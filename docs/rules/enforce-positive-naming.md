@@ -4,7 +4,7 @@
 
 <!-- end auto-generated rule header -->
 
-Negative boolean names force readers to mentally invert conditions (`if (!isNotReady)`) and often hide intent. This rule enforces positive, self-describing names for boolean variables, functions, parameters, properties, and class members.
+Negative boolean names can force readers to mentally invert conditions (`if (!isNotReady)`) and often hide intent. This rule suggests positive, self-describing names for boolean variables, functions, parameters, properties, and class members.
 
 ## Rule Details
 
@@ -28,6 +28,12 @@ type State = { isUnreachable: boolean; doesNotExist: boolean };
 class Session { get isDisallowed() { return !this.isEnabled; } }
 ```
 
+Example message:
+
+```text
+Variable "isNotReady" uses negative naming, which can make logic harder to follow (e.g., "if (!isNotReady)"). This rule is a suggestion; some concepts are naturally negative (like "isUnauthorized"). If this name is the clearest choice, please use an // eslint-disable-next-line @blumintinc/blumint/enforce-positive-naming comment. Otherwise, consider a positive alternative like isReady.
+```
+
 ### Examples of **correct** code for this rule:
 
 ```ts
@@ -38,14 +44,18 @@ type State = { isReachable: boolean; doesExist: boolean };
 class Session { get isAllowed() { return this.isEnabled; } }
 ```
 
-## Options
+### ✅ Correct (With disable comment if negative naming is clearest)
 
-This rule does not have any options.
+```ts
+// eslint-disable-next-line @blumintinc/blumint/enforce-positive-naming
+const isUnauthorized = true;
+```
 
 ## When Not To Use It
 
 - Codebases that intentionally encode negation in names for readability conventions.
-- Transitional refactors where renaming booleans would break external contracts—disable locally while migrating.
+- If a concept is inherently negative and a positive name would be more confusing.
+- Transitional refactors where renaming booleans would break external contracts—disable locally while migrating with an `// eslint-disable-next-line @blumintinc/blumint/enforce-positive-naming` comment.
 
 ## Further Reading
 

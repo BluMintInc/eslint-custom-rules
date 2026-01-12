@@ -3,7 +3,7 @@ import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceVerbNounNaming } from '../rules/enforce-verb-noun-naming';
 
 const verbNounMessage = (name: string) =>
-  `Function "${name}" should start with an action verb followed by the thing it acts on. Verb-first names tell readers this symbol performs work instead of representing data, which keeps APIs predictable and prevents accidental misuse. Rename "${name}" to a verb-noun phrase such as "fetchUsers" or "processRequest".`;
+  `Function "${name}" might need a verb-noun phrase (like "fetchUsers" or "processRequest"). This rule is a suggestion based on NLP heuristics and might misidentify verbs or miss domain-specific patterns. If "${name}" is already descriptive or follows a specific convention, please use an // eslint-disable-next-line @blumintinc/blumint/enforce-verb-noun-naming comment. Otherwise, consider a verb-first name to clarify that this symbol performs work.`;
 
 const verbNounError = (name: string) =>
   ({
@@ -77,15 +77,35 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
       }`,
     },
 
-    // Functions starting with "to" or "with"
+    // React component detection for PascalCase functions (isJsxFile=false)
     {
-      code: `function toNumber(value) { return +value; }`,
+      code: `const MyComponent: React.FC = () => null;`,
+      filename: 'src/components/MyComponent.ts',
     },
     {
-      code: `const withLogging = (fn) => (...args) => { console.log(...args); return fn(...args); }`,
+      code: `function MyComponent(): React.JSX.Element { return null; }`,
+      filename: 'src/components/MyComponent.ts',
     },
     {
-      code: `class Converter { toString() { return ''; } }`,
+      code: `const MyComponent: FC<Props> = (props) => { return null; };`,
+      filename: 'src/components/MyComponent.ts',
+    },
+    {
+      code: `export const MyComponent: FunctionComponent = () => null;`,
+      filename: 'src/components/MyComponent.ts',
+    },
+    {
+      code: `const MyComponent: React.FunctionComponent = () => null;`,
+      filename: 'src/components/MyComponent.ts',
+    },
+    // PascalCase in TSX files should be treated as components even without JSX return (e.g. returns null)
+    {
+      code: `const MyComponent = () => null;`,
+      filename: 'src/components/MyComponent.tsx',
+    },
+    {
+      code: `function MyComponent() { return null; }`,
+      filename: 'src/components/MyComponent.tsx',
     },
 
     // Data types with noun phrases
@@ -189,12 +209,116 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
         ecmaFeatures: { jsx: true },
       },
     },
+
+    // Regression tests for Issue #1101
+    `async function upsertMetadata() {}`,
+    `async function debit() {}`,
+    `async function lookupIpData() {}`,
+    `async function mintMore() {}`,
+    `function dedupeSnaps() {}`,
+    `function lowercaseFirstLetter() {}`,
+    `function unpluck() {}`,
+    `function triage() {}`,
+    `function calcMinAge() {}`,
+    `function cleanup() {}`,
+    `function cacheTransactionStatus() {}`,
+    `function destructureAdminDirectory() {}`,
+    `function firstExists() {}`,
+    `const stableHash = () => {}`,
+    `const sequentialDocumentWritten = () => {}`,
+    `const onlyEvery = () => {}`,
+    `const cartesianCombine = () => {}`,
+    `const uuidv4Base62 = () => {}`,
+    `const blumintAreEqual = () => {}`,
+    `const callableFactory = () => {}`,
+    `const recursive = () => {}`,
+    {
+      code: `function UnauthorizedPage() { return <div />; }`,
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+      },
+    },
+    {
+      code: `const ElectronTitleBar = () => { return <div />; }`,
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+      },
+    },
+    {
+      code: `/** @jsx jsx */
+      const conditionalComponent = (props) => {
+        return props.isVisible && <div>Visible</div>;
+      }`,
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+      },
+    },
+    {
+      code: `/** @jsx jsx */
+      function logicalFunction(props) {
+        return props.data || <div />;
+      }`,
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+      },
+    },
+    {
+      code: `/** @jsx jsx */
+      const conditionalReturn = (props) => {
+        return props.isVisible ? <div>Visible</div> : null;
+      }`,
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+      },
+    },
+    // React component detection tests
+    {
+      filename: 'MyComponent.tsx',
+      code: `function MyComponent() { return <div />; }`,
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+      },
+    },
+    {
+      filename: 'MyComponent.ts',
+      code: `function MyComponent(): React.FC { return null; }`,
+    },
   ],
   invalid: [
+    {
+      code: `function NonComponentHelper() { return 123; }`,
+      filename: 'helpers.ts',
+      errors: [verbNounError('NonComponentHelper')],
+    },
+    {
+      code: `const HelperFunction = () => { doWork(); }`,
+      filename: 'utils.ts',
+      errors: [verbNounError('HelperFunction')],
+    },
     // Invalid function names (not verb phrases)
     {
       code: `function userData() { return null; }`,
       errors: [verbNounError('userData')],
+    },
+
+    // Regression tests for destructured parameters false positive
+    {
+      code: `function userDataDestructured({ id, name }) { return { id, name }; }`,
+      errors: [verbNounError('userDataDestructured')],
+    },
+    {
+      code: `const configHandler = ({ config }) => { return config; };`,
+      errors: [verbNounError('configHandler')],
+    },
+
+    // Regression tests for React type annotation false positive (FC/FunctionComponent substring matching)
+    {
+      code: `const myFC: RFC3339Date = (date) => { return date; };`,
+      errors: [verbNounError('myFC')],
+    },
+    {
+      code: `const configParser: IETFConfig = ({ config }) => { return config; };`,
+      errors: [verbNounError('configParser')],
     },
 
     // Invalid arrow function names (not verb phrases)
@@ -209,6 +333,26 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
         data() { }
       }`,
       errors: [verbNounError('data')],
+    },
+    {
+      filename: 'UserData.ts',
+      code: `function UserData() {
+        let make = () => { return null; };
+        make = () => { return 1; };
+        return make;
+      }`,
+      errors: [verbNounError('UserData')],
+    },
+    {
+      filename: 'StatusData.ts',
+      code: `function StatusData() {
+        const make = () => { return null; };
+        {
+          const make = () => { return 1; };
+          return make;
+        }
+      }`,
+      errors: [verbNounError('StatusData')],
     },
   ],
 });

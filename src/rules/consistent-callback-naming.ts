@@ -11,16 +11,16 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
     type: 'suggestion',
     docs: {
       description:
-        'Enforce consistent naming conventions for callback props and functions',
+        'Suggest consistent naming conventions for callback props and functions',
       recommended: 'error',
     },
     fixable: 'code',
     schema: [],
     messages: {
       callbackPropPrefix:
-        'Callback props (function type props) must be prefixed with "on" (e.g., onClick, onChange)',
+        'Callback prop "{{propName}}" might need an "on" prefix (e.g., "on{{capitalizedPropName}}"). This rule is suggestive and might conflict with external library conventions. If "{{propName}}" is the correct name, please use an // eslint-disable-next-line @blumintinc/blumint/consistent-callback-naming comment.',
       callbackFunctionPrefix:
-        'Callback functions should not use "handle" prefix, use descriptive verb phrases instead',
+        'Function "{{functionName}}" uses the "handle" prefix, which might be less descriptive than a verb phrase. This is a suggested naming convention. If "handle" is preferred for this callback, please use an // eslint-disable-next-line @blumintinc/blumint/consistent-callback-naming comment. Otherwise, consider a descriptive verb phrase instead.',
     },
   },
   defaultOptions: [],
@@ -157,14 +157,14 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
             !propName.startsWith('on') &&
             !isReactComponentType(node.value.expression)
           ) {
+            const capitalizedPropName =
+              propName.charAt(0).toUpperCase() + propName.slice(1);
             context.report({
               node,
               messageId: 'callbackPropPrefix',
+              data: { propName, capitalizedPropName },
               fix(fixer) {
-                // Convert camelCase to PascalCase for the event name
-                const eventName =
-                  propName.charAt(0).toUpperCase() + propName.slice(1);
-                return fixer.replaceText(node.name, `on${eventName}`);
+                return fixer.replaceText(node.name, `on${capitalizedPropName}`);
               },
             });
           }
@@ -184,6 +184,7 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
             context.report({
               node,
               messageId: 'callbackFunctionPrefix',
+              data: { functionName },
             });
             return;
           }
@@ -197,6 +198,7 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
             context.report({
               node,
               messageId: 'callbackFunctionPrefix',
+              data: { functionName },
             });
             return;
           }
@@ -262,6 +264,7 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
           context.report({
             node,
             messageId: 'callbackFunctionPrefix',
+            data: { functionName },
             fix(fixer) {
               // Remove 'handle' prefix and convert first character to lowercase
               const newName =
@@ -300,6 +303,7 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
             context.report({
               node: node.key,
               messageId: 'callbackFunctionPrefix',
+              data: { functionName: name },
             });
             return;
           }
@@ -309,6 +313,7 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
             context.report({
               node: node.key,
               messageId: 'callbackFunctionPrefix',
+              data: { functionName: name },
             });
             return;
           }
@@ -316,6 +321,7 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
           context.report({
             node: node.key,
             messageId: 'callbackFunctionPrefix',
+            data: { functionName: name },
             fix(fixer) {
               // Remove 'handle' prefix and convert first character to lowercase
               const newName =
@@ -335,6 +341,7 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
           context.report({
             node,
             messageId: 'callbackFunctionPrefix',
+            data: { functionName: node.parameter.name },
           });
         }
       },

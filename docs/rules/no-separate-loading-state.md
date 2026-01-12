@@ -4,39 +4,23 @@
 
 <!-- end auto-generated rule header -->
 
+Loading flags that separate "loading status" from the "data itself" often lead to state drift and unnecessary render cycles. This rule suggests encoding the loading phase inside the primary state variable instead.
+
 ## Rule Details
 
-This rule warns when a component introduces a _second_ `useState` pair such as **`[isXLoading, setIsXLoading]`** or **`[isLoadingX, setIsLoadingX]`** whose only job is to track whether **another** piece of state is still being fetched.
+This rule identifies `useState` declarations that follow common loading patterns (e.g., `isLoading`, `isProfileLoading`) and track whether they are toggled between truthy and falsy values.
 
-Separate loading booleans split the source of truth for fetching state. The flag can drift from the data (`false` before the data arrives, `true` after an error), and the extra toggles add renders without exposing the data's real lifecycle. Encode the loading phase inside the primary state instead (for example with a `'loading'` sentinel or a discriminated union) so every consumer reads a single authoritative value.
+### Why this rule matters
 
-### Detection Heuristic
+- Boolean toggles can drift from the actual data availability, leading to UI bugs where a spinner shows while data is present, or vice versa.
+- Managing multiple related state variables adds mental overhead and extra render cycles.
+- Discrimination unions or sentinel values (like `null`, `'loading'`, or `{ status: 'loading' }`) provide a single authoritative source of truth.
 
-The rule flags any `useState` identifier that matches `/^is.*Loading$/i` or `/^isLoading.+/i` and whose setter is invoked with a truthy value before an async boundary and with a falsy value afterward. This heuristic targets booleans that mirror a separate piece of state instead of representing the data directly.
-
-### Scope
-
-React function components and custom hooks. Redux/SWR/React-Query flags are ignored.
-
-### Allowed Uses
-
-Booleans whose names do not match the patterns (for example `isModalOpen`) are allowed.
-
-### Autofix
-
-Not provided – switching to a sentinel or discriminated union requires manual type updates and consumer changes.
-
-### Options
-
-- `patterns` (`string[]`, optional): Custom regex strings for detecting loading-state variable names. Defaults to `['^is.*Loading$', '^isLoading.+']`.
-
-## Examples
-
-### ❌ Incorrect
+### Examples of **incorrect** code for this rule:
 
 ```tsx
 const [profile, setProfile] = useState<User | null>(null);
-const [isProfileLoading, setIsProfileLoading] = useState(false);   // ❌ duplicate loading flag
+const [isProfileLoading, setIsProfileLoading] = useState(false);   // ❌ separate loading flag
 
 async function loadProfile(id: string) {
   setIsProfileLoading(true);
@@ -49,53 +33,52 @@ async function loadProfile(id: string) {
 }
 ```
 
-```tsx
-const [avatar, setAvatar] = useState(null);
-const [isLoadingAvatar, setIsLoadingAvatar] = useState(false);   // ❌ duplicate loading flag
+Example message:
 
-async function loadAvatar() {
-  setIsLoadingAvatar(true);
-  const data = await fetchAvatar();
-  setAvatar(data);
-  setIsLoadingAvatar(false);
+```text
+Loading flag "isProfileLoading" might be splitting the source of truth for your data. This rule is a suggestion; complex UIs may legitimately require multiple loading flags. If this separate state is intentional, please use an // eslint-disable-next-line @blumintinc/blumint/no-separate-loading-state comment. Otherwise, consider encoding the loading phase inside the primary state (e.g., using a discriminated union or sentinel value) to prevent state drift.
+```
+
+### Examples of **correct** code for this rule:
+
+```tsx
+// Using a sentinel value
+const [profile, setProfile] = useState<UserProfile | 'loading' | null>(null);
+
+async function loadProfile(id) {
+  setProfile('loading');
+  const data = await api.get('/users/' + id);
+  setProfile(data);
 }
+
+// Using a discriminated union (preferred for complex state)
+type RemoteData<T> =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'success'; data: T }
+  | { status: 'error'; error: Error };
+
+const [profile, setProfile] = useState<RemoteData<UserProfile>>({ status: 'idle' });
 ```
 
-### ✅ Correct
+### ✅ Correct (With disable comment if separate state is intentional)
 
 ```tsx
-const [profile, setProfile] = useState<User | 'loading' | { kind: 'error'; message: string } | null>(null);
-
-async function loadProfile(id: string) {
-  setProfile('loading');                        // sentinel to mark the fetch lifecycle
-  try {
-    const data = await api.get(`/users/${id}`);
-    setProfile(data);
-  } catch (error) {
-    setProfile({ kind: 'error', message: (error as Error).message });
-  }
-}
+// eslint-disable-next-line @blumintinc/blumint/no-separate-loading-state
+const [isGlobalLoading, setIsGlobalLoading] = useState(false);
 ```
 
-```tsx
-// Boolean states that don't match loading patterns are allowed
-const [isModalOpen, setIsModalOpen] = useState(false);
-const [isVisible, setIsVisible] = useState(true);
+## Options
 
-function toggleModal() {
-  setIsModalOpen(!isModalOpen);
-}
-```
+This rule accepts an options object:
 
-## Interaction with react/no-stale-state-across-await
+- `patterns`: (Default: `[/^is.*Loading$/i, /^isLoading.+/i]`) An array of regex strings to match loading state variable names.
 
-Disable `react/no-stale-state-across-await` when intentionally double updating:
+## When Not To Use It
 
-```tsx
-// eslint-disable-next-line @blumintinc/blumint/no-stale-state-across-await
-setProfile('loading');
-```
+Disable this rule if you are working on a complex UI where multiple independent loading flags are the clearest way to manage state, or when integrating with libraries that enforce this pattern. Use an `// eslint-disable-next-line @blumintinc/blumint/no-separate-loading-state` comment for local exceptions.
 
-## Benefits
+## Further Reading
 
-By detecting **both** `isXLoading` and `isLoadingX` patterns, this rule keeps loading semantics co-located with the data they describe, removes redundant renders (`true → false`), and prevents desynchronisation between a boolean flag and the actual fetch result.
+- [Discriminated Unions in TypeScript](https://www.typescriptlang.org/docs/handbook/2/narrowing.html#discriminated-unions)
+- [React Docs: Choosing the State Structure](https://react.dev/learn/choosing-the-state-structure)

@@ -156,7 +156,7 @@ export const noHandlerSuffix = createRule<Options, MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Disallow the generic "handler" suffix in callback names so names explain the action they perform',
+        'Discourage the generic "handler" suffix in callback names so names explain the action they perform',
       recommended: 'error',
     },
     schema: [
@@ -178,7 +178,7 @@ export const noHandlerSuffix = createRule<Options, MessageIds>({
     ],
     messages: {
       handlerSuffix:
-        'Function "{{name}}" ends with the generic {{suffix}} suffix. Handler names hide the outcome of the callback and make call sites indistinguishable. Rename it to describe the effect (e.g., "{{suggestedName}}" or another action phrase) so readers know what the function actually does.',
+        'Function "{{name}}" ends with the generic "{{suffix}}" suffix, which might hide what the function actually does. This rule is a suggestion; "handler" is sometimes the most descriptive term for generic callbacks. If this suffix is appropriate, please use an // eslint-disable-next-line @blumintinc/blumint/no-handler-suffix comment. Otherwise, consider renaming to describe the effect (e.g., "{{suggestedName}}").',
     },
   },
   defaultOptions: [DEFAULT_OPTIONS],

@@ -757,6 +757,31 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
         }
       `,
     },
+    // Regression for #1103: IIFE capturing local variables should not be flagged
+    {
+      code: `
+        import { useState } from 'react';
+        import { isPromiseLike } from 'functions/src/util/isPromiseLike';
+
+        export function useExample(result: any) {
+          const [isLoading, setIsLoading] = useState(false);
+
+          if (isPromiseLike(result)) {
+            // Should NOT be flagged: It captures 'result' and 'setIsLoading' from the local scope.
+            const promise: any = (async () => {
+              try {
+                return await result;
+              } finally {
+                setIsLoading(false);
+              }
+            })();
+            return promise;
+          }
+          
+          return result;
+        }
+      `,
+    },
   ],
   invalid: [
     // Should flag immutable string constants

@@ -247,7 +247,7 @@ export const noPassthroughGetters = createRule({
     schema: [],
     messages: {
       noPassthroughGetter:
-        'Getter "{{getterName}}" only forwards nested property "{{propertyPath}}" from an object provided via the constructor. This indirection hides the real source of state and expands the class API without adding behavior. Read the constructor-injected object directly or add logic that justifies a getter (validation, memoization, fallback).',
+        'Getter "{{getterName}}" only forwards "{{propertyPath}}" from a constructor-injected object. This rule is a suggestion; simple delegation can sometimes be a valid design choice for API stability or internal readability. If this passthrough is intentional, please use an // eslint-disable-next-line @blumintinc/blumint/no-passthrough-getters comment. Otherwise, consider reading the injected object directly or adding behavior to this getter.',
     },
   },
   defaultOptions: [],

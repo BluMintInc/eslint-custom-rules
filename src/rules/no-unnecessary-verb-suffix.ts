@@ -76,14 +76,14 @@ export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Prevent unnecessary verb suffixes in function and method names',
+        'Discourage unnecessary verb suffixes in function and method names',
       recommended: 'error',
     },
     fixable: 'code',
     schema: [],
     messages: {
       unnecessaryVerbSuffix:
-        'Function name "{{name}}" ends with verb suffix "{{suffix}}" that does not add meaning beyond its parameters. Redundant verb-preposition endings make call sites harder to scan and hide the primary action. Rename to "{{suggestion}}" so the name stays action-oriented while arguments express the relationship.',
+        'Function "{{name}}" ends with the suffix "{{suffix}}", which might be redundant if the arguments already express the relationship. This rule is suggestive and might flag suffixes that are critical for clarity in your specific domain. If "{{suffix}}" is necessary, please use an // eslint-disable-next-line @blumintinc/blumint/no-unnecessary-verb-suffix comment. Otherwise, consider renaming to "{{suggestion}}" to keep the name focused on the primary action.',
     },
   },
   defaultOptions: [],

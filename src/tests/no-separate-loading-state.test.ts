@@ -13,7 +13,7 @@ const ruleTester = new ESLintUtils.RuleTester({
 });
 
 const loadingMessage = (stateName: string) =>
-  `Loading flag "${stateName}" splits the source of truth for data fetching. Boolean toggles drift from the actual data and add extra renders. Encode the loading phase inside the primary state instead (use a "loading" sentinel or discriminated union) so components read a single authoritative value.`;
+  `Loading flag "${stateName}" might be splitting the source of truth for your data. This rule is a suggestion; complex UIs may legitimately require multiple loading flags. If this separate state is intentional, please use an // eslint-disable-next-line @blumintinc/blumint/no-separate-loading-state comment. Otherwise, consider encoding the loading phase inside the primary state (e.g., using a discriminated union or sentinel value) to prevent state drift.`;
 
 // RuleTester accepts a raw message string at runtime even though the type
 // definition requires a messageId, so we assert the type to verify the text.
