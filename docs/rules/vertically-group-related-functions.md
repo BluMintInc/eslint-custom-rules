@@ -38,52 +38,61 @@ It reports when:
 
 ```typescript
 // Default configuration (callers-first, event handlers first)
-function fetchData() {
-  return api.get('/data');
-}
-
 function processUserInput(input: string) {
-  return sanitize(input);
+  const sanitized = sanitizeInput(input);
+  return validateInput(sanitized);
 }
 
-function transformData(data: unknown[]) {
-  return data.map((item) => (item as any).value);
+function sanitizeInput(input: string) {
+  return input.trim().toLowerCase();
+}
+
+function validateInput(input: string) {
+  return input.length > 0;
 }
 
 function handleClick() {
-  processUserInput(userInput);
+  const input = "example input";
+  processUserInput(input);
 }
 ```
 
 ```typescript
 // exportPlacement: "bottom"
-export function makeRequest() {}
+export function makeRequest() {
+  return prepareRequest();
+}
+
 function prepareRequest() {}
 ```
 
 ## Examples of correct code for this rule
 
 ```typescript
+// Default configuration (callers-first, event handlers first)
 function handleClick() {
-  processUserInput(userInput);
+  const input = "example input";
+  processUserInput(input);
 }
 
 function processUserInput(input: string) {
-  return sanitize(input);
+  const sanitized = sanitizeInput(input);
+  return validateInput(sanitized);
 }
 
-function fetchData() {
-  return api.get('/data');
+function sanitizeInput(input: string) {
+  return input.trim().toLowerCase();
 }
 
-function transformData(data: unknown[]) {
-  return data.map((item) => (item as any).value);
+function validateInput(input: string) {
+  return input.length > 0;
 }
 ```
 
 ```typescript
 // exportPlacement: "bottom"
 function prepareRequest() {}
+
 export function makeRequest() {
   return prepareRequest();
 }

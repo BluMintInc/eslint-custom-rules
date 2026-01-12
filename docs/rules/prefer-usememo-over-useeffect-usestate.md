@@ -32,7 +32,11 @@ function Component({ a, b }) {
 
   return <div>{sum}</div>;
 }
-// Lint: Derived state "sum" is computed inside useEffect and copied into React state even though the value comes from a pure calculation. That extra render cycle and state indirection make components re-render more and risk stale snapshots when dependencies change. Compute the value with useMemo (or inline in render) and read it directly instead of mirroring it into state.
+// Lint: Derived state "sum" is computed inside useEffect and copied into React
+// state even though the value comes from a pure calculation. That extra render
+// cycle and state indirection make components re-render more and risk stale
+// snapshots when dependencies change. Compute the value with useMemo (or inline
+// in render) and read it directly instead of mirroring it into state.
 ```
 
 ### Correct
@@ -63,6 +67,10 @@ function Component({ initialValue }) {
   return <Input value={value} />;
 }
 ```
+
+> [!NOTE]
+> While this pattern is allowed by the rule (it does not flag simple identifier-to-identifier synchronization), React generally discourages prop-to-state mirroring. Prefer using a [controlled component](https://react.dev/learn/sharing-state-between-components#controlled-and-uncontrolled-components), a [key-based reset](https://react.dev/learn/you-might-not-need-an-effect#resetting-all-state-when-a-prop-changes), or a guarded comparison if you must sync.
+
 
 ## When not to use it
 
