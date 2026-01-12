@@ -17,24 +17,20 @@ Firestore and RealtimeDB triggers already surface typed path segments through `e
 - Ignores non-handler functions and member access unrelated to a `ref.parent` chain.
 
 The rule allows up to two `.parent` hops for simple relative navigation; anything longer triggers a message explaining why the chain is risky and how to replace it with params-based access. The message template is:
-`Found {{count}} consecutive ref.parent hops in this handler. Long parent chains break when Firestore/RealtimeDB paths change and bypass the typed params the trigger already provides. Read path components from event.params (for example, params.userId) instead of walking ref.parent repeatedly.`
+
+```
+Found {{count}} consecutive ref.parent hops in this handler. Long parent chains break when Firestore/RealtimeDB paths change and bypass the typed params the trigger already provides. Read path components from event.params (for example, params.userId) instead of walking ref.parent repeatedly.
+```
 
 ## Options
 
-- `max` (integer): Maximum number of consecutive `.parent` hops allowed before warning. Defaults to `2`.
+- `max` (integer): Maximum number of consecutive `.parent` hops allowed before triggering a violation. Defaults to `2`.
 
 ```json
 {
   "@blumintinc/blumint/no-excessive-parent-chain": ["error", { "max": 2 }]
 }
 ```
-
-## Why this rule matters
-
-- **Path drift creates runtime bugs**: A collection rename or nesting change invalidates every `ref.parent.parent.parent` chain and fails at runtime.
-- **Params already hold the identifiers**: `event.params` is typed from the trigger path, so using it keeps handlers aligned with declared routes.
-- **Intent is clearer**: `params.userId` communicates which path component is being read, while a long parent chain hides intent.
-- **Consistent handler pattern**: Using params yields the same readable approach across all triggers.
 
 ## How to fix
 
@@ -98,14 +94,14 @@ This rule provides editor suggestions to replace long parent chains with `event.
 
 ### Problems with Long Parent Chains
 
-1. **Fragility**: Changes to the Firestore path structure can break multiple chained `.parent` calls.
-1. **Readability**: Long chains like `ref.parent.parent.parent.parent` are difficult to comprehend.
-1. **Type Safety**: Manual navigation doesn't provide compile-time guarantees about path structure.
-1. **Maintainability**: Refactoring path structures requires updating all hardcoded parent chains.
+1. **Fragility and Path Drift**: Changes to the Firestore path structure or collection renames invalidate chained `.parent` calls, leading to runtime failures.
+1. **Poor Readability**: Long chains like `ref.parent.parent.parent.parent` are difficult to comprehend and hide the developer's intent.
+1. **Lack of Type Safety**: Manual navigation bypasses the typed parameters the trigger already provides and offers no compile-time guarantees.
+1. **Maintenance Burden**: Refactoring path structures requires finding and updating all hardcoded parent chains throughout the codebase.
 
 ### Benefits of Using Params
 
-1. **Type Safety**: The `params` object is automatically generated based on the path pattern and provides type-safe access
-1. **Maintainability**: Path changes only require updating the path pattern, not individual handlers
-1. **Clarity**: `params.userId` is much clearer than `ref.parent.parent.parent.id`
-1. **Consistency**: All handlers use the same pattern for accessing path components.
+1. **Type Safety**: The `params` object is automatically generated from the trigger path, ensuring type-safe access to path segments.
+1. **Resilience to Change**: Path changes only require updating the trigger's path pattern; handlers using `params` remain valid.
+1. **Explicit Intent**: `params.userId` clearly communicates which path component is being accessed, making the code self-documenting.
+1. **Consistent Patterns**: Using `params` establishes a uniform, readable approach for accessing data across all database triggers.

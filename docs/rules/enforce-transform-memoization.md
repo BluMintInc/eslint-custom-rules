@@ -11,9 +11,9 @@
 This rule enforces:
 
 1. `transformValue` must be memoized with `useMemo` (or a clearly memoized helper).
-2. `transformOnChange` must be memoized with `useCallback` (or a memoized helper).
-3. When `useMemo`/`useCallback` is used, the dependency array must exist and include all outer-scope values referenced by the transform.
-4. Functions defined outside the component are treated as stable and are allowed directly.
+1. `transformOnChange` must be memoized with `useCallback` (or a memoized helper).
+1. When `useMemo`/`useCallback` is used, the dependency array must exist and include all outer-scope values referenced by the transform.
+1. Functions defined outside the component are treated as stable and are allowed directly.
 
 `transformValue` represents a derived or computed value that should be stabilized to avoid expensive recomputations (hence `useMemo`), while `transformOnChange` is an event callback whose identity must be stable to prevent unnecessary re-renders or effect triggers in the adapted component (hence `useCallback`).
 
@@ -73,6 +73,7 @@ function Component() {
 ```js
 // ✅ Memoized utility wrapper with useMemo
 import { useMemo } from 'react';
+// Mock throttle for demonstration (real implementation would delay execution)
 const throttle = (fn) => fn;
 const TextInput = () => null;
 
