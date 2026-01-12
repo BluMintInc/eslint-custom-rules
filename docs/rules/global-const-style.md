@@ -9,7 +9,7 @@
 Top-level constants should read as immutable configuration and stay frozen at the value authored. This rule keeps that intent obvious by enforcing:
 
 1. `UPPER_SNAKE_CASE` names for module-scope constants so they stand out from runtime variables.
-2. `as const` for literal, array, and object initializers in TypeScript so the type stays exact and the value cannot be mutated accidentally.
+1. `as const` for literal, array, and object initializers in TypeScript so the type stays exact and the value cannot be mutated accidentally.
 
 ## Rule Details
 
@@ -59,8 +59,8 @@ const memoized = memo(MyComponent);
 You might want to disable this rule if:
 
 1. Use a different naming convention for module-level constants.
-2. Prefer explicit type annotations over `as const` for literals.
-3. Avoid this rule if you rarely keep literal values at module scope and do not need the visual distinction.
+1. Prefer explicit type annotations over `as const` for literals.
+1. Avoid this rule if you rarely keep literal values at module scope and do not need the visual distinction.
 
 ## Further Reading
 

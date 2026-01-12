@@ -14,8 +14,8 @@ React's `useMemo` is intended for memoizing computationally expensive values tha
 
 By identifying and refactoring these patterns, we can:
 1. Reduce runtime memory consumption
-2. Improve code clarity and maintainability
-3. Encourage proper use of React hooks
+1. Improve code clarity and maintainability
+1. Encourage proper use of React hooks
 
 ### Examples of incorrect code for this rule:
 

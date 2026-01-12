@@ -30,6 +30,7 @@ adaptValue({
 ```
 
 ```js
+// Mock component for demonstration
 const Switch = () => null;
 function Component({ formatter }) {
   // ❌ Wrong hook (should be useCallback) + missing dependency in array
@@ -49,6 +50,9 @@ Examples of **correct** code for this rule:
 ```js
 import { useMemo, useCallback } from 'react';
 
+// Mock component for demonstration
+const Switch = () => null;
+
 function Component() {
   return adaptValue({
     valueKey: 'checked',
@@ -60,6 +64,9 @@ function Component() {
 ```
 
 ```js
+// Mock component for demonstration
+const Switch = () => null;
+
 // ✅ Stable helper defined outside the component
 const convertToBoolean = (value) => Boolean(value);
 
@@ -75,8 +82,11 @@ function Component() {
 ```js
 // ✅ Memoized utility wrapper with useMemo
 import { useMemo } from 'react';
-// Mock throttle for demonstration (real implementation would delay execution)
-const throttle = (fn) => fn;
+
+// Mock throttle for demonstration - real implementation would delay execution
+const throttle = (fn, _delay) => fn;
+
+// Mock component for demonstration
 const TextInput = () => null;
 
 function Component() {
