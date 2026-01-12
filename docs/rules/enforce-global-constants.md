@@ -104,5 +104,5 @@ You might want to disable this rule if your codebase has a specific pattern or a
 
 ## Further Reading
 
-- [React useMemo Documentation](https://reactjs.org/docs/hooks-reference.html#usememo)
-- [React Hooks Performance Optimization](https://reactjs.org/docs/hooks-faq.html#how-to-memoize-calculations)
+- [React useMemo Documentation](https://react.dev/reference/react/useMemo)
+- [React Hooks Performance Optimization](https://react.dev/reference/react/useMemo#skipping-expensive-recalculations)

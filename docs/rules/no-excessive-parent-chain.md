@@ -108,10 +108,10 @@ However, consider that leaving long parent chains unaddressed increases technica
 
 ### Problems with Long Parent Chains
 
-1. **Fragility and Path Drift**: Changes to the Firestore path structure or collection renames invalidate chained `.parent` calls, leading to runtime failures.
-1. **Poor Readability**: Long chains like `ref.parent.parent.parent.parent` are difficult to comprehend and hide the developer's intent.
-1. **Lack of Type Safety**: Manual navigation bypasses the typed parameters the trigger already provides and offers no compile-time guarantees.
-1. **Maintenance Burden**: Refactoring path structures requires finding and updating all hardcoded parent chains throughout the codebase.
+1. **Path drift creates runtime bugs**: A collection rename or nesting change invalidates every `ref.parent.parent.parent` chain and fails at runtime.
+1. **Params already hold the identifiers**: `event.params` is typed from the trigger path, so using it keeps handlers aligned with declared routes.
+1. **Intent is clearer**: `params.userId` communicates which path component is being read, while a long parent chain hides intent.
+1. **Consistent handler pattern**: Using params yields the same readable approach across all triggers.
 
 ### Benefits of Using Params
 
