@@ -79,7 +79,13 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
       // break descriptive naming.
       const sameTypeParams = propsParams.filter((p) => p.typeName === typeName);
       if (sameTypeParams.length > 1) {
-        return currentName ?? '';
+        // Keep the current name when multiple params share the same Props type.
+        // This preserves descriptive names like prevProps/nextProps.
+        if (!currentName) {
+          // Fallback should not occur since destructured params are filtered upstream.
+          return 'props';
+        }
+        return currentName;
       }
 
       if (typeName === 'Props') {
