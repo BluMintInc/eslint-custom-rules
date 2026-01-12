@@ -14,10 +14,12 @@ React's `useMemo` is intended for memoizing computationally expensive values tha
 
 By identifying and refactoring these patterns, we can:
 1. Reduce runtime memory consumption
-1. Improve code clarity and maintainability
-1. Encourage proper use of React hooks
+2. Improve code clarity and maintainability
+3. Encourage proper use of React hooks
 
 ### Examples of incorrect code for this rule:
+
+#### `useMemo` with empty dependency array
 
 ```tsx
 const MyComponent = () => {
@@ -40,7 +42,23 @@ const MyComponent = () => {
 };
 ```
 
+#### Inline destructuring defaults
+
+```tsx
+// Incorrect: inline default object/array in component props
+const MyComponent = ({ config = { theme: 'light', size: 'medium' } }) => {
+  return <div>{config.theme}</div>;
+};
+
+// Incorrect: inline default object/array in hook arguments
+const useMyHook = (options = ['default-option']) => {
+  return options;
+};
+```
+
 ### Examples of correct code for this rule:
+
+#### Global constants for `useMemo` replacement
 
 ```tsx
 // Define once at module scope - never recreated during renders
@@ -57,6 +75,23 @@ const MyComponent = () => {
       ))}
     </div>
   );
+};
+```
+
+#### Global constants for destructuring defaults
+
+```tsx
+// Extract to global constant
+const DEFAULT_CONFIG = { theme: 'light', size: 'medium' } as const;
+
+const MyComponent = ({ config = DEFAULT_CONFIG }) => {
+  return <div>{config.theme}</div>;
+};
+
+const DEFAULT_OPTIONS = ['default-option'] as const;
+
+const useMyHook = (options = DEFAULT_OPTIONS) => {
+  return options;
 };
 ```
 

@@ -132,8 +132,8 @@ function process<T extends ComponentProps>(props: T) {
 You might want to disable this rule if:
 
 1. Your project has an established naming convention for Props parameters that differs from this rule
-1. You frequently use multiple Props parameters in the same function and prefer more descriptive names
-1. You don't want to enforce strict naming consistency for Props parameters
+2. You frequently use multiple Props parameters in the same function and prefer more descriptive names
+3. You don't want to enforce strict naming consistency for Props parameters
 
 ## Further Reading
 
