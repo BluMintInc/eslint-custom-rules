@@ -4,7 +4,7 @@
 
 <!-- end auto-generated rule header -->
 
-`adaptValue` relies on `transformValue` and `transformOnChange` to bridge editable components. Inline transforms recreate functions every render, forcing unnecessary re-renders and risking stale closures. This rule ensures those transforms are memoized with the correct React hook and that dependency arrays list every captured value.
+When you use `adaptValue` to bridge editable components, you must provide `transformValue` and `transformOnChange` functions. If you define these transforms inline, React recreates them on every render, forcing unnecessary re-renders and risking stale closures. This rule ensures you memoize those transforms with the correct React hook and include every captured value in your dependency arrays so the adapted component receives stable handlers and avoids unnecessary re-renders.
 
 ## Rule Details
 
