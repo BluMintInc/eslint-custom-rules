@@ -224,6 +224,25 @@ ruleTesterTs.run('prefer-settings-object', preferSettingsObject, {
       `,
       options: [{ checkSameTypeParameters: true }],
     },
+    // Inferred types from context should be ignored
+    {
+      code: `
+        export const myStrategy: PropagationStrategyTransaction<Transaction, TokenMetadata> = {
+          queryResolveAll: async ({ source }, transaction) => {
+            return [];
+          },
+        };
+      `,
+      options: [{ checkSameTypeParameters: true }],
+    },
+    {
+      code: `
+        const handler: SomeLargeInterface = (a, b, c, d) => {
+          return [];
+        };
+      `,
+      options: [{ minimumParameters: 3 }],
+    },
   ],
   invalid: [
     // Too many parameters
@@ -243,6 +262,17 @@ ruleTesterTs.run('prefer-settings-object', preferSettingsObject, {
         {
           messageId: 'sameTypeParams',
           data: { paramCount: 2, type: 'string' },
+        },
+      ],
+    },
+    // Qualified type names
+    {
+      code: `function qualified(a: A.B, b: A.B) {}`,
+      options: [{ checkSameTypeParameters: true }],
+      errors: [
+        {
+          messageId: 'sameTypeParams',
+          data: { paramCount: 2, type: 'A.B' },
         },
       ],
     },
