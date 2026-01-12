@@ -12,7 +12,7 @@
 
 ## Rule Details
 
-The rule flags `useEffect` callbacks that only call a `useState` setter with a value that looks pure (object/array literals, array map/filter/reduce, or calls to `compute*`, `calculate*`, `format*`, `transform*`, `convert*`, `get*`, `derive*`, `create*`).
+The rule flags `useEffect` callbacks that only call a `useState` setter with a value that looks pure (object/array literals, array map/filter/reduce, or calls to `compute*`, `calculate*`, `format*`, `transform*`, `convert*`, `get*`, `derive*`, `create*`, `expensive*`).
 
 The rule does **not** report when:
 
