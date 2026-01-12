@@ -9,17 +9,16 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description:
-        'Enforce using global static constants instead of useMemo with empty dependency arrays for object literals, and extract inline destructuring defaults in React components/hooks to global constants',
+      description: 'Enforce global static constants for React components/hooks',
       recommended: 'error',
     },
     fixable: 'code',
     schema: [],
     messages: {
       useGlobalConstant:
-        'Object literal in useMemo with empty dependencies might be better as a global static constant. This rule is a suggestion; small or frequently changed literals might not justify a global constant. If this inline literal is preferred, please use an // eslint-disable-next-line @blumintinc/blumint/enforce-global-constants comment. Otherwise, consider hoisting it to a module-level constant.',
+        'Object literal returned from useMemo with empty dependencies creates a new reference every render without providing memoization benefits → this wastes memory and misleads readers into thinking the value is computed → move the object to a module-level constant (e.g., const OPTIONS = { ... } as const;).',
       extractDefaultToGlobalConstant:
-        'Inline default value might be better as a module-level constant for stable reference. This is a suggested practice for referential stability in React. If an inline default is clearer, please use an // eslint-disable-next-line @blumintinc/blumint/enforce-global-constants comment. Otherwise, consider extracting it to a constant.',
+        'Inline default value in destructuring creates a new reference on every render → this causes unnecessary re-renders in child components due to unstable identity → extract the default to a module-level constant (e.g., const DEFAULT_OPTIONS = { ... } as const;).',
     },
   },
   defaultOptions: [],

@@ -1,4 +1,4 @@
-# Enforce using global static constants instead of useMemo with empty dependency arrays (`@blumintinc/blumint/enforce-global-constants`)
+# Enforce global static constants for React components/hooks (`@blumintinc/blumint/enforce-global-constants`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
@@ -6,57 +6,110 @@
 
 <!-- end auto-generated rule header -->
 
-Creating stable references for object literals using `useMemo` with an empty dependency array adds unnecessary hook overhead. This rule suggests hoisting such literals to module-level constants.
+This rule helps you identify instances where you use `useMemo` hooks with empty dependency arrays to return object literals, and where you use object/array literals for inline destructuring defaults in React components or hooks. Such usage is unnecessary and adds runtime memoization overhead and repeated object allocations instead of using global static constants.
 
-## Why this rule?
+## Rule Details
 
-- Global constants are evaluated once and provide a stable reference across all renders without hook overhead.
-- Hoisting data out of components clarifies which values are static and which depend on component state.
-- Stable references are critical for preventing unnecessary re-renders in child components or re-running effects.
+React's `useMemo` is intended for memoizing computationally expensive values that depend on props or state. When you use `useMemo` with an empty dependency array to return an object literal, you unnecessarily invoke the memoization mechanism on every render to return the same cached reference. This pattern adds runtime overhead without providing any benefit over a module-level constant, which provides a stable reference with zero runtime cost.
 
-## Examples
+By identifying and refactoring these patterns, you can:
+1. Reduce runtime memory consumption
+2. Improve code clarity and maintainability
+3. Encourage proper use of React hooks
 
-### ❌ Incorrect
+### Examples of incorrect code for this rule:
 
-```tsx
-const MyComponent = () => {
-  // Hook overhead for a static literal
-  const options = useMemo(() => ({ enabled: true }), []);
-  
-  return <Child options={options} />;
-};
-```
+> [!NOTE]
+> The examples use the TypeScript `as const` assertion. This narrows literal types to readonly tuples or objects so values are treated as exact literals rather than widened types. This assertion is orthogonal to the rule—it ensures type safety but does not justify the inline object/array patterns shown below.
 
-Example message:
-
-```text
-Object literal in useMemo with empty dependencies might be better as a global static constant. This rule is a suggestion; small or frequently changed literals might not justify a global constant. If this inline literal is preferred, please use an // eslint-disable-next-line @blumintinc/blumint/enforce-global-constants comment. Otherwise, consider hoisting it to a module-level constant.
-```
-
-### ✅ Correct
-
-```tsx
-const OPTIONS = { enabled: true };
-
-const MyComponent = () => {
-  return <Child options={OPTIONS} />;
-};
-```
-
-### ✅ Correct (With disable comment if inline is preferred)
+#### `useMemo` with empty dependency array
 
 ```tsx
 const MyComponent = () => {
-  // eslint-disable-next-line @blumintinc/blumint/enforce-global-constants
-  const options = useMemo(() => ({ enabled: true }), []);
-  return <Child options={options} />;
+  // This useMemo unnecessarily invokes memoization logic on every render
+  // to return the same cached object because the dependency array is empty
+  const roomOptions = useMemo(() => {
+    return {
+      roomA: { label: 'Room A', icon: 'room-icon' },
+      roomB: { label: 'Room B', icon: 'room-icon' },
+    } as const;
+  }, []);
+
+  return (
+    <div>
+      {Object.entries(roomOptions).map(([key, option]) => (
+        <Option key={key} label={option.label} icon={option.icon} />
+      ))}
+    </div>
+  );
 };
 ```
 
-## Options
+#### Inline destructuring defaults
 
-This rule does not have any options.
+```tsx
+// Incorrect: inline default object/array in component props
+const MyComponent = ({ config = { theme: 'light', size: 'medium' } }) => {
+  return <div>{config.theme}</div>;
+};
+
+// Incorrect: inline default object/array in hook arguments
+const useMyHook = (options = ['default-option']) => {
+  return options;
+};
+```
+
+### Examples of correct code for this rule:
+
+#### Global constants for `useMemo` replacement
+
+```tsx
+// Define once at module scope - never recreated during renders
+const ROOM_OPTIONS = {
+  roomA: { label: 'Room A', icon: 'room-icon' },
+  roomB: { label: 'Room B', icon: 'room-icon' },
+} as const;
+
+const MyComponent = () => {
+  return (
+    <div>
+      {Object.entries(ROOM_OPTIONS).map(([key, option]) => (
+        <Option key={key} label={option.label} icon={option.icon} />
+      ))}
+    </div>
+  );
+};
+```
+
+#### Global constants for destructuring defaults
+
+```tsx
+// Extract to global constant
+const DEFAULT_CONFIG = { theme: 'light', size: 'medium' } as const;
+
+const MyComponent = ({ config = DEFAULT_CONFIG }) => {
+  return <div>{config.theme}</div>;
+};
+
+const DEFAULT_OPTIONS = ['default-option'] as const;
+
+const useMyHook = (options = DEFAULT_OPTIONS) => {
+  return options;
+};
+```
 
 ## When Not To Use It
 
-Disable this rule for very small components where hook overhead is negligible, or when you prefer keeping simple configuration data local to the component body. Use an `// eslint-disable-next-line @blumintinc/blumint/enforce-global-constants` comment for local exceptions.
+You might want to disable this rule if:
+
+1. Working with **generated code** that cannot be easily refactored (e.g., codegen output producing object literals).
+2. Using **test utilities** that intentionally return fresh object instances each run for isolation.
+3. Using specific **third-party framework patterns** that rely on `useMemo` with empty dependency arrays (e.g., certain legacy memoization techniques).
+4. You need to maintain **legacy compatibility** where hoisting constants is constrained by existing tooling or architecture.
+
+In most cases, however, you should prefer hoisting these literals to module-level constants to ensure stable references with zero runtime overhead.
+
+## Further Reading
+
+- [React useMemo Documentation](https://react.dev/reference/react/useMemo)
+- [React Hooks Performance Optimization](https://react.dev/reference/react/useMemo#skipping-expensive-recalculations)

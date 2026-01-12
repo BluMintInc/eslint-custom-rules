@@ -14,7 +14,7 @@ const ALTERNATIVES = {
 type Prefix = keyof typeof ALTERNATIVES;
 
 const buildMessage = (functionName: string, prefix: Prefix) =>
-  `Function "${functionName}" uses the generic prefix "${prefix}", which might hide its intent. This rule is a suggestion and may flag prefixes that are appropriate for your specific context. If "${prefix}" is the most accurate verb, please use an // eslint-disable-next-line @blumintinc/blumint/semantic-function-prefixes comment. Otherwise, consider a more semantic alternative like ${ALTERNATIVES[prefix]} to better describe if it fetches data, transforms input, or mutates state.`;
+  `Function "${functionName}" starts with the generic prefix "${prefix}", which hides whether it fetches remote data, transforms input, or mutates state. Use a semantic verb such as ${ALTERNATIVES[prefix]} to describe the operation and set caller expectations.`;
 
 const error = (functionName: string, prefix: Prefix) =>
   ({

@@ -4,17 +4,17 @@
 
 <!-- end auto-generated rule header -->
 
-Rejects callback names that end with the generic `handler` suffix (e.g., `countCheckedInHandler`, `processPaymentHandler`). The suffix might hide what the function actually does, making call sites harder to scan.
+Rejects callback names that end with the generic `handler` suffix (e.g., `countCheckedInHandler`, `processPaymentHandler`). The suffix hides what the function actually does, making call sites harder to scan and encouraging copy‑pasted naming across unrelated callbacks.
 
 ## Rule Details
 
-The rule inspects function declarations, function expressions, arrow functions assigned to variables or properties, and class members. It suggests action‑oriented names instead of ending with `Handler` or `Handlers`.
+The rule inspects function declarations, function expressions, arrow functions assigned to variables or properties, and class members. It reports when the name ends with `Handler` or `Handlers`, encouraging descriptive, action‑oriented names.
 
 ### Why this matters
 
-- Generic `handler` names often force readers to open the implementation to learn what the callback does.
-- Distinct, action‑focused names (e.g., `countCheckedInParticipants`, `processPaymentTransaction`) communicate intent at call sites.
-- Keeping this rule alongside `consistent-callback-naming` covers both prefix and suffix conventions.
+- Generic `handler` names force readers to open the implementation to learn what the callback does, slowing code review and debugging.
+- Distinct, action‑focused names (e.g., `countCheckedInParticipants`, `processPaymentTransaction`) communicate intent at call sites and reduce duplicate or incorrectly wired callbacks.
+- Keeping this rule alongside `consistent-callback-naming` covers both prefix and suffix conventions so callbacks read like verbs instead of framework boilerplate.
 
 ### Examples of **incorrect** code
 
@@ -35,12 +35,6 @@ const validateInputHandler = (input: string) => {};
 export default function handler(req: NextApiRequest, res: NextApiResponse) {}
 ```
 
-Example message:
-
-```text
-Function "updateUserHandler" ends with the generic "Handler" suffix, which might hide what the function actually does. This rule is a suggestion; "handler" is sometimes the most descriptive term for generic callbacks. If this suffix is appropriate, please use an // eslint-disable-next-line @blumintinc/blumint/no-handler-suffix comment. Otherwise, consider renaming to describe the effect (e.g., "updateUser").
-```
-
 ### Examples of **correct** code
 
 ```ts
@@ -56,13 +50,6 @@ const countCheckedInParticipants: DocumentChangeHandler<ParticipantTeam> =
 const updateUserProfile = async (userId: string) => {};
 const processPaymentTransaction = async (payment: Payment) => {};
 const validateUserInput = (input: string) => {};
-```
-
-### ✅ Correct (With disable comment if "handler" is intentional)
-
-```ts
-// eslint-disable-next-line @blumintinc/blumint/no-handler-suffix
-const resultHandler = (result) => { /* ... */ };
 ```
 
 ## Options
@@ -112,4 +99,4 @@ With this configuration:
 
 ## When Not To Use It
 
-Disable or relax this rule if a framework or third‑party contract mandates the `handler` suffix everywhere and more descriptive aliases are not feasible, or if the suffix is the most accurate term for your callback. Use an `// eslint-disable-next-line @blumintinc/blumint/no-handler-suffix` comment for local exceptions.
+Disable or relax this rule if a framework or third‑party contract mandates the `handler` suffix everywhere and more descriptive aliases are not feasible, or if your codebase already enforces descriptive naming through other mechanisms.

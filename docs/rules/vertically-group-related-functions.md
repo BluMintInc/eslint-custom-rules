@@ -6,77 +6,94 @@
 
 <!-- end auto-generated rule header -->
 
-Keeping related functions grouped vertically makes a file easier to scan and helps readers follow call chains top-down. This rule suggests grouping event handlers, main logic, and utilities so the file remains organized.
+Keep top-level functions together so readers can scan call chains from top to bottom without jumping around the file. The rule prefers grouping entry points (event handlers and exported functions) above the helpers they invoke and supports configurable grouping for exports, event handlers, and utilities.
 
-## Why this rule?
+## Rule Details
 
-- Scattering related logic makes it harder to trace how data flows through a file.
-- Grouping by category (e.g., event handlers first) provides a consistent structure across files.
-- A predictable function order speeds up code reviews and onboarding.
+You'll see this rule applied to named, top-level function declarations and variable declarations whose initializer is an arrow/function expression. The rule ignores nested functions, inline callbacks, and methods defined inside object literals.
 
-## Examples
-
-### ❌ Incorrect
-
-```ts
-function utilityHelper() { /* ... */ }
-
-function handleClick() {
-  utilityHelper();
-}
-
-function anotherHelper() { /* ... */ }
-
-function onSubmit() {
-  anotherHelper();
-}
-```
-
-Example message:
-
-```text
-Function "utilityHelper" is out of order: utilities should follow the configured group order. This rule is a suggestion for vertical grouping; what constitutes "related" logic is subjective. If this order is intentional, please use an // eslint-disable-next-line @blumintinc/blumint/vertically-group-related-functions comment. Otherwise, consider moving it after "onSubmit" to improve file scanability.
-```
-
-### ✅ Correct
-
-```ts
-// Main entry/event handlers
-function handleClick() {
-  utilityHelper();
-}
-
-function onSubmit() {
-  anotherHelper();
-}
-
-// Helpers/utilities grouped together below
-function utilityHelper() { /* ... */ }
-function anotherHelper() { /* ... */ }
-```
-
-### ✅ Correct (With disable comment if order is intentional)
-
-```ts
-// eslint-disable-next-line @blumintinc/blumint/vertically-group-related-functions
-function legacyUtility() { /* ... */ }
-```
+The rule reports violations when:
+- You have callers below the helpers they invoke (default `callers-first` dependency direction).
+- You separate event handlers or exported functions from their related helpers.
+- Your export placement does not match your configured preference (`top`/`bottom`).
 
 ## Options
 
-This rule accepts an options object:
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `exportPlacement` | `"ignore" \| "top" \| "bottom"` | `"ignore"` | Keep exported functions at the top or bottom of the function block |
+| `dependencyDirection` | `"callers-first" \| "callees-first"` | `"callers-first"` | If set to `callees-first`, helpers may precede callers |
+| `groupOrder` | `string[]` | `["event-handlers", "other", "utilities"]` | Preferred vertical grouping buckets |
+| `eventHandlerPattern` | `string` | `"^(handle[A-Z]\|on[A-Z])"` | Regex pattern to classify event handler functions |
+| `utilityPattern` | `string` | `"^(get\|set\|fetch\|load\|format\|compute\|transform\|build\|derive\|prepare)"` | Regex pattern to classify utility functions |
 
-- `exportPlacement`: (`'top' | 'bottom' | 'ignore'`, Default: `'ignore'`) Whether to group exported functions together.
-- `dependencyDirection`: (`'callers-first' | 'callees-first'`, Default: `'callers-first'`) Whether helpers should appear above or below their callers.
-- `groupOrder`: (`['event-handlers' | 'utilities' | 'other'][]`, Default: `['event-handlers', 'other', 'utilities']`) The preferred order of function groups.
-- `eventHandlerPattern`: (Regex string) Pattern to identify event handlers.
-- `utilityPattern`: (Regex string) Pattern to identify utility functions.
+Patterns longer than 200 characters or containing nested greedy quantifiers are rejected with a warning and fall back to the safe defaults to avoid ReDoS-prone configurations.
 
-## When Not To Use It
+## Examples of incorrect code for this rule
 
-Disable this rule if you prefer a different organizational style or if the rule's suggestions conflict with your project's specific file layout conventions. Use an `// eslint-disable-next-line @blumintinc/blumint/vertically-group-related-functions` comment for local exceptions.
+```typescript
+// Default configuration (callers-first, event handlers first)
 
-## Further Reading
+// Lint: vertically-group-related-functions - "processUserInput" should appear below its caller "handleClick"
+function processUserInput(input: string) {
+  const sanitized = sanitizeInput(input);
+  return validateInput(sanitized);
+}
 
-- [Clean Code: Stepdown Rule](https://learning.oreilly.com/library/view/clean-code/9780136083238/chapter03.html#ch3lev1sec7)
-- [Refactoring: Reorder Functions](https://refactoring.guru/reorder-functions)
+// Lint: vertically-group-related-functions - "sanitizeInput" should appear below its caller "processUserInput"
+function sanitizeInput(input: string) {
+  return input.trim().toLowerCase();
+}
+
+// Lint: vertically-group-related-functions - "validateInput" should appear below its caller "processUserInput"
+function validateInput(input: string) {
+  return input.length > 0;
+}
+
+// Lint: vertically-group-related-functions - "handleClick" (event handler) should appear at the top of the file
+function handleClick() {
+  const input = "example input";
+  processUserInput(input);
+}
+```
+
+```typescript
+// exportPlacement: "bottom"
+export function makeRequest() {
+  return prepareRequest();
+}
+
+function prepareRequest() {}
+```
+
+## Examples of correct code for this rule
+
+```typescript
+// Default configuration (callers-first, event handlers first)
+function handleClick() {
+  const input = "example input";
+  processUserInput(input);
+}
+
+function processUserInput(input: string) {
+  const sanitized = sanitizeInput(input);
+  return validateInput(sanitized);
+}
+
+function sanitizeInput(input: string) {
+  return input.trim().toLowerCase();
+}
+
+function validateInput(input: string) {
+  return input.length > 0;
+}
+```
+
+```typescript
+// exportPlacement: "bottom"
+function prepareRequest() {}
+
+export function makeRequest() {
+  return prepareRequest();
+}
+```

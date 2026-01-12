@@ -11,16 +11,20 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
     type: 'suggestion',
     docs: {
       description:
-        'Suggest consistent naming conventions for callback props and functions',
+        'Enforce consistent naming conventions for callback props and functions',
       recommended: 'error',
     },
     fixable: 'code',
     schema: [],
     messages: {
       callbackPropPrefix:
-        'Callback prop "{{propName}}" might need an "on" prefix (e.g., "on{{capitalizedPropName}}"). This rule is suggestive and might conflict with external library conventions. If "{{propName}}" is the correct name, please use an // eslint-disable-next-line @blumintinc/blumint/consistent-callback-naming comment.',
+        'Callback prop "{{propName}}" is a function but lacks the "on" prefix. ' +
+        'Consistent "on" prefixes signal event handlers to consumers and distinguish callbacks from data props. ' +
+        'Rename to "on{{eventName}}".',
       callbackFunctionPrefix:
-        'Function "{{functionName}}" uses the "handle" prefix, which might be less descriptive than a verb phrase. This is a suggested naming convention. If "handle" is preferred for this callback, please use an // eslint-disable-next-line @blumintinc/blumint/consistent-callback-naming comment. Otherwise, consider a descriptive verb phrase instead.',
+        'Function "{{functionName}}" uses the "handle" prefix. ' +
+        'The "handle" prefix is redundant and less descriptive than action-oriented verb phrases. ' +
+        'Rename using a descriptive verb (e.g., click instead of handleClick).',
     },
   },
   defaultOptions: [],
@@ -157,14 +161,18 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
             !propName.startsWith('on') &&
             !isReactComponentType(node.value.expression)
           ) {
-            const capitalizedPropName =
+            const eventName =
               propName.charAt(0).toUpperCase() + propName.slice(1);
             context.report({
               node,
               messageId: 'callbackPropPrefix',
-              data: { propName, capitalizedPropName },
+              data: {
+                propName,
+                eventName,
+              },
               fix(fixer) {
-                return fixer.replaceText(node.name, `on${capitalizedPropName}`);
+                // Convert camelCase to PascalCase for the event name
+                return fixer.replaceText(node.name, `on${eventName}`);
               },
             });
           }

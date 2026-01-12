@@ -2,7 +2,7 @@ import { enforceSingularTypeNames } from '../rules/enforce-singular-type-names';
 import { ruleTesterTs } from '../utils/ruleTester';
 
 const messageTemplate =
-  'Type name "{{name}}" appears to be plural, which might suggest a collection instead of a single instance. This rule is a suggestion and its pluralization heuristics may have false positives for irregular words or domain jargon. If "{{name}}" is intended to be plural or is a false positive, please use an // eslint-disable-next-line @blumintinc/blumint/enforce-singular-type-names comment. Otherwise, consider the singular form "{{suggestedName}}".';
+  "Type name '{{name}}' is plural, which signals a collection and hides whether this alias, interface, or enum represents one value or many. Plural type identifiers push callers to misuse the symbol for arrays or maps. Rename it to a singular noun such as '{{suggestedName}}' so the declaration clearly models a single instance and leaves plural names for container types.";
 
 const error = (name: string, suggestedName: string) => ({
   messageId: 'typeShouldBeSingular' as const,

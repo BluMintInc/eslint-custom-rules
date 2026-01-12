@@ -22,7 +22,7 @@ export const enforceIdCapitalization = createRule<Options, MessageIds>({
     schema: [],
     messages: {
       enforceIdCapitalization:
-        'Use "ID" instead of "id" in user-facing text for better readability. This rule is a suggestion; if "id" is intentional (e.g., a specific technical term), please use an // eslint-disable-next-line @blumintinc/blumint/enforce-id-capitalization comment. Otherwise, consider "ID" for visible labels and messages.',
+        'Found lowercase "id" in user-facing text → "ID" (capitalized) is the standard abbreviation for "identifier" and improves readability in UI labels and messages → replace lowercase "id" with uppercase "ID" in displayed labels and messages.',
     },
   },
   defaultOptions: [],

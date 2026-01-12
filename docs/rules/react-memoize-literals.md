@@ -6,13 +6,7 @@
 
 <!-- end auto-generated rule header -->
 
-Creating new object, array, or function literals on every render breaks referential stability. This rule suggests memoizing these values or hoisting them to constants to prevent unnecessary re-renders or effect re-runs.
-
-## Why this rule?
-
-- Fresh references on every render can cause `useEffect`, `useMemo`, or `useCallback` to re-run even if the data hasn't changed.
-- Passing new references to `memo()` components defeats their optimization.
-- Stable references make component behavior more predictable and easier to debug.
+React re-runs your component and hook bodies on every render. Inline object, array, and function literals create fresh references each time, which breaks referential equality checks inside hooks, cache layers, and child components. This rule keeps those references stable by requiring literals in React components and hooks to be either memoized (via `useMemo`/`useCallback`) or hoisted to module-level constants. Direct top-level hook arguments remain allowed, but nested literals inside those arguments are flagged because they still change on every render.
 
 ## Rule Details
 
@@ -22,45 +16,57 @@ Creating new object, array, or function literals on every render breaks referent
 - Skips literals that are destined to be thrown (e.g., `throw { message: 'error' }` or a variable where every usage is in a `throw` statement), as throwing aborts the render cycle and referential stability is irrelevant.
 - Skips literals already inside callbacks passed to stable hooks (`useMemo`, `useCallback`, `useEffect`, `useLayoutEffect`, `useInsertionEffect`, `useImperativeHandle`, `useState`, `useReducer`, `useRef`, `useSyncExternalStore`, `useDeferredValue`, `useTransition`, `useId`, `useLatestCallback`, `useDeepCompareMemo`, `useDeepCompareCallback`, `useDeepCompareEffect`, `useProgressionCallback`) and module-level constants.
 - Accounts for `async` function boundaries, skipping literals inside `async` function expressions or declarations. While the synchronous portion before the first `await` runs immediately, async functions are typically used as event handlers or effect callbacks where internal literal references do not affect render stability.
-- Exempts object and array literals passed to deep-compared JSX attributes like `sx`, `style`, and any attribute ending in `Sx` or `Style` (e.g., `containerSx`). These attributes are compared using deep-equality (via `blumintAreEqual`) in BluMint components, so fresh references do not trigger unnecessary re-renders. **Note:** Inline functions passed to these attributes are still flagged, as they cannot be reliably deep-compared and still break referential stability.
 - Offers suggestions to wrap component-level literals in `useMemo`/`useCallback` for a stable reference and injects a `__TODO_MEMOIZATION_DEPENDENCIES__` placeholder so callers must supply real dependencies instead of accidentally shipping an empty array.
 
-## Examples
-
-### ❌ Incorrect
+### Examples of incorrect code
 
 ```tsx
 function UserProfile({ userId }) {
-  // New object on every render
-  const config = { enabled: true };
+  const userData = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+    options: {
+      staleTime: 5000,
+      cacheOptions: { ttl: 60000 },
+    },
+  });
 
-  // New function on every render
-  const handleClick = () => console.log(userId);
-
-  return <Child config={config} onClick={handleClick} />;
+  const defaults = { enabled: true };
+  return <ProfileDisplay data={userData} defaults={defaults} />;
 }
 ```
 
-Example message:
-
-```text
-New object literal inside component "UserProfile" is created on every render, which might break referential stability. This rule is a suggestion; small or static literals often do not justify the overhead of useMemo. If this reference change is acceptable or intentional, please use an // eslint-disable-next-line @blumintinc/blumint/react-memoize-literals comment. Otherwise, consider hoisting it to a constant or wrapping it in useMemo with the right dependencies.
+```tsx
+function useUserSettings() {
+  return {
+    theme: 'dark',
+    onChange: () => updateTheme(),
+  };
+}
 ```
 
-### ✅ Correct
-
-#### Memoization and Hoisting
+### Examples of correct code
 
 These examples show how you keep references stable by memoizing values with the right dependencies (or hoisting constants).
 
 ```tsx
-const DEFAULT_CONFIG = { enabled: true };
+const EMPTY_RESULTS: string[] = [];
 
-function UserProfile({ userId }) {
-  const config = useMemo(() => DEFAULT_CONFIG, []);
-  const handleClick = useCallback(() => console.log(userId), [userId]);
+function UserProfile({ userId, locale }) {
+  const queryFn = useCallback(() => fetchUser(userId), [userId]);
+  const queryKey = useMemo(() => ['user', userId], [userId]);
+  const options = useMemo(
+    () => ({
+      staleTime: 5000,
+      cacheOptions: { ttl: 60000 },
+      labels: buildLabels(locale),
+    }),
+    [locale],
+  );
 
-  return <Child config={config} onClick={handleClick} />;
+  const userData = useQuery({ queryKey, queryFn, options });
+  const [searchResults] = useState(EMPTY_RESULTS);
+  return <ProfileDisplay data={userData} results={searchResults} />;
 }
 ```
 
@@ -74,34 +80,6 @@ function useUserSettings() {
     }),
     [onChange],
   );
-}
-```
-
-#### Deep-compared JSX attributes
-
-Object and array literals passed to deep-compared attributes (sx, style, or any attribute ending in Sx or Style) are exempt from memoization requirements:
-
-```tsx
-// ✅ Valid: object literals in deep-compared attributes
-function UserCard({ name }) {
-  return (
-    <Box sx={{ padding: 2, margin: 1 }}>
-      <Typography style={{ fontWeight: 'bold' }}>{name}</Typography>
-      <Container containerSx={{ display: 'flex' }}>Content</Container>
-    </Box>
-  );
-}
-```
-
-#### Intentional Reference Changes
-
-Disable the rule if stability is not required:
-
-```tsx
-function Component() {
-  // eslint-disable-next-line @blumintinc/blumint/react-memoize-literals
-  const smallLiteral = { x: 1 };
-  return <div data-meta={smallLiteral} />;
 }
 ```
 
@@ -122,9 +100,3 @@ This placeholder must be replaced before committing.
 
 - Components that intentionally regenerate literals on every render (e.g., to force recalculation) and where the cost is acceptable.
 - Codepaths outside React components or hooks where referential stability is irrelevant.
-- Small, stable literals that are not used in performance-sensitive contexts or as hook dependencies. Use an `// eslint-disable-next-line @blumintinc/blumint/react-memoize-literals` comment for local exceptions.
-
-## Further Reading
-
-- [React Docs: useMemo](https://react.dev/reference/react/useMemo)
-- [React Docs: useCallback](https://react.dev/reference/react/useCallback)

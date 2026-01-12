@@ -6,72 +6,52 @@
 
 <!-- end auto-generated rule header -->
 
-Keeping class members organized in a top-to-bottom layout (fields → constructor → callers → helpers) enables local reasoning. This rule suggests an order where you can verify each caller without scrolling back up the file.
+Your classes should read like a top-to-bottom story: your fields (properties) establish state, your constructor introduces the entry path, and each caller appears before the helper it relies on. When members fall out of that sequence, you force readers to jump backward to rediscover dependencies and control flow. This rule keeps your class layout linear so callers lead into the helpers they rely on.
 
-## Why this rule?
+## Rule Details
 
-- Top-down flow enables local reasoning: you can verify each caller without scrolling back.
-- Upward jumps make code reviews harder because you must verify call chains in reverse.
-- Consistent member ordering obscures which fields a helper assumes are initialized.
+- Keep your fields at the top so state is established first.
+- Place the constructor before other methods.
+- Keep callers above the methods they invoke so you can scan downward without backtracking.
 
-## Examples
+### Examples of incorrect code for this rule:
 
-### ❌ Incorrect
+```typescript
+class IncorrectlyOrdered {
+  field1: string;
+  field2: number;
 
-```ts
-class TestClass {
-  methodA() {
+  methodA() { // ❌ methodA appears before constructor
     this.methodB();
   }
-  
+
+  constructor() {
+    this.methodA();
+    this.methodC(); // ℹ️ methodC is a helper defined later
+  }
+
+  methodB() {}
+  methodC() {}
+}
+```
+
+### Examples of correct code for this rule:
+
+```typescript
+class CorrectlyOrdered {
+  field1: string;
+  field2: number;
+
   constructor() {
     this.methodA();
   }
-  
+
+  methodA() {
+    this.methodB();
+  }
+
   methodB() {}
 }
 ```
 
-Example message:
-
-```text
-In TestClass, methodA appears before constructor. This rule suggests a top-to-bottom class layout for better readability. Architectural preference for member ordering can vary. If this layout is intentional, please use an // eslint-disable-next-line @blumintinc/blumint/class-methods-read-top-to-bottom comment. Otherwise, consider moving constructor above methodA.
-```
-
-### ✅ Correct
-
-```ts
-class TestClass {
-  constructor() {
-    this.methodA();
-  }
-  
-  methodA() {
-    this.methodB();
-  }
-  
-  methodB() {}
-}
-```
-
-### ✅ Correct (With disable comment if layout is intentional)
-
-```ts
-class CustomLayout {
-  // eslint-disable-next-line @blumintinc/blumint/class-methods-read-top-to-bottom
-  helperFirst() {}
-  
-  mainMethod() {
-    this.helperFirst();
-  }
-}
-```
-
-## When Not To Use It
-
-Disable this rule if you prefer a different class layout (e.g., public members before private members regardless of call order) or if the rule's suggestions conflict with your project's architectural style. Use an `// eslint-disable-next-line @blumintinc/blumint/class-methods-read-top-to-bottom` comment for local exceptions.
-
-## Further Reading
-
-- [Clean Code: Vertical Distance](https://learning.oreilly.com/library/view/clean-code/9780136083238/chapter05.html#ch5lev1sec5)
-- [Refactoring: Replace Constructor with Factory Function](https://refactoring.com/catalog/replaceConstructorWithFactoryFunction.html)
+In the correct version, fields lead, the constructor sets the initial flow, and each caller appears before the helper it relies on, allowing the class to be read straight down. When the rule reports a violation, move the reported dependency above the caller so the class flows from state, to constructor, to callers, and finally to helpers—no backward scrolling required.

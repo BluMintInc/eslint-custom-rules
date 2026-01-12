@@ -1,74 +1,108 @@
-# Enforce memoization of adaptValue transformValue/transformOnChange (`@blumintinc/blumint/enforce-transform-memoization`)
+# Enforce memoization of transformValue and transformOnChange in adaptValue (`@blumintinc/blumint/enforce-transform-memoization`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
 <!-- end auto-generated rule header -->
 
-Creating new transform functions on every render inside `adaptValue` can cause unnecessary re-renders of the adapted component. This rule suggests memoizing these transforms using `useMemo` or `useCallback`.
+When you use `adaptValue` to bridge editable components, you must provide `transformValue` and `transformOnChange` functions. If you define these transforms inline, React recreates them on every render, forcing unnecessary re-renders and risking stale closures. This rule ensures you memoize those transforms with the correct React hook and include every captured value in your dependency arrays so the adapted component receives stable handlers and avoids unnecessary re-renders.
 
-## Why this rule?
+## Rule Details
 
-- Unmemoized functions passed to `adaptValue` change their reference on every render.
-- Stable handlers help React skip re-rendering child components when their props haven't effectively changed.
-- Correct hook usage (`useMemo` for values, `useCallback` for handlers) clarifies the intent of the memoization.
+This rule enforces:
 
-## Examples
+1. `transformValue` must be memoized with `useMemo` (or a clearly memoized helper).
+1. `transformOnChange` must be memoized with `useCallback` (or a memoized helper).
+1. When `useMemo`/`useCallback` is used, the dependency array must exist and include all outer-scope values referenced by the transform.
+1. Functions defined outside the component are treated as stable and are allowed directly.
 
-### ❌ Incorrect
+`transformValue` represents a derived or computed value that should be stabilized to avoid expensive recomputations (hence `useMemo`), while `transformOnChange` is an event callback whose identity must be stable to prevent unnecessary re-renders or effect triggers in the adapted component (hence `useCallback`).
 
-```tsx
-function Component() {
-  return adaptValue(
-    {
-      valueKey: 'checked',
-      onChangeKey: 'onChange',
-      // transformValue is recreated every render
-      transformValue: (value) => Boolean(value),
-    },
-    Switch,
-  );
+Examples of **incorrect** code for this rule:
+
+```js
+adaptValue({
+  valueKey: 'checked',
+  onChangeKey: 'onChange',
+  // ❌ Inline transforms recreate on every render
+  transformValue: (value) => Boolean(value),
+  transformOnChange: (event) => event.target.checked,
+}, Switch);
+```
+
+```js
+// Mock component for demonstration
+const Switch = () => null;
+function Component({ formatter }) {
+  // ❌ Wrong hook (should be useCallback) + missing dependency in array
+  return adaptValue({
+    valueKey: 'value',
+    onChangeKey: 'onChange',
+    transformOnChange: useMemo(
+      () => (event) => formatter(event.target.value),
+      [], // Missing formatter
+    ),
+  }, Switch);
 }
 ```
 
-Example message:
+Examples of **correct** code for this rule:
 
-```text
-transformValue might need memoization. This rule is a suggestion to keep adaptValue handlers stable. If this reference change is acceptable, please use an // eslint-disable-next-line @blumintinc/blumint/enforce-transform-memoization comment. Otherwise, consider wrapping it in useMemo.
-```
+```js
+import { useMemo, useCallback } from 'react';
 
-### ✅ Correct
+// Mock component for demonstration
+const Switch = () => null;
 
-```tsx
 function Component() {
-  const transformValue = useMemo(() => (value) => Boolean(value), []);
-  
-  return adaptValue(
-    {
-      valueKey: 'checked',
-      onChangeKey: 'onChange',
-      transformValue,
-    },
-    Switch,
-  );
+  return adaptValue({
+    valueKey: 'checked',
+    onChangeKey: 'onChange',
+    transformValue: useMemo(() => (value) => Boolean(value), []),
+    transformOnChange: useCallback((event) => event.target.checked, []),
+  }, Switch);
 }
 ```
 
-### ✅ Correct (With disable comment if stability is not required)
+```js
+// Mock component for demonstration
+const Switch = () => null;
 
-```tsx
-// eslint-disable-next-line @blumintinc/blumint/enforce-transform-memoization
-const transform = (v) => v;
+// ✅ Stable helper defined outside the component
+const convertToBoolean = (value) => Boolean(value);
+
+function Component() {
+  return adaptValue({
+    valueKey: 'checked',
+    onChangeKey: 'onChange',
+    transformValue: convertToBoolean,
+  }, Switch);
+}
 ```
 
-## Options
+```js
+// ✅ Memoized utility wrapper with useMemo
+import { useMemo } from 'react';
 
-This rule does not have any options.
+// Mock throttle for demonstration - real implementation would delay execution
+const throttle = (fn, _delay) => fn;
+
+// Mock component for demonstration
+const TextInput = () => null;
+
+function Component() {
+  const transformValue = useMemo(
+    () => throttle((value) => value.toString(), 200),
+    [],
+  );
+
+  return adaptValue({
+    valueKey: 'value',
+    onChangeKey: 'onChange',
+    transformValue,
+  }, TextInput);
+}
+```
 
 ## When Not To Use It
 
-Disable this rule if the adapted component is lightweight and the performance impact of re-renders is negligible, or if you are intentionally passing a fresh reference. Use an `// eslint-disable-next-line @blumintinc/blumint/enforce-transform-memoization` comment for local exceptions.
-
-## Further Reading
-
-- [React Docs: useMemo](https://react.dev/reference/react/useMemo)
-- [React Docs: useCallback](https://react.dev/reference/react/useCallback)
+Disable this rule if your project does not use `adaptValue`, or if you rely on a different memoization strategy for these transforms and prefer to manage re-render performance manually.

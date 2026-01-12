@@ -4,58 +4,74 @@
 
 <!-- end auto-generated rule header -->
 
-When a `useState` setter is called both before and after an async boundary (like `await`, `.then()`, or `yield`), the UI may enter a stale state if the async operation resolves out of order or if the first update is overwritten by a later stale update. This rule suggests keeping setter calls on one side of the boundary or consolidating them into a single atomic update.
+Calling a `useState` setter on both sides of an async boundary leaves the component vulnerable to stale writes. A placeholder or reset that happens before `await`, `.then()`, or `yield` can resolve after later updates and overwrite fresher data, causing flicker or outdated UI. This rule flags those cross-boundary setters to keep state updates atomic and predictable.
 
-## Why this rule?
+## Rule Details
 
-- Updates issued before an async boundary can resolve after later updates and overwrite fresher data.
-- Multiple state updates in the same function can lead to unnecessary re-renders.
-- Consolidating updates after the async work ensures that the UI always reflects the final state.
+- Triggers when the same `useState` setter is invoked both before and after an async boundary (`await`, `.then()`, or `yield`) inside one function.
+- Earlier writes can resolve after the async work completes, replacing the new value with stale data or a loading placeholder.
+- Favor a single atomic update after the async work or a dedicated loading flag instead of mutating the same state twice.
 
-## Examples
-
-### ❌ Incorrect
+### Examples of **incorrect** code for this rule:
 
 ```tsx
-async function loadProfile(id) {
-  setProfile(null); // update before await
-  const data = await api.get(`/users/${id}`);
-  setProfile(data); // update after await
-}
-```
+const [profile, setProfile] = useState<Profile | 'loading' | null>(null);
 
-Example message:
-
-```text
-State setter "setProfile" runs on both sides of an await boundary, which might lead to stale UI updates if the async work resolves out of order. This rule is a suggestion; patterns like optimistic UI or intentional sentinel updates before/after awaits are sometimes necessary. If this pattern is intentional, please use an // eslint-disable-next-line @blumintinc/blumint/no-stale-state-across-await comment. Otherwise, consider consolidating updates after the async boundary.
-```
-
-### ✅ Correct
-
-```tsx
-async function loadProfile(id) {
-  // Only update once after the async work
-  const data = await api.get(`/users/${id}`);
-  setProfile(data);
-}
-```
-
-### ✅ Correct (With disable comment for intentional sentinel/optimistic UI)
-
-```tsx
-async function loadProfile(id) {
-  // eslint-disable-next-line @blumintinc/blumint/no-stale-state-across-await
+async function loadProfile(id: string) {
   setProfile('loading');
   const data = await api.get(`/users/${id}`);
   setProfile(data);
 }
 ```
 
-## When Not To Use It
+```tsx
+const [profile, setProfile] = useState<Profile | null>(null);
 
-Disable this rule if you are intentionally using a sentinel value or implementing an optimistic UI pattern where multiple updates are required across an async boundary. Use an `// eslint-disable-next-line @blumintinc/blumint/no-stale-state-across-await` comment to document the intent.
+function loadProfile(id: string) {
+  setProfile(null);
+  api.get(`/users/${id}`).then((data) => {
+    setProfile(data);
+  });
+}
+```
 
-## Further Reading
+### Examples of **correct** code for this rule:
 
-- [React Docs: Keeping Components Pure](https://react.dev/learn/keeping-components-pure)
-- [React Docs: State as a Snapshot](https://react.dev/learn/state-as-a-snapshot)
+```tsx
+const [profile, setProfile] = useState<Profile | null>(null);
+
+async function loadProfile(id: string) {
+  const data = await api.get(`/users/${id}`);
+  setProfile(data); // single write after await keeps state atomic
+}
+```
+
+```tsx
+const [profile, setProfile] = useState<Profile | null>(null);
+const [loading, setLoading] = useState(false);
+
+async function loadProfile(id: string) {
+  setLoading(true); // dedicated loading flag
+  const data = await api.get(`/users/${id}`);
+  setProfile(data);
+  setLoading(false);
+}
+```
+
+### Intentional loading sentinel (discouraged by default)
+
+If you must write a placeholder before the async boundary, document the decision and disable the rule for that line to avoid accidental regressions:
+
+```tsx
+// eslint-disable-next-line @blumintinc/blumint/no-stale-state-across-await -- using a loading sentinel is intentional for UX
+setProfile('loading');
+const data = await api.get(`/users/${id}`);
+setProfile(data);
+```
+
+## How to fix a violation
+
+- Move all calls to the flagged setter so they occur before the async boundary or after it, but not both.
+- Prefer a single atomic update after the awaited work, potentially using functional updates when merging data.
+- Use a separate loading flag instead of writing placeholder values into the same state.
+- When a placeholder before the await is truly required, pair it with an `eslint-disable-next-line` comment explaining the rationale.

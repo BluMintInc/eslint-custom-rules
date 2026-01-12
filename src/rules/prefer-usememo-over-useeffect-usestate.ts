@@ -7,12 +7,12 @@ export const preferUseMemoOverUseEffectUseState = createRule({
     type: 'suggestion',
     docs: {
       description:
-        'Suggest useMemo over useEffect + useState for pure computations to avoid extra render cycles and stale derived state.',
+        'Prefer useMemo over useEffect + useState for pure computations to avoid extra render cycles and stale derived state.',
       recommended: 'error',
     },
     messages: {
       preferUseMemo:
-        'Derived state "{{stateName}}" is updated in useEffect, which might be better handled by useMemo to avoid extra render cycles. This rule is a suggestion based on a heuristic for "pure" calculations and might miss intentional side effects. If this update must happen in useEffect, please use an // eslint-disable-next-line @blumintinc/blumint/prefer-usememo-over-useeffect-usestate comment. Otherwise, consider computing the value with useMemo (or inline) and reading it directly.',
+        'Use useMemo to compute derived state "{{stateName}}" instead of useEffect + useState to avoid extra render cycles and stale snapshots.',
     },
     schema: [],
   },

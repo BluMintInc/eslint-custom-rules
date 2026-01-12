@@ -592,23 +592,6 @@ function statementReferencesAny(
   return false;
 }
 
-/**
- * Find the index of the first statement that references any of the given names,
- * searching forward from afterIndex.
- */
-function findFirstUsageIndex(
-  body: TSESTree.Statement[],
-  names: Set<string>,
-  afterIndex: number,
-): number {
-  for (let cursor = afterIndex; cursor < body.length; cursor += 1) {
-    if (statementReferencesAny(body[cursor], names)) {
-      return cursor;
-    }
-  }
-  return -1;
-}
-
 function collectAssignedNamesFromPattern(
   target: TSESTree.Node,
   names: Set<string>,
@@ -1015,14 +998,10 @@ function getStartWithComments(
   sourceCode: TSESLint.SourceCode,
 ): number {
   const comments = sourceCode.getCommentsBefore(statement);
-  const start =
-    comments.length === 0 ? statement.range[0] : comments[0].range[0];
-  const text = sourceCode.getText();
-  let cursor = start - 1;
-  while (cursor >= 0 && (text[cursor] === ' ' || text[cursor] === '\t')) {
-    cursor -= 1;
+  if (comments.length === 0) {
+    return statement.range[0];
   }
-  return cursor + 1;
+  return comments[0].range[0];
 }
 
 function getNextStart(
@@ -1344,69 +1323,6 @@ function trackDeclaredNames(
   declared.forEach((name) => declaredIndices.set(name, index));
 }
 
-/**
- * Restrict late-declaration candidates to simple variables with at most an Identifier or
- * Literal initializer. This ensures they are pure values that do not have side effects or
- * change execution order when moved closer to their usage. More complex initializers are
- * excluded to maintain temporal safety.
- */
-function isLateDeclarationCandidate(
-  statement: TSESTree.Statement,
-): statement is TSESTree.VariableDeclaration & {
-  declarations: [TSESTree.VariableDeclarator & { id: TSESTree.Identifier }];
-} {
-  if (
-    statement.type !== AST_NODE_TYPES.VariableDeclaration ||
-    statement.declarations.length !== 1
-  ) {
-    return false;
-  }
-  const [declarator] = statement.declarations;
-  return (
-    declarator.id.type === AST_NODE_TYPES.Identifier &&
-    (!declarator.init ||
-      declarator.init.type === AST_NODE_TYPES.Identifier ||
-      declarator.init.type === AST_NODE_TYPES.Literal)
-  );
-}
-
-/**
- * Treat a loop as an ordering barrier for late-declaration moves when it both mutates a
- * tracked name and that name is used again after the loop.
- */
-function isMutatedInLoopAndUsedAfter(
-  body: TSESTree.Statement[],
-  usageIndex: number,
-  nameSet: Set<string>,
-): boolean {
-  const firstUsage = body[usageIndex];
-  if (!firstUsage) {
-    return false;
-  }
-  const isLoop =
-    firstUsage.type === AST_NODE_TYPES.ForStatement ||
-    firstUsage.type === AST_NODE_TYPES.ForInStatement ||
-    firstUsage.type === AST_NODE_TYPES.ForOfStatement ||
-    firstUsage.type === AST_NODE_TYPES.WhileStatement ||
-    firstUsage.type === AST_NODE_TYPES.DoWhileStatement;
-
-  if (!isLoop) {
-    return false;
-  }
-
-  if (!statementMutatesAny(firstUsage, nameSet)) {
-    return false;
-  }
-
-  for (let i = usageIndex + 1; i < body.length; i += 1) {
-    if (statementReferencesAny(body[i], nameSet)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
 function handleLateDeclarations(
   ruleContext: RuleExecutionContext,
   body: TSESTree.Statement[],
@@ -1415,10 +1331,21 @@ function handleLateDeclarations(
   const { sourceCode } = ruleContext;
 
   body.forEach((statement, index) => {
-    if (!isLateDeclarationCandidate(statement)) {
+    if (
+      statement.type !== AST_NODE_TYPES.VariableDeclaration ||
+      statement.declarations.length !== 1
+    ) {
       return;
     }
     const [declarator] = statement.declarations;
+    if (
+      declarator.id.type !== AST_NODE_TYPES.Identifier ||
+      (declarator.init &&
+        declarator.init.type !== AST_NODE_TYPES.Identifier &&
+        declarator.init.type !== AST_NODE_TYPES.Literal)
+    ) {
+      return;
+    }
     const name = declarator.id.name;
     const dependencies = new Set<string>();
     if (declarator.init && declarator.init.type === AST_NODE_TYPES.Identifier) {
@@ -1426,44 +1353,24 @@ function handleLateDeclarations(
     }
 
     const nameSet = new Set([name]);
-    const usageIndex = findFirstUsageIndex(body, nameSet, index + 1);
+    let usageIndex = -1;
+    for (let cursor = index + 1; cursor < body.length; cursor += 1) {
+      if (statementReferencesAny(body[cursor], nameSet)) {
+        usageIndex = cursor;
+        break;
+      }
+    }
 
     if (usageIndex === -1 || usageIndex <= index + 1) {
       return;
     }
 
-    // Loop mutations create a dependency barrier: declarations that precede loops and are
-    // mutated inside them cannot be safely moved, as the declaration must be visible across
-    // all iterations. Prevent false positives for this pattern.
-    if (isMutatedInLoopAndUsedAfter(body, usageIndex, nameSet)) {
-      return;
-    }
-
     const intervening = body.slice(index + 1, usageIndex);
     // Only move across pure declarations that do not mention the placeholder or its initializer dependencies to avoid changing closure timing or TDZ behavior.
-    const crossesImpureOrTracked = intervening.some((stmt, i) => {
+    const crossesImpureOrTracked = intervening.some((stmt) => {
       if (!isPureDeclaration(stmt, { allowHooks: false })) {
         return true;
       }
-
-      // Do not hop over another declaration that is used at the same index or earlier
-      // if it is also a candidate for being moved.
-      // This prevents circular swapping of related declarations (like resolve/reject pairs).
-      if (isLateDeclarationCandidate(stmt)) {
-        const declaredNames = getDeclaredNames(stmt);
-        const firstUsageOfIntervening = findFirstUsageIndex(
-          body,
-          declaredNames,
-          index + 1 + i + 1,
-        );
-        if (
-          firstUsageOfIntervening !== -1 &&
-          firstUsageOfIntervening <= usageIndex
-        ) {
-          return true;
-        }
-      }
-
       if (
         statementDeclaresAny(stmt, nameSet) ||
         statementMutatesAny(stmt, nameSet)
@@ -2077,20 +1984,16 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<
     type: 'suggestion',
     docs: {
       description:
-        'Suggest logical top-to-bottom grouping of related statements',
+        'Enforce logical top-to-bottom grouping of related statements',
       recommended: 'error',
     },
     fixable: 'code',
     schema: [],
     messages: {
-      moveGuardUp:
-        'The guard "{{guard}}" appears after setup it can skip. This rule is a suggestion; grouping logic is subjective and evaluation order might be intentional. If this order is correct, please use an // eslint-disable-next-line @blumintinc/blumint/logical-top-to-bottom-grouping comment. Otherwise, consider placing the guard before the setup it protects.',
-      groupDerived:
-        'Value "{{name}}" depends on "{{dependency}}" but is separated by unrelated statements. This rule is a suggestion for logical grouping. If this arrangement is clearer for your mental model, please use an // eslint-disable-next-line @blumintinc/blumint/logical-top-to-bottom-grouping comment. Otherwise, consider grouping "{{name}}" next to "{{dependency}}" so they form a cohesive unit.',
-      moveDeclarationCloser:
-        'Variable "{{name}}" is declared far from its first use. This rule is a suggestion to keep related logic adjacent. If this declaration placement is intentional, please use an // eslint-disable-next-line @blumintinc/blumint/logical-top-to-bottom-grouping comment. Otherwise, consider moving it next to its first usage.',
-      moveSideEffect:
-        'The side effect "{{effect}}" is buried after unrelated setup. This rule is a suggestion for chronological flow. If this order is intentional, please use an // eslint-disable-next-line @blumintinc/blumint/logical-top-to-bottom-grouping comment. Otherwise, consider emitting observable effects before unrelated initialization to keep the temporal order obvious.',
+      moveGuardUp: `What's wrong: the guard "{{guard}}" appears after setup it can skip. Why it matters: readers miss the early-exit path and unnecessary work may execute; unsafe reordering can also introduce TDZ errors when guards reference values declared below. How to fix: place the guard immediately before the setup it protects.`,
+      groupDerived: `What's wrong: "{{name}}" depends on "{{dependency}}" but is separated by unrelated statements. Why it matters: scattered dependencies make the input→output flow harder to follow and increase cognitive load; grouping them clarifies the logical relationship. How to fix: move "{{name}}" next to "{{dependency}}" so they form a cohesive unit.`,
+      moveDeclarationCloser: `What's wrong: "{{name}}" is declared far from its first use. Why it matters: distant declarations scatter the flow and make the execution order harder to follow; readers must mentally track when the variable becomes available. How to fix: move "{{name}}" next to its first usage.`,
+      moveSideEffect: `What's wrong: the side effect "{{effect}}" is buried after unrelated setup. Why it matters: chronological flow becomes unclear and readers may assume the effect happens later than it actually does. How to fix: emit observable effects before unrelated initialization to keep the temporal order obvious.`,
     },
   },
   defaultOptions: [],
