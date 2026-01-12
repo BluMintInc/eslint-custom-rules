@@ -10,7 +10,7 @@ Keep top-level functions together so readers can scan call chains from top to bo
 
 ## Rule Details
 
-You'll see this rule applied to named, top-level function declarations and variable assignments whose initializer is an arrow/function expression. The rule ignores nested functions, inline callbacks, and methods defined inside object literals.
+You'll see this rule applied to named, top-level function declarations and variable declarations whose initializer is an arrow/function expression. The rule ignores nested functions, inline callbacks, and methods defined inside object literals.
 
 The rule reports violations when:
 - You have callers below the helpers they invoke (default `callers-first` dependency direction).

@@ -86,7 +86,7 @@ function Component({ initialValue }) {
 
 You should not use this rule if:
 
-- Your effect has side effects other than updating state (e.g., logging, network requests, DOM manipulation).
-- Your state update is intended to be asynchronous or needs to wait for some other side effect.
-- Your computation is impure and its results shouldn't be memoized based only on React dependencies.
-- You are intentionally using `useEffect` for state synchronization (e.g., updating local state when a prop changes).
+- The effect performs side actions beyond state updates, such as logging, network requests, or DOM manipulation.
+- State updates are intended to be asynchronous or must wait for some other side effect.
+- The computation is impure and its results shouldn't be memoized based only on React dependencies.
+- Intentional state synchronization is required (e.g., updating local state when a prop changes).
