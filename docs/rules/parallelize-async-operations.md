@@ -6,7 +6,7 @@
 
 <!-- end auto-generated rule header -->
 
-Parallelizing independent awaits keeps total latency bounded by the slowest call instead of the sum of every call. This rule flags back-to-back awaits with no detected dependency, loop, or per-call error boundary and suggests `Promise.all` so network and I/O overlap.
+Parallelizing independent awaits keeps total latency bounded by the slowest call instead of the sum of every call. This rule flags back-to-back awaits with no detected dependency, loop, or per-call error boundary and enforces `Promise.all` so network and I/O overlap.
 
 ## Rule Details
 
@@ -14,7 +14,7 @@ Serializing independent async work stretches response time and wastes compute bi
 
 The rule reports when all of these are true:
 - Two or more awaits or await-based variable declarations appear consecutively.
-- Later awaits do not reference identifiers created by earlier awaits (simple dependency check).
+- Later awaits do not reference identifiers created by earlier awaits (direct identifier reference-based dependency check).
 - The awaits are not inside try blocks or loops, which signal intentional ordering or per-call error handling.
 - The calls do not match a small list of side-effect-heavy patterns (e.g., update/check counters) that should stay ordered.
 

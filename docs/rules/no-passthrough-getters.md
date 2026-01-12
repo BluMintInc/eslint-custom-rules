@@ -23,6 +23,8 @@ This rule flags getters that only forward a constructor-injected object property
 
 ### ❌ Incorrect
 
+The following example shows a class with passthrough getters that simply return properties from the constructor-injected `settings` object without adding any logic or transformation:
+
 ```typescript
 export class MatchAdmin {
   constructor(private readonly settings: MatchAdminProps) {}
@@ -46,6 +48,8 @@ export class MatchAdmin {
 ```
 
 ### ✅ Correct
+
+Here's the same class refactored to access the `settings` properties directly, eliminating the unnecessary indirection:
 
 ```typescript
 export class MatchAdmin {
