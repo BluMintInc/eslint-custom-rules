@@ -40,11 +40,30 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
       return typeName.endsWith('Props');
     }
 
+    // Get all parameters that have a "Props" type
+    function getPropsParams(
+      params: TSESTree.Parameter[],
+    ): { id: TSESTree.Identifier; typeName: string }[] {
+      return params
+        .map((param) => {
+          const id = getIdFromParam(param);
+          if (id && id.typeAnnotation && id.typeAnnotation.typeAnnotation) {
+            const paramTypeName = getTypeName(id.typeAnnotation.typeAnnotation);
+            if (paramTypeName && endsWithProps(paramTypeName)) {
+              return { id, typeName: paramTypeName };
+            }
+          }
+          return null;
+        })
+        .filter((p): p is { id: TSESTree.Identifier; typeName: string } => !!p);
+    }
+
     // Generate suggested parameter name for Props types
     function getSuggestedParameterName(
       typeName: string,
       allParams: TSESTree.Parameter[],
       currentParam: TSESTree.Parameter,
+      propsParams: { id: TSESTree.Identifier; typeName: string }[],
     ): string {
       const currentId = getIdFromParam(currentParam);
       const currentName = currentId?.name;
@@ -57,22 +76,6 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
           .map((id) => id.name),
       );
 
-      // Identify all parameters that have a "Props" type
-      const propsParams = allParams
-        .map((param) => {
-          const id = getIdFromParam(param);
-          if (id && id.typeAnnotation && id.typeAnnotation.typeAnnotation) {
-            const paramTypeName = getTypeName(
-              id.typeAnnotation.typeAnnotation,
-            );
-            if (paramTypeName && endsWithProps(paramTypeName)) {
-              return { id, typeName: paramTypeName };
-            }
-          }
-          return null;
-        })
-        .filter((p): p is { id: TSESTree.Identifier; typeName: string } => !!p);
-
       // If multiple parameters have the exact same Props type, allow the current names.
       // This handles cases like (prevProps: TProps, nextProps: TProps) where
       // forcing a single name based on the type would cause a collision or
@@ -83,7 +86,12 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
         // This preserves descriptive names like prevProps/nextProps.
         if (!currentName) {
           // Fallback should not occur since destructured params are filtered upstream.
-          return 'props';
+          let candidate = 'props';
+          let suffix = 2;
+          while (existingNames.has(candidate)) {
+            candidate = `props${suffix++}`;
+          }
+          return candidate;
         }
         return currentName;
       }
@@ -209,6 +217,7 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
       }
 
       const sourceCode = context.sourceCode;
+      const propsParams = getPropsParams(node.params);
 
       node.params.forEach((param) => {
         if (isDestructuredParameter(param)) {
@@ -224,6 +233,7 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
               typeName,
               node.params,
               param,
+              propsParams,
             );
 
             if (id.name !== suggestedName) {
@@ -258,6 +268,7 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
     function checkClassMethod(node: TSESTree.MethodDefinition): void {
       const method = node.value;
       const sourceCode = context.sourceCode;
+      const propsParams = getPropsParams(method.params);
 
       method.params.forEach((param) => {
         if (isDestructuredParameter(param)) {
@@ -273,6 +284,7 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
               typeName,
               method.params,
               param,
+              propsParams,
             );
 
             if (id.name !== suggestedName) {

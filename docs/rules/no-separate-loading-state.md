@@ -1,4 +1,4 @@
-# Disallow separate loading state variables that track the loading status of other state (`@blumintinc/blumint/no-separate-loading-state`)
+# Discourage separate loading state variables that track the loading status of other state (`@blumintinc/blumint/no-separate-loading-state`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
