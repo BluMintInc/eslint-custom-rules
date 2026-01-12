@@ -50,7 +50,7 @@ function Component({ a, b }) {
 }
 ```
 
-1. **Legitimate side effects**: Using `useEffect` is correct when you perform asynchronous operations or other side effects, like fetching data.
+2. **Legitimate side effects**: Using `useEffect` is correct when you perform asynchronous operations or other side effects, like fetching data.
 
 ```tsx
 function Component({ userId }) {
@@ -62,7 +62,7 @@ function Component({ userId }) {
 }
 ```
 
-1. **Prop-to-state synchronization**: The rule allows direct synchronization of a prop to state, although React generally discourages this pattern.
+3. **Prop-to-state synchronization**: The rule allows direct synchronization of a prop to state, although React generally discourages this pattern.
 
 ```tsx
 function Component({ initialValue }) {
