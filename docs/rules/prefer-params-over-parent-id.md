@@ -10,13 +10,13 @@
 
 Prefer handler params for parent IDs instead of traversing `ref.parent.id` so Firebase triggers stay aligned with path templates and type-safe.
 
-In Firestore and Realtime Database change handlers, you already get trigger path variables through `event.params`. Reconstructing those IDs with `ref.parent.id`:
+In Firestore and Realtime Database change handlers, you already get trigger path variables through `event.params`. When you reconstruct those IDs with `ref.parent.id`:
 
-- drifts as soon as collection nesting changes, so handlers silently read the wrong parent
-- bypasses the type-safe params object, hiding typos behind optional chaining or `undefined`
-- makes intent harder to scan because readers must mentally follow the reference chain
+- this drifts as soon as your collection nesting changes, so you silently read the wrong parent
+- this bypasses your type-safe params object and hides typos behind optional chaining or `undefined`
+- this makes your intent harder to scan because readers must mentally follow the reference chain
 
-The rule targets handlers typed as `DocumentChangeHandler`, `DocumentChangeHandlerTransaction`, `RealtimeDbChangeHandler`, or `RealtimeDbChangeHandlerTransaction` and reports any `ref.parent...id` access inside them.
+This rule targets handlers you type as `DocumentChangeHandler`, `DocumentChangeHandlerTransaction`, `RealtimeDbChangeHandler`, or `RealtimeDbChangeHandlerTransaction` and reports any `ref.parent...id` access you use inside them.
 
 ## Setup Example
 
