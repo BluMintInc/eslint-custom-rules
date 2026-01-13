@@ -67,9 +67,23 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
       ): boolean => {
         if (expression.operator !== '+') return true;
 
-        const isStaticLiteral = (expr: TSESTree.Node): boolean =>
-          expr.type === AST_NODE_TYPES.Literal &&
-          typeof expr.value === 'string';
+        const isStaticLiteral = (expr: TSESTree.Node): boolean => {
+          // Unwrap TS assertions
+          let inner: TSESTree.Node = expr;
+          while (
+            inner.type === AST_NODE_TYPES.TSAsExpression ||
+            inner.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+            inner.type === AST_NODE_TYPES.TSNonNullExpression ||
+            inner.type === AST_NODE_TYPES.TSTypeAssertion
+          ) {
+            inner = inner.expression;
+          }
+
+          return (
+            inner.type === AST_NODE_TYPES.Literal &&
+            typeof inner.value === 'string'
+          );
+        };
 
         const isSafe = (
           expr: TSESTree.Expression | TSESTree.PrivateIdentifier,
@@ -77,10 +91,22 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
           if (expr.type === AST_NODE_TYPES.PrivateIdentifier) {
             return false;
           }
-          if (expr.type === AST_NODE_TYPES.BinaryExpression) {
-            return !isDynamicBinaryExpression(expr);
+
+          // Unwrap TS assertions
+          let inner: TSESTree.Node = expr;
+          while (
+            inner.type === AST_NODE_TYPES.TSAsExpression ||
+            inner.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+            inner.type === AST_NODE_TYPES.TSNonNullExpression ||
+            inner.type === AST_NODE_TYPES.TSTypeAssertion
+          ) {
+            inner = inner.expression;
           }
-          return isStaticLiteral(expr);
+
+          if (inner.type === AST_NODE_TYPES.BinaryExpression) {
+            return !isDynamicBinaryExpression(inner);
+          }
+          return isStaticLiteral(inner);
         };
 
         return !(isSafe(expression.left) && isSafe(expression.right));
@@ -120,19 +146,30 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
        * `shouldValidateForStaticness`.
        */
       const checkMessageIsStatic = (messageNode: TSESTree.Expression) => {
-        if (messageNode.type === AST_NODE_TYPES.Literal) {
+        // Unwrap TS assertions to check the underlying value
+        let currentNode: TSESTree.Node = messageNode;
+        while (
+          currentNode.type === AST_NODE_TYPES.TSAsExpression ||
+          currentNode.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+          currentNode.type === AST_NODE_TYPES.TSNonNullExpression ||
+          currentNode.type === AST_NODE_TYPES.TSTypeAssertion
+        ) {
+          currentNode = currentNode.expression;
+        }
+
+        if (currentNode.type === AST_NODE_TYPES.Literal) {
           return;
         }
 
         if (
-          messageNode.type === AST_NODE_TYPES.TemplateLiteral &&
-          messageNode.expressions.length === 0
+          currentNode.type === AST_NODE_TYPES.TemplateLiteral &&
+          currentNode.expressions.length === 0
         ) {
           return;
         }
 
-        if (messageNode.type === AST_NODE_TYPES.BinaryExpression) {
-          if (isDynamicBinaryExpression(messageNode)) {
+        if (currentNode.type === AST_NODE_TYPES.BinaryExpression) {
+          if (isDynamicBinaryExpression(currentNode)) {
             context.report({
               node: messageNode,
               messageId: 'dynamicHttpsErrors',

@@ -110,6 +110,12 @@ const validCases = [
   "throw new HttpsError('foo', 'bar', 'baz') as any;",
   "throw new HttpsError<string>('foo', 'bar', 'baz');",
   "throw (new HttpsError('foo', 'bar', 'baz'));",
+  "throw new HttpsError('foo', 'bar' as const, 'baz');",
+  "throw new HttpsError('foo', 'bar' satisfies string, 'baz');",
+  "throw new HttpsError('foo', ('bar'!) as any, 'baz');",
+  "throw new HttpsError('foo', <string>'bar', 'baz');",
+  "throw new HttpsError('foo', ('bar' as string) + ('baz' as const), 'details');",
+  "new HttpsError({ code: 'foo', message: 'bar' as const, details: 'baz' });",
 
   // Complex nested expressions in third argument (valid)
   "throw new HttpsError('foo', 'bar', { nested: { deep: { value: 'test' } } });",
@@ -451,6 +457,14 @@ const invalidCases: InvalidCase[] = [
   {
     code: "throw (new HttpsError('foo', 'bar'));",
     errors: [{ messageId: 'missingThirdArgument' }],
+  },
+  {
+    code: "throw new HttpsError('foo', (getMessage() as string), 'baz');",
+    errors: [{ messageId: 'dynamicHttpsErrors' }],
+  },
+  {
+    code: "throw new HttpsError('foo', ('bar' + getVar()) as any, 'baz');",
+    errors: [{ messageId: 'dynamicHttpsErrors' }],
   },
 
   // Template literals with nested expressions

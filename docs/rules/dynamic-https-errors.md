@@ -105,6 +105,17 @@ new HttpsError({
   });
   ```
 
+- ✅ Valid (with TypeScript assertions):
+
+  ```typescript
+  throw new HttpsError('invalid-argument', 'Static message' as const, { details });
+  new HttpsError({
+    code: 'unauthenticated',
+    message: 'User must be authenticated' satisfies string,
+    details: { userUid: 'guest' },
+  });
+  ```
+
 **Dynamic message content (messageId: `dynamicHttpsErrors`)**
 
 - ❌ Invalid (template literal):
