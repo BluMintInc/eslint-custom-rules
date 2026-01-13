@@ -30,7 +30,8 @@ const findPropertyByName = (
 type MessageIds =
   | 'dynamicHttpsErrors'
   | 'missingThirdArgument'
-  | 'missingDetailsProperty';
+  | 'missingDetailsProperty'
+  | 'missingDetailsDueToSpread';
 
 export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
   createRule({
@@ -50,6 +51,8 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
           'HttpsError calls must include a third "details" argument. The message (second argument) is hashed into a stable identifier, so omitting details leaves errors hard to debug and encourages packing variables into the hashed message. Provide a third argument with the request-specific context (object or string) to keep identifiers stable and diagnostics useful.',
         missingDetailsProperty:
           'HttpsError calls must include a "details" property. The message is hashed into a stable identifier, so omitting details leaves errors hard to debug and encourages packing variables into the hashed message. Provide a details property with the request-specific context (object or string) to keep identifiers stable and diagnostics useful.',
+        missingDetailsDueToSpread:
+          'HttpsError calls must include a "details" property. This call uses an object spread, which prevents static verification that "details" is present. Ensure the spread object contains "details" or provide it explicitly to keep identifiers stable and diagnostics useful.',
       },
     },
     defaultOptions: [],
@@ -134,18 +137,32 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
 
         // Signature 1: Object-based constructor (HttpsErrorProps)
         if (
-          node.arguments.length === 1 &&
+          node.arguments.length >= 1 &&
           node.arguments[0].type === AST_NODE_TYPES.ObjectExpression
         ) {
+          if (node.arguments.length > 1) {
+            context.report({
+              node,
+              messageId: 'missingThirdArgument',
+            });
+            return;
+          }
+
           const props = node.arguments[0];
 
           const messageProperty = findPropertyByName(props.properties, 'message');
           const detailsProperty = findPropertyByName(props.properties, 'details');
 
           if (!detailsProperty) {
+            const hasSpread = props.properties.some(
+              (p) => p.type === AST_NODE_TYPES.SpreadElement,
+            );
+
             context.report({
               node,
-              messageId: 'missingDetailsProperty',
+              messageId: hasSpread
+                ? 'missingDetailsDueToSpread'
+                : 'missingDetailsProperty',
             });
           }
 

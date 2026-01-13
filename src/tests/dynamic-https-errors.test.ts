@@ -5,6 +5,7 @@ const {
   dynamicHttpsErrors: dynamicMessage,
   missingThirdArgument: missingThirdArgumentMessage,
   missingDetailsProperty: missingDetailsPropertyMessage,
+  missingDetailsDueToSpread: missingDetailsDueToSpreadMessage,
 } = dynamicHttpsErrors.meta.messages;
 
 type MessageId = keyof typeof dynamicHttpsErrors.meta.messages;
@@ -24,6 +25,9 @@ describe('dynamic-https-errors messages', () => {
     );
     expect(missingDetailsPropertyMessage).toBe(
       'HttpsError calls must include a "details" property. The message is hashed into a stable identifier, so omitting details leaves errors hard to debug and encourages packing variables into the hashed message. Provide a details property with the request-specific context (object or string) to keep identifiers stable and diagnostics useful.',
+    );
+    expect(missingDetailsDueToSpreadMessage).toBe(
+      'HttpsError calls must include a "details" property. This call uses an object spread, which prevents static verification that "details" is present. Ensure the spread object contains "details" or provide it explicitly to keep identifiers stable and diagnostics useful.',
     );
   });
 });
@@ -175,6 +179,13 @@ const validCases = [
     code: 'unauthenticated',
     [message]: 'This is actually the message value, but the key is dynamic',
     details: { foo: 'bar' }
+  });
+  `,
+  // Object-based signature with spread and explicit details (valid)
+  `
+  new HttpsError({
+    ...config,
+    details: { foo: 'bar' },
   });
   `,
 ];
@@ -555,6 +566,28 @@ const invalidCases: InvalidCase[] = [
     });
     `,
     errors: [{ messageId: 'missingDetailsProperty' }],
+  },
+  // Object-based signature with spread and missing details (invalid - specific message)
+  {
+    code: `
+    new HttpsError({
+      ...config,
+      code: 'unauthenticated',
+      message: 'Static message',
+    });
+    `,
+    errors: [{ messageId: 'missingDetailsDueToSpread' }],
+  },
+  // Object-based signature with extra arguments (invalid)
+  {
+    code: `
+    new HttpsError({
+      code: 'unauthenticated',
+      message: 'Static message',
+      details: { foo: 'bar' },
+    }, 'extra-arg');
+    `,
+    errors: [{ messageId: 'missingThirdArgument' }],
   },
 ];
 

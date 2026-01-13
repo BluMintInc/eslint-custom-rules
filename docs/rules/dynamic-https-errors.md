@@ -50,7 +50,7 @@ new HttpsError({
 });
 ```
 
-**Missing third argument (messageId: `missingThirdArgument` or `missingDetailsProperty`)**
+**Missing third argument (messageId: `missingThirdArgument`, `missingDetailsProperty`, or `missingDetailsDueToSpread`)**
 
 - ❌ Invalid (positional):
 
@@ -65,6 +65,17 @@ new HttpsError({
     code: 'not-found',
     message: 'Resource not found',
   });
+  ```
+
+- ❌ Invalid (object-based with spread):
+
+  ```typescript
+  throw new HttpsError({
+    ...config,
+    code: 'not-found',
+    message: 'Resource not found',
+  });
+  // Error: HttpsError calls must include a "details" property. This call uses an object spread, which prevents static verification that "details" is present.
   ```
 
 - ✅ Valid (positional):
