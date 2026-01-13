@@ -389,6 +389,30 @@ ruleTesterTs.run(
           tsconfigRootDir,
         },
       },
+      {
+        code: `
+        function constrained<T extends string>(a: T, b: string) {
+          return a || b;
+        }
+        `,
+        filename: 'src/rules/prefer-nullish-coalescing-boolean-props.ts',
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
+      },
+      {
+        code: `
+        function constrainedBool<T extends boolean>(a: T, b: boolean) {
+          return a || b;
+        }
+        `,
+        filename: 'src/rules/prefer-nullish-coalescing-boolean-props.ts',
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
+      },
     ],
     invalid: [
       {

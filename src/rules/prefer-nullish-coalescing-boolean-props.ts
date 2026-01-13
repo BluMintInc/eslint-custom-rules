@@ -12,28 +12,52 @@ type MessageIds = 'preferNullishCoalescing';
 const BOOLEAN_PROP_REGEX =
   /^(is|has|should|can|will|do|does|did|was|were|enable|disable)/;
 
-function isBooleanType(type: ts.Type): boolean {
+function isBooleanType(type: ts.Type, checker?: ts.TypeChecker): boolean {
   if (type.isUnion()) {
-    return type.types.every((t) => isBooleanType(t));
+    return type.types.every((t) => isBooleanType(t, checker));
   }
+
+  // For type parameters, check if the constraint is a boolean type
+  if (type.getFlags() & ts.TypeFlags.TypeParameter) {
+    if (checker) {
+      const constraint = checker.getBaseConstraintOfType(type);
+      if (constraint && constraint !== type) {
+        return isBooleanType(constraint, checker);
+      }
+    }
+    return false;
+  }
+
   return (
     (type.getFlags() & (ts.TypeFlags.Boolean | ts.TypeFlags.BooleanLiteral)) !==
     0
   );
 }
 
-function isPossiblyNullish(type: ts.Type): boolean {
+function isPossiblyNullish(type: ts.Type, checker?: ts.TypeChecker): boolean {
   if (type.isUnion()) {
-    return type.types.some((t) => isPossiblyNullish(t));
+    return type.types.some((t) => isPossiblyNullish(t, checker));
   }
+
+  // For type parameters, check if the constraint excludes nullish
+  if (type.getFlags() & ts.TypeFlags.TypeParameter) {
+    if (checker) {
+      const constraint = checker.getBaseConstraintOfType(type);
+      if (constraint && constraint !== type) {
+        return isPossiblyNullish(constraint, checker);
+      }
+    }
+    // If we can't determine the constraint, assume it could be nullish
+    return true;
+  }
+
   return (
     (type.getFlags() &
       (ts.TypeFlags.Null |
         ts.TypeFlags.Undefined |
         ts.TypeFlags.Void |
         ts.TypeFlags.Any |
-        ts.TypeFlags.Unknown |
-        ts.TypeFlags.TypeParameter)) !==
+        ts.TypeFlags.Unknown)) !==
     0
   );
 }
@@ -107,13 +131,13 @@ function isInBooleanContext(
     try {
       const tsNode = parserServices.esTreeNodeToTSNodeMap.get(node);
       const contextualType = checker.getContextualType(tsNode as ts.Expression);
-      if (contextualType && isBooleanType(contextualType)) {
+      if (contextualType && isBooleanType(contextualType, checker)) {
         return true;
       }
 
       // Also check if the expression itself is a boolean type
       const actualType = checker.getTypeAtLocation(tsNode);
-      if (actualType && isBooleanType(actualType)) {
+      if (actualType && isBooleanType(actualType, checker)) {
         return true;
       }
 
@@ -121,7 +145,7 @@ function isInBooleanContext(
       if (node.type === AST_NODE_TYPES.LogicalExpression) {
         const leftTSNode = parserServices.esTreeNodeToTSNodeMap.get(node.left);
         const leftType = checker.getTypeAtLocation(leftTSNode);
-        if (leftType && isBooleanType(leftType)) {
+        if (leftType && isBooleanType(leftType, checker)) {
           return true;
         }
       }
@@ -563,7 +587,7 @@ function couldBeNullish(
     try {
       const tsNode = parserServices.esTreeNodeToTSNodeMap.get(node);
       const type = checker.getTypeAtLocation(tsNode);
-      return isPossiblyNullish(type);
+      return isPossiblyNullish(type, checker);
     } catch {
       // esTreeNodeToTSNodeMap may fail for synthetic nodes or nodes without
       // source positions; getTypeAtLocation may throw for nodes without
