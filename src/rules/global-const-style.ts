@@ -53,6 +53,10 @@ export default createRule<[], MessageIds>({
         return true;
       }
 
+      if (target.type === AST_NODE_TYPES.ChainExpression) {
+        return isDynamicValue(target.expression);
+      }
+
       if (target.type === AST_NODE_TYPES.MemberExpression) {
         return isDynamicValue(target.object);
       }

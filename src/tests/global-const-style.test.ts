@@ -155,6 +155,10 @@ ruleTesterTs.run('global-const-style', rule, {
       code: 'export const deep = new Class().prop.nested.method;',
       filename: 'test.ts',
     },
+    {
+      code: 'export const result = new Service()?.method;',
+      filename: 'test.ts',
+    },
   ],
   invalid: [
     // Missing UPPER_SNAKE_CASE and as const in TypeScript
