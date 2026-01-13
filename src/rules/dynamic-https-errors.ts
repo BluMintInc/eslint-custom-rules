@@ -31,7 +31,8 @@ type MessageIds =
   | 'dynamicHttpsErrors'
   | 'missingThirdArgument'
   | 'missingDetailsProperty'
-  | 'missingDetailsDueToSpread';
+  | 'missingDetailsDueToSpread'
+  | 'unexpectedExtraArgumentForObjectCall';
 
 export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
   createRule({
@@ -53,6 +54,8 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
           'HttpsError calls must include a "details" property. The message is hashed into a stable identifier, so omitting details leaves errors hard to debug and encourages packing variables into the hashed message. Provide a details property with the request-specific context (object or string) to keep identifiers stable and diagnostics useful.',
         missingDetailsDueToSpread:
           'HttpsError calls must include a "details" property. This call uses an object spread, which prevents static verification that "details" is present. Ensure the spread object contains "details" or provide it explicitly to keep identifiers stable and diagnostics useful.',
+        unexpectedExtraArgumentForObjectCall:
+          'Object-based HttpsError calls must have exactly one argument containing code, message, and details properties. Remove extra arguments or use the positional signature (code, message, details).',
       },
     },
     defaultOptions: [],
@@ -86,11 +89,10 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
       /**
        * Determines if a node should be validated for staticness.
        *
-       * Pragmatic Exception: Identifier nodes (AST_NODE_TYPES.Identifier) are excluded from
-       * staticness validation (allowing e.g., `message: props.message` or `message: ERROR_MSG`).
-       * While identifiers can be dynamic and may affect message stability, they are permitted
-       * to support common React/props patterns and constants, preserving developer ergonomics
-       * as an intentional trade-off.
+       * Pragmatic Exception: Identifier and MemberExpression nodes (e.g., `props.message`, `ERROR_MSG`)
+       * are excluded from staticness validation. While they can be dynamic and may affect message
+       * stability, they are permitted to support common React/props patterns and constants,
+       * preserving developer ergonomics as an intentional trade-off.
        */
       const shouldValidateForStaticness = (
         node: TSESTree.Node,
@@ -99,6 +101,7 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
           node.type !== AST_NODE_TYPES.ArrayPattern &&
           node.type !== AST_NODE_TYPES.AssignmentPattern &&
           node.type !== AST_NODE_TYPES.Identifier &&
+          node.type !== AST_NODE_TYPES.MemberExpression &&
           node.type !== AST_NODE_TYPES.ObjectPattern &&
           node.type !== AST_NODE_TYPES.RestElement &&
           node.type !== AST_NODE_TYPES.TSEmptyBodyFunctionExpression &&
@@ -106,27 +109,43 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
         );
       };
 
+      /**
+       * Checks if the message node is static.
+       *
+       * A message is considered static if it's a Literal (string), a TemplateLiteral with no expressions,
+       * or a BinaryExpression (string concatenation with '+') where all parts are static.
+       *
+       * This function reports `dynamicHttpsErrors` for all other expression types (CallExpression,
+       * ConditionalExpression, etc.) that reach it, except for those explicitly excluded by
+       * `shouldValidateForStaticness`.
+       */
       const checkMessageIsStatic = (messageNode: TSESTree.Expression) => {
-        if (
-          messageNode.type === AST_NODE_TYPES.TemplateLiteral &&
-          messageNode.expressions.length > 0
-        ) {
-          context.report({
-            node: messageNode,
-            messageId: 'dynamicHttpsErrors',
-          });
+        if (messageNode.type === AST_NODE_TYPES.Literal) {
           return;
         }
 
         if (
-          messageNode.type === AST_NODE_TYPES.BinaryExpression &&
-          isDynamicBinaryExpression(messageNode)
+          messageNode.type === AST_NODE_TYPES.TemplateLiteral &&
+          messageNode.expressions.length === 0
         ) {
-          context.report({
-            node: messageNode,
-            messageId: 'dynamicHttpsErrors',
-          });
+          return;
         }
+
+        if (messageNode.type === AST_NODE_TYPES.BinaryExpression) {
+          if (isDynamicBinaryExpression(messageNode)) {
+            context.report({
+              node: messageNode,
+              messageId: 'dynamicHttpsErrors',
+            });
+          }
+          return;
+        }
+
+        // Catch-all for other dynamic forms (CallExpression, ConditionalExpression, etc.)
+        context.report({
+          node: messageNode,
+          messageId: 'dynamicHttpsErrors',
+        });
       };
 
       const checkForHttpsError = (
@@ -143,7 +162,7 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
           if (node.arguments.length > 1) {
             context.report({
               node,
-              messageId: 'missingThirdArgument',
+              messageId: 'unexpectedExtraArgumentForObjectCall',
             });
             return;
           }

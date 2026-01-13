@@ -6,6 +6,7 @@ const {
   missingThirdArgument: missingThirdArgumentMessage,
   missingDetailsProperty: missingDetailsPropertyMessage,
   missingDetailsDueToSpread: missingDetailsDueToSpreadMessage,
+  unexpectedExtraArgumentForObjectCall: unexpectedExtraArgumentForObjectCallMessage,
 } = dynamicHttpsErrors.meta.messages;
 
 type MessageId = keyof typeof dynamicHttpsErrors.meta.messages;
@@ -28,6 +29,9 @@ describe('dynamic-https-errors messages', () => {
     );
     expect(missingDetailsDueToSpreadMessage).toBe(
       'HttpsError calls must include a "details" property. This call uses an object spread, which prevents static verification that "details" is present. Ensure the spread object contains "details" or provide it explicitly to keep identifiers stable and diagnostics useful.',
+    );
+    expect(unexpectedExtraArgumentForObjectCallMessage).toBe(
+      'Object-based HttpsError calls must have exactly one argument containing code, message, and details properties. Remove extra arguments or use the positional signature (code, message, details).',
     );
   });
 });
@@ -112,11 +116,10 @@ const validCases = [
   "throw new HttpsError('foo', 'bar', [1, 2, 3].map(x => x * 2));",
   "throw new HttpsError('foo', 'bar', condition && { conditionalData: true });",
 
-  // Other expressions in second argument (currently allowed - testing current behavior)
-  "throw new HttpsError('foo', getMessage(), 'context');",
+  // Allowed exceptions for second argument: Identifier and MemberExpression
   "throw new HttpsError('foo', obj.message, 'context');",
-  "throw new HttpsError('foo', condition ? 'msg1' : 'msg2', 'context');",
   "throw new HttpsError('foo', errorMessage, 'context');",
+  "throw new HttpsError('foo', this.errorMsg, 'context');",
 
   // Empty template literals (valid - no expressions)
   "throw new HttpsError('foo', ``, 'context');",
@@ -240,6 +243,28 @@ const invalidCases: InvalidCase[] = [
   },
   {
     code: "throw new HttpsError('foo', 'Error: ' + variable, 'context');",
+    errors: [{ messageId: 'dynamicHttpsErrors' }],
+  },
+
+  // New expanded dynamic content detection
+  {
+    code: "throw new HttpsError('foo', getMessage(), 'context');",
+    errors: [{ messageId: 'dynamicHttpsErrors' }],
+  },
+  {
+    code: "throw new HttpsError('foo', condition ? 'msg1' : 'msg2', 'context');",
+    errors: [{ messageId: 'dynamicHttpsErrors' }],
+  },
+  {
+    code: "throw new HttpsError('foo', true ? 'a' : 'b', 'context');",
+    errors: [{ messageId: 'dynamicHttpsErrors' }],
+  },
+  {
+    code: "throw new HttpsError('foo', someVar || 'default', 'context');",
+    errors: [{ messageId: 'dynamicHttpsErrors' }],
+  },
+  {
+    code: "throw new HttpsError('foo', !isError ? 'ok' : 'error', 'context');",
     errors: [{ messageId: 'dynamicHttpsErrors' }],
   },
 
@@ -404,7 +429,10 @@ const invalidCases: InvalidCase[] = [
   // Complex expressions in arguments but still missing third
   {
     code: 'throw new HttpsError(getErrorCode(), getMessage());',
-    errors: [{ messageId: 'missingThirdArgument' }],
+    errors: [
+        { messageId: 'missingThirdArgument' },
+        { messageId: 'dynamicHttpsErrors' }
+    ],
   },
   {
     code: "throw new HttpsError(condition ? 'foo' : 'bar', 'message');",
@@ -587,7 +615,7 @@ const invalidCases: InvalidCase[] = [
       details: { foo: 'bar' },
     }, 'extra-arg');
     `,
-    errors: [{ messageId: 'missingThirdArgument' }],
+    errors: [{ messageId: 'unexpectedExtraArgumentForObjectCall' }],
   },
 ];
 

@@ -50,7 +50,7 @@ new HttpsError({
 });
 ```
 
-**Missing third argument (messageId: `missingThirdArgument`, `missingDetailsProperty`, or `missingDetailsDueToSpread`)**
+**Missing third argument (messageId: `missingThirdArgument`, `missingDetailsProperty`, `missingDetailsDueToSpread`, or `unexpectedExtraArgumentForObjectCall`)**
 
 - ❌ Invalid (positional):
 
@@ -65,6 +65,17 @@ new HttpsError({
     code: 'not-found',
     message: 'Resource not found',
   });
+  ```
+
+- ❌ Invalid (object-based with extra arguments):
+
+  ```typescript
+  throw new HttpsError({
+    code: 'not-found',
+    message: 'Resource not found',
+    details: { id: resourceId },
+  }, 'extra-arg');
+  // Error: Object-based HttpsError calls must have exactly one argument.
   ```
 
 - ❌ Invalid (object-based with spread):
@@ -96,12 +107,20 @@ new HttpsError({
 
 **Dynamic message content (messageId: `dynamicHttpsErrors`)**
 
-- ❌ Invalid:
+- ❌ Invalid (template literal):
 
   ```typescript
   throw new https.HttpsError('permission-denied', `User ${userId} cannot access`, {
     path,
   });
+  ```
+
+- ❌ Invalid (other dynamic forms):
+
+  ```typescript
+  throw new HttpsError('foo', getErrorMessage(), { id: resourceId });
+  throw new HttpsError('foo', condition ? 'A' : 'B', { id: resourceId });
+  throw new HttpsError('foo', someVar || 'default', { id: resourceId });
   ```
 
 - ✅ Valid:
