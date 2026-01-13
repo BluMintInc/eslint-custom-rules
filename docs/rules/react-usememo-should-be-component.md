@@ -93,14 +93,14 @@ export const LivestreamInfo = ({ streamer, title, description }) => {
 You might consider disabling this rule if:
 
 1. Legacy code makes component extraction infeasible and the churn risk outweighs the benefit.
-2. Only a benchmarked hotspot is satisfied by memoizing JSX inside `useMemo` (this is rare; prefer `React.memo` first).
+1. Only a benchmarked hotspot is satisfied by memoizing JSX inside `useMemo` (this is rare; prefer `React.memo` first).
 
 ## Rule Exceptions
 
 This rule automatically allows:
 
 1. Memoized JSX that is reused multiple times within the same component (to avoid duplication).
-2. Memoized JSX that is passed through as a prop or spread attribute to other components.
+1. Memoized JSX that is passed through as a prop or spread attribute to other components.
 
 Example of allowed usage (memoized JSX used multiple times):
 

@@ -62,8 +62,8 @@ function MyComponent({ onAction }) {
 You should not use this rule when:
 
 1. Your codebase doesn't have access to the `use-latest-callback` package.
-2. You're working with callbacks that return JSX (render props or components-as-children patterns). In these scenarios, `useCallback` is the correct hook to memoize the component/JSX structure itself.
-3. You need a dependency-aware memoized function identity for advanced React optimization cases where a stable reference is not desired.
+1. You're working with callbacks that return JSX (render props or components-as-children patterns). In these scenarios, `useCallback` is the correct hook to memoize the component/JSX structure itself.
+1. You need a dependency-aware memoized function identity for advanced React optimization cases where a stable reference is not desired.
 
 ## Further Reading
 

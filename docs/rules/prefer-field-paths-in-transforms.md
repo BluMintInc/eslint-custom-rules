@@ -61,19 +61,19 @@ const strategy = {
    return { matchesAggregation: { matchPreviews: {} } };
    ```
 
-2. Arrays and array operations
+1. Arrays and array operations
 
    Arrays are handled by the diff’s array extraction. This rule focuses on nested object shapes under containers. Returning flattened keys that include array indices or leaf fields is valid.
 
-3. Mixed outputs (nested + flattened)
+1. Mixed outputs (nested + flattened)
 
    Only nested shapes under configured containers are flagged. Other top-level flattened keys in the same return are allowed.
 
-4. Dynamic keys
+1. Dynamic keys
 
    Computed dot-keys like ``[`matchesAggregation.matchPreviews.${matchId}`]`` are encouraged and not flagged.
 
-5. Non-aggregation targets
+1. Non-aggregation targets
 
    If a transform writes to fields that aren’t shared containers, the rule is silent by default. Scope can be configured via options.
 
