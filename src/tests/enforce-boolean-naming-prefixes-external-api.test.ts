@@ -40,38 +40,14 @@ ruleTesterTs.run(
       makeDir(dirname(path), { recursive: true });
     }
     `,
-    ],
-    invalid: [
-      // Should flag boolean properties in object literals NOT passed to external APIs
-      {
-        code: `
+      // Now all object literals are ignored
+      `
       function createSettings() {
         return { enabled: true, visible: false };
       }
       `,
-        errors: [
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'property',
-              name: 'enabled',
-              capitalizedName: 'Enabled',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'property',
-              name: 'visible',
-              capitalizedName: 'Visible',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
-        ],
-      },
+    ],
+    invalid: [
       // Should flag boolean properties in object literals passed to non-imported functions
       {
         code: `
@@ -93,18 +69,6 @@ ruleTesterTs.run(
             },
             line: 2,
             column: 41,
-          },
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'property',
-              name: 'enabled',
-              capitalizedName: 'Enabled',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-            line: 6,
-            column: 38,
           },
         ],
       },

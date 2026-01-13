@@ -42,6 +42,28 @@ export default createRule<[], MessageIds>({
       return target;
     };
 
+    const isDynamicValue = (node: TSESTree.Node): boolean => {
+      const target = unwrapAssertions(node);
+
+      if (
+        target.type === AST_NODE_TYPES.CallExpression ||
+        target.type === AST_NODE_TYPES.NewExpression ||
+        target.type === AST_NODE_TYPES.BinaryExpression
+      ) {
+        return true;
+      }
+
+      if (target.type === AST_NODE_TYPES.ChainExpression) {
+        return isDynamicValue(target.expression);
+      }
+
+      if (target.type === AST_NODE_TYPES.MemberExpression) {
+        return isDynamicValue(target.object);
+      }
+
+      return false;
+    };
+
     const describeValueKind = (node: TSESTree.Node): string => {
       const target = unwrapAssertions(node);
 
@@ -134,12 +156,7 @@ export default createRule<[], MessageIds>({
           const init = declaration.init;
 
           // Skip if no initializer or if it's a dynamic value or class instance
-          if (
-            !init ||
-            init.type === AST_NODE_TYPES.CallExpression ||
-            init.type === AST_NODE_TYPES.BinaryExpression ||
-            init.type === AST_NODE_TYPES.NewExpression
-          ) {
+          if (!init || isDynamicValue(init)) {
             return;
           }
 

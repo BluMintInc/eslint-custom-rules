@@ -1,6 +1,11 @@
 import { createRule } from '../utils/createRule';
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  TSESTree,
+  TSESLint,
+} from '@typescript-eslint/utils';
 import { getMethodName } from '../utils/getMethodName';
+import * as ts from 'typescript';
 
 const COMPLEX_EXPRESSION_TYPES = new Set<TSESTree.Expression['type']>([
   AST_NODE_TYPES.CallExpression,
@@ -13,7 +18,7 @@ const COMPLEX_EXPRESSION_TYPES = new Set<TSESTree.Expression['type']>([
 
 export const noPassthroughGetters = createRule({
   create(context) {
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode;
     return {
       // Target getter methods in classes
       MethodDefinition(node) {
@@ -24,6 +29,11 @@ export const noPassthroughGetters = createRule({
 
         // Skip if the getter has decorators (like @Memoize)
         if (node.decorators && node.decorators.length > 0) {
+          return;
+        }
+
+        // Check if this getter satisfies an interface or overrides a base class member
+        if (isRequiredByInterfaceOrBaseClass(node, sourceCode)) {
           return;
         }
 
@@ -87,6 +97,82 @@ export const noPassthroughGetters = createRule({
         }
       },
     };
+
+    /**
+     * Check if the getter is required by an implemented interface or overrides a base class member
+     */
+    function isRequiredByInterfaceOrBaseClass(
+      node: TSESTree.MethodDefinition,
+      sourceCode: TSESLint.SourceCode,
+    ): boolean {
+      const parserServices = sourceCode.parserServices;
+      if (
+        !parserServices ||
+        !parserServices.program ||
+        !parserServices.esTreeNodeToTSNodeMap
+      ) {
+        return false;
+      }
+
+      const checker = parserServices.program.getTypeChecker();
+      const tsNode = parserServices.esTreeNodeToTSNodeMap.get(node) as
+        | ts.MethodDeclaration
+        | ts.GetAccessorDeclaration
+        | undefined;
+      if (!tsNode) {
+        return false;
+      }
+      const symbol = checker.getSymbolAtLocation(tsNode.name);
+
+      if (
+        !symbol ||
+        !tsNode.parent ||
+        !(
+          ts.isClassDeclaration(tsNode.parent) ||
+          ts.isClassExpression(tsNode.parent)
+        )
+      ) {
+        return false;
+      }
+
+      const classNode = tsNode.parent as
+        | ts.ClassDeclaration
+        | ts.ClassExpression;
+      const classType = checker.getTypeAtLocation(classNode);
+      const classSymbol = classType.getSymbol();
+      if (!classSymbol) {
+        return false;
+      }
+
+      const instanceType = checker.getDeclaredTypeOfSymbol(classSymbol);
+      const name = symbol.getName();
+
+      // Check base classes
+      const baseTypes = instanceType.getBaseTypes() || [];
+      for (const baseType of baseTypes) {
+        if (baseType.getProperty(name)) {
+          return true;
+        }
+      }
+
+      // Check interfaces
+      if (classNode.heritageClauses) {
+        for (const clause of classNode.heritageClauses) {
+          // Only check implemented interfaces as base classes are already checked via getBaseTypes()
+          if (clause.token !== ts.SyntaxKind.ImplementsKeyword) {
+            continue;
+          }
+          for (const typeNode of clause.types) {
+            const type = checker.getTypeAtLocation(typeNode);
+            if (type.getProperty(name)) {
+              return true;
+            }
+          }
+        }
+      }
+
+      return false;
+    }
 
     /**
      * Check if the node is a simple property access from a constructor parameter
