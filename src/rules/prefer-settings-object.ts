@@ -59,6 +59,7 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
   defaultOptions: [defaultOptions],
   create(context, [options]) {
     const finalOptions = { ...defaultOptions, ...options };
+    const { sourceCode } = context;
 
     function getParameterType(param: TSESTree.Parameter): string | null {
       if (param.type === AST_NODE_TYPES.AssignmentPattern) {
@@ -69,7 +70,6 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
         const typeNode = param.typeAnnotation.typeAnnotation;
         if (typeNode.type === AST_NODE_TYPES.TSTypeReference) {
           // Include type parameters in the type signature to differentiate generic types
-          const sourceCode = context.sourceCode;
           const typeName = sourceCode.getText(typeNode.typeName);
 
           // If there are type parameters, include them in the type signature
@@ -91,7 +91,6 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
         const typeNode = param.typeAnnotation.typeAnnotation;
         if (typeNode.type === AST_NODE_TYPES.TSTypeReference) {
           // Include type parameters in the type signature to differentiate generic types
-          const sourceCode = context.sourceCode;
           const typeName = sourceCode.getText(typeNode.typeName);
 
           // If there are type parameters, include them in the type signature
