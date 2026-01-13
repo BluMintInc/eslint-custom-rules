@@ -37,71 +37,109 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
     },
     defaultOptions: [],
     create(context) {
+      // Only string concatenation with "+" can be static; all other operators
+      // are treated as dynamic to avoid hashing non-literal message content.
+      const isDynamicBinaryExpression = (
+        expression: TSESTree.BinaryExpression,
+      ): boolean => {
+        if (expression.operator !== '+') return true;
+
+        const isStaticLiteral = (expr: TSESTree.Node): boolean =>
+          expr.type === AST_NODE_TYPES.Literal &&
+          typeof expr.value === 'string';
+
+        const isSafe = (
+          expr: TSESTree.Expression | TSESTree.PrivateIdentifier,
+        ): boolean => {
+          if (expr.type === AST_NODE_TYPES.PrivateIdentifier) {
+            return false;
+          }
+          if (expr.type === AST_NODE_TYPES.BinaryExpression) {
+            return !isDynamicBinaryExpression(expr);
+          }
+          return isStaticLiteral(expr);
+        };
+
+        return !(isSafe(expression.left) && isSafe(expression.right));
+      };
+
+      const checkMessageIsStatic = (messageNode: TSESTree.Expression) => {
+        if (
+          messageNode.type === AST_NODE_TYPES.TemplateLiteral &&
+          messageNode.expressions.length > 0
+        ) {
+          context.report({
+            node: messageNode,
+            messageId: 'dynamicHttpsErrors',
+          });
+          return;
+        }
+
+        if (
+          messageNode.type === AST_NODE_TYPES.BinaryExpression &&
+          isDynamicBinaryExpression(messageNode)
+        ) {
+          context.report({
+            node: messageNode,
+            messageId: 'dynamicHttpsErrors',
+          });
+        }
+      };
+
       const checkForHttpsError = (
         node: TSESTree.CallExpression | TSESTree.NewExpression,
       ) => {
         const callee = node.callee;
-        if (isHttpsErrorCall(callee)) {
-          // Check for missing third argument
-          if (node.arguments.length < 3) {
+        if (!isHttpsErrorCall(callee)) return;
+
+        // Signature 1: Object-based constructor (HttpsErrorProps)
+        if (
+          node.arguments.length === 1 &&
+          node.arguments[0].type === AST_NODE_TYPES.ObjectExpression
+        ) {
+          const props = node.arguments[0];
+          const messageProperty = props.properties.find(
+            (p): p is TSESTree.Property =>
+              p.type === AST_NODE_TYPES.Property &&
+              p.key.type === AST_NODE_TYPES.Identifier &&
+              p.key.name === 'message',
+          );
+          const detailsProperty = props.properties.find(
+            (p): p is TSESTree.Property =>
+              p.type === AST_NODE_TYPES.Property &&
+              p.key.type === AST_NODE_TYPES.Identifier &&
+              p.key.name === 'details',
+          );
+
+          if (!detailsProperty) {
             context.report({
               node,
               messageId: 'missingThirdArgument',
             });
           }
 
-          // Check for dynamic content in second argument (existing functionality)
-          const secondArg = node.arguments[1];
-          if (!secondArg) return;
-
-          if (
-            secondArg.type === AST_NODE_TYPES.TemplateLiteral &&
-            secondArg.expressions.length > 0
-          ) {
-            context.report({
-              node: secondArg,
-              messageId: 'dynamicHttpsErrors',
-            });
-            return;
+          if (messageProperty && messageProperty.value.type !== 'Identifier') {
+            checkMessageIsStatic(messageProperty.value as TSESTree.Expression);
           }
+          return;
+        }
 
-          // Only string concatenation with "+" can be static; all other operators
-          // are treated as dynamic to avoid hashing non-literal message content.
-          const isDynamicBinaryExpression = (
-            expression: TSESTree.BinaryExpression,
-          ): boolean => {
-            if (expression.operator !== '+') return true;
+        // Signature 2: Positional arguments (code, message, details)
+        // Check for missing third argument
+        if (node.arguments.length < 3) {
+          context.report({
+            node,
+            messageId: 'missingThirdArgument',
+          });
+        }
 
-            const isStaticLiteral = (expr: TSESTree.Node): boolean =>
-              expr.type === AST_NODE_TYPES.Literal &&
-              typeof expr.value === 'string';
-
-            const isSafe = (
-              expr: TSESTree.Expression | TSESTree.PrivateIdentifier,
-            ): boolean => {
-              if (expr.type === AST_NODE_TYPES.PrivateIdentifier) {
-                return false;
-              }
-              if (expr.type === AST_NODE_TYPES.BinaryExpression) {
-                return !isDynamicBinaryExpression(expr);
-              }
-              return isStaticLiteral(expr);
-            };
-
-            return !(isSafe(expression.left) && isSafe(expression.right));
-          };
-
-          if (
-            secondArg.type === AST_NODE_TYPES.BinaryExpression &&
-            isDynamicBinaryExpression(secondArg)
-          ) {
-            context.report({
-              node: secondArg,
-              messageId: 'dynamicHttpsErrors',
-            });
-          }
+        // Check for dynamic content in second argument
+        const secondArg = node.arguments[1];
+        if (secondArg && secondArg.type !== 'Identifier') {
+          checkMessageIsStatic(secondArg as TSESTree.Expression);
         }
       };
+
       return {
         NewExpression(node: TSESTree.NewExpression) {
           checkForHttpsError(node);

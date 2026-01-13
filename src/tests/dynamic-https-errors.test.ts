@@ -123,9 +123,64 @@ const validCases = [
 
   // Spread operator in arguments (valid when we can statically verify 3+ args)
   "throw new HttpsError('foo', 'bar', ...contextArgs);",
+
+  // Object-based constructor signature (valid)
+  `
+  new HttpsError({
+    code: 'unauthenticated',
+    message: 'User must be authenticated to create a transaction.',
+    details: { userUid: 'guest' },
+  });
+  `,
+  `
+  new HttpsError({
+    code: 'unauthenticated',
+    message: 'User must be authenticated to create a transaction.',
+    details: 'some string details',
+  });
+  `,
+  // Object-based signature with dynamic message should be valid if it's an Identifier (e.g. from props)
+  // or it will be caught by our new logic if it's literal/template
+  `
+  new HttpsError({
+    code: 'unauthenticated',
+    message: props.message,
+    details: 'details',
+  });
+  `,
 ];
 
 const invalidCases: InvalidCase[] = [
+  // Object-based constructor signature (invalid)
+  {
+    code: `
+    new HttpsError({
+      code: 'unauthenticated',
+      message: 'User must be authenticated to create a transaction.',
+    });
+    `,
+    errors: [{ messageId: 'missingThirdArgument' }],
+  },
+  {
+    code: `
+    new HttpsError({
+      code: 'unauthenticated',
+      message: \`User must be authenticated to create a transaction: \${userUid}\`,
+      details: { userUid },
+    });
+    `,
+    errors: [{ messageId: 'dynamicHttpsErrors' }],
+  },
+  {
+    code: `
+    new HttpsError({
+      code: 'unauthenticated',
+      message: 'User ' + userUid + ' must be authenticated.',
+      details: { userUid },
+    });
+    `,
+    errors: [{ messageId: 'dynamicHttpsErrors' }],
+  },
   // Invalid cases for dynamic content in second argument
   {
     code: "throw new https.HttpsError('foo', `Error: ${bar}`, 'baz');",
