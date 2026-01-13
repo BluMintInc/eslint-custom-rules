@@ -117,7 +117,11 @@ export const noPassthroughGetters = createRule({
       const checker = parserServices.program.getTypeChecker();
       const tsNode = parserServices.esTreeNodeToTSNodeMap.get(node) as
         | ts.MethodDeclaration
-        | ts.GetAccessorDeclaration;
+        | ts.GetAccessorDeclaration
+        | undefined;
+      if (!tsNode) {
+        return false;
+      }
       const symbol = checker.getSymbolAtLocation(tsNode.name);
 
       if (
