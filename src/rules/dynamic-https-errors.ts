@@ -2,14 +2,14 @@ import { createRule } from '../utils/createRule';
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 
 const isHttpsErrorCall = (callee: TSESTree.LeftHandSideExpression): boolean => {
-  if (callee.type === 'MemberExpression') {
+  if (callee.type === AST_NODE_TYPES.MemberExpression) {
     return (
-      callee.object.type === 'Identifier' &&
+      callee.object.type === AST_NODE_TYPES.Identifier &&
       callee.object.name === 'https' &&
-      callee.property.type === 'Identifier' &&
+      callee.property.type === AST_NODE_TYPES.Identifier &&
       callee.property.name === 'HttpsError'
     );
-  } else if (callee.type === 'Identifier') {
+  } else if (callee.type === AST_NODE_TYPES.Identifier) {
     return callee.name === 'HttpsError';
   }
   return false;
@@ -98,24 +98,23 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
           node.arguments[0].type === AST_NODE_TYPES.ObjectExpression
         ) {
           const props = node.arguments[0];
-          const messageProperty = props.properties.find(
-            (p): p is TSESTree.Property =>
-              p.type === AST_NODE_TYPES.Property &&
-              !p.computed &&
-              ((p.key.type === AST_NODE_TYPES.Identifier &&
-                p.key.name === 'message') ||
-                (p.key.type === AST_NODE_TYPES.Literal &&
-                  p.key.value === 'message')),
-          );
-          const detailsProperty = props.properties.find(
-            (p): p is TSESTree.Property =>
-              p.type === AST_NODE_TYPES.Property &&
-              !p.computed &&
-              ((p.key.type === AST_NODE_TYPES.Identifier &&
-                p.key.name === 'details') ||
-                (p.key.type === AST_NODE_TYPES.Literal &&
-                  p.key.value === 'details')),
-          );
+
+          const findPropertyByName = (
+            properties: (TSESTree.Property | TSESTree.SpreadElement)[],
+            name: string,
+          ): TSESTree.Property | undefined =>
+            properties.find(
+              (p): p is TSESTree.Property =>
+                p.type === AST_NODE_TYPES.Property &&
+                !p.computed &&
+                ((p.key.type === AST_NODE_TYPES.Identifier &&
+                  p.key.name === name) ||
+                  (p.key.type === AST_NODE_TYPES.Literal &&
+                    p.key.value === name)),
+            );
+
+          const messageProperty = findPropertyByName(props.properties, 'message');
+          const detailsProperty = findPropertyByName(props.properties, 'details');
 
           if (!detailsProperty) {
             context.report({
@@ -124,7 +123,10 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
             });
           }
 
-          if (messageProperty && messageProperty.value.type !== 'Identifier') {
+          if (
+            messageProperty &&
+            messageProperty.value.type !== AST_NODE_TYPES.Identifier
+          ) {
             checkMessageIsStatic(messageProperty.value as TSESTree.Expression);
           }
           return;
@@ -141,7 +143,7 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
 
         // Check for dynamic content in second argument
         const secondArg = node.arguments[1];
-        if (secondArg && secondArg.type !== 'Identifier') {
+        if (secondArg && secondArg.type !== AST_NODE_TYPES.Identifier) {
           checkMessageIsStatic(secondArg as TSESTree.Expression);
         }
       };
