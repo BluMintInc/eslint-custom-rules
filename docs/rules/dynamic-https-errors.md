@@ -53,21 +53,28 @@ new HttpsError({
 **Missing third argument (messageId: `missingThirdArgument` or `missingDetailsProperty`)**
 
 - ❌ Invalid (positional):
+
   ```typescript
   throw new HttpsError('not-found', 'Resource not found');
   ```
+
 - ❌ Invalid (object-based):
+
   ```typescript
   throw new HttpsError({
     code: 'not-found',
     message: 'Resource not found',
   });
   ```
+
 - ✅ Valid (positional):
+
   ```typescript
   throw new HttpsError('not-found', 'Resource not found', { id: resourceId });
   ```
+
 - ✅ Valid (object-based):
+
   ```typescript
   throw new HttpsError({
     code: 'not-found',
@@ -79,12 +86,15 @@ new HttpsError({
 **Dynamic message content (messageId: `dynamicHttpsErrors`)**
 
 - ❌ Invalid:
+
   ```typescript
   throw new https.HttpsError('permission-denied', `User ${userId} cannot access`, {
     path,
   });
   ```
+
 - ✅ Valid:
+
   ```typescript
   throw new https.HttpsError('permission-denied', 'User cannot access', {
     path,

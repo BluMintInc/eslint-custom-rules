@@ -80,6 +80,15 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
         return !(isSafe(expression.left) && isSafe(expression.right));
       };
 
+      /**
+       * Determines if a node should be validated for staticness.
+       *
+       * Pragmatic Exception: Identifier nodes (AST_NODE_TYPES.Identifier) are excluded from
+       * staticness validation (allowing e.g., `message: props.message` or `message: ERROR_MSG`).
+       * While identifiers can be dynamic and may affect message stability, they are permitted
+       * to support common React/props patterns and constants, preserving developer ergonomics
+       * as an intentional trade-off.
+       */
       const shouldValidateForStaticness = (
         node: TSESTree.Node,
       ): node is TSESTree.Expression => {
