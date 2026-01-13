@@ -75,6 +75,18 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
         return !(isSafe(expression.left) && isSafe(expression.right));
       };
 
+      const isExpression = (node: TSESTree.Node): node is TSESTree.Expression => {
+        return (
+          node.type !== AST_NODE_TYPES.ArrayPattern &&
+          node.type !== AST_NODE_TYPES.AssignmentPattern &&
+          node.type !== AST_NODE_TYPES.Identifier &&
+          node.type !== AST_NODE_TYPES.ObjectPattern &&
+          node.type !== AST_NODE_TYPES.RestElement &&
+          node.type !== AST_NODE_TYPES.TSEmptyBodyFunctionExpression &&
+          node.type !== AST_NODE_TYPES.SpreadElement
+        );
+      };
+
       const checkMessageIsStatic = (messageNode: TSESTree.Expression) => {
         if (
           messageNode.type === AST_NODE_TYPES.TemplateLiteral &&
@@ -121,11 +133,8 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
             });
           }
 
-          if (
-            messageProperty &&
-            messageProperty.value.type !== AST_NODE_TYPES.Identifier
-          ) {
-            checkMessageIsStatic(messageProperty.value as TSESTree.Expression);
+          if (messageProperty && isExpression(messageProperty.value)) {
+            checkMessageIsStatic(messageProperty.value);
           }
           return;
         }
