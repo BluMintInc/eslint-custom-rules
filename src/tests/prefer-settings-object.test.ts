@@ -224,6 +224,75 @@ ruleTesterTs.run('prefer-settings-object', preferSettingsObject, {
       `,
       options: [{ checkSameTypeParameters: true }],
     },
+    // Inferred types from context should be ignored
+    {
+      code: `
+        export const myStrategy: PropagationStrategyTransaction<Transaction, TokenMetadata> = {
+          queryResolveAll: async ({ source }, transaction) => {
+            return [];
+          },
+        };
+      `,
+      options: [{ checkSameTypeParameters: true }],
+    },
+    {
+      code: `
+        const handler: SomeLargeInterface = (a, b, c, d) => {
+          return [];
+        };
+      `,
+      options: [{ minimumParameters: 3 }],
+    },
+    // Implicitly typed parameters
+    {
+      code: `function noTypes(a, b, c) {}`,
+      options: [{ minimumParameters: 3 }],
+    },
+    {
+      code: `const noTypesArrow = (a, b, c) => {};`,
+      options: [{ minimumParameters: 3 }],
+    },
+    // TSParameterProperty without explicit type
+    {
+      code: `
+        class Foo {
+          constructor(public a, private b, protected c) {}
+        }
+      `,
+      options: [{ minimumParameters: 3 }],
+    },
+    // AssignmentPattern without explicit type
+    {
+      code: `function defaultValues(a = 1, b = 'str', c = true) {}`,
+      options: [{ minimumParameters: 3 }],
+    },
+    // Mixed implicit and explicit (should still ignore if any is implicit)
+    {
+      code: `function mixedTypes(a: string, b, c: number) {}`,
+      options: [{ minimumParameters: 3 }],
+    },
+    // Explicit type in generics but implicit in params
+    {
+      code: `
+        const handler: Handler<string, number> = (a, b) => {};
+      `,
+      options: [{ checkSameTypeParameters: true }],
+    },
+    // Object pattern without type
+    {
+      code: `function objectPattern({ a, b, c }) {}`,
+      options: [{ minimumParameters: 3 }],
+    },
+    // Array pattern without type
+    {
+      code: `function arrayPattern([a, b, c]) {}`,
+      options: [{ minimumParameters: 3 }],
+    },
+    // Rest element without type
+    {
+      code: `function restParam(a, b, ...args) {}`,
+      options: [{ minimumParameters: 3 }],
+    },
   ],
   invalid: [
     // Too many parameters
@@ -243,6 +312,17 @@ ruleTesterTs.run('prefer-settings-object', preferSettingsObject, {
         {
           messageId: 'sameTypeParams',
           data: { paramCount: 2, type: 'string' },
+        },
+      ],
+    },
+    // Qualified type names
+    {
+      code: `function qualified(a: A.B, b: A.B) {}`,
+      options: [{ checkSameTypeParameters: true }],
+      errors: [
+        {
+          messageId: 'sameTypeParams',
+          data: { paramCount: 2, type: 'A.B' },
         },
       ],
     },
