@@ -302,7 +302,15 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
           current = current.left;
         }
 
-        return !(current as any).typeAnnotation;
+        if (
+          current.type === AST_NODE_TYPES.Identifier ||
+          current.type === AST_NODE_TYPES.ObjectPattern ||
+          current.type === AST_NODE_TYPES.ArrayPattern ||
+          current.type === AST_NODE_TYPES.RestElement
+        ) {
+          return !current.typeAnnotation;
+        }
+        return true;
       });
     }
 
