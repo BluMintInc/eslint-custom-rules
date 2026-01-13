@@ -246,7 +246,6 @@ ruleTesterTs.run(
           },
         ],
       },
-
     ],
   },
 );

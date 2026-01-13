@@ -14,7 +14,8 @@ export const enforceTransformMemoization = createRule<[], MessageIds>({
   meta: {
     type: 'problem',
     docs: {
-      description: 'Enforce memoization of transformValue and transformOnChange in adaptValue',
+      description:
+        'Enforce memoization of transformValue and transformOnChange in adaptValue',
       recommended: 'error',
     },
     schema: [],

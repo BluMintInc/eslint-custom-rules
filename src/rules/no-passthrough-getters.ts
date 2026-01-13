@@ -1,9 +1,5 @@
 import { createRule } from '../utils/createRule';
-import {
-  AST_NODE_TYPES,
-  TSESTree,
-  TSESLint,
-} from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { getMethodName } from '../utils/getMethodName';
 import * as ts from 'typescript';
 
