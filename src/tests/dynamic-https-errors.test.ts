@@ -4,6 +4,7 @@ import { dynamicHttpsErrors } from '../rules/dynamic-https-errors';
 const {
   dynamicHttpsErrors: dynamicMessage,
   missingThirdArgument: missingThirdArgumentMessage,
+  missingDetailsProperty: missingDetailsPropertyMessage,
 } = dynamicHttpsErrors.meta.messages;
 
 type MessageId = keyof typeof dynamicHttpsErrors.meta.messages;
@@ -20,6 +21,9 @@ describe('dynamic-https-errors messages', () => {
     );
     expect(missingThirdArgumentMessage).toBe(
       'HttpsError calls must include a third "details" argument. The message (second argument) is hashed into a stable identifier, so omitting details leaves errors hard to debug and encourages packing variables into the hashed message. Provide a third argument with the request-specific context (object or string) to keep identifiers stable and diagnostics useful.',
+    );
+    expect(missingDetailsPropertyMessage).toBe(
+      'HttpsError calls must include a "details" property. The message is hashed into a stable identifier, so omitting details leaves errors hard to debug and encourages packing variables into the hashed message. Provide a details property with the request-specific context (object or string) to keep identifiers stable and diagnostics useful.',
     );
   });
 });
@@ -184,7 +188,7 @@ const invalidCases: InvalidCase[] = [
       message: 'User must be authenticated to create a transaction.',
     });
     `,
-    errors: [{ messageId: 'missingThirdArgument' }],
+    errors: [{ messageId: 'missingDetailsProperty' }],
   },
   {
     code: `
@@ -550,7 +554,7 @@ const invalidCases: InvalidCase[] = [
       'message': 'Static message',
     });
     `,
-    errors: [{ messageId: 'missingThirdArgument' }],
+    errors: [{ messageId: 'missingDetailsProperty' }],
   },
 ];
 

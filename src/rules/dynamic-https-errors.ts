@@ -27,7 +27,10 @@ const findPropertyByName = (
         (p.key.type === AST_NODE_TYPES.Literal && p.key.value === name)),
   );
 
-type MessageIds = 'dynamicHttpsErrors' | 'missingThirdArgument';
+type MessageIds =
+  | 'dynamicHttpsErrors'
+  | 'missingThirdArgument'
+  | 'missingDetailsProperty';
 
 export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
   createRule({
@@ -45,6 +48,8 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
           'The HttpsError message (second argument) must stay static. Template expressions here change the hashed message and explode the number of error ids for the same failure. Keep this argument constant and move interpolated values into the third "details" argument so monitoring groups the error while still capturing request context.',
         missingThirdArgument:
           'HttpsError calls must include a third "details" argument. The message (second argument) is hashed into a stable identifier, so omitting details leaves errors hard to debug and encourages packing variables into the hashed message. Provide a third argument with the request-specific context (object or string) to keep identifiers stable and diagnostics useful.',
+        missingDetailsProperty:
+          'HttpsError calls must include a "details" property. The message is hashed into a stable identifier, so omitting details leaves errors hard to debug and encourages packing variables into the hashed message. Provide a details property with the request-specific context (object or string) to keep identifiers stable and diagnostics useful.',
       },
     },
     defaultOptions: [],
@@ -75,7 +80,9 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
         return !(isSafe(expression.left) && isSafe(expression.right));
       };
 
-      const isExpression = (node: TSESTree.Node): node is TSESTree.Expression => {
+      const shouldValidateForStaticness = (
+        node: TSESTree.Node,
+      ): node is TSESTree.Expression => {
         return (
           node.type !== AST_NODE_TYPES.ArrayPattern &&
           node.type !== AST_NODE_TYPES.AssignmentPattern &&
@@ -129,11 +136,14 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
           if (!detailsProperty) {
             context.report({
               node,
-              messageId: 'missingThirdArgument',
+              messageId: 'missingDetailsProperty',
             });
           }
 
-          if (messageProperty && isExpression(messageProperty.value)) {
+          if (
+            messageProperty &&
+            shouldValidateForStaticness(messageProperty.value)
+          ) {
             checkMessageIsStatic(messageProperty.value);
           }
           return;
@@ -150,11 +160,7 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
 
         // Check for dynamic content in second argument
         const secondArg = node.arguments[1];
-        if (
-          secondArg &&
-          secondArg.type !== AST_NODE_TYPES.Identifier &&
-          secondArg.type !== AST_NODE_TYPES.SpreadElement
-        ) {
+        if (secondArg && shouldValidateForStaticness(secondArg)) {
           checkMessageIsStatic(secondArg);
         }
       };

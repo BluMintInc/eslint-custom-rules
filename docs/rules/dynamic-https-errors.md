@@ -50,15 +50,30 @@ new HttpsError({
 });
 ```
 
-**Missing third argument (messageId: `missingThirdArgument`)**
+**Missing third argument (messageId: `missingThirdArgument` or `missingDetailsProperty`)**
 
-- ❌ Invalid:
+- ❌ Invalid (positional):
   ```typescript
   throw new HttpsError('not-found', 'Resource not found');
   ```
-- ✅ Valid:
+- ❌ Invalid (object-based):
+  ```typescript
+  throw new HttpsError({
+    code: 'not-found',
+    message: 'Resource not found',
+  });
+  ```
+- ✅ Valid (positional):
   ```typescript
   throw new HttpsError('not-found', 'Resource not found', { id: resourceId });
+  ```
+- ✅ Valid (object-based):
+  ```typescript
+  throw new HttpsError({
+    code: 'not-found',
+    message: 'Resource not found',
+    details: { id: resourceId },
+  });
   ```
 
 **Dynamic message content (messageId: `dynamicHttpsErrors`)**
