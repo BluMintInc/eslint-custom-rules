@@ -60,6 +60,19 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
     },
     defaultOptions: [],
     create(context) {
+      const unwrapTSAssertions = (node: TSESTree.Node): TSESTree.Node => {
+        let inner = node;
+        while (
+          inner.type === AST_NODE_TYPES.TSAsExpression ||
+          inner.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+          inner.type === AST_NODE_TYPES.TSNonNullExpression ||
+          inner.type === AST_NODE_TYPES.TSTypeAssertion
+        ) {
+          inner = inner.expression;
+        }
+        return inner;
+      };
+
       // Only string concatenation with "+" can be static; all other operators
       // are treated as dynamic to avoid hashing non-literal message content.
       const isDynamicBinaryExpression = (
@@ -68,16 +81,7 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
         if (expression.operator !== '+') return true;
 
         const isStaticLiteral = (expr: TSESTree.Node): boolean => {
-          // Unwrap TS assertions
-          let inner: TSESTree.Node = expr;
-          while (
-            inner.type === AST_NODE_TYPES.TSAsExpression ||
-            inner.type === AST_NODE_TYPES.TSSatisfiesExpression ||
-            inner.type === AST_NODE_TYPES.TSNonNullExpression ||
-            inner.type === AST_NODE_TYPES.TSTypeAssertion
-          ) {
-            inner = inner.expression;
-          }
+          const inner = unwrapTSAssertions(expr);
 
           return (
             inner.type === AST_NODE_TYPES.Literal &&
@@ -92,16 +96,7 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
             return false;
           }
 
-          // Unwrap TS assertions
-          let inner: TSESTree.Node = expr;
-          while (
-            inner.type === AST_NODE_TYPES.TSAsExpression ||
-            inner.type === AST_NODE_TYPES.TSSatisfiesExpression ||
-            inner.type === AST_NODE_TYPES.TSNonNullExpression ||
-            inner.type === AST_NODE_TYPES.TSTypeAssertion
-          ) {
-            inner = inner.expression;
-          }
+          const inner = unwrapTSAssertions(expr);
 
           if (inner.type === AST_NODE_TYPES.BinaryExpression) {
             return !isDynamicBinaryExpression(inner);
@@ -115,23 +110,26 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
       /**
        * Determines if a node should be validated for staticness.
        *
-       * Pragmatic Exception: Identifier and MemberExpression nodes (e.g., `props.message`, `ERROR_MSG`)
-       * are excluded from staticness validation. While they can be dynamic and may affect message
-       * stability, they are permitted to support common React/props patterns and constants,
-       * preserving developer ergonomics as an intentional trade-off.
+       * Pragmatic Exception: Identifier, MemberExpression, and ChainExpression nodes
+       * (e.g., `props.message`, `props?.message`, `ERROR_MSG`) are excluded from
+       * staticness validation. While they can be dynamic and may affect message
+       * stability, they are permitted to support common React/props patterns and
+       * constants, preserving developer ergonomics as an intentional trade-off.
        */
       const shouldValidateForStaticness = (
         node: TSESTree.Node,
       ): node is TSESTree.Expression => {
         return (
-          node.type !== AST_NODE_TYPES.ArrayPattern &&
-          node.type !== AST_NODE_TYPES.AssignmentPattern &&
           node.type !== AST_NODE_TYPES.Identifier &&
           node.type !== AST_NODE_TYPES.MemberExpression &&
+          node.type !== AST_NODE_TYPES.ChainExpression &&
+          node.type !== AST_NODE_TYPES.SpreadElement &&
+          // Explicitly exclude patterns and other non-Expression nodes that can appear in Property.value
+          node.type !== AST_NODE_TYPES.ArrayPattern &&
+          node.type !== AST_NODE_TYPES.AssignmentPattern &&
           node.type !== AST_NODE_TYPES.ObjectPattern &&
           node.type !== AST_NODE_TYPES.RestElement &&
-          node.type !== AST_NODE_TYPES.TSEmptyBodyFunctionExpression &&
-          node.type !== AST_NODE_TYPES.SpreadElement
+          node.type !== AST_NODE_TYPES.TSEmptyBodyFunctionExpression
         );
       };
 
@@ -146,16 +144,7 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
        * `shouldValidateForStaticness`.
        */
       const checkMessageIsStatic = (messageNode: TSESTree.Expression) => {
-        // Unwrap TS assertions to check the underlying value
-        let currentNode: TSESTree.Node = messageNode;
-        while (
-          currentNode.type === AST_NODE_TYPES.TSAsExpression ||
-          currentNode.type === AST_NODE_TYPES.TSSatisfiesExpression ||
-          currentNode.type === AST_NODE_TYPES.TSNonNullExpression ||
-          currentNode.type === AST_NODE_TYPES.TSTypeAssertion
-        ) {
-          currentNode = currentNode.expression;
-        }
+        const currentNode = unwrapTSAssertions(messageNode);
 
         if (currentNode.type === AST_NODE_TYPES.Literal) {
           return;

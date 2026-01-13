@@ -126,6 +126,7 @@ const validCases = [
   "throw new HttpsError('foo', obj.message, 'context');",
   "throw new HttpsError('foo', errorMessage, 'context');",
   "throw new HttpsError('foo', this.errorMsg, 'context');",
+  "throw new HttpsError('foo', obj?.message, 'context');",
 
   // Empty template literals (valid - no expressions)
   "throw new HttpsError('foo', ``, 'context');",
