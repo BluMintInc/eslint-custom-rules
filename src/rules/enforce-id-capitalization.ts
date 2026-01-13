@@ -22,7 +22,7 @@ export const enforceIdCapitalization = createRule<Options, MessageIds>({
     schema: [],
     messages: {
       enforceIdCapitalization:
-        'Use "ID" instead of "id" in user-facing text for better readability',
+        'Found lowercase "id" in user-facing text → "ID" (capitalized) is the standard abbreviation for "identifier" and improves readability in UI labels and messages → replace lowercase "id" with uppercase "ID" in displayed labels and messages.',
     },
   },
   defaultOptions: [],

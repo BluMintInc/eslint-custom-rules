@@ -10,8 +10,8 @@ This rule enforces proper memoization and usage of `useRenderHits` and `renderHi
 
 This rule aims to ensure:
 1. `transformBefore` and `render` props passed to `useRenderHits` are always memoized.
-2. `renderHits` is only used inside a memoized context (e.g., `useMemo` or `useCallback`).
-3. React components are never passed directly to `render`, but rather wrapped in a memoized arrow function.
+1. `renderHits` is only used inside a memoized context (e.g., `useMemo` or `useCallback`).
+1. React components are never passed directly to `render`, but rather wrapped in a memoized arrow function.
 
 Examples of **incorrect** code for this rule:
 

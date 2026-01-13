@@ -15,7 +15,7 @@ Calling a `useState` setter on both sides of an async boundary leaves the compon
 ### Examples of **incorrect** code for this rule:
 
 ```tsx
-const [profile, setProfile] = useState<Profile | 'loading'>(null);
+const [profile, setProfile] = useState<Profile | 'loading' | null>(null);
 
 async function loadProfile(id: string) {
   setProfile('loading');

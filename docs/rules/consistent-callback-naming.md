@@ -18,7 +18,7 @@ Callback naming should communicate intent at call sites. This rule enforces two 
 The rule reports when:
 
 - A JSX prop is a function-typed expression but its name does not start with `on` (excluding built-in React handlers and common non-callback props like `className`, `style`, `ref`, `sx`, `css`, etc.).
-- A function, method, class property, or parameter starts with `handle`/`handleX` (except plain `handler`/`handlers`), because the name should describe the action instead of the generic prefix.
+- A function, method, class property, or parameter has a name like `handleSubmit` or `handleClick` (starts with `handle` followed by additional characters, but not the plain words `handler` or `handlers`), because the name should describe the action instead of the generic prefix.
 - React component props or PascalCase prop names are skipped to avoid renaming component references.
 
 ### Examples of **incorrect** code for this rule:

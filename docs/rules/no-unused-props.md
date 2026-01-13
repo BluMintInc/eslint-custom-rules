@@ -88,8 +88,8 @@ const GroupModeToggles = ({ mode, preferences, ...rest }: GroupModeTogglesProps)
 You might want to disable this rule if:
 
 1. You're building a library where some props might be used by higher-order components or other wrappers.
-2. Placeholder props exist for type-level wiring that must not reach the component.
-3. Certain props are being deprecated but must stay temporarily for backward compatibility.
+1. Placeholder props exist for type-level wiring that must not reach the component.
+1. Certain props are being deprecated but must stay temporarily for backward compatibility.
 
 ## Version
 

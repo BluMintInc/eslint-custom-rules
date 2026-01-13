@@ -1,5 +1,8 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { preferNullishCoalescingBooleanProps } from '../rules/prefer-nullish-coalescing-boolean-props';
+import path from 'path';
+
+const tsconfigRootDir = path.join(__dirname, '..', '..');
 
 ruleTesterTs.run(
   'prefer-nullish-coalescing-boolean-props',
@@ -347,8 +350,119 @@ ruleTesterTs.run(
       // ===== DESTRUCTURING WITH BOOLEAN LOGIC =====
       `const { isValid = loading || hasDefault } = props;`,
       `const [ready, setReady] = useState(initialReady || defaultReady);`,
+
+      // ===== REGRESSION TESTS FOR ISSUE #1125 =====
+      {
+        code: `
+        const eitherEqual = (a: boolean, b: boolean) => {
+          return a || b; 
+        };
+        `,
+        filename: 'src/rules/prefer-nullish-coalescing-boolean-props.ts',
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
+      },
+      {
+        code: `
+        const eitherEqual = (a: boolean, b: boolean): boolean => {
+          return a || b; 
+        };
+        `,
+        filename: 'src/rules/prefer-nullish-coalescing-boolean-props.ts',
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
+      },
+      {
+        code: `
+        const result = (a: boolean | undefined, b: boolean) => {
+          const x = a || b;
+          return x;
+        };
+        `,
+        filename: 'src/rules/prefer-nullish-coalescing-boolean-props.ts',
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
+      },
+      {
+        code: `
+        function constrained<T extends string>(a: T, b: string) {
+          return a || b;
+        }
+        `,
+        filename: 'src/rules/prefer-nullish-coalescing-boolean-props.ts',
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
+      },
+      {
+        code: `
+        function constrainedBool<T extends boolean>(a: T, b: boolean) {
+          return a || b;
+        }
+        `,
+        filename: 'src/rules/prefer-nullish-coalescing-boolean-props.ts',
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
+      },
     ],
     invalid: [
+      {
+        code: `
+        function generic<T>(a: T, b: boolean) {
+          return a || b;
+        }
+        `,
+        filename: 'src/rules/prefer-nullish-coalescing-boolean-props.ts',
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `
+        function generic<T>(a: T, b: boolean) {
+          return a ?? b;
+        }
+        `,
+      },
+      {
+        code: `
+        function test(a: void | string, b: string) {
+          const x = a || b;
+          return x;
+        }
+        `,
+        filename: 'src/rules/prefer-nullish-coalescing-boolean-props.ts',
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `
+        function test(a: void | string, b: string) {
+          const x = a ?? b;
+          return x;
+        }
+        `,
+      },
       // ===== BASIC CASES WHERE NULLISH COALESCING SHOULD BE PREFERRED =====
       {
         code: `const value = data || defaultValue;`,

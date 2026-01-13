@@ -385,7 +385,8 @@ ruleTesterTs.run(
       // 16. Empty entryPoints array should fall back to defaults (invalid if onCall is used)
       {
         code: `import { onCall } from '../../v2/https/onCall'; onCall();`,
-        filename: '/workspace/functions/src/callable/user/emptyOptionsInvalid.ts',
+        filename:
+          '/workspace/functions/src/callable/user/emptyOptionsInvalid.ts',
         options: [{ entryPoints: [] }],
         errors: [
           {
