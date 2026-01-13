@@ -1,5 +1,8 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { preferNullishCoalescingBooleanProps } from '../rules/prefer-nullish-coalescing-boolean-props';
+import path from 'path';
+
+const tsconfigRootDir = path.join(__dirname, '..', '..');
 
 ruleTesterTs.run(
   'prefer-nullish-coalescing-boolean-props',
@@ -355,6 +358,11 @@ ruleTesterTs.run(
           return a || b; 
         };
         `,
+        filename: 'src/rules/prefer-nullish-coalescing-boolean-props.ts',
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
       },
       {
         code: `
@@ -362,6 +370,11 @@ ruleTesterTs.run(
           return a || b; 
         };
         `,
+        filename: 'src/rules/prefer-nullish-coalescing-boolean-props.ts',
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
       },
     ],
     invalid: [

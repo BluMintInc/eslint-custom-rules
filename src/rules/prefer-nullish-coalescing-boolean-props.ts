@@ -2,6 +2,7 @@ import {
   AST_NODE_TYPES,
   TSESTree,
   ParserServices,
+  ESLintUtils,
 } from '@typescript-eslint/utils';
 import * as ts from 'typescript';
 import { createRule } from '../utils/createRule';
@@ -108,7 +109,9 @@ function isInBooleanContext(
         return true;
       }
     } catch {
-      // Fallback to manual AST traversal
+      // esTreeNodeToTSNodeMap may fail for synthetic nodes or nodes without
+      // source positions; getContextualType may return undefined for non-expression
+      // contexts. Fall back to AST-based heuristics in these cases.
     }
   }
 
@@ -545,7 +548,9 @@ function couldBeNullish(
       const type = checker.getTypeAtLocation(tsNode);
       return isPossiblyNullish(type);
     } catch {
-      // Fallback to manual check
+      // esTreeNodeToTSNodeMap may fail for synthetic nodes or nodes without
+      // source positions; getTypeAtLocation may throw for nodes without
+      // type information. Fall back to manual check.
     }
   }
 
@@ -593,7 +598,7 @@ export const preferNullishCoalescingBooleanProps = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const parserServices = context.sourceCode.parserServices;
+    const parserServices = ESLintUtils.getParserServices(context, true);
     const checker = parserServices?.program?.getTypeChecker();
 
     return {
