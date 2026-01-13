@@ -30,6 +30,7 @@ function isPossiblyNullish(type: ts.Type): boolean {
     (type.getFlags() &
       (ts.TypeFlags.Null |
         ts.TypeFlags.Undefined |
+        ts.TypeFlags.Void |
         ts.TypeFlags.Any |
         ts.TypeFlags.Unknown |
         ts.TypeFlags.TypeParameter)) !==
