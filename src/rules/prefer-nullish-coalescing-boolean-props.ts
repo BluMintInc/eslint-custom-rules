@@ -31,7 +31,8 @@ function isPossiblyNullish(type: ts.Type): boolean {
       (ts.TypeFlags.Null |
         ts.TypeFlags.Undefined |
         ts.TypeFlags.Any |
-        ts.TypeFlags.Unknown)) !==
+        ts.TypeFlags.Unknown |
+        ts.TypeFlags.TypeParameter)) !==
     0
   );
 }
@@ -107,6 +108,21 @@ function isInBooleanContext(
       const contextualType = checker.getContextualType(tsNode as ts.Expression);
       if (contextualType && isBooleanType(contextualType)) {
         return true;
+      }
+
+      // Also check if the expression itself is a boolean type
+      const actualType = checker.getTypeAtLocation(tsNode);
+      if (actualType && isBooleanType(actualType)) {
+        return true;
+      }
+
+      // If this is a logical expression, also check if the left operand is a boolean
+      if (node.type === AST_NODE_TYPES.LogicalExpression) {
+        const leftTSNode = parserServices.esTreeNodeToTSNodeMap.get(node.left);
+        const leftType = checker.getTypeAtLocation(leftTSNode);
+        if (leftType && isBooleanType(leftType)) {
+          return true;
+        }
       }
     } catch {
       // esTreeNodeToTSNodeMap may fail for synthetic nodes or nodes without

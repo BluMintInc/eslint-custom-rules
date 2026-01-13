@@ -376,8 +376,44 @@ ruleTesterTs.run(
           tsconfigRootDir,
         },
       },
+      {
+        code: `
+        const result = (a: boolean | undefined, b: boolean) => {
+          const x = a || b;
+          return x;
+        };
+        `,
+        filename: 'src/rules/prefer-nullish-coalescing-boolean-props.ts',
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
+      },
     ],
     invalid: [
+      {
+        code: `
+        function generic<T>(a: T, b: boolean) {
+          return a || b;
+        }
+        `,
+        filename: 'src/rules/prefer-nullish-coalescing-boolean-props.ts',
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `
+        function generic<T>(a: T, b: boolean) {
+          return a ?? b;
+        }
+        `,
+      },
       // ===== BASIC CASES WHERE NULLISH COALESCING SHOULD BE PREFERRED =====
       {
         code: `const value = data || defaultValue;`,
