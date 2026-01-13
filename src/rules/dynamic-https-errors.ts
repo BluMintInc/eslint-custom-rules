@@ -15,6 +15,18 @@ const isHttpsErrorCall = (callee: TSESTree.LeftHandSideExpression): boolean => {
   return false;
 };
 
+const findPropertyByName = (
+  properties: (TSESTree.Property | TSESTree.SpreadElement)[],
+  name: string,
+): TSESTree.Property | undefined =>
+  properties.find(
+    (p): p is TSESTree.Property =>
+      p.type === AST_NODE_TYPES.Property &&
+      !p.computed &&
+      ((p.key.type === AST_NODE_TYPES.Identifier && p.key.name === name) ||
+        (p.key.type === AST_NODE_TYPES.Literal && p.key.value === name)),
+  );
+
 type MessageIds = 'dynamicHttpsErrors' | 'missingThirdArgument';
 
 export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
@@ -99,20 +111,6 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
         ) {
           const props = node.arguments[0];
 
-          const findPropertyByName = (
-            properties: (TSESTree.Property | TSESTree.SpreadElement)[],
-            name: string,
-          ): TSESTree.Property | undefined =>
-            properties.find(
-              (p): p is TSESTree.Property =>
-                p.type === AST_NODE_TYPES.Property &&
-                !p.computed &&
-                ((p.key.type === AST_NODE_TYPES.Identifier &&
-                  p.key.name === name) ||
-                  (p.key.type === AST_NODE_TYPES.Literal &&
-                    p.key.value === name)),
-            );
-
           const messageProperty = findPropertyByName(props.properties, 'message');
           const detailsProperty = findPropertyByName(props.properties, 'details');
 
@@ -143,8 +141,12 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
 
         // Check for dynamic content in second argument
         const secondArg = node.arguments[1];
-        if (secondArg && secondArg.type !== AST_NODE_TYPES.Identifier) {
-          checkMessageIsStatic(secondArg as TSESTree.Expression);
+        if (
+          secondArg &&
+          secondArg.type !== AST_NODE_TYPES.Identifier &&
+          secondArg.type !== AST_NODE_TYPES.SpreadElement
+        ) {
+          checkMessageIsStatic(secondArg);
         }
       };
 

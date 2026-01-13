@@ -35,6 +35,19 @@ throw new HttpsError('foo', `Error: ${bar}`, 'baz');
 
 // Both issues: missing third argument AND dynamic content in message
 throw new HttpsError('foo', `Error: ${bar}`);
+
+// Object-based signature (missing details)
+new HttpsError({
+  code: 'unauthenticated',
+  message: 'User must be authenticated',
+});
+
+// Object-based signature (dynamic message)
+new HttpsError({
+  code: 'unauthenticated',
+  message: `User ${userId} must be authenticated`,
+  details: { userId },
+});
 ```
 
 **Missing third argument (messageId: `missingThirdArgument`)**
@@ -75,6 +88,13 @@ throw new https.HttpsError('permission-denied', 'Access denied', { userId, resou
 throw new https.HttpsError('foo', 'bar', 'baz');
 throw new https.HttpsError('foo', 'bar', `Details: ${baz}`);
 throw new HttpsError('not-found', 'Resource not found', { id: resourceId });
+
+// Object-based signature
+new HttpsError({
+  code: 'unauthenticated',
+  message: 'User must be authenticated',
+  details: { userUid: 'guest' },
+});
 ```
 
 ## Why?
