@@ -443,6 +443,84 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
       }
     }
     `,
+
+    // Getters that satisfy an interface (Issue #1132)
+    `
+    interface GitHubIssueRequest {
+      id: string;
+    }
+
+    class DatadogGitHubIssue implements GitHubIssueRequest {
+      constructor(private readonly payload: { issue: { id: string } }) {}
+
+      // Should NOT be flagged as a passthrough getter because it satisfies GitHubIssueRequest
+      public get id() {
+        return this.payload.issue.id;
+      }
+    }
+    `,
+
+    // Getters that override a base class member (Issue #1132)
+    `
+    abstract class BaseIssue {
+      abstract get id(): string;
+    }
+
+    class SpecificIssue extends BaseIssue {
+      constructor(private readonly payload: { id: string }) {}
+
+      // Should NOT be flagged as it overrides base class abstract getter
+      public get id() {
+        return this.payload.id;
+      }
+    }
+    `,
+
+    // Getters in anonymous classes satisfying interfaces (Issue #1133)
+    `
+    interface Repository {
+      readonly name: string;
+    }
+
+    const createRepo = (repoName: string) => {
+      return new class implements Repository {
+        constructor(private readonly data: { name: string }) {}
+        get name() {
+          return this.data.name;
+        }
+      }({ name: repoName });
+    };
+    `,
+
+    // Getters in anonymous classes overriding base class members (Issue #1133)
+    `
+    abstract class BaseHandler {
+      abstract get type(): string;
+    }
+
+    const handler = new class extends BaseHandler {
+      constructor(private readonly config: { type: string }) {
+        super();
+      }
+      get type() {
+        return this.config.type;
+      }
+    }({ type: 'github' });
+    `,
+
+    // Getters in named class expressions satisfying interfaces (Issue #1133)
+    `
+    interface NamedInterface {
+      readonly value: number;
+    }
+
+    const instance = new (class MyClass implements NamedInterface {
+      constructor(private readonly props: { value: number }) {}
+      get value() {
+        return this.props.value;
+      }
+    })({ value: 42 });
+    `,
   ],
   invalid: [
     // Simple passthrough getter
