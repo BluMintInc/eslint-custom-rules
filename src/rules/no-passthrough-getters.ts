@@ -123,32 +123,28 @@ export const noPassthroughGetters = createRule({
       if (
         !symbol ||
         !tsNode.parent ||
-        !(ts.isClassDeclaration(tsNode.parent) || ts.isClassExpression(tsNode.parent))
-      ) {
-        return false;
-      }
-
-      const classSymbol = checker.getSymbolAtLocation(
-        (tsNode.parent as ts.ClassDeclaration).name!,
-      );
-      if (
-        !classSymbol ||
-        !classSymbol.valueDeclaration ||
         !(
-          ts.isClassDeclaration(classSymbol.valueDeclaration) ||
-          ts.isClassExpression(classSymbol.valueDeclaration)
+          ts.isClassDeclaration(tsNode.parent) ||
+          ts.isClassExpression(tsNode.parent)
         )
       ) {
         return false;
       }
 
-      const classType = checker.getDeclaredTypeOfSymbol(classSymbol);
+      const classNode = tsNode.parent as
+        | ts.ClassDeclaration
+        | ts.ClassExpression;
+      const classType = checker.getTypeAtLocation(classNode);
+      const classSymbol = classType.getSymbol();
+      if (!classSymbol) {
+        return false;
+      }
 
-      // A better way: check if the symbol has any declarations in other types
+      const instanceType = checker.getDeclaredTypeOfSymbol(classSymbol);
       const name = symbol.getName();
 
       // Check base classes
-      const baseTypes = classType.getBaseTypes() || [];
+      const baseTypes = instanceType.getBaseTypes() || [];
       for (const baseType of baseTypes) {
         if (baseType.getProperty(name)) {
           return true;
@@ -156,10 +152,12 @@ export const noPassthroughGetters = createRule({
       }
 
       // Check interfaces
-      // We can look at the class declaration's "implements" clause
-      const classDecl = tsNode.parent as ts.ClassDeclaration;
-      if (classDecl.heritageClauses) {
-        for (const clause of classDecl.heritageClauses) {
+      if (classNode.heritageClauses) {
+        for (const clause of classNode.heritageClauses) {
+          // Only check implemented interfaces as base classes are already checked via getBaseTypes()
+          if (clause.token !== ts.SyntaxKind.ImplementsKeyword) {
+            continue;
+          }
           for (const typeNode of clause.types) {
             const type = checker.getTypeAtLocation(typeNode);
             if (type.getProperty(name)) {
