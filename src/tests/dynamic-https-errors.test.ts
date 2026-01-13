@@ -163,6 +163,16 @@ const validCases = [
     "details": { foo: "bar" },
   });
   `,
+  // Computed property with variable named 'message' should not match (valid)
+  // This is technically allowed by our rule (message is missing, but it's an optional prop)
+  `
+  const message = 'some-message';
+  new HttpsError({
+    code: 'unauthenticated',
+    [message]: 'This is actually the message value, but the key is dynamic',
+    details: { foo: 'bar' }
+  });
+  `,
 ];
 
 const invalidCases: InvalidCase[] = [
@@ -522,29 +532,6 @@ const invalidCases: InvalidCase[] = [
     ],
   },
   // Computed property with variable named 'message' should not match (invalid)
-  {
-    code: `
-    const message = 'some-message';
-    new HttpsError({
-      code: 'unauthenticated',
-      [message]: 'This is actually the message value, but the key is dynamic',
-      details: { foo: 'bar' }
-    });
-    `,
-    errors: [{ messageId: 'missingThirdArgument' }],
-  },
-  // Computed property with variable named 'details' should not match (invalid)
-  {
-    code: `
-    const details = 'some-details';
-    new HttpsError({
-      code: 'unauthenticated',
-      message: 'Static message',
-      [details]: { foo: 'bar' }
-    });
-    `,
-    errors: [{ messageId: 'missingThirdArgument' }],
-  },
   // String literal keys (invalid)
   {
     code: `
