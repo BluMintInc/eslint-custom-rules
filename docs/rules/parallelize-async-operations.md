@@ -6,7 +6,7 @@
 
 <!-- end auto-generated rule header -->
 
-Parallelizing independent awaits keeps total latency bounded by the slowest call instead of the sum of every call. This rule flags back-to-back awaits with no detected dependency, loop, or per-call error boundary and suggests `Promise.all` so network and I/O overlap.
+Parallelizing independent awaits keeps total latency bounded by the slowest call instead of the sum of every call. This rule flags back-to-back awaits with no detected dependency, loop, or per-call error boundary and enforces `Promise.all` so network and I/O overlap.
 
 ## Rule Details
 
@@ -14,7 +14,7 @@ Serializing independent async work stretches response time and wastes compute bi
 
 The rule reports when all of these are true:
 - Two or more awaits or await-based variable declarations appear consecutively.
-- Later awaits do not reference identifiers created by earlier awaits (simple dependency check).
+- Later awaits do not reference identifiers created by earlier awaits (direct identifier reference-based dependency check).
 - The awaits are not inside try blocks or loops, which signal intentional ordering or per-call error handling.
 - The calls do not match a small list of side-effect-heavy patterns (e.g., update/check counters) that should stay ordered.
 
@@ -50,28 +50,59 @@ async function loadProfiles(userIds) {
 }
 ```
 
-   When you still want concurrency but independent error paths, prefer:
+### ✅ Correct (with independent error handling)
 
-   ```typescript
-   const results = await Promise.allSettled([operation1(), operation2()]);
-   for (const r of results) {
-     if (r.status === 'rejected') handle(r.reason);
-   }
-   ```
+When you still want concurrency but independent error paths, prefer `Promise.allSettled`:
 
-3. **Operations with Side Effects**: When operations have side effects that affect other operations.
+```typescript
+const results = await Promise.allSettled([operation1(), operation2()]);
+for (const r of results) {
+  if (r.status === 'rejected') handle(r.reason);
+}
+```
+
+## How to fix a violation
 
 - Wrap the independent await targets in a single `Promise.all([...])`.
 - Destructure the array result when you need distinct variables.
 - Keep operations that require per-call error handling or deliberate ordering outside the combined array.
 
+## Options
+
+### `sideEffectPatterns`
+
+An array of string, glob, or regex patterns (type: `string[]`) that customizes which method or function call patterns are considered side effects. The rule will skip any calls that match these patterns to avoid parallelizing operations that might rely on a specific order.
+
+**Default values:**
+- `updatecounter`
+- `setcounter`
+- `incrementcounter`
+- `decrementcounter`
+- `updatethreshold`
+- `setthreshold`
+- `checkthreshold`
+
+**Example configuration:**
+```json
+{
+  "rules": {
+    "@blumintinc/blumint/parallelize-async-operations": [
+      "error",
+      {
+        "sideEffectPatterns": ["save.*", "commit.*"]
+      }
+    ]
+  }
+}
+```
+
 ## When Not To Use It
 
 Skip or disable the rule if any of the following apply:
 1. Later operations truly depend on values produced by earlier awaits.
-2. Each await needs its own try/catch or error boundary.
-3. The operations rely on ordered side effects that must not overlap.
-4. The awaits sit inside a loop where batching or chunked parallelism would be safer.
+1. Each await needs its own try/catch or error boundary.
+1. The operations rely on ordered side effects that must not overlap.
+1. The awaits sit inside a loop where batching or chunked parallelism would be safer.
 
    ### ✅ Recommended in loops
 

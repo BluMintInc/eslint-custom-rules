@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds = 'unnecessaryDestructuringRename';
 
@@ -166,19 +167,10 @@ export const noUnnecessaryDestructuringRename = createRule<[], MessageIds>({
     const getDeclaredVariables = (
       node: TSESTree.Node,
     ): readonly TSESLint.Scope.Variable[] => {
-      const sourceCodeWithDeclarations = sourceCode as unknown as {
-        getDeclaredVariables?: (
-          target: TSESTree.Node,
-        ) => TSESLint.Scope.Variable[];
-      };
-
-      if (
-        typeof sourceCodeWithDeclarations.getDeclaredVariables === 'function'
-      ) {
-        return sourceCodeWithDeclarations.getDeclaredVariables(node);
-      }
-
-      return context.getDeclaredVariables(node);
+      return ASTHelpers.getDeclaredVariables(
+        context as unknown as TSESLint.RuleContext<string, readonly unknown[]>,
+        node,
+      );
     };
 
     function collectDeclaredVariablesUpTree(

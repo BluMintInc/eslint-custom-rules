@@ -19,10 +19,10 @@ The rule reports when you create `DocSetter` or `DocSetterTransaction` instances
 Using field paths with flattened documents instead of nested objects provides several critical advantages:
 
 1. Enables direct querying of nested fields without compound indexes.
-2. Eliminates the need for read-before-write operations when updating nested fields.
-3. Reduces transaction requirements for updating nested properties.
-4. Minimizes potential update conflicts.
-5. Improves performance through more targeted database operations.
+1. Eliminates the need for read-before-write operations when updating nested fields.
+1. Reduces transaction requirements for updating nested properties.
+1. Minimizes potential update conflicts.
+1. Improves performance through more targeted database operations.
 
 ### How to fix
 
@@ -122,8 +122,8 @@ await userSetter.set({
 You might consider disabling this rule if:
 
 1. The documents you handle do not have nested objects.
-2. Performance needs are better served by nested object structures.
-3. A different document-update pattern avoids field paths entirely.
+1. Performance needs are better served by nested object structures.
+1. A different document-update pattern avoids field paths entirely.
 
 ## Further Reading
 

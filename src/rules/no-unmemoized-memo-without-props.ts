@@ -407,7 +407,7 @@ export const noUnmemoizedMemoWithoutProps = createRule<Options, MessageIds>({
         return;
       }
 
-      const returnsJsx = ASTHelpers.returnsJSX(node.body);
+      const returnsJsx = ASTHelpers.returnsJSX(node.body, context);
       if (!returnsJsx) {
         return;
       }

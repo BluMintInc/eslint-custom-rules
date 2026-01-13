@@ -141,15 +141,37 @@ class UsesJsxArgumentOnly {
     },
     {
       filename: 'file.tsx',
-      code: `class MutuallyRecursiveLocals {
-  get handler() {
-    function a() {
-      return b();
+      code: `class ShadowedVariable {
+  get component() {
+    const make = () => <div />;
+    {
+      const make = () => null;
+      return make;
     }
-    function b() {
-      return a();
+  }
+}`,
+    },
+    {
+      filename: 'file.tsx',
+      code: `class MultipleDeclarations {
+  get component() {
+    var make = () => <div />;
+    var make = () => null;
+    return make;
+  }
+}`,
+    },
+    {
+      filename: 'file.tsx',
+      code: `class MultipleDefinitionsValid {
+  get component() {
+    let make;
+    if (Math.random() > 0.5) {
+      make = () => <div />;
+    } else {
+      make = () => null;
     }
-    return a;
+    return make;
   }
 }`,
     },
@@ -164,6 +186,46 @@ class UsesJsxArgumentOnly {
     },
   ],
   invalid: [
+    {
+      filename: 'file.tsx',
+      code: `class ConditionalJsx {
+  get component() {
+    const make = () => <div />;
+    const alt = () => null;
+    return condition ? make : alt;
+  }
+}`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `import { Memoize } from '@blumintinc/typescript-memoize';
+class ConditionalJsx {
+  @Memoize()
+  get component() {
+    const make = () => <div />;
+    const alt = () => null;
+    return condition ? make : alt;
+  }
+}`,
+    },
+    {
+      filename: 'file.tsx',
+      code: `class ReassignedVariable {
+  get component() {
+    let make = () => <div />;
+    make = () => <span>Actually Jsx</span>;
+    return make;
+  }
+}`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `import { Memoize } from '@blumintinc/typescript-memoize';
+class ReassignedVariable {
+  @Memoize()
+  get component() {
+    let make = () => <div />;
+    make = () => <span>Actually Jsx</span>;
+    return make;
+  }
+}`,
+    },
     {
       filename: 'file.tsx',
       code: `class ExampleProvider {

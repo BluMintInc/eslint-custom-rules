@@ -1,4 +1,4 @@
-# Prefer handler params for parent IDs instead of traversing ref.parent.id so Firebase triggers stay aligned with path templates and type-safe (`@blumintinc/blumint/prefer-params-over-parent-id`)
+# Prefer event.params over ref.parent.id for type-safe Firebase trigger paths (`@blumintinc/blumint/prefer-params-over-parent-id`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
@@ -8,13 +8,15 @@
 
 ## Rule Details
 
-In Firestore and Realtime Database change handlers, you already get trigger path variables through `event.params`. Reconstructing those IDs with `ref.parent.id`:
+Prefer handler params for parent IDs instead of traversing `ref.parent.id` so Firebase triggers stay aligned with path templates and type-safe.
 
-- drifts as soon as collection nesting changes, so handlers silently read the wrong parent
-- bypasses the type-safe params object, hiding typos behind optional chaining or `undefined`
-- makes intent harder to scan because readers must mentally follow the reference chain
+In Firestore and Realtime Database change handlers, you already get trigger path variables through `event.params`. When you reconstruct those IDs with `ref.parent.id`:
 
-The rule targets handlers typed as `DocumentChangeHandler`, `DocumentChangeHandlerTransaction`, `RealtimeDbChangeHandler`, or `RealtimeDbChangeHandlerTransaction` and reports any `ref.parent...id` access inside them.
+- this drifts as soon as your collection nesting changes, so you silently read the wrong parent
+- this bypasses your type-safe params object and hides typos behind optional chaining or `undefined`
+- this makes your intent harder to scan because readers must mentally follow the reference chain
+
+This rule targets handlers you type as `DocumentChangeHandler`, `DocumentChangeHandlerTransaction`, `RealtimeDbChangeHandler`, or `RealtimeDbChangeHandlerTransaction` and reports any `ref.parent...id` access you use inside them.
 
 ## Setup Example
 
@@ -30,7 +32,19 @@ This rule is enabled by default in the recommended config. To configure it expli
 
 ## Auto-fix
 
-When `params` is already available, the fixer replaces `ref.parent.id` with `event.params.userId` (or `event?.params?.userId` if optional chaining is present). For deeper `parent.parent` traversals it maps to the specific path parameter (for example, `tournamentId`) so IDs still come from the trigger params rather than the reference chain.
+When `params` is available, the fixer replaces `ref.parent.id` with a corresponding path parameter. The resolution follows this algorithm:
+
+1. **Identify Depth**: The number of `.parent` traversals determines the target nesting level (e.g., `ref.parent.id` is depth 1, `ref.parent.parent.id` is depth 2).
+1. **Map to Default Name**: Each depth maps to a default parameter name:
+   - Depth 1 → `userId`
+   - Depth 2 → `parentId`
+   - Depth 3+ → `parentNId` (e.g., `parent3Id`)
+1. **Check Scope**: The rule looks for an existing `params` object (from `event.params` or destructured `const { params } = event`).
+1. **Resolve Identifier**:
+   - If `params` is destructured and contains the default name (e.g., `const { params: { userId } } = event`), the fixer uses the local variable.
+   - Otherwise, it uses `event.params.[defaultName]` (or `event?.params?.[defaultName]` if optional chaining was used in the original expression).
+
+This ensures that `ref.parent.id` becomes `event.params.userId` (or a local `userId` variable) and deeper traversals like `ref.parent.parent.id` map to `event.params.parentId` or `event.params.parent3Id` in accordance with common nesting patterns. Existing destructured names will only be used if they match these generic defaults.
 
 ## Examples
 
@@ -88,7 +102,7 @@ export const grandparentAccess: DocumentChangeHandler<
 };
 ```
 
-### ✅ Correct
+### ✅ Correct (Generic names)
 
 ```typescript
 export const updateRelatedDocuments: DocumentChangeHandler<
@@ -117,6 +131,10 @@ export const handleUpdate: DocumentChangeHandler<
 };
 ```
 
+### ✅ Correct (Domain-specific params - manual)
+
+Developers must manually name their parameters in the path template and destructure them if they want domain-specific names. The auto-fixer will not generate these names.
+
 ```typescript
 export const nestedPathHandler: DocumentChangeHandler<
   GameData,
@@ -135,7 +153,7 @@ export const nestedPathHandler: DocumentChangeHandler<
 
 ### 1. Multi-Level Path Parameters
 
-For paths like `/Game/{gameId}/Tournament/{tournamentId}/Round/{roundId}`, the rule maps each `ref.parent[.parent].id` access to the corresponding named parameter in `event.params` (for example, `gameId`, `tournamentId`, or `roundId`) instead of a generic `parentId`.
+The rule maps each `ref.parent[.parent].id` access to generic parameter names by depth (userId, parentId, parent3Id).
 
 ### 2. Variable Assignment and Reuse
 
@@ -151,14 +169,14 @@ const { params: { userId } } = event;
 
 ### 3. Complex Reference Chains
 
-The rule handles various patterns of parent reference access:
+The rule handles various patterns of parent reference access and always emits generic names by depth:
 
 ```typescript
 // ❌ Incorrect
 const grandparentId = change.after.ref.parent.parent.id;
 
 // ✅ Correct (use the specific parameter)
-const { params: { tournamentId } } = event;
+const { params: { parentId } } = event;
 ```
 
 ### 4. Optional Chaining

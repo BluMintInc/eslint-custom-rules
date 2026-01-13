@@ -277,7 +277,7 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Prefer handler params for parent IDs instead of traversing ref.parent.id so Firebase triggers stay aligned with path templates and type-safe.',
+        'Prefer event.params over ref.parent.id for type-safe Firebase trigger paths.',
       recommended: 'error',
     },
     fixable: 'code',

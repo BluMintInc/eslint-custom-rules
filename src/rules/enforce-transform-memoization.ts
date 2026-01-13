@@ -14,8 +14,7 @@ export const enforceTransformMemoization = createRule<[], MessageIds>({
   meta: {
     type: 'problem',
     docs: {
-      description:
-        'Enforce memoization of adaptValue transformValue/transformOnChange so the adapted component receives stable handlers and avoids unnecessary re-renders.',
+      description: 'Enforce memoization of transformValue and transformOnChange in adaptValue',
       recommended: 'error',
     },
     schema: [],

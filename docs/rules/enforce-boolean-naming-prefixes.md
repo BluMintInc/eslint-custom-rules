@@ -241,8 +241,8 @@ When `true`, getters marked `override` or declared as abstract are ignored. Use 
 You might want to disable this rule if:
 
 1. Your project already has an established naming convention for booleans that doesn't align with this rule
-2. You prefer a different approach to boolean naming, such as suffixes instead of prefixes
-3. You don't want to enforce strict naming conventions for boolean values
+1. You prefer a different approach to boolean naming, such as suffixes instead of prefixes
+1. You don't want to enforce strict naming conventions for boolean values
 
 ## Further Reading
 

@@ -201,6 +201,23 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
       `,
     },
 
+    // Multiple parameters with the exact same Props type should be allowed
+    {
+      code: `
+        const eitherEqual = <TProps>(prevProps: TProps, nextProps: TProps) => {
+          return prevProps === nextProps;
+        };
+      `,
+    },
+    {
+      code: `
+        type Props = { val: number };
+        function compare(p1: Props, p2: Props) {
+          return p1.val === p2.val;
+        }
+      `,
+    },
+
     // Multiple Props parameters with correct naming
     {
       code: `
