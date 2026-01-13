@@ -148,6 +148,21 @@ const validCases = [
     details: 'details',
   });
   `,
+  // String literal keys (valid)
+  `
+  new HttpsError({
+    'code': 'unauthenticated',
+    'message': 'Static message',
+    'details': { foo: 'bar' },
+  });
+  `,
+  `
+  new HttpsError({
+    "code": "unauthenticated",
+    "message": "Static message",
+    "details": { foo: "bar" },
+  });
+  `,
 ];
 
 const invalidCases: InvalidCase[] = [
@@ -505,6 +520,50 @@ const invalidCases: InvalidCase[] = [
       { messageId: 'missingThirdArgument' },
       { messageId: 'dynamicHttpsErrors' },
     ],
+  },
+  // Computed property with variable named 'message' should not match (invalid)
+  {
+    code: `
+    const message = 'some-message';
+    new HttpsError({
+      code: 'unauthenticated',
+      [message]: 'This is actually the message value, but the key is dynamic',
+      details: { foo: 'bar' }
+    });
+    `,
+    errors: [{ messageId: 'missingThirdArgument' }],
+  },
+  // Computed property with variable named 'details' should not match (invalid)
+  {
+    code: `
+    const details = 'some-details';
+    new HttpsError({
+      code: 'unauthenticated',
+      message: 'Static message',
+      [details]: { foo: 'bar' }
+    });
+    `,
+    errors: [{ messageId: 'missingThirdArgument' }],
+  },
+  // String literal keys (invalid)
+  {
+    code: `
+    new HttpsError({
+      'code': 'unauthenticated',
+      'message': \`Dynamic \${message}\`,
+      'details': { foo: 'bar' }
+    });
+    `,
+    errors: [{ messageId: 'dynamicHttpsErrors' }],
+  },
+  {
+    code: `
+    new HttpsError({
+      'code': 'unauthenticated',
+      'message': 'Static message',
+    });
+    `,
+    errors: [{ messageId: 'missingThirdArgument' }],
   },
 ];
 

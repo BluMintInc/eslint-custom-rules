@@ -101,14 +101,20 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
           const messageProperty = props.properties.find(
             (p): p is TSESTree.Property =>
               p.type === AST_NODE_TYPES.Property &&
-              p.key.type === AST_NODE_TYPES.Identifier &&
-              p.key.name === 'message',
+              !p.computed &&
+              ((p.key.type === AST_NODE_TYPES.Identifier &&
+                p.key.name === 'message') ||
+                (p.key.type === AST_NODE_TYPES.Literal &&
+                  p.key.value === 'message')),
           );
           const detailsProperty = props.properties.find(
             (p): p is TSESTree.Property =>
               p.type === AST_NODE_TYPES.Property &&
-              p.key.type === AST_NODE_TYPES.Identifier &&
-              p.key.name === 'details',
+              !p.computed &&
+              ((p.key.type === AST_NODE_TYPES.Identifier &&
+                p.key.name === 'details') ||
+                (p.key.type === AST_NODE_TYPES.Literal &&
+                  p.key.value === 'details')),
           );
 
           if (!detailsProperty) {
