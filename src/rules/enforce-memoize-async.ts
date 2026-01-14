@@ -66,7 +66,7 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
   defaultOptions: [],
   create(context) {
     let hasMemoizeImport = false;
-    const memoizeAliases = new Set<string>();
+    const memoizeAliases = new Map<string, string>(); // alias -> source module
     const memoizeNamespaces = new Set<string>();
     let scheduledImportFix = false;
 
@@ -80,7 +80,7 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
             ) {
               hasMemoizeImport = true;
               if (spec.local) {
-                memoizeAliases.add(spec.local.name);
+                memoizeAliases.set(spec.local.name, node.source.value);
               }
             } else if (spec.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
               hasMemoizeImport = true;
@@ -111,7 +111,7 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
           const aliasesToCheck =
             memoizeAliases.size === 0 && memoizeNamespaces.size === 0
               ? ['Memoize']
-              : Array.from(memoizeAliases);
+              : Array.from(memoizeAliases.keys());
 
           // Check against all known aliases
           for (const alias of aliasesToCheck) {
@@ -160,12 +160,19 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
             // Determine which identifier to use for the decorator
             let decoratorIdent = 'Memoize';
             if (hasMemoizeImport) {
-              // Prefer 'Memoize' if it's available as an alias
-              if (memoizeAliases.has('Memoize')) {
+              // Prefer 'Memoize' from the new package if available
+              if (
+                memoizeAliases.has('Memoize') &&
+                memoizeAliases.get('Memoize') === MEMOIZE_MODULE
+              ) {
                 decoratorIdent = 'Memoize';
               } else if (memoizeAliases.size > 0) {
-                // Use the first alias if 'Memoize' is not available
-                decoratorIdent = Array.from(memoizeAliases)[0];
+                // Find first alias from new package, fallback to any alias
+                const newPackageAlias = Array.from(
+                  memoizeAliases.entries(),
+                ).find(([_, pkg]) => pkg === MEMOIZE_MODULE)?.[0];
+                decoratorIdent =
+                  newPackageAlias || Array.from(memoizeAliases.keys())[0];
               } else if (memoizeNamespaces.size > 0) {
                 decoratorIdent = `${Array.from(memoizeNamespaces)[0]}.Memoize`;
               }
@@ -176,8 +183,7 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
             if (
               !hasMemoizeImport &&
               memoizeNamespaces.size === 0 &&
-              !scheduledImportFix &&
-              !sourceCode.text.includes(importStatement)
+              !scheduledImportFix
             ) {
               const programBody = (sourceCode.ast as TSESTree.Program).body;
               const firstImport = programBody.find(

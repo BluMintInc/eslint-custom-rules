@@ -384,7 +384,7 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
       `,
     },
     {
-      name: 'repro multiple imports: uses first alias if only aliases are imported',
+      name: 'repro multiple imports: prefers new package alias over legacy',
       code: `
         import { Memoize as M1 } from 'typescript-memoize';
         import { Memoize as M2 } from '@blumintinc/typescript-memoize';
@@ -397,13 +397,13 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
         import { Memoize as M1 } from 'typescript-memoize';
         import { Memoize as M2 } from '@blumintinc/typescript-memoize';
         class Example {
-          @M1()
+          @M2()
           async getData() { return 1; }
         }
       `,
     },
     {
-      name: 'repro multiple imports: prefers Memoize if available',
+      name: 'repro multiple imports: prefers new package alias over legacy Memoize',
       code: `
         import { Memoize } from 'typescript-memoize';
         import { Memoize as M2 } from '@blumintinc/typescript-memoize';
@@ -416,7 +416,7 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
         import { Memoize } from 'typescript-memoize';
         import { Memoize as M2 } from '@blumintinc/typescript-memoize';
         class Example {
-          @Memoize()
+          @M2()
           async getData() { return 1; }
         }
       `,
