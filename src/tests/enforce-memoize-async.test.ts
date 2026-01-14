@@ -138,6 +138,64 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
         }
       `,
     },
+    // Namespace import with bare @Memoize should be valid (legacy/global support)
+    {
+      code: `
+        import * as memo from '@blumintinc/typescript-memoize';
+        class Example {
+          @Memoize()
+          async getData() {
+            return 1;
+          }
+        }
+      `,
+    },
+    // Namespace import with namespaced @memo.Memoize() should be valid
+    {
+      code: `
+        import * as memo from '@blumintinc/typescript-memoize';
+        class Example {
+          @memo.Memoize()
+          async getData() {
+            return 1;
+          }
+        }
+      `,
+    },
+    // Namespace import with namespaced @memo.Memoize should be valid
+    {
+      code: `
+        import * as memo from '@blumintinc/typescript-memoize';
+        class Example {
+          @memo.Memoize
+          async getData() {
+            return 1;
+          }
+        }
+      `,
+    },
+    // Global support: @Memoize() without any imports
+    {
+      code: `
+        class Example {
+          @Memoize()
+          async getData() {
+            return 1;
+          }
+        }
+      `,
+    },
+    // Global support: @Memoize without any imports
+    {
+      code: `
+        class Example {
+          @Memoize
+          async getData() {
+            return 1;
+          }
+        }
+      `,
+    },
   ],
   invalid: [
     // Missing decorator on async method with no parameters

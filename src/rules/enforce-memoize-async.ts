@@ -76,12 +76,11 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
           node.specifiers.forEach((spec) => {
             if (
               spec.type === AST_NODE_TYPES.ImportSpecifier &&
+              spec.imported.type === AST_NODE_TYPES.Identifier &&
               spec.imported.name === 'Memoize'
             ) {
               hasMemoizeImport = true;
-              if (spec.local) {
-                memoizeAliases.set(spec.local.name, node.source.value);
-              }
+              memoizeAliases.set(spec.local.name, node.source.value);
             } else if (spec.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
               hasMemoizeImport = true;
               memoizeNamespaces.add(spec.local.name);
@@ -107,9 +106,9 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
 
         // Check if method already has @Memoize or @Memoize() decorator
         const hasDecorator = node.decorators?.some((decorator) => {
-          // If no imports were found, we assume 'Memoize' is the intended name (for legacy/global support)
+          // If no named imports were found, we assume 'Memoize' is the intended name (for legacy/global support)
           const aliasesToCheck =
-            memoizeAliases.size === 0 && memoizeNamespaces.size === 0
+            memoizeAliases.size === 0
               ? ['Memoize']
               : Array.from(memoizeAliases.keys());
 
