@@ -162,17 +162,6 @@ ruleTesterTs.run(
         ].join('\n'),
         errors: [preferError('STATUS_EXCEEDING', 'StatusExceeding')],
       },
-      // Ensure we ignore non-top-level (this one is top-level, so it's NOT ignored, but it is in a type alias so it SHOULD be allowed)
-      // Wait, let's keep this as a "consumer" context example if possible.
-      // The original test was:
-      // {
-      //   code: ["const LOCAL = 'x' as const;", 'type T = typeof LOCAL;'].join(
-      //     '\n',
-      //   ),
-      //   errors: [preferError('LOCAL', 'Local')],
-      // },
-      // This is now valid, so I should remove it or change it to a consumer context.
-
       // Consumer context: variable annotation
       {
         code: [
