@@ -43,6 +43,35 @@ ruleTesterTs.run(
           'function checkStatus(status: StatusToCheck) {}',
         ].join('\n'),
       },
+      // Good: typeof within a type alias definition is now ALLOWED (Issue #1117)
+      {
+        code: [
+          "export const STATUS_CHANGE = 'statusChange' as const;",
+          'export type CursorStatusChangeEvent = typeof STATUS_CHANGE;',
+        ].join('\n'),
+      },
+      // Good: union of typeof within a type alias is now ALLOWED
+      {
+        code: [
+          "const STATUS_EXCEEDING = 'exceeding' as const;",
+          "const STATUS_SUBCEEDING = 'succeeding' as const;",
+          'type StatusToCheck = typeof STATUS_EXCEEDING | typeof STATUS_SUBCEEDING;',
+        ].join('\n'),
+      },
+      // Good: intersection of typeof within a type alias is now ALLOWED
+      {
+        code: [
+          "const STATUS_EXCEEDING = 'exceeding' as const;",
+          'type T = typeof STATUS_EXCEEDING & { extra: number };',
+        ].join('\n'),
+      },
+      // Good: mixed union within a type alias is now ALLOWED
+      {
+        code: [
+          "const STATUS_EXCEEDING = 'exceeding' as const;",
+          "type T = typeof STATUS_EXCEEDING | 'succeeding';",
+        ].join('\n'),
+      },
       // Good: imported constant, typeof allowed locally (suggestions may be given but not errors)
       {
         code: [
@@ -113,18 +142,6 @@ ruleTesterTs.run(
       },
     ],
     invalid: [
-      // Basic: union of typeof local constants
-      {
-        code: [
-          "const STATUS_EXCEEDING = 'exceeding' as const;",
-          "const STATUS_SUBCEEDING = 'succeeding' as const;",
-          'type StatusToCheck = typeof STATUS_EXCEEDING | typeof STATUS_SUBCEEDING;',
-        ].join('\n'),
-        errors: [
-          preferError('STATUS_EXCEEDING', 'StatusExceeding'),
-          preferError('STATUS_SUBCEEDING', 'StatusSubceeding'),
-        ],
-      },
       // In function parameter
       {
         code: [
@@ -145,20 +162,24 @@ ruleTesterTs.run(
         ].join('\n'),
         errors: [preferError('STATUS_EXCEEDING', 'StatusExceeding')],
       },
-      // With intersection
+      // Ensure we ignore non-top-level (this one is top-level, so it's NOT ignored, but it is in a type alias so it SHOULD be allowed)
+      // Wait, let's keep this as a "consumer" context example if possible.
+      // The original test was:
+      // {
+      //   code: ["const LOCAL = 'x' as const;", 'type T = typeof LOCAL;'].join(
+      //     '\n',
+      //   ),
+      //   errors: [preferError('LOCAL', 'Local')],
+      // },
+      // This is now valid, so I should remove it or change it to a consumer context.
+
+      // Consumer context: variable annotation
       {
         code: [
           "const STATUS_EXCEEDING = 'exceeding' as const;",
-          'type T = typeof STATUS_EXCEEDING & { extra: number };',
+          'const s: typeof STATUS_EXCEEDING = "exceeding";',
         ].join('\n'),
         errors: [preferError('STATUS_EXCEEDING', 'StatusExceeding')],
-      },
-      // Ensure we ignore non-top-level (so this one is top-level const)
-      {
-        code: ["const LOCAL = 'x' as const;", 'type T = typeof LOCAL;'].join(
-          '\n',
-        ),
-        errors: [preferError('LOCAL', 'Local')],
       },
       // Ordering: type alias declared after constant
       {
@@ -167,23 +188,6 @@ ruleTesterTs.run(
           "type StatusExceeding = 'exceeding';",
         ].join('\n'),
         errors: [orderingError('StatusExceeding', 'STATUS_EXCEEDING')],
-      },
-      // Mixed union: part typeof, part literal
-      {
-        code: [
-          "const STATUS_EXCEEDING = 'exceeding' as const;",
-          "type T = typeof STATUS_EXCEEDING | 'succeeding';",
-        ].join('\n'),
-        errors: [preferError('STATUS_EXCEEDING', 'StatusExceeding')],
-      },
-      // Multiple constants
-      {
-        code: [
-          "const A = 'a' as const;",
-          "const B = 'b' as const;",
-          'type U = typeof A | typeof B;',
-        ].join('\n'),
-        errors: [preferError('A', 'A'), preferError('B', 'B')],
       },
       // Interface property with intersection
       {
