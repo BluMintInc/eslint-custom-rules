@@ -479,5 +479,24 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
         }
       `,
     },
+    {
+      name: 'repro multiple namespace imports: prefers new package namespace over legacy',
+      code: `
+        import * as m1 from 'typescript-memoize';
+        import * as m2 from '@blumintinc/typescript-memoize';
+        class Example {
+          async getData() { return 1; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import * as m1 from 'typescript-memoize';
+        import * as m2 from '@blumintinc/typescript-memoize';
+        class Example {
+          @m2.Memoize()
+          async getData() { return 1; }
+        }
+      `,
+    },
   ],
 });

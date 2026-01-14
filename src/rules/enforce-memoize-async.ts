@@ -67,12 +67,12 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
   create(context) {
     let hasMemoizeImport = false;
     const memoizeAliases = new Map<string, string>(); // alias -> source module
-    const memoizeNamespaces = new Set<string>();
+    const memoizeNamespaces = new Map<string, string>(); // namespace -> source module
     let scheduledImportFix = false;
 
     return {
       ImportDeclaration(node: TSESTree.ImportDeclaration) {
-        if (ALLOWED_MEMOIZE_MODULES.has(node.source.value)) {
+        if (ALLOWED_MEMOIZE_MODULES.has(String(node.source.value))) {
           node.specifiers.forEach((spec) => {
             if (
               spec.type === AST_NODE_TYPES.ImportSpecifier &&
@@ -80,10 +80,10 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
               spec.imported.name === 'Memoize'
             ) {
               hasMemoizeImport = true;
-              memoizeAliases.set(spec.local.name, node.source.value);
+              memoizeAliases.set(spec.local.name, String(node.source.value));
             } else if (spec.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
               hasMemoizeImport = true;
-              memoizeNamespaces.add(spec.local.name);
+              memoizeNamespaces.set(spec.local.name, String(node.source.value));
             }
           });
         }
@@ -173,7 +173,13 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
                 decoratorIdent =
                   newPackageAlias || Array.from(memoizeAliases.keys())[0];
               } else if (memoizeNamespaces.size > 0) {
-                decoratorIdent = `${Array.from(memoizeNamespaces)[0]}.Memoize`;
+                // Prefer namespace from the new package if available
+                const newPackageNs = Array.from(
+                  memoizeNamespaces.entries(),
+                ).find(([_, pkg]) => pkg === MEMOIZE_MODULE)?.[0];
+                const selectedNs =
+                  newPackageNs || Array.from(memoizeNamespaces.keys())[0];
+                decoratorIdent = `${selectedNs}.Memoize`;
               }
             }
             const importStatement = `import { Memoize } from '${MEMOIZE_MODULE}';`;
