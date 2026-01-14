@@ -258,6 +258,16 @@ export const preferTypeAliasOverTypeofConstant: TSESLint.RuleModule<
       TSTypeQuery(node: TSESTree.TSTypeQuery) {
         if (!collected) return;
 
+        // Skip if inside a type alias declaration (Issue #1117)
+        // This allows 'type T = typeof CONST' as the canonical way to define the alias.
+        let current: TSESTree.Node | undefined = node.parent;
+        while (current) {
+          if (current.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
+            return;
+          }
+          current = current.parent;
+        }
+
         // Skip `keyof typeof X`
         if (
           node.parent &&
