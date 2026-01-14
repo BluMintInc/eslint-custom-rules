@@ -6,14 +6,14 @@
 
 <!-- end auto-generated rule header -->
 
-Async methods that hit the network or perform heavy work should not repeat identical calls. This rule requires decorating async instance methods with zero or one parameter with `@Memoize()` (from `typescript-memoize`) so results are cached per argument. The fixer adds the import and decorator for you.
+Async methods that hit the network or perform heavy work should not repeat identical calls. This rule requires decorating async instance methods with zero or one parameter with `@Memoize()` (from `@blumintinc/typescript-memoize`) so results are cached per argument. The fixer adds the import and decorator for you.
 
 ## Rule Details
 
 This rule reports when:
 
 - An async, non-static class method with 0–1 parameters lacks a `@Memoize()` decorator.
-- The method already has decorators, but none are `Memoize` (any alias imported from `typescript-memoize` is respected).
+- The method already has decorators, but none are `Memoize` (any alias imported from `@blumintinc/typescript-memoize` is respected).
 
 The rule skips:
 
@@ -33,7 +33,7 @@ class UserRepo {
 ### Examples of **correct** code for this rule:
 
 ```ts
-import { Memoize } from 'typescript-memoize';
+import { Memoize } from '@blumintinc/typescript-memoize';
 
 class UserRepo {
   @Memoize()
@@ -55,4 +55,4 @@ This rule does not have any options.
 
 ## Further Reading
 
-- [`typescript-memoize` documentation](https://www.npmjs.com/package/typescript-memoize)
+- [`@blumintinc/typescript-memoize` documentation](https://www.npmjs.com/package/@blumintinc/typescript-memoize)

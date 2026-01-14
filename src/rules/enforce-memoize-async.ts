@@ -4,7 +4,7 @@ import { createRule } from '../utils/createRule';
 type MessageIds = 'requireMemoize';
 type Options = [];
 
-const MEMOIZE_MODULE = 'typescript-memoize';
+const MEMOIZE_MODULE = '@blumintinc/typescript-memoize';
 
 /**
  * Matches a memoize decorator in supported syntaxes:
@@ -56,7 +56,7 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
     schema: [],
     messages: {
       requireMemoize:
-        'Async methods with 0-1 parameters should be decorated with @Memoize() to cache results and improve performance. Instead of `async getData(id?: string)`, use `@Memoize()\nasync getData(id?: string)`. Import Memoize from "typescript-memoize".',
+        'Async methods with 0-1 parameters should be decorated with @Memoize() to cache results and improve performance. Instead of `async getData(id?: string)`, use `@Memoize()\nasync getData(id?: string)`. Import Memoize from "@blumintinc/typescript-memoize".',
     },
   },
   defaultOptions: [],

@@ -6,7 +6,7 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
     // Already decorated async method
     {
       code: `
-        import { Memoize } from 'typescript-memoize';
+        import { Memoize } from '@blumintinc/typescript-memoize';
         class Example {
           @Memoize()
           async getData() {
@@ -18,7 +18,7 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
     // Method with multiple parameters (should be ignored)
     {
       code: `
-        import { Memoize } from 'typescript-memoize';
+        import { Memoize } from '@blumintinc/typescript-memoize';
         class Example {
           async getData(param1: string, param2: string) {
             return await fetch(\`data/\${param1}/\${param2}\`);
@@ -29,7 +29,7 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
     // Non-async method (should be ignored)
     {
       code: `
-        import { Memoize } from 'typescript-memoize';
+        import { Memoize } from '@blumintinc/typescript-memoize';
         class Example {
           getData() {
             return 'data';
@@ -40,7 +40,7 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
     // Already decorated with aliased import
     {
       code: `
-        import { Memoize as Cache } from 'typescript-memoize';
+        import { Memoize as Cache } from '@blumintinc/typescript-memoize';
         class Example {
           @Cache()
           async getData() {
@@ -60,7 +60,7 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
     // Static async method with no parameters (should be ignored)
     {
       code: `
-        import { Memoize } from 'typescript-memoize';
+        import { Memoize } from '@blumintinc/typescript-memoize';
         class Example {
           static async getData() {
             return await fetch('data');
@@ -71,7 +71,7 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
     // Static async method with one parameter (should be ignored)
     {
       code: `
-        import { Memoize } from 'typescript-memoize';
+        import { Memoize } from '@blumintinc/typescript-memoize';
         class Example {
           static async getData(id: string) {
             return await fetch(\`data/\${id}\`);
@@ -82,7 +82,7 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
     // Static async method with @Memoize (should be ignored)
     {
       code: `
-        import { Memoize } from 'typescript-memoize';
+        import { Memoize } from '@blumintinc/typescript-memoize';
         class Example {
           @Memoize()
           static async getData() {
@@ -94,7 +94,7 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
     // Already decorated without parentheses
     {
       code: `
-        import { Memoize } from 'typescript-memoize';
+        import { Memoize } from '@blumintinc/typescript-memoize';
         class Example {
           @Memoize
           async getData() {
@@ -106,7 +106,7 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
     // Other decorator present and also Memoize()
     {
       code: `
-        import { Memoize } from 'typescript-memoize';
+        import { Memoize } from '@blumintinc/typescript-memoize';
         function Log(): MethodDecorator { return () => {}; }
         class Example {
           @Log()
@@ -130,7 +130,7 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
     // Static async generator method should be ignored
     {
       code: `
-        import { Memoize } from 'typescript-memoize';
+        import { Memoize } from '@blumintinc/typescript-memoize';
         class Example {
           static async *stream() {
             yield 1;
@@ -143,7 +143,7 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
     // Missing decorator on async method with no parameters
     {
       code: `
-        import { Memoize } from 'typescript-memoize';
+        import { Memoize } from '@blumintinc/typescript-memoize';
         class Example {
           async getData() {
             return await fetch('data');
@@ -152,7 +152,7 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
       `,
       errors: [{ messageId: 'requireMemoize' }],
       output: `
-        import { Memoize } from 'typescript-memoize';
+        import { Memoize } from '@blumintinc/typescript-memoize';
         class Example {
           @Memoize()
           async getData() {
@@ -164,7 +164,7 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
     // Missing decorator on async method with one parameter
     {
       code: `
-        import { Memoize } from 'typescript-memoize';
+        import { Memoize } from '@blumintinc/typescript-memoize';
         class Example {
           async getData(id: string) {
             return await fetch(\`data/\${id}\`);
@@ -173,7 +173,7 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
       `,
       errors: [{ messageId: 'requireMemoize' }],
       output: `
-        import { Memoize } from 'typescript-memoize';
+        import { Memoize } from '@blumintinc/typescript-memoize';
         class Example {
           @Memoize()
           async getData(id: string) {
@@ -185,7 +185,7 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
     // Missing decorator with aliased import
     {
       code: `
-        import { Memoize as Cache } from 'typescript-memoize';
+        import { Memoize as Cache } from '@blumintinc/typescript-memoize';
         class Example {
           async getData() {
             return await fetch('data');
@@ -194,7 +194,7 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
       `,
       errors: [{ messageId: 'requireMemoize' }],
       output: `
-        import { Memoize as Cache } from 'typescript-memoize';
+        import { Memoize as Cache } from '@blumintinc/typescript-memoize';
         class Example {
           @Cache()
           async getData() {
@@ -214,7 +214,7 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
       `,
       errors: [{ messageId: 'requireMemoize' }],
       output: `
-        import { Memoize } from 'typescript-memoize';
+        import { Memoize } from '@blumintinc/typescript-memoize';
         class Example {
           @Memoize()
           async getData() {
@@ -235,7 +235,7 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
       `,
       errors: [{ messageId: 'requireMemoize' }],
       output: `
-        import { Memoize } from 'typescript-memoize';
+        import { Memoize } from '@blumintinc/typescript-memoize';
         import { something } from 'lib';
         export class Example {
           @Memoize()
@@ -259,7 +259,7 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
         { messageId: 'requireMemoize' },
       ],
       output: `
-        import { Memoize } from 'typescript-memoize';
+        import { Memoize } from '@blumintinc/typescript-memoize';
         class Example {
           @Memoize()
           async a() { return 1; }
@@ -280,7 +280,7 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
       `,
       errors: [{ messageId: 'requireMemoize' }],
       output: `
-        import { Memoize } from 'typescript-memoize';
+        import { Memoize } from '@blumintinc/typescript-memoize';
         class Example {
           @Memoize()
           async getData(id: string = 'x') {
@@ -300,7 +300,7 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
       `,
       errors: [{ messageId: 'requireMemoize' }],
       output: `
-        import { Memoize } from 'typescript-memoize';
+        import { Memoize } from '@blumintinc/typescript-memoize';
         class Example {
           @Memoize()
           async getAll(...ids: string[]) {
@@ -322,7 +322,7 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
       `,
       errors: [{ messageId: 'requireMemoize' }],
       output: `
-        import { Memoize } from 'typescript-memoize';
+        import { Memoize } from '@blumintinc/typescript-memoize';
         function Log(): MethodDecorator { return () => {}; }
         class Example {
           @Memoize()
@@ -360,7 +360,7 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
         { messageId: 'requireMemoize' },
       ],
       output: `
-        import { Memoize } from 'typescript-memoize';
+        import { Memoize } from '@blumintinc/typescript-memoize';
         export class CohortIO {
           @Memoize()
           public async execute() {
