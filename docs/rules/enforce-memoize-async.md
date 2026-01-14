@@ -13,7 +13,7 @@ Async methods that hit the network or perform heavy work should not repeat ident
 This rule reports when:
 
 - An async, non-static class method with 0–1 parameters lacks a `@Memoize()` decorator.
-- The method already has decorators, but none are `Memoize` (any alias imported from `@blumintinc/typescript-memoize` is respected).
+- The method already has decorators, but none are `Memoize` (any alias imported from `@blumintinc/typescript-memoize` or the legacy `typescript-memoize` is respected for backward compatibility).
 
 The rule skips:
 

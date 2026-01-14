@@ -383,5 +383,43 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
         }
       `,
     },
+    {
+      name: 'repro multiple imports: uses first alias if only aliases are imported',
+      code: `
+        import { Memoize as M1 } from 'typescript-memoize';
+        import { Memoize as M2 } from '@blumintinc/typescript-memoize';
+        class Example {
+          async getData() { return 1; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize as M1 } from 'typescript-memoize';
+        import { Memoize as M2 } from '@blumintinc/typescript-memoize';
+        class Example {
+          @M1()
+          async getData() { return 1; }
+        }
+      `,
+    },
+    {
+      name: 'repro multiple imports: prefers Memoize if available',
+      code: `
+        import { Memoize } from 'typescript-memoize';
+        import { Memoize as M2 } from '@blumintinc/typescript-memoize';
+        class Example {
+          async getData() { return 1; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from 'typescript-memoize';
+        import { Memoize as M2 } from '@blumintinc/typescript-memoize';
+        class Example {
+          @Memoize()
+          async getData() { return 1; }
+        }
+      `,
+    },
   ],
 });

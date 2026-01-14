@@ -66,8 +66,8 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
   defaultOptions: [],
   create(context) {
     let hasMemoizeImport = false;
-    let memoizeAlias = 'Memoize';
-    let memoizeNamespace: string | null = null;
+    const memoizeAliases = new Set<string>();
+    const memoizeNamespaces = new Set<string>();
     let scheduledImportFix = false;
 
     return {
@@ -79,10 +79,12 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
               spec.imported.name === 'Memoize'
             ) {
               hasMemoizeImport = true;
-              memoizeAlias = spec.local?.name ?? memoizeAlias;
+              if (spec.local) {
+                memoizeAliases.add(spec.local.name);
+              }
             } else if (spec.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
               hasMemoizeImport = true;
-              memoizeNamespace = spec.local.name;
+              memoizeNamespaces.add(spec.local.name);
             }
           });
         }
@@ -104,9 +106,45 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
         }
 
         // Check if method already has @Memoize or @Memoize() decorator
-        const hasDecorator = node.decorators?.some((decorator) =>
-          isMemoizeDecorator(decorator, memoizeAlias),
-        );
+        const hasDecorator = node.decorators?.some((decorator) => {
+          // If no imports were found, we assume 'Memoize' is the intended name (for legacy/global support)
+          const aliasesToCheck =
+            memoizeAliases.size === 0 && memoizeNamespaces.size === 0
+              ? ['Memoize']
+              : Array.from(memoizeAliases);
+
+          // Check against all known aliases
+          for (const alias of aliasesToCheck) {
+            if (isMemoizeDecorator(decorator, alias)) {
+              return true;
+            }
+          }
+          // Also check against namespaces
+          const expression = decorator.expression;
+          if (
+            expression.type === AST_NODE_TYPES.MemberExpression &&
+            !expression.computed &&
+            expression.property.type === AST_NODE_TYPES.Identifier &&
+            expression.property.name === 'Memoize' &&
+            expression.object.type === AST_NODE_TYPES.Identifier &&
+            memoizeNamespaces.has(expression.object.name)
+          ) {
+            return true;
+          }
+          // Handle namespace call: @ns.Memoize()
+          if (
+            expression.type === AST_NODE_TYPES.CallExpression &&
+            expression.callee.type === AST_NODE_TYPES.MemberExpression &&
+            !expression.callee.computed &&
+            expression.callee.property.type === AST_NODE_TYPES.Identifier &&
+            expression.callee.property.name === 'Memoize' &&
+            expression.callee.object.type === AST_NODE_TYPES.Identifier &&
+            memoizeNamespaces.has(expression.callee.object.name)
+          ) {
+            return true;
+          }
+          return false;
+        });
 
         if (hasDecorator) {
           return;
@@ -118,15 +156,26 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
           fix(fixer) {
             const fixes: TSESLint.RuleFix[] = [];
             const sourceCode = context.sourceCode;
-            const decoratorIdent = memoizeNamespace
-              ? `${memoizeNamespace}.Memoize`
-              : memoizeAlias;
+
+            // Determine which identifier to use for the decorator
+            let decoratorIdent = 'Memoize';
+            if (hasMemoizeImport) {
+              // Prefer 'Memoize' if it's available as an alias
+              if (memoizeAliases.has('Memoize')) {
+                decoratorIdent = 'Memoize';
+              } else if (memoizeAliases.size > 0) {
+                // Use the first alias if 'Memoize' is not available
+                decoratorIdent = Array.from(memoizeAliases)[0];
+              } else if (memoizeNamespaces.size > 0) {
+                decoratorIdent = `${Array.from(memoizeNamespaces)[0]}.Memoize`;
+              }
+            }
             const importStatement = `import { Memoize } from '${MEMOIZE_MODULE}';`;
 
             // Add import if it's not already present; ensure we only add once per file
             if (
               !hasMemoizeImport &&
-              !memoizeNamespace &&
+              memoizeNamespaces.size === 0 &&
               !scheduledImportFix &&
               !sourceCode.text.includes(importStatement)
             ) {
