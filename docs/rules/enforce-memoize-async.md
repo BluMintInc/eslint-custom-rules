@@ -44,10 +44,6 @@ class UserRepo {
 }
 ```
 
-## Options
-
-This rule does not have any options.
-
 ## When Not To Use It
 
 - Methods whose results must always be fresh (e.g., real-time data or mutation calls).
