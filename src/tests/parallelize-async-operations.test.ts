@@ -447,6 +447,34 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
       return true;
     }
     `,
+
+    // Regression: Batch manager dependency (Issue #1147)
+    `
+    async function batchManagerRegression() {
+      const batchManager = options?.batchManager ?? new BatchManager<Notification>();
+
+      await Promise.all(
+        settings.map((setting) => {
+          const filer = new NotificationFiler(setting);
+          return filer.store({ batchManager });
+        }),
+      );
+      await batchManager.commit();
+    }
+    `,
+    `
+    async function batchManagerSimple() {
+      const batch = new Batch();
+      await batch.add(item);
+      await batch.commit();
+    }
+    `,
+    `
+    async function coordinatorShared() {
+      await manager.doSomething();
+      await manager.doSomethingElse();
+    }
+    `,
   ],
   invalid: [
     // Basic case: two sequential awaits with realtimeDb

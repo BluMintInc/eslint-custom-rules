@@ -18,6 +18,9 @@ const defaultOptions: Options = [
       'updatethreshold',
       'setthreshold',
       'checkthreshold',
+      'commit',
+      'flush',
+      'saveall',
     ],
   },
 ];
@@ -166,6 +169,43 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     }
 
     /**
+     * Extracts all identifiers used in a node
+     */
+    function getAllIdentifiers(node: TSESTree.Node): Set<string> {
+      const identifiers = new Set<string>();
+
+      function visit(n: TSESTree.Node) {
+        if (n.type === AST_NODE_TYPES.Identifier) {
+          identifiers.add(n.name);
+          return;
+        }
+
+        for (const key in n) {
+          if (key === 'parent' || key === 'range' || key === 'loc') continue;
+
+          const child = (n as any)[key];
+          if (child && typeof child === 'object') {
+            if (Array.isArray(child)) {
+              for (const item of child) {
+                if (item && typeof item === 'object' && 'type' in item) {
+                  visit(item as TSESTree.Node);
+                }
+              }
+            } else if ('type' in child) {
+              visit(child as TSESTree.Node);
+            }
+          }
+        }
+      }
+
+      visit(node);
+      return identifiers;
+    }
+
+    const COORDINATOR_PATTERN =
+      /batch|manager|collector|transaction|tx|unitofwork|accumulator/i;
+
+    /**
      * Checks if there are dependencies between await expressions
      */
     function hasDependencies(
@@ -178,56 +218,67 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
         return false;
       }
 
-      // For each await node (except the first), check if it depends on previous variables
-      for (let i = 1; i < awaitNodes.length; i++) {
-        const currentNode = awaitNodes[i];
+      const allIdentifiers = awaitNodes.map((node) => {
+        const awaitExpr = getAwaitExpression(node);
+        return awaitExpr
+          ? getAllIdentifiers(awaitExpr.argument)
+          : new Set<string>();
+      });
 
-        // Check if any previous variable is used in the current await expression
-        for (const varName of variableNames) {
-          const awaitExpr = getAwaitExpression(currentNode);
-          if (
-            awaitExpr &&
-            isIdentifierUsedInNode(varName, awaitExpr.argument)
-          ) {
-            return true;
+      // Check all nodes for side effects and shared coordinators
+      for (let i = 0; i < awaitNodes.length; i++) {
+        const currentNode = awaitNodes[i];
+        const awaitExpr = getAwaitExpression(currentNode);
+        if (!awaitExpr) continue;
+
+        // 1. Check if current node depends on variables DECLARED in previous awaits
+        if (i > 0) {
+          for (const varName of variableNames) {
+            if (isIdentifierUsedInNode(varName, awaitExpr.argument)) {
+              return true;
+            }
           }
         }
 
-        // Check for operations that might have side effects that affect subsequent operations
-        // This is a conservative heuristic - we only flag very specific patterns
-        const awaitExpr = getAwaitExpression(currentNode);
-        if (
-          awaitExpr &&
-          awaitExpr.argument.type === AST_NODE_TYPES.CallExpression
-        ) {
-          const callee = awaitExpr.argument.callee;
+        // 2. Check for shared coordinators between this node and ANY previous node
+        if (i > 0) {
+          const currentIds = allIdentifiers[i];
+          for (const id of currentIds) {
+            if (COORDINATOR_PATTERN.test(id)) {
+              for (let j = 0; j < i; j++) {
+                if (allIdentifiers[j].has(id)) {
+                  return true;
+                }
+              }
+            }
+          }
+        }
 
-          // Check for method calls that might indicate side effects
+        // 3. Check for operations that might have side effects
+        // If any node has a side effect, we should not parallelize the sequence
+        if (awaitExpr.argument.type === AST_NODE_TYPES.CallExpression) {
+          const callee = awaitExpr.argument.callee;
+          let methodName: string | null = null;
+
           if (
             callee.type === AST_NODE_TYPES.MemberExpression &&
             callee.property.type === AST_NODE_TYPES.Identifier
           ) {
-            const methodName = callee.property.name;
-            if (
-              sideEffectPatterns.some((pattern) => pattern.test(methodName))
-            ) {
-              return true;
-            }
+            methodName = callee.property.name;
+          } else if (callee.type === AST_NODE_TYPES.Identifier) {
+            methodName = callee.name;
           }
 
-          if (callee.type === AST_NODE_TYPES.Identifier) {
-            const functionName = callee.name;
-            if (
-              sideEffectPatterns.some((pattern) => pattern.test(functionName))
-            ) {
-              return true;
-            }
+          if (
+            methodName &&
+            sideEffectPatterns.some((pattern) => pattern.test(methodName!))
+          ) {
+            return true;
           }
         }
       }
 
       // If any node is a variable declaration with destructuring, consider it as having dependencies
-      // This is because destructuring often creates variables that are used later
       for (const node of awaitNodes) {
         if (node.type === AST_NODE_TYPES.VariableDeclaration) {
           for (const declaration of node.declarations) {
