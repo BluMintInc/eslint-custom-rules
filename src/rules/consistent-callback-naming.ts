@@ -115,9 +115,7 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
         return (
           typeStr.includes('JSX.Element') ||
           typeStr.includes('ReactElement') ||
-          typeStr.includes('ReactNode') ||
-          (typeStr.includes('Element') &&
-            (typeStr.includes('React') || typeStr.includes('JSX')))
+          typeStr.includes('ReactNode')
         );
       };
 
