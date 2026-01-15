@@ -190,8 +190,41 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         };
       `,
     },
+    // Namespaced and generic React element types should be valid
+    {
+      code: `
+        import React from 'react';
+        interface Props {
+          customRenderer: () => React.ReactElement<{ foo: string }>;
+          nodeRenderer: () => React.ReactNode;
+        }
+        const Example = ({ customRenderer, nodeRenderer }: Props) => (
+          <div custom={customRenderer} node={nodeRenderer} />
+        );
+      `,
+    },
   ],
   invalid: [
+    // Function returning HTMLElement should be flagged (not a React render prop)
+    {
+      code: `
+        interface Props {
+          getElement: () => HTMLElement;
+        }
+        const Example = ({ getElement }: Props) => (
+          <div element={getElement} />
+        );
+      `,
+      errors: [{ messageId: 'callbackPropPrefix' }],
+      output: `
+        interface Props {
+          getElement: () => HTMLElement;
+        }
+        const Example = ({ getElement }: Props) => (
+          <div onElement={getElement} />
+        );
+      `,
+    },
     // Function prop without 'on' prefix
     {
       code: `

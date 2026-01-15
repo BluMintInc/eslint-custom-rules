@@ -110,27 +110,27 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
 
       if (signatures.length === 0) return false;
 
+      const isReactType = (t: ts.Type): boolean => {
+        const typeStr = checker.typeToString(t);
+        return (
+          typeStr.includes('JSX.Element') ||
+          typeStr.includes('ReactElement') ||
+          typeStr.includes('ReactNode') ||
+          (typeStr.includes('Element') &&
+            (typeStr.includes('React') || typeStr.includes('JSX')))
+        );
+      };
+
       return signatures.some((signature) => {
         const returnType = checker.getReturnTypeOfSignature(signature);
-        const returnTypeString = checker.typeToString(returnType);
 
-        return (
-          returnTypeString.includes('JSX.Element') ||
-          returnTypeString.includes('ReactElement') ||
-          returnTypeString.includes('ReactNode') ||
-          returnTypeString.includes('Element') ||
-          // Check if it returns a union that includes one of these
-          (returnType.isUnion() &&
-            returnType.types.some((t) => {
-              const tString = checker.typeToString(t);
-              return (
-                tString.includes('JSX.Element') ||
-                tString.includes('ReactElement') ||
-                tString.includes('ReactNode') ||
-                tString.includes('Element')
-              );
-            }))
-        );
+        if (isReactType(returnType)) return true;
+
+        if (returnType.isUnion()) {
+          return returnType.types.some((t) => isReactType(t));
+        }
+
+        return false;
       });
     }
 

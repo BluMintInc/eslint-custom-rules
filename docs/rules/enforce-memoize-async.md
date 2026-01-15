@@ -1,4 +1,4 @@
-# Enforce @Memoize() decorator on async methods with 0-1 parameters to cache results and prevent redundant API calls or expensive computations. This improves performance by reusing previous results when the same parameters are provided, particularly useful for data fetching methods (`@blumintinc/blumint/enforce-memoize-async`)
+# Enforce @Memoize() decorator on async methods with 0-1 parameters to cache results and prevent redundant API calls or expensive computations. Without memoization, repeated calls trigger redundant requests or expensive computations, increasing latency. @Memoize() caches results by parameter, ensuring subsequent calls with identical inputs return immediately (`@blumintinc/blumint/enforce-memoize-async`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
