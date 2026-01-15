@@ -45,6 +45,29 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
       ClassInfo
     >();
 
+    type PropertyStats = {
+      callsWithProperty: number;
+      violations: {
+        methodMeta: MethodMeta;
+        access: ThisAccess;
+      }[];
+    };
+
+    type MethodStats = {
+      totalCalls: number;
+      // argIndex -> propertyName -> PropertyStats
+      argStats: Map<number, Map<string, PropertyStats>>;
+    };
+
+    type ClassStats = {
+      methods: Map<string, MethodStats>;
+    };
+
+    const classStatsMap = new WeakMap<
+      TSESTree.ClassDeclaration | TSESTree.ClassExpression,
+      ClassStats
+    >();
+
     function isFunctionLike(
       node: TSESTree.Node | null | undefined,
     ): node is
@@ -581,6 +604,33 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
         node: TSESTree.ClassDeclaration | TSESTree.ClassExpression,
       ) {
         collectClassInfo(node);
+        classStatsMap.set(node, { methods: new Map() });
+      },
+
+      'ClassDeclaration, ClassExpression:exit'(
+        node: TSESTree.ClassDeclaration | TSESTree.ClassExpression,
+      ) {
+        const stats = classStatsMap.get(node);
+        if (!stats) {
+          return;
+        }
+
+        for (const [methodName, methodStats] of stats.methods) {
+          for (const [argIndex, argProperties] of methodStats.argStats) {
+            for (const [, propStats] of argProperties) {
+              if (propStats.callsWithProperty === methodStats.totalCalls) {
+                for (const violation of propStats.violations) {
+                  reportAccess(
+                    methodName,
+                    violation.methodMeta,
+                    argIndex,
+                    violation.access,
+                  );
+                }
+              }
+            }
+          }
+        }
       },
 
       CallExpression(node: TSESTree.CallExpression) {
@@ -618,6 +668,21 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
           }
         }
 
+        const stats = classStatsMap.get(classNode);
+        if (!stats) {
+          return;
+        }
+
+        let methodStats = stats.methods.get(methodName);
+        if (!methodStats) {
+          methodStats = { totalCalls: 0, argStats: new Map() };
+          stats.methods.set(methodName, methodStats);
+        }
+        const currentMethodStats = methodStats;
+        currentMethodStats.totalCalls++;
+
+        const seenInThisCall = new Set<string>();
+
         node.arguments.forEach((arg, index) => {
           if (!arg) {
             return;
@@ -628,7 +693,29 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
           const accesses = collectThisAccesses(targetNode);
 
           for (const access of accesses) {
-            reportAccess(methodName, methodMeta, index, access);
+            const key = `${index}:${access.propertyName}`;
+
+            let argMap = currentMethodStats.argStats.get(index);
+            if (!argMap) {
+              argMap = new Map();
+              currentMethodStats.argStats.set(index, argMap);
+            }
+
+            let propStats = argMap.get(access.propertyName);
+            if (!propStats) {
+              propStats = { callsWithProperty: 0, violations: [] };
+              argMap.set(access.propertyName, propStats);
+            }
+
+            propStats.violations.push({
+              methodMeta: methodMeta,
+              access,
+            });
+
+            if (!seenInThisCall.has(key)) {
+              propStats.callsWithProperty++;
+              seenInThisCall.add(key);
+            }
           }
         });
       },
