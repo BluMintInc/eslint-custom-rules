@@ -171,6 +171,33 @@ ruleTesterTs.run('no-redundant-this-params', noRedundantThisParams, {
       }
     }
     `,
+    `
+    class PropagationStrategizerBase {
+      private beforeSource: any;
+      private afterSource: any;
+
+      private resolveTargetsForSource(source: any) {
+        if (!source) return [];
+        // ... logic processing the source ...
+        return [];
+      }
+
+      public initialize() {
+        const beforeTargets = this.resolveTargetsForSource(this.beforeSource);
+        const afterTargets = this.resolveTargetsForSource(this.afterSource);
+      }
+    }
+    `,
+    `
+    class MixedUsage {
+      private value = 1;
+      private helper(val: any) { return val; }
+      run() {
+        this.helper(this.value);
+        this.helper(123);
+      }
+    }
+    `,
   ],
   invalid: [
     {
