@@ -103,6 +103,35 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
       return type.getCallSignatures().length > 0;
     }
 
+    function isRenderFunction(node: TSESTree.Node): boolean {
+      const tsNode = parserServices!.esTreeNodeToTSNodeMap.get(node);
+      const type = checker.getTypeAtLocation(tsNode);
+      const signatures = type.getCallSignatures();
+
+      if (signatures.length === 0) return false;
+
+      const isReactType = (t: ts.Type): boolean => {
+        const typeStr = checker.typeToString(t);
+        return (
+          typeStr.includes('JSX.Element') ||
+          typeStr.includes('ReactElement') ||
+          typeStr.includes('ReactNode')
+        );
+      };
+
+      return signatures.some((signature) => {
+        const returnType = checker.getReturnTypeOfSignature(signature);
+
+        if (isReactType(returnType)) return true;
+
+        if (returnType.isUnion()) {
+          return returnType.types.some((t) => isReactType(t));
+        }
+
+        return false;
+      });
+    }
+
     return {
       // Check JSX attributes for callback props
       JSXAttribute(node: TSESTree.JSXAttribute) {
@@ -159,6 +188,8 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
             isFunctionType(node.value.expression) &&
             propName &&
             !propName.startsWith('on') &&
+            !propName.startsWith('render') &&
+            !isRenderFunction(node.value.expression) &&
             !isReactComponentType(node.value.expression)
           ) {
             const eventName =
