@@ -5,9 +5,13 @@ name: Link PR to Source Issue
     types: [opened]
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
-  issues: read
+  issues: write
+  statuses: write
+
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
   link_issue_on_pr:
@@ -24,7 +28,6 @@ jobs:
 
       - name: Prepend "Closes <issue-number>" (and second-order) to PR body based on branch name
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BRANCH: ${{ github.head_ref }}
           REPO: ${{ github.repository }}
