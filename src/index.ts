@@ -1,3 +1,4 @@
+import { enforceDateTTime } from './rules/enforce-date-ttime';
 import { enforceFExtensionForEntryPoints } from './rules/enforce-f-extension-for-entry-points';
 import { arrayMethodsThisContext } from './rules/array-methods-this-context';
 import { classMethodsReadTopToBottom } from './rules/class-methods-read-top-to-bottom';
@@ -202,6 +203,7 @@ module.exports = {
       plugins: ['@blumintinc/blumint'],
       rules: {
         '@blumintinc/blumint/enforce-f-extension-for-entry-points': 'error',
+        '@blumintinc/blumint/enforce-date-ttime': 'error',
         '@blumintinc/blumint/firestore-transaction-reads-before-writes':
           'error',
         // Override the @typescript-eslint/prefer-nullish-coalescing rule
@@ -457,6 +459,7 @@ module.exports = {
   },
 
   rules: {
+    'enforce-date-ttime': enforceDateTTime,
     'enforce-f-extension-for-entry-points': enforceFExtensionForEntryPoints,
     'firestore-transaction-reads-before-writes':
       firestoreTransactionReadsBeforeWrites,
