@@ -184,6 +184,12 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
       return identifiers;
     }
 
+    /**
+     * Matches coordinator-like identifiers. Intentionally uses substring
+     * matching (no word boundaries) to catch patterns like "batchManager",
+     * "transactionCollector", etc. This may produce false positives for
+     * unrelated managers, but errs on the side of safety.
+     */
     const COORDINATOR_PATTERN =
       /batch|manager|collector|transaction|tx|unitofwork|accumulator/i;
 
