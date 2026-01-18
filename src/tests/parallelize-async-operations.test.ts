@@ -480,6 +480,13 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
       await coordinator.doSomethingElse();
     }
     `,
+    // property-based coordinator
+    `
+    async function propertyCoordinator() {
+      await myObj.batchManager.add(item1);
+      await myObj.batchManager.add(item2);
+    }
+    `,
   ],
   invalid: [
     // Basic case: two sequential awaits with realtimeDb

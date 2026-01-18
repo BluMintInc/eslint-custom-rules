@@ -133,13 +133,18 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     function visitIdentifiers(
       node: TSESTree.Node,
       callback: (name: string) => boolean | void,
+      options: { includeMemberProperties?: boolean } = {},
     ): boolean {
       if (node.type === AST_NODE_TYPES.Identifier) {
         const parent = node.parent;
 
         // Skip non-computed properties in MemberExpressions as they are not value uses
         if (parent && parent.type === AST_NODE_TYPES.MemberExpression) {
-          if (parent.property === node && !parent.computed) {
+          if (
+            parent.property === node &&
+            !parent.computed &&
+            !options.includeMemberProperties
+          ) {
             return false;
           }
         }
@@ -170,13 +175,25 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
           if (Array.isArray(child)) {
             for (const item of child) {
               if (item && typeof item === 'object' && 'type' in item) {
-                if (visitIdentifiers(item as TSESTree.Node, callback)) {
+                if (
+                  visitIdentifiers(
+                    item as TSESTree.Node,
+                    callback,
+                    options,
+                  )
+                ) {
                   return true;
                 }
               }
             }
           } else if ('type' in child) {
-            if (visitIdentifiers(child as TSESTree.Node, callback)) {
+            if (
+              visitIdentifiers(
+                child as TSESTree.Node,
+                callback,
+                options,
+              )
+            ) {
               return true;
             }
           }
@@ -199,11 +216,18 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     /**
      * Extracts all identifiers used in a node
      */
-    function getAllIdentifiers(node: TSESTree.Node): Set<string> {
+    function getAllIdentifiers(
+      node: TSESTree.Node,
+      options?: { includeMemberProperties?: boolean },
+    ): Set<string> {
       const identifiers = new Set<string>();
-      visitIdentifiers(node, (name) => {
-        identifiers.add(name);
-      });
+      visitIdentifiers(
+        node,
+        (name) => {
+          identifiers.add(name);
+        },
+        options,
+      );
       return identifiers;
     }
 
@@ -231,7 +255,9 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
       const allIdentifiers = awaitNodes.map((node) => {
         const awaitExpr = getAwaitExpression(node);
         return awaitExpr
-          ? getAllIdentifiers(awaitExpr.argument)
+          ? getAllIdentifiers(awaitExpr.argument, {
+              includeMemberProperties: true,
+            })
           : new Set<string>();
       });
 

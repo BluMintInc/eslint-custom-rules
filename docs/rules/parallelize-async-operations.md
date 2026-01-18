@@ -51,7 +51,7 @@ The rule recognizes common coordinator identifier patterns that indicate shared 
 - Identifiers containing: `manager`, `batch`, `transaction`, `tx`, `collector`, `coordinator`, `unitofwork`, `accumulator`.
 - These are matched case-insensitively using the `COORDINATOR_PATTERN`.
 
-If sequential awaits interact with the same identifier matching this pattern, they are not flagged for parallelization.
+If sequential awaits interact with the same identifier matching this pattern (even as a nested property like `ctx.batchManager`), they are not flagged for parallelization.
 
 ```typescript
 async function processBatch(batchManager: BatchManager, item1: Item, item2: Item) {
