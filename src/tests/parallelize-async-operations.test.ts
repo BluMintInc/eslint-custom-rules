@@ -476,8 +476,8 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
     }
 
     async function coordinatorExplicitlyNamed() {
-      await coordinator.doSomething();
-      await coordinator.doSomethingElse();
+      await unitofwork.doSomething();
+      await unitofwork.doSomethingElse();
     }
     `,
     // property-based coordinator

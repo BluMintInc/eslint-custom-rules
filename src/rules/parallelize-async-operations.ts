@@ -238,7 +238,7 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
      * unrelated managers, but errs on the side of safety.
      */
     const COORDINATOR_PATTERN =
-      /batch|manager|collector|transaction|tx|coordinator|unitofwork|accumulator/i;
+      /batch|manager|collector|transaction|tx|unitofwork|accumulator/i;
 
     /**
      * Checks if there are dependencies between await expressions
