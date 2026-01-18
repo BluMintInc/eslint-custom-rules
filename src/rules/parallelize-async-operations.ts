@@ -396,7 +396,6 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
         return null;
       }
 
-      // Extract the await expressions
       const awaitExpressions = awaitNodes
         .map((node) => getAwaitExpression(node))
         .filter((node): node is TSESTree.AwaitExpression => node !== null);
@@ -405,7 +404,6 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
         return null;
       }
 
-      // Get the text of each await argument
       const awaitArguments = awaitExpressions.map((expr) =>
         sourceCode.getText(expr.argument),
       );
@@ -449,10 +447,8 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
         )}\n]);`;
       }
 
-      // Find the start position, accounting for leading comments
       const startPos = awaitNodes[0].range[0];
 
-      // Replace the range from the start of the first await to the end of the last await
       const endPos = awaitNodes[awaitNodes.length - 1].range[1];
 
       return fixer.replaceTextRange([startPos, endPos], promiseAllText);
