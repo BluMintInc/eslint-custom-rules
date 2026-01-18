@@ -138,7 +138,10 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
         if (callback(node.name) === true) return true;
       }
 
-      // Recursively visit all child nodes
+      /**
+       * Recursively traverses child nodes while skipping 'parent' to avoid
+       * circular back-references, and 'range'/'loc' which are metadata.
+       */
       for (const key in node) {
         if (key === 'parent' || key === 'range' || key === 'loc') continue;
 
@@ -201,7 +204,6 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
       variableNames: Set<string>,
       sideEffectPatterns: RegExp[],
     ): boolean {
-      // If we have fewer than 2 nodes, there are no dependencies to check
       if (awaitNodes.length < 2) {
         return false;
       }
@@ -341,7 +343,6 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
       for (const node of nodes) {
         let current: TSESTree.Node | undefined = node;
 
-        // Traverse up to find if the node is in a try block
         while (current && current.parent) {
           if (
             current.parent.type === AST_NODE_TYPES.TryStatement &&
@@ -365,7 +366,6 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
       for (const node of nodes) {
         let current: TSESTree.Node | undefined = node;
 
-        // Traverse up to find if the node is in a loop
         while (current && current.parent) {
           if (
             current.parent.type === AST_NODE_TYPES.ForStatement ||
