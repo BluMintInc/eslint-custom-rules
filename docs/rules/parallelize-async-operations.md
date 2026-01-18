@@ -17,7 +17,7 @@ The rule reports when all of these are true:
 - Later awaits do not reference identifiers created by earlier awaits (direct identifier reference-based dependency check).
 - Later awaits do not share "coordinator" identifiers (like `batchManager`, `transaction`, or `collector`) with earlier awaits.
 - The awaits are not inside try blocks or loops, which signal intentional ordering or per-call error handling.
-- The calls do not match a small list of side-effect-heavy patterns (e.g., `updatecounter`, `commit`, `flush`) that should stay ordered.
+- The calls do not match a small list of side-effect-heavy patterns (e.g., `updatecounter`, `commit`, `flush`, `saveall`) that should stay ordered.
 
 ### ❌ Incorrect
 
