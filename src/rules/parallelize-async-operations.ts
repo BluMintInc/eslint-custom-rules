@@ -128,44 +128,49 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     }
 
     /**
+     * Generic AST visitor for identifier collection
+     */
+    function visitIdentifiers(
+      node: TSESTree.Node,
+      callback: (name: string) => boolean | void,
+    ): boolean {
+      if (node.type === AST_NODE_TYPES.Identifier) {
+        if (callback(node.name) === true) return true;
+      }
+
+      // Recursively visit all child nodes
+      for (const key in node) {
+        if (key === 'parent' || key === 'range' || key === 'loc') continue;
+
+        const child = (node as any)[key];
+        if (child && typeof child === 'object') {
+          if (Array.isArray(child)) {
+            for (const item of child) {
+              if (item && typeof item === 'object' && 'type' in item) {
+                if (visitIdentifiers(item as TSESTree.Node, callback)) {
+                  return true;
+                }
+              }
+            }
+          } else if ('type' in child) {
+            if (visitIdentifiers(child as TSESTree.Node, callback)) {
+              return true;
+            }
+          }
+        }
+      }
+
+      return false;
+    }
+
+    /**
      * Checks if an identifier is used in a node
      */
     function isIdentifierUsedInNode(
       identifier: string,
       node: TSESTree.Node,
     ): boolean {
-      let isUsed = false;
-
-      function visit(node: TSESTree.Node) {
-        if (
-          node.type === AST_NODE_TYPES.Identifier &&
-          node.name === identifier
-        ) {
-          isUsed = true;
-          return;
-        }
-
-        // Recursively visit all child nodes
-        for (const key in node) {
-          if (key === 'parent' || key === 'range' || key === 'loc') continue;
-
-          const child = (node as any)[key];
-          if (child && typeof child === 'object') {
-            if (Array.isArray(child)) {
-              for (const item of child) {
-                if (item && typeof item === 'object' && 'type' in item) {
-                  visit(item as TSESTree.Node);
-                }
-              }
-            } else if ('type' in child) {
-              visit(child as TSESTree.Node);
-            }
-          }
-        }
-      }
-
-      visit(node);
-      return isUsed;
+      return visitIdentifiers(node, (name) => name === identifier);
     }
 
     /**
@@ -173,32 +178,9 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
      */
     function getAllIdentifiers(node: TSESTree.Node): Set<string> {
       const identifiers = new Set<string>();
-
-      function visit(n: TSESTree.Node) {
-        if (n.type === AST_NODE_TYPES.Identifier) {
-          identifiers.add(n.name);
-          return;
-        }
-
-        for (const key in n) {
-          if (key === 'parent' || key === 'range' || key === 'loc') continue;
-
-          const child = (n as any)[key];
-          if (child && typeof child === 'object') {
-            if (Array.isArray(child)) {
-              for (const item of child) {
-                if (item && typeof item === 'object' && 'type' in item) {
-                  visit(item as TSESTree.Node);
-                }
-              }
-            } else if ('type' in child) {
-              visit(child as TSESTree.Node);
-            }
-          }
-        }
-      }
-
-      visit(node);
+      visitIdentifiers(node, (name) => {
+        identifiers.add(name);
+      });
       return identifiers;
     }
 

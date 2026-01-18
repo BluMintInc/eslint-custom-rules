@@ -39,6 +39,18 @@ async function cleanUpReferences(params, ref) {
 }
 ```
 
+### ✅ Correct (shared coordinator dependency)
+
+These must remain sequential because they share a "coordinator" object (`batchManager`). The rule detects that they interact with the same mutable state.
+
+```typescript
+async function processBatch(batchManager: BatchManager) {
+  await batchManager.add(item1);
+  await batchManager.add(item2);
+  await batchManager.commit(); // depends on previous adds
+}
+```
+
 ### ✅ Correct (with assignments)
 
 ```typescript
