@@ -138,23 +138,21 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
         const parent = node.parent;
 
         // Skip non-computed properties in MemberExpressions as they are not value uses
-        if (
-          (parent?.type === AST_NODE_TYPES.MemberExpression ||
-            parent?.type === AST_NODE_TYPES.OptionalMemberExpression) &&
-          parent.property === node &&
-          !parent.computed
-        ) {
-          return false;
+        if (parent && parent.type === AST_NODE_TYPES.MemberExpression) {
+          if (parent.property === node && !parent.computed) {
+            return false;
+          }
         }
 
         // Skip non-shorthand keys in object literals as they are not value uses
-        if (
-          parent?.type === AST_NODE_TYPES.Property &&
-          parent.key === node &&
-          !parent.computed &&
-          !parent.shorthand
-        ) {
-          return false;
+        if (parent && parent.type === AST_NODE_TYPES.Property) {
+          if (
+            parent.key === node &&
+            !parent.computed &&
+            !parent.shorthand
+          ) {
+            return false;
+          }
         }
 
         if (callback(node.name) === true) return true;
