@@ -18,6 +18,9 @@ const defaultOptions: Options = [
       'updatethreshold',
       'setthreshold',
       'checkthreshold',
+      'commit',
+      'flush',
+      'saveall',
     ],
   },
 ];
@@ -125,45 +128,117 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     }
 
     /**
+     * Generic AST visitor for identifier collection
+     */
+    function visitIdentifiers(
+      node: TSESTree.Node,
+      callback: (name: string) => boolean | void,
+      options: { includeMemberProperties?: boolean } = {},
+    ): boolean {
+      if (node.type === AST_NODE_TYPES.Identifier) {
+        const parent = node.parent;
+
+        // Skip non-computed properties in MemberExpressions as they are not value uses
+        if (parent && parent.type === AST_NODE_TYPES.MemberExpression) {
+          if (
+            parent.property === node &&
+            !parent.computed &&
+            !options.includeMemberProperties
+          ) {
+            return false;
+          }
+        }
+
+        // Skip non-shorthand keys in object literals as they are not value uses
+        if (parent && parent.type === AST_NODE_TYPES.Property) {
+          if (
+            parent.key === node &&
+            !parent.computed &&
+            !parent.shorthand
+          ) {
+            return false;
+          }
+        }
+
+        if (callback(node.name) === true) return true;
+      }
+
+      /**
+       * Recursively traverses child nodes while skipping 'parent' to avoid
+       * circular back-references, and 'range'/'loc' which are metadata.
+       */
+      for (const key in node) {
+        if (key === 'parent' || key === 'range' || key === 'loc') continue;
+
+        const child = (node as any)[key];
+        if (child && typeof child === 'object') {
+          if (Array.isArray(child)) {
+            for (const item of child) {
+              if (item && typeof item === 'object' && 'type' in item) {
+                if (
+                  visitIdentifiers(
+                    item as TSESTree.Node,
+                    callback,
+                    options,
+                  )
+                ) {
+                  return true;
+                }
+              }
+            }
+          } else if ('type' in child) {
+            if (
+              visitIdentifiers(
+                child as TSESTree.Node,
+                callback,
+                options,
+              )
+            ) {
+              return true;
+            }
+          }
+        }
+      }
+
+      return false;
+    }
+
+    /**
      * Checks if an identifier is used in a node
      */
     function isIdentifierUsedInNode(
       identifier: string,
       node: TSESTree.Node,
     ): boolean {
-      let isUsed = false;
-
-      function visit(node: TSESTree.Node) {
-        if (
-          node.type === AST_NODE_TYPES.Identifier &&
-          node.name === identifier
-        ) {
-          isUsed = true;
-          return;
-        }
-
-        // Recursively visit all child nodes
-        for (const key in node) {
-          if (key === 'parent' || key === 'range' || key === 'loc') continue;
-
-          const child = (node as any)[key];
-          if (child && typeof child === 'object') {
-            if (Array.isArray(child)) {
-              for (const item of child) {
-                if (item && typeof item === 'object' && 'type' in item) {
-                  visit(item as TSESTree.Node);
-                }
-              }
-            } else if ('type' in child) {
-              visit(child as TSESTree.Node);
-            }
-          }
-        }
-      }
-
-      visit(node);
-      return isUsed;
+      return visitIdentifiers(node, (name) => name === identifier);
     }
+
+    /**
+     * Extracts all identifiers used in a node
+     */
+    function getAllIdentifiers(
+      node: TSESTree.Node,
+      options?: { includeMemberProperties?: boolean },
+    ): Set<string> {
+      const identifiers = new Set<string>();
+      visitIdentifiers(
+        node,
+        (name) => {
+          identifiers.add(name);
+        },
+        options,
+      );
+      return identifiers;
+    }
+
+    /**
+     * Matches coordinator-like identifiers. Intentionally uses substring
+     * matching (no word boundaries) to catch patterns like "batchManager",
+     * "transactionCollector", etc. This may produce false positives for
+     * unrelated managers, but errs on the side of safety.
+     */
+    const COORDINATOR_PATTERN =
+      /batch|manager|collector|transaction|tx|unitofwork|accumulator/i;
 
     /**
      * Checks if there are dependencies between await expressions
@@ -173,61 +248,83 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
       variableNames: Set<string>,
       sideEffectPatterns: RegExp[],
     ): boolean {
-      // If we have fewer than 2 nodes, there are no dependencies to check
       if (awaitNodes.length < 2) {
         return false;
       }
 
-      // For each await node (except the first), check if it depends on previous variables
-      for (let i = 1; i < awaitNodes.length; i++) {
-        const currentNode = awaitNodes[i];
+      const allIdentifiers = awaitNodes.map((node) => {
+        const awaitExpr = getAwaitExpression(node);
+        return awaitExpr
+          ? getAllIdentifiers(awaitExpr.argument, {
+              includeMemberProperties: true,
+            })
+          : new Set<string>();
+      });
 
-        // Check if any previous variable is used in the current await expression
-        for (const varName of variableNames) {
-          const awaitExpr = getAwaitExpression(currentNode);
-          if (
-            awaitExpr &&
-            isIdentifierUsedInNode(varName, awaitExpr.argument)
-          ) {
-            return true;
+      // Check all nodes for side effects and shared coordinators
+      for (let i = 0; i < awaitNodes.length; i++) {
+        const currentNode = awaitNodes[i];
+        const awaitExpr = getAwaitExpression(currentNode);
+        if (!awaitExpr) continue;
+
+        // 1. Check if current node depends on variables DECLARED in previous awaits
+        if (i > 0) {
+          for (const varName of variableNames) {
+            if (isIdentifierUsedInNode(varName, awaitExpr.argument)) {
+              return true;
+            }
           }
         }
 
-        // Check for operations that might have side effects that affect subsequent operations
-        // This is a conservative heuristic - we only flag very specific patterns
-        const awaitExpr = getAwaitExpression(currentNode);
-        if (
-          awaitExpr &&
-          awaitExpr.argument.type === AST_NODE_TYPES.CallExpression
-        ) {
-          const callee = awaitExpr.argument.callee;
+        // 2. Check for shared coordinators between this node and ANY previous node
+        if (i > 0) {
+          const currentIds = allIdentifiers[i];
+          for (const id of currentIds) {
+            if (COORDINATOR_PATTERN.test(id)) {
+              for (let j = 0; j < i; j++) {
+                if (allIdentifiers[j].has(id)) {
+                  return true;
+                }
+              }
+            }
+          }
+        }
 
-          // Check for method calls that might indicate side effects
+        // 3. Check for operations that might have side effects
+        // If any node has a side effect, we should not parallelize the sequence
+        let callExpr: TSESTree.CallExpression | null = null;
+        if (awaitExpr.argument.type === AST_NODE_TYPES.CallExpression) {
+          callExpr = awaitExpr.argument;
+        } else if (
+          awaitExpr.argument.type === AST_NODE_TYPES.ChainExpression &&
+          awaitExpr.argument.expression.type === AST_NODE_TYPES.CallExpression
+        ) {
+          callExpr = awaitExpr.argument.expression;
+        }
+
+        if (callExpr) {
+          const callee = callExpr.callee;
+          let methodName: string | null = null;
+
           if (
             callee.type === AST_NODE_TYPES.MemberExpression &&
             callee.property.type === AST_NODE_TYPES.Identifier
           ) {
-            const methodName = callee.property.name;
-            if (
-              sideEffectPatterns.some((pattern) => pattern.test(methodName))
-            ) {
-              return true;
-            }
+            methodName = callee.property.name;
+          } else if (callee.type === AST_NODE_TYPES.Identifier) {
+            methodName = callee.name;
           }
 
-          if (callee.type === AST_NODE_TYPES.Identifier) {
-            const functionName = callee.name;
-            if (
-              sideEffectPatterns.some((pattern) => pattern.test(functionName))
-            ) {
-              return true;
-            }
+          if (
+            methodName &&
+            sideEffectPatterns.some((pattern) => pattern.test(methodName!))
+          ) {
+            return true;
           }
         }
       }
 
       // If any node is a variable declaration with destructuring, consider it as having dependencies
-      // This is because destructuring often creates variables that are used later
       for (const node of awaitNodes) {
         if (node.type === AST_NODE_TYPES.VariableDeclaration) {
           for (const declaration of node.declarations) {
@@ -302,7 +399,6 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
       for (const node of nodes) {
         let current: TSESTree.Node | undefined = node;
 
-        // Traverse up to find if the node is in a try block
         while (current && current.parent) {
           if (
             current.parent.type === AST_NODE_TYPES.TryStatement &&
@@ -326,7 +422,6 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
       for (const node of nodes) {
         let current: TSESTree.Node | undefined = node;
 
-        // Traverse up to find if the node is in a loop
         while (current && current.parent) {
           if (
             current.parent.type === AST_NODE_TYPES.ForStatement ||
@@ -357,7 +452,6 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
         return null;
       }
 
-      // Extract the await expressions
       const awaitExpressions = awaitNodes
         .map((node) => getAwaitExpression(node))
         .filter((node): node is TSESTree.AwaitExpression => node !== null);
@@ -366,7 +460,6 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
         return null;
       }
 
-      // Get the text of each await argument
       const awaitArguments = awaitExpressions.map((expr) =>
         sourceCode.getText(expr.argument),
       );
@@ -410,10 +503,8 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
         )}\n]);`;
       }
 
-      // Find the start position, accounting for leading comments
       const startPos = awaitNodes[0].range[0];
 
-      // Replace the range from the start of the first await to the end of the last await
       const endPos = awaitNodes[awaitNodes.length - 1].range[1];
 
       return fixer.replaceTextRange([startPos, endPos], promiseAllText);
