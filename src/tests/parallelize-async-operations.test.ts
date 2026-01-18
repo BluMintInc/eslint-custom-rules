@@ -474,6 +474,11 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
       await manager.doSomething();
       await manager.doSomethingElse();
     }
+
+    async function coordinatorExplicitlyNamed() {
+      await coordinator.doSomething();
+      await coordinator.doSomethingElse();
+    }
     `,
   ],
   invalid: [

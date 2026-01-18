@@ -19,6 +19,8 @@ The rule reports when all of these are true:
 - The awaits are not inside try blocks or loops, which signal intentional ordering or per-call error handling.
 - The calls do not match a small list of side-effect-heavy patterns (e.g., `updatecounter`, `commit`, `flush`, `saveall`) that should stay ordered.
 
+These conditions are evaluated independently—if any single condition indicates ordering is required (e.g., matching a **side-effect-heavy pattern** or sharing **coordinator identifiers**), the rule will not suggest parallelization.
+
 ### ❌ Incorrect
 
 ```typescript
@@ -52,7 +54,7 @@ The rule recognizes common coordinator identifier patterns that indicate shared 
 If sequential awaits interact with the same identifier matching this pattern, they are not flagged for parallelization.
 
 ```typescript
-async function processBatch(batchManager: BatchManager) {
+async function processBatch(batchManager: BatchManager, item1: Item, item2: Item) {
   await batchManager.add(item1);
   await batchManager.add(item2);
   await batchManager.commit(); // depends on previous adds
