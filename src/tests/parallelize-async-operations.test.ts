@@ -487,6 +487,13 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
       await myObj.batchManager.add(item2);
     }
     `,
+    // Regression: Optional chaining with side-effect patterns (Issue #1147)
+    `
+    async function optionalChainingSideEffect() {
+      await batchManager?.commit();
+      await batchManager?.flush();
+    }
+    `,
   ],
   invalid: [
     // Basic case: two sequential awaits with realtimeDb

@@ -52,6 +52,8 @@ The rule recognizes common coordinator identifier patterns that indicate shared 
 
 If sequential awaits interact with the same identifier matching this pattern (even as a nested property like `ctx.batchManager`), they are not flagged for parallelization.
 
+Because matching is substring-based, identifiers like `CacheManager`, `taskCollector`, or `ctx.batch` will also match. This is intentional and errs on the side of safety by preserving sequential execution when shared state might be involved.
+
 ```typescript
 async function processBatch(batchManager: BatchManager, item1: Item, item2: Item) {
   await batchManager.add(item1);

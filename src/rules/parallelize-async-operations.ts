@@ -292,8 +292,18 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
 
         // 3. Check for operations that might have side effects
         // If any node has a side effect, we should not parallelize the sequence
+        let callExpr: TSESTree.CallExpression | null = null;
         if (awaitExpr.argument.type === AST_NODE_TYPES.CallExpression) {
-          const callee = awaitExpr.argument.callee;
+          callExpr = awaitExpr.argument;
+        } else if (
+          awaitExpr.argument.type === AST_NODE_TYPES.ChainExpression &&
+          awaitExpr.argument.expression.type === AST_NODE_TYPES.CallExpression
+        ) {
+          callExpr = awaitExpr.argument.expression;
+        }
+
+        if (callExpr) {
+          const callee = callExpr.callee;
           let methodName: string | null = null;
 
           if (
