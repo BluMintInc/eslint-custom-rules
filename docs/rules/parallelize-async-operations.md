@@ -41,7 +41,15 @@ async function cleanUpReferences(params, ref) {
 
 ### ✅ Correct (shared coordinator dependency)
 
-These must remain sequential because they share a "coordinator" object (`batchManager`). The rule detects that they interact with the same mutable state.
+These must remain sequential because they share a "coordinator" object (`batchManager`). The rule uses a **COORDINATOR_PATTERN** to detect identifiers (e.g., `batchManager`, `manager`, `transaction`) that imply shared mutable state, which requires sequential execution.
+
+#### Coordinator Pattern Detection
+
+The rule recognizes common coordinator identifier patterns that indicate shared mutable state:
+- Identifiers containing: `manager`, `batch`, `transaction`, `tx`, `collector`, `coordinator`, `unitofwork`, `accumulator`.
+- These are matched case-insensitively using the `COORDINATOR_PATTERN`.
+
+If sequential awaits interact with the same identifier matching this pattern, they are not flagged for parallelization.
 
 ```typescript
 async function processBatch(batchManager: BatchManager) {
