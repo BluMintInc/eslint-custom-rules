@@ -5,6 +5,15 @@ on:
     - cron: '59 23 * * 5' # Every Friday at 11:59pm UTC
   workflow_dispatch:
 
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  statuses: write
+
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 jobs:
   generate-report:
     runs-on: blacksmith-4vcpu-ubuntu-2204

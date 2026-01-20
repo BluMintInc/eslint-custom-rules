@@ -124,6 +124,41 @@ ruleTesterTs.run('global-const-style', rule, {
       code: 'const COLORS = ({ primary: "#000" } as const) as ThemeA;',
       filename: 'test.ts',
     },
+    // MemberExpression on dynamic values should be ignored (Issue #1130)
+    {
+      code: `
+        import { ExponentialBackoff } from './ExponentialBackoff';
+        const CONFIG_429 = {
+          initialDelay: 1000,
+          maxDelay: 60000,
+          factor: 2,
+        } as const;
+        export const withExponentialBackoff429 = new ExponentialBackoff(
+          CONFIG_429,
+        ).withExponentialBackoff;
+      `,
+      filename: 'test.ts',
+    },
+    {
+      code: 'export const helper = new Service().helper;',
+      filename: 'test.ts',
+    },
+    {
+      code: 'export const data = fetchData().result;',
+      filename: 'test.ts',
+    },
+    {
+      code: 'export const value = (a + b).property;',
+      filename: 'test.ts',
+    },
+    {
+      code: 'export const deep = new Class().prop.nested.method;',
+      filename: 'test.ts',
+    },
+    {
+      code: 'export const result = new Service()?.method;',
+      filename: 'test.ts',
+    },
   ],
   invalid: [
     // Missing UPPER_SNAKE_CASE and as const in TypeScript

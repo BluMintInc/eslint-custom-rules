@@ -21,8 +21,8 @@ Chained spreads only clone one level of an object. Every deeper property still p
 ### How to fix violations
 
 1. Identify the base object being spread (the first `...base` entry).
-2. Call `cloneDeep(baseObject, { /* overrides */ } as const)` instead of chaining nested spreads.
-3. Move only the overridden leaves into the overrides object; the rest is cloned by `cloneDeep`.
+1. Call `cloneDeep(baseObject, { /* overrides */ } as const)` instead of chaining nested spreads.
+1. Move only the overridden leaves into the overrides object; the rest is cloned by `cloneDeep`.
 
 ### ❌ Incorrect
 

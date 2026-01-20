@@ -90,6 +90,9 @@ ruleTesterJsx.run('requireMemo', requireMemo, {
           `,
     },
     {
+      code: `const shorthandHOC = (Component) => (props) => <Component {...props} />;`,
+    },
+    {
       code: `function useComponent() {
             return function HookComponent() {
               return <div>From Hook</div>;
@@ -122,14 +125,14 @@ ruleTesterJsx.run('requireMemo', requireMemo, {
     withDefaults({
       code: `function Component({foo}) { return <div>{foo}</div>; }`,
       output: `import { memo } from '../util/memo';
-const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; })`,
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
       filename: 'src/components/SomeComponent.tsx',
       name: 'Component',
     }),
     withDefaults({
       code: `function Component({foo}) { return <div>{foo}</div>; }`,
       output: `import { memo } from '../../util/memo';
-const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; })`,
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
       filename: 'src/components/nested/SomeComponent.tsx',
       name: 'Component',
     }),
@@ -179,14 +182,14 @@ const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</
     withDefaults({
       code: `function MultiplePropsComponent({ foo, bar }) { return <div>{foo}{bar}</div>; }`,
       output: `import { memo } from '../util/memo';
-const MultiplePropsComponent = memo(function MultiplePropsComponentUnmemoized({ foo, bar }) { return <div>{foo}{bar}</div>; })`,
+const MultiplePropsComponent = memo(function MultiplePropsComponentUnmemoized({ foo, bar }) { return <div>{foo}{bar}</div>; });`,
       filename: 'src/components/SomeComponent.tsx',
       name: 'MultiplePropsComponent',
     }),
     withDefaults({
       code: `function DefaultPropComponent({ foo = 'default' }) { return <div>{foo}</div>; }`,
       output: `import { memo } from '../util/memo';
-const DefaultPropComponent = memo(function DefaultPropComponentUnmemoized({ foo = 'default' }) { return <div>{foo}</div>; })`,
+const DefaultPropComponent = memo(function DefaultPropComponentUnmemoized({ foo = 'default' }) { return <div>{foo}</div>; });`,
       filename: 'src/components/SomeComponent.tsx',
       name: 'DefaultPropComponent',
     }),
@@ -217,7 +220,7 @@ export const ShouldBeMemoized = memo(function ShouldBeMemoizedUnmemoized({foo}) 
         return (
           <div>{foo}</div>
         )
-      })`,
+      });`,
       filename: 'src/components/SomeComponent.tsx',
       name: 'ShouldBeMemoized',
     }),
@@ -232,7 +235,7 @@ export const ShouldBeMemoized = memo(function ShouldBeMemoizedUnmemoized({ foo }
             return (
               <div>{foo}</div>
             )
-          })`,
+          });`,
       filename: 'src/components/SomeComponent.tsx',
       name: 'ShouldBeMemoized',
     }),
@@ -249,45 +252,47 @@ import { memo } from '../util/memo';
             return (
               <div>{foo}</div>
             )
-          })`,
+          });`,
       filename: 'src/components/SomeComponent.tsx',
       name: 'ShouldBeMemoized',
     }),
     withDefaults({
-      code: `import { memo } from '../util/memo';
-    
-    export function ShouldStillBeMemoized({foo}) {
+      code: `export function ShouldStillBeMemoized({foo}) {
             return (
               <div>{foo}</div>
             )
           }`,
       output: `import { memo } from '../util/memo';
-    
-    export const ShouldStillBeMemoized = memo(function ShouldStillBeMemoizedUnmemoized({foo}) {
+export const ShouldStillBeMemoized = memo(function ShouldStillBeMemoizedUnmemoized({foo}) {
             return (
               <div>{foo}</div>
             )
-          })`,
+          });`,
       name: 'ShouldStillBeMemoized',
+    }),
+    withDefaults({
+      code: `async function AsyncComponent({foo}) { return <div>{foo}</div>; }`,
+      output: null,
+      name: 'AsyncComponent',
     }),
     withDefaults({
       code: `function Component({foo}) { return <div>{foo}</div>; }`,
       output: `import { memo } from 'src/util/memo';
-const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; })`,
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
       filename: 'pages/SomeComponent.tsx',
       name: 'Component',
     }),
     withDefaults({
       code: `function Component({foo}) { return <div>{foo}</div>; }`,
       output: `import { memo } from './util/memo';
-const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; })`,
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
       filename: 'src/SomeComponent.tsx',
       name: 'Component',
     }),
     withDefaults({
       code: `function Component({foo}) { return <div>{foo}</div>; }`,
       output: `import { memo } from '../util/memo';
-const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; })`,
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
       filename: 'src\\components\\SomeComponent.tsx',
       name: 'Component',
     }),

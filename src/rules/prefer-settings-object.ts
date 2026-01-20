@@ -59,8 +59,9 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
   defaultOptions: [defaultOptions],
   create(context, [options]) {
     const finalOptions = { ...defaultOptions, ...options };
+    const { sourceCode } = context;
 
-    function getParameterType(param: TSESTree.Parameter): string {
+    function getParameterType(param: TSESTree.Parameter): string | null {
       if (param.type === AST_NODE_TYPES.AssignmentPattern) {
         return getParameterType(param.left as TSESTree.Parameter);
       }
@@ -69,17 +70,13 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
         const typeNode = param.typeAnnotation.typeAnnotation;
         if (typeNode.type === AST_NODE_TYPES.TSTypeReference) {
           // Include type parameters in the type signature to differentiate generic types
-          const typeName =
-            typeNode.typeName.type === AST_NODE_TYPES.Identifier
-              ? typeNode.typeName.name
-              : 'unknown';
+          const typeName = sourceCode.getText(typeNode.typeName);
 
           // If there are type parameters, include them in the type signature
           if (
             typeNode.typeParameters &&
             typeNode.typeParameters.params.length > 0
           ) {
-            const sourceCode = context.sourceCode;
             const typeParams = typeNode.typeParameters.params
               .map((param) => sourceCode.getText(param))
               .join(', ');
@@ -94,17 +91,13 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
         const typeNode = param.typeAnnotation.typeAnnotation;
         if (typeNode.type === AST_NODE_TYPES.TSTypeReference) {
           // Include type parameters in the type signature to differentiate generic types
-          const typeName =
-            typeNode.typeName.type === AST_NODE_TYPES.Identifier
-              ? typeNode.typeName.name
-              : 'unknown';
+          const typeName = sourceCode.getText(typeNode.typeName);
 
           // If there are type parameters, include them in the type signature
           if (
             typeNode.typeParameters &&
             typeNode.typeParameters.params.length > 0
           ) {
-            const sourceCode = context.sourceCode;
             const typeParams = typeNode.typeParameters.params
               .map((param) => sourceCode.getText(param))
               .join(', ');
@@ -118,7 +111,7 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
         if (typeNode.type === AST_NODE_TYPES.TSBooleanKeyword) return 'boolean';
         return typeNode.type;
       }
-      return 'unknown';
+      return null;
     }
 
     function findDuplicateParameterType(
@@ -128,6 +121,8 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
 
       for (const param of params) {
         const type = getParameterType(param);
+        if (type === null) continue;
+
         const count = (typeMap.get(type) || 0) + 1;
         typeMap.set(type, count);
 
@@ -296,6 +291,28 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
       return false;
     }
 
+    function hasImplicitlyTypedParams(params: TSESTree.Parameter[]): boolean {
+      return params.some((param) => {
+        let current: TSESTree.Node = param;
+        if (current.type === AST_NODE_TYPES.TSParameterProperty) {
+          current = current.parameter;
+        }
+        if (current.type === AST_NODE_TYPES.AssignmentPattern) {
+          current = current.left;
+        }
+
+        if (
+          current.type === AST_NODE_TYPES.Identifier ||
+          current.type === AST_NODE_TYPES.ObjectPattern ||
+          current.type === AST_NODE_TYPES.ArrayPattern ||
+          current.type === AST_NODE_TYPES.RestElement
+        ) {
+          return !current.typeAnnotation;
+        }
+        return true;
+      });
+    }
+
     function shouldIgnoreNode(node: TSESTree.Node): boolean {
       // Ignore built-in objects and third-party modules
       if (isBuiltInOrThirdParty(node)) return true;
@@ -324,7 +341,7 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
         }
       }
 
-      // Ignore functions with A/B pattern parameters
+      // Ignore functions with A/B pattern parameters or missing type annotations
       if (
         (node.type === AST_NODE_TYPES.FunctionDeclaration ||
           node.type === AST_NODE_TYPES.FunctionExpression ||
@@ -334,6 +351,7 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
         Array.isArray(node.params)
       ) {
         if (hasABPattern(node.params)) return true;
+        if (hasImplicitlyTypedParams(node.params)) return true;
       }
 
       // Check if the function is a handler with transaction parameter

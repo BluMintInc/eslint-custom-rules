@@ -166,9 +166,9 @@ await docSetter.set({
 This rule provides automatic fixes that convert nested object syntax into FieldPath syntax. The auto-fix will:
 
 1. Flatten nested objects into dot notation keys
-2. Preserve the `id` property at the top-level
-3. Quote keys that contain dots
-4. Maintain proper formatting and indentation
+1. Preserve the `id` property at the top-level
+1. Quote keys that contain dots
+1. Maintain proper formatting and indentation
 
 ## When Not to Use
 

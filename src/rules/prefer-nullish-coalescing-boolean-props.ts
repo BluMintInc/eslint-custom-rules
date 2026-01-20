@@ -1,10 +1,66 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  TSESTree,
+  ParserServices,
+  ESLintUtils,
+} from '@typescript-eslint/utils';
+import * as ts from 'typescript';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'preferNullishCoalescing';
 
 const BOOLEAN_PROP_REGEX =
   /^(is|has|should|can|will|do|does|did|was|were|enable|disable)/;
+
+function isBooleanType(type: ts.Type, checker?: ts.TypeChecker): boolean {
+  if (type.isUnion()) {
+    return type.types.every((t) => isBooleanType(t, checker));
+  }
+
+  // For type parameters, check if the constraint is a boolean type
+  if (type.getFlags() & ts.TypeFlags.TypeParameter) {
+    if (checker) {
+      const constraint = checker.getBaseConstraintOfType(type);
+      if (constraint && constraint !== type) {
+        return isBooleanType(constraint, checker);
+      }
+    }
+    return false;
+  }
+
+  return (
+    (type.getFlags() & (ts.TypeFlags.Boolean | ts.TypeFlags.BooleanLiteral)) !==
+    0
+  );
+}
+
+function isPossiblyNullish(type: ts.Type, checker?: ts.TypeChecker): boolean {
+  if (type.isUnion()) {
+    return type.types.some((t) => isPossiblyNullish(t, checker));
+  }
+
+  // For type parameters, check if the constraint excludes nullish
+  if (type.getFlags() & ts.TypeFlags.TypeParameter) {
+    if (checker) {
+      const constraint = checker.getBaseConstraintOfType(type);
+      if (constraint && constraint !== type) {
+        return isPossiblyNullish(constraint, checker);
+      }
+    }
+    // If we can't determine the constraint, assume it could be nullish
+    return true;
+  }
+
+  return (
+    (type.getFlags() &
+      (ts.TypeFlags.Null |
+        ts.TypeFlags.Undefined |
+        ts.TypeFlags.Void |
+        ts.TypeFlags.Any |
+        ts.TypeFlags.Unknown)) !==
+    0
+  );
+}
 
 function isInJSXBooleanAttribute(node: TSESTree.Node): boolean {
   const parent = node.parent;
@@ -66,7 +122,40 @@ function isInConditionalContext(node: TSESTree.Node): boolean {
 /**
  * Determines if a node is within a boolean context in JSX props or other boolean contexts
  */
-function isInBooleanContext(node: TSESTree.Node): boolean {
+function isInBooleanContext(
+  node: TSESTree.Node,
+  checker?: ts.TypeChecker,
+  parserServices?: ParserServices,
+): boolean {
+  if (checker && parserServices) {
+    try {
+      const tsNode = parserServices.esTreeNodeToTSNodeMap.get(node);
+      const contextualType = checker.getContextualType(tsNode as ts.Expression);
+      if (contextualType && isBooleanType(contextualType, checker)) {
+        return true;
+      }
+
+      // Also check if the expression itself is a boolean type
+      const actualType = checker.getTypeAtLocation(tsNode);
+      if (actualType && isBooleanType(actualType, checker)) {
+        return true;
+      }
+
+      // If this is a logical expression, also check if the left operand is a boolean
+      if (node.type === AST_NODE_TYPES.LogicalExpression) {
+        const leftTSNode = parserServices.esTreeNodeToTSNodeMap.get(node.left);
+        const leftType = checker.getTypeAtLocation(leftTSNode);
+        if (leftType && isBooleanType(leftType, checker)) {
+          return true;
+        }
+      }
+    } catch {
+      // esTreeNodeToTSNodeMap may fail for synthetic nodes or nodes without
+      // source positions; getContextualType may return undefined for non-expression
+      // contexts. Fall back to AST-based heuristics in these cases.
+    }
+  }
+
   let current: TSESTree.Node | undefined = node;
 
   // Traverse up the AST to find if we're in a boolean context
@@ -489,7 +578,23 @@ function isInBooleanContext(node: TSESTree.Node): boolean {
 /**
  * Checks if the left operand could be nullish (null or undefined)
  */
-function couldBeNullish(node: TSESTree.Expression): boolean {
+function couldBeNullish(
+  node: TSESTree.Expression,
+  checker?: ts.TypeChecker,
+  parserServices?: ParserServices,
+): boolean {
+  if (checker && parserServices) {
+    try {
+      const tsNode = parserServices.esTreeNodeToTSNodeMap.get(node);
+      const type = checker.getTypeAtLocation(tsNode);
+      return isPossiblyNullish(type, checker);
+    } catch {
+      // esTreeNodeToTSNodeMap may fail for synthetic nodes or nodes without
+      // source positions; getTypeAtLocation may throw for nodes without
+      // type information. Fall back to manual check.
+    }
+  }
+
   // For literals, check the actual value
   if (node.type === AST_NODE_TYPES.Literal) {
     return node.value === null || node.value === undefined;
@@ -534,17 +639,20 @@ export const preferNullishCoalescingBooleanProps = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
+    const parserServices = ESLintUtils.getParserServices(context, true);
+    const checker = parserServices?.program?.getTypeChecker();
+
     return {
       LogicalExpression(node) {
         if (node.operator === '||') {
           // If the node is in a boolean context, we allow logical OR
-          if (isInBooleanContext(node)) {
+          if (isInBooleanContext(node, checker, parserServices)) {
             return;
           }
 
           // Check if this could benefit from nullish coalescing
           // We only suggest nullish coalescing when the left operand could be nullish
-          if (couldBeNullish(node.left)) {
+          if (couldBeNullish(node.left, checker, parserServices)) {
             const sourceCode = context.getSourceCode();
             const leftText = sourceCode.getText(node.left);
             const rightText = sourceCode.getText(node.right);

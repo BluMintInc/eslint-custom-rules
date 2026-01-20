@@ -4,7 +4,7 @@
 
 <!-- end auto-generated rule header -->
 
-This rule ensures any `HttpsError` created inside a `catch` block includes the caught error as the fourth `cause` argument. Passing the original error preserves the stack trace so monitoring can deduplicate issues reliably and keep the root cause available for debugging. The third `details` argument remains optional, but the cause must always be provided when an error is rethrown from a `catch` block.
+This rule ensures any `HttpsError` created inside a `catch` block includes the caught error as the `cause`. This can be done either via the fourth positional argument or a `cause` property in a single settings object argument. Passing the original error preserves the stack trace so monitoring can deduplicate issues reliably and keep the root cause available for debugging.
 Always bind the full error object (for example, `catch (error)`) so it can be forwarded. Destructuring (such as `catch ({ message })`) drops the original error reference and cannot satisfy the required cause argument.
 
 ## Rule Details
@@ -17,6 +17,16 @@ try {
 } catch (error) {
   // Missing cause argument
   throw new HttpsError('internal', 'Operation failed');
+}
+
+try {
+  await doWork();
+} catch (error) {
+  // Missing cause in settings object
+  throw new HttpsError({
+    code: 'internal',
+    message: 'Operation failed',
+  });
 }
 
 try {
@@ -53,6 +63,16 @@ try {
 
 try {
   await doWork();
+} catch (error) {
+  throw new HttpsError({
+    code: 'internal',
+    message: 'Operation failed',
+    cause: error,
+  });
+}
+
+try {
+  await doWork();
 } catch (err) {
   throw new HttpsError('internal', 'Operation failed', { jobId }, err);
 }
@@ -69,3 +89,8 @@ try {
 
 - You are working in contexts where `HttpsError` is not available or you intentionally want to construct errors outside a `catch` block (those calls are out of scope for this rule).
 - You deliberately do not want to preserve the original error stack (not recommended for production error monitoring).
+
+### Known Limitations
+
+- **Spread Syntax**: The rule does not currently inspect properties introduced via spread syntax in the settings object (e.g., `new HttpsError({ ...config, cause: error })` where `cause` is inside `config`). The `cause` must be explicitly present as a property in the object literal for the rule to detect it.
+- **Computed Properties**: Computed property keys for `cause` (e.g., `new HttpsError({ [computedKey]: error })`) are not supported and will be reported as a missing cause.

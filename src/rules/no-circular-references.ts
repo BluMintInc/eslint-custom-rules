@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'circularReference';
@@ -61,7 +61,7 @@ export const noCircularReferences = createRule<[], MessageIds>({
       return node.type === AST_NODE_TYPES.ThisExpression;
     }
 
-    function getScopeId(scope: any): string {
+    function getScopeId(scope: TSESLint.Scope.Scope): string {
       return `${scope.type}:${scope.block.range[0]}:${scope.block.range[1]}`;
     }
 
@@ -144,11 +144,21 @@ export const noCircularReferences = createRule<[], MessageIds>({
       );
     }
 
+    function getVariable(name: string): TSESLint.Scope.Variable | null {
+      let scope: TSESLint.Scope.Scope | null = context.getScope();
+      while (scope) {
+        const variable = scope.variables.find((v) => v.name === name);
+        if (variable) {
+          return variable;
+        }
+        scope = scope.upper;
+      }
+      return null;
+    }
+
     function getReferencedObject(node: TSESTree.Node): TSESTree.Node | null {
       if (isIdentifier(node)) {
-        const scope = context.getScope();
-        const scopeId = getScopeId(scope);
-        const variable = scope.variables.find((v) => v.name === node.name);
+        const variable = getVariable(node.name);
         if (
           variable?.defs[0]?.node.type === AST_NODE_TYPES.VariableDeclarator
         ) {
@@ -168,25 +178,12 @@ export const noCircularReferences = createRule<[], MessageIds>({
             }
           }
         }
-        // Check objects in the current scope
-        const scopeObjects = scopeMap.get(scopeId);
-        if (scopeObjects) {
-          for (const obj of scopeObjects) {
-            const info = objectMap.get(obj);
-            if (info && info.scope === scopeId && !info.isCircular) {
-              return obj;
-            }
-          }
-        }
       } else if (node.type === AST_NODE_TYPES.MemberExpression) {
         const property = node.property;
         if (property.type === AST_NODE_TYPES.Identifier) {
           const object = node.object;
           if (isIdentifier(object)) {
-            const scope = context.getScope();
-            const variable = scope.variables.find(
-              (v) => v.name === object.name,
-            );
+            const variable = getVariable(object.name);
             if (
               variable?.defs[0]?.node.type === AST_NODE_TYPES.VariableDeclarator
             ) {

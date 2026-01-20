@@ -35,28 +35,107 @@ throw new HttpsError('foo', `Error: ${bar}`, 'baz');
 
 // Both issues: missing third argument AND dynamic content in message
 throw new HttpsError('foo', `Error: ${bar}`);
+
+// Object-based signature (missing details)
+new HttpsError({
+  code: 'unauthenticated',
+  message: 'User must be authenticated',
+});
+
+// Object-based signature (dynamic message)
+new HttpsError({
+  code: 'unauthenticated',
+  message: `User ${userId} must be authenticated`,
+  details: { userId },
+});
 ```
 
-**Missing third argument (messageId: `missingThirdArgument`)**
+**Missing third argument (messageId: `missingThirdArgument`, `missingDetailsProperty`, `missingDetailsDueToSpread`, or `unexpectedExtraArgumentForObjectCall`)**
 
-- ❌ Invalid:
+- ❌ Invalid (positional):
+
   ```typescript
   throw new HttpsError('not-found', 'Resource not found');
   ```
-- ✅ Valid:
+
+- ❌ Invalid (object-based):
+
+  ```typescript
+  throw new HttpsError({
+    code: 'not-found',
+    message: 'Resource not found',
+  });
+  ```
+
+- ❌ Invalid (object-based with extra arguments):
+
+  ```typescript
+  throw new HttpsError({
+    code: 'not-found',
+    message: 'Resource not found',
+    details: { id: resourceId },
+  }, 'extra-arg');
+  // Error: Object-based HttpsError calls must have exactly one argument.
+  ```
+
+- ❌ Invalid (object-based with spread):
+
+  ```typescript
+  throw new HttpsError({
+    ...config,
+    code: 'not-found',
+    message: 'Resource not found',
+  });
+  // Error: HttpsError calls must include a "details" property. This call uses an object spread, which prevents static verification that "details" is present.
+  ```
+
+- ✅ Valid (positional):
+
   ```typescript
   throw new HttpsError('not-found', 'Resource not found', { id: resourceId });
   ```
 
+- ✅ Valid (object-based):
+
+  ```typescript
+  throw new HttpsError({
+    code: 'not-found',
+    message: 'Resource not found',
+    details: { id: resourceId },
+  });
+  ```
+
+- ✅ Valid (with TypeScript assertions):
+
+  ```typescript
+  throw new HttpsError('invalid-argument', 'Static message' as const, { details });
+  new HttpsError({
+    code: 'unauthenticated',
+    message: 'User must be authenticated' satisfies string,
+    details: { userUid: 'guest' },
+  });
+  ```
+
 **Dynamic message content (messageId: `dynamicHttpsErrors`)**
 
-- ❌ Invalid:
+- ❌ Invalid (template literal):
+
   ```typescript
   throw new https.HttpsError('permission-denied', `User ${userId} cannot access`, {
     path,
   });
   ```
+
+- ❌ Invalid (other dynamic forms):
+
+  ```typescript
+  throw new HttpsError('foo', getErrorMessage(), { id: resourceId });
+  throw new HttpsError('foo', condition ? 'A' : 'B', { id: resourceId });
+  throw new HttpsError('foo', someVar || 'default', { id: resourceId });
+  ```
+
 - ✅ Valid:
+
   ```typescript
   throw new https.HttpsError('permission-denied', 'User cannot access', {
     path,
@@ -75,6 +154,13 @@ throw new https.HttpsError('permission-denied', 'Access denied', { userId, resou
 throw new https.HttpsError('foo', 'bar', 'baz');
 throw new https.HttpsError('foo', 'bar', `Details: ${baz}`);
 throw new HttpsError('not-found', 'Resource not found', { id: resourceId });
+
+// Object-based signature
+new HttpsError({
+  code: 'unauthenticated',
+  message: 'User must be authenticated',
+  details: { userUid: 'guest' },
+});
 ```
 
 ## Why?

@@ -4,7 +4,11 @@ import { createRule } from '../utils/createRule';
 type MessageIds = 'requireMemoize';
 type Options = [];
 
-const MEMOIZE_MODULE = 'typescript-memoize';
+const MEMOIZE_MODULE = '@blumintinc/typescript-memoize';
+const ALLOWED_MEMOIZE_MODULES = new Set([
+  MEMOIZE_MODULE,
+  'typescript-memoize',
+]);
 
 /**
  * Matches a memoize decorator in supported syntaxes:
@@ -49,36 +53,37 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Enforce @Memoize() decorator on async methods with 0-1 parameters to cache results and prevent redundant API calls or expensive computations. This improves performance by reusing previous results when the same parameters are provided, particularly useful for data fetching methods.',
+        'Enforce @Memoize() decorator on async methods with 0-1 parameters to cache results and prevent redundant API calls or expensive computations. Without memoization, repeated calls trigger redundant requests or expensive computations, increasing latency. @Memoize() caches results by parameter, ensuring subsequent calls with identical inputs return immediately.',
       recommended: 'error',
     },
     fixable: 'code',
     schema: [],
     messages: {
       requireMemoize:
-        'Async methods with 0-1 parameters should be decorated with @Memoize() to cache results and improve performance. Instead of `async getData(id?: string)`, use `@Memoize()\nasync getData(id?: string)`. Import Memoize from "typescript-memoize".',
+        'Async methods with 0-1 parameters should be decorated with @Memoize(). Without memoization, repeated calls trigger redundant network requests or expensive computations, increasing latency and risk of rate-limiting. @Memoize() caches results by parameter, ensuring subsequent calls with identical inputs return immediately. Fix: add @Memoize() above the method and import Memoize from "@blumintinc/typescript-memoize".',
     },
   },
   defaultOptions: [],
   create(context) {
     let hasMemoizeImport = false;
-    let memoizeAlias = 'Memoize';
-    let memoizeNamespace: string | null = null;
+    const memoizeAliases = new Map<string, string>(); // alias -> source module
+    const memoizeNamespaces = new Map<string, string>(); // namespace -> source module
     let scheduledImportFix = false;
 
     return {
       ImportDeclaration(node: TSESTree.ImportDeclaration) {
-        if (node.source.value === MEMOIZE_MODULE) {
+        if (ALLOWED_MEMOIZE_MODULES.has(String(node.source.value))) {
           node.specifiers.forEach((spec) => {
             if (
               spec.type === AST_NODE_TYPES.ImportSpecifier &&
+              spec.imported.type === AST_NODE_TYPES.Identifier &&
               spec.imported.name === 'Memoize'
             ) {
               hasMemoizeImport = true;
-              memoizeAlias = spec.local?.name ?? memoizeAlias;
+              memoizeAliases.set(spec.local.name, String(node.source.value));
             } else if (spec.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
               hasMemoizeImport = true;
-              memoizeNamespace = spec.local.name;
+              memoizeNamespaces.set(spec.local.name, String(node.source.value));
             }
           });
         }
@@ -100,9 +105,45 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
         }
 
         // Check if method already has @Memoize or @Memoize() decorator
-        const hasDecorator = node.decorators?.some((decorator) =>
-          isMemoizeDecorator(decorator, memoizeAlias),
-        );
+        const hasDecorator = node.decorators?.some((decorator) => {
+          // If no named imports were found, we assume 'Memoize' is the intended name (for legacy/global support)
+          const aliasesToCheck =
+            memoizeAliases.size === 0
+              ? ['Memoize']
+              : Array.from(memoizeAliases.keys());
+
+          // Check against all known aliases
+          for (const alias of aliasesToCheck) {
+            if (isMemoizeDecorator(decorator, alias)) {
+              return true;
+            }
+          }
+          // Also check against namespaces
+          const expression = decorator.expression;
+          if (
+            expression.type === AST_NODE_TYPES.MemberExpression &&
+            !expression.computed &&
+            expression.property.type === AST_NODE_TYPES.Identifier &&
+            expression.property.name === 'Memoize' &&
+            expression.object.type === AST_NODE_TYPES.Identifier &&
+            memoizeNamespaces.has(expression.object.name)
+          ) {
+            return true;
+          }
+          // Handle namespace call: @ns.Memoize()
+          if (
+            expression.type === AST_NODE_TYPES.CallExpression &&
+            expression.callee.type === AST_NODE_TYPES.MemberExpression &&
+            !expression.callee.computed &&
+            expression.callee.property.type === AST_NODE_TYPES.Identifier &&
+            expression.callee.property.name === 'Memoize' &&
+            expression.callee.object.type === AST_NODE_TYPES.Identifier &&
+            memoizeNamespaces.has(expression.callee.object.name)
+          ) {
+            return true;
+          }
+          return false;
+        });
 
         if (hasDecorator) {
           return;
@@ -114,17 +155,40 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
           fix(fixer) {
             const fixes: TSESLint.RuleFix[] = [];
             const sourceCode = context.sourceCode;
-            const decoratorIdent = memoizeNamespace
-              ? `${memoizeNamespace}.Memoize`
-              : memoizeAlias;
+
+            // Determine which identifier to use for the decorator
+            let decoratorIdent = 'Memoize';
+            if (hasMemoizeImport) {
+              // Prefer 'Memoize' from the new package if available
+              if (
+                memoizeAliases.has('Memoize') &&
+                memoizeAliases.get('Memoize') === MEMOIZE_MODULE
+              ) {
+                decoratorIdent = 'Memoize';
+              } else if (memoizeAliases.size > 0) {
+                // Find first alias from new package, fallback to any alias
+                const newPackageAlias = Array.from(
+                  memoizeAliases.entries(),
+                ).find(([_, pkg]) => pkg === MEMOIZE_MODULE)?.[0];
+                decoratorIdent =
+                  newPackageAlias || Array.from(memoizeAliases.keys())[0];
+              } else if (memoizeNamespaces.size > 0) {
+                // Prefer namespace from the new package if available
+                const newPackageNs = Array.from(
+                  memoizeNamespaces.entries(),
+                ).find(([_, pkg]) => pkg === MEMOIZE_MODULE)?.[0];
+                const selectedNs =
+                  newPackageNs || Array.from(memoizeNamespaces.keys())[0];
+                decoratorIdent = `${selectedNs}.Memoize`;
+              }
+            }
             const importStatement = `import { Memoize } from '${MEMOIZE_MODULE}';`;
 
             // Add import if it's not already present; ensure we only add once per file
             if (
               !hasMemoizeImport &&
-              !memoizeNamespace &&
-              !scheduledImportFix &&
-              !sourceCode.text.includes(importStatement)
+              memoizeNamespaces.size === 0 &&
+              !scheduledImportFix
             ) {
               const programBody = (sourceCode.ast as TSESTree.Program).body;
               const firstImport = programBody.find(

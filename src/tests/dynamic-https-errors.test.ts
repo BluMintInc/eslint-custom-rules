@@ -4,6 +4,9 @@ import { dynamicHttpsErrors } from '../rules/dynamic-https-errors';
 const {
   dynamicHttpsErrors: dynamicMessage,
   missingThirdArgument: missingThirdArgumentMessage,
+  missingDetailsProperty: missingDetailsPropertyMessage,
+  missingDetailsDueToSpread: missingDetailsDueToSpreadMessage,
+  unexpectedExtraArgumentForObjectCall: unexpectedExtraArgumentForObjectCallMessage,
 } = dynamicHttpsErrors.meta.messages;
 
 type MessageId = keyof typeof dynamicHttpsErrors.meta.messages;
@@ -20,6 +23,15 @@ describe('dynamic-https-errors messages', () => {
     );
     expect(missingThirdArgumentMessage).toBe(
       'HttpsError calls must include a third "details" argument. The message (second argument) is hashed into a stable identifier, so omitting details leaves errors hard to debug and encourages packing variables into the hashed message. Provide a third argument with the request-specific context (object or string) to keep identifiers stable and diagnostics useful.',
+    );
+    expect(missingDetailsPropertyMessage).toBe(
+      'HttpsError calls must include a "details" property. The message is hashed into a stable identifier, so omitting details leaves errors hard to debug and encourages packing variables into the hashed message. Provide a details property with the request-specific context (object or string) to keep identifiers stable and diagnostics useful.',
+    );
+    expect(missingDetailsDueToSpreadMessage).toBe(
+      'HttpsError calls must include a "details" property. This call uses an object spread, which prevents static verification that "details" is present. Ensure the spread object contains "details" or provide it explicitly to keep identifiers stable and diagnostics useful.',
+    );
+    expect(unexpectedExtraArgumentForObjectCallMessage).toBe(
+      'Object-based HttpsError calls must have exactly one argument containing code, message, and details properties. Remove extra arguments or use the positional signature (code, message, details).',
     );
   });
 });
@@ -98,17 +110,23 @@ const validCases = [
   "throw new HttpsError('foo', 'bar', 'baz') as any;",
   "throw new HttpsError<string>('foo', 'bar', 'baz');",
   "throw (new HttpsError('foo', 'bar', 'baz'));",
+  "throw new HttpsError('foo', 'bar' as const, 'baz');",
+  "throw new HttpsError('foo', 'bar' satisfies string, 'baz');",
+  "throw new HttpsError('foo', ('bar'!) as any, 'baz');",
+  "throw new HttpsError('foo', <string>'bar', 'baz');",
+  "throw new HttpsError('foo', ('bar' as string) + ('baz' as const), 'details');",
+  "new HttpsError({ code: 'foo', message: 'bar' as const, details: 'baz' });",
 
   // Complex nested expressions in third argument (valid)
   "throw new HttpsError('foo', 'bar', { nested: { deep: { value: 'test' } } });",
   "throw new HttpsError('foo', 'bar', [1, 2, 3].map(x => x * 2));",
   "throw new HttpsError('foo', 'bar', condition && { conditionalData: true });",
 
-  // Other expressions in second argument (currently allowed - testing current behavior)
-  "throw new HttpsError('foo', getMessage(), 'context');",
+  // Allowed exceptions for second argument: Identifier and MemberExpression
   "throw new HttpsError('foo', obj.message, 'context');",
-  "throw new HttpsError('foo', condition ? 'msg1' : 'msg2', 'context');",
   "throw new HttpsError('foo', errorMessage, 'context');",
+  "throw new HttpsError('foo', this.errorMsg, 'context');",
+  "throw new HttpsError('foo', obj?.message, 'context');",
 
   // Empty template literals (valid - no expressions)
   "throw new HttpsError('foo', ``, 'context');",
@@ -123,9 +141,96 @@ const validCases = [
 
   // Spread operator in arguments (valid when we can statically verify 3+ args)
   "throw new HttpsError('foo', 'bar', ...contextArgs);",
+
+  // Object-based constructor signature (valid)
+  `
+  new HttpsError({
+    code: 'unauthenticated',
+    message: 'User must be authenticated to create a transaction.',
+    details: { userUid: 'guest' },
+  });
+  `,
+  `
+  new HttpsError({
+    code: 'unauthenticated',
+    message: 'User must be authenticated to create a transaction.',
+    details: 'some string details',
+  });
+  `,
+  // Object-based signature with dynamic message should be valid if it's an Identifier (e.g. from props)
+  // or it will be caught by our new logic if it's literal/template
+  `
+  new HttpsError({
+    code: 'unauthenticated',
+    message: props.message,
+    details: 'details',
+  });
+  `,
+  // String literal keys (valid)
+  `
+  new HttpsError({
+    'code': 'unauthenticated',
+    'message': 'Static message',
+    'details': { foo: 'bar' },
+  });
+  `,
+  `
+  new HttpsError({
+    "code": "unauthenticated",
+    "message": "Static message",
+    "details": { foo: "bar" },
+  });
+  `,
+  // Computed property with variable named 'message' should not match (valid)
+  // This is technically allowed by our rule (message is missing, but it's an optional prop)
+  `
+  const message = 'some-message';
+  new HttpsError({
+    code: 'unauthenticated',
+    [message]: 'This is actually the message value, but the key is dynamic',
+    details: { foo: 'bar' }
+  });
+  `,
+  // Object-based signature with spread and explicit details (valid)
+  `
+  new HttpsError({
+    ...config,
+    details: { foo: 'bar' },
+  });
+  `,
 ];
 
 const invalidCases: InvalidCase[] = [
+  // Object-based constructor signature (invalid)
+  {
+    code: `
+    new HttpsError({
+      code: 'unauthenticated',
+      message: 'User must be authenticated to create a transaction.',
+    });
+    `,
+    errors: [{ messageId: 'missingDetailsProperty' }],
+  },
+  {
+    code: `
+    new HttpsError({
+      code: 'unauthenticated',
+      message: \`User must be authenticated to create a transaction: \${userUid}\`,
+      details: { userUid },
+    });
+    `,
+    errors: [{ messageId: 'dynamicHttpsErrors' }],
+  },
+  {
+    code: `
+    new HttpsError({
+      code: 'unauthenticated',
+      message: 'User ' + userUid + ' must be authenticated.',
+      details: { userUid },
+    });
+    `,
+    errors: [{ messageId: 'dynamicHttpsErrors' }],
+  },
   // Invalid cases for dynamic content in second argument
   {
     code: "throw new https.HttpsError('foo', `Error: ${bar}`, 'baz');",
@@ -145,6 +250,28 @@ const invalidCases: InvalidCase[] = [
   },
   {
     code: "throw new HttpsError('foo', 'Error: ' + variable, 'context');",
+    errors: [{ messageId: 'dynamicHttpsErrors' }],
+  },
+
+  // New expanded dynamic content detection
+  {
+    code: "throw new HttpsError('foo', getMessage(), 'context');",
+    errors: [{ messageId: 'dynamicHttpsErrors' }],
+  },
+  {
+    code: "throw new HttpsError('foo', condition ? 'msg1' : 'msg2', 'context');",
+    errors: [{ messageId: 'dynamicHttpsErrors' }],
+  },
+  {
+    code: "throw new HttpsError('foo', true ? 'a' : 'b', 'context');",
+    errors: [{ messageId: 'dynamicHttpsErrors' }],
+  },
+  {
+    code: "throw new HttpsError('foo', someVar || 'default', 'context');",
+    errors: [{ messageId: 'dynamicHttpsErrors' }],
+  },
+  {
+    code: "throw new HttpsError('foo', !isError ? 'ok' : 'error', 'context');",
     errors: [{ messageId: 'dynamicHttpsErrors' }],
   },
 
@@ -309,7 +436,10 @@ const invalidCases: InvalidCase[] = [
   // Complex expressions in arguments but still missing third
   {
     code: 'throw new HttpsError(getErrorCode(), getMessage());',
-    errors: [{ messageId: 'missingThirdArgument' }],
+    errors: [
+        { messageId: 'missingThirdArgument' },
+        { messageId: 'dynamicHttpsErrors' }
+    ],
   },
   {
     code: "throw new HttpsError(condition ? 'foo' : 'bar', 'message');",
@@ -328,6 +458,14 @@ const invalidCases: InvalidCase[] = [
   {
     code: "throw (new HttpsError('foo', 'bar'));",
     errors: [{ messageId: 'missingThirdArgument' }],
+  },
+  {
+    code: "throw new HttpsError('foo', (getMessage() as string), 'baz');",
+    errors: [{ messageId: 'dynamicHttpsErrors' }],
+  },
+  {
+    code: "throw new HttpsError('foo', ('bar' + getVar()) as any, 'baz');",
+    errors: [{ messageId: 'dynamicHttpsErrors' }],
   },
 
   // Template literals with nested expressions
@@ -450,6 +588,49 @@ const invalidCases: InvalidCase[] = [
       { messageId: 'missingThirdArgument' },
       { messageId: 'dynamicHttpsErrors' },
     ],
+  },
+  // Computed property with variable named 'message' should not match (invalid)
+  // String literal keys (invalid)
+  {
+    code: `
+    new HttpsError({
+      'code': 'unauthenticated',
+      'message': \`Dynamic \${message}\`,
+      'details': { foo: 'bar' }
+    });
+    `,
+    errors: [{ messageId: 'dynamicHttpsErrors' }],
+  },
+  {
+    code: `
+    new HttpsError({
+      'code': 'unauthenticated',
+      'message': 'Static message',
+    });
+    `,
+    errors: [{ messageId: 'missingDetailsProperty' }],
+  },
+  // Object-based signature with spread and missing details (invalid - specific message)
+  {
+    code: `
+    new HttpsError({
+      ...config,
+      code: 'unauthenticated',
+      message: 'Static message',
+    });
+    `,
+    errors: [{ messageId: 'missingDetailsDueToSpread' }],
+  },
+  // Object-based signature with extra arguments (invalid)
+  {
+    code: `
+    new HttpsError({
+      code: 'unauthenticated',
+      message: 'Static message',
+      details: { foo: 'bar' },
+    }, 'extra-arg');
+    `,
+    errors: [{ messageId: 'unexpectedExtraArgumentForObjectCall' }],
   },
 ];
 

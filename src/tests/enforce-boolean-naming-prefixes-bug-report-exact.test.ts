@@ -177,6 +177,16 @@ ruleTesterTs.run(
       type PickedFlags = Pick<UserFlags, '_isActive' | '_hasPermissions'>;
       type OmittedFlags = Omit<UserFlags, '_canEdit'>;
       `,
+
+      // Object literals with mixed naming (now ignored)
+      `
+      const config_mixed = {
+        _isEnabled: true,
+        active: false,
+        _hasFeature: true,
+        visible: false,
+      };
+      `,
     ],
     invalid: [
       // Non-underscore boolean properties should still be flagged
@@ -230,40 +240,6 @@ ruleTesterTs.run(
               type: 'property',
               name: 'enabled',
               capitalizedName: 'Enabled',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
-        ],
-      },
-
-      // Object literals with mixed naming
-      {
-        code: `
-        const config = {
-          _isEnabled: true, // Valid - starts with underscore
-          active: false, // Invalid - doesn't start with underscore or approved prefix
-          _hasFeature: true, // Valid - starts with underscore
-          visible: false, // Invalid - doesn't start with underscore or approved prefix
-        };
-        `,
-        errors: [
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'property',
-              name: 'active',
-              capitalizedName: 'Active',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'property',
-              name: 'visible',
-              capitalizedName: 'Visible',
               prefixes:
                 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },

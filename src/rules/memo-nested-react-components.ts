@@ -1,7 +1,6 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { minimatch } from 'minimatch';
 import { createRule } from '../utils/createRule';
-import { ASTHelpers } from '../utils/ASTHelpers';
 
 type Options = [
   {
@@ -16,12 +15,12 @@ type ComponentDetectionResult = {
   componentIsCallback: boolean;
 };
 
-const CALLBACK_HOOKS = new Set(['useCallback', 'useDeepCompareCallback']);
-
-const HOOK_REPLACEMENT: Record<string, string> = {
-  useCallback: 'useMemo',
-  useDeepCompareCallback: 'useDeepCompareMemo',
-};
+const CALLBACK_HOOKS = new Set([
+  'useCallback',
+  'useDeepCompareCallback',
+  'useMemo',
+  'useDeepCompareMemo',
+]);
 
 type ReactImports = {
   namespace: string | null;
@@ -386,19 +385,19 @@ const getVariableName = (node: TSESTree.CallExpression): string | null => {
   return null;
 };
 
-const findMemoReference = (reactImports: ReactImports): string | null => {
-  if (reactImports.namespace) {
-    return `${reactImports.namespace}.memo`;
+const isInsideFunction = (node: TSESTree.Node): boolean => {
+  let parent = node.parent;
+  while (parent) {
+    if (
+      parent.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+      parent.type === AST_NODE_TYPES.FunctionExpression ||
+      parent.type === AST_NODE_TYPES.FunctionDeclaration
+    ) {
+      return true;
+    }
+    parent = parent.parent;
   }
-
-  return reactImports.named.memo ?? null;
-};
-
-const hasIdentifierInScope = (
-  identifierName: string,
-  scope: TSESLint.Scope.Scope,
-) => {
-  return !!ASTHelpers.findVariableInScope(scope, identifierName);
+  return false;
 };
 
 export const memoNestedReactComponents = createRule<Options, MessageIds>({
@@ -407,10 +406,9 @@ export const memoNestedReactComponents = createRule<Options, MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Disallow React components defined in useCallback/useDeepCompareCallback',
+        'Disallow React components defined in render bodies, hooks, or passed as props',
       recommended: 'error',
     },
-    fixable: 'code',
     schema: [
       {
         type: 'object',
@@ -425,9 +423,19 @@ export const memoNestedReactComponents = createRule<Options, MessageIds>({
       },
     ],
     messages: {
-      memoizeNestedComponent: `What's wrong: React component "{{componentName}}" is created inside {{hookName}}.
-Why it matters: Components defined inside callbacks get new identities when the callback changes, causing React to remount them and drop their state and effects.
-How to fix: Create the component via {{replacementHook}} and wrap it in memo() so its identity stays stable across renders.`,
+      memoizeNestedComponent: `What's wrong: React component "{{componentName}}" is created inline inside {{locationDescription}}.
+
+Why it matters: Inline components get new identities when their containing scope re-renders, causing React to unmount and remount them—dropping state, replaying animations, and causing UI flashes. Wrapping with memo() does NOT fix this—memo() only prevents re-renders when props change, not when the component identity itself changes.
+
+How to fix:
+  1. Define the component at MODULE SCOPE in its own file, wrapped with memo()
+  2. Use React Context and/or directly provide props to supply any dynamic data the component needs
+  3. Pass the stable, imported component reference to props like CatalogWrapper
+
+Don't pass inline function components to component-type props (*Wrapper, *Component).
+Render-prop callbacks (e.g., render={...}) are fine; this rule targets component-type props only.
+
+See: https://react.dev/learn/your-first-component#nesting-and-organizing-components`,
     },
   },
   defaultOptions: [{}],
@@ -442,7 +450,21 @@ How to fix: Create the component via {{replacementHook}} and wrap it in memo() s
 
     const sourceCode = context.sourceCode ?? context.getSourceCode();
     const reactImports = collectReactImports(sourceCode);
-    const memoReference = findMemoReference(reactImports);
+
+    const reportNestedComponentViolation = (
+      node: TSESTree.Node,
+      componentName: string,
+      locationDescription: string,
+    ) => {
+      context.report({
+        node,
+        messageId: 'memoizeNestedComponent',
+        data: {
+          componentName,
+          locationDescription,
+        },
+      });
+    };
 
     return {
       CallExpression(node) {
@@ -462,6 +484,17 @@ How to fix: Create the component via {{replacementHook}} and wrap it in memo() s
           return;
         }
 
+        // For useMemo, it only counts as a component if it returns a function
+        if (
+          hook.name.includes('useMemo') ||
+          hook.name.includes('useDeepCompareMemo')
+        ) {
+          if (componentMatch.componentIsCallback) {
+            // Returns JSX directly, so it's an element, not a component
+            return;
+          }
+        }
+
         const componentName =
           getVariableName(node) ??
           (isFunctionExpression(callback) &&
@@ -469,132 +502,82 @@ How to fix: Create the component via {{replacementHook}} and wrap it in memo() s
             ? callback.id.name
             : 'component');
 
-        const replacementHook = HOOK_REPLACEMENT[hook.name];
+        reportNestedComponentViolation(node, componentName, `${hook.name}()`);
+      },
 
-        context.report({
+      VariableDeclarator(node) {
+        if (!node.init) return;
+        if (node.id.type !== AST_NODE_TYPES.Identifier) return;
+
+        // Only check if name starts with uppercase (convention for components)
+        if (!/^[A-Z]/.test(node.id.name)) return;
+
+        if (!isInsideFunction(node)) return;
+
+        // Skip if it's already a hook call (handled by CallExpression visitor)
+        if (node.init.type === AST_NODE_TYPES.CallExpression) {
+          const hook = isHookCall(node.init.callee);
+          if (hook) return;
+        }
+
+        const componentMatch = expressionCreatesComponent(
+          node.init,
+          reactImports,
+        );
+        if (!componentMatch) return;
+
+        // JSX elements assigned to variables are fine, only report function definitions
+        if (componentMatch.componentIsCallback) return;
+
+        reportNestedComponentViolation(node, node.id.name, 'a render body');
+      },
+
+      FunctionDeclaration(node) {
+        if (!node.id || !/^[A-Z]/.test(node.id.name)) return;
+        if (!isInsideFunction(node)) return;
+
+        const componentMatch = functionCreatesComponent(node, reactImports);
+        if (!componentMatch) return;
+
+        reportNestedComponentViolation(node.id, node.id.name, 'a render body');
+      },
+
+      JSXAttribute(node) {
+        if (node.name.type !== AST_NODE_TYPES.JSXIdentifier) return;
+        const attrName = node.name.name;
+
+        // Check if it's a component-type prop
+        if (!/(Wrapper|Component|Template|Header|Footer)$/.test(attrName)) {
+          return;
+        }
+
+        if (
+          !node.value ||
+          node.value.type !== AST_NODE_TYPES.JSXExpressionContainer
+        ) {
+          return;
+        }
+
+        const expression = node.value.expression;
+        if (expression.type === AST_NODE_TYPES.JSXEmptyExpression) return;
+
+        const componentMatch = expressionCreatesComponent(
+          expression,
+          reactImports,
+        );
+        if (!componentMatch) return;
+
+        // For props, we only report if it's a function (component definition)
+        if (componentMatch.componentIsCallback) {
+          // It's a JSX element passed directly, which is usually fine
+          return;
+        }
+
+        reportNestedComponentViolation(
           node,
-          messageId: 'memoizeNestedComponent',
-          data: {
-            componentName,
-            hookName: `${hook.name}()`,
-            replacementHook: `${replacementHook}()`,
-          },
-          fix: (fixer) => {
-            if (!memoReference) {
-              return null;
-            }
-
-            const memoNamespace = memoReference.endsWith('.memo')
-              ? memoReference.slice(0, -'.memo'.length)
-              : null;
-
-            // Prefer SourceCode#getScope when available; fall back to RuleContext#getScope for ESLint compatibility.
-            const sourceCodeWithScope = sourceCode as unknown as {
-              getScope?: (node: TSESTree.Node) => TSESLint.Scope.Scope;
-            };
-            const scope =
-              typeof sourceCodeWithScope.getScope === 'function'
-                ? sourceCodeWithScope.getScope(node)
-                : context.getScope();
-            const replacementIdentifierAvailable =
-              hook.name === 'useCallback'
-                ? hasIdentifierInScope(HOOK_REPLACEMENT.useCallback, scope)
-                : hasIdentifierInScope(
-                    HOOK_REPLACEMENT.useDeepCompareCallback,
-                    scope,
-                  );
-
-            if (!replacementIdentifierAvailable) {
-              // When the standalone replacement hook (useMemo/useDeepCompareMemo) is not imported,
-              // we can only fix member expressions that use the React namespace.
-              if (
-                node.callee.type !== AST_NODE_TYPES.MemberExpression ||
-                node.callee.object.type !== AST_NODE_TYPES.Identifier
-              ) {
-                return null;
-              }
-
-              // Ensure memo's namespace matches the hook's namespace (e.g., React.useCallback → React.useMemo + React.memo).
-              if (
-                memoReference &&
-                memoReference.includes('.') &&
-                memoReference !== `${node.callee.object.name}.memo`
-              ) {
-                return null;
-              }
-            }
-
-            // Component factories (functions returning functions that return JSX) require manual refactoring.
-            if (!componentMatch.componentIsCallback) {
-              return null;
-            }
-
-            // Ensure callback is a function expression before attempting to wrap it.
-            if (!isFunctionExpression(callback)) {
-              return null;
-            }
-
-            // React.memo() expects a synchronous component function. Wrapping async functions or
-            // generators would produce a Promise/yielding component, which is not renderable.
-            if (
-              callback.async ||
-              (callback.type === AST_NODE_TYPES.FunctionExpression &&
-                callback.generator)
-            ) {
-              return null;
-            }
-
-            // Avoid rewriting non-React namespaces (e.g., Hooks.useCallback → Hooks.useMemo),
-            // even when useMemo/memo are available as named imports.
-            if (node.callee.type === AST_NODE_TYPES.MemberExpression) {
-              if (
-                node.callee.object.type !== AST_NODE_TYPES.Identifier ||
-                !reactImports.namespace ||
-                node.callee.object.name !== reactImports.namespace
-              ) {
-                return null;
-              }
-            }
-
-            // Prevent mixing namespaces: don't apply fix when hook and memo use different React imports.
-            if (
-              memoNamespace &&
-              node.callee.type === AST_NODE_TYPES.MemberExpression &&
-              node.callee.object.type === AST_NODE_TYPES.Identifier &&
-              node.callee.object.name !== memoNamespace
-            ) {
-              return null;
-            }
-
-            const callbackText = sourceCode.getText(callback);
-            const callbackReplacement = `() => ${memoReference}(${callbackText})`;
-
-            const fixes: TSESLint.RuleFix[] = [
-              fixer.replaceText(callback, callbackReplacement),
-            ];
-
-            if (node.callee.type === AST_NODE_TYPES.Identifier) {
-              fixes.push(
-                fixer.replaceText(
-                  node.callee,
-                  HOOK_REPLACEMENT[node.callee.name],
-                ),
-              );
-            } else if (
-              node.callee.type === AST_NODE_TYPES.MemberExpression &&
-              node.callee.property.type === AST_NODE_TYPES.Identifier
-            ) {
-              fixes.push(
-                fixer.replaceText(
-                  node.callee.property,
-                  HOOK_REPLACEMENT[node.callee.property.name],
-                ),
-              );
-            }
-
-            return fixes;
-          },
-        });
+          attrName,
+          `the "${attrName}" prop`,
+        );
       },
     };
   },

@@ -151,8 +151,80 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         };
       `,
     },
+    // Render functions returning JSX should be valid (Bug #1140)
+    {
+      code: `
+        import React, { useCallback } from 'react';
+
+        const TeamHit = ({ hit, isPinned }: { hit: any, isPinned: boolean }) => {
+          const renderHit = useCallback((hit: any) => {
+            return <div {...hit} isPinned={isPinned} />;
+          }, [isPinned]);
+
+          return (
+            <VerticalCarousel
+              render={renderHit}
+            />
+          );
+        };
+      `,
+    },
+    {
+      code: `
+        import React from 'react';
+        interface Props {
+          renderItem: (item: any) => React.ReactNode;
+        }
+        const List = ({ renderItem }: Props) => (
+          <div renderItem={renderItem} />
+        );
+      `,
+    },
+    // Callback function returning JSX inside useCallback should be valid
+    {
+      code: `
+        import React, { useCallback } from 'react';
+        const Component = () => {
+          const getItem = useCallback(() => <div>Item</div>, []);
+          return <div item={getItem} />;
+        };
+      `,
+    },
+    // Namespaced and generic React element types should be valid
+    {
+      code: `
+        import React from 'react';
+        interface Props {
+          customRenderer: () => React.ReactElement<{ foo: string }>;
+          nodeRenderer: () => React.ReactNode;
+        }
+        const Example = ({ customRenderer, nodeRenderer }: Props) => (
+          <div custom={customRenderer} node={nodeRenderer} />
+        );
+      `,
+    },
   ],
   invalid: [
+    // Function returning HTMLElement should be flagged (not a React render prop)
+    {
+      code: `
+        interface Props {
+          getElement: () => HTMLElement;
+        }
+        const Example = ({ getElement }: Props) => (
+          <div element={getElement} />
+        );
+      `,
+      errors: [{ messageId: 'callbackPropPrefix' }],
+      output: `
+        interface Props {
+          getElement: () => HTMLElement;
+        }
+        const Example = ({ getElement }: Props) => (
+          <div onElement={getElement} />
+        );
+      `,
+    },
     // Function prop without 'on' prefix
     {
       code: `
