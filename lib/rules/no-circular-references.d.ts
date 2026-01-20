@@ -1,1 +1,2 @@
-export declare const noCircularReferences: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"circularReference", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;
+import { TSESLint } from '@typescript-eslint/utils';
+export declare const noCircularReferences: TSESLint.RuleModule<"circularReference", [], TSESLint.RuleListener>;

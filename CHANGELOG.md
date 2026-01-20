@@ -1,3 +1,59 @@
+# [1.15.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.14.0...v1.15.0) (2026-01-20)
+
+
+### Bug Fixes
+
+* **@blumintinc/blumint/no-redundant-this-params:** allow different instance members for same parameter ([88d194e](https://github.com/BluMintInc/eslint-custom-rules/commit/88d194ee88ae109c1f94802afb2583cf86f6c9dc))
+* add parserServices fallback to enforce-date-ttime rule ([ea45ddb](https://github.com/BluMintInc/eslint-custom-rules/commit/ea45ddbcfb8f23e41700350897303e907be6f7c6))
+* add Void type flag to isPossiblyNullish check ([87e2db9](https://github.com/BluMintInc/eslint-custom-rules/commit/87e2db9407e9f0baa1e186b8254b30aa8712bdad))
+* address PR review comments for `prefer-nullish-coalescing-boolean-props` ([a8bbe60](https://github.com/BluMintInc/eslint-custom-rules/commit/a8bbe6061aedd9cd7a9e43d2a76bc831cab2300b))
+* address PR review comments for dynamic-https-errors ([e6d7027](https://github.com/BluMintInc/eslint-custom-rules/commit/e6d7027936266116b7d90bc5c791b2c3b036fe5a))
+* allow typeof constant in type alias definitions ([c7d3cbe](https://github.com/BluMintInc/eslint-custom-rules/commit/c7d3cbe886402901cef584faab8e0821ea9cf64a))
+* **dynamic-https-errors:** handle spread elements and edge cases in HttpsError calls ([8e87a35](https://github.com/BluMintInc/eslint-custom-rules/commit/8e87a35aff9e5ce164ccf5c24e85100c1cb1eb52))
+* **dynamic-https-errors:** handle string literal keys and computed properties in object-based constructor ([fb0250d](https://github.com/BluMintInc/eslint-custom-rules/commit/fb0250d774ac6c139e7a249f1d4bdbbec6dacee8))
+* **dynamic-https-errors:** handle TypeScript assertions in staticness check ([8eab5ef](https://github.com/BluMintInc/eslint-custom-rules/commit/8eab5efb5a77c9f6f07a63b362d94a1596858d25))
+* **dynamic-https-errors:** replace type assertion with explicit isExpression type guard ([05a18af](https://github.com/BluMintInc/eslint-custom-rules/commit/05a18afaab898ffc12800963d1efc9d3d4c4b31a))
+* **dynamic-https-errors:** support object-based constructor signature ([755641f](https://github.com/BluMintInc/eslint-custom-rules/commit/755641f1e503488418426bcaaa84964ad5c2bd4c))
+* **enforce-memoize-async:** enhance alias handling for decorator selection ([ee6a9f8](https://github.com/BluMintInc/eslint-custom-rules/commit/ee6a9f870b3a360bee2e524134a5226b158f2ac8))
+* **enforce-memoize-async:** enhance namespace handling for multiple imports ([b3a1a6e](https://github.com/BluMintInc/eslint-custom-rules/commit/b3a1a6e4d3a7d9b4f41412f497db2fa5e37133ab))
+* **enforce-memoize-async:** improve decorator detection and simplify code ([6ae6579](https://github.com/BluMintInc/eslint-custom-rules/commit/6ae6579127adc7c8c1167ad55999909d5a03e60b))
+* **enforce-memoize-async:** improve decorator detection with multiple imports ([018b874](https://github.com/BluMintInc/eslint-custom-rules/commit/018b874f9b513e9b01824e2cdee365bb874a7548))
+* exclude literals used in throw statements from react-memoize-literals ([5a1a9c1](https://github.com/BluMintInc/eslint-custom-rules/commit/5a1a9c1bcac8ad1687d6e9fadc3f07b6bbef7fc5))
+* **global-const-style:** ignore MemberExpression on dynamic values ([f938fd3](https://github.com/BluMintInc/eslint-custom-rules/commit/f938fd389e245557e77cc854cf6a254b0977cdad)), closes [#1130](https://github.com/BluMintInc/eslint-custom-rules/issues/1130)
+* handle functions in ASTHelpers.declarationIncludesIdentifier ([d4c3edf](https://github.com/BluMintInc/eslint-custom-rules/commit/d4c3edf05c4edabe5f9aaab85123d3bd278810bf))
+* handle optional chaining in isDynamicValue for global-const-style ([5eb4f27](https://github.com/BluMintInc/eslint-custom-rules/commit/5eb4f27acda86d922ed434c62089d9135e43ae0e))
+* ignore batch manager and coordinator dependencies in parallelize-async-operations ([7fd4f74](https://github.com/BluMintInc/eslint-custom-rules/commit/7fd4f740fea3301244e9249770c3b3ca99fcf072))
+* improve boolean context and nullish type checking ([bc30b38](https://github.com/BluMintInc/eslint-custom-rules/commit/bc30b38ef86f8a9f48ac8e1a433cf1fe773eb3fd))
+* improve HttpsError validation and error messages ([f68cd1e](https://github.com/BluMintInc/eslint-custom-rules/commit/f68cd1e232346234f9c01bf7bc00fdc2732c8de1))
+* improve TypeParameter handling in isPossiblyNullish ([d9fcfa5](https://github.com/BluMintInc/eslint-custom-rules/commit/d9fcfa5718ba38243ebc1c8c534650bf143bb933))
+* include member properties in coordinator detection and update docs ([1040d2b](https://github.com/BluMintInc/eslint-custom-rules/commit/1040d2ba50eedd19160f8df6320669b6dddd1ae3))
+* **no-passthrough-getters:** add defensive check for tsNode mapping ([4a3660a](https://github.com/BluMintInc/eslint-custom-rules/commit/4a3660aeaad9ff8012c971e40d2d1a2732f87c12)), closes [no-passthrou#getters](https://github.com/no-passthrou/issues/getters)
+* **no-passthrough-getters:** handle anonymous classes and optimize heritage checks ([4740677](https://github.com/BluMintInc/eslint-custom-rules/commit/47406775d52ac20d61d10699032f5a1809e46a7e)), closes [no-passthrou#getters](https://github.com/no-passthrou/issues/getters)
+* prevent duplicate parameter names in enforce-props-argument-name rule ([1129669](https://github.com/BluMintInc/eslint-custom-rules/commit/1129669271c10af3e59a5a644990fbc32f4bcb64))
+* prevent no-passthrough-getters from flagging interface implementations ([29b85ff](https://github.com/BluMintInc/eslint-custom-rules/commit/29b85ff24b655b6306bd9a68f34eff17febd7dcf)), closes [no-passthrou#getters](https://github.com/no-passthrou/issues/getters) [no-passthrou#getters](https://github.com/no-passthrou/issues/getters) [BluMintInc/eslint-custom-rules#1132](https://github.com/BluMintInc/eslint-custom-rules/issues/1132)
+* restrict isRenderFunction to React-specific types and add tests ([6503d34](https://github.com/BluMintInc/eslint-custom-rules/commit/6503d34b426895e00e848565f5dba762ba3a6e13))
+* **rules:** exempt render functions from consistent-callback-naming ([b2e3aab](https://github.com/BluMintInc/eslint-custom-rules/commit/b2e3aab01c37c4ea8e333e0abdba6b2e370bce44))
+* update enforce-memoize-async package name to @blumintinc/typescript-memoize ([25614a6](https://github.com/BluMintInc/eslint-custom-rules/commit/25614a6e28afd9810f6903b4def25386090a8638))
+* update enforce-memoize-async to use @blumintinc/typescript-memoize ([5c5a3dd](https://github.com/BluMintInc/eslint-custom-rules/commit/5c5a3dd849bc5b1b4d134aa0c0a40e3c5487b6ca)), closes [#1128](https://github.com/BluMintInc/eslint-custom-rules/issues/1128)
+
+
+### Features
+
+* Add coverage threshold and improve memoization tests ([13c6c06](https://github.com/BluMintInc/eslint-custom-rules/commit/13c6c06058e0f81493ebfdd5facfa500d4244385))
+* Add enforce-f-extension-for-entry-points rule ([61abebb](https://github.com/BluMintInc/eslint-custom-rules/commit/61abebbcaac58fdef153e588667d0979c7a15bc8))
+* Add type checking to prefer-nullish-coalescing-boolean-props ([3fbb4d3](https://github.com/BluMintInc/eslint-custom-rules/commit/3fbb4d3441afe28f664f4f73c81c83ff4d922c05))
+* Allow HttpsError cause via settings object ([eff0068](https://github.com/BluMintInc/eslint-custom-rules/commit/eff0068f24b4b504069b7cd2b9acd98489d56c27))
+* Allow memoizing literals in conditional/logical expressions ([cdf1ce3](https://github.com/BluMintInc/eslint-custom-rules/commit/cdf1ce3078370176f0028455f7bede1fc0a4d752))
+* Allow memoizing literals in deep-compared JSX attributes ([8785bb8](https://github.com/BluMintInc/eslint-custom-rules/commit/8785bb81b3e961918c09eee12f0205a0566a0ef3))
+* enhance enforce-date-ttime rule based on PR review ([ed4ec60](https://github.com/BluMintInc/eslint-custom-rules/commit/ed4ec60766969ba7b8bf31ca355f9369b0a5d993))
+* **eslint:** add enforce-date-ttime rule ([5e4e059](https://github.com/BluMintInc/eslint-custom-rules/commit/5e4e059232028bf495fdf7910f0dd43f60ff66bb))
+* Improve AST helper and verb-noun rule ([6ed0e25](https://github.com/BluMintInc/eslint-custom-rules/commit/6ed0e2500d3144dd123fb78943790023c2531d57))
+* Improve memo-compare-deeply-complex-props and prevent-children-clobber ([b9c14ca](https://github.com/BluMintInc/eslint-custom-rules/commit/b9c14ca03748a796ea0065efce48bf566d0b03f2))
+* Skip memoizing literals that are thrown ([33a7992](https://github.com/BluMintInc/eslint-custom-rules/commit/33a799222dcfbef02ee09d2808cd6a62302aede3))
+* Support JSX in VariableDeclarations and Declarators ([de5a127](https://github.com/BluMintInc/eslint-custom-rules/commit/de5a1275b1e39e02b3b8eb7d5aedad52ca64b497))
+* Support more stable hooks and async functions ([80a176b](https://github.com/BluMintInc/eslint-custom-rules/commit/80a176ba650ba289311fe578bafaf0249d58c05d))
+* Support namespace imports for entry points ([e03e1f3](https://github.com/BluMintInc/eslint-custom-rules/commit/e03e1f36e92187248c58f2da88e01ba82f0e846b))
+
 # [1.14.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.13.0...v1.14.0) (2026-01-06)
 
 

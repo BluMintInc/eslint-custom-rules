@@ -1,4 +1,4 @@
-import { TSESTree } from '@typescript-eslint/utils';
-export declare const noPassthroughGetters: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"noPassthroughGetter", never[], {
+import { TSESTree, TSESLint } from '@typescript-eslint/utils';
+export declare const noPassthroughGetters: TSESLint.RuleModule<"noPassthroughGetter", never[], {
     MethodDefinition(node: TSESTree.MethodDefinition): void;
 }>;
