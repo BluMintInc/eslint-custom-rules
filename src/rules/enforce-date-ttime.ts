@@ -23,7 +23,7 @@ export const enforceDateTTime = createRule<[], MessageIds>({
   defaultOptions: [],
   create(context) {
     const sourceCode = (context as any).sourceCode ?? context.getSourceCode();
-    const parserServices = sourceCode.parserServices;
+    const parserServices = sourceCode?.parserServices ?? context.parserServices;
     const checker = parserServices?.program?.getTypeChecker();
 
     if (!parserServices || !checker) {
