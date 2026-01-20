@@ -1,12 +1,27 @@
 import { createRule } from '../utils/createRule';
+import { minimatch } from 'minimatch';
 
 export const RULE_NAME = 'enforce-dynamic-imports';
 
 type Options = [
   {
-    libraries: string[];
+    ignoredLibraries?: string[];
     allowImportType?: boolean;
   },
+];
+
+export const DEFAULT_IGNORED_LIBRARIES = [
+  'react',
+  'react-dom',
+  'next',
+  'next/**',
+  '@mui/material',
+  '@mui/material/**',
+  '@mui/icons-material',
+  '@mui/icons-material/**',
+  '@emotion/**',
+  'clsx',
+  'tailwind-merge',
 ];
 
 export default createRule<Options, 'dynamicImportRequired'>({
@@ -15,14 +30,14 @@ export default createRule<Options, 'dynamicImportRequired'>({
     type: 'suggestion',
     docs: {
       description:
-        'Enforce dynamic imports for specified libraries to optimize bundle size',
+        'Enforce dynamic imports for external libraries by default to optimize bundle size, unless explicitly ignored',
       recommended: 'error',
     },
     schema: [
       {
         type: 'object',
         properties: {
-          libraries: {
+          ignoredLibraries: {
             type: 'array',
             items: {
               type: 'string',
@@ -37,29 +52,35 @@ export default createRule<Options, 'dynamicImportRequired'>({
     ],
     messages: {
       dynamicImportRequired:
-        'Static import from "{{source}}" eagerly pulls the entire package into the entry bundle, inflating download size and delaying the first render. Load it lazily with a dynamic import (for example, useDynamic(() => import("{{source}}"))) so the code is fetched only when needed; if you only need types, use a type-only import with allowImportType enabled.',
+        'Static import from "{{source}}" eagerly pulls the entire package into the initial bundle, inflating download size and delaying the first render. External libraries should be loaded lazily with a dynamic import (for example, useDynamic(() => import("{{source}}"))) unless they are intentionally static; if you only need types, use a type-only import.',
     },
   },
   defaultOptions: [
     {
-      libraries: ['@stream-io/video-react-sdk'],
+      ignoredLibraries: DEFAULT_IGNORED_LIBRARIES,
       allowImportType: true,
     },
   ],
   create(context, [options]) {
-    const { libraries, allowImportType = true } = options;
+    const {
+      ignoredLibraries = DEFAULT_IGNORED_LIBRARIES,
+      allowImportType = true,
+    } = options;
 
-    // Check if the import source matches any of the specified libraries
-    const isLibraryMatch = (source: string): boolean => {
-      return libraries.some((lib) => {
-        // Simple glob pattern matching
+    const isIgnored = (source: string): boolean => {
+      return ignoredLibraries.some((lib) => {
         if (lib.includes('*')) {
-          const pattern = lib.replace(/\*/g, '.*');
-          const regex = new RegExp(`^${pattern}$`);
-          return regex.test(source);
+          return minimatch(source, lib);
         }
         return source === lib;
       });
+    };
+
+    const isExternal = (source: string): boolean => {
+      // Basic check: starts with a letter or @
+      // This excludes relative imports (./, ../) and absolute paths (/)
+      // and path aliases starting with @/ (if not just @)
+      return /^[a-z@]/i.test(source) && !source.startsWith('@/');
     };
 
     return {
@@ -68,12 +89,10 @@ export default createRule<Options, 'dynamicImportRequired'>({
 
         // Skip type-only imports if allowed
         if (allowImportType) {
-          // Check if it's a type-only import declaration
           if (node.importKind === 'type') {
             return;
           }
 
-          // Check if all specifiers are type imports
           if (
             node.specifiers.length > 0 &&
             node.specifiers.every(
@@ -85,8 +104,8 @@ export default createRule<Options, 'dynamicImportRequired'>({
           }
         }
 
-        // Check if the import is from a library that should be dynamically imported
-        if (typeof importSource === 'string' && isLibraryMatch(importSource)) {
+        // Only enforce for external libraries that are NOT ignored
+        if (isExternal(importSource) && !isIgnored(importSource)) {
           context.report({
             node,
             messageId: 'dynamicImportRequired',
