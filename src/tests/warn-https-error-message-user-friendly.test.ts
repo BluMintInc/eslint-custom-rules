@@ -45,6 +45,33 @@ ruleTesterTs.run('warn-https-error-message-user-friendly', warnHttpsErrorMessage
       const getOptions = () => ({ code: 'ok' });
       new HttpsError(getOptions());
     `,
+    // 16. Function overload (body is null)
+    `
+      function getOptions(): any;
+      function getOptions() { return { code: 'ok' }; }
+      new HttpsError(getOptions());
+    `,
+    // 17. Nested function returns messageUserFriendly but outer doesn't
+    `
+      function getOptions() {
+        function nested() { return { messageUserFriendly: 'oops' }; }
+        return { code: 'ok' };
+      }
+      new HttpsError(getOptions());
+    `,
+    // 18. Nested function expression and arrow function
+    `
+      function getOptions() {
+        const a = function() { return { messageUserFriendly: 'oops' }; };
+        const b = () => ({ messageUserFriendly: 'oops' });
+        return { code: 'ok' };
+      }
+      new HttpsError(getOptions());
+    `,
+    // 19. Not an HttpsError call (covers line 18)
+    `
+      const x = NotHttpsError({ messageUserFriendly: 'oops' });
+    `,
   ],
   invalid: [
     // 1. Direct object literal in new HttpsError

@@ -47,6 +47,34 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
   defaultOptions: [],
   create(context) {
     /**
+     * Finds properties or spread elements that contain messageUserFriendly in an object expression.
+     */
+    const findMessageUserFriendlyProperties = (
+      node: TSESTree.ObjectExpression,
+      visited: Set<string> = new Set(),
+    ): (TSESTree.Property | TSESTree.SpreadElement)[] => {
+      const matches: (TSESTree.Property | TSESTree.SpreadElement)[] = [];
+      for (const prop of node.properties) {
+        if (prop.type === AST_NODE_TYPES.Property) {
+          if (
+            !prop.computed &&
+            ((prop.key.type === AST_NODE_TYPES.Identifier &&
+              prop.key.name === 'messageUserFriendly') ||
+              (prop.key.type === AST_NODE_TYPES.Literal &&
+                prop.key.value === 'messageUserFriendly'))
+          ) {
+            matches.push(prop);
+          }
+        } else if (prop.type === AST_NODE_TYPES.SpreadElement) {
+          if (checkNode(prop.argument, visited)) {
+            matches.push(prop);
+          }
+        }
+      }
+      return matches;
+    };
+
+    /**
      * Traces a variable to see if its initializer contains messageUserFriendly.
      */
     const traceVariable = (
@@ -88,7 +116,8 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
         | TSESTree.ArrowFunctionExpression,
       visited: Set<string> = new Set(),
     ): boolean => {
-      const sourceCode = context.getSourceCode();
+      if (!node.body) return false;
+      const sourceCode = context.sourceCode ?? context.getSourceCode();
       const walk = (current: TSESTree.Node): boolean => {
         if (
           current !== node &&
@@ -141,23 +170,7 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
       visited: Set<string> = new Set(),
     ): boolean => {
       if (node.type === AST_NODE_TYPES.ObjectExpression) {
-        for (const prop of node.properties) {
-          if (prop.type === AST_NODE_TYPES.Property) {
-            if (
-              !prop.computed &&
-              ((prop.key.type === AST_NODE_TYPES.Identifier &&
-                prop.key.name === 'messageUserFriendly') ||
-                (prop.key.type === AST_NODE_TYPES.Literal &&
-                  prop.key.value === 'messageUserFriendly'))
-            ) {
-              return true;
-            }
-          } else if (prop.type === AST_NODE_TYPES.SpreadElement) {
-            if (checkNode(prop.argument, visited)) {
-              return true;
-            }
-          }
-        }
+        return findMessageUserFriendlyProperties(node, visited).length > 0;
       } else if (node.type === AST_NODE_TYPES.Identifier) {
         return traceVariable(node, visited);
       } else if (node.type === AST_NODE_TYPES.LogicalExpression) {
@@ -197,31 +210,13 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
 
     const validateOptions = (node: TSESTree.Node) => {
       if (node.type === AST_NODE_TYPES.ObjectExpression) {
-        for (const prop of node.properties) {
-          if (prop.type === AST_NODE_TYPES.Property) {
-            if (
-              !prop.computed &&
-              ((prop.key.type === AST_NODE_TYPES.Identifier &&
-                prop.key.name === 'messageUserFriendly') ||
-                (prop.key.type === AST_NODE_TYPES.Literal &&
-                  prop.key.value === 'messageUserFriendly'))
-            ) {
-              context.report({
-                node: prop.key,
-                messageId: 'warnHttpsErrorMessageUserFriendly',
-                data: { propertyName: 'messageUserFriendly' },
-              });
-            }
-          } else if (prop.type === AST_NODE_TYPES.SpreadElement) {
-            if (checkNode(prop.argument)) {
-              context.report({
-                node: prop,
-                messageId: 'warnHttpsErrorMessageUserFriendly',
-                data: { propertyName: 'messageUserFriendly' },
-              });
-            }
-          }
-        }
+        findMessageUserFriendlyProperties(node).forEach((prop) => {
+          context.report({
+            node: prop.type === AST_NODE_TYPES.Property ? prop.key : prop,
+            messageId: 'warnHttpsErrorMessageUserFriendly',
+            data: { propertyName: 'messageUserFriendly' },
+          });
+        });
       } else if (node.type === AST_NODE_TYPES.Identifier) {
         if (traceVariable(node)) {
           context.report({
