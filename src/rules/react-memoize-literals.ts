@@ -391,6 +391,69 @@ function unwrapNestedExpressions(node: TSESTree.Node): TSESTree.Node {
 }
 
 /**
+ * Checks whether a node is a JSX attribute that is deep-compared by blumintAreEqual.
+ * These attributes include 'sx', 'style', and any ending in 'Sx' or 'Style'.
+ * @param node Node to inspect.
+ * @returns True when the node is a deep-compared JSX attribute.
+ */
+function isDeepComparedJSXAttribute(node: TSESTree.Node): boolean {
+  if (isFunctionNode(node)) {
+    return false;
+  }
+
+  let current: TSESTree.Node | null = node.parent as TSESTree.Node | null;
+
+  while (current) {
+    if (isFunctionNode(current)) {
+      return false;
+    }
+
+    if (current.type === AST_NODE_TYPES.JSXExpressionContainer) {
+      current = current.parent as TSESTree.Node | null;
+      break;
+    }
+
+    if (
+      isExpressionWrapper(current) ||
+      current.type === AST_NODE_TYPES.ConditionalExpression ||
+      current.type === AST_NODE_TYPES.LogicalExpression ||
+      current.type === AST_NODE_TYPES.SpreadElement ||
+      // Property, ObjectExpression, and ArrayExpression allow detection of nested
+      // literals within deep-compared attributes (e.g., sx={{ nested: { a: 1 } }}
+      // or sx={[{ margin: 1 }]}). Since deep equality checks compare nested
+      // structures recursively, nested literals are also exempt from triggering
+      // the memoization rule.
+      current.type === AST_NODE_TYPES.Property ||
+      current.type === AST_NODE_TYPES.ObjectExpression ||
+      current.type === AST_NODE_TYPES.ArrayExpression
+    ) {
+      current = current.parent as TSESTree.Node | null;
+      continue;
+    }
+
+    break;
+  }
+
+  if (current?.type === AST_NODE_TYPES.JSXAttribute) {
+    const attributeName =
+      current.name.type === AST_NODE_TYPES.JSXIdentifier
+        ? current.name.name
+        : null;
+
+    if (attributeName) {
+      return (
+        attributeName === 'sx' ||
+        attributeName.endsWith('Sx') ||
+        attributeName === 'style' ||
+        attributeName.endsWith('Style')
+      );
+    }
+  }
+
+  return false;
+}
+
+/**
  * Finds the nearest enclosing hook call for a literal and whether the literal
  * is passed directly as an argument (versus nested inside another expression).
  */
@@ -737,7 +800,10 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
       const owner = findEnclosingComponentOrHook(node);
       if (!owner) return;
 
-      if (isInsideAllowedHookCallback(node)) {
+      if (
+        isInsideAllowedHookCallback(node) ||
+        isDeepComparedJSXAttribute(node)
+      ) {
         return;
       }
 

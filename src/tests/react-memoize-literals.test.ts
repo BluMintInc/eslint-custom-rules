@@ -140,6 +140,37 @@ function Component() {
 }
       `,
     },
+    // JSX props 'sx' and 'style' (and variations) are deep-compared and allowed for literals
+    {
+      code: `
+function Component() {
+  return (
+    <div
+      sx={{ color: 'blue' }}
+      style={{ padding: '10px' }}
+      containerSx={{ margin: '10px' }}
+      innerStyle={{ display: 'flex' }}
+      nestedSx={[{ color: 'red' }, { margin: '5px' }]}
+    />
+  );
+}
+      `,
+    },
+    // MUI sx prop from issue example
+    {
+      code: `
+import Stack from '@mui/material/Stack';
+
+const Example = () => (
+  <Stack
+    sx={{
+      backgroundColor: 'red',
+      textWrap: 'nowrap',
+    }}
+  />
+);
+      `,
+    },
     // Hook argument uses identifiers only
     {
       code: `
@@ -990,6 +1021,58 @@ const MyComponent = () => {
           data: {
             literalType: 'inline function',
             context: 'component "MyComponent"',
+            memoHook: 'useCallback',
+          },
+        },
+      ],
+    },
+    // Inline function in deep-compared JSX attribute should still be reported
+    {
+      code: `
+function Component() {
+  return <div sx={() => console.log('test')} />;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'inline function',
+            context: 'component "Component"',
+            memoHook: 'useCallback',
+          },
+        },
+      ],
+    },
+    {
+      code: `
+function Component() {
+  return <div style={() => console.log('test')} />;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'inline function',
+            context: 'component "Component"',
+            memoHook: 'useCallback',
+          },
+        },
+      ],
+    },
+    {
+      code: `
+function Component() {
+  return <div sx={{ onClick: () => console.log('test') }} />;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'inline function',
+            context: 'component "Component"',
             memoHook: 'useCallback',
           },
         },
