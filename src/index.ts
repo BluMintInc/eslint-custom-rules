@@ -1,3 +1,4 @@
+import { enforceDateTTime } from './rules/enforce-date-ttime';
 import { enforceFExtensionForEntryPoints } from './rules/enforce-f-extension-for-entry-points';
 import { arrayMethodsThisContext } from './rules/array-methods-this-context';
 import { classMethodsReadTopToBottom } from './rules/class-methods-read-top-to-bottom';
@@ -380,6 +381,12 @@ module.exports = {
        */
       overrides: [
         {
+          files: ['src/**/*.{ts,tsx}'],
+          rules: {
+            '@blumintinc/blumint/enforce-date-ttime': 'error',
+          },
+        },
+        {
           files: ['functions/*.f.ts'],
           rules: {
             'no-restricted-imports': [
@@ -457,6 +464,7 @@ module.exports = {
   },
 
   rules: {
+    'enforce-date-ttime': enforceDateTTime,
     'enforce-f-extension-for-entry-points': enforceFExtensionForEntryPoints,
     'firestore-transaction-reads-before-writes':
       firestoreTransactionReadsBeforeWrites,
