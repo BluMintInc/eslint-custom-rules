@@ -273,10 +273,6 @@ function getObjectUsagesInHook(
     if (!node || visited.has(node)) return;
     visited.add(node);
 
-    // Direct usage of the target identifier to distinguish between:
-    // 1. Never used (not even present) → suggest removal
-    // 2. Used in ways requiring entire object → no suggestion
-    // 3. Used only via specific fields → suggest replacing with fields
     if (node.type === AST_NODE_TYPES.Identifier && node.name === objectName) {
       const parent = node.parent;
 
@@ -322,7 +318,9 @@ function getObjectUsagesInHook(
           parent?.type === AST_NODE_TYPES.SpreadElement ||
           parent?.type === AST_NODE_TYPES.ForInStatement ||
           parent?.type === AST_NODE_TYPES.ForOfStatement ||
-          parent?.type === AST_NODE_TYPES.CallExpression;
+          parent?.type === AST_NODE_TYPES.CallExpression ||
+          parent?.type === AST_NODE_TYPES.TSAsExpression ||
+          parent?.type === AST_NODE_TYPES.TSTypeAssertion;
 
         if (isTypeAUsage) {
           needsEntireObject = true;
@@ -377,49 +375,48 @@ function getObjectUsagesInHook(
       // Only process if this is the outermost member expression in a chain
       // (i.e., its parent is not also a member expression)
       const parent = memberExpr.parent;
-      if (parent && parent.type === AST_NODE_TYPES.MemberExpression) {
-        // This is an intermediate member expression, skip it
-        return;
-      }
+      const isIntermediate =
+        parent && parent.type === AST_NODE_TYPES.MemberExpression;
 
-      // Check if this member expression involves our target object
-      let current: TSESTree.Node = memberExpr;
-      let foundTargetObject = false;
-      let hasDynamicComputed = false;
+      if (!isIntermediate) {
+        // Check if this member expression involves our target object
+        let current: TSESTree.Node = memberExpr;
+        let foundTargetObject = false;
+        let hasDynamicComputed = false;
 
-      // Walk up the member expression chain to see if it involves our target object
-      while (current.type === AST_NODE_TYPES.MemberExpression) {
-        const currentMember = current as TSESTree.MemberExpression;
+        // Walk up the member expression chain to see if it involves our target object
+        while (current.type === AST_NODE_TYPES.MemberExpression) {
+          const currentMember = current as TSESTree.MemberExpression;
 
-        // Check if this level uses dynamic computed property access
-        if (
-          currentMember.computed &&
-          currentMember.property.type === AST_NODE_TYPES.Identifier
-        ) {
-          hasDynamicComputed = true;
+          // Check if this level uses dynamic computed property access
+          if (
+            currentMember.computed &&
+            currentMember.property.type === AST_NODE_TYPES.Identifier
+          ) {
+            hasDynamicComputed = true;
+          }
+
+          current = currentMember.object;
         }
 
-        current = currentMember.object;
-      }
+        // Check if we reached our target object
+        if (
+          current.type === AST_NODE_TYPES.Identifier &&
+          current.name === objectName
+        ) {
+          foundTargetObject = true;
+        }
 
-      // Check if we reached our target object
-      if (
-        current.type === AST_NODE_TYPES.Identifier &&
-        current.name === objectName
-      ) {
-        foundTargetObject = true;
-      }
-
-      if (foundTargetObject) {
-        if (hasDynamicComputed) {
-          // Dynamic computed property access means we need the entire object
-          needsEntireObject = true;
-          return;
-        } else {
-          // Static property access - add to usages
-          const path = buildAccessPath(memberExpr);
-          if (path) {
-            usages.set(path, memberExpr.range?.[0] || 0);
+        if (foundTargetObject) {
+          if (hasDynamicComputed) {
+            // Dynamic computed property access means we need the entire object
+            needsEntireObject = true;
+          } else {
+            // Static property access - add to usages
+            const path = buildAccessPath(memberExpr);
+            if (path) {
+              usages.set(path, memberExpr.range?.[0] || 0);
+            }
           }
         }
       }

@@ -262,6 +262,23 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
+    // Test case for the bug report #1157 - object literal property usage
+    {
+      code: `
+        import { useMemo } from 'react';
+
+        export const useRepro = (onMenuClose: () => void, uid: string) => {
+          const item = useMemo(() => {
+            return {
+              onClick: onMenuClose,
+              href: \`/\${uid}\`,
+            };
+          }, [onMenuClose, uid]);
+
+          return item;
+        };
+      `,
+    },
     // Using JSON.stringify() should be valid
     {
       code: `
