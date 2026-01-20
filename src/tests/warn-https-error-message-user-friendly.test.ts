@@ -355,5 +355,97 @@ ruleTesterTs.run('warn-https-error-message-user-friendly', warnHttpsErrorMessage
         },
       ],
     },
+    // 22. Nested returns in function body
+    {
+      code: `
+        function getOptions() {
+          if (condition) {
+            return { messageUserFriendly: 'oops' };
+          }
+          return { code: 'ok' };
+        }
+        new HttpsError(getOptions());
+      `,
+      errors: [
+        {
+          messageId,
+          line: 8,
+          column: 24,
+          data: { propertyName: 'messageUserFriendly' },
+        },
+      ],
+    },
+    // 23. Nested returns in switch statement
+    {
+      code: `
+        function getOptions(type) {
+          switch (type) {
+            case 'error':
+              return { messageUserFriendly: 'oops' };
+            default:
+              return {};
+          }
+        }
+        new HttpsError(getOptions('error'));
+      `,
+      errors: [
+        {
+          messageId,
+          line: 10,
+          column: 24,
+          data: { propertyName: 'messageUserFriendly' },
+        },
+      ],
+    },
+    // 24. Logical expression passed directly to HttpsError
+    {
+      code: `
+        const opts = { messageUserFriendly: 'oops' };
+        new HttpsError(condition && opts);
+      `,
+      errors: [
+        {
+          messageId,
+          line: 3,
+          column: 37,
+          data: { propertyName: 'messageUserFriendly' },
+        },
+      ],
+    },
+    // 25. Conditional expression passed directly to toHttpsError
+    {
+      code: `
+        toHttpsError(err, condition ? { messageUserFriendly: 'oops' } : {});
+      `,
+      errors: [
+        {
+          messageId,
+          line: 2,
+          column: 41,
+          data: { propertyName: 'messageUserFriendly' },
+        },
+      ],
+    },
+    // 26. Deeply nested returns
+    {
+      code: `
+        function getOptions() {
+          try {
+            return { messageUserFriendly: 'oops' };
+          } catch (e) {
+            return {};
+          }
+        }
+        new HttpsError(getOptions());
+      `,
+      errors: [
+        {
+          messageId,
+          line: 9,
+          column: 24,
+          data: { propertyName: 'messageUserFriendly' },
+        },
+      ],
+    },
   ],
 });

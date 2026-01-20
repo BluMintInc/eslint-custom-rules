@@ -35,7 +35,7 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
         'Warn when messageUserFriendly is used in HttpsError or toHttpsError to ensure it is truly a user-caused error.',
       recommended: 'warn',
     },
-    fixable: undefined,
+    fixable: undefined, // Not automatically fixable
     schema: [],
     messages: {
       warnHttpsErrorMessageUserFriendly:
@@ -88,13 +88,45 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
         | TSESTree.ArrowFunctionExpression,
       visited: Set<string> = new Set(),
     ): boolean => {
-      if (node.body.type === AST_NODE_TYPES.BlockStatement) {
-        return node.body.body.some((statement) => {
-          if (statement.type === AST_NODE_TYPES.ReturnStatement && statement.argument) {
-            return checkNode(statement.argument, visited);
+      const sourceCode = context.getSourceCode();
+      const walk = (current: TSESTree.Node): boolean => {
+        if (
+          current !== node &&
+          (current.type === AST_NODE_TYPES.FunctionDeclaration ||
+            current.type === AST_NODE_TYPES.FunctionExpression ||
+            current.type === AST_NODE_TYPES.ArrowFunctionExpression)
+        ) {
+          return false;
+        }
+
+        if (
+          current.type === AST_NODE_TYPES.ReturnStatement &&
+          current.argument
+        ) {
+          return checkNode(current.argument, visited);
+        }
+
+        const keys = sourceCode.visitorKeys[current.type] ?? [];
+        return keys.some((key) => {
+          const value = (current as Record<string, any>)[key];
+          if (Array.isArray(value)) {
+            return value.some(
+              (child) =>
+                child &&
+                typeof child === 'object' &&
+                'type' in child &&
+                walk(child as TSESTree.Node),
+            );
+          }
+          if (value && typeof value === 'object' && 'type' in value) {
+            return walk(value as TSESTree.Node);
           }
           return false;
         });
+      };
+
+      if (node.body.type === AST_NODE_TYPES.BlockStatement) {
+        return walk(node.body);
       } else {
         // Arrow function with expression body
         return checkNode(node.body, visited);
@@ -209,6 +241,12 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
             data: { propertyName: 'messageUserFriendly' },
           });
         }
+      } else if (node.type === AST_NODE_TYPES.LogicalExpression) {
+        validateOptions(node.left);
+        validateOptions(node.right);
+      } else if (node.type === AST_NODE_TYPES.ConditionalExpression) {
+        validateOptions(node.consequent);
+        validateOptions(node.alternate);
       }
     };
 
