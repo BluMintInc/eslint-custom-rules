@@ -1,6 +1,17 @@
 on:
   pull_request:
   push:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  statuses: write
+  checks: write
+
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 jobs:
   build-test:
     name: Build & Test

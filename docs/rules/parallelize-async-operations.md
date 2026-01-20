@@ -15,8 +15,11 @@ Serializing independent async work stretches response time and wastes compute bi
 The rule reports when all of these are true:
 - Two or more awaits or await-based variable declarations appear consecutively.
 - Later awaits do not reference identifiers created by earlier awaits (direct identifier reference-based dependency check).
+- Later awaits do not share "coordinator" identifiers (like `batchManager`, `transaction`, or `collector`) with earlier awaits.
 - The awaits are not inside try blocks or loops, which signal intentional ordering or per-call error handling.
-- The calls do not match a small list of side-effect-heavy patterns (e.g., update/check counters) that should stay ordered.
+- The calls do not match a small list of side-effect-heavy patterns (e.g., `updatecounter`, `commit`, `flush`, `saveall`) that should stay ordered.
+
+These conditions are evaluated independently—if any single condition indicates ordering is required (e.g., matching a **side-effect-heavy pattern** or sharing **coordinator identifiers**), the rule will not suggest parallelization.
 
 ### ❌ Incorrect
 
@@ -35,6 +38,27 @@ async function cleanUpReferences(params, ref) {
     realtimeDb.ref(buildPath(params)).remove(),
     realtimeDb.ref(ref).remove(),
   ]);
+}
+```
+
+### ✅ Correct (shared coordinator dependency)
+
+These must remain sequential because they share a "coordinator" object (`batchManager`). The rule uses a **COORDINATOR_PATTERN** to detect identifiers (e.g., `batchManager`, `manager`, `transaction`) that imply shared mutable state, which requires sequential execution.
+
+#### Coordinator Pattern Detection
+
+The rule recognizes common coordinator identifier patterns that indicate shared mutable state. These are matched case-insensitively using the `COORDINATOR_PATTERN`:
+- `batch`, `manager`, `collector`, `transaction`, `tx`, `unitofwork`, `accumulator`.
+
+If sequential awaits interact with the same identifier matching this pattern (even as a nested property like `ctx.batchManager`), they are not flagged for parallelization.
+
+Because matching is substring-based, identifiers like `CacheManager`, `taskCollector`, or `ctx.batch` will also match. This is intentional and errs on the side of safety by preserving sequential execution when shared state might be involved.
+
+```typescript
+async function processBatch(batchManager: BatchManager, item1: Item, item2: Item) {
+  await batchManager.add(item1);
+  await batchManager.add(item2);
+  await batchManager.commit(); // depends on previous adds
 }
 ```
 
@@ -81,6 +105,9 @@ An array of string, glob, or regex patterns (type: `string[]`) that customizes w
 - `updatethreshold`
 - `setthreshold`
 - `checkthreshold`
+- `commit`
+- `flush`
+- `saveall`
 
 **Example configuration:**
 ```json
