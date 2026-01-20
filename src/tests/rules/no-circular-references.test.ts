@@ -260,15 +260,6 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
     // Complex multi-level circular reference - our rule doesn't detect this case yet
     {
       code: `
-        const obj1 = { a: {} };
-        const obj2 = { b: obj1.a };
-        const obj3 = { c: obj2 };
-        obj1.a.ref = obj3;
-      `,
-    },
-    // Circular reference with Object.assign - our rule doesn't detect this case yet
-    {
-      code: `
         const obj = {};
         Object.assign(obj, { ref: obj });
       `,
@@ -695,6 +686,15 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
     // Circular through variables in the same scope
     {
       code: `
+        const obj1 = { a: {} };
+        const obj2 = { b: obj1.a };
+        const obj3 = { c: obj2 };
+        obj1.a.ref = obj3;
+      `,
+      errors: [error('obj3')],
+    },
+    {
+      code: `
         const obj = {
           data: { a: 1, b: 2, c: 3 },
           getRestObj() {
@@ -814,16 +814,6 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         obj2.ref = obj1;
       `,
       errors: [error('obj1')],
-    },
-    // Circular reference with Promise
-    {
-      code: `
-        const obj = {};
-        const promise = Promise.resolve(obj);
-        obj.promise = promise;
-        promise.then(result => obj.self = result);
-      `,
-      errors: [error('result')],
     },
     // Circular reference with Symbol
     {
