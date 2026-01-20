@@ -40,7 +40,7 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
     messages: {
       warnHttpsErrorMessageUserFriendly:
         "What's wrong: '{{propertyName}}' is set on an HttpsError/toHttpsError options object. " +
-        "Why it matters: this marks the error as user-caused and can suppress automated error monitoring and QA issue creation for real defects. " +
+        'Why it matters: this marks the error as user-caused and can suppress automated error monitoring and QA issue creation for real defects. ' +
         "How to fix: remove '{{propertyName}}' unless the error is genuinely user-caused; if it is, keep it and add // eslint-disable-next-line to document the exception.",
     },
   },
@@ -137,7 +137,7 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
 
         const keys = sourceCode.visitorKeys[current.type] ?? [];
         return keys.some((key) => {
-          const value = (current as Record<string, any>)[key];
+          const value = (current as unknown as Record<string, unknown>)[key];
           if (Array.isArray(value)) {
             return value.some(
               (child) =>
@@ -177,7 +177,8 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
         return checkNode(node.left, visited) || checkNode(node.right, visited);
       } else if (node.type === AST_NODE_TYPES.ConditionalExpression) {
         return (
-          checkNode(node.consequent, visited) || checkNode(node.alternate, visited)
+          checkNode(node.consequent, visited) ||
+          checkNode(node.alternate, visited)
         );
       } else if (
         node.type === AST_NODE_TYPES.CallExpression ||
@@ -185,20 +186,27 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
       ) {
         if (node.callee.type === AST_NODE_TYPES.Identifier) {
           const scope = ASTHelpers.getScope(context, node.callee);
-          const variable = ASTHelpers.findVariableInScope(scope, node.callee.name);
+          const variable = ASTHelpers.findVariableInScope(
+            scope,
+            node.callee.name,
+          );
           if (variable) {
             for (const def of variable.defs) {
               if (
                 def.type === 'FunctionName' &&
                 def.node.type === AST_NODE_TYPES.FunctionDeclaration
               ) {
-                return traceFunctionReturn(def.node, visited);
+                if (traceFunctionReturn(def.node, visited)) {
+                  return true;
+                }
               } else if (def.type === 'Variable' && def.node.init) {
                 if (
                   def.node.init.type === AST_NODE_TYPES.FunctionExpression ||
                   def.node.init.type === AST_NODE_TYPES.ArrowFunctionExpression
                 ) {
-                  return traceFunctionReturn(def.node.init, visited);
+                  if (traceFunctionReturn(def.node.init, visited)) {
+                    return true;
+                  }
                 }
               }
             }
