@@ -6,6 +6,8 @@
 
 This rule flags any use of `messageUserFriendly` when constructing an `HttpsError` (either via `new HttpsError({ ... })` or `toHttpsError(err, { ... })`).
 
+It also attempts to trace variables and function return values that might contain `messageUserFriendly`.
+
 ## Rationale
 
 The use of `messageUserFriendly` is an intentional speed bump to re-evaluate whether an error is truly user-caused. Misusing this property suppresses automated error monitoring and QA issue creation for real bugs.
@@ -31,6 +33,10 @@ throw toHttpsError(error, {
   message: 'Third-party API failed',
   messageUserFriendly: USER_MESSAGE_SOMETHING_WENT_WRONG,
 });
+
+// Helper function returning messageUserFriendly
+const getOptions = () => ({ messageUserFriendly: 'oops' });
+new HttpsError(getOptions());
 ```
 
 ### Correct

@@ -35,32 +35,72 @@ ruleTesterTs.run('warn-https-error-message-user-friendly', warnHttpsErrorMessage
       const b = { ...a };
       new HttpsError(a);
     `,
+    // 14. Helper function returning options without messageUserFriendly
+    `
+      function getOptions() { return { code: 'ok' }; }
+      new HttpsError(getOptions());
+    `,
+    // 15. Arrow function returning options without messageUserFriendly
+    `
+      const getOptions = () => ({ code: 'ok' });
+      new HttpsError(getOptions());
+    `,
   ],
   invalid: [
     // 1. Direct object literal in new HttpsError
     {
       code: `new HttpsError({ code: 'already-exists', messageUserFriendly: 'oops' });`,
-      errors: [{ messageId, column: 42 }],
+      errors: [
+        {
+          messageId,
+          column: 42,
+          data: { propertyName: 'messageUserFriendly' },
+        },
+      ],
     },
     // 2. Direct object literal in toHttpsError
     {
       code: `toHttpsError(err, { messageUserFriendly: 'oops' });`,
-      errors: [{ messageId, column: 21 }],
+      errors: [
+        {
+          messageId,
+          column: 21,
+          data: { propertyName: 'messageUserFriendly' },
+        },
+      ],
     },
     // 3. HttpsError as CallExpression
     {
       code: `HttpsError({ messageUserFriendly: 'oops' });`,
-      errors: [{ messageId, column: 14 }],
+      errors: [
+        {
+          messageId,
+          column: 14,
+          data: { propertyName: 'messageUserFriendly' },
+        },
+      ],
     },
     // 4. https.HttpsError
     {
       code: `new https.HttpsError({ messageUserFriendly: 'oops' });`,
-      errors: [{ messageId, column: 24 }],
+      errors: [
+        {
+          messageId,
+          column: 24,
+          data: { propertyName: 'messageUserFriendly' },
+        },
+      ],
     },
     // 5. Literal key
     {
       code: `new HttpsError({ 'messageUserFriendly': 'oops' });`,
-      errors: [{ messageId, column: 18 }],
+      errors: [
+        {
+          messageId,
+          column: 18,
+          data: { propertyName: 'messageUserFriendly' },
+        },
+      ],
     },
     // 6. Variable tracing
     {
@@ -68,12 +108,25 @@ ruleTesterTs.run('warn-https-error-message-user-friendly', warnHttpsErrorMessage
         const options = { messageUserFriendly: 'oops' };
         new HttpsError(options);
       `,
-      errors: [{ messageId, line: 3, column: 24 }],
+      errors: [
+        {
+          messageId,
+          line: 3,
+          column: 24,
+          data: { propertyName: 'messageUserFriendly' },
+        },
+      ],
     },
     // 7. Spread object literal
     {
       code: `new HttpsError({ ...{ messageUserFriendly: 'oops' } });`,
-      errors: [{ messageId, column: 18 }],
+      errors: [
+        {
+          messageId,
+          column: 18,
+          data: { propertyName: 'messageUserFriendly' },
+        },
+      ],
     },
     // 8. Variable tracing with spread
     {
@@ -82,12 +135,25 @@ ruleTesterTs.run('warn-https-error-message-user-friendly', warnHttpsErrorMessage
         const options = { ...base };
         new HttpsError(options);
       `,
-      errors: [{ messageId, line: 4, column: 24 }],
+      errors: [
+        {
+          messageId,
+          line: 4,
+          column: 24,
+          data: { propertyName: 'messageUserFriendly' },
+        },
+      ],
     },
     // 9. messageUserFriendly set to undefined
     {
       code: `new HttpsError({ messageUserFriendly: undefined });`,
-      errors: [{ messageId, column: 18 }],
+      errors: [
+        {
+          messageId,
+          column: 18,
+          data: { propertyName: 'messageUserFriendly' },
+        },
+      ],
     },
     // 10. Multiple properties including messageUserFriendly
     {
@@ -98,7 +164,14 @@ ruleTesterTs.run('warn-https-error-message-user-friendly', warnHttpsErrorMessage
           messageUserFriendly: 'user error'
         });
       `,
-      errors: [{ messageId, line: 5, column: 11 }],
+      errors: [
+        {
+          messageId,
+          line: 5,
+          column: 11,
+          data: { propertyName: 'messageUserFriendly' },
+        },
+      ],
     },
     // 11. toHttpsError with variable
     {
@@ -106,7 +179,14 @@ ruleTesterTs.run('warn-https-error-message-user-friendly', warnHttpsErrorMessage
         const opts = { messageUserFriendly: 'oops' };
         toHttpsError(err, opts);
       `,
-      errors: [{ messageId, line: 3, column: 27 }],
+      errors: [
+        {
+          messageId,
+          line: 3,
+          column: 27,
+          data: { propertyName: 'messageUserFriendly' },
+        },
+      ],
     },
     // 12. Nested tracing (options used in another object)
     {
@@ -115,7 +195,14 @@ ruleTesterTs.run('warn-https-error-message-user-friendly', warnHttpsErrorMessage
         const outer = { ...inner };
         new HttpsError(outer);
       `,
-      errors: [{ messageId, line: 4, column: 24 }],
+      errors: [
+        {
+          messageId,
+          line: 4,
+          column: 24,
+          data: { propertyName: 'messageUserFriendly' },
+        },
+      ],
     },
     // 13. Multiple spreads, one has messageUserFriendly
     {
@@ -124,7 +211,14 @@ ruleTesterTs.run('warn-https-error-message-user-friendly', warnHttpsErrorMessage
         const s2 = { messageUserFriendly: 'oops' };
         new HttpsError({ ...s1, ...s2 });
       `,
-      errors: [{ messageId, line: 4, column: 33 }],
+      errors: [
+        {
+          messageId,
+          line: 4,
+          column: 33,
+          data: { propertyName: 'messageUserFriendly' },
+        },
+      ],
     },
     // 14. Conditional inclusion (Logical AND)
     {
@@ -135,7 +229,14 @@ ruleTesterTs.run('warn-https-error-message-user-friendly', warnHttpsErrorMessage
         };
         new HttpsError(options);
       `,
-      errors: [{ messageId, line: 6, column: 24 }],
+      errors: [
+        {
+          messageId,
+          line: 6,
+          column: 24,
+          data: { propertyName: 'messageUserFriendly' },
+        },
+      ],
     },
     // 15. Conditional inclusion (Ternary)
     {
@@ -146,7 +247,14 @@ ruleTesterTs.run('warn-https-error-message-user-friendly', warnHttpsErrorMessage
         };
         new HttpsError(options);
       `,
-      errors: [{ messageId, line: 6, column: 24 }],
+      errors: [
+        {
+          messageId,
+          line: 6,
+          column: 24,
+          data: { propertyName: 'messageUserFriendly' },
+        },
+      ],
     },
     // 16. Property with spread variable
     {
@@ -154,7 +262,14 @@ ruleTesterTs.run('warn-https-error-message-user-friendly', warnHttpsErrorMessage
         const base = { messageUserFriendly: 'oops' };
         new HttpsError({ ...base, other: 1 });
       `,
-      errors: [{ messageId, line: 3, column: 26 }],
+      errors: [
+        {
+          messageId,
+          line: 3,
+          column: 26,
+          data: { propertyName: 'messageUserFriendly' },
+        },
+      ],
     },
     // 17. new https.HttpsError tracing
     {
@@ -162,7 +277,14 @@ ruleTesterTs.run('warn-https-error-message-user-friendly', warnHttpsErrorMessage
         const options = { messageUserFriendly: 'oops' };
         new https.HttpsError(options);
       `,
-      errors: [{ messageId, line: 3, column: 30 }],
+      errors: [
+        {
+          messageId,
+          line: 3,
+          column: 30,
+          data: { propertyName: 'messageUserFriendly' },
+        },
+      ],
     },
     // 18. multiple messageUserFriendly in one call
     {
@@ -173,8 +295,18 @@ ruleTesterTs.run('warn-https-error-message-user-friendly', warnHttpsErrorMessage
         });
       `,
       errors: [
-        { messageId, line: 3, column: 11 },
-        { messageId, line: 4, column: 11 }
+        {
+          messageId,
+          line: 3,
+          column: 11,
+          data: { propertyName: 'messageUserFriendly' },
+        },
+        {
+          messageId,
+          line: 4,
+          column: 11,
+          data: { propertyName: 'messageUserFriendly' },
+        },
       ],
     },
     // 19. circular reference with messageUserFriendly
@@ -184,7 +316,44 @@ ruleTesterTs.run('warn-https-error-message-user-friendly', warnHttpsErrorMessage
         const b = { ...a };
         new HttpsError(a);
       `,
-      errors: [{ messageId, line: 4, column: 24 }],
+      errors: [
+        {
+          messageId,
+          line: 4,
+          column: 24,
+          data: { propertyName: 'messageUserFriendly' },
+        },
+      ],
+    },
+    // 20. Helper function returning options
+    {
+      code: `
+        function getOptions() { return { messageUserFriendly: 'oops' }; }
+        new HttpsError(getOptions());
+      `,
+      errors: [
+        {
+          messageId,
+          line: 3,
+          column: 24,
+          data: { propertyName: 'messageUserFriendly' },
+        },
+      ],
+    },
+    // 21. Arrow function returning options
+    {
+      code: `
+        const getOptions = () => ({ messageUserFriendly: 'oops' });
+        new HttpsError(getOptions());
+      `,
+      errors: [
+        {
+          messageId,
+          line: 3,
+          column: 24,
+          data: { propertyName: 'messageUserFriendly' },
+        },
+      ],
     },
   ],
 });
