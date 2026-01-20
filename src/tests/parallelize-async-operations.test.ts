@@ -447,6 +447,53 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
       return true;
     }
     `,
+
+    // Regression: Batch manager dependency (Issue #1147)
+    `
+    async function batchManagerRegression() {
+      const batchManager = options?.batchManager ?? new BatchManager<Notification>();
+
+      await Promise.all(
+        settings.map((setting) => {
+          const filer = new NotificationFiler(setting);
+          return filer.store({ batchManager });
+        }),
+      );
+      await batchManager.commit();
+    }
+    `,
+    `
+    async function batchManagerSimple() {
+      const batch = new Batch();
+      await batch.add(item);
+      await batch.commit();
+    }
+    `,
+    `
+    async function coordinatorShared() {
+      await manager.doSomething();
+      await manager.doSomethingElse();
+    }
+
+    async function coordinatorExplicitlyNamed() {
+      await unitofwork.doSomething();
+      await unitofwork.doSomethingElse();
+    }
+    `,
+    // property-based coordinator
+    `
+    async function propertyCoordinator() {
+      await myObj.batchManager.add(item1);
+      await myObj.batchManager.add(item2);
+    }
+    `,
+    // Regression: Optional chaining with side-effect patterns (Issue #1147)
+    `
+    async function optionalChainingSideEffect() {
+      await batchManager?.commit();
+      await batchManager?.flush();
+    }
+    `,
   ],
   invalid: [
     // Basic case: two sequential awaits with realtimeDb
