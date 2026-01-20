@@ -225,6 +225,21 @@ export const useReproduction = () => {
 };
       `,
     },
+    // useLatestCallback with Promise.all (Issue #1159)
+    {
+      code: `
+function MyComponent() {
+  const refreshUser = useLatestCallback(async () => {
+    const [, userWithClaims] = await Promise.all([
+      current.reload(),
+      mergeFetchedClaims(current),
+    ]);
+    setUserInternal({ ...userWithClaims, _isFetchedFromRemote: true });
+  });
+  return null;
+}
+      `,
+    },
     // async function boundaries
     {
       code: `

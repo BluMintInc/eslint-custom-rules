@@ -59,6 +59,18 @@ const SAFE_HOOK_ARGUMENTS = new Set([
   'useProgressionCallback',
 ]);
 
+/**
+ * Hooks where any literal defined inside their arguments is safe because
+ * the hook either doesn't use the identity for comparison or provides its
+ * own stability.
+ */
+const HOOKS_ALLOWING_NESTED_LITERALS = new Set([
+  'useLatestCallback',
+  'useState',
+  'useReducer',
+  'useRef',
+]);
+
 const MEMOIZATION_DEPS_TODO_PLACEHOLDER = '__TODO_MEMOIZATION_DEPENDENCIES__';
 const TODO_DEPS_COMMENT = `/* ${MEMOIZATION_DEPS_TODO_PLACEHOLDER} */`;
 const PARENTHESIZED_EXPRESSION_TYPE =
@@ -747,8 +759,13 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
 
       const hookCall = findEnclosingHookCall(node);
       if (hookCall) {
-        if (hookCall.isDirectArgument) {
+        if (
+          hookCall.isDirectArgument ||
+          HOOKS_ALLOWING_NESTED_LITERALS.has(hookCall.hookName)
+        ) {
           // Top-level literal passed directly to a hook argument is allowed.
+          // Also allow nested literals for hooks that don't rely on argument
+          // reference stability for memoization (e.g. useLatestCallback, useEffect).
           return;
         }
 
