@@ -65,8 +65,6 @@ function isNonPrimitiveWithoutTypes(expr: TSESTree.Expression): boolean {
   switch (expr.type) {
     case AST_NODE_TYPES.ArrayExpression:
     case AST_NODE_TYPES.ObjectExpression:
-    case AST_NODE_TYPES.FunctionExpression:
-    case AST_NODE_TYPES.ArrowFunctionExpression:
     case AST_NODE_TYPES.NewExpression:
     case AST_NODE_TYPES.ClassExpression:
       return true;
@@ -79,6 +77,8 @@ function isNonPrimitiveWithoutTypes(expr: TSESTree.Expression): boolean {
     case AST_NODE_TYPES.MemberExpression:
     case AST_NODE_TYPES.ChainExpression:
     case AST_NODE_TYPES.CallExpression:
+    case AST_NODE_TYPES.FunctionExpression:
+    case AST_NODE_TYPES.ArrowFunctionExpression:
     default:
       return false;
   }
@@ -101,8 +101,8 @@ function isNonPrimitiveWithTypes(
     if (!tsNode) return false;
     const type = checker.getTypeAtLocation(tsNode);
 
-    // Only consider explicit functions as non-primitive here
-    if (type.getCallSignatures().length > 0) return true;
+    // Explicitly ignore functions even though they are non-primitive
+    if (type.getCallSignatures().length > 0) return false;
 
     // Avoid guessing for unknown/any or non-function types
     if (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) return false;
@@ -284,7 +284,7 @@ function isImportedIdentifier(
   return false;
 }
 
-function identifierUsedAsObjectOrFunction(
+function identifierUsedAsObjectOrArray(
   callback: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
   name: string,
 ): boolean {
@@ -312,13 +312,6 @@ function identifierUsedAsObjectOrFunction(
         if (base.type === AST_NODE_TYPES.Identifier && base.name === name) {
           return true;
         }
-      }
-    }
-
-    if (node.type === AST_NODE_TYPES.CallExpression) {
-      const callee = node.callee;
-      if (callee.type === AST_NODE_TYPES.Identifier && callee.name === name) {
-        return true; // function usage
       }
     }
 
@@ -368,14 +361,14 @@ export const preferUseDeepCompareMemo = createRule<[], MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Enforce using useDeepCompareMemo when dependency array contains non-primitive values (objects, arrays, functions) that are not already memoized. This prevents unnecessary re-renders due to reference changes.',
+        'Enforce using useDeepCompareMemo when dependency array contains non-primitive values (objects, arrays) that are not already memoized. This prevents unnecessary re-renders due to reference changes.',
       recommended: 'error',
     },
     fixable: 'code',
     schema: [],
     messages: {
       preferUseDeepCompareMemo:
-        'Dependency array for "{{hook}}" includes objects/arrays/functions that change identity each render, so React treats them as changed and reruns the memoized computation, triggering avoidable renders. Use useDeepCompareMemo (or memoize those dependencies first) so comparisons use deep equality and the memo stays stable.',
+        'Dependency array for "{{hook}}" includes objects/arrays that change identity each render, so React treats them as changed and reruns the memoized computation, triggering avoidable renders. Use useDeepCompareMemo (or memoize those dependencies first) so comparisons use deep equality and the memo stays stable.',
     },
   },
   defaultOptions: [],
@@ -428,7 +421,7 @@ export const preferUseDeepCompareMemo = createRule<[], MessageIds>({
             if (isImportedIdentifier(context, expr.name)) {
               isNonPrimitive = false;
             } else if (
-              identifierUsedAsObjectOrFunction(callback, expr.name) &&
+              identifierUsedAsObjectOrArray(callback, expr.name) &&
               !isIdentifierMemoizedAbove(expr.name, memoizedIds)
             ) {
               isNonPrimitive = true;
