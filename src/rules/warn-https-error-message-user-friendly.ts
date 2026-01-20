@@ -46,6 +46,19 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
+    const unwrapTSAssertions = (node: TSESTree.Node): TSESTree.Node => {
+      let inner = node;
+      while (
+        inner.type === AST_NODE_TYPES.TSAsExpression ||
+        inner.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+        inner.type === AST_NODE_TYPES.TSNonNullExpression ||
+        inner.type === AST_NODE_TYPES.TSTypeAssertion
+      ) {
+        inner = inner.expression;
+      }
+      return inner;
+    };
+
     /**
      * Finds properties or spread elements that contain messageUserFriendly in an object expression.
      */
@@ -57,11 +70,14 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
       for (const prop of node.properties) {
         if (prop.type === AST_NODE_TYPES.Property) {
           if (
-            !prop.computed &&
-            ((prop.key.type === AST_NODE_TYPES.Identifier &&
-              prop.key.name === 'messageUserFriendly') ||
-              (prop.key.type === AST_NODE_TYPES.Literal &&
-                prop.key.value === 'messageUserFriendly'))
+            (!prop.computed &&
+              ((prop.key.type === AST_NODE_TYPES.Identifier &&
+                prop.key.name === 'messageUserFriendly') ||
+                (prop.key.type === AST_NODE_TYPES.Literal &&
+                  prop.key.value === 'messageUserFriendly'))) ||
+            (prop.computed &&
+              prop.key.type === AST_NODE_TYPES.Literal &&
+              prop.key.value === 'messageUserFriendly')
           ) {
             matches.push(prop);
           }
@@ -169,26 +185,32 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
       node: TSESTree.Node,
       visited: Set<string> = new Set(),
     ): boolean => {
-      if (node.type === AST_NODE_TYPES.ObjectExpression) {
-        return findMessageUserFriendlyProperties(node, visited).length > 0;
-      } else if (node.type === AST_NODE_TYPES.Identifier) {
-        return traceVariable(node, visited);
-      } else if (node.type === AST_NODE_TYPES.LogicalExpression) {
-        return checkNode(node.left, visited) || checkNode(node.right, visited);
-      } else if (node.type === AST_NODE_TYPES.ConditionalExpression) {
+      const unwrappedNode = unwrapTSAssertions(node);
+      if (unwrappedNode.type === AST_NODE_TYPES.ObjectExpression) {
         return (
-          checkNode(node.consequent, visited) ||
-          checkNode(node.alternate, visited)
+          findMessageUserFriendlyProperties(unwrappedNode, visited).length > 0
+        );
+      } else if (unwrappedNode.type === AST_NODE_TYPES.Identifier) {
+        return traceVariable(unwrappedNode, visited);
+      } else if (unwrappedNode.type === AST_NODE_TYPES.LogicalExpression) {
+        return (
+          checkNode(unwrappedNode.left, visited) ||
+          checkNode(unwrappedNode.right, visited)
+        );
+      } else if (unwrappedNode.type === AST_NODE_TYPES.ConditionalExpression) {
+        return (
+          checkNode(unwrappedNode.consequent, visited) ||
+          checkNode(unwrappedNode.alternate, visited)
         );
       } else if (
-        node.type === AST_NODE_TYPES.CallExpression ||
-        node.type === AST_NODE_TYPES.NewExpression
+        unwrappedNode.type === AST_NODE_TYPES.CallExpression ||
+        unwrappedNode.type === AST_NODE_TYPES.NewExpression
       ) {
-        if (node.callee.type === AST_NODE_TYPES.Identifier) {
-          const scope = ASTHelpers.getScope(context, node.callee);
+        if (unwrappedNode.callee.type === AST_NODE_TYPES.Identifier) {
+          const scope = ASTHelpers.getScope(context, unwrappedNode.callee);
           const variable = ASTHelpers.findVariableInScope(
             scope,
-            node.callee.name,
+            unwrappedNode.callee.name,
           );
           if (variable) {
             for (const def of variable.defs) {
@@ -217,39 +239,40 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
     };
 
     const validateOptions = (node: TSESTree.Node) => {
-      if (node.type === AST_NODE_TYPES.ObjectExpression) {
-        findMessageUserFriendlyProperties(node).forEach((prop) => {
+      const unwrappedNode = unwrapTSAssertions(node);
+      if (unwrappedNode.type === AST_NODE_TYPES.ObjectExpression) {
+        findMessageUserFriendlyProperties(unwrappedNode).forEach((prop) => {
           context.report({
             node: prop.type === AST_NODE_TYPES.Property ? prop.key : prop,
             messageId: 'warnHttpsErrorMessageUserFriendly',
             data: { propertyName: 'messageUserFriendly' },
           });
         });
-      } else if (node.type === AST_NODE_TYPES.Identifier) {
-        if (traceVariable(node)) {
+      } else if (unwrappedNode.type === AST_NODE_TYPES.Identifier) {
+        if (traceVariable(unwrappedNode)) {
           context.report({
-            node,
+            node: unwrappedNode,
             messageId: 'warnHttpsErrorMessageUserFriendly',
             data: { propertyName: 'messageUserFriendly' },
           });
         }
       } else if (
-        node.type === AST_NODE_TYPES.CallExpression ||
-        node.type === AST_NODE_TYPES.NewExpression
+        unwrappedNode.type === AST_NODE_TYPES.CallExpression ||
+        unwrappedNode.type === AST_NODE_TYPES.NewExpression
       ) {
-        if (checkNode(node)) {
+        if (checkNode(unwrappedNode)) {
           context.report({
             node,
             messageId: 'warnHttpsErrorMessageUserFriendly',
             data: { propertyName: 'messageUserFriendly' },
           });
         }
-      } else if (node.type === AST_NODE_TYPES.LogicalExpression) {
-        validateOptions(node.left);
-        validateOptions(node.right);
-      } else if (node.type === AST_NODE_TYPES.ConditionalExpression) {
-        validateOptions(node.consequent);
-        validateOptions(node.alternate);
+      } else if (unwrappedNode.type === AST_NODE_TYPES.LogicalExpression) {
+        validateOptions(unwrappedNode.left);
+        validateOptions(unwrappedNode.right);
+      } else if (unwrappedNode.type === AST_NODE_TYPES.ConditionalExpression) {
+        validateOptions(unwrappedNode.consequent);
+        validateOptions(unwrappedNode.alternate);
       }
     };
 

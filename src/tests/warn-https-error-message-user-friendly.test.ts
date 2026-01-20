@@ -474,5 +474,27 @@ ruleTesterTs.run('warn-https-error-message-user-friendly', warnHttpsErrorMessage
         },
       ],
     },
+    // 27. TS assertions (Repro for Comment 1)
+    {
+      code: "new HttpsError({ messageUserFriendly: 'oops' } as const);",
+      errors: [{ messageId, data: { propertyName: 'messageUserFriendly' } }],
+    },
+    {
+      code: "new HttpsError({ messageUserFriendly: 'oops' } satisfies any);",
+      errors: [{ messageId, data: { propertyName: 'messageUserFriendly' } }],
+    },
+    {
+      code: "new HttpsError({ messageUserFriendly: 'oops' }!);",
+      errors: [{ messageId, data: { propertyName: 'messageUserFriendly' } }],
+    },
+    {
+      code: "new HttpsError(<any>{ messageUserFriendly: 'oops' });",
+      errors: [{ messageId, data: { propertyName: 'messageUserFriendly' } }],
+    },
+    // 28. Computed literal keys (Repro for Comment 2)
+    {
+      code: "new HttpsError({ ['messageUserFriendly']: 'oops' });",
+      errors: [{ messageId, data: { propertyName: 'messageUserFriendly' } }],
+    },
   ],
 });
