@@ -193,5 +193,47 @@ ruleTesterTs.run('enforce-date-ttime', enforceDateTTime, {
         { messageId: 'enforceDateTTime' }, // for UserDoc
       ],
     },
+    {
+      // TSQualifiedName (Namespace)
+      code: `namespace Types {\n  export interface Notification<TTime = any> { t: TTime }\n}\ntype Foo = Types.Notification;`,
+      output: `namespace Types {\n  export interface Notification<TTime = any> { t: TTime }\n}\ntype Foo = Types.Notification<Date>;`,
+      parserOptions,
+      filename,
+      errors: [{ messageId: 'enforceDateTTime' }],
+    },
+    {
+      // Aliased symbol via import/alias
+      code: `${COMMON_TYPES}\ntype N = Notification;\ntype Foo = N;`,
+      output: `${COMMON_TYPES}\ntype N = Notification<Date>;\ntype Foo = N;`,
+      parserOptions,
+      filename,
+      errors: [
+        { messageId: 'enforceDateTTime' }, // for Notification in type N
+      ],
+    },
+    {
+      // Class with TTime
+      code: `class Base<TTime = any> { t!: TTime }\ntype Foo = Base;`,
+      output: `class Base<TTime = any> { t!: TTime }\ntype Foo = Base<Date>;`,
+      parserOptions,
+      filename,
+      errors: [{ messageId: 'enforceDateTTime' }],
+    },
+    {
+      // Omitted TTime in the middle (fixable because it's at the end of provided ones)
+      code: `interface Multi<A, TTime, B = any> { a: A, t: TTime, b: B }\ntype Foo = Multi<string>;`,
+      output: `interface Multi<A, TTime, B = any> { a: A, t: TTime, b: B }\ntype Foo = Multi<string, Date>;`,
+      parserOptions,
+      filename,
+      errors: [{ messageId: 'enforceDateTTime' }],
+    },
+    {
+      // Omitted TTime in the middle (not fixable because it would skip parameters)
+      code: `interface Multi<A, B, TTime> { a: A, b: B, t: TTime }\ntype Foo = Multi<string>;`,
+      output: null,
+      parserOptions,
+      filename,
+      errors: [{ messageId: 'enforceDateTTime' }],
+    },
   ],
 });

@@ -203,7 +203,6 @@ module.exports = {
       plugins: ['@blumintinc/blumint'],
       rules: {
         '@blumintinc/blumint/enforce-f-extension-for-entry-points': 'error',
-        '@blumintinc/blumint/enforce-date-ttime': 'error',
         '@blumintinc/blumint/firestore-transaction-reads-before-writes':
           'error',
         // Override the @typescript-eslint/prefer-nullish-coalescing rule
@@ -381,6 +380,12 @@ module.exports = {
        * requires an additional override.
        */
       overrides: [
+        {
+          files: ['src/**/*.{ts,tsx}'],
+          rules: {
+            '@blumintinc/blumint/enforce-date-ttime': 'error',
+          },
+        },
         {
           files: ['functions/*.f.ts'],
           rules: {

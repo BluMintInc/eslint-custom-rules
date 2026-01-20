@@ -17,7 +17,7 @@ export const enforceDateTTime = createRule<[], MessageIds>({
     schema: [],
     messages: {
       enforceDateTTime:
-        'TTime must be Date in frontend code. Pass Date explicitly.',
+        '{{typeName}} leaves TTime unspecified or not Date → Firestore Frontend Hooks convert Timestamp to Date on the client, so non-Date TTime misrepresents runtime values and forces defensive conversions → Set the TTime argument to Date explicitly (e.g., {{typeName}}<..., Date, ...>).',
     },
   },
   defaultOptions: [],
@@ -30,12 +30,21 @@ export const enforceDateTTime = createRule<[], MessageIds>({
       return {};
     }
 
+    const tTimeIndexCache = new WeakMap<ts.Symbol, number | undefined>();
+
     /**
      * Finds the index of the TTime parameter in the given symbol's declarations.
      */
     function findTTimeParameterIndex(symbol: ts.Symbol): number | undefined {
+      if (tTimeIndexCache.has(symbol)) {
+        return tTimeIndexCache.get(symbol);
+      }
+
       const declarations = symbol.getDeclarations();
-      if (!declarations) return undefined;
+      if (!declarations) {
+        tTimeIndexCache.set(symbol, undefined);
+        return undefined;
+      }
 
       for (const declaration of declarations) {
         if (
@@ -47,11 +56,15 @@ export const enforceDateTTime = createRule<[], MessageIds>({
             const index = declaration.typeParameters.findIndex(
               (tp) => tp.name.text === 'TTime',
             );
-            if (index !== -1) return index;
+            if (index !== -1) {
+              tTimeIndexCache.set(symbol, index);
+              return index;
+            }
           }
         }
       }
 
+      tTimeIndexCache.set(symbol, undefined);
       return undefined;
     }
 
@@ -72,10 +85,15 @@ export const enforceDateTTime = createRule<[], MessageIds>({
 
     return {
       TSTypeReference(node) {
-        if (node.typeName.type !== AST_NODE_TYPES.Identifier) return;
+        const typeNameNode =
+          node.typeName.type === AST_NODE_TYPES.TSQualifiedName
+            ? node.typeName.right
+            : node.typeName;
+
+        if (typeNameNode.type !== AST_NODE_TYPES.Identifier) return;
 
         // Skip the "Date" type itself
-        if (node.typeName.name === 'Date') return;
+        if (typeNameNode.name === 'Date') return;
 
         const tsNode = parserServices.esTreeNodeToTSNodeMap.get(
           node,
@@ -84,17 +102,24 @@ export const enforceDateTTime = createRule<[], MessageIds>({
         const symbol = checker.getSymbolAtLocation(tsNode.typeName);
         if (!symbol) return;
 
-        const tTimeIndex = findTTimeParameterIndex(symbol);
+        const resolvedSymbol =
+          symbol.flags & ts.SymbolFlags.Alias
+            ? checker.getAliasedSymbol(symbol)
+            : symbol;
+
+        const tTimeIndex = findTTimeParameterIndex(resolvedSymbol);
         if (tTimeIndex === undefined) return;
 
         const typeArgs = node.typeParameters?.params || [];
         const tTimeArg = typeArgs[tTimeIndex];
+        const typeName = sourceCode.getText(node.typeName);
 
         if (!tTimeArg) {
           // TTime is omitted
           context.report({
             node,
             messageId: 'enforceDateTTime',
+            data: { typeName },
             fix(fixer) {
               if (node.typeParameters) {
                 // Already has type parameters, but not enough to cover TTime
@@ -120,6 +145,7 @@ export const enforceDateTTime = createRule<[], MessageIds>({
           context.report({
             node: tTimeArg,
             messageId: 'enforceDateTTime',
+            data: { typeName },
             fix(fixer) {
               return fixer.replaceText(tTimeArg, 'Date');
             },
