@@ -430,7 +430,10 @@ function getObjectUsagesInHook(
 
         // Check if we reached our target object
         const base = unwrapExpression(current);
-        if (base.type === AST_NODE_TYPES.Identifier && base.name === objectName) {
+        if (
+          base.type === AST_NODE_TYPES.Identifier &&
+          base.name === objectName
+        ) {
           foundTargetObject = true;
         }
 
@@ -661,103 +664,103 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
           return;
         }
 
-    // Check each dependency in the array
-    depsArg.elements.forEach((element) => {
-      const unwrappedElement = element ? unwrapExpression(element) : null;
-      if (!unwrappedElement) return; // Skip null elements (holes in the array)
+        // Check each dependency in the array
+        depsArg.elements.forEach((element) => {
+          const unwrappedElement = element ? unwrapExpression(element) : null;
+          if (!unwrappedElement) return; // Skip null elements (holes in the array)
 
-      if (unwrappedElement.type === AST_NODE_TYPES.Identifier) {
-        const objectName = unwrappedElement.name;
+          if (unwrappedElement.type === AST_NODE_TYPES.Identifier) {
+            const objectName = unwrappedElement.name;
 
-        // Skip type checking if we don't have TypeScript services
-        if (hasFullTypeChecking && parserServices) {
-          const checker = parserServices.program.getTypeChecker();
-          const nodeMap = parserServices.esTreeNodeToTSNodeMap;
+            // Skip type checking if we don't have TypeScript services
+            if (hasFullTypeChecking && parserServices) {
+              const checker = parserServices.program.getTypeChecker();
+              const nodeMap = parserServices.esTreeNodeToTSNodeMap;
 
-          // Skip if the dependency is an array or primitive type
-          if (isArrayOrPrimitive(checker, unwrappedElement, nodeMap)) {
-            return;
+              // Skip if the dependency is an array or primitive type
+              if (isArrayOrPrimitive(checker, unwrappedElement, nodeMap)) {
+                return;
+              }
+            }
+            // For testing without TypeScript services, we'll assume all identifiers are objects
+
+            const result = getObjectUsagesInHook(
+              (
+                callbackArg as
+                  | TSESTree.ArrowFunctionExpression
+                  | TSESTree.FunctionExpression
+              ).body,
+              objectName,
+              context,
+            );
+
+            // If the object is not used at all, suggest removing it
+            if (result.notUsed) {
+              context.report({
+                node: element as TSESTree.Node,
+                messageId: 'removeUnusedDependency',
+                data: {
+                  objectName,
+                },
+                fix(fixer) {
+                  // Remove the element and handle commas properly
+                  const elementIndex = depsArg.elements.indexOf(element);
+
+                  if (elementIndex === -1) return null;
+
+                  // If this is the only element, just remove it
+                  if (depsArg.elements.length === 1) {
+                    return fixer.remove(element as TSESTree.Node);
+                  }
+
+                  // If this is the last element, remove the preceding comma
+                  if (elementIndex === depsArg.elements.length - 1) {
+                    const prevElement = depsArg.elements[elementIndex - 1];
+                    if (prevElement) {
+                      const range: [number, number] = [
+                        prevElement.range![1],
+                        (element as TSESTree.Node).range![1],
+                      ];
+                      return fixer.removeRange(range);
+                    }
+                  }
+
+                  // Otherwise, remove the element and the following comma
+                  const nextElement = depsArg.elements[elementIndex + 1];
+                  if (nextElement) {
+                    const range: [number, number] = [
+                      (element as TSESTree.Node).range![0],
+                      nextElement.range![0],
+                    ];
+                    return fixer.removeRange(range);
+                  }
+
+                  // Fallback to just removing the element
+                  return fixer.remove(element as TSESTree.Node);
+                },
+              });
+            }
+            // If we found specific field usages and the entire object is in deps
+            // Skip reporting if needsEntireObject is true (indicates spread operator usage)
+            else if (result.usages.size > 0 && !result.needsEntireObject) {
+              const fields = Array.from(result.usages).join(', ');
+              context.report({
+                node: element as TSESTree.Node,
+                messageId: 'avoidEntireObject',
+                data: {
+                  objectName,
+                  fields,
+                },
+                fix(fixer) {
+                  return fixer.replaceText(
+                    element as TSESTree.Node,
+                    Array.from(result.usages).join(', '),
+                  );
+                },
+              });
+            }
           }
-        }
-        // For testing without TypeScript services, we'll assume all identifiers are objects
-
-        const result = getObjectUsagesInHook(
-          (
-            callbackArg as
-              | TSESTree.ArrowFunctionExpression
-              | TSESTree.FunctionExpression
-          ).body,
-          objectName,
-          context,
-        );
-
-        // If the object is not used at all, suggest removing it
-        if (result.notUsed) {
-          context.report({
-            node: element as TSESTree.Node,
-            messageId: 'removeUnusedDependency',
-            data: {
-              objectName,
-            },
-            fix(fixer) {
-              // Remove the element and handle commas properly
-              const elementIndex = depsArg.elements.indexOf(element);
-
-              if (elementIndex === -1) return null;
-
-              // If this is the only element, just remove it
-              if (depsArg.elements.length === 1) {
-                return fixer.remove(element as TSESTree.Node);
-              }
-
-              // If this is the last element, remove the preceding comma
-              if (elementIndex === depsArg.elements.length - 1) {
-                const prevElement = depsArg.elements[elementIndex - 1];
-                if (prevElement) {
-                  const range: [number, number] = [
-                    prevElement.range![1],
-                    (element as TSESTree.Node).range![1],
-                  ];
-                  return fixer.removeRange(range);
-                }
-              }
-
-              // Otherwise, remove the element and the following comma
-              const nextElement = depsArg.elements[elementIndex + 1];
-              if (nextElement) {
-                const range: [number, number] = [
-                  (element as TSESTree.Node).range![0],
-                  nextElement.range![0],
-                ];
-                return fixer.removeRange(range);
-              }
-
-              // Fallback to just removing the element
-              return fixer.remove(element as TSESTree.Node);
-            },
-          });
-        }
-        // If we found specific field usages and the entire object is in deps
-        // Skip reporting if needsEntireObject is true (indicates spread operator usage)
-        else if (result.usages.size > 0 && !result.needsEntireObject) {
-          const fields = Array.from(result.usages).join(', ');
-          context.report({
-            node: element as TSESTree.Node,
-            messageId: 'avoidEntireObject',
-            data: {
-              objectName,
-              fields,
-            },
-            fix(fixer) {
-              return fixer.replaceText(
-                element as TSESTree.Node,
-                Array.from(result.usages).join(', '),
-              );
-            },
-          });
-        }
-      }
-    });
+        });
       },
     };
   },
