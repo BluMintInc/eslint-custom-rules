@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 type ParenthesizedTypeNode = TSESTree.TypeNode & {
   typeAnnotation: TSESTree.TypeNode;
@@ -97,6 +98,41 @@ function collectReferencedTypeNames(
     case AST_NODE_TYPES.TSTupleType: {
       const tup = node as TSESTree.TSTupleType;
       for (const e of tup.elementTypes) collectReferencedTypeNames(e, acc);
+      break;
+    }
+    case AST_NODE_TYPES.TSIndexedAccessType: {
+      const idx = node as TSESTree.TSIndexedAccessType;
+      collectReferencedTypeNames(idx.objectType, acc);
+      collectReferencedTypeNames(idx.indexType, acc);
+      break;
+    }
+    case AST_NODE_TYPES.TSMappedType: {
+      const mapped = node as TSESTree.TSMappedType;
+      if (mapped.typeAnnotation)
+        collectReferencedTypeNames(mapped.typeAnnotation, acc);
+      if (mapped.nameType) collectReferencedTypeNames(mapped.nameType, acc);
+      break;
+    }
+    case AST_NODE_TYPES.TSConditionalType: {
+      const cond = node as TSESTree.TSConditionalType;
+      collectReferencedTypeNames(cond.checkType, acc);
+      collectReferencedTypeNames(cond.extendsType, acc);
+      collectReferencedTypeNames(cond.trueType, acc);
+      collectReferencedTypeNames(cond.falseType, acc);
+      break;
+    }
+    case AST_NODE_TYPES.TSTypeLiteral: {
+      const lit = node as TSESTree.TSTypeLiteral;
+      for (const m of lit.members) {
+        if (m.type === AST_NODE_TYPES.TSPropertySignature && m.typeAnnotation) {
+          collectReferencedTypeNames(m.typeAnnotation.typeAnnotation, acc);
+        } else if (
+          m.type === AST_NODE_TYPES.TSMethodSignature &&
+          (m as any).returnType
+        ) {
+          collectReferencedTypeNames((m as any).returnType.typeAnnotation, acc);
+        }
+      }
       break;
     }
     default: {
@@ -258,21 +294,23 @@ export const preferTypeAliasOverTypeofConstant: TSESLint.RuleModule<
       TSTypeQuery(node: TSESTree.TSTypeQuery) {
         if (!collected) return;
 
-        // Skip if inside a type alias declaration (Issue #1117)
+        const ancestors = ASTHelpers.getAncestors(context, node);
+
+        // Skip if inside a type alias declaration (Issue #1117, #1175)
         // This allows 'type T = typeof CONST' as the canonical way to define the alias.
-        let current: TSESTree.Node | undefined = node.parent;
-        while (current) {
-          if (current.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
-            return;
-          }
-          current = current.parent;
+        if (
+          ancestors.some((a) => a.type === AST_NODE_TYPES.TSTypeAliasDeclaration)
+        ) {
+          return;
         }
 
-        // Skip `keyof typeof X`
+        // Skip `keyof typeof X` (handles nested parentheses via ancestors check)
         if (
-          node.parent &&
-          node.parent.type === AST_NODE_TYPES.TSTypeOperator &&
-          node.parent.operator === 'keyof'
+          ancestors.some(
+            (a) =>
+              a.type === AST_NODE_TYPES.TSTypeOperator &&
+              (a as TSESTree.TSTypeOperator).operator === 'keyof',
+          )
         ) {
           return;
         }

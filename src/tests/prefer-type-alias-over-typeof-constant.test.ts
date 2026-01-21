@@ -112,6 +112,20 @@ ruleTesterTs.run(
           'type Keys = keyof typeof MAP;',
         ].join('\n'),
       },
+      // Good: keyof (typeof MAP) pattern (Issue #1175)
+      {
+        code: [
+          'export const MAP = { A: 1, B: 2 } as const;',
+          'type Keys = keyof (typeof MAP);',
+        ].join('\n'),
+      },
+      // Good: (typeof ARRAY_CONST)[number] pattern (Issue #1175)
+      {
+        code: [
+          'export const ERROR_MESSAGES_USER_FRIENDLY = ["A"] as const;',
+          'export type ErrorMessageUserFriendly = (typeof ERROR_MESSAGES_USER_FRIENDLY)[number];',
+        ].join('\n'),
+      },
       // Good: TS import type + union usage
       {
         code: [
