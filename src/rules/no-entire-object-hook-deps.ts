@@ -75,6 +75,18 @@ function isArrayOrPrimitive(
   }
 }
 
+function unwrapExpression(expr: TSESTree.Node): TSESTree.Node {
+  let current = expr;
+  while (
+    current.type === AST_NODE_TYPES.TSAsExpression ||
+    current.type === AST_NODE_TYPES.TSTypeAssertion ||
+    current.type === AST_NODE_TYPES.ChainExpression
+  ) {
+    current = current.expression;
+  }
+  return current;
+}
+
 function getObjectUsagesInHook(
   hookBody: TSESTree.Node,
   objectName: string,
@@ -154,13 +166,15 @@ function getObjectUsagesInHook(
         // For computed properties with variables (like user[key]), we need the entire object
         if (memberExpr.property.type === AST_NODE_TYPES.Identifier) {
           // Check if this is accessing our target object
-          let current = memberExpr.object;
-          while (current.type === AST_NODE_TYPES.MemberExpression) {
-            current = current.object;
+          let currentBase = unwrapExpression(memberExpr.object);
+          while (currentBase.type === AST_NODE_TYPES.MemberExpression) {
+            currentBase = unwrapExpression(
+              (currentBase as TSESTree.MemberExpression).object,
+            );
           }
           if (
-            current.type === AST_NODE_TYPES.Identifier &&
-            current.name === objectName
+            currentBase.type === AST_NODE_TYPES.Identifier &&
+            currentBase.name === objectName
           ) {
             // This is a computed property access on our target object, so we need the entire object
             needsEntireObject = true;
@@ -204,32 +218,32 @@ function getObjectUsagesInHook(
             STRING_METHODS.has(memberExpr.property.name))
         ) {
           // Check if this is accessing our target object or a property of it
-          let current = memberExpr.object;
+          let currentBase = unwrapExpression(memberExpr.object);
           let pathParts: string[] = [];
-          let hasOptionalChaining = false;
+          let hasOptionalChainingInMethod = false;
 
           // Build the path to the array/string being accessed
-          while (current.type === AST_NODE_TYPES.MemberExpression) {
-            const currentMember = current as TSESTree.MemberExpression;
+          while (currentBase.type === AST_NODE_TYPES.MemberExpression) {
+            const currentMember = currentBase as TSESTree.MemberExpression;
             if (currentMember.property.type === AST_NODE_TYPES.Identifier) {
               pathParts.unshift(currentMember.property.name);
             }
             if (currentMember.optional) {
-              hasOptionalChaining = true;
+              hasOptionalChainingInMethod = true;
             }
-            current = currentMember.object;
+            currentBase = unwrapExpression(currentMember.object);
           }
 
           if (
-            current.type === AST_NODE_TYPES.Identifier &&
-            current.name === objectName
+            currentBase.type === AST_NODE_TYPES.Identifier &&
+            currentBase.name === objectName
           ) {
             if (pathParts.length === 0) {
               // Direct method call on the object (e.g., userData.map(...))
               needsEntireObject = true;
             } else {
               // Method call on a property (e.g., userData.items.map(...) or userData?.items?.map(...))
-              let path = objectName + (hasOptionalChaining ? '?' : '');
+              let path = objectName + (hasOptionalChainingInMethod ? '?' : '');
               path += '.' + pathParts.join('.');
               usages.set(path, memberExpr.range?.[0] || 0);
             }
@@ -243,14 +257,12 @@ function getObjectUsagesInHook(
       if (memberExpr.optional) {
         hasOptionalChaining = true;
       }
-      current = memberExpr.object;
+      current = unwrapExpression(memberExpr.object);
     }
 
     // Check if we reached the target identifier
-    if (
-      current.type === AST_NODE_TYPES.Identifier &&
-      current.name === objectName
-    ) {
+    const base = unwrapExpression(current);
+    if (base.type === AST_NODE_TYPES.Identifier && base.name === objectName) {
       // Build the path with optional chaining
       let path = objectName + (hasOptionalChaining ? '?' : '');
 
@@ -274,24 +286,25 @@ function getObjectUsagesInHook(
     visited.add(node);
 
     if (node.type === AST_NODE_TYPES.Identifier && node.name === objectName) {
-      const parent = node.parent;
+      const unwrappedNode = unwrapExpression(node);
+      const parent = unwrappedNode.parent;
 
       // Exclude: property name in `other.objectName` (not our target object)
       const isMemberProperty =
         parent?.type === AST_NODE_TYPES.MemberExpression &&
-        parent.property === node &&
+        parent.property === unwrappedNode &&
         !parent.computed;
 
       // Exclude: object in `objectName.prop` (handled by MemberExpression visitor for field tracking)
       const isMemberObject =
         parent?.type === AST_NODE_TYPES.MemberExpression &&
-        parent.object === node;
+        parent.object === unwrappedNode;
 
       // Exclude: key in `{ objectName: value }` (not usage, just a label)
       // Include: shorthand `{ objectName }` (actual usage)
       const isPropertyKey =
         parent?.type === AST_NODE_TYPES.Property &&
-        parent.key === node &&
+        parent.key === unwrappedNode &&
         !parent.computed &&
         !parent.shorthand;
 
@@ -299,28 +312,36 @@ function getObjectUsagesInHook(
         isUsed = true;
 
         // Patterns that require the entire object (cannot refactor to specific fields)
+        let currentParent: TSESTree.Node | undefined = parent;
+        while (
+          currentParent &&
+          (currentParent.type === AST_NODE_TYPES.TSAsExpression ||
+            currentParent.type === AST_NODE_TYPES.TSTypeAssertion)
+        ) {
+          currentParent = (currentParent as any).parent;
+        }
+
         const isTypeAUsage =
-          parent?.type === AST_NODE_TYPES.ReturnStatement ||
-          parent?.type === AST_NODE_TYPES.ArrayExpression ||
-          parent?.type === AST_NODE_TYPES.BinaryExpression ||
-          parent?.type === AST_NODE_TYPES.LogicalExpression ||
-          parent?.type === AST_NODE_TYPES.ConditionalExpression ||
-          parent?.type === AST_NODE_TYPES.UnaryExpression ||
-          (parent?.type === AST_NODE_TYPES.Property &&
-            (parent.value === node ||
-              parent.shorthand ||
-              (parent.key === node && parent.computed))) ||
-          parent?.type === AST_NODE_TYPES.TemplateLiteral ||
-          parent?.type === AST_NODE_TYPES.VariableDeclarator ||
-          parent?.type === AST_NODE_TYPES.AssignmentExpression ||
-          parent?.type === AST_NODE_TYPES.JSXExpressionContainer ||
-          parent?.type === AST_NODE_TYPES.JSXSpreadAttribute ||
-          parent?.type === AST_NODE_TYPES.SpreadElement ||
-          parent?.type === AST_NODE_TYPES.ForInStatement ||
-          parent?.type === AST_NODE_TYPES.ForOfStatement ||
-          parent?.type === AST_NODE_TYPES.CallExpression ||
-          parent?.type === AST_NODE_TYPES.TSAsExpression ||
-          parent?.type === AST_NODE_TYPES.TSTypeAssertion;
+          currentParent?.type === AST_NODE_TYPES.ReturnStatement ||
+          currentParent?.type === AST_NODE_TYPES.ArrayExpression ||
+          currentParent?.type === AST_NODE_TYPES.BinaryExpression ||
+          currentParent?.type === AST_NODE_TYPES.LogicalExpression ||
+          currentParent?.type === AST_NODE_TYPES.ConditionalExpression ||
+          currentParent?.type === AST_NODE_TYPES.UnaryExpression ||
+          (currentParent?.type === AST_NODE_TYPES.Property &&
+            (currentParent.value === unwrappedNode ||
+              currentParent.shorthand ||
+              (currentParent.key === unwrappedNode &&
+                currentParent.computed))) ||
+          currentParent?.type === AST_NODE_TYPES.TemplateLiteral ||
+          currentParent?.type === AST_NODE_TYPES.VariableDeclarator ||
+          currentParent?.type === AST_NODE_TYPES.AssignmentExpression ||
+          currentParent?.type === AST_NODE_TYPES.JSXExpressionContainer ||
+          currentParent?.type === AST_NODE_TYPES.JSXSpreadAttribute ||
+          currentParent?.type === AST_NODE_TYPES.SpreadElement ||
+          currentParent?.type === AST_NODE_TYPES.ForInStatement ||
+          currentParent?.type === AST_NODE_TYPES.ForOfStatement ||
+          currentParent?.type === AST_NODE_TYPES.CallExpression;
 
         if (isTypeAUsage) {
           needsEntireObject = true;
@@ -330,16 +351,21 @@ function getObjectUsagesInHook(
 
     if (node.type === AST_NODE_TYPES.CallExpression) {
       // Check if the object is being called as a function
+      const callee = unwrapExpression(node.callee);
       if (
-        node.callee.type === AST_NODE_TYPES.Identifier &&
-        node.callee.name === objectName
+        callee.type === AST_NODE_TYPES.Identifier &&
+        callee.name === objectName
       ) {
         needsEntireObject = true;
       }
 
       // Check if the object is directly passed as an argument
       node.arguments.forEach((arg) => {
-        if (arg.type === AST_NODE_TYPES.Identifier && arg.name === objectName) {
+        const unwrappedArg = unwrapExpression(arg);
+        if (
+          unwrappedArg.type === AST_NODE_TYPES.Identifier &&
+          unwrappedArg.name === objectName
+        ) {
           needsEntireObject = true;
         }
       });
@@ -350,20 +376,23 @@ function getObjectUsagesInHook(
       // If we find a JSX element, check its attributes for spread operator
       if (node.type === AST_NODE_TYPES.JSXElement) {
         node.openingElement.attributes.forEach((attr) => {
-          if (
-            attr.type === AST_NODE_TYPES.JSXSpreadAttribute &&
-            attr.argument.type === AST_NODE_TYPES.Identifier &&
-            attr.argument.name === objectName
-          ) {
-            needsEntireObject = true;
+          if (attr.type === AST_NODE_TYPES.JSXSpreadAttribute) {
+            const argument = unwrapExpression(attr.argument);
+            if (
+              argument.type === AST_NODE_TYPES.Identifier &&
+              argument.name === objectName
+            ) {
+              needsEntireObject = true;
+            }
           }
         });
       }
     } else if (node.type === AST_NODE_TYPES.SpreadElement) {
       // If we find a spread operator with our target object, consider it as accessing all properties
+      const argument = unwrapExpression(node.argument);
       if (
-        node.argument.type === AST_NODE_TYPES.Identifier &&
-        node.argument.name === objectName
+        argument.type === AST_NODE_TYPES.Identifier &&
+        argument.name === objectName
       ) {
         needsEntireObject = true;
         return;
@@ -396,14 +425,12 @@ function getObjectUsagesInHook(
             hasDynamicComputed = true;
           }
 
-          current = currentMember.object;
+          current = unwrapExpression(currentMember.object);
         }
 
         // Check if we reached our target object
-        if (
-          current.type === AST_NODE_TYPES.Identifier &&
-          current.name === objectName
-        ) {
+        const base = unwrapExpression(current);
+        if (base.type === AST_NODE_TYPES.Identifier && base.name === objectName) {
           foundTargetObject = true;
         }
 
@@ -634,102 +661,103 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
           return;
         }
 
-        // Check each dependency in the array
-        depsArg.elements.forEach((element) => {
-          if (!element) return; // Skip null elements (holes in the array)
+    // Check each dependency in the array
+    depsArg.elements.forEach((element) => {
+      const unwrappedElement = element ? unwrapExpression(element) : null;
+      if (!unwrappedElement) return; // Skip null elements (holes in the array)
 
-          if (element.type === AST_NODE_TYPES.Identifier) {
-            const objectName = element.name;
+      if (unwrappedElement.type === AST_NODE_TYPES.Identifier) {
+        const objectName = unwrappedElement.name;
 
-            // Skip type checking if we don't have TypeScript services
-            if (hasFullTypeChecking && parserServices) {
-              const checker = parserServices.program.getTypeChecker();
-              const nodeMap = parserServices.esTreeNodeToTSNodeMap;
+        // Skip type checking if we don't have TypeScript services
+        if (hasFullTypeChecking && parserServices) {
+          const checker = parserServices.program.getTypeChecker();
+          const nodeMap = parserServices.esTreeNodeToTSNodeMap;
 
-              // Skip if the dependency is an array or primitive type
-              if (isArrayOrPrimitive(checker, element, nodeMap)) {
-                return;
-              }
-            }
-            // For testing without TypeScript services, we'll assume all identifiers are objects
-
-            const result = getObjectUsagesInHook(
-              (
-                callbackArg as
-                  | TSESTree.ArrowFunctionExpression
-                  | TSESTree.FunctionExpression
-              ).body,
-              objectName,
-              context,
-            );
-
-            // If the object is not used at all, suggest removing it
-            if (result.notUsed) {
-              context.report({
-                node: element as TSESTree.Node,
-                messageId: 'removeUnusedDependency',
-                data: {
-                  objectName,
-                },
-                fix(fixer) {
-                  // Remove the element and handle commas properly
-                  const elementIndex = depsArg.elements.indexOf(element);
-
-                  if (elementIndex === -1) return null;
-
-                  // If this is the only element, just remove it
-                  if (depsArg.elements.length === 1) {
-                    return fixer.remove(element as TSESTree.Node);
-                  }
-
-                  // If this is the last element, remove the preceding comma
-                  if (elementIndex === depsArg.elements.length - 1) {
-                    const prevElement = depsArg.elements[elementIndex - 1];
-                    if (prevElement) {
-                      const range: [number, number] = [
-                        prevElement.range![1],
-                        (element as TSESTree.Node).range![1],
-                      ];
-                      return fixer.removeRange(range);
-                    }
-                  }
-
-                  // Otherwise, remove the element and the following comma
-                  const nextElement = depsArg.elements[elementIndex + 1];
-                  if (nextElement) {
-                    const range: [number, number] = [
-                      (element as TSESTree.Node).range![0],
-                      nextElement.range![0],
-                    ];
-                    return fixer.removeRange(range);
-                  }
-
-                  // Fallback to just removing the element
-                  return fixer.remove(element as TSESTree.Node);
-                },
-              });
-            }
-            // If we found specific field usages and the entire object is in deps
-            // Skip reporting if needsEntireObject is true (indicates spread operator usage)
-            else if (result.usages.size > 0 && !result.needsEntireObject) {
-              const fields = Array.from(result.usages).join(', ');
-              context.report({
-                node: element as TSESTree.Node,
-                messageId: 'avoidEntireObject',
-                data: {
-                  objectName,
-                  fields,
-                },
-                fix(fixer) {
-                  return fixer.replaceText(
-                    element as TSESTree.Node,
-                    Array.from(result.usages).join(', '),
-                  );
-                },
-              });
-            }
+          // Skip if the dependency is an array or primitive type
+          if (isArrayOrPrimitive(checker, unwrappedElement, nodeMap)) {
+            return;
           }
-        });
+        }
+        // For testing without TypeScript services, we'll assume all identifiers are objects
+
+        const result = getObjectUsagesInHook(
+          (
+            callbackArg as
+              | TSESTree.ArrowFunctionExpression
+              | TSESTree.FunctionExpression
+          ).body,
+          objectName,
+          context,
+        );
+
+        // If the object is not used at all, suggest removing it
+        if (result.notUsed) {
+          context.report({
+            node: element as TSESTree.Node,
+            messageId: 'removeUnusedDependency',
+            data: {
+              objectName,
+            },
+            fix(fixer) {
+              // Remove the element and handle commas properly
+              const elementIndex = depsArg.elements.indexOf(element);
+
+              if (elementIndex === -1) return null;
+
+              // If this is the only element, just remove it
+              if (depsArg.elements.length === 1) {
+                return fixer.remove(element as TSESTree.Node);
+              }
+
+              // If this is the last element, remove the preceding comma
+              if (elementIndex === depsArg.elements.length - 1) {
+                const prevElement = depsArg.elements[elementIndex - 1];
+                if (prevElement) {
+                  const range: [number, number] = [
+                    prevElement.range![1],
+                    (element as TSESTree.Node).range![1],
+                  ];
+                  return fixer.removeRange(range);
+                }
+              }
+
+              // Otherwise, remove the element and the following comma
+              const nextElement = depsArg.elements[elementIndex + 1];
+              if (nextElement) {
+                const range: [number, number] = [
+                  (element as TSESTree.Node).range![0],
+                  nextElement.range![0],
+                ];
+                return fixer.removeRange(range);
+              }
+
+              // Fallback to just removing the element
+              return fixer.remove(element as TSESTree.Node);
+            },
+          });
+        }
+        // If we found specific field usages and the entire object is in deps
+        // Skip reporting if needsEntireObject is true (indicates spread operator usage)
+        else if (result.usages.size > 0 && !result.needsEntireObject) {
+          const fields = Array.from(result.usages).join(', ');
+          context.report({
+            node: element as TSESTree.Node,
+            messageId: 'avoidEntireObject',
+            data: {
+              objectName,
+              fields,
+            },
+            fix(fixer) {
+              return fixer.replaceText(
+                element as TSESTree.Node,
+                Array.from(result.usages).join(', '),
+              );
+            },
+          });
+        }
+      }
+    });
       },
     };
   },

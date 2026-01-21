@@ -1426,5 +1426,59 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
+    // TS assertion case
+    {
+      code: `
+        const MyComponent = ({ userData }) => {
+          useCallback(() => {
+            console.log((userData as User).name);
+          }, [userData]);
+        };
+      `,
+      errors: [avoid('userData', 'userData.name')],
+      output: `
+        const MyComponent = ({ userData }) => {
+          useCallback(() => {
+            console.log((userData as User).name);
+          }, [userData.name]);
+        };
+      `,
+    },
+    // TS assertion with optional chaining
+    {
+      code: `
+        const MyComponent = ({ userData }) => {
+          useCallback(() => {
+            console.log((userData?.profile as Profile).id);
+          }, [userData]);
+        };
+      `,
+      errors: [avoid('userData', 'userData?.profile.id, userData?.profile')],
+      output: `
+        const MyComponent = ({ userData }) => {
+          useCallback(() => {
+            console.log((userData?.profile as Profile).id);
+          }, [userData?.profile.id, userData?.profile]);
+        };
+      `,
+    },
+    // Wrapped dependency in array
+    {
+      code: `
+        const MyComponent = ({ userData }) => {
+          useCallback(() => {
+            console.log(userData.name);
+          }, [userData as any]);
+        };
+      `,
+      errors: [avoid('userData', 'userData.name')],
+      output: `
+        const MyComponent = ({ userData }) => {
+          useCallback(() => {
+            console.log(userData.name);
+          }, [userData.name]);
+        };
+      `,
+    },
   ],
 });
