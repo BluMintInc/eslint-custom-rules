@@ -207,10 +207,14 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
         unwrappedNode.type === AST_NODE_TYPES.NewExpression
       ) {
         if (unwrappedNode.callee.type === AST_NODE_TYPES.Identifier) {
+          const calleeName = unwrappedNode.callee.name;
+          if (visited.has(calleeName)) return false;
+          visited.add(calleeName);
+
           const scope = ASTHelpers.getScope(context, unwrappedNode.callee);
           const variable = ASTHelpers.findVariableInScope(
             scope,
-            unwrappedNode.callee.name,
+            calleeName,
           );
           if (variable) {
             for (const def of variable.defs) {

@@ -72,6 +72,12 @@ ruleTesterTs.run('warn-https-error-message-user-friendly', warnHttpsErrorMessage
     `
       const x = NotHttpsError({ messageUserFriendly: 'oops' });
     `,
+    // 20. Mutually recursive functions (should not crash)
+    `
+      function a() { return b(); }
+      function b() { return a(); }
+      new HttpsError(a());
+    `,
   ],
   invalid: [
     // 1. Direct object literal in new HttpsError
@@ -495,6 +501,25 @@ ruleTesterTs.run('warn-https-error-message-user-friendly', warnHttpsErrorMessage
     {
       code: "new HttpsError({ ['messageUserFriendly']: 'oops' });",
       errors: [{ messageId, data: { propertyName: 'messageUserFriendly' } }],
+    },
+    // 29. Mutually recursive functions where one eventually returns messageUserFriendly
+    {
+      code: `
+        function a() { return b(); }
+        function b() { 
+          if (condition) return a();
+          return { messageUserFriendly: 'oops' };
+        }
+        new HttpsError(a());
+      `,
+      errors: [
+        {
+          messageId,
+          line: 7,
+          column: 24,
+          data: { propertyName: 'messageUserFriendly' },
+        },
+      ],
     },
   ],
 });
