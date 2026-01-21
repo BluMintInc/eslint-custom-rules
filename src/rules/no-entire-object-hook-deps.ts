@@ -80,7 +80,8 @@ function unwrapExpression(expr: TSESTree.Node): TSESTree.Node {
   while (
     current.type === AST_NODE_TYPES.TSAsExpression ||
     current.type === AST_NODE_TYPES.TSTypeAssertion ||
-    current.type === AST_NODE_TYPES.ChainExpression
+    current.type === AST_NODE_TYPES.ChainExpression ||
+    current.type === AST_NODE_TYPES.TSNonNullExpression
   ) {
     current = current.expression;
   }
@@ -293,7 +294,8 @@ function getObjectUsagesInHook(
         effectiveParent &&
         (effectiveParent.type === AST_NODE_TYPES.TSAsExpression ||
           effectiveParent.type === AST_NODE_TYPES.TSTypeAssertion ||
-          effectiveParent.type === AST_NODE_TYPES.ChainExpression)
+          effectiveParent.type === AST_NODE_TYPES.ChainExpression ||
+          effectiveParent.type === AST_NODE_TYPES.TSNonNullExpression)
       ) {
         wrapperNode = effectiveParent;
         effectiveParent = effectiveParent.parent;
@@ -409,7 +411,8 @@ function getObjectUsagesInHook(
         effectiveParent &&
         (effectiveParent.type === AST_NODE_TYPES.TSAsExpression ||
           effectiveParent.type === AST_NODE_TYPES.TSTypeAssertion ||
-          effectiveParent.type === AST_NODE_TYPES.ChainExpression)
+          effectiveParent.type === AST_NODE_TYPES.ChainExpression ||
+          effectiveParent.type === AST_NODE_TYPES.TSNonNullExpression)
       ) {
         effectiveParent = effectiveParent.parent;
       }
