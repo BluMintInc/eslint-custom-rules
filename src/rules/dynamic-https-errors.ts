@@ -1,19 +1,6 @@
 import { createRule } from '../utils/createRule';
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
-
-const isHttpsErrorCall = (callee: TSESTree.LeftHandSideExpression): boolean => {
-  if (callee.type === AST_NODE_TYPES.MemberExpression) {
-    return (
-      callee.object.type === AST_NODE_TYPES.Identifier &&
-      callee.object.name === 'https' &&
-      callee.property.type === AST_NODE_TYPES.Identifier &&
-      callee.property.name === 'HttpsError'
-    );
-  } else if (callee.type === AST_NODE_TYPES.Identifier) {
-    return callee.name === 'HttpsError';
-  }
-  return false;
-};
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 const findPropertyByName = (
   properties: (TSESTree.Property | TSESTree.SpreadElement)[],
@@ -60,19 +47,6 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
     },
     defaultOptions: [],
     create(context) {
-      const unwrapTSAssertions = (node: TSESTree.Node): TSESTree.Node => {
-        let inner = node;
-        while (
-          inner.type === AST_NODE_TYPES.TSAsExpression ||
-          inner.type === AST_NODE_TYPES.TSSatisfiesExpression ||
-          inner.type === AST_NODE_TYPES.TSNonNullExpression ||
-          inner.type === AST_NODE_TYPES.TSTypeAssertion
-        ) {
-          inner = inner.expression;
-        }
-        return inner;
-      };
-
       // Only string concatenation with "+" can be static; all other operators
       // are treated as dynamic to avoid hashing non-literal message content.
       const isDynamicBinaryExpression = (
@@ -81,7 +55,7 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
         if (expression.operator !== '+') return true;
 
         const isStaticLiteral = (expr: TSESTree.Node): boolean => {
-          const inner = unwrapTSAssertions(expr);
+          const inner = ASTHelpers.unwrapTSAssertions(expr);
 
           return (
             inner.type === AST_NODE_TYPES.Literal &&
@@ -96,7 +70,7 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
             return false;
           }
 
-          const inner = unwrapTSAssertions(expr);
+          const inner = ASTHelpers.unwrapTSAssertions(expr);
 
           if (inner.type === AST_NODE_TYPES.BinaryExpression) {
             return !isDynamicBinaryExpression(inner);
@@ -144,7 +118,7 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
        * `shouldValidateForStaticness`.
        */
       const checkMessageIsStatic = (messageNode: TSESTree.Expression) => {
-        const currentNode = unwrapTSAssertions(messageNode);
+        const currentNode = ASTHelpers.unwrapTSAssertions(messageNode);
 
         if (currentNode.type === AST_NODE_TYPES.Literal) {
           return;
@@ -178,7 +152,7 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
         node: TSESTree.CallExpression | TSESTree.NewExpression,
       ) => {
         const callee = node.callee;
-        if (!isHttpsErrorCall(callee)) return;
+        if (!ASTHelpers.isHttpsErrorCall(callee)) return;
 
         // Signature 1: Object-based constructor (HttpsErrorProps)
         if (
