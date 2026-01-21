@@ -1,4 +1,5 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'circularReference';
@@ -73,7 +74,7 @@ export const noCircularReferences = createRule<[], MessageIds>({
     }
 
     function getVariable(node: TSESTree.Identifier): TSESLint.Scope.Variable | null {
-      let scope: TSESLint.Scope.Scope | null = (context as any).sourceCode.getScope(node);
+      let scope: TSESLint.Scope.Scope | null = ASTHelpers.getScope(context, node);
       while (scope) {
         const variable = scope.variables.find((v) => v.name === node.name);
         if (variable) return variable;
@@ -109,19 +110,24 @@ export const noCircularReferences = createRule<[], MessageIds>({
           let propValue: TSESTree.Node | undefined;
 
           // 1. Check object literal properties
-          if (
-            referencedObj.type === AST_NODE_TYPES.ObjectExpression &&
-            isIdentifier(property) &&
-            !node.computed
-          ) {
-            const prop = referencedObj.properties.find(
-              (p) =>
-                p.type === AST_NODE_TYPES.Property &&
-                !p.computed &&
-                isIdentifier(p.key) &&
-                p.key.name === property.name,
-            ) as TSESTree.Property | undefined;
-            if (prop) propValue = prop.value;
+          if (referencedObj.type === AST_NODE_TYPES.ObjectExpression) {
+            const key =
+              !node.computed && isIdentifier(property)
+                ? property.name
+                : node.computed && property.type === AST_NODE_TYPES.Literal
+                  ? property.value
+                  : null;
+
+            if (key !== null && (typeof key === 'string' || typeof key === 'number')) {
+              const prop = referencedObj.properties.find(
+                (p) =>
+                  p.type === AST_NODE_TYPES.Property &&
+                  !p.computed &&
+                  ((isIdentifier(p.key) && p.key.name === key) ||
+                    (p.key.type === AST_NODE_TYPES.Literal && p.key.value === key)),
+              ) as TSESTree.Property | undefined;
+              if (prop) propValue = prop.value;
+            }
           }
 
           // 2. Check assigned properties if not found in literal
@@ -136,7 +142,7 @@ export const noCircularReferences = createRule<[], MessageIds>({
           if (propValue) {
             const unwrappedValue = getUnwrappedObjectExpression(propValue);
             if (unwrappedValue) return unwrappedValue;
-            if (isIdentifier(propValue)) {
+            if (isIdentifier(propValue) || propValue.type === AST_NODE_TYPES.MemberExpression) {
               return getReferencedObject(propValue, visitedVariables);
             }
             if (propValue.type === AST_NODE_TYPES.ArrayExpression) {
