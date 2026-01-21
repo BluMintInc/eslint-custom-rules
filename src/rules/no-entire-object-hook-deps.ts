@@ -286,62 +286,63 @@ function getObjectUsagesInHook(
     visited.add(node);
 
     if (node.type === AST_NODE_TYPES.Identifier && node.name === objectName) {
-      // Find the real parent by skipping TS type assertions
+      // Find the real parent by skipping TS type assertions and optional chaining
       let wrapperNode: TSESTree.Node = node;
-      let parent = node.parent;
+      let effectiveParent = node.parent;
       while (
-        parent &&
-        (parent.type === AST_NODE_TYPES.TSAsExpression ||
-          parent.type === AST_NODE_TYPES.TSTypeAssertion)
+        effectiveParent &&
+        (effectiveParent.type === AST_NODE_TYPES.TSAsExpression ||
+          effectiveParent.type === AST_NODE_TYPES.TSTypeAssertion ||
+          effectiveParent.type === AST_NODE_TYPES.ChainExpression)
       ) {
-        wrapperNode = parent;
-        parent = parent.parent;
+        wrapperNode = effectiveParent;
+        effectiveParent = effectiveParent.parent;
       }
 
       // Exclude: property name in `other.objectName` (not our target object)
       const isMemberProperty =
-        parent?.type === AST_NODE_TYPES.MemberExpression &&
-        parent.property === wrapperNode &&
-        !parent.computed;
+        effectiveParent?.type === AST_NODE_TYPES.MemberExpression &&
+        effectiveParent.property === wrapperNode &&
+        !effectiveParent.computed;
 
       // Exclude: object in `objectName.prop` (handled by MemberExpression visitor for field tracking)
       const isMemberObject =
-        parent?.type === AST_NODE_TYPES.MemberExpression &&
-        parent.object === wrapperNode;
+        effectiveParent?.type === AST_NODE_TYPES.MemberExpression &&
+        effectiveParent.object === wrapperNode;
 
       // Exclude: key in `{ objectName: value }` (not usage, just a label)
       // Include: shorthand `{ objectName }` (actual usage)
       const isPropertyKey =
-        parent?.type === AST_NODE_TYPES.Property &&
-        parent.key === wrapperNode &&
-        !parent.computed &&
-        !parent.shorthand;
+        effectiveParent?.type === AST_NODE_TYPES.Property &&
+        effectiveParent.key === wrapperNode &&
+        !effectiveParent.computed &&
+        !effectiveParent.shorthand;
 
       if (!isMemberProperty && !isMemberObject && !isPropertyKey) {
         isUsed = true;
 
         // Patterns that require the entire object (cannot refactor to specific fields)
         const isTypeAUsage =
-          parent?.type === AST_NODE_TYPES.ReturnStatement ||
-          parent?.type === AST_NODE_TYPES.ArrayExpression ||
-          parent?.type === AST_NODE_TYPES.BinaryExpression ||
-          parent?.type === AST_NODE_TYPES.LogicalExpression ||
-          parent?.type === AST_NODE_TYPES.ConditionalExpression ||
-          parent?.type === AST_NODE_TYPES.UnaryExpression ||
-          (parent?.type === AST_NODE_TYPES.Property &&
-            (parent.value === wrapperNode ||
-              parent.shorthand ||
-              (parent.key === wrapperNode &&
-                parent.computed))) ||
-          parent?.type === AST_NODE_TYPES.TemplateLiteral ||
-          parent?.type === AST_NODE_TYPES.VariableDeclarator ||
-          parent?.type === AST_NODE_TYPES.AssignmentExpression ||
-          parent?.type === AST_NODE_TYPES.JSXExpressionContainer ||
-          parent?.type === AST_NODE_TYPES.JSXSpreadAttribute ||
-          parent?.type === AST_NODE_TYPES.SpreadElement ||
-          parent?.type === AST_NODE_TYPES.ForInStatement ||
-          parent?.type === AST_NODE_TYPES.ForOfStatement ||
-          parent?.type === AST_NODE_TYPES.CallExpression;
+          effectiveParent?.type === AST_NODE_TYPES.ReturnStatement ||
+          effectiveParent?.type === AST_NODE_TYPES.ArrayExpression ||
+          effectiveParent?.type === AST_NODE_TYPES.BinaryExpression ||
+          effectiveParent?.type === AST_NODE_TYPES.LogicalExpression ||
+          effectiveParent?.type === AST_NODE_TYPES.ConditionalExpression ||
+          effectiveParent?.type === AST_NODE_TYPES.UnaryExpression ||
+          (effectiveParent?.type === AST_NODE_TYPES.Property &&
+            (effectiveParent.value === wrapperNode ||
+              effectiveParent.shorthand ||
+              (effectiveParent.key === wrapperNode &&
+                effectiveParent.computed))) ||
+          effectiveParent?.type === AST_NODE_TYPES.TemplateLiteral ||
+          effectiveParent?.type === AST_NODE_TYPES.VariableDeclarator ||
+          effectiveParent?.type === AST_NODE_TYPES.AssignmentExpression ||
+          effectiveParent?.type === AST_NODE_TYPES.JSXExpressionContainer ||
+          effectiveParent?.type === AST_NODE_TYPES.JSXSpreadAttribute ||
+          effectiveParent?.type === AST_NODE_TYPES.SpreadElement ||
+          effectiveParent?.type === AST_NODE_TYPES.ForInStatement ||
+          effectiveParent?.type === AST_NODE_TYPES.ForOfStatement ||
+          effectiveParent?.type === AST_NODE_TYPES.CallExpression;
 
         if (isTypeAUsage) {
           needsEntireObject = true;
@@ -403,9 +404,17 @@ function getObjectUsagesInHook(
 
       // Only process if this is the outermost member expression in a chain
       // (i.e., its parent is not also a member expression)
-      const parent = memberExpr.parent;
+      let effectiveParent = memberExpr.parent;
+      while (
+        effectiveParent &&
+        (effectiveParent.type === AST_NODE_TYPES.TSAsExpression ||
+          effectiveParent.type === AST_NODE_TYPES.TSTypeAssertion ||
+          effectiveParent.type === AST_NODE_TYPES.ChainExpression)
+      ) {
+        effectiveParent = effectiveParent.parent;
+      }
       const isIntermediate =
-        parent && parent.type === AST_NODE_TYPES.MemberExpression;
+        effectiveParent && effectiveParent.type === AST_NODE_TYPES.MemberExpression;
 
       if (!isIntermediate) {
         // Check if this member expression involves our target object
