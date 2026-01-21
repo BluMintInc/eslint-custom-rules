@@ -4,14 +4,6 @@ import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds = 'warnHttpsErrorMessageUserFriendly';
 
-const isToHttpsErrorCall = (
-  callee: TSESTree.LeftHandSideExpression,
-): boolean => {
-  return (
-    callee.type === AST_NODE_TYPES.Identifier && callee.name === 'toHttpsError'
-  );
-};
-
 export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
   name: 'warn-https-error-message-user-friendly',
   meta: {
@@ -275,7 +267,7 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
           if (node.arguments.length > 0) {
             validateOptions(node.arguments[0]);
           }
-        } else if (isToHttpsErrorCall(node.callee)) {
+        } else if (ASTHelpers.isToHttpsErrorCall(node.callee)) {
           if (node.arguments.length > 1) {
             validateOptions(node.arguments[1]);
           }

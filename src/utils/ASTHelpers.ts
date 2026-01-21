@@ -962,6 +962,26 @@ export class ASTHelpers {
   }
 
   /**
+   * Checks if a call expression is a call to toHttpsError.
+   * Handles both 'toHttpsError' and 'https.toHttpsError'.
+   */
+  public static isToHttpsErrorCall(
+    callee: TSESTree.LeftHandSideExpression,
+  ): boolean {
+    if (callee.type === AST_NODE_TYPES.MemberExpression) {
+      return (
+        callee.object.type === AST_NODE_TYPES.Identifier &&
+        callee.object.name === 'https' &&
+        callee.property.type === AST_NODE_TYPES.Identifier &&
+        callee.property.name === 'toHttpsError'
+      );
+    } else if (callee.type === AST_NODE_TYPES.Identifier) {
+      return callee.name === 'toHttpsError';
+    }
+    return false;
+  }
+
+  /**
    * Unwraps TypeScript-specific nodes (assertions, non-null, satisfies) and
    * parenthesized expressions to get to the underlying expression.
    */
