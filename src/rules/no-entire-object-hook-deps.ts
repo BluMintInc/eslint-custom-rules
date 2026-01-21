@@ -287,7 +287,10 @@ function getObjectUsagesInHook(
     visited.add(node);
 
     if (node.type === AST_NODE_TYPES.Identifier && node.name === objectName) {
-      // Skip wrapper nodes so usage is attributed to the actual parent context.
+      // Skip TS type assertions, ChainExpression and TSNonNullExpression wrappers
+      // (used around the Identifier) so we can attribute the Identifier's usage
+      // to its actual parent context (e.g., call/member/assignment) and avoid
+      // misclassifying the dependency when determining if the whole object is referenced.
       let wrapperNode: TSESTree.Node = node;
       let effectiveParent = node.parent;
       while (
@@ -404,7 +407,9 @@ function getObjectUsagesInHook(
       // Check if this is accessing a property of our target object
       const memberExpr = node as TSESTree.MemberExpression;
 
-      // Skip wrapper nodes so usage is attributed to the actual parent context.
+      // Skip TS type assertions, ChainExpression and TSNonNullExpression wrappers
+      // so we can attribute the MemberExpression's usage to its actual parent
+      // context and avoid misclassifying the dependency.
       // We only process if this is the outermost member expression in a chain.
       let effectiveParent = memberExpr.parent;
       while (
