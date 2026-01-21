@@ -60,7 +60,8 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
     };
 
     /**
-     * Finds properties or spread elements that contain messageUserFriendly in an object expression.
+     * Extracts problematic property definitions to provide precise reporting locations,
+     * even when properties are deeply nested or mixed via spread elements.
      */
     const findMessageUserFriendlyProperties = (
       node: TSESTree.ObjectExpression,
@@ -91,7 +92,8 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
     };
 
     /**
-     * Traces a variable to see if its initializer contains messageUserFriendly.
+     * Analyzes variable assignments to prevent rule bypass via intermediate identifiers,
+     * ensuring that 'messageUserFriendly' cannot be hidden behind a variable name.
      */
     const traceVariable = (
       identifier: TSESTree.Identifier,
@@ -123,7 +125,8 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
     };
 
     /**
-     * Traces function returns to see if any return an object with messageUserFriendly.
+     * Inspects function bodies to detect cases where the options object is generated
+     * dynamically, closing a common bypass pattern where factories or helpers are used.
      */
     const traceFunctionReturn = (
       node:
@@ -179,7 +182,8 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
     };
 
     /**
-     * Checks a node (expression) for messageUserFriendly.
+     * Recursively evaluates diverse AST structures (logical, conditional, calls) to ensure
+     * that the presence of 'messageUserFriendly' is detected regardless of expression complexity.
      */
     const checkNode = (
       node: TSESTree.Node,
