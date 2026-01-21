@@ -6,8 +6,7 @@ type MessageIds = 'circularReference';
 type ObjectInfo = {
   node: TSESTree.Node;
   references: Set<TSESTree.Node>;
-  scope: string;
-  isCircular?: boolean;
+  assignedProperties: Map<string | number, TSESTree.Node>;
 };
 
 export const noCircularReferences = createRule<[], MessageIds>({
@@ -45,15 +44,14 @@ export const noCircularReferences = createRule<[], MessageIds>({
     function getUnwrappedObjectExpression(
       node: TSESTree.Node,
     ): TSESTree.ObjectExpression | null {
-      if (node.type === AST_NODE_TYPES.ObjectExpression) return node;
-      if (
-        (node.type === AST_NODE_TYPES.TSAsExpression ||
-          node.type === AST_NODE_TYPES.TSTypeAssertion) &&
-        node.expression.type === AST_NODE_TYPES.ObjectExpression
+      let current: TSESTree.Node = node;
+      while (
+        current.type === AST_NODE_TYPES.TSAsExpression ||
+        current.type === AST_NODE_TYPES.TSTypeAssertion
       ) {
-        return node.expression;
+        current = current.expression;
       }
-      return null;
+      return current.type === AST_NODE_TYPES.ObjectExpression ? current : null;
     }
 
     function isIdentifier(node: TSESTree.Node): node is TSESTree.Identifier {
@@ -74,10 +72,10 @@ export const noCircularReferences = createRule<[], MessageIds>({
       return false;
     }
 
-    function getVariable(name: string): TSESLint.Scope.Variable | null {
-      let scope: TSESLint.Scope.Scope | null = context.getScope();
+    function getVariable(node: TSESTree.Identifier): TSESLint.Scope.Variable | null {
+      let scope: TSESLint.Scope.Scope | null = (context as any).sourceCode.getScope(node);
       while (scope) {
-        const variable = scope.variables.find((v) => v.name === name);
+        const variable = scope.variables.find((v) => v.name === node.name);
         if (variable) return variable;
         scope = scope.upper;
       }
@@ -88,25 +86,34 @@ export const noCircularReferences = createRule<[], MessageIds>({
       node: TSESTree.Node,
       visitedVariables = new Set<TSESLint.Scope.Variable>(),
     ): TSESTree.Node | null {
+      if (node.type === AST_NODE_TYPES.ArrayExpression) return node;
+      const unwrapped = getUnwrappedObjectExpression(node);
+      if (unwrapped) return unwrapped;
+
       if (isIdentifier(node)) {
-        const variable = getVariable(node.name);
+        const variable = getVariable(node);
         if (variable && !visitedVariables.has(variable) && variable.defs.length > 0) {
           visitedVariables.add(variable);
           const def = variable.defs[0];
           if (def.node.type === AST_NODE_TYPES.VariableDeclarator && def.node.init) {
-            const unwrapped = getUnwrappedObjectExpression(def.node.init);
-            if (unwrapped) return unwrapped;
-            if (isIdentifier(def.node.init)) {
-              return getReferencedObject(def.node.init, visitedVariables);
-            }
+            const result = getReferencedObject(def.node.init, visitedVariables);
+            if (result) return result;
           }
         }
       } else if (node.type === AST_NODE_TYPES.MemberExpression) {
         const object = node.object;
         const property = node.property;
-        if (isIdentifier(object) && isIdentifier(property)) {
-          const referencedObj = getReferencedObject(object, visitedVariables);
-          if (referencedObj && referencedObj.type === AST_NODE_TYPES.ObjectExpression) {
+        const referencedObj = getReferencedObject(object, visitedVariables);
+        if (referencedObj) {
+          const info = objectMap.get(referencedObj);
+          let propValue: TSESTree.Node | undefined;
+
+          // 1. Check object literal properties
+          if (
+            referencedObj.type === AST_NODE_TYPES.ObjectExpression &&
+            isIdentifier(property) &&
+            !node.computed
+          ) {
             const prop = referencedObj.properties.find(
               (p) =>
                 p.type === AST_NODE_TYPES.Property &&
@@ -114,25 +121,32 @@ export const noCircularReferences = createRule<[], MessageIds>({
                 isIdentifier(p.key) &&
                 p.key.name === property.name,
             ) as TSESTree.Property | undefined;
-            if (prop && (isFunction(prop.value) || isPrimitive(prop.value))) {
+            if (prop) propValue = prop.value;
+          }
+
+          // 2. Check assigned properties if not found in literal
+          if (!propValue && info) {
+            if (!node.computed && isIdentifier(property)) {
+              propValue = info.assignedProperties.get(property.name);
+            } else if (node.computed && property.type === AST_NODE_TYPES.Literal) {
+              propValue = info.assignedProperties.get(property.value as string | number);
+            }
+          }
+
+          if (propValue) {
+            const unwrappedValue = getUnwrappedObjectExpression(propValue);
+            if (unwrappedValue) return unwrappedValue;
+            if (isIdentifier(propValue)) {
+              return getReferencedObject(propValue, visitedVariables);
+            }
+            if (propValue.type === AST_NODE_TYPES.ArrayExpression) {
+              return propValue;
+            }
+            if (isFunction(propValue) || isPrimitive(propValue)) {
               return null;
             }
-            return referencedObj;
           }
         }
-      }
-      return null;
-    }
-
-    function getObjectFromMemberExpression(
-      node: TSESTree.MemberExpression,
-    ): TSESTree.Node | null {
-      let current: TSESTree.Node = node;
-      while (current.type === AST_NODE_TYPES.MemberExpression) {
-        current = current.object;
-      }
-      if (isIdentifier(current)) {
-        return getReferencedObject(current);
       }
       return null;
     }
@@ -153,7 +167,6 @@ export const noCircularReferences = createRule<[], MessageIds>({
       for (const ref of objectInfo.references) {
         const referencedObj = getReferencedObject(ref);
         if (referencedObj && detectCircularReference(referencedObj, new Set(visited), depth + 1)) {
-          objectInfo.isCircular = true;
           return true;
         }
       }
@@ -165,7 +178,10 @@ export const noCircularReferences = createRule<[], MessageIds>({
       targetObj: TSESTree.Node,
       reference: TSESTree.Node,
     ) {
-      const unwrapped = getUnwrappedObjectExpression(targetObj);
+      let unwrapped: TSESTree.Node | null = getUnwrappedObjectExpression(targetObj);
+      if (!unwrapped && targetObj.type === AST_NODE_TYPES.ArrayExpression) {
+        unwrapped = targetObj;
+      }
       if (!unwrapped) return;
 
       const targetInfo = objectMap.get(unwrapped);
@@ -179,25 +195,20 @@ export const noCircularReferences = createRule<[], MessageIds>({
 
     return {
       ObjectExpression(node) {
-        const scope = context.getScope();
-        const scopeId = `${scope.type}:${scope.block.range[0]}:${scope.block.range[1]}`;
-        objectMap.set(node, { node, references: new Set(), scope: scopeId });
+        objectMap.set(node, { node, references: new Set(), assignedProperties: new Map() });
+      },
+
+      ArrayExpression(node) {
+        objectMap.set(node, { node, references: new Set(), assignedProperties: new Map() });
       },
 
       'ObjectExpression > Property'(node: TSESTree.Property) {
         const parentObject = node.parent as TSESTree.ObjectExpression;
         const value = node.value;
 
-        if (isIdentifier(value)) {
-          const referencedObj = getReferencedObject(value);
-          if (referencedObj) {
-            checkAndReportCircularReference(parentObject, value);
-          }
-        } else if (value.type === AST_NODE_TYPES.MemberExpression) {
-          const referencedObj = getObjectFromMemberExpression(value);
-          if (referencedObj) {
-            checkAndReportCircularReference(parentObject, value);
-          }
+        const referencedObj = getReferencedObject(value);
+        if (referencedObj) {
+          checkAndReportCircularReference(parentObject, value);
         }
       },
 
@@ -207,19 +218,25 @@ export const noCircularReferences = createRule<[], MessageIds>({
 
         if (left.type !== AST_NODE_TYPES.MemberExpression) return;
 
-        const targetObj = getObjectFromMemberExpression(left);
+        const targetObj = getReferencedObject(left.object);
         if (!targetObj) return;
 
-        if (isIdentifier(right)) {
-          const referencedObj = getReferencedObject(right);
-          if (referencedObj) {
-            checkAndReportCircularReference(targetObj, right);
+        // Track assigned property
+        const targetInfo = objectMap.get(targetObj);
+        if (targetInfo) {
+          if (!left.computed && isIdentifier(left.property)) {
+            targetInfo.assignedProperties.set(left.property.name, right);
+          } else if (left.computed && left.property.type === AST_NODE_TYPES.Literal) {
+            targetInfo.assignedProperties.set(
+              left.property.value as string | number,
+              right,
+            );
           }
-        } else if (right.type === AST_NODE_TYPES.MemberExpression) {
-          const referencedObj = getObjectFromMemberExpression(right);
-          if (referencedObj) {
-            checkAndReportCircularReference(targetObj, right);
-          }
+        }
+
+        const referencedObj = getReferencedObject(right);
+        if (referencedObj) {
+          checkAndReportCircularReference(targetObj, right);
         }
       },
     };
