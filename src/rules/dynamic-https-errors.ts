@@ -1,19 +1,6 @@
 import { createRule } from '../utils/createRule';
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
-
-const isHttpsErrorCall = (callee: TSESTree.LeftHandSideExpression): boolean => {
-  if (callee.type === AST_NODE_TYPES.MemberExpression) {
-    return (
-      callee.object.type === AST_NODE_TYPES.Identifier &&
-      callee.object.name === 'https' &&
-      callee.property.type === AST_NODE_TYPES.Identifier &&
-      callee.property.name === 'HttpsError'
-    );
-  } else if (callee.type === AST_NODE_TYPES.Identifier) {
-    return callee.name === 'HttpsError';
-  }
-  return false;
-};
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 const findPropertyByName = (
   properties: (TSESTree.Property | TSESTree.SpreadElement)[],
@@ -178,7 +165,7 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
         node: TSESTree.CallExpression | TSESTree.NewExpression,
       ) => {
         const callee = node.callee;
-        if (!isHttpsErrorCall(callee)) return;
+        if (!ASTHelpers.isHttpsErrorCall(callee)) return;
 
         // Signature 1: Object-based constructor (HttpsErrorProps)
         if (

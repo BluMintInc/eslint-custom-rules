@@ -4,20 +4,6 @@ import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds = 'warnHttpsErrorMessageUserFriendly';
 
-const isHttpsErrorCall = (callee: TSESTree.LeftHandSideExpression): boolean => {
-  if (callee.type === AST_NODE_TYPES.MemberExpression) {
-    return (
-      callee.object.type === AST_NODE_TYPES.Identifier &&
-      callee.object.name === 'https' &&
-      callee.property.type === AST_NODE_TYPES.Identifier &&
-      callee.property.name === 'HttpsError'
-    );
-  } else if (callee.type === AST_NODE_TYPES.Identifier) {
-    return callee.name === 'HttpsError';
-  }
-  return false;
-};
-
 const isToHttpsErrorCall = (
   callee: TSESTree.LeftHandSideExpression,
 ): boolean => {
@@ -184,6 +170,11 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
     /**
      * Recursively evaluates diverse AST structures (logical, conditional, calls) to ensure
      * that the presence of 'messageUserFriendly' is detected regardless of expression complexity.
+     *
+     * Note: This implementation intentionally covers only Identifier callees for simplicity,
+     * as MemberExpression callees (e.g., optionsFactory.build()) are not currently used in
+     * the codebase for HttpsError options. Handling for MemberExpression callees can be
+     * added as a future enhancement if such patterns emerge.
      */
     const checkNode = (
       node: TSESTree.Node,
@@ -286,14 +277,14 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
 
     return {
       NewExpression(node) {
-        if (isHttpsErrorCall(node.callee)) {
+        if (ASTHelpers.isHttpsErrorCall(node.callee)) {
           if (node.arguments.length > 0) {
             validateOptions(node.arguments[0]);
           }
         }
       },
       CallExpression(node) {
-        if (isHttpsErrorCall(node.callee)) {
+        if (ASTHelpers.isHttpsErrorCall(node.callee)) {
           if (node.arguments.length > 0) {
             validateOptions(node.arguments[0]);
           }

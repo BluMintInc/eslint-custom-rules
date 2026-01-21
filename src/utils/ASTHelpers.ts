@@ -942,6 +942,26 @@ export class ASTHelpers {
   }
 
   /**
+   * Checks if a call expression or new expression is a call to HttpsError.
+   * Handles both 'HttpsError' and 'https.HttpsError'.
+   */
+  public static isHttpsErrorCall(
+    callee: TSESTree.LeftHandSideExpression,
+  ): boolean {
+    if (callee.type === AST_NODE_TYPES.MemberExpression) {
+      return (
+        callee.object.type === AST_NODE_TYPES.Identifier &&
+        callee.object.name === 'https' &&
+        callee.property.type === AST_NODE_TYPES.Identifier &&
+        callee.property.name === 'HttpsError'
+      );
+    } else if (callee.type === AST_NODE_TYPES.Identifier) {
+      return callee.name === 'HttpsError';
+    }
+    return false;
+  }
+
+  /**
    * Helper to get ancestors of a node in a way that is compatible with both ESLint v8 and v9.
    * In ESLint v9, context.getAncestors() is deprecated and moved to context.sourceCode.getAncestors(node).
    */
