@@ -287,7 +287,7 @@ function getObjectUsagesInHook(
     visited.add(node);
 
     if (node.type === AST_NODE_TYPES.Identifier && node.name === objectName) {
-      // Find the real parent by skipping TS type assertions and optional chaining
+      // Skip wrapper nodes so usage is attributed to the actual parent context.
       let wrapperNode: TSESTree.Node = node;
       let effectiveParent = node.parent;
       while (
@@ -404,8 +404,8 @@ function getObjectUsagesInHook(
       // Check if this is accessing a property of our target object
       const memberExpr = node as TSESTree.MemberExpression;
 
-      // Only process if this is the outermost member expression in a chain
-      // (i.e., its parent is not also a member expression)
+      // Skip wrapper nodes so usage is attributed to the actual parent context.
+      // We only process if this is the outermost member expression in a chain.
       let effectiveParent = memberExpr.parent;
       while (
         effectiveParent &&
