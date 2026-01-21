@@ -279,6 +279,30 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
+    // TS assertion in object literal property value requires entire object
+    {
+      code: `
+        const MyComponent = ({ userData }) => {
+          const item = useMemo(() => ({
+            user: userData as User,
+            name: userData.name
+          }), [userData]);
+          return item;
+        };
+      `,
+    },
+    // TS assertion in computed property key requires entire object
+    {
+      code: `
+        const MyComponent = ({ userData }) => {
+          const item = useMemo(() => ({
+            [(userData as string)]: 'value',
+            name: userData.name
+          }), [userData]);
+          return item;
+        };
+      `,
+    },
     // Using JSON.stringify() should be valid
     {
       code: `

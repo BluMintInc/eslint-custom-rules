@@ -286,25 +286,34 @@ function getObjectUsagesInHook(
     visited.add(node);
 
     if (node.type === AST_NODE_TYPES.Identifier && node.name === objectName) {
-      const unwrappedNode = unwrapExpression(node);
-      const parent = unwrappedNode.parent;
+      // Find the real parent by skipping TS type assertions
+      let wrapperNode: TSESTree.Node = node;
+      let parent = node.parent;
+      while (
+        parent &&
+        (parent.type === AST_NODE_TYPES.TSAsExpression ||
+          parent.type === AST_NODE_TYPES.TSTypeAssertion)
+      ) {
+        wrapperNode = parent;
+        parent = parent.parent;
+      }
 
       // Exclude: property name in `other.objectName` (not our target object)
       const isMemberProperty =
         parent?.type === AST_NODE_TYPES.MemberExpression &&
-        parent.property === unwrappedNode &&
+        parent.property === wrapperNode &&
         !parent.computed;
 
       // Exclude: object in `objectName.prop` (handled by MemberExpression visitor for field tracking)
       const isMemberObject =
         parent?.type === AST_NODE_TYPES.MemberExpression &&
-        parent.object === unwrappedNode;
+        parent.object === wrapperNode;
 
       // Exclude: key in `{ objectName: value }` (not usage, just a label)
       // Include: shorthand `{ objectName }` (actual usage)
       const isPropertyKey =
         parent?.type === AST_NODE_TYPES.Property &&
-        parent.key === unwrappedNode &&
+        parent.key === wrapperNode &&
         !parent.computed &&
         !parent.shorthand;
 
@@ -312,36 +321,27 @@ function getObjectUsagesInHook(
         isUsed = true;
 
         // Patterns that require the entire object (cannot refactor to specific fields)
-        let currentParent: TSESTree.Node | undefined = parent;
-        while (
-          currentParent &&
-          (currentParent.type === AST_NODE_TYPES.TSAsExpression ||
-            currentParent.type === AST_NODE_TYPES.TSTypeAssertion)
-        ) {
-          currentParent = (currentParent as any).parent;
-        }
-
         const isTypeAUsage =
-          currentParent?.type === AST_NODE_TYPES.ReturnStatement ||
-          currentParent?.type === AST_NODE_TYPES.ArrayExpression ||
-          currentParent?.type === AST_NODE_TYPES.BinaryExpression ||
-          currentParent?.type === AST_NODE_TYPES.LogicalExpression ||
-          currentParent?.type === AST_NODE_TYPES.ConditionalExpression ||
-          currentParent?.type === AST_NODE_TYPES.UnaryExpression ||
-          (currentParent?.type === AST_NODE_TYPES.Property &&
-            (currentParent.value === unwrappedNode ||
-              currentParent.shorthand ||
-              (currentParent.key === unwrappedNode &&
-                currentParent.computed))) ||
-          currentParent?.type === AST_NODE_TYPES.TemplateLiteral ||
-          currentParent?.type === AST_NODE_TYPES.VariableDeclarator ||
-          currentParent?.type === AST_NODE_TYPES.AssignmentExpression ||
-          currentParent?.type === AST_NODE_TYPES.JSXExpressionContainer ||
-          currentParent?.type === AST_NODE_TYPES.JSXSpreadAttribute ||
-          currentParent?.type === AST_NODE_TYPES.SpreadElement ||
-          currentParent?.type === AST_NODE_TYPES.ForInStatement ||
-          currentParent?.type === AST_NODE_TYPES.ForOfStatement ||
-          currentParent?.type === AST_NODE_TYPES.CallExpression;
+          parent?.type === AST_NODE_TYPES.ReturnStatement ||
+          parent?.type === AST_NODE_TYPES.ArrayExpression ||
+          parent?.type === AST_NODE_TYPES.BinaryExpression ||
+          parent?.type === AST_NODE_TYPES.LogicalExpression ||
+          parent?.type === AST_NODE_TYPES.ConditionalExpression ||
+          parent?.type === AST_NODE_TYPES.UnaryExpression ||
+          (parent?.type === AST_NODE_TYPES.Property &&
+            (parent.value === wrapperNode ||
+              parent.shorthand ||
+              (parent.key === wrapperNode &&
+                parent.computed))) ||
+          parent?.type === AST_NODE_TYPES.TemplateLiteral ||
+          parent?.type === AST_NODE_TYPES.VariableDeclarator ||
+          parent?.type === AST_NODE_TYPES.AssignmentExpression ||
+          parent?.type === AST_NODE_TYPES.JSXExpressionContainer ||
+          parent?.type === AST_NODE_TYPES.JSXSpreadAttribute ||
+          parent?.type === AST_NODE_TYPES.SpreadElement ||
+          parent?.type === AST_NODE_TYPES.ForInStatement ||
+          parent?.type === AST_NODE_TYPES.ForOfStatement ||
+          parent?.type === AST_NODE_TYPES.CallExpression;
 
         if (isTypeAUsage) {
           needsEntireObject = true;
