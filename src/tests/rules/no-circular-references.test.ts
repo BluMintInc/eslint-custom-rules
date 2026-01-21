@@ -671,6 +671,14 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const restObj = obj.getRestObj();
       `,
     },
+    // Reproduction for issue #1171: Object property assigned a function parameter
+    {
+      code: `
+        const createMobileSize = (size: string) => {
+          return { fontSize: size } as const;
+        };
+      `,
+    },
     // Reproduction for issue #1091: False positive when variable is in outer scope and resolution falls back
     {
       code: `

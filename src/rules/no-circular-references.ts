@@ -10,10 +10,6 @@ type ObjectInfo = {
   isCircular?: boolean;
 };
 
-const objectMap = new WeakMap<TSESTree.Node, ObjectInfo>();
-const scopeMap = new Map<string, Set<TSESTree.Node>>();
-const circularRefs = new WeakSet<TSESTree.Node>();
-
 export const noCircularReferences = createRule<[], MessageIds>({
   name: 'no-circular-references',
   meta: {
@@ -31,6 +27,9 @@ export const noCircularReferences = createRule<[], MessageIds>({
   defaultOptions: [],
   create(context) {
     const sourceCode = context.getSourceCode();
+    const objectMap = new WeakMap<TSESTree.Node, ObjectInfo>();
+    const scopeMap = new Map<string, Set<TSESTree.Node>>();
+    const circularRefs = new WeakSet<TSESTree.Node>();
 
     function reportCircularReference(
       node: TSESTree.Node,
@@ -159,10 +158,16 @@ export const noCircularReferences = createRule<[], MessageIds>({
     function getReferencedObject(node: TSESTree.Node): TSESTree.Node | null {
       if (isIdentifier(node)) {
         const variable = getVariable(node.name);
+        if (!variable || variable.defs.length === 0) {
+          return null;
+        }
+
+        const def = variable.defs[0];
         if (
-          variable?.defs[0]?.node.type === AST_NODE_TYPES.VariableDeclarator
+          def.type === 'Variable' &&
+          def.node.type === AST_NODE_TYPES.VariableDeclarator
         ) {
-          const init = variable.defs[0].node.init;
+          const init = def.node.init;
           if (init) {
             if (isObjectExpression(init)) {
               return init;
