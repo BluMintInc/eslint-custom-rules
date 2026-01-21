@@ -109,16 +109,21 @@ export const noCircularReferences = createRule<[], MessageIds>({
           const info = objectMap.get(referencedObj);
           let propValue: TSESTree.Node | undefined;
 
-          // 1. Check object literal properties
-          if (referencedObj.type === AST_NODE_TYPES.ObjectExpression) {
-            const key =
-              !current.computed && isIdentifier(property)
-                ? property.name
-                : current.computed && property.type === AST_NODE_TYPES.Literal
-                  ? property.value
-                  : null;
+          const key =
+            !current.computed && isIdentifier(property)
+              ? property.name
+              : current.computed && property.type === AST_NODE_TYPES.Literal
+                ? property.value
+                : null;
 
-            if (key !== null && (typeof key === 'string' || typeof key === 'number')) {
+          if (key !== null && (typeof key === 'string' || typeof key === 'number')) {
+            // 1. Check assigned properties first
+            if (info) {
+              propValue = info.assignedProperties.get(key);
+            }
+
+            // 2. Check object literal properties
+            if (!propValue && referencedObj.type === AST_NODE_TYPES.ObjectExpression) {
               const prop = referencedObj.properties.find(
                 (p) =>
                   p.type === AST_NODE_TYPES.Property &&
@@ -127,15 +132,6 @@ export const noCircularReferences = createRule<[], MessageIds>({
                     (p.key.type === AST_NODE_TYPES.Literal && p.key.value === key)),
               ) as TSESTree.Property | undefined;
               if (prop) propValue = prop.value;
-            }
-          }
-
-          // 2. Check assigned properties if not found in literal
-          if (!propValue && info) {
-            if (!current.computed && isIdentifier(property)) {
-              propValue = info.assignedProperties.get(property.name);
-            } else if (current.computed && property.type === AST_NODE_TYPES.Literal) {
-              propValue = info.assignedProperties.get(property.value as string | number);
             }
           }
 
@@ -202,6 +198,15 @@ export const noCircularReferences = createRule<[], MessageIds>({
         objectMap.set(node, { references: new Set(), assignedProperties: new Map() });
       },
 
+      'ArrayExpression > *'(node: TSESTree.Node | null) {
+        if (!node || node.type === AST_NODE_TYPES.SpreadElement) return;
+        const parentArray = node.parent as TSESTree.ArrayExpression;
+        const referencedObj = getReferencedObject(node);
+        if (referencedObj) {
+          checkAndReportCircularReference(parentArray, node);
+        }
+      },
+
       'ObjectExpression > Property'(node: TSESTree.Property) {
         const parentObject = node.parent as TSESTree.ObjectExpression;
         const value = node.value;
@@ -227,10 +232,10 @@ export const noCircularReferences = createRule<[], MessageIds>({
           if (!left.computed && isIdentifier(left.property)) {
             targetInfo.assignedProperties.set(left.property.name, right);
           } else if (left.computed && left.property.type === AST_NODE_TYPES.Literal) {
-            targetInfo.assignedProperties.set(
-              left.property.value as string | number,
-              right,
-            );
+            const key = left.property.value;
+            if (typeof key === 'string' || typeof key === 'number') {
+              targetInfo.assignedProperties.set(key, right);
+            }
           }
         }
 

@@ -42,12 +42,13 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         obj.toJSON = () => ({ key: "value" });
       `,
     },
-    // Object with array reference
+    // Object with Map reference
     {
       code: `
         const obj = {};
-        const arr = [obj];
-        obj.array = arr;
+        const map = new Map();
+        map.set('key', obj);
+        obj.map = map;
       `,
     },
     // Object with primitive values
@@ -796,6 +797,15 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
       `,
       errors: [error('obj')],
     },
+    // Circular reference through array literal
+    {
+      code: `
+        const obj = {};
+        const arr = [obj];
+        obj.array = arr;
+      `,
+      errors: [error('arr')],
+    },
     // Circular reference through computed property
     {
       code: `
@@ -848,6 +858,15 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         (arr as any)[0] = arr;
       `,
       errors: [error('arr')],
+    },
+    // Circular reference through reassigned property
+    {
+      code: `
+        const obj = { inner: {} };
+        obj.inner = { deep: {} };
+        obj.inner.deep.ref = obj;
+      `,
+      errors: [error('obj')],
     },
     // Object with property that shadows a global
     {
