@@ -825,7 +825,31 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
       `,
       errors: [error('obj')],
     },
-    // Circular reference with property that shadows a global
+    // Object wrapped in satisfies with circular reference
+    {
+      code: `
+        const obj = ({ self: null } satisfies { self: any });
+        obj.self = obj;
+      `,
+      errors: [error('obj')],
+    },
+    // Object wrapped in ParenthesizedExpression with circular reference
+    {
+      code: `
+        const obj = ({ self: null });
+        obj.self = obj;
+      `,
+      errors: [error('obj')],
+    },
+    // Array wrapped in as const with circular reference
+    {
+      code: `
+        const arr = ([null] as const);
+        (arr as any)[0] = arr;
+      `,
+      errors: [error('arr')],
+    },
+    // Object with property that shadows a global
     {
       code: `
         const obj = {};
