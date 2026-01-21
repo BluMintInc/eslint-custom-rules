@@ -682,8 +682,23 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         };
       `,
     },
+    // Self-referential member expression (recursion protection test)
+    {
+      code: `
+        const obj = {};
+        obj.a = obj.a;
+      `,
+    },
   ],
   invalid: [
+    // Circular reference through array element access (newly supported)
+    {
+      code: `
+        const arr = [{}];
+        arr[0].self = arr;
+      `,
+      errors: [error('arr')],
+    },
     // Circular through variables in the same scope
     {
       code: `
