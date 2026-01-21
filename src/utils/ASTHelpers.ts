@@ -962,6 +962,25 @@ export class ASTHelpers {
   }
 
   /**
+   * Unwraps TypeScript-specific nodes (assertions, non-null, satisfies) and
+   * parenthesized expressions to get to the underlying expression.
+   */
+  public static unwrapTSAssertions(node: TSESTree.Node): TSESTree.Node {
+    let inner = node;
+    while (
+      inner &&
+      (inner.type === AST_NODE_TYPES.TSAsExpression ||
+        inner.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+        inner.type === AST_NODE_TYPES.TSNonNullExpression ||
+        inner.type === AST_NODE_TYPES.TSTypeAssertion ||
+        (inner as any).type === 'ParenthesizedExpression')
+    ) {
+      inner = (inner as any).expression;
+    }
+    return inner;
+  }
+
+  /**
    * Helper to get ancestors of a node in a way that is compatible with both ESLint v8 and v9.
    * In ESLint v9, context.getAncestors() is deprecated and moved to context.sourceCode.getAncestors(node).
    */

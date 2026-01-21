@@ -32,19 +32,6 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const unwrapTSAssertions = (node: TSESTree.Node): TSESTree.Node => {
-      let inner = node;
-      while (
-        inner.type === AST_NODE_TYPES.TSAsExpression ||
-        inner.type === AST_NODE_TYPES.TSSatisfiesExpression ||
-        inner.type === AST_NODE_TYPES.TSNonNullExpression ||
-        inner.type === AST_NODE_TYPES.TSTypeAssertion
-      ) {
-        inner = inner.expression;
-      }
-      return inner;
-    };
-
     /**
      * Extracts problematic property definitions to provide precise reporting locations,
      * even when properties are deeply nested or mixed via spread elements.
@@ -180,7 +167,7 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
       node: TSESTree.Node,
       visited: Set<string> = new Set(),
     ): boolean => {
-      const unwrappedNode = unwrapTSAssertions(node);
+      const unwrappedNode = ASTHelpers.unwrapTSAssertions(node);
       if (unwrappedNode.type === AST_NODE_TYPES.ObjectExpression) {
         return (
           findMessageUserFriendlyProperties(unwrappedNode, visited).length > 0
@@ -238,7 +225,7 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
     };
 
     const validateOptions = (node: TSESTree.Node) => {
-      const unwrappedNode = unwrapTSAssertions(node);
+      const unwrappedNode = ASTHelpers.unwrapTSAssertions(node);
       if (unwrappedNode.type === AST_NODE_TYPES.ObjectExpression) {
         findMessageUserFriendlyProperties(unwrappedNode).forEach((prop) => {
           context.report({

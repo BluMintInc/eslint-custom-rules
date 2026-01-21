@@ -47,19 +47,6 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
     },
     defaultOptions: [],
     create(context) {
-      const unwrapTSAssertions = (node: TSESTree.Node): TSESTree.Node => {
-        let inner = node;
-        while (
-          inner.type === AST_NODE_TYPES.TSAsExpression ||
-          inner.type === AST_NODE_TYPES.TSSatisfiesExpression ||
-          inner.type === AST_NODE_TYPES.TSNonNullExpression ||
-          inner.type === AST_NODE_TYPES.TSTypeAssertion
-        ) {
-          inner = inner.expression;
-        }
-        return inner;
-      };
-
       // Only string concatenation with "+" can be static; all other operators
       // are treated as dynamic to avoid hashing non-literal message content.
       const isDynamicBinaryExpression = (
@@ -68,7 +55,7 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
         if (expression.operator !== '+') return true;
 
         const isStaticLiteral = (expr: TSESTree.Node): boolean => {
-          const inner = unwrapTSAssertions(expr);
+          const inner = ASTHelpers.unwrapTSAssertions(expr);
 
           return (
             inner.type === AST_NODE_TYPES.Literal &&
@@ -83,7 +70,7 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
             return false;
           }
 
-          const inner = unwrapTSAssertions(expr);
+          const inner = ASTHelpers.unwrapTSAssertions(expr);
 
           if (inner.type === AST_NODE_TYPES.BinaryExpression) {
             return !isDynamicBinaryExpression(inner);
@@ -131,7 +118,7 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
        * `shouldValidateForStaticness`.
        */
       const checkMessageIsStatic = (messageNode: TSESTree.Expression) => {
-        const currentNode = unwrapTSAssertions(messageNode);
+        const currentNode = ASTHelpers.unwrapTSAssertions(messageNode);
 
         if (currentNode.type === AST_NODE_TYPES.Literal) {
           return;
