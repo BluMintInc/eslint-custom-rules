@@ -82,8 +82,9 @@ export const requireMigrationScriptMetadata = createRule<Options, MessageIds>({
   },
   defaultOptions: [DEFAULT_OPTIONS],
   create(context, [options]) {
-    const filename =
+    const rawFilename =
       (context as { filename?: string }).filename ?? context.getFilename();
+    const filename = rawFilename.replace(/\\/g, '/');
     const { targetGlobs, allowLegacyHeader } = {
       ...DEFAULT_OPTIONS,
       ...options,

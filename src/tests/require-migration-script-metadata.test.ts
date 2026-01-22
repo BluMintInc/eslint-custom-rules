@@ -145,6 +145,18 @@ import { onCallVaripotent } from '../../v2/https/onCall';
         filename,
         options: [{ allowLegacyHeader: false }],
       },
+      {
+        code: `
+/**
+ * @migration true
+ * @migrationPhase after
+ * @migrationDependencies NONE
+ * @migrationDescription Windows path test
+ */
+import { onCallVaripotent } from '../../v2/https/onCall';
+      `,
+        filename: 'functions\\src\\callable\\scripts\\testScript.f.ts',
+      },
     ],
     invalid: [
       {
