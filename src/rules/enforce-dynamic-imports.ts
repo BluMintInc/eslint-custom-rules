@@ -1,5 +1,5 @@
 import { createRule } from '../utils/createRule';
-import { minimatch } from 'minimatch';
+import { Minimatch } from 'minimatch';
 
 export const RULE_NAME = 'enforce-dynamic-imports';
 
@@ -69,20 +69,29 @@ export default createRule<Options, 'dynamicImportRequired'>({
       allowImportType = true,
     } = options;
 
+    const exactIgnored = new Set<string>();
+    const globIgnored: Minimatch[] = [];
+
+    for (const lib of ignoredLibraries) {
+      const mm = new Minimatch(lib);
+      if (mm.hasMagic()) {
+        globIgnored.push(mm);
+      } else {
+        exactIgnored.add(lib);
+      }
+    }
+
     const isIgnored = (source: string): boolean => {
-      return ignoredLibraries.some((lib) => {
-        if (lib.includes('*')) {
-          return minimatch(source, lib);
-        }
-        return source === lib;
-      });
+      return (
+        exactIgnored.has(source) ||
+        globIgnored.some((mm) => mm.match(source))
+      );
     };
 
     const isExternal = (source: string): boolean => {
-      // Basic check: starts with a letter or @
-      // This excludes relative imports (./, ../) and absolute paths (/)
-      // and path aliases starting with @/ (if not just @)
-      return /^[a-z@]/i.test(source) && !source.startsWith('@/');
+      // Treat only npm-style specifiers as external; keep relative/absolute and `@/` aliases internal.
+      // This distinguishes external packages from relative/absolute/path-alias imports.
+      return /^[a-z0-9@]/i.test(source) && !source.startsWith('@/');
     };
 
     return {

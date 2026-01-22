@@ -48,6 +48,18 @@ ruleTester.run(RULE_NAME, rule, {
 
     // Dynamic imports are valid
     `const VideoCall = useDynamic(() => import('@stream-io/video-react-sdk'));`,
+
+    // Complex glob pattern handled by minimatch.hasMagic
+    {
+      code: `import { thing } from 'lib-a';`,
+      options: [{ ignoredLibraries: ['lib-[a-z]'] }],
+    },
+
+    // Package starting with a digit can be ignored
+    {
+      code: `import { thing } from '3d-force-graph';`,
+      options: [{ ignoredLibraries: ['3d-force-graph'] }],
+    },
   ],
   invalid: [
     // Non-ignored external libraries should be invalid by default
@@ -105,6 +117,13 @@ ruleTester.run(RULE_NAME, rule, {
       code: `import { thing } from '@internal/lib';`,
       options: [{ ignoredLibraries: [] }],
       errors: [buildError('@internal/lib')],
+    },
+
+    // External that starts with a digit
+    {
+      code: `import { thing } from '3d-force-graph';`,
+      options: [{ ignoredLibraries: [] }],
+      errors: [buildError('3d-force-graph')],
     },
   ],
 });
