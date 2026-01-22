@@ -12,7 +12,9 @@ type Options = [
 
 export const DEFAULT_IGNORED_LIBRARIES = [
   'react',
+  'react/**',
   'react-dom',
+  'react-dom/**',
   'next',
   'next/**',
   '@mui/material',

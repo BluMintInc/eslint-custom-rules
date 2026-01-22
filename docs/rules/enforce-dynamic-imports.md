@@ -59,7 +59,7 @@ The rule accepts an options object with the following properties:
 }
 ```
 
-- `ignoredLibraries`: An array of library names or glob patterns that are allowed to be imported statically. Defaults to a sensible list of common libraries (`react`, `next`, `@mui/**`, etc.).
+- `ignoredLibraries`: An array of library names or glob patterns that are allowed to be imported statically. Defaults to: `react`, `react/**`, `react-dom`, `react-dom/**`, `next`, `next/**`, `@mui/material`, `@mui/material/**`, `@mui/icons-material`, `@mui/icons-material/**`, `@emotion/**`, `clsx`, `tailwind-merge`.
 - `allowImportType`: A boolean indicating whether to allow `import type` statements or type-only specifiers. Defaults to `true`.
 
 ### Example Configuration

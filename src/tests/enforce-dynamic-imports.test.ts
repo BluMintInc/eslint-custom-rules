@@ -19,6 +19,8 @@ ruleTester.run(RULE_NAME, rule, {
     // Default ignored libraries should be valid
     `import React from 'react';`,
     `import { useState } from 'react';`,
+    `import { createRoot } from 'react-dom/client';`,
+    `import { renderToString } from 'react-dom/server';`,
     `import { useRouter } from 'next/router';`,
     `import { Button } from '@mui/material';`,
     `import { Add } from '@mui/icons-material';`,
