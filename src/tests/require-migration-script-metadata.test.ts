@@ -130,6 +130,21 @@ import { onCallVaripotent } from '../../v2/https/onCall';
       `,
         filename,
       },
+      {
+        // Legacy single-line comment is NOT treated as a legacy header, so this is valid even if allowLegacyHeader is false
+        code: `
+// Legacy comment
+/**
+ * @migration true
+ * @migrationPhase after
+ * @migrationDependencies NONE
+ * @migrationDescription Block
+ */
+import { onCallVaripotent } from '../../v2/https/onCall';
+      `,
+        filename,
+        options: [{ allowLegacyHeader: false }],
+      },
     ],
     invalid: [
       {
@@ -320,22 +335,6 @@ import { onCallVaripotent } from '../../v2/https/onCall';
 /**
  * Legacy header
  */
-/**
- * @migration true
- * @migrationPhase after
- * @migrationDependencies NONE
- * @migrationDescription Block
- */
-import { onCallVaripotent } from '../../v2/https/onCall';
-      `,
-        filename,
-        options: [{ allowLegacyHeader: false }],
-        errors: [{ messageId: 'legacyHeaderNotAllowed' }],
-      },
-      {
-        // Legacy single-line comment not allowed
-        code: `
-// Legacy comment
 /**
  * @migration true
  * @migrationPhase after

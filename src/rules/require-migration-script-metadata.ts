@@ -19,14 +19,12 @@ type Options = [
   {
     targetGlobs?: string[];
     allowLegacyHeader?: boolean;
-    autoFix?: boolean;
   },
 ];
 
 const DEFAULT_OPTIONS: Options[0] = {
   targetGlobs: ['**/functions/src/callable/scripts/**/*.f.ts'],
   allowLegacyHeader: true,
-  autoFix: false,
 };
 
 export const requireMigrationScriptMetadata = createRule<Options, MessageIds>({
@@ -46,9 +44,6 @@ export const requireMigrationScriptMetadata = createRule<Options, MessageIds>({
             items: { type: 'string' },
           },
           allowLegacyHeader: {
-            type: 'boolean',
-          },
-          autoFix: {
             type: 'boolean',
           },
         },
@@ -99,7 +94,7 @@ export const requireMigrationScriptMetadata = createRule<Options, MessageIds>({
       return {};
     }
 
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode ?? context.getSourceCode();
     const comments = sourceCode.getAllComments();
     const firstToken = sourceCode.getFirstToken(sourceCode.ast, {
       includeComments: false,
@@ -139,7 +134,7 @@ export const requireMigrationScriptMetadata = createRule<Options, MessageIds>({
 
         if (!allowLegacyHeader) {
           const hasLeadingComment = comments.some(
-            (c) => c.range[0] < comment.range[0],
+            (c) => c.type === 'Block' && c.range[0] < comment.range[0],
           );
           if (hasLeadingComment) {
             context.report({

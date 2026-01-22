@@ -121,8 +121,3 @@ Default: `['**/functions/src/callable/scripts/**/*.f.ts']`
 
 Whether to allow legacy header comments before the metadata block.
 Default: `true`
-
-### `autoFix`
-
-Whether to attempt auto-fixing.
-Default: `false` (Explicit values are required from the author)
