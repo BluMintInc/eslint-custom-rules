@@ -166,7 +166,7 @@ import { onCallVaripotent } from '../../v2/https/onCall';
 import { onCallVaripotent } from '../../v2/https/onCall';
       `,
         filename,
-        errors: [{ messageId: 'missingMetadata' }],
+        errors: [{ messageId: 'missingMigrationTag' }],
       },
       {
         // Invalid @migration tag
@@ -347,6 +347,31 @@ import { onCallVaripotent } from '../../v2/https/onCall';
         filename,
         options: [{ allowLegacyHeader: false }],
         errors: [{ messageId: 'legacyHeaderNotAllowed' }],
+      },
+      {
+        // @migration with no value
+        code: `
+/**
+ * @migration 
+ * @migrationPhase after
+ * @migrationDependencies NONE
+ * @migrationDescription No value
+ */
+import { onCallVaripotent } from '../../v2/https/onCall';
+      `,
+        filename,
+        errors: [{ messageId: 'invalidMigrationTag' }],
+      },
+      {
+        // @migration missing but @migrationDescription present
+        code: `
+/**
+ * @migrationDescription only desc
+ */
+import { onCallVaripotent } from '../../v2/https/onCall';
+      `,
+        filename,
+        errors: [{ messageId: 'missingMigrationTag' }],
       },
     ],
   },

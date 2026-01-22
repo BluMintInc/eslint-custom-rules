@@ -112,7 +112,9 @@ export const requireMigrationScriptMetadata = createRule<Options, MessageIds>({
             (comment) => comment.type === 'Block' && comment.value.startsWith('*'),
           )
           .map((comment) => ({ comment, tags: parseJSDocTags(comment.value) }))
-          .filter(({ tags }) => 'migration' in tags);
+          .filter(({ tags }) =>
+            Object.keys(tags).some((tag) => tag.startsWith('migration')),
+          );
 
         if (metadataCandidates.length > 1) {
           for (const extra of metadataCandidates.slice(1)) {
@@ -155,6 +157,14 @@ export const requireMigrationScriptMetadata = createRule<Options, MessageIds>({
           });
         }
 
+        if (!('migration' in tags)) {
+          context.report({
+            node: comment,
+            messageId: 'missingMigrationTag',
+          });
+          return;
+        }
+
         const migration = tags.migration;
         if (migration !== 'true' && migration !== 'false') {
           context.report({
@@ -193,7 +203,7 @@ export const requireMigrationScriptMetadata = createRule<Options, MessageIds>({
             const deps = tags.migrationDependencies
               .split(',')
               .map((d) => d.trim());
-            if (deps.length === 0 || deps.some((d) => d === '')) {
+            if (deps.some((d) => d === '')) {
               context.report({
                 node: comment,
                 messageId: 'invalidDependenciesTag',
@@ -230,10 +240,10 @@ function parseJSDocTags(commentValue: string): Record<string, string> {
 
   for (const line of lines) {
     const trimmedLine = line.trim().replace(/^\*+\s*/, '');
-    const match = trimmedLine.match(/^@(\w+)\s+(.+)$/);
+    const match = trimmedLine.match(/^@(\w+)(?:\s+(.*))?$/);
     if (match) {
       const [, tagName, tagValue] = match;
-      tags[tagName] = tagValue.trim();
+      tags[tagName] = (tagValue ?? '').trim();
     }
   }
 
