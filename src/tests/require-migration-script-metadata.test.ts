@@ -2,6 +2,7 @@ import { ruleTesterTs } from '../utils/ruleTester';
 import { requireMigrationScriptMetadata } from '../rules/require-migration-script-metadata';
 
 const filename = 'functions/src/callable/scripts/testScript.f.ts';
+const absolutePath = '/home/user/project/functions/src/callable/scripts/testScript.f.ts';
 
 ruleTesterTs.run(
   'require-migration-script-metadata',
@@ -19,6 +20,18 @@ ruleTesterTs.run(
 import { onCallVaripotent } from '../../v2/https/onCall';
       `,
         filename,
+      },
+      {
+        code: `
+/**
+ * @migration true
+ * @migrationPhase after
+ * @migrationDependencies NONE
+ * @migrationDescription Absolute path test
+ */
+import { onCallVaripotent } from '../../v2/https/onCall';
+      `,
+        filename: absolutePath,
       },
       {
         code: `
@@ -44,6 +57,7 @@ export default () => null;
 import { onCallVaripotent } from '../../v2/https/onCall';
       `,
         filename,
+        options: [{ allowLegacyHeader: true }],
       },
       {
         code: `
@@ -97,11 +111,12 @@ import { onCallVaripotent } from '../../v2/https/onCall';
  * @migration true
  * @migrationPhase before
  * @migrationDependencies NONE
- * @migrationDescription Multiple blocks
+ * @migrationDescription Multiple blocks, only one with @migration
  */
 import { onCallVaripotent } from '../../v2/https/onCall';
       `,
         filename,
+        options: [{ allowLegacyHeader: true }],
       },
       {
         code: `
@@ -278,6 +293,60 @@ import { onCallVaripotent } from '../../v2/https/onCall';
       `,
         filename,
         errors: [{ messageId: 'invalidDependenciesTag' }],
+      },
+      {
+        // Multiple migration blocks
+        code: `
+/**
+ * @migration true
+ * @migrationPhase after
+ * @migrationDependencies NONE
+ * @migrationDescription Block 1
+ */
+/**
+ * @migration true
+ * @migrationPhase after
+ * @migrationDependencies NONE
+ * @migrationDescription Block 2
+ */
+import { onCallVaripotent } from '../../v2/https/onCall';
+      `,
+        filename,
+        errors: [{ messageId: 'multipleMetadataBlocks' }],
+      },
+      {
+        // Legacy header not allowed
+        code: `
+/**
+ * Legacy header
+ */
+/**
+ * @migration true
+ * @migrationPhase after
+ * @migrationDependencies NONE
+ * @migrationDescription Block
+ */
+import { onCallVaripotent } from '../../v2/https/onCall';
+      `,
+        filename,
+        options: [{ allowLegacyHeader: false }],
+        errors: [{ messageId: 'legacyHeaderNotAllowed' }],
+      },
+      {
+        // Legacy single-line comment not allowed
+        code: `
+// Legacy comment
+/**
+ * @migration true
+ * @migrationPhase after
+ * @migrationDependencies NONE
+ * @migrationDescription Block
+ */
+import { onCallVaripotent } from '../../v2/https/onCall';
+      `,
+        filename,
+        options: [{ allowLegacyHeader: false }],
+        errors: [{ messageId: 'legacyHeaderNotAllowed' }],
       },
     ],
   },

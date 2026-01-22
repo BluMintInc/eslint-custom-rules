@@ -1,4 +1,3 @@
-import { TSESTree } from '@typescript-eslint/utils';
 import { minimatch } from 'minimatch';
 import { createRule } from '../utils/createRule';
 
@@ -12,7 +11,9 @@ type MessageIds =
   | 'missingDependenciesTag'
   | 'invalidDependenciesTag'
   | 'missingDescriptionTag'
-  | 'extensionInDependencies';
+  | 'extensionInDependencies'
+  | 'legacyHeaderNotAllowed'
+  | 'multipleMetadataBlocks';
 
 type Options = [
   {
@@ -23,7 +24,7 @@ type Options = [
 ];
 
 const DEFAULT_OPTIONS: Options[0] = {
-  targetGlobs: ['functions/src/callable/scripts/**/*.f.ts'],
+  targetGlobs: ['**/functions/src/callable/scripts/**/*.f.ts'],
   allowLegacyHeader: true,
   autoFix: false,
 };
@@ -56,28 +57,35 @@ export const requireMigrationScriptMetadata = createRule<Options, MessageIds>({
     ],
     messages: {
       missingMetadata:
-        'Migration script metadata block is missing. Every callable script must include a JSDoc block with @migration, @migrationPhase, @migrationDependencies, and @migrationDescription.',
+        'Missing migration metadata JSDoc block → Release tooling cannot determine participation or ordering, which can skip or misorder migrations → Add a top-of-file JSDoc block with `@migration` true/false; when true include `@migrationPhase`, `@migrationDependencies` (or NONE), and `@migrationDescription`.',
       metadataAfterStatement:
-        'Migration metadata must appear at the top of the file, before any imports or executable statements.',
-      missingMigrationTag: 'The @migration tag is required (true/false).',
-      invalidMigrationTag: 'The @migration tag must be "true" or "false".',
+        'Migration metadata appears after code/imports → The release scanner only reads the top-of-file block and will miss this metadata → Move the metadata JSDoc above all imports/statements (legacy header allowed only when configured).',
+      missingMigrationTag:
+        'Metadata block is missing `@migration` → Without an explicit true/false, automation cannot decide whether to run this script → Add `@migration` true or `@migration` false to the metadata block.',
+      invalidMigrationTag:
+        'Invalid `@migration` value → Only true/false is supported so automation can branch deterministically → Replace with `@migration` true or `@migration` false.',
       missingPhaseTag:
-        'The @migrationPhase tag is required when @migration is true.',
-      invalidPhaseTag: 'The @migrationPhase tag must be "before" or "after".',
+        'Missing `@migrationPhase` while `@migration` is true → Release ordering cannot place this script → Add `@migrationPhase` before or after.',
+      invalidPhaseTag:
+        'Invalid `@migrationPhase` value → Release ordering only understands before/after → Use `@migrationPhase` before or `@migrationPhase` after.',
       missingDependenciesTag:
-        'The @migrationDependencies tag is required when @migration is true. Use "NONE" if there are no dependencies.',
+        'Missing `@migrationDependencies` while `@migration` is true → Dependency ordering cannot be computed → Add `@migrationDependencies` NONE or a comma-separated list of script names.',
       invalidDependenciesTag:
-        'The @migrationDependencies tag must be a comma-separated list of script names or "NONE". Empty entries are not allowed.',
+        'Invalid `@migrationDependencies` list → Empty or whitespace entries break dependency resolution → Provide a comma-separated list of non-empty names or NONE.',
       missingDescriptionTag:
-        'The @migrationDescription tag is required when @migration is true.',
+        'Missing `@migrationDescription` while `@migration` is true → Release reports lose context and reviewers cannot assess impact → Add a brief `@migrationDescription`.',
       extensionInDependencies:
-        'Dependency "{{name}}" should not include the ".f.ts" extension. Use only the script name.',
+        'Dependency "{{name}}" includes a file extension → Dependencies are script identifiers, and extensions cause mismatches → Remove the ".f.ts" extension from "{{name}}".',
+      legacyHeaderNotAllowed:
+        'Legacy header/comment appears before metadata → The metadata block must be the first file-level block to keep linting deterministic → Remove leading comments or enable allowLegacyHeader.',
+      multipleMetadataBlocks:
+        'Multiple metadata blocks found → Conflicting `@migration` tags make automation ambiguous → Keep exactly one JSDoc block with `@migration`.',
     },
   },
   defaultOptions: [DEFAULT_OPTIONS],
   create(context, [options]) {
     const filename = context.getFilename();
-    const { targetGlobs } = {
+    const { targetGlobs, allowLegacyHeader } = {
       ...DEFAULT_OPTIONS,
       ...options,
     };
@@ -99,22 +107,23 @@ export const requireMigrationScriptMetadata = createRule<Options, MessageIds>({
 
     return {
       Program() {
-        let migrationMetadata: {
-          comment: TSESTree.Comment;
-          tags: Record<string, string>;
-        } | null = null;
+        const metadataCandidates = comments
+          .filter(
+            (comment) => comment.type === 'Block' && comment.value.startsWith('*'),
+          )
+          .map((comment) => ({ comment, tags: parseJSDocTags(comment.value) }))
+          .filter(({ tags }) => 'migration' in tags);
 
-        for (const comment of comments) {
-          if (comment.type !== 'Block' || !comment.value.startsWith('*')) {
-            continue;
-          }
-
-          const tags = parseJSDocTags(comment.value);
-          if ('migration' in tags) {
-            migrationMetadata = { comment, tags };
-            break;
+        if (metadataCandidates.length > 1) {
+          for (const extra of metadataCandidates.slice(1)) {
+            context.report({
+              node: extra.comment,
+              messageId: 'multipleMetadataBlocks',
+            });
           }
         }
+
+        const migrationMetadata = metadataCandidates[0] ?? null;
 
         if (!migrationMetadata) {
           context.report({
@@ -125,6 +134,18 @@ export const requireMigrationScriptMetadata = createRule<Options, MessageIds>({
         }
 
         const { comment, tags } = migrationMetadata;
+
+        if (!allowLegacyHeader) {
+          const hasLeadingComment = comments.some(
+            (c) => c.range[0] < comment.range[0],
+          );
+          if (hasLeadingComment) {
+            context.report({
+              node: comment,
+              messageId: 'legacyHeaderNotAllowed',
+            });
+          }
+        }
 
         // Check if metadata appears after the first statement/import
         if (firstToken && comment.range[0] > firstToken.range[0]) {

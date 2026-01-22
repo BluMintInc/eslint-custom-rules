@@ -9,6 +9,7 @@ Every callable script under `functions/src/callable/scripts/**/*.f.ts` must incl
 ## Rationale
 
 Migration scripts are critical during production releases. Missing or ambiguous metadata makes releases brittle and error-prone. By enforcing a standardized JSDoc block, we:
+
 - Prevent missed or misordered migration scripts during release deployments.
 - Encode deployment phase decisions directly in the script (before vs. after deploy).
 - Force explicit dependencies to avoid implicit ordering assumptions.
@@ -27,6 +28,7 @@ This rule enforces a single JSDoc block at the top of the file (before any impor
 ### Examples of Incorrect Code
 
 #### Missing metadata
+
 ```typescript
 // functions/src/callable/scripts/backfillData.f.ts
 import { onCallVaripotent } from '../../v2/https/onCall';
@@ -34,6 +36,7 @@ import { onCallVaripotent } from '../../v2/https/onCall';
 ```
 
 #### Metadata after imports
+
 ```typescript
 import { onCallVaripotent } from '../../v2/https/onCall';
 
@@ -46,6 +49,7 @@ import { onCallVaripotent } from '../../v2/https/onCall';
 ```
 
 #### Missing required tags
+
 ```typescript
 /**
  * @migration true
@@ -56,6 +60,7 @@ import { onCallVaripotent } from '../../v2/https/onCall';
 ```
 
 #### Invalid values
+
 ```typescript
 /**
  * @migration true
@@ -69,6 +74,7 @@ import { onCallVaripotent } from '../../v2/https/onCall';
 ### Examples of Correct Code
 
 #### Migration script
+
 ```typescript
 /**
  * @migration true
@@ -80,6 +86,7 @@ import { onCallVaripotent } from '../../v2/https/onCall';
 ```
 
 #### Non-migration script
+
 ```typescript
 /**
  * @migration false
@@ -88,6 +95,7 @@ export default () => null;
 ```
 
 #### Legacy header allowed
+
 ```typescript
 /* eslint-disable */
 /**
@@ -105,13 +113,16 @@ import { onCallVaripotent } from '../../v2/https/onCall';
 ## Options
 
 ### `targetGlobs`
+
 An array of glob patterns to specify which files should be checked.
-Default: `['functions/src/callable/scripts/**/*.f.ts']`
+Default: `['**/functions/src/callable/scripts/**/*.f.ts']`
 
 ### `allowLegacyHeader`
+
 Whether to allow legacy header comments before the metadata block.
 Default: `true`
 
 ### `autoFix`
+
 Whether to attempt auto-fixing.
 Default: `false` (Explicit values are required from the author)
