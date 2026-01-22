@@ -831,7 +831,13 @@ function getComplexPropertiesFromType(
   const complexProps: string[] = [];
 
   for (const prop of properties) {
-    if (prop.name === 'children' || prop.name === 'ref') continue;
+    if (
+      prop.name === 'children' ||
+      prop.name === 'ref' ||
+      isDefaultDeepCompareProp(prop.name)
+    ) {
+      continue;
+    }
 
     if (
       isPropertyComplex(

@@ -61,6 +61,25 @@ const MyComponent = ({ ref, innerRef, customRef }: Props) => (
 export const Wrapped = memo(MyComponent);
 `,
       },
+      {
+        filename: 'src/components/SxStyleProps.tsx',
+        code: `
+import React, { memo } from 'react';
+
+type Props = {
+  sx?: { color: string };
+  containerSx?: { padding: number };
+  style?: React.CSSProperties;
+  wrapperStyle?: any;
+};
+
+const MyComponent = ({ sx, containerSx, style, wrapperStyle }: Props) => (
+  <div sx={sx} style={style} />
+);
+
+export const Wrapped = memo(MyComponent);
+`,
+      },
     ],
     invalid: [
       {
