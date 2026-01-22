@@ -89,8 +89,8 @@ export default createRule<Options, 'dynamicImportRequired'>({
     };
 
     const isExternal = (source: string): boolean => {
-      // Treat only npm-style specifiers as external; keep relative/absolute and `@/` aliases internal.
-      // This distinguishes external packages from relative/absolute/path-alias imports.
+      // Treat npm-style specifiers as external (allowing numeric-leading packages like '3d-force-graph');
+      // relative, absolute, and `@/` aliases are internal.
       return /^[a-z0-9@]/i.test(source) && !source.startsWith('@/');
     };
 
