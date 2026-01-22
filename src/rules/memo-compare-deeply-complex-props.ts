@@ -652,6 +652,16 @@ function isObjectType(ts: typeof import('typescript'), flags: number): boolean {
 function isReactNodeType(type: Type, checker: TypeChecker): boolean {
   const typeString = checker.typeToString(type) || '';
   const symbol = type.getSymbol() || type.aliasSymbol;
+
+  // Check for Ref types
+  if (
+    typeString.includes('Ref<') ||
+    typeString.includes('RefObject<') ||
+    typeString.includes('MutableRefObject<')
+  ) {
+    return true;
+  }
+
   if (symbol) {
     const name = symbol.getName();
     if (
@@ -659,7 +669,10 @@ function isReactNodeType(type: Type, checker: TypeChecker): boolean {
       name === 'ReactElement' ||
       name === 'JSX.Element' ||
       name === 'FC' ||
-      name === 'FunctionComponent'
+      name === 'FunctionComponent' ||
+      name === 'Ref' ||
+      name === 'RefObject' ||
+      name === 'MutableRefObject'
     ) {
       return true;
     }
@@ -818,7 +831,7 @@ function getComplexPropertiesFromType(
   const complexProps: string[] = [];
 
   for (const prop of properties) {
-    if (prop.name === 'children') continue;
+    if (prop.name === 'children' || prop.name === 'ref') continue;
 
     if (
       isPropertyComplex(

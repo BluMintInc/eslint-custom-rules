@@ -43,6 +43,24 @@ const MyComponent = ({ avatar, preview, renderItem, Component }: Props) => (
 export const Wrapped = memo(MyComponent);
 `,
       },
+      {
+        filename: 'src/components/RefProps.tsx',
+        code: `
+import React, { memo, Ref } from 'react';
+
+type Props = {
+  ref?: Ref<HTMLDivElement>;
+  innerRef: Ref<any>;
+  customRef: React.RefObject<any>;
+};
+
+const MyComponent = ({ ref, innerRef, customRef }: Props) => (
+  <div ref={ref} />
+);
+
+export const Wrapped = memo(MyComponent);
+`,
+      },
     ],
     invalid: [
       {
