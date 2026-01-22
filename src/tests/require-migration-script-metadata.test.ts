@@ -386,6 +386,34 @@ import { onCallVaripotent } from '../../v2/https/onCall';
         filename,
         errors: [{ messageId: 'invalidDependenciesTag' }],
       },
+      {
+        // Wrong casing for NONE
+        code: `
+/**
+ * @migration true
+ * @migrationPhase after
+ * @migrationDependencies none
+ * @migrationDescription Casing error
+ */
+import { onCallVaripotent } from '../../v2/https/onCall';
+      `,
+        filename,
+        errors: [{ messageId: 'noneCasing' }],
+      },
+      {
+        // Mixed none with wrong casing
+        code: `
+/**
+ * @migration true
+ * @migrationPhase after
+ * @migrationDependencies none, scriptA
+ * @migrationDescription Mixed none casing
+ */
+import { onCallVaripotent } from '../../v2/https/onCall';
+      `,
+        filename,
+        errors: [{ messageId: 'invalidDependenciesTag' }],
+      },
     ],
   },
 );

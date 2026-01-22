@@ -12,6 +12,7 @@ type MessageIds =
   | 'invalidDependenciesTag'
   | 'missingDescriptionTag'
   | 'extensionInDependencies'
+  | 'noneCasing'
   | 'legacyHeaderNotAllowed'
   | 'multipleMetadataBlocks';
 
@@ -71,6 +72,8 @@ export const requireMigrationScriptMetadata = createRule<Options, MessageIds>({
         'Missing `@migrationDescription` while `@migration` is true → Release reports lose context and reviewers cannot assess impact → Add a brief `@migrationDescription`.',
       extensionInDependencies:
         'Dependency "{{name}}" includes a file extension → Dependencies are script identifiers, and extensions cause mismatches → Remove the ".f.ts" extension from "{{name}}".',
+      noneCasing:
+        'Invalid `@migrationDependencies` casing → Automation expects exactly "NONE" in all-caps to signal no dependencies → Change to uppercase "NONE".',
       legacyHeaderNotAllowed:
         'Legacy header/comment appears before metadata → The metadata block must be the first file-level block to keep linting deterministic → Remove leading comments or enable allowLegacyHeader.',
       multipleMetadataBlocks:
@@ -197,17 +200,24 @@ export const requireMigrationScriptMetadata = createRule<Options, MessageIds>({
             const deps = tags.migrationDependencies
               .split(',')
               .map((d) => d.trim());
+            const hasNone = deps.some((d) => d.toUpperCase() === 'NONE');
+
             if (deps.some((d) => d === '')) {
               context.report({
                 node: comment,
                 messageId: 'invalidDependenciesTag',
               });
-            } else if (deps.includes('NONE') && deps.length > 1) {
+            } else if (hasNone && deps.length > 1) {
               context.report({
                 node: comment,
                 messageId: 'invalidDependenciesTag',
               });
-            } else if (deps.length === 1 && deps[0] === 'NONE') {
+            } else if (hasNone && deps[0] !== 'NONE') {
+              context.report({
+                node: comment,
+                messageId: 'noneCasing',
+              });
+            } else if (hasNone && deps[0] === 'NONE') {
               // Valid: exactly NONE
             } else {
               for (const dep of deps) {

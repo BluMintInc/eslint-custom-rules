@@ -22,7 +22,7 @@ This rule enforces a single JSDoc block at the top of the file (before any impor
 - `@migration`: `true` or `false` (Required)
 - If `@migration true`, the following are also required:
   - `@migrationPhase`: `before` or `after`
-  - `@migrationDependencies`: `NONE` or a comma-separated list of script names (without `.f.ts`)
+  - `@migrationDependencies`: `NONE` (must be all-caps) or a comma-separated list of script names (without `.f.ts`)
   - `@migrationDescription`: A brief description of what the script does
 
 ### Examples of Incorrect Code
