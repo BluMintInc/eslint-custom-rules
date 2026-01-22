@@ -54,7 +54,7 @@ export default createRule<Options, 'dynamicImportRequired'>({
     ],
     messages: {
       dynamicImportRequired:
-        'Static import from "{{source}}" eagerly pulls the entire package into the initial bundle, inflating download size and delaying the first render. External libraries should be loaded lazily with a dynamic import (for example, useDynamic(() => import("{{source}}"))) unless they are intentionally static; if you only need types, use a type-only import.',
+        'Static import from "{{source}}" loads the full package into the initial bundle. → This increases download size and delays first render, undermining our lazy‑loading pattern for external dependencies. → Use a dynamic import (e.g., useDynamic(() => import("{{source}}"))), add "{{source}}" to ignoredLibraries for intentional static usage, or use a type‑only import when you only need types.',
     },
   },
   defaultOptions: [
@@ -89,8 +89,7 @@ export default createRule<Options, 'dynamicImportRequired'>({
     };
 
     const isExternal = (source: string): boolean => {
-      // Treat npm-style specifiers as external (allowing numeric-leading packages like '3d-force-graph');
-      // relative, absolute, and `@/` aliases are internal.
+      // Treat npm-style specifiers (including numeric names like '3d-force-graph') as external; internal paths are excluded.
       return /^[a-z0-9@]/i.test(source) && !source.startsWith('@/');
     };
 
