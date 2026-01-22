@@ -4,7 +4,7 @@
 
 <!-- end auto-generated rule header -->
 
-Circular object graphs throw during `JSON.stringify()`, keep objects reachable longer (leading to leaks), and make mutation paths harder to reason about. This rule reports any assignment or property wiring that makes an object point back to itself, directly or through another object, method, or promise callback.
+Circular object graphs throw during `JSON.stringify()`, keep objects reachable longer (leading to leaks), and make mutation paths harder to reason about. This rule reports any assignment or property wiring that makes an object point back to itself, directly or through another object.
 
 ## Rule Details
 
@@ -22,7 +22,6 @@ How to fix:
 
 - Store stable identifiers (IDs, paths) instead of assigning the original object.
 - Clone data (`structuredClone`, spread, or serialization) before attaching it back to a parent.
-- Avoid reattaching resolved values in async chains back onto the source object.
 
 ## Examples
 
@@ -37,11 +36,6 @@ obj.self = obj;
 const obj1 = {};
 const obj2 = { ref: obj1 };
 obj1.ref = obj2;
-
-// Async path that reattaches the resolved value back to the source
-const obj = {};
-const promise = Promise.resolve(obj);
-promise.then((result) => (obj.self = result));
 ```
 
 Examples of **correct** code for this rule:
@@ -55,13 +49,6 @@ const profile = { userId: user.id };
 const original = { settings: { theme: 'dark' } };
 const snapshot = structuredClone(original.settings);
 const viewModel = { settings: snapshot };
-
-// Keep async flows acyclic
-const obj = { id: 'u123' };
-const promise = Promise.resolve(obj);
-promise.then((result) => {
-  obj.selfId = result.id; // store a stable identifier, not the object
-});
 ```
 
 ## When Not To Use It

@@ -5,10 +5,7 @@ type MessageIds = 'requireMemoize';
 type Options = [];
 
 const MEMOIZE_MODULE = '@blumintinc/typescript-memoize';
-const ALLOWED_MEMOIZE_MODULES = new Set([
-  MEMOIZE_MODULE,
-  'typescript-memoize',
-]);
+const ALLOWED_MEMOIZE_MODULES = new Set([MEMOIZE_MODULE, 'typescript-memoize']);
 
 /**
  * Matches a memoize decorator in supported syntaxes:
