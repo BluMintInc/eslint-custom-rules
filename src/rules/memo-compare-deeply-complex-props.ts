@@ -516,10 +516,20 @@ function isComplexTypeInternal(
   if (visited.has(type)) return false;
   visited.add(type);
 
+  if (isReactNodeType(type, checker)) {
+    return false;
+  }
+
   const flags = type.flags ?? 0;
 
   if (isUnionType(ts, flags)) {
-    return checkUnionType(ts, type as UnionType, checker, visited);
+    const unionType = type as UnionType;
+    // If any member of the union is a React node, we treat the whole union as not complex
+    // because ReactNode is often a union of string | number | boolean | ReactElement | ...
+    if (unionType.types.some((t) => isReactNodeType(t, checker))) {
+      return false;
+    }
+    return checkUnionType(ts, unionType, checker, visited);
   }
 
   if (isIntersectionType(ts, flags)) {
@@ -639,6 +649,69 @@ function isObjectType(ts: typeof import('typescript'), flags: number): boolean {
   return (flags & ts.TypeFlags.Object) !== 0;
 }
 
+function isReactNodeType(type: Type, checker: TypeChecker): boolean {
+  const typeString = checker.typeToString(type) || '';
+  const symbol = type.getSymbol() || type.aliasSymbol;
+  if (symbol) {
+    const name = symbol.getName();
+    if (
+      name === 'ReactNode' ||
+      name === 'ReactElement' ||
+      name === 'JSX.Element' ||
+      name === 'FC' ||
+      name === 'FunctionComponent'
+    ) {
+      return true;
+    }
+
+    // Check for React internal types or types from @types/react
+    const declarations = symbol.getDeclarations();
+    if (declarations) {
+      for (const decl of declarations) {
+        const fileName = decl.getSourceFile().fileName;
+        if (
+          fileName.includes('@types/react') ||
+          fileName.includes('node_modules/react') ||
+          fileName.includes('node_modules/@types/react') ||
+          fileName.includes('typescript/lib/lib.dom.d.ts') // JSX can be here
+        ) {
+          return true;
+        }
+      }
+    }
+  }
+
+  // Check for React types in union members
+  if (type.isUnion()) {
+    return type.types.some((t) => isReactNodeType(t, checker));
+  }
+
+  // Check if it's a function that returns ReactNode/JSX.Element
+  const callSignatures = type.getCallSignatures();
+  if (callSignatures.length > 0) {
+    return callSignatures.some((sig) => {
+      const returnType = checker.getReturnTypeOfSignature(sig);
+      // Avoid infinite recursion by checking if returnType is different from current type
+      if (returnType !== type) {
+        return isReactNodeType(returnType, checker);
+      }
+      return false;
+    });
+  }
+
+  // Check for intrinsic elements or other React-like objects
+  if (typeString === 'any' || typeString === 'unknown') return false;
+  if (
+    typeString.startsWith('global.JSX.') ||
+    typeString.startsWith('JSX.') ||
+    typeString.includes('ReactElement')
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 function getTypeFromSymbol(
   symbol: import('typescript').Symbol,
   checker: TypeChecker,
@@ -698,6 +771,27 @@ function isPropertyComplex(
   parentTypeFlags: number,
 ): boolean {
   const propType = getTypeFromSymbol(prop, checker, tsNode);
+
+  if (isReactNodeType(propType, checker)) {
+    return false;
+  }
+
+  if (propType.flags & ts.TypeFlags.Any) {
+    const propDeclaration = extractPropertyDeclaration(prop);
+    const annotationType = extractAnnotationType(propDeclaration);
+    if (annotationType) {
+      const annotationText = annotationType.getText();
+      if (
+        annotationText.includes('ReactNode') ||
+        annotationText.includes('ReactElement') ||
+        annotationText.includes('JSX.Element') ||
+        annotationText.includes('FC') ||
+        annotationText.includes('FunctionComponent')
+      ) {
+        return false;
+      }
+    }
+  }
 
   if (isComplexType(ts, propType, checker)) {
     return true;
