@@ -372,6 +372,20 @@ import { onCallVaripotent } from '../../v2/https/onCall';
         filename,
         errors: [{ messageId: 'missingMigrationTag' }],
       },
+      {
+        // Mixing NONE with other dependencies
+        code: `
+/**
+ * @migration true
+ * @migrationPhase after
+ * @migrationDependencies NONE, scriptA
+ * @migrationDescription Mixed NONE
+ */
+import { onCallVaripotent } from '../../v2/https/onCall';
+      `,
+        filename,
+        errors: [{ messageId: 'invalidDependenciesTag' }],
+      },
     ],
   },
 );

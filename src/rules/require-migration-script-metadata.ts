@@ -79,7 +79,8 @@ export const requireMigrationScriptMetadata = createRule<Options, MessageIds>({
   },
   defaultOptions: [DEFAULT_OPTIONS],
   create(context, [options]) {
-    const filename = context.getFilename();
+    const filename =
+      (context as { filename?: string }).filename ?? context.getFilename();
     const { targetGlobs, allowLegacyHeader } = {
       ...DEFAULT_OPTIONS,
       ...options,
@@ -192,8 +193,6 @@ export const requireMigrationScriptMetadata = createRule<Options, MessageIds>({
               node: comment,
               messageId: 'missingDependenciesTag',
             });
-          } else if (tags.migrationDependencies === 'NONE') {
-            // Valid
           } else {
             const deps = tags.migrationDependencies
               .split(',')
@@ -203,6 +202,13 @@ export const requireMigrationScriptMetadata = createRule<Options, MessageIds>({
                 node: comment,
                 messageId: 'invalidDependenciesTag',
               });
+            } else if (deps.includes('NONE') && deps.length > 1) {
+              context.report({
+                node: comment,
+                messageId: 'invalidDependenciesTag',
+              });
+            } else if (deps.length === 1 && deps[0] === 'NONE') {
+              // Valid: exactly NONE
             } else {
               for (const dep of deps) {
                 if (dep.endsWith('.f.ts')) {
