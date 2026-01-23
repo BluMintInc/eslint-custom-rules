@@ -262,6 +262,47 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
+    // Test case for the bug report #1157 - object literal property usage
+    {
+      code: `
+        import { useMemo } from 'react';
+
+        export const useRepro = (onMenuClose: () => void, uid: string) => {
+          const item = useMemo(() => {
+            return {
+              onClick: onMenuClose,
+              href: \`/\${uid}\`,
+            };
+          }, [onMenuClose, uid]);
+
+          return item;
+        };
+      `,
+    },
+    // TS assertion in object literal property value requires entire object
+    {
+      code: `
+        const MyComponent = ({ userData }) => {
+          const item = useMemo(() => ({
+            user: userData as User,
+            name: userData.name
+          }), [userData]);
+          return item;
+        };
+      `,
+    },
+    // TS assertion in computed property key requires entire object
+    {
+      code: `
+        const MyComponent = ({ userData }) => {
+          const item = useMemo(() => ({
+            [(userData as string)]: 'value',
+            name: userData.name
+          }), [userData]);
+          return item;
+        };
+      `,
+    },
     // Using JSON.stringify() should be valid
     {
       code: `
@@ -1406,6 +1447,60 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
             return userData?.profile?.settings?.theme?.primary || 'default';
           }, [userData?.profile.settings.theme.primary, userData?.profile]);
           return <div>{result}</div>;
+        };
+      `,
+    },
+    // TS assertion case
+    {
+      code: `
+        const MyComponent = ({ userData }) => {
+          useCallback(() => {
+            console.log((userData as User).name);
+          }, [userData]);
+        };
+      `,
+      errors: [avoid('userData', 'userData.name')],
+      output: `
+        const MyComponent = ({ userData }) => {
+          useCallback(() => {
+            console.log((userData as User).name);
+          }, [userData.name]);
+        };
+      `,
+    },
+    // TS assertion with optional chaining
+    {
+      code: `
+        const MyComponent = ({ userData }) => {
+          useCallback(() => {
+            console.log((userData?.profile as Profile).id);
+          }, [userData]);
+        };
+      `,
+      errors: [avoid('userData', 'userData?.profile.id, userData?.profile')],
+      output: `
+        const MyComponent = ({ userData }) => {
+          useCallback(() => {
+            console.log((userData?.profile as Profile).id);
+          }, [userData?.profile.id, userData?.profile]);
+        };
+      `,
+    },
+    // Wrapped dependency in array
+    {
+      code: `
+        const MyComponent = ({ userData }) => {
+          useCallback(() => {
+            console.log(userData.name);
+          }, [userData as any]);
+        };
+      `,
+      errors: [avoid('userData', 'userData.name')],
+      output: `
+        const MyComponent = ({ userData }) => {
+          useCallback(() => {
+            console.log(userData.name);
+          }, [userData.name]);
         };
       `,
     },

@@ -1,10 +1,13 @@
 import { parallelizeAsyncOperations } from '../rules/parallelize-async-operations';
 import { ruleTesterTs } from '../utils/ruleTester';
 
-ruleTesterTs.run('parallelize-async-operations-repro', parallelizeAsyncOperations, {
-  valid: [
-    // This is the problematic code from the issue
-    `
+ruleTesterTs.run(
+  'parallelize-async-operations-repro',
+  parallelizeAsyncOperations,
+  {
+    valid: [
+      // This is the problematic code from the issue
+      `
     async function reproduction() {
       const batchManager = options?.batchManager ?? new BatchManager<Notification>();
 
@@ -17,6 +20,7 @@ ruleTesterTs.run('parallelize-async-operations-repro', parallelizeAsyncOperation
       await batchManager.commit();
     }
     `,
-  ],
-  invalid: [],
-});
+    ],
+    invalid: [],
+  },
+);
