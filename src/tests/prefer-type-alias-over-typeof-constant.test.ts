@@ -154,6 +154,20 @@ ruleTesterTs.run(
       {
         code: "type X = typeof import('./mod').X;",
       },
+      // Good: mapped type constraint
+      {
+        code: [
+          'type Keys = "a" | "b";',
+          'const MAP: { [K in Keys]: number } = { a: 1, b: 2 };',
+        ].join('\n'),
+      },
+      // Good: type literal with method and index signature
+      {
+        code: [
+          'type T = { name: string };',
+          'const OBJ: { [key: string]: T; get(id: T): T } = { a: { name: "a" }, get(id: T) { return id; } };',
+        ].join('\n'),
+      },
     ],
     invalid: [
       // In function parameter
@@ -191,6 +205,30 @@ ruleTesterTs.run(
           "type StatusExceeding = 'exceeding';",
         ].join('\n'),
         errors: [orderingError('StatusExceeding', 'STATUS_EXCEEDING')],
+      },
+      // Ordering: type alias in mapped type constraint declared after constant
+      {
+        code: [
+          'const MAP: { [K in Keys]: number } = { a: 1, b: 2 };',
+          'type Keys = "a" | "b";',
+        ].join('\n'),
+        errors: [orderingError('Keys', 'MAP')],
+      },
+      // Ordering: type alias in index signature declared after constant
+      {
+        code: [
+          'const OBJ: { [key: string]: T } = { a: { name: "a" } };',
+          'type T = { name: string };',
+        ].join('\n'),
+        errors: [orderingError('T', 'OBJ')],
+      },
+      // Ordering: type alias in method parameter declared after constant
+      {
+        code: [
+          'const OBJ: { get(id: T): void } = { get(id: T) {} };',
+          'type T = { name: string };',
+        ].join('\n'),
+        errors: [orderingError('T', 'OBJ')],
       },
       // Interface property with intersection
       {

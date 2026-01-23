@@ -111,6 +111,9 @@ function collectReferencedTypeNames(
       if (mapped.typeAnnotation)
         collectReferencedTypeNames(mapped.typeAnnotation, acc);
       if (mapped.nameType) collectReferencedTypeNames(mapped.nameType, acc);
+      if ((mapped as any).typeParameter && (mapped as any).typeParameter.constraint) {
+        collectReferencedTypeNames((mapped as any).typeParameter.constraint, acc);
+      }
       break;
     }
     case AST_NODE_TYPES.TSConditionalType: {
@@ -126,11 +129,45 @@ function collectReferencedTypeNames(
       for (const m of lit.members) {
         if (m.type === AST_NODE_TYPES.TSPropertySignature && m.typeAnnotation) {
           collectReferencedTypeNames(m.typeAnnotation.typeAnnotation, acc);
+        } else if (m.type === AST_NODE_TYPES.TSMethodSignature) {
+          if (m.returnType) {
+            collectReferencedTypeNames(m.returnType.typeAnnotation, acc);
+          }
+          for (const p of m.params) {
+            if ((p as any).typeAnnotation) {
+              collectReferencedTypeNames(
+                (p as any).typeAnnotation.typeAnnotation,
+                acc,
+              );
+            }
+          }
+        } else if (m.type === AST_NODE_TYPES.TSIndexSignature) {
+          if (m.typeAnnotation) {
+            collectReferencedTypeNames(m.typeAnnotation.typeAnnotation, acc);
+          }
+          for (const p of m.parameters) {
+            if ((p as any).typeAnnotation) {
+              collectReferencedTypeNames(
+                (p as any).typeAnnotation.typeAnnotation,
+                acc,
+              );
+            }
+          }
         } else if (
-          m.type === AST_NODE_TYPES.TSMethodSignature &&
-          (m as any).returnType
+          m.type === AST_NODE_TYPES.TSCallSignatureDeclaration ||
+          m.type === AST_NODE_TYPES.TSConstructSignatureDeclaration
         ) {
-          collectReferencedTypeNames((m as any).returnType.typeAnnotation, acc);
+          if (m.returnType) {
+            collectReferencedTypeNames(m.returnType.typeAnnotation, acc);
+          }
+          for (const p of m.params) {
+            if ((p as any).typeAnnotation) {
+              collectReferencedTypeNames(
+                (p as any).typeAnnotation.typeAnnotation,
+                acc,
+              );
+            }
+          }
         }
       }
       break;
