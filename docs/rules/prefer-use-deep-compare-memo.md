@@ -1,4 +1,4 @@
-# Enforce using useDeepCompareMemo when dependency array contains non-primitive values (objects, arrays, functions) that are not already memoized. This prevents unnecessary re-renders due to reference changes (`@blumintinc/blumint/prefer-use-deep-compare-memo`)
+# Enforce using useDeepCompareMemo when dependency array contains non-primitive values (objects, arrays) that are not already memoized. This prevents unnecessary re-renders due to reference changes (`@blumintinc/blumint/prefer-use-deep-compare-memo`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
@@ -6,12 +6,12 @@
 
 <!-- end auto-generated rule header -->
 
-`useMemo` compares dependencies by reference. Objects, arrays, and functions created inside a render receive a new identity every time, so `useMemo` treats them as "changed" and reruns the memoized computation, triggering downstream renders. `useDeepCompareMemo` (or memoizing the dependencies first) compares by value and keeps equivalent dependencies stable.
+`useMemo` compares dependencies by reference. Objects and arrays created inside a render receive a new identity every time, so `useMemo` treats them as "changed" and reruns the memoized computation, triggering downstream renders. `useDeepCompareMemo` (or memoizing the dependencies first) compares by value and keeps equivalent dependencies stable.
 
 ## Rule Details
 
 - **Why**: Non-primitive dependencies change identity each render. Reference equality in `useMemo` sees them as different, so the memo recomputes and can force avoidable renders.
-- **How**: The rule flags `useMemo` calls when the dependency array contains an object, array, or function that is not already memoized. Identifiers are considered safe when they come from `useMemo`, `useCallback`, `useLatestCallback`, or `useDeepCompareMemo`.
+- **How**: The rule flags `useMemo` calls when the dependency array contains an object or array that is not already memoized. Identifiers are considered safe when they come from `useMemo`, `useCallback`, `useLatestCallback`, or `useDeepCompareMemo`.
 - **Fix**: Auto-fix replaces `useMemo` with `useDeepCompareMemo` and inserts `import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';`. You can also silence the warning by memoizing the dependencies first.
 
 Auto-fix adds the import if needed:

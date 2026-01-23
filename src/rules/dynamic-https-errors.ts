@@ -169,8 +169,14 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
 
           const props = node.arguments[0];
 
-          const messageProperty = findPropertyByName(props.properties, 'message');
-          const detailsProperty = findPropertyByName(props.properties, 'details');
+          const messageProperty = findPropertyByName(
+            props.properties,
+            'message',
+          );
+          const detailsProperty = findPropertyByName(
+            props.properties,
+            'details',
+          );
 
           if (!detailsProperty) {
             const hasSpread = props.properties.some(
