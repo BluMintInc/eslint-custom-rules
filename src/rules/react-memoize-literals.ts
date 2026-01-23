@@ -65,7 +65,6 @@ const SAFE_HOOK_ARGUMENTS = new Set([
  * own stability.
  */
 const HOOKS_ALLOWING_NESTED_LITERALS = new Set([
-  'useLatestCallback',
   'useState',
   'useReducer',
   'useRef',
@@ -765,7 +764,7 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
         ) {
           // Top-level literal passed directly to a hook argument is allowed.
           // Also allow nested literals for hooks that don't rely on argument
-          // reference stability for memoization (e.g. useLatestCallback, useEffect).
+          // reference stability for memoization (e.g. useState, useReducer).
           return;
         }
 

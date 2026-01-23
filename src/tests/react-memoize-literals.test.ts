@@ -229,11 +229,11 @@ export const useReproduction = () => {
     {
       code: `
 function MyComponent() {
-  const refreshUser = useLatestCallback(async () => {
-    const [, userWithClaims] = await Promise.all([
+  const refreshUser = useLatestCallback(() => {
+    const [, userWithClaims] = [
       current.reload(),
       mergeFetchedClaims(current),
-    ]);
+    ];
     setUserInternal({ ...userWithClaims, _isFetchedFromRemote: true });
   });
   return null;
