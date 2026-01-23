@@ -341,7 +341,7 @@ export const preferTypeAliasOverTypeofConstant: TSESLint.RuleModule<
           return;
         }
 
-        // Skip `keyof typeof X` (handles nested parentheses via ancestors check)
+        // Skip `keyof typeof X` as it's a canonical way to derive a union of keys from a constant object.
         if (
           ancestors.some(
             (a) =>
