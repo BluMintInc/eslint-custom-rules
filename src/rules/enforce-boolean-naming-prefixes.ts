@@ -304,8 +304,20 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           const left = evaluateBooleanishExpression(node.init.left);
           const right = evaluateBooleanishExpression(node.init.right);
 
-          // Both sides must evaluate to boolean for the whole expression to be boolean
-          return left === 'boolean' && right === 'boolean';
+          // If both sides are boolean, the result is boolean.
+          if (left === 'boolean' && right === 'boolean') {
+            return true;
+          }
+
+          // If the right side is boolean, and the left side is unknown (but not non-boolean),
+          // we treat it as boolean to avoid false negatives for common patterns like `user && user.isActive`.
+          // This is a trade-off: it might cause some false positives for non-boolean variables
+          // used as guards, but those are less common than the `user && user.isActive` pattern.
+          if (right === 'boolean' && left === 'unknown') {
+            return true;
+          }
+
+          return false;
         }
 
         // Special case for logical OR (||) - only consider it boolean if:
