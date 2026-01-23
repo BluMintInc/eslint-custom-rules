@@ -112,6 +112,20 @@ ruleTesterTs.run(
           'type Keys = keyof typeof MAP;',
         ].join('\n'),
       },
+      // Good: keyof (typeof MAP) pattern (Issue #1175)
+      {
+        code: [
+          'export const MAP = { A: 1, B: 2 } as const;',
+          'type Keys = keyof (typeof MAP);',
+        ].join('\n'),
+      },
+      // Good: (typeof ARRAY_CONST)[number] pattern (Issue #1175)
+      {
+        code: [
+          'export const ERROR_MESSAGES_USER_FRIENDLY = ["A"] as const;',
+          'export type ErrorMessageUserFriendly = (typeof ERROR_MESSAGES_USER_FRIENDLY)[number];',
+        ].join('\n'),
+      },
       // Good: TS import type + union usage
       {
         code: [
@@ -139,6 +153,20 @@ ruleTesterTs.run(
       // Good: typeof import expression should be ignored
       {
         code: "type X = typeof import('./mod').X;",
+      },
+      // Good: mapped type constraint
+      {
+        code: [
+          'type Keys = "a" | "b";',
+          'const MAP: { [K in Keys]: number } = { a: 1, b: 2 };',
+        ].join('\n'),
+      },
+      // Good: type literal with method and index signature
+      {
+        code: [
+          'type T = { name: string };',
+          'const OBJ: { [key: string]: T; get(id: T): T } = { a: { name: "a" }, get(id: T) { return id; } };',
+        ].join('\n'),
       },
     ],
     invalid: [
@@ -177,6 +205,30 @@ ruleTesterTs.run(
           "type StatusExceeding = 'exceeding';",
         ].join('\n'),
         errors: [orderingError('StatusExceeding', 'STATUS_EXCEEDING')],
+      },
+      // Ordering: type alias in mapped type constraint declared after constant
+      {
+        code: [
+          'const MAP: { [K in Keys]: number } = { a: 1, b: 2 };',
+          'type Keys = "a" | "b";',
+        ].join('\n'),
+        errors: [orderingError('Keys', 'MAP')],
+      },
+      // Ordering: type alias in index signature declared after constant
+      {
+        code: [
+          'const OBJ: { [key: string]: T } = { a: { name: "a" } };',
+          'type T = { name: string };',
+        ].join('\n'),
+        errors: [orderingError('T', 'OBJ')],
+      },
+      // Ordering: type alias in method parameter declared after constant
+      {
+        code: [
+          'const OBJ: { get(id: T): void } = { get(id: T) {} };',
+          'type T = { name: string };',
+        ].join('\n'),
+        errors: [orderingError('T', 'OBJ')],
       },
       // Interface property with intersection
       {

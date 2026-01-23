@@ -200,6 +200,8 @@ ruleTesterTs.run(
       const flags = { visible: true };
       flags === otherConfig;
       `,
+      'const IS_READY = true;',
+      'const is_ready = true;',
     ],
     invalid: [
       // Variables without proper boolean prefixes
