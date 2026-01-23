@@ -163,6 +163,7 @@ import { verticallyGroupRelatedFunctions } from './rules/vertically-group-relate
 import { default as noStaticConstantsInDynamicFiles } from './rules/no-static-constants-in-dynamic-files';
 import { testFileLocationEnforcement } from './rules/test-file-location-enforcement';
 import { preventChildrenClobber } from './rules/prevent-children-clobber';
+import { requireMigrationScriptMetadata } from './rules/require-migration-script-metadata';
 import { warnHttpsErrorMessageUserFriendly } from './rules/warn-https-error-message-user-friendly';
 
 const NO_FRONTEND_IMPORTS_FROM_FUNCTIONS_MESSAGE =
@@ -374,6 +375,7 @@ module.exports = {
         '@blumintinc/blumint/vertically-group-related-functions': 'error',
         '@blumintinc/blumint/no-static-constants-in-dynamic-files': 'error',
         '@blumintinc/blumint/test-file-location-enforcement': 'error',
+        '@blumintinc/blumint/require-migration-script-metadata': 'error',
         '@blumintinc/blumint/warn-https-error-message-user-friendly': 'warn',
       },
       /**
@@ -642,6 +644,7 @@ module.exports = {
     'vertically-group-related-functions': verticallyGroupRelatedFunctions,
     'no-static-constants-in-dynamic-files': noStaticConstantsInDynamicFiles,
     'test-file-location-enforcement': testFileLocationEnforcement,
+    'require-migration-script-metadata': requireMigrationScriptMetadata,
     'warn-https-error-message-user-friendly': warnHttpsErrorMessageUserFriendly,
   },
 };

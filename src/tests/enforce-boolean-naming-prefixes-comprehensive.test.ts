@@ -199,9 +199,9 @@ ruleTesterTs.run(
       `const haven: string = "safe place";`, // "haven" should not be flagged
       `const harvest: number = 2023;`, // "harvest" should not be flagged
 
-      // Words that start with plural prefixes but are boolean (should be allowed)
-      `const arena: boolean = true;`, // "arena" starts with "are" so it's valid
-      `const haven: boolean = true;`, // "haven" starts with "have" so it's valid
+      // Words that start with plural prefixes but are boolean (should be allowed only if they follow naming conventions)
+      // Note: "arena" and "haven" no longer count as prefixed booleans because they don't follow camelCase/snake_case boundaries
+      // These are now handled in the invalid section below
 
       // ===== EXISTING SINGULAR PREFIXES (regression testing) =====
 
@@ -659,6 +659,15 @@ ruleTesterTs.run(
             },
           },
         ],
+      },
+      // Words that start with plural prefixes but don't follow boundary rules
+      {
+        code: `const arena: boolean = true;`,
+        errors: [{ messageId: 'missingBooleanPrefix' }],
+      },
+      {
+        code: `const haven: boolean = true;`,
+        errors: [{ messageId: 'missingBooleanPrefix' }],
       },
     ],
   },

@@ -63,6 +63,16 @@ const Comp = ({ obj }) => {
 };
 `,
       },
+      // Function in deps (should be treated as stable enough)
+      {
+        code: `
+import { useMemo } from 'react';
+const Comp = ({ fn }) => {
+  const result = useMemo(() => fn(1), [fn]);
+  return <div>{result}</div>;
+};
+`,
+      },
     ],
     invalid: [
       // Identifier non-primitive (heuristic) triggers replacement
@@ -100,25 +110,6 @@ import { useMemo } from 'react';
 const Comp = ({ a, b }) => {
   const arr = useDeepCompareMemo(() => a + b, [[a,b]]);
   return <div>{arr}</div>;
-};
-`,
-      },
-      // Function in deps
-      {
-        code: `
-import { useMemo } from 'react';
-const Comp = ({ fn }) => {
-  const result = useMemo(() => fn(1), [fn]);
-  return <div>{result}</div>;
-};
-`,
-        errors: [error],
-        output: `
-import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
-import { useMemo } from 'react';
-const Comp = ({ fn }) => {
-  const result = useDeepCompareMemo(() => fn(1), [fn]);
-  return <div>{result}</div>;
 };
 `,
       },

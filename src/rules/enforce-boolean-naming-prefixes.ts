@@ -82,6 +82,9 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
   defaultOptions: [DEFAULT_OPTIONS],
   create(context, [options]) {
     const approvedPrefixes = options.prefixes || DEFAULT_OPTIONS.prefixes;
+    const approvedPrefixesWithoutAsserts = approvedPrefixes.filter(
+      (p) => p !== 'asserts',
+    );
     const ignoreOverriddenGetters =
       options.ignoreOverriddenGetters ??
       DEFAULT_OPTIONS.ignoreOverriddenGetters;
@@ -99,6 +102,61 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     }
 
     /**
+     * Check if a name is prefixed by a boolean keyword with proper boundaries.
+     * Supports camelCase (isSomething), snake_case (is_something, IS_SOMETHING),
+     * and exact matches.
+     */
+    function isPrefixedByBooleanKeyword(
+      name: string,
+      prefixes: string[],
+    ): boolean {
+      const normalizedName = name.startsWith('_') ? name.slice(1) : name;
+
+      const checkPrefix = (p: string) => {
+        if (!normalizedName.toLowerCase().startsWith(p.toLowerCase())) {
+          return false;
+        }
+
+        if (normalizedName.length === p.length) {
+          return true;
+        }
+
+        const nextChar = normalizedName.charAt(p.length);
+
+        // For SCREAMING_SNAKE_CASE or similar all-uppercase names,
+        // we require an underscore boundary.
+        const isAllUppercase =
+          normalizedName === normalizedName.toUpperCase() &&
+          /[a-z]/i.test(normalizedName);
+        if (isAllUppercase) {
+          return nextChar === '_';
+        }
+
+        // For camelCase, the next char must be uppercase, a digit, or $
+        return (
+          nextChar === '_' ||
+          nextChar === '$' ||
+          (nextChar >= '0' && nextChar <= '9') ||
+          (nextChar === nextChar.toUpperCase() &&
+            nextChar !== nextChar.toLowerCase())
+        );
+      };
+
+      const checkPrefixWithPlural = (p: string) => {
+        if (checkPrefix(p)) return true;
+
+        if (['is', 'has', 'does', 'was', 'had', 'did'].includes(p)) {
+          const pluralPrefix = pluralize.plural(p);
+          if (checkPrefix(pluralPrefix)) return true;
+        }
+
+        return false;
+      };
+
+      return prefixes.some((prefix) => checkPrefixWithPlural(prefix));
+    }
+
+    /**
      * Check if a name starts with any of the approved prefixes, their plural forms,
      * or if it starts with an underscore (which indicates a private/internal property)
      */
@@ -108,30 +166,13 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     ): boolean {
       const treatLeadingUnderscoreAsApproved =
         options?.treatLeadingUnderscoreAsApproved ?? true;
-      const normalizedName = name.startsWith('_') ? name.slice(1) : name;
 
       // Skip checking properties that start with an underscore (private/internal properties)
       if (treatLeadingUnderscoreAsApproved && name.startsWith('_')) {
         return true;
       }
 
-      return approvedPrefixes.some((prefix) => {
-        // Check for exact prefix match
-        if (normalizedName.toLowerCase().startsWith(prefix.toLowerCase())) {
-          return true;
-        }
-
-        // Check for plural form of the prefix
-        // Only apply pluralization to certain prefixes that have meaningful plural forms
-        if (['is', 'has', 'does', 'was', 'had', 'did'].includes(prefix)) {
-          const pluralPrefix = pluralize.plural(prefix);
-          return normalizedName
-            .toLowerCase()
-            .startsWith(pluralPrefix.toLowerCase());
-        }
-
-        return false;
-      });
+      return isPrefixedByBooleanKeyword(name, approvedPrefixes);
     }
 
     function nameSuggestsBoolean(name: string): boolean {
@@ -151,9 +192,8 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       ];
 
       return (
-        hasApprovedPrefix(normalizedName, {
-          treatLeadingUnderscoreAsApproved: false,
-        }) || suffixKeywords.some((keyword) => lowerName.endsWith(keyword))
+        isPrefixedByBooleanKeyword(normalizedName, approvedPrefixes) ||
+        suffixKeywords.some((keyword) => lowerName.endsWith(keyword))
       );
     }
 
@@ -261,131 +301,23 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           node.init.type === AST_NODE_TYPES.LogicalExpression &&
           node.init.operator === '&&'
         ) {
-          // Check if the right side is a method call that might return a non-boolean value
-          const rightSide = node.init.right;
-          if (rightSide.type === AST_NODE_TYPES.CallExpression) {
-            // If right side is a simple identifier call
-            if (rightSide.callee.type === AST_NODE_TYPES.Identifier) {
-              const calleeName = rightSide.callee.name;
-              const lowerCallee = calleeName.toLowerCase();
+          const left = evaluateBooleanishExpression(node.init.left);
+          const right = evaluateBooleanishExpression(node.init.right);
 
-              // For assert*-style utilities, only treat as boolean if we can confirm boolean return type
-              if (lowerCallee.startsWith('assert')) {
-                return identifierReturnsBoolean(calleeName);
-              }
-
-              // Otherwise, infer based on naming heuristics
-              const isBooleanCall = approvedPrefixes.some(
-                (prefix) =>
-                  prefix !== 'asserts' &&
-                  lowerCallee.startsWith(prefix.toLowerCase()),
-              );
-
-              if (
-                isBooleanCall ||
-                lowerCallee.includes('boolean') ||
-                lowerCallee.includes('enabled') ||
-                lowerCallee.includes('auth') ||
-                lowerCallee.includes('valid') ||
-                lowerCallee.includes('check')
-              ) {
-                return true;
-              }
-
-              if (
-                lowerCallee.startsWith('get') ||
-                lowerCallee.startsWith('fetch') ||
-                lowerCallee.startsWith('retrieve') ||
-                lowerCallee.startsWith('load') ||
-                lowerCallee.startsWith('read')
-              ) {
-                return false;
-              }
-            }
-
-            // If the method name doesn't suggest it returns a boolean, don't flag it
-            if (
-              rightSide.callee.type === AST_NODE_TYPES.MemberExpression &&
-              rightSide.callee.property.type === AST_NODE_TYPES.Identifier
-            ) {
-              const methodName = rightSide.callee.property.name;
-              const lowerMethodName = methodName.toLowerCase();
-
-              // Ignore assert*-style methods which often return the input value
-              if (lowerMethodName.startsWith('assert')) {
-                return false;
-              }
-
-              // Check if the method name suggests it returns a boolean
-              const isBooleanMethod = approvedPrefixes.some(
-                (prefix) =>
-                  prefix !== 'asserts' &&
-                  lowerMethodName.startsWith(prefix.toLowerCase()),
-              );
-
-              // If the method name suggests it returns a boolean (starts with a boolean prefix or contains 'boolean' or 'enabled'),
-              // then the variable should be treated as a boolean
-              if (
-                isBooleanMethod ||
-                lowerMethodName.includes('boolean') ||
-                lowerMethodName.includes('enabled') ||
-                lowerMethodName.includes('auth') ||
-                lowerMethodName.includes('valid') ||
-                lowerMethodName.includes('check')
-              ) {
-                return true;
-              }
-
-              // For methods like getVolume(), getData(), etc., assume they return non-boolean values
-              if (
-                lowerMethodName.startsWith('get') ||
-                lowerMethodName.startsWith('fetch') ||
-                lowerMethodName.startsWith('retrieve') ||
-                lowerMethodName.startsWith('load') ||
-                lowerMethodName.startsWith('read')
-              ) {
-                return false;
-              }
-            }
+          // If both sides are boolean, the result is boolean.
+          if (left === 'boolean' && right === 'boolean') {
+            return true;
           }
 
-          // Check if the right side is a property access that might return a non-boolean value
-          if (
-            rightSide.type === AST_NODE_TYPES.MemberExpression &&
-            rightSide.property.type === AST_NODE_TYPES.Identifier
-          ) {
-            const propertyName = rightSide.property.name;
-            const lowerPropertyName = propertyName.toLowerCase();
-
-            // If the property name is 'parentElement', 'parentNode', etc., it's likely not a boolean
-            if (
-              lowerPropertyName.includes('parent') ||
-              lowerPropertyName.includes('element') ||
-              lowerPropertyName.includes('node') ||
-              lowerPropertyName.includes('child') ||
-              lowerPropertyName.includes('sibling')
-            ) {
-              return false;
-            }
-
-            // Ignore assert*-style properties which often return the input value
-            if (lowerPropertyName.startsWith('assert')) {
-              return false;
-            }
-
-            // For property access like user.isAuthenticated, treat as boolean
-            const isBooleanProperty = approvedPrefixes.some(
-              (prefix) =>
-                prefix !== 'asserts' &&
-                lowerPropertyName.startsWith(prefix.toLowerCase()),
-            );
-            if (isBooleanProperty) {
-              return true;
-            }
+          // If the right side is boolean, and the left side is unknown (but not non-boolean),
+          // we treat it as boolean to avoid false negatives for common patterns like `user && user.isActive`.
+          // This is a trade-off: it might cause some false positives for non-boolean variables
+          // used as guards, but those are less common than the `user && user.isActive` pattern.
+          if (right === 'boolean' && left === 'unknown') {
+            return true;
           }
 
-          // Default to true for other cases with && to avoid false negatives
-          return true;
+          return false;
         }
 
         // Special case for logical OR (||) - only consider it boolean if:
@@ -439,10 +371,9 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
               return identifierReturnsBoolean(calleeName);
             }
 
-            return approvedPrefixes.some(
-              (prefix) =>
-                prefix !== 'asserts' &&
-                lowerCallee.startsWith(prefix.toLowerCase()),
+            return isPrefixedByBooleanKeyword(
+              calleeName,
+              approvedPrefixesWithoutAsserts,
             );
           }
 
@@ -472,10 +403,9 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           }
 
           // Check if the function name suggests it returns a boolean
-          return approvedPrefixes.some(
-            (prefix) =>
-              prefix !== 'asserts' &&
-              lowerCallee.startsWith(prefix.toLowerCase()),
+          return isPrefixedByBooleanKeyword(
+            calleeName,
+            approvedPrefixes.filter((p) => p !== 'asserts'),
           );
         }
       }
@@ -596,10 +526,9 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           return identifierReturnsBoolean(calleeName) ? 'boolean' : 'unknown';
         }
 
-        const matchesPrefix = approvedPrefixes.some(
-          (prefix) =>
-            prefix !== 'asserts' &&
-            lowerCallee.startsWith(prefix.toLowerCase()),
+        const matchesPrefix = isPrefixedByBooleanKeyword(
+          calleeName,
+          approvedPrefixesWithoutAsserts,
         );
 
         if (
@@ -635,10 +564,9 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           return 'unknown';
         }
 
-        const matchesPrefix = approvedPrefixes.some(
-          (prefix) =>
-            prefix !== 'asserts' &&
-            lowerMethodName.startsWith(prefix.toLowerCase()),
+        const matchesPrefix = isPrefixedByBooleanKeyword(
+          methodName,
+          approvedPrefixesWithoutAsserts,
         );
 
         if (
@@ -659,7 +587,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     function evaluateBooleanishExpression(
       expression: TSESTree.Expression | null | undefined,
     ): BooleanEvaluation {
-      if (!expression) return 'nonBoolean';
+      if (!expression) return 'unknown';
 
       let currentExpression: TSESTree.Expression = expression;
 
@@ -1142,10 +1070,12 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     }
 
     /**
-     * Check if a variable is used in a while loop condition and is likely a boolean
+     * Check if a variable is initialized with a boolean-suggesting member expression
      * This helps identify variables that should be flagged as needing a boolean prefix
      */
-    function isLikelyBooleanInWhileLoop(node: TSESTree.Identifier): boolean {
+    function isLikelyBooleanByMemberExpression(
+      node: TSESTree.Identifier,
+    ): boolean {
       // Check if the variable is initialized with a boolean-related value
       const variableDeclarator = node.parent;
       if (
@@ -1169,8 +1099,9 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         ) {
           const propertyName = (init.property as TSESTree.Identifier).name;
           // If the property name suggests it's a boolean (starts with a boolean prefix)
-          const isBooleanProperty = approvedPrefixes.some((prefix) =>
-            propertyName.toLowerCase().startsWith(prefix.toLowerCase()),
+          const isBooleanProperty = isPrefixedByBooleanKeyword(
+            propertyName,
+            approvedPrefixes,
           );
 
           if (isBooleanProperty) {
@@ -1242,8 +1173,8 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       let isBooleanVar =
         hasBooleanTypeAnnotation(node.id) || hasInitialBooleanValue(node);
 
-      // Check if it's a boolean variable used in a while loop
-      if (!isBooleanVar && isLikelyBooleanInWhileLoop(node.id)) {
+      // Check if it's a boolean variable used in a while loop or initialized with a boolean property
+      if (!isBooleanVar && isLikelyBooleanByMemberExpression(node.id)) {
         isBooleanVar = true;
       }
 
