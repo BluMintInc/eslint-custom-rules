@@ -6,7 +6,8 @@ const {
   missingThirdArgument: missingThirdArgumentMessage,
   missingDetailsProperty: missingDetailsPropertyMessage,
   missingDetailsDueToSpread: missingDetailsDueToSpreadMessage,
-  unexpectedExtraArgumentForObjectCall: unexpectedExtraArgumentForObjectCallMessage,
+  unexpectedExtraArgumentForObjectCall:
+    unexpectedExtraArgumentForObjectCallMessage,
 } = dynamicHttpsErrors.meta.messages;
 
 type MessageId = keyof typeof dynamicHttpsErrors.meta.messages;
@@ -437,8 +438,8 @@ const invalidCases: InvalidCase[] = [
   {
     code: 'throw new HttpsError(getErrorCode(), getMessage());',
     errors: [
-        { messageId: 'missingThirdArgument' },
-        { messageId: 'dynamicHttpsErrors' }
+      { messageId: 'missingThirdArgument' },
+      { messageId: 'dynamicHttpsErrors' },
     ],
   },
   {

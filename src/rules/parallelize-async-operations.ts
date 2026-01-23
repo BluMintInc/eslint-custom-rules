@@ -151,11 +151,7 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
 
         // Skip non-shorthand keys in object literals as they are not value uses
         if (parent && parent.type === AST_NODE_TYPES.Property) {
-          if (
-            parent.key === node &&
-            !parent.computed &&
-            !parent.shorthand
-          ) {
+          if (parent.key === node && !parent.computed && !parent.shorthand) {
             return false;
           }
         }
@@ -176,24 +172,14 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
             for (const item of child) {
               if (item && typeof item === 'object' && 'type' in item) {
                 if (
-                  visitIdentifiers(
-                    item as TSESTree.Node,
-                    callback,
-                    options,
-                  )
+                  visitIdentifiers(item as TSESTree.Node, callback, options)
                 ) {
                   return true;
                 }
               }
             }
           } else if ('type' in child) {
-            if (
-              visitIdentifiers(
-                child as TSESTree.Node,
-                callback,
-                options,
-              )
-            ) {
+            if (visitIdentifiers(child as TSESTree.Node, callback, options)) {
               return true;
             }
           }

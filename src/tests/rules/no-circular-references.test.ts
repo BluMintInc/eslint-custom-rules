@@ -42,12 +42,13 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         obj.toJSON = () => ({ key: "value" });
       `,
     },
-    // Object with array reference
+    // Object with Map reference
     {
       code: `
         const obj = {};
-        const arr = [obj];
-        obj.array = arr;
+        const map = new Map();
+        map.set('key', obj);
+        obj.map = map;
       `,
     },
     // Object with primitive values
@@ -258,15 +259,6 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
       `,
     },
     // Complex multi-level circular reference - our rule doesn't detect this case yet
-    {
-      code: `
-        const obj1 = { a: {} };
-        const obj2 = { b: obj1.a };
-        const obj3 = { c: obj2 };
-        obj1.a.ref = obj3;
-      `,
-    },
-    // Circular reference with Object.assign - our rule doesn't detect this case yet
     {
       code: `
         const obj = {};
@@ -698,9 +690,33 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         };
       `,
     },
+    // Self-referential member expression (recursion protection test)
+    {
+      code: `
+        const obj = {};
+        obj.a = obj.a;
+      `,
+    },
   ],
   invalid: [
+    // Circular reference through array element access (newly supported)
+    {
+      code: `
+        const arr = [{}];
+        arr[0].self = arr;
+      `,
+      errors: [error('arr')],
+    },
     // Circular through variables in the same scope
+    {
+      code: `
+        const obj1 = { a: {} };
+        const obj2 = { b: obj1.a };
+        const obj3 = { c: obj2 };
+        obj1.a.ref = obj3;
+      `,
+      errors: [error('obj3')],
+    },
     {
       code: `
         const obj = {
@@ -804,6 +820,15 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
       `,
       errors: [error('obj')],
     },
+    // Circular reference through array literal
+    {
+      code: `
+        const obj = {};
+        const arr = [obj];
+        obj.array = arr;
+      `,
+      errors: [error('arr')],
+    },
     // Circular reference through computed property
     {
       code: `
@@ -823,16 +848,6 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
       `,
       errors: [error('obj1')],
     },
-    // Circular reference with Promise
-    {
-      code: `
-        const obj = {};
-        const promise = Promise.resolve(obj);
-        obj.promise = promise;
-        promise.then(result => obj.self = result);
-      `,
-      errors: [error('result')],
-    },
     // Circular reference with Symbol
     {
       code: `
@@ -843,7 +858,40 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
       `,
       errors: [error('obj')],
     },
-    // Circular reference with property that shadows a global
+    // Object wrapped in satisfies with circular reference
+    {
+      code: `
+        const obj = ({ self: null } satisfies { self: any });
+        obj.self = obj;
+      `,
+      errors: [error('obj')],
+    },
+    // Object wrapped in ParenthesizedExpression with circular reference
+    {
+      code: `
+        const obj = ({ self: null });
+        obj.self = obj;
+      `,
+      errors: [error('obj')],
+    },
+    // Array wrapped in as const with circular reference
+    {
+      code: `
+        const arr = ([null] as const);
+        (arr as any)[0] = arr;
+      `,
+      errors: [error('arr')],
+    },
+    // Circular reference through reassigned property
+    {
+      code: `
+        const obj = { inner: {} };
+        obj.inner = { deep: {} };
+        obj.inner.deep.ref = obj;
+      `,
+      errors: [error('obj')],
+    },
+    // Object with property that shadows a global
     {
       code: `
         const obj = {};

@@ -1,39 +1,38 @@
-# Enforce dynamic imports for specified libraries to optimize bundle size (`@blumintinc/blumint/enforce-dynamic-imports`)
+# Enforce dynamic imports for external libraries by default to optimize bundle size, unless explicitly ignored (`@blumintinc/blumint/enforce-dynamic-imports`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
 <!-- end auto-generated rule header -->
 
-Enforce dynamic imports for specified libraries to optimize bundle size.
+Enforce dynamic imports for external libraries by default to optimize bundle size, unless explicitly ignored.
 
 ## Rule Details
 
-Static imports pull the entire target package into your entry bundle. For heavy UI SDKs and media clients, that eager load inflates your users' first download, delays time-to-interactive, and forces them to fetch code paths they might never hit. This rule blocks your static imports for the configured libraries and requires a dynamic import so the dependency downloads only when your code path runs. Type-only imports stay allowed when you enable `allowImportType`, so you keep type safety without shipping runtime code.
+Static imports pull the entire target package into your entry bundle. For heavy UI SDKs and media clients, that eager load inflates your users' first download, delays time-to-interactive, and forces them to fetch code paths they might never hit. This rule enforces dynamic imports for all external libraries by default, requiring a dynamic import (for example, `useDynamic(() => import("source"))`) so the dependency downloads only when your code path runs.
 
-Use this rule when a library is large, rarely needed on initial render, or better loaded just before use (for example, before opening a call UI).
+Libraries that are safe to import statically (like `react`, `next`, or small utilities) can be added to `ignoredLibraries`.
+
+Type-only imports stay allowed when you enable `allowImportType`, so you keep type safety without shipping runtime code.
 
 ### Examples
 
 #### ❌ Incorrect
 
 ```js
-// Static import from a large library – ships everything on first load
+// Static import from an external library - ships everything on first load
 import { VideoCall } from "@stream-io/video-react-sdk";
 
-// Default import from a large library
+// Default import from an external library
 import VideoSDK from "@stream-io/video-react-sdk";
 
-// Multiple named imports from a large library
-import { VideoCall, AudioCall } from "@stream-io/video-react-sdk";
-
-// Side-effect import from a large library
-import "@stream-io/video-react-sdk";
+// lodash is not ignored by default
+import { debounce } from "lodash";
 ```
 
 #### ✅ Correct
 
 ```js
-// Dynamic import using useDynamic hook keeps the initial bundle lean
+// Dynamic import keeping the initial bundle lean
 const VideoCall = useDynamic(() => import("@stream-io/video-react-sdk").then(mod => mod.VideoCall));
 
 // Type imports are allowed by default
@@ -42,7 +41,10 @@ import type { VideoCallProps } from "@stream-io/video-react-sdk";
 // Type-only specifiers are also allowed
 import { type StreamVideo } from "@stream-io/video-react-sdk";
 
-// Regular imports from non-blacklisted libraries
+// Relative imports are always allowed
+import { localHelper } from "./helpers";
+
+// Standard libraries like react are ignored by default
 import React from 'react';
 ```
 
@@ -52,20 +54,20 @@ The rule accepts an options object with the following properties:
 
 ```js
 {
-  "libraries": ["@stream-io/video-react-sdk", "some-heavy-lib*"],
+  "ignoredLibraries": ["react", "next/**", "custom-lib"],
   "allowImportType": true
 }
 ```
 
-- `libraries`: An array of library names or glob patterns to enforce dynamic imports for.
-- `allowImportType`: A boolean indicating whether to allow `import type` statements for the specified libraries. Defaults to `true`.
+- `ignoredLibraries`: An array of library names or glob patterns that are allowed to be imported statically. Defaults to: `react`, `react/**`, `react-dom`, `react-dom/**`, `next`, `next/**`, `@mui/material`, `@mui/material/**`, `@mui/icons-material`, `@mui/icons-material/**`, `@emotion/**`, `clsx`, `tailwind-merge`.
+- `allowImportType`: A boolean indicating whether to allow `import type` statements or type-only specifiers. Defaults to `true`.
 
 ### Example Configuration
 
 ```json
 "rules": {
   "@blumintinc/blumint/enforce-dynamic-imports": ["error", {
-    "libraries": ["@stream-io/video-react-sdk", "some-heavy-lib*"],
+    "ignoredLibraries": ["react", "react-dom", "next", "clsx"],
     "allowImportType": true
   }]
 }
