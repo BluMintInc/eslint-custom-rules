@@ -3,7 +3,7 @@
 /* eslint-disable import/no-unused-modules */
 /* eslint-disable max-lines */
 /**
- * Adds the rule-request and cursor-research labels to all open enhancement
+ * Adds the rule-request and claude-research labels to all open enhancement
  * issues. Processes issues in batches to avoid rate limits and supports a
  * dry-run mode for verification.
  */
@@ -17,7 +17,7 @@ type IssueSearchItem = {
 
 const DEFAULT_BATCH_SIZE = 20 as const;
 const BATCH_DELAY_MS = 10 * 60 * 1000; // 10 minutes between batches
-const TARGET_LABELS = ['rule-request', 'cursor-research'] as const;
+const TARGET_LABELS = ['rule-request', 'claude-research'] as const;
 const DRY_RUN = process.argv.includes('--dry-run');
 
 const [defaultOwner, defaultRepo] = (
