@@ -237,7 +237,7 @@ function collectFilesExcludingTmp(
   allFiles: Set<string>,
 ) {
   for (const file of files) {
-    // Filter out files in .claude/tmp/ directory
+    // Exclude tmp artifacts so generated logs don't appear as user edits.
     if (file.includes(TMP_DIR_SEGMENT)) continue;
     allFiles.add(file);
   }

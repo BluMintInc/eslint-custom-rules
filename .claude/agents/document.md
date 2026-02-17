@@ -44,7 +44,6 @@ Based on the system scope description, search the codebase to identify files tha
 - **Search by directory patterns**: Look for directories that might contain the system (e.g., `functions/src/util/validation/`, `src/components/validation/`)
 - **Search for key terms**: Find files related to the system's purpose
 - **Check imports**: Look for files that import from or are imported by system files
-- **Identify glob patterns**: Determine appropriate glob patterns for the `globs` field in the frontmatter
 
 Create a comprehensive list of files that belong to the system, organized by directory.
 

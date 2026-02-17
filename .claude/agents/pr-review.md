@@ -44,6 +44,7 @@ When you are asked to "address all outstanding PR review comments" or a similar 
 
 
 ## Definition of Done
+
 - All PR review comments are resolved; `npm run fetch-unresolved-comments` returns none.
 - `.claude/tmp/pr-review-checklist.md` exists and all items are checked off.
 - All necessary code edits are implemented; modified files pass linting; relevant tests pass.

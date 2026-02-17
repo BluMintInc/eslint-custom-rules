@@ -7,14 +7,14 @@ JSON_INPUT=$(cat)
 # Try to extract workspace root using available tools
 # Claude uses 'cwd', Cursor uses 'workspace_roots'
 if command -v jq >/dev/null 2>&1; then
-  WORKSPACE_ROOT=$(echo "$JSON_INPUT" | jq -r '.cwd // .workspace_roots[0] // empty' 2>/dev/null)
+  WORKSPACE_ROOT=$(printf '%s' "$JSON_INPUT" | jq -r '.cwd // .workspace_roots[0] // empty' 2>/dev/null)
 elif command -v python3 >/dev/null 2>&1; then
-  WORKSPACE_ROOT=$(echo "$JSON_INPUT" | python3 -c "import sys, json; data = json.load(sys.stdin); print(data.get('cwd') or (data.get('workspace_roots', [])[0] if data.get('workspace_roots') else ''))" 2>/dev/null)
+  WORKSPACE_ROOT=$(printf '%s' "$JSON_INPUT" | python3 -c "import sys, json; data = json.load(sys.stdin); print(data.get('cwd') or (data.get('workspace_roots', [])[0] if data.get('workspace_roots') else ''))" 2>/dev/null)
 else
   # Simple grep/sed extraction for cwd
-  WORKSPACE_ROOT=$(echo "$JSON_INPUT" | grep -o '"cwd"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' | head -1)
+  WORKSPACE_ROOT=$(printf '%s' "$JSON_INPUT" | grep -o '"cwd"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' | head -1)
   if [ -z "$WORKSPACE_ROOT" ]; then
-    WORKSPACE_ROOT=$(echo "$JSON_INPUT" | grep -o '"workspace_roots"[[:space:]]*:\[[[:space:]]*"[^"]*"' | sed 's/.*"workspace_roots"[[:space:]]*:\[[[:space:]]*"\([^"]*\)".*/\1/' | head -1)
+    WORKSPACE_ROOT=$(printf '%s' "$JSON_INPUT" | grep -o '"workspace_roots"[[:space:]]*:\[[[:space:]]*"[^"]*"' | sed 's/.*"workspace_roots"[[:space:]]*:\[[[:space:]]*"\([^"]*\)".*/\1/' | head -1)
   fi
 fi
 

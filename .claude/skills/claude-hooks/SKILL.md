@@ -208,6 +208,7 @@ scripts/
 ### Hook Input/Output Formats
 
 **PostToolUse (track-changes)**:
+
 ```json
 {
   "session_id": "abc123",
@@ -219,6 +220,7 @@ scripts/
 ```
 
 **UserPromptSubmit (track-prompt)**:
+
 ```json
 {
   "hook_event_name": "UserPromptSubmit",
@@ -229,6 +231,7 @@ scripts/
 Output: `{}` (empty object allows prompt through)
 
 **Stop (agent-check)**:
+
 ```json
 {
   "session_id": "abc123",

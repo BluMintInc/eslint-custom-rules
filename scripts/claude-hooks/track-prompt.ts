@@ -7,7 +7,7 @@ import {
   setLastUserMessage,
 } from './change-log';
 
-// Claude Code UserPromptSubmit input format
+// Aligns with Claude Code hook payloads so prompts can be correlated by session_id.
 export type Input = {
   readonly hook_event_name: 'UserPromptSubmit';
   readonly prompt: string;
@@ -19,9 +19,7 @@ function isInput(value: unknown): value is Input {
   if (typeof value !== 'object' || value === null) return false;
   const maybe = value as { prompt?: unknown; session_id?: unknown };
   if (typeof maybe.prompt !== 'string') return false;
-  if (maybe.session_id !== undefined && typeof maybe.session_id !== 'string') {
-    return false;
-  }
+  if (typeof maybe.session_id !== 'string') return false;
   return true;
 }
 

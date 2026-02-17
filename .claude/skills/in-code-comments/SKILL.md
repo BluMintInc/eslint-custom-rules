@@ -4,6 +4,8 @@ description: "Use when writing or reviewing in-code comments. Explains the 'why 
 user-invocable: false
 ---
 
+# In-code Comments
+
 ## Purpose
 
 This skill guides you, the AI agent, in writing effective, maintainable, and "Clean Code" compliant in-code comments. It enforces the principle that comments should elucidate what the code *cannot* say on its own, rather than merely summarizing the code's actions. This avoids redundancy and fragility during updates.

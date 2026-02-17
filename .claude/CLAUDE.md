@@ -1,3 +1,5 @@
+# Claude Code Guidance
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 **As an agent, use as many steps as you need to get to a solution, and do not stop until you are VERY confident in a solution.**

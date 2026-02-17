@@ -31,9 +31,9 @@ Ensure every new issue has the correct type label:
 - Add the label `claude-research` to any new rule request.
 - **Action**: A research agent will search the web and post findings.
 - **Your Job**:
-  - **EXACT MATCH**: Close issue or ask a member of the to import existing rule into main monorepo.
+  - **EXACT MATCH**: Close issue or ask a member of the team to import an existing rule into the main monorepo.
   - **NO MATCH**: System automatically adds `claude-implement` to start coding.
-  - **PARTIAL MATCH**: Decide whether to important into main monorepo and adapt existing rule or build new custom rule.
+  - **PARTIAL MATCH**: Decide whether to import into the main monorepo and adapt an existing rule or build a new custom rule.
 
 **Step 3: Implementation**
 - **New Rules**: Ensure issue has `rule-request`, `research-complete`, and `claude-implement`. Triggers coding agent.
@@ -77,6 +77,6 @@ If `.github/workflows/test-report.yml` fails:
 
 If you need to address bot reviews (CodeRabbit, Cursor Bugbot) or if the automatic trigger didn't fire:
 1. Add label `claude-address-bot-review` to the PR.
-2. This triggers the cloud agent to triage and fix bot comments.
+2. This triggers the Claude agent to triage and fix bot comments.
 
-**Note**: If a Cloud Agent stops abruptly, open it up and send a message in its conversation: "It looks like you were interrupted. Please continue."
+**Note**: If a Claude agent stops abruptly, open it up and send a message in its conversation: "It looks like you were interrupted. Please continue."

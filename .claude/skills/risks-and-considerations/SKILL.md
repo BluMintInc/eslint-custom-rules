@@ -4,6 +4,8 @@ description: "Use when reviewing planning documents for security, performance, a
 user-invocable: false
 ---
 
+# Risks and Considerations
+
 ## Purpose
 
 To ensure a systematic review of potential risks, edge cases, and important technical considerations for planning documents, particularly for GitHub Issues and new Claude Code Skills. This practice aids in proactive problem identification, robust planning, and the creation of more resilient and well-thought-out features and guidelines.

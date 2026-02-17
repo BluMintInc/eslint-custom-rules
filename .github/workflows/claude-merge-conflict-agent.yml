@@ -218,7 +218,7 @@ jobs:
           fi
 
           cat > /tmp/merge-conflict-agent-prompt.txt <<EOF
-          You are a Cursor Background Agent launched automatically because this PR cannot be merged cleanly.
+          You are a Claude Background Agent launched automatically because this PR cannot be merged cleanly.
 
           ## Context
           - PR: #$PR_NUMBER ($PR_URL)

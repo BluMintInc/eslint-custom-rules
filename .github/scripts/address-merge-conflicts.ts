@@ -76,12 +76,12 @@ function main(): void {
   const prompt = buildMergePrompt(context);
 
   const repoRoot = runCommand('git rev-parse --show-toplevel', true);
-  const tmpDir = path.join(repoRoot, '.cursor', 'tmp');
+  const tmpDir = path.join(repoRoot, '.claude', 'tmp');
   fs.mkdirSync(tmpDir, { recursive: true });
 
   const promptPath = path.join(tmpDir, 'merge-conflict-prompt.md');
   fs.writeFileSync(promptPath, prompt);
-  console.log('✓ Prompt written to .cursor/tmp/merge-conflict-prompt.md\n');
+  console.log('✓ Prompt written to .claude/tmp/merge-conflict-prompt.md\n');
 
   outputInstructions(promptPath);
 }

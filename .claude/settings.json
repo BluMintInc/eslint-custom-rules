@@ -42,9 +42,9 @@
   },
   "permissions": {
     "allow": [
-      "Edit(.claude/**)",
-      "Write(.claude/**)",
-      "Read(.claude/**)"
+      "Edit(**)",
+      "Write(**)",
+      "Read(**)"
     ],
     "deny": [
       "Read(.env*)",

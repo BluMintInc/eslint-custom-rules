@@ -52,7 +52,7 @@ fi
 
 # If we found a workspace root, change to it
 if [ -n "$WORKSPACE_ROOT" ] && [ -d "$WORKSPACE_ROOT" ]; then
-  cd "$WORKSPACE_ROOT" || { echo "[TEMP_DEBUG] Failed to cd to $WORKSPACE_ROOT" >&2; exit 1; }
+  cd "$WORKSPACE_ROOT" || { echo "Error: Failed to change directory to $WORKSPACE_ROOT" >&2; exit 1; }
 fi
 
 # Calculate the path to the TS script
