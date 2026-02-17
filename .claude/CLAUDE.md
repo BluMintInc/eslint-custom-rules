@@ -1,0 +1,663 @@
+# Claude Code Guidance
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+**As an agent, use as many steps as you need to get to a solution, and do not stop until you are VERY confident in a solution.**
+
+---
+
+# BluMint ESLint Plugin Development Guidelines
+
+This repository contains custom ESLint rules for BluMint. When contributing, follow these guidelines to maintain consistency and quality.
+
+For repository maintenance workflows (triage, automated agents, troubleshooting), see [.claude/skills/repo-maintenance/SKILL.md](.claude/skills/repo-maintenance/SKILL.md).
+
+## Repository Purpose
+
+This ESLint plugin provides **100+ custom rules** for BluMint's TypeScript/React codebase. The rules enforce coding standards, prevent common mistakes, and maintain code quality across BluMint's projects.
+
+## Temporary Files
+
+Place all temporary artifacts (verification checklists, scratch notes, generated logs, etc.) in `.claude/tmp/` to avoid adding stray files to the repository.
+
+## Prerequisites
+
+* **Node.js 22+** (required - see `engines` in package.json)
+* npm (comes with Node.js)
+
+## Project Structure
+
+```
+eslint-custom-rules/
+├── docs/                    # Markdown documentation for each rule
+│   └── rules/               # Auto-generated rule documentation
+├── scripts/                 # Utility scripts for development
+│   ├── make-docs.sh         # Documentation generation script
+│   ├── test-release.js      # Release testing script
+│   └── update-version.js    # Version update script
+├── src/                     # Source code
+│   ├── index.ts             # Main entry point with rule exports and recommended config
+│   ├── rules/               # ESLint rule implementations
+│   ├── tests/               # Jest test suites
+│   └── utils/               # Helper functions and utilities
+│       ├── ASTHelpers.ts    # AST manipulation helpers
+│       ├── createRule.ts    # Rule creation utility
+│       ├── ruleTester.ts    # Test utility exports
+│       └── graph/           # Class graph analysis utilities
+│           ├── ClassGraphBuilder.ts
+│           ├── ClassGraphSorter.ts
+│           └── ClassGraphSorterReadability.ts
+├── .devcontainer/           # VS Code devcontainer setup
+├── .eslintrc.js             # ESLint configuration for the plugin itself
+├── .prettierrc.json         # Prettier configuration
+├── .releaserc.json          # Semantic-release configuration
+├── jest.config.js           # Jest configuration
+├── package.json             # Package manifest
+└── tsconfig.json            # TypeScript configuration
+```
+
+## Quick Reference
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `npm install` | Install dependencies |
+| `npm run build` | Compile TypeScript to `lib/` |
+| `npm test` | Run all tests with coverage |
+| `npx jest src/tests/my-rule.test.ts` | Run specific test |
+| `npm run lint:fix` | Fix linting issues |
+| `npm run docs` | Generate documentation |
+| `npm run release:dry-run` | Test semantic-release |
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/index.ts` | Rule exports and recommended config |
+| `src/utils/createRule.ts` | Rule creation helper |
+| `src/utils/ruleTester.ts` | Test utility exports (3 variants) |
+| `src/utils/ASTHelpers.ts` | AST manipulation helpers |
+| `src/utils/graph/` | Class graph analysis utilities |
+
+---
+
+## Available Utilities
+
+### createRule Utility
+
+The `createRule` utility from `src/utils/createRule.ts` provides a standardized way to create ESLint rules with TypeScript support:
+
+```typescript
+import { ESLintUtils } from '@typescript-eslint/utils';
+
+export const createRule = ESLintUtils.RuleCreator(
+  (name) =>
+    `https://github.com/BluMintInc/eslint-custom-rules/docs/rules/${name}.md`,
+);
+```
+
+### RuleTester Variants
+
+Three test utilities are available in `src/utils/ruleTester.ts` for different testing scenarios:
+
+| RuleTester | Purpose | When to Use |
+|------------|---------|-------------|
+| `ruleTesterTs` | TypeScript code testing | Most rules (default) |
+| `ruleTesterJsx` | JSX/React code testing | React-specific rules |
+| `ruleTesterJson` | JSON file testing | `no-unpinned-dependencies`, etc. |
+
+```typescript
+// TypeScript rules
+import { ruleTesterTs } from '../utils/ruleTester';
+
+// React/JSX rules
+import { ruleTesterJsx } from '../utils/ruleTester';
+
+// JSON rules (e.g., package.json validation)
+import { ruleTesterJson } from '../utils/ruleTester';
+```
+
+### ASTHelpers Class
+
+The `ASTHelpers` class in `src/utils/ASTHelpers.ts` provides common AST operations:
+
+```typescript
+class ASTHelpers {
+  // Check if a block statement contains an identifier
+  static blockIncludesIdentifier(block: TSESTree.BlockStatement): boolean;
+
+  // Recursively check if a node includes an identifier
+  static declarationIncludesIdentifier(node: TSESTree.Node | null): boolean;
+
+  // Extract class method dependencies for graph building
+  static classMethodDependenciesOf(
+    node: TSESTree.Node | null,
+    graph: Graph,
+    className: string,
+  ): string[];
+
+  // Type guard for AST nodes
+  static isNode(value: unknown): value is TSESTree.Node;
+
+  // Check if a node contains a return statement
+  static hasReturnStatement(node: TSESTree.Node): boolean;
+
+  // Check if a node is exported
+  static isNodeExported(node: TSESTree.Node): boolean;
+
+  // Check if a node returns JSX
+  static returnsJSX(node: TSESTree.Node): boolean;
+
+  // Check if a function has parameters
+  static hasParameters(
+    node: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression | TSESTree.FunctionDeclaration,
+  ): boolean;
+}
+```
+
+### Graph Utilities
+
+The graph utilities in `src/utils/graph/` are used by `class-methods-read-top-to-bottom` for class member ordering:
+
+**Types (`ClassGraphBuilder.ts`):**
+```typescript
+type GraphNode = {
+  name: string;
+  type: 'method' | 'property' | 'constructor';
+  accessibility?: TSESTree.Accessibility;
+  isStatic: boolean;
+  dependencies: string[];
+};
+
+type Graph = Record<string, GraphNode>;
+```
+
+**Classes:**
+- `ClassGraphBuilder` - Builds dependency graphs from class declarations
+- `ClassGraphSorter` - Abstract base class for sorting algorithms
+- `ClassGraphSorterReadability` - DFS-based sorting for readable class layout
+
+These may prove as helpful utilities for other complex rule implementations.
+
+---
+
+## Creating New Rules
+
+### 1. Rule Implementation
+
+Create a new file in `src/rules/` using this template:
+
+```typescript
+import { createRule } from '../utils/createRule';
+
+type MessageIds = 'yourMessageId';
+
+export const yourRuleName = createRule<[], MessageIds>({
+  name: 'your-rule-name',
+  meta: {
+    type: 'suggestion', // or 'problem' or 'layout'
+    docs: {
+      description: 'Clear description of what the rule enforces',
+      recommended: 'error', // 'error' | 'warn' | 'strict' | false
+    },
+    fixable: 'code', // 'code' | 'whitespace' | null
+    schema: [], // or your options schema
+    messages: {
+      yourMessageId: 'Your error message here',
+    },
+  },
+  defaultOptions: [],
+  create(context) {
+    return {
+      // Your AST visitor methods here
+    };
+  },
+});
+```
+
+### 2. Rule Naming and Organization
+
+* Use kebab-case for rule names
+* Be descriptive and action-oriented (e.g., `enforce-`, `require-`, `no-`, `prefer-`)
+* Group related rules with common prefixes
+
+### 3. AST Handling
+
+Use TypeScript's AST types from `@typescript-eslint/utils`:
+
+```typescript
+import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+
+// Type guards for node types
+function isTargetNode(node: TSESTree.Node): node is TSESTree.CallExpression {
+  return node.type === AST_NODE_TYPES.CallExpression;
+}
+
+// Parent traversal helpers
+function findParentOfType<T extends TSESTree.Node>(
+  node: TSESTree.Node,
+  type: AST_NODE_TYPES,
+): T | undefined {
+  let current: TSESTree.Node | undefined = node;
+  while (current) {
+    if (current.type === type) {
+      return current as T;
+    }
+    current = current.parent as TSESTree.Node;
+  }
+  return undefined;
+}
+```
+
+### 4. Rule Configuration
+
+Define schema for rule options when needed:
+
+```typescript
+schema: [
+  {
+    type: 'object',
+    properties: {
+      yourOption: {
+        type: 'array',
+        items: { type: 'string' },
+        default: ['defaultValue'],
+      },
+    },
+    additionalProperties: false,
+  },
+],
+```
+
+Access options in `create` function:
+
+```typescript
+create(context, [options]) {
+  const userOptions = {
+    ...defaultOptions,
+    ...options,
+  };
+  // ...
+}
+```
+
+### 5. Error Reporting
+
+Use `context.report()` with `messageId` for errors:
+
+```typescript
+context.report({
+  node,
+  messageId: 'yourMessageId',
+  fix(fixer) {
+    // Return null if fix isn't possible in some cases
+    if (!canFix) return null;
+    return fixer.replaceText(node, newText);
+  },
+});
+```
+
+### 6. Performance Considerations
+
+* Cache repeated calculations
+* Skip unnecessary processing (e.g., files in `node_modules`)
+* Use early returns when possible
+* Use `Set`s for O(1) lookups:
+  ```typescript
+  const CONSTANT_SET = new Set(['value1', 'value2']);
+  ```
+
+---
+
+## Writing Tests
+
+### Test File Structure
+
+* Create test files in `src/tests/` directory
+* Name the test file the same as the rule file with `.test.ts` extension
+* Use the appropriate ruleTester variant:
+
+```typescript
+import { ruleTesterTs } from '../utils/ruleTester';
+import { yourRuleName } from '../rules/your-rule-name';
+
+ruleTesterTs.run('your-rule-name', yourRuleName, {
+  valid: [
+    // valid test cases
+  ],
+  invalid: [
+    // invalid test cases with expected errors
+  ],
+});
+```
+
+### Test Setup
+
+* Use the exported `ruleTesterTs`, `ruleTesterJsx`, or `ruleTesterJson`
+* **DO NOT** create a new `RuleTester` instance
+
+### Understanding Valid vs Invalid Tests
+
+ESLint rule tests are divided into two categories that serve opposite purposes:
+
+#### Valid (Positive) Tests
+
+**Purpose:** Tests where the code snippet should **NOT** throw an ESLint error. These are examples of "good" code that follows the rule correctly.
+
+Valid tests live inside the `valid: [...]` array. They verify that the rule does **not** produce false positives—i.e., the rule correctly allows code that is acceptable.
+
+```typescript
+valid: [
+  // Global constants are valid (rule should NOT fire)
+  `
+  const ROOM_OPTIONS = { disconnectOnPageLeave: true } as const;
+  const MyComponent = () => {
+    return (
+      <div>
+        {Object.entries(ROOM_OPTIONS).map(([key, option]) => (
+          <Option key={key} label={option.label} icon={option.icon} />
+        ))}
+      </div>
+    );
+  };
+  `,
+],
+```
+
+#### Invalid (Negative) Tests
+
+**Purpose:** Tests where the code snippet **SHOULD** throw ESLint errors. These are examples of "bad" code that violates the rule.
+
+Invalid tests live inside the `invalid: [...]` array. Each test must specify the expected error(s) via the `errors` property, which lists the `messageId`(s) the rule should report.
+
+```typescript
+invalid: [
+  // useMemo with empty dependency array returning object literal (rule SHOULD fire)
+  {
+    code: `
+    const MyComponent = () => {
+      const roomOptions = useMemo(() => {
+        return {
+          disconnectOnPageLeave: true,
+        } as const;
+      }, []);
+      return (
+        <div>
+          {Object.entries(roomOptions).map(([key, option]) => (
+            <Option key={key} label={option.label} icon={option.icon} />
+          ))}
+        </div>
+      );
+    };
+    `,
+    errors: [
+      {
+        messageId: 'useGlobalConstant',
+      },
+    ],
+  },
+],
+```
+
+### Why Both Test Types Matter
+
+| Test Type | What It Proves | Common Failure Mode |
+|-----------|----------------|---------------------|
+| **Valid** | Rule does NOT fire on correct code | **False Positive**: Rule incorrectly flags good code |
+| **Invalid** | Rule DOES fire on incorrect code | **False Negative**: Rule fails to catch bad code |
+
+When writing tests, brainstorm scenarios that might cause:
+* **False positives** — add these as `valid` tests to ensure the rule doesn't over-trigger
+* **False negatives** — add these as `invalid` tests to ensure the rule catches all violations
+
+### Testing Guidelines
+
+* **Be extremely comprehensive** - expect to write 20+ tests per rule
+* Cover edge cases:
+  - Incorrect AST node types
+  - Empty function bodies
+  - Invalid function signatures
+  - Unusual whitespace or comments
+  - Complex nested structures
+* **Avoid excessive indentation** in multiline `code` and `output` blocks
+
+### Coverage Verification
+
+```bash
+# Run tests with coverage
+npm test
+
+# View coverage report
+open coverage/lcov-report/index.html
+```
+
+Jest is configured with `collectCoverage: true` and outputs to `coverage/` directory.
+
+---
+
+## Registering Rules
+
+After implementing and testing your rule:
+
+1. **Import your rule** at the top of `src/index.ts`:
+   ```typescript
+   import { yourRuleName } from './rules/your-rule-name';
+   ```
+
+2. **Add to the `rules` object**:
+   ```typescript
+   rules: {
+     // ... existing rules
+     'your-rule-name': yourRuleName,
+   }
+   ```
+
+3. **Add to recommended config** (if it should be enabled by default):
+   ```typescript
+   configs: {
+     recommended: {
+       rules: {
+         // ... existing rules
+         '@blumintinc/blumint/your-rule-name': 'error', // or 'warn'
+       }
+     }
+   }
+   ```
+
+4. **Ensure the rule name matches** your file name in kebab-case
+
+---
+
+## Documentation
+
+### Generate Documentation
+
+```bash
+# Generate rule docs and update README
+npm run docs
+
+# Verify documentation
+npm run lint:eslint-docs
+```
+
+This runs `scripts/make-docs.sh` followed by `eslint-doc-generator`.
+
+### Rule Metadata
+
+Write comprehensive metadata in your rule file:
+* Clear description
+* Recommended configuration status
+* Fixable status
+* Examples of valid/invalid code
+
+---
+
+## Development Workflow
+
+1. **Setup**: Run `npm install` to set up all dependencies
+2. **Development**:
+   * Write rule implementation and tests
+   * Run `npm run build` to compile TypeScript
+   * Run `npm test` to run all tests
+   * Run `npx jest src/tests/<rule>.test.ts` to test specific rule
+   * Run `npm run lint:fix` to fix linting issues
+3. **Documentation**:
+   * Run `npm run docs` to generate/update documentation
+   * Run `npm run lint:eslint-docs` to verify documentation
+
+---
+
+## CI/CD & Release Process
+
+### Semantic Release
+
+The project uses **Semantic Release** for automated versioning and publishing:
+* Releases are triggered from the `main` branch (see `.releaserc.json`)
+* Version bumps are determined by commit message prefixes:
+  - `fix:` → patch (1.0.x)
+  - `feat:` → minor (1.x.0)
+  - `BREAKING CHANGE:` in body → major (x.0.0)
+
+### Conventional Commits
+
+Follow the [Conventional Commits](https://www.conventionalcommits.org/) specification:
+```
+feat: add new rule for XYZ
+fix: correct false positive in ABC rule
+docs: update README with new examples
+refactor: simplify AST traversal logic
+test: add edge case coverage for DEF rule
+```
+
+### Release Testing
+
+```bash
+# Test what would be released without actually releasing
+npm run release:dry-run
+```
+
+---
+
+## Configuration Files
+
+| File | Purpose |
+|------|---------|
+| `.releaserc.json` | Semantic-release configuration (branches from `main`) |
+| `.prettierrc.json` | Prettier: semicolons, single quotes, 80 width, trailing commas |
+| `.eslintrc.js` | ESLint config for the plugin codebase itself |
+| `.devcontainer/` | VS Code devcontainer setup |
+| `jest.config.js` | Jest: ts-jest preset, coverage enabled |
+| `tsconfig.json` | TypeScript configuration |
+
+---
+
+## Key Dependencies
+
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `@typescript-eslint/utils` | 5.59.6 | ESLint TypeScript utilities |
+| `compromise` | 14.14.4 | NLP for verb/noun analysis (`enforce-verb-noun-naming`) |
+| `pluralize` | 8.0.0 | Pluralization for naming conventions |
+| `minimatch` | 10.0.1 | Glob pattern matching |
+| `typescript` | ^4.9.5 | TypeScript compiler |
+
+---
+
+## Development Philosophy
+
+### Quality Over Speed
+* Write comprehensive tests (20+ per rule)
+* Fix edge cases before shipping
+* Prefer false negatives over false positives
+
+### Fail Fast
+* Rules should report clear, actionable error messages
+* Include suggestions for fixes when possible
+* Use auto-fix functionality where appropriate
+
+---
+
+## Code Style & Conventions
+
+### Comments
+
+Write comments that explain **why**, not **how**:
+* Design decisions and trade-offs
+* Non-obvious behaviors or edge cases
+* Business logic requirements
+
+**Do not** write comments that:
+* Merely restate what the code does
+* Summarize variable assignments
+
+**A-temporal style required**: Use present tense. Avoid "now", "currently", "recently", "new", "old", or references to history.
+
+### TypeScript Conventions
+
+* Trust TypeScript inference for return types
+* Use descriptive variable names
+* Prefer `const` over `let`
+* Use strict equality (`===`)
+
+---
+
+## Acceptance Criteria
+
+All new rules must meet these criteria:
+
+### File Structure (Strict Enforcement)
+* The following files must be created/updated for every new rule:
+  - `src/index.ts` (Rule export, rules object, recommended config)
+  - `src/rules/new-rule.ts`
+  - `src/tests/new-rule.test.ts`
+  - `docs/rules/new-rule.md`
+  - `README.md`
+* **Note:** Stop Hooks will block completion if any of these are missing.
+
+### Code Quality
+* Rule adheres to ESLint plugin guidelines
+* Passes linting and code style checks with zero errors
+* Uses `createRule` utility from `src/utils/createRule.ts`
+* Leverages `ASTHelpers` for common operations where appropriate
+
+### Testing
+* Comprehensive test coverage (minimum 90%)
+* Tests include edge cases:
+  - Incorrect AST node types
+  - Empty function bodies
+  - Invalid function signatures
+  - Unusual whitespace or comments
+  - Complex nested structures
+* **Expect to write 20+ tests per rule**
+* All tests passing
+
+### Documentation
+* Clear and concise documentation including:
+  - Description of the rule's purpose
+  - Usage instructions
+  - Configuration options
+  - Examples of correct and incorrect code
+* Documentation generated via `npm run docs`
+* Documentation verification passes via `npm run lint:eslint-docs`
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+**Tests failing with parser errors:**
+- Ensure you're using the correct ruleTester variant (`ruleTesterTs`, `ruleTesterJsx`, or `ruleTesterJson`)
+
+**Rule not appearing in recommended config:**
+- Check that the rule is imported in `src/index.ts`
+- Verify it's added to both the `rules` object and `configs.recommended.rules`
+
+**Documentation generation failing:**
+- Run `npm run build` first to compile TypeScript
+- Ensure rule metadata is complete (description, recommended, fixable)
+
+**Type errors with AST nodes:**
+- Import types from `@typescript-eslint/utils`: `TSESTree`, `AST_NODE_TYPES`
+- Use type guards for node type narrowing

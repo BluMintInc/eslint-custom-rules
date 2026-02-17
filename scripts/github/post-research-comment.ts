@@ -20,7 +20,7 @@ if (!ISSUE_NUMBER) {
 }
 
 // Read research results
-const resultsPath = '.cursor/tmp/research-results.md';
+const resultsPath = '.claude/tmp/research-results.md';
 if (!existsSync(resultsPath)) {
   console.error(`Research results not found at ${resultsPath}`);
   process.exit(1);
@@ -127,14 +127,14 @@ try {
 console.log('Updating issue labels...');
 
 try {
-  // Remove cursor-research label
+  // Remove claude-research label
   gh(
-    `issue edit ${ISSUE_NUMBER} --repo ${GITHUB_REPOSITORY} --remove-label "cursor-research"`,
+    `issue edit ${ISSUE_NUMBER} --repo ${GITHUB_REPOSITORY} --remove-label "claude-research"`,
   );
-  console.log('Removed cursor-research label');
+  console.log('Removed claude-research label');
 } catch {
   // Label might not exist, continue
-  console.log('Note: cursor-research label may not have been present');
+  console.log('Note: claude-research label may not have been present');
 }
 
 try {
@@ -153,11 +153,11 @@ if (recommendationType === 'NO_MATCH') {
   console.log('NO MATCH detected - triggering implementation workflow');
   try {
     gh(
-      `issue edit ${ISSUE_NUMBER} --repo ${GITHUB_REPOSITORY} --add-label "cursor-implement"`,
+      `issue edit ${ISSUE_NUMBER} --repo ${GITHUB_REPOSITORY} --add-label "claude-implement"`,
     );
-    console.log('Added cursor-implement label');
+    console.log('Added claude-implement label');
   } catch {
-    console.error('Failed to add cursor-implement label');
+    console.error('Failed to add claude-implement label');
   }
 } else if (
   recommendationType === 'EXACT_MATCH' ||

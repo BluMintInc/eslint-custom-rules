@@ -91,7 +91,7 @@ eslint-custom-rules/
     └── workflows/
         ├── cursor-rule-research-agent.yml   # Research existing rules
         ├── cursor-implement-rule-agent.yml  # Implement new rules
-        └── cursor-fix-bug-agent.yml         # Fix bugs in existing rules
+        └── claude-fix-bug-agent.yml         # Fix bugs in existing rules
 ```
 
 #### 1.2 Update GitHub Labels
@@ -104,7 +104,7 @@ Replace current labels with:
 | `bug` | `bug` | Bug in an existing rule |
 | N/A | `cursor-research` | Triggers deep research workflow |
 | N/A | `cursor-implement` | Triggers implementation agent |
-| N/A | `cursor-fix` | Triggers bug fix agent |
+| N/A | `claude-fix` | Triggers bug fix agent |
 | N/A | `research-complete` | Research has been performed |
 
 #### 1.3 Update Issue Templates
@@ -115,7 +115,7 @@ Update `.github/ISSUE_TEMPLATE/eslint-rule-request.md`:
 
 Update `.github/ISSUE_TEMPLATE/eslint-rule-bug-report.md`:
 - Keep `bug` label
-- Add `cursor-fix` as default label for automatic fixing
+- Add `claude-fix` as default label for automatic fixing
 
 ---
 
@@ -608,9 +608,9 @@ jobs:
 - The workflow copies `.cursor/commands/implement-rule.md` and appends issue details
 - This avoids prompt duplication and ensures consistency
 
-#### 4.2 `cursor-fix-bug-agent.yml`
+#### 4.2 `claude-fix-bug-agent.yml`
 
-**Trigger**: Issue labeled with `cursor-fix`
+**Trigger**: Issue labeled with `claude-fix`
 
 **Prerequisites**: Issue has `bug` label
 
@@ -630,14 +630,14 @@ env:
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 concurrency:
-  group: cursor-fix-${{ github.event.issue.number }}
+  group: claude-fix-${{ github.event.issue.number }}
   cancel-in-progress: true
 
 jobs:
   fix_bug:
     if: |
-      ((github.event.action == 'labeled' && github.event.label.name == 'cursor-fix') ||
-       (github.event.action == 'reopened' && contains(github.event.issue.labels.*.name, 'cursor-fix'))) &&
+      ((github.event.action == 'labeled' && github.event.label.name == 'claude-fix') ||
+       (github.event.action == 'reopened' && contains(github.event.issue.labels.*.name, 'claude-fix'))) &&
       contains(github.event.issue.labels.*.name, 'bug')
     runs-on: ubuntu-latest
     steps:

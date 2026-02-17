@@ -1,0 +1,58 @@
+{
+  "model": "sonnet",
+  "cleanupPeriodDays": 500,
+  "disableAllHooks": false,
+  "respectGitignore": false,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/track-changes.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/track-prompt.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/skill-activation-llm-eval.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/stop.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Edit(**)",
+      "Write(**)",
+      "Read(**)"
+    ],
+    "deny": [
+      "Read(.env*)",
+      "Read(**/.env*)",
+      "Read(node_modules/**)",
+      "Read(coverage/**)",
+      "Read(lib/**)",
+      "Read(package-lock.json)"
+    ]
+  }
+}
