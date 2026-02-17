@@ -53,9 +53,6 @@ jobs:
           ISSUE_TITLE=$(echo "$ISSUE_JSON" | jq -r '.title')
           ISSUE_BODY=$(echo "$ISSUE_JSON" | jq -r '.body // ""')
 
-          # Derive target branch
-          TARGET_BRANCH="develop-research-rule-$ISSUE_NUMBER"
-
           # Build research prompt
           PROMPT_FILE=/tmp/research-prompt.txt
           cat > "$PROMPT_FILE" << 'PROMPT_EOF'
@@ -128,49 +125,26 @@ jobs:
              - If NO MATCH: Also add `claude-implement` label
           PROMPT_ISSUE
 
-          echo "source_ref=develop" >> "$GITHUB_OUTPUT"
-          echo "target_branch=$TARGET_BRANCH" >> "$GITHUB_OUTPUT"
           echo "prompt_path=$PROMPT_FILE" >> "$GITHUB_OUTPUT"
 
-      - name: Mask Cursor API Key
+      - name: Setup Node.js
         if: steps.check_research.outputs.has_research != 'true'
-        run: echo "::add-mask::${CURSOR_API_KEY}"
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        if: steps.check_research.outputs.has_research != 'true'
+        run: npm ci
+
+      - name: Run Claude Research Agent
+        if: steps.check_research.outputs.has_research != 'true'
+        uses: anthropics/claude-code-action@beta
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt_file: ${{ steps.vars.outputs.prompt_path }}
+          allowed_tools: "Bash,Read,Write,Edit,Glob,Grep"
         env:
-          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
-
-      - name: Launch Cursor Background Agent
-        if: steps.check_research.outputs.has_research != 'true'
-        id: launch
-        env:
-          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
-        run: |
-          PROMPT_FILE='${{ steps.vars.outputs.prompt_path }}'
-
-          JSON_PAYLOAD=$(jq -n \
-            --rawfile prompt_text "$PROMPT_FILE" \
-            --arg repository "https://github.com/${{ github.repository }}" \
-            --arg source_ref "${{ steps.vars.outputs.source_ref }}" \
-            --arg target_branch "${{ steps.vars.outputs.target_branch }}" \
-            --arg model "gemini-3-flash" \
-            '{
-              model: $model,
-              prompt: { text: $prompt_text },
-              source: { repository: $repository, ref: $source_ref },
-              target: { branchName: $target_branch, autoCreatePr: false, skipReviewerRequest: true }
-            }')
-
-          RESPONSE=$(curl --fail --silent --show-error \
-            --request POST \
-            --url https://api.cursor.com/v0/agents \
-            --header "Authorization: Bearer ${CURSOR_API_KEY}" \
-            --header "Content-Type: application/json" \
-            --data "$JSON_PAYLOAD")
-
-          AGENT_URL=$(echo "$RESPONSE" | jq -r '.target.url')
-          echo "agent_url=$AGENT_URL" >> "$GITHUB_OUTPUT"
-      - name: Comment on issue with agent link
-        if: steps.check_research.outputs.has_research != 'true'
-        run: |
-          URL='${{ steps.launch.outputs.agent_url }}'
-          gh api repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/comments \
-            -f body="🔍 Launched Cursor Research Agent to check for existing ESLint rules. View agent: $URL"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
