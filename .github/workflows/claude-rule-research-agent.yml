@@ -9,7 +9,6 @@ permissions:
   pull-requests: write
   issues: write
   statuses: write
-  id-token: write
 
 env:
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -138,13 +137,21 @@ jobs:
         if: steps.check_research.outputs.has_research != 'true'
         run: npm ci
 
+      - name: Load prompt for Claude Code
+        id: load_prompt
+        if: steps.check_research.outputs.has_research != 'true'
+        uses: ./.github/actions/load-prompt
+        with:
+          prompt_path: ${{ steps.vars.outputs.prompt_path }}
+
       - name: Run Claude Research Agent
         if: steps.check_research.outputs.has_research != 'true'
-        uses: anthropics/claude-code-action@beta
+        uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt_file: ${{ steps.vars.outputs.prompt_path }}
-          allowed_tools: "Bash,Read,Write,Edit,Glob,Grep,WebSearch,WebFetch"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: ${{ steps.load_prompt.outputs.content }}
+          claude_args: --permission-mode bypassPermissions --max-turns 200
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}

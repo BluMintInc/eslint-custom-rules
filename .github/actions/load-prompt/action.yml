@@ -1,0 +1,32 @@
+name: 'Load Prompt'
+description: 'Loads prompt content from a file into an output variable for use with Claude Code'
+
+inputs:
+  prompt_path:
+    description: 'Path to the file containing the prompt'
+    required: true
+
+outputs:
+  content:
+    description: 'The loaded prompt content'
+    value: ${{ steps.load.outputs.content }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Load prompt content
+      id: load
+      shell: bash
+      run: |
+        set -euo pipefail
+        PROMPT_PATH="${{ inputs.prompt_path }}"
+        if [ ! -f "$PROMPT_PATH" ]; then
+          echo "Prompt file not found: $PROMPT_PATH" >&2
+          exit 1
+        fi
+        DELIM="PROMPT_EOF_$(date +%s%N)"
+        {
+          echo "content<<$DELIM"
+          cat "$PROMPT_PATH"
+          echo "$DELIM"
+        } >> "$GITHUB_OUTPUT"

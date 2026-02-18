@@ -9,7 +9,6 @@ permissions:
   pull-requests: write
   issues: write
   statuses: write
-  id-token: write
 
 env:
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -125,13 +124,21 @@ jobs:
         run: |
           echo "::notice::Skipping automatic agent launch for bot review. Bot reviews are addressed separately via the claude-bot-pr-review-agent workflow."
 
+      - name: Load prompt for Claude Code
+        id: load_prompt
+        if: steps.comments.outputs.count != '0' && steps.context.outputs.is_bot != 'true'
+        uses: ./.github/actions/load-prompt
+        with:
+          prompt_path: ${{ steps.prompt.outputs.prompt_path }}
+
       - name: Run Claude PR Review Agent
         if: steps.comments.outputs.count != '0' && steps.context.outputs.is_bot != 'true'
-        uses: anthropics/claude-code-action@beta
+        uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt_file: /tmp/pr-review-prompt.txt
-          allowed_tools: "Bash,Read,Write,Edit,Glob,Grep"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: ${{ steps.load_prompt.outputs.content }}
+          claude_args: --permission-mode bypassPermissions --max-turns 500
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
