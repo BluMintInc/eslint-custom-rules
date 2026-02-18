@@ -251,6 +251,17 @@ jobs:
         if: steps.idempotency.outputs.already_launched != 'true' && steps.prompt.outputs.no_prompt == 'true'
         run: echo "No merge-conflict prompt built; skipping agent launch."
 
+      - name: Verify Anthropic API key is configured
+        if: steps.idempotency.outputs.already_launched != 'true' && steps.prompt.outputs.no_prompt != 'true'
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::ANTHROPIC_API_KEY secret is not set. Add it under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          echo "ANTHROPIC_API_KEY is configured."
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
       - name: Load prompt for Claude Code
         id: load_prompt
         if: steps.idempotency.outputs.already_launched != 'true' && steps.prompt.outputs.no_prompt != 'true'
@@ -266,6 +277,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: ${{ steps.load_prompt.outputs.content }}
           claude_args: --permission-mode bypassPermissions --max-turns 300
+          show_full_output: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
