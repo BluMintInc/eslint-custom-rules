@@ -5,24 +5,22 @@ import type { IncomingMessage } from 'node:http';
 import * as ts from 'typescript';
 
 type LaunchResult =
-  | { success: true; rule: string; agentUrl: string; branch: string }
+  | { success: true; rule: string; messageId: string; branch: string }
   | { success: false; rule: string; branch: string; error: string };
 
-const CURSOR_API_KEY = process.env.CURSOR_API_KEY;
-const GITHUB_REPOSITORY =
-  process.env.GITHUB_REPOSITORY || 'BluMintInc/eslint-custom-rules';
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const SOURCE_REF = process.env.SOURCE_REF || 'develop';
-const MODEL = process.env.CURSOR_MODEL || 'gpt-4o';
+const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 const BATCH_SIZE = Number(process.env.BATCH_SIZE || 20);
-const CURSOR_API_TIMEOUT_MS = Number(
-  process.env.CURSOR_API_TIMEOUT_MS || 60000,
+const CLAUDE_API_TIMEOUT_MS = Number(
+  process.env.CLAUDE_API_TIMEOUT_MS || 60000,
 );
 // Default gap between batches: 15 minutes
 const BATCH_DELAY_MS = Number(process.env.BATCH_DELAY_MS || 15 * 60 * 1000);
 const DRY_RUN = process.argv.includes('--dry-run');
 
-if (!CURSOR_API_KEY) {
-  console.error('CURSOR_API_KEY environment variable is required.');
+if (!ANTHROPIC_API_KEY) {
+  console.error('ANTHROPIC_API_KEY environment variable is required.');
   process.exit(1);
 }
 
@@ -82,7 +80,7 @@ function extractRuleNames(): string[] {
 }
 
 function readLintMessageGuide(): string {
-  const path = '.cursor/rules/lint-message.mdc';
+  const path = '.claude/skills/lint-message/SKILL.md';
   try {
     return readFileSync(path, 'utf-8');
   } catch (error) {
@@ -102,11 +100,11 @@ function buildPrompt(ruleName: string): string {
     `You are improving the ESLint rule "${ruleName}". Focus strictly on lint messaging and documentation quality while keeping the rule logic intact.`,
     '',
     'Deliverables:',
-    `- Refine all message strings in ${rulePath} to follow the lint-message.mdc guide.`,
+    `- Refine all message strings in ${rulePath} to follow the lint-message SKILL.md guide.`,
     `- Update tests such as ${testPath} to expect the refined messages (no behavior changes).`,
     `- Refresh ${docPath} so it explains the why/how of the rule and shows updated examples.`,
     '',
-    'Lint message requirements (full guide from .cursor/rules/lint-message.mdc):',
+    'Lint message requirements (full guide from .claude/skills/lint-message/SKILL.md):',
     lintMessageGuide,
     '',
     'Constraints:',
@@ -127,17 +125,23 @@ function slugifyBranch(ruleName: string): string {
   return `improve-msg-docs-${base}`;
 }
 
-function callCursorAPI(payload: unknown): Promise<unknown> {
+function callClaudeAPI(prompt: string): Promise<string> {
   return new Promise((resolve, reject) => {
+    const payload = {
+      model: MODEL,
+      max_tokens: 8192,
+      messages: [{ role: 'user', content: prompt }],
+    };
     const data = JSON.stringify(payload);
     const req = request(
       {
         method: 'POST',
-        hostname: 'api.cursor.com',
-        path: '/v0/agents',
-        timeout: CURSOR_API_TIMEOUT_MS,
+        hostname: 'api.anthropic.com',
+        path: '/v1/messages',
+        timeout: CLAUDE_API_TIMEOUT_MS,
         headers: {
-          Authorization: `Bearer ${CURSOR_API_KEY}`,
+          'x-api-key': ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(data),
         },
@@ -149,18 +153,22 @@ function callCursorAPI(payload: unknown): Promise<unknown> {
           const body = Buffer.concat(chunks).toString('utf-8');
           if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
             try {
-              resolve(JSON.parse(body));
+              const parsed = JSON.parse(body) as {
+                id: string;
+                content: Array<{ type: string; text: string }>;
+              };
+              resolve(parsed.id);
             } catch (error) {
               reject(
                 new Error(
-                  `Failed to parse Cursor response (status ${res.statusCode}): ${body}`,
+                  `Failed to parse Anthropic response (status ${res.statusCode}): ${body}`,
                 ),
               );
             }
           } else {
             reject(
               new Error(
-                `Cursor API error (status ${
+                `Anthropic API error (status ${
                   res.statusCode ?? 'unknown'
                 }): ${body}`,
               ),
@@ -170,10 +178,10 @@ function callCursorAPI(payload: unknown): Promise<unknown> {
       },
     );
 
-    req.setTimeout(CURSOR_API_TIMEOUT_MS, () => {
+    req.setTimeout(CLAUDE_API_TIMEOUT_MS, () => {
       req.destroy(
         new Error(
-          `Cursor API request socket timed out after ${CURSOR_API_TIMEOUT_MS}ms`,
+          `Anthropic API request socket timed out after ${CLAUDE_API_TIMEOUT_MS}ms`,
         ),
       );
     });
@@ -190,30 +198,13 @@ async function launchAgent(rule: string): Promise<LaunchResult> {
 
   if (DRY_RUN) {
     console.log(`[dry-run] Would launch agent for ${rule} on branch ${branch}`);
-    return { success: true, rule, branch, agentUrl: 'dry-run' };
+    return { success: true, rule, branch, messageId: 'dry-run' };
   }
 
-  const payload = {
-    model: MODEL,
-    prompt: { text: prompt },
-    source: {
-      repository: `https://github.com/${GITHUB_REPOSITORY}`,
-      ref: SOURCE_REF,
-    },
-    target: {
-      branchName: branch,
-      autoCreatePr: true,
-      skipReviewerRequest: true,
-    },
-  };
-
   try {
-    const response = (await callCursorAPI(payload)) as {
-      target?: { url?: string };
-    };
-    const agentUrl = response.target?.url ?? 'unknown';
-    console.log(`Launched agent for ${rule} -> ${agentUrl}`);
-    return { success: true, rule, branch, agentUrl };
+    const messageId = await callClaudeAPI(prompt);
+    console.log(`Launched agent for ${rule} -> messageId: ${messageId}`);
+    return { success: true, rule, branch, messageId };
   } catch (error) {
     const message =
       error instanceof Error ? error.message : 'Unknown error launching agent';
@@ -268,7 +259,7 @@ async function run() {
     console.log('\nLaunched agents:');
     for (const success of successes) {
       console.log(
-        `- ${success.rule} -> ${success.agentUrl} (branch ${success.branch})`,
+        `- ${success.rule} (messageId: ${success.messageId}, branch ${success.branch})`,
       );
     }
   }

@@ -1,4 +1,4 @@
-name: Launch Cursor Agent on Bot Checks
+name: Launch Claude Agent on Bot Checks
 
 'on':
   check_run:
@@ -27,7 +27,7 @@ jobs:
     concurrency:
       # Use the commit SHA as the primary concurrency key so that check_run + status
       # triggers for the same commit serialize and the idempotency marker can prevent
-      # double-launching Cursor agents.
+      # double-launching Claude agents.
       group: claude-bot-review-${{ github.event.pull_request.head.sha || github.event.check_run.pull_requests[0].head.sha || github.event.check_run.head_sha || github.event.sha }}
       cancel-in-progress: false
     steps:
@@ -64,13 +64,13 @@ jobs:
             echo "Status event for SHA: $HEAD_SHA. Resolving PR..."
             # Fetch open PRs associated with this commit
             PR_JSON=$(gh api -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/commits/$HEAD_SHA/pulls" | jq 'map(select(.state=="open")) | .[0]')
-            
+
             if [ -z "$PR_JSON" ] || [ "$PR_JSON" == "null" ]; then
               echo "No open PR found for commit $HEAD_SHA. Skipping."
               echo "missing_required=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            
+
             PR_NUMBER=$(echo "$PR_JSON" | jq -r '.number')
             HEAD_REF=$(echo "$PR_JSON" | jq -r '.head.ref')
             echo "Resolved to PR #$PR_NUMBER ($HEAD_REF)"
@@ -241,80 +241,30 @@ jobs:
           echo "context_path=/tmp/pr-review-context.json" >> "$GITHUB_OUTPUT"
           echo "prompt_path=/tmp/pr-review-prompt.txt" >> "$GITHUB_OUTPUT"
 
-      - name: Launch Cursor Background Agent for bot comments
-        id: launch
+      - name: Run Claude Bot Review Agent
         if: steps.checks.outputs.missing_required == 'false' && steps.idempotency.outputs.already_launched != 'true' && steps.comments.outputs.no_comments != 'true'
+        uses: anthropics/claude-code-action@beta
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt_file: /tmp/pr-review-prompt.txt
+          allowed_tools: "Bash,Read,Write,Edit,Glob,Grep"
         env:
-          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
-          CURSOR_WEBHOOK_SECRET: ${{ secrets.CURSOR_WEBHOOK_SECRET }}
-          CURSOR_WEBHOOK_URL: ${{ secrets.CURSOR_WEBHOOK_URL }}
-        run: |
-          echo "::add-mask::${CURSOR_API_KEY}"
-
-          jq -n \
-            --rawfile prompt_text /tmp/pr-review-prompt.txt \
-            --arg repository "https://github.com/${{ github.repository }}" \
-            --arg source_ref "${{ steps.checks.outputs.head_ref }}" \
-            --arg target_branch "${{ steps.checks.outputs.head_ref }}" \
-            --arg webhook_url "${CURSOR_WEBHOOK_URL}" \
-            --arg webhook_secret "${CURSOR_WEBHOOK_SECRET}" \
-            --arg model "gemini-3-flash" \
-            '{
-              model: $model,
-              prompt: { text: $prompt_text },
-              source: { repository: $repository, ref: $source_ref },
-              target: { branchName: $target_branch, autoCreatePr: false, skipReviewerRequest: true }
-            } + (if $webhook_url != "" then { webhook: { url: $webhook_url, secret: $webhook_secret } } else {} end)' > /tmp/claude-agent-payload.json
-
-          HTTP_RESPONSE=$(curl --silent --show-error --write-out "HTTPSTATUS:%{http_code}" \
-            --request POST \
-            --url https://api.cursor.com/v0/agents \
-            --header "Authorization: Bearer ${CURSOR_API_KEY}" \
-            --header "Content-Type: application/json" \
-            --data-binary "@/tmp/claude-agent-payload.json")
-
-          HTTP_STATUS="${HTTP_RESPONSE##*HTTPSTATUS:}"
-          HTTP_BODY="${HTTP_RESPONSE%HTTPSTATUS:*}"
-
-          echo "Cursor API HTTP status: $HTTP_STATUS"
-          if [[ "$HTTP_STATUS" =~ ^2 ]]; then
-            AGENT_URL=$(echo "$HTTP_BODY" | jq -r '.target.url // empty')
-            SAFE_SUMMARY=$(echo "$HTTP_BODY" | jq '{target: .target, status: "success"}' 2>/dev/null || true)
-            if [ -n "$SAFE_SUMMARY" ]; then
-              echo "Cursor API response (safe): $SAFE_SUMMARY"
-            fi
-
-            echo "agent_url=$AGENT_URL" >> $GITHUB_OUTPUT
-            echo "launched=true" >> $GITHUB_OUTPUT
-          else
-            SAFE_ERROR=$(echo "$HTTP_BODY" | jq '{error: .error, message: .message}' 2>/dev/null || true)
-            if [ -n "$SAFE_ERROR" ]; then
-              echo "Cursor API error (safe): $SAFE_ERROR"
-            else
-              echo "Cursor API response not JSON; body length ${#HTTP_BODY} (redacted)."
-            fi
-
-            echo "::warning::Cursor API returned status $HTTP_STATUS. See response details above."
-            echo "agent_url=" >> $GITHUB_OUTPUT
-            echo "launched=false" >> $GITHUB_OUTPUT
-          fi
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
 
       - name: Mark agent launch in commit status (idempotency fallback)
-        if: steps.launch.outputs.launched == 'true'
+        if: steps.checks.outputs.missing_required == 'false' && steps.idempotency.outputs.already_launched != 'true' && steps.comments.outputs.no_comments != 'true'
         run: |
           HEAD_SHA='${{ steps.checks.outputs.head_sha }}'
-          URL='${{ steps.launch.outputs.agent_url }}'
           gh api -X POST -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/statuses/$HEAD_SHA" \
             -f state=success \
             -f context="claude-bot-agent" \
-            -f target_url="$URL" \
-            -f description="Cursor agent launched to address bot review comments" \
+            -f description="Claude agent launched to address bot review comments" \
             >/dev/null || echo "::warning::Failed to set commit status marker for $HEAD_SHA; idempotency relies on the PR comment marker."
 
       - name: Comment on PR
-        if: steps.launch.outputs.launched == 'true'
+        if: steps.checks.outputs.missing_required == 'false' && steps.idempotency.outputs.already_launched != 'true' && steps.comments.outputs.no_comments != 'true'
         run: |
-          URL='${{ steps.launch.outputs.agent_url }}'
           PR=${{ steps.checks.outputs.pr_number }}
           HEAD_SHA='${{ steps.checks.outputs.head_sha }}'
-          gh pr comment "$PR" --body "✅ Launched Claude agent to address bot review comments after CodeRabbit and Cursor Bugbot checks passed (commit $HEAD_SHA). Agent: $URL. Changes are pushed directly to this PR branch. <!-- claude-bot-agent:$HEAD_SHA -->"
+          gh pr comment "$PR" --body "✅ Launched Claude agent to address bot review comments after CodeRabbit and Cursor Bugbot checks passed (commit $HEAD_SHA). Changes are pushed directly to this PR branch. <!-- claude-bot-agent:$HEAD_SHA -->"
