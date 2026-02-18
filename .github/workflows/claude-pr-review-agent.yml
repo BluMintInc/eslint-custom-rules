@@ -124,6 +124,17 @@ jobs:
         run: |
           echo "::notice::Skipping automatic agent launch for bot review. Bot reviews are addressed separately via the claude-bot-pr-review-agent workflow."
 
+      - name: Verify Anthropic API key is configured
+        if: steps.comments.outputs.count != '0' && steps.context.outputs.is_bot != 'true'
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::ANTHROPIC_API_KEY secret is not set. Add it under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          echo "ANTHROPIC_API_KEY is configured."
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
       - name: Load prompt for Claude Code
         id: load_prompt
         if: steps.comments.outputs.count != '0' && steps.context.outputs.is_bot != 'true'
@@ -139,6 +150,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: ${{ steps.load_prompt.outputs.content }}
           claude_args: --permission-mode bypassPermissions --max-turns 500
+          show_full_output: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
