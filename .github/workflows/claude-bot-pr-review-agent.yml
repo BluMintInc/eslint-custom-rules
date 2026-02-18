@@ -13,7 +13,6 @@ permissions:
   pull-requests: write
   issues: write
   statuses: write
-  id-token: write
 
 env:
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -242,13 +241,21 @@ jobs:
           echo "context_path=/tmp/pr-review-context.json" >> "$GITHUB_OUTPUT"
           echo "prompt_path=/tmp/pr-review-prompt.txt" >> "$GITHUB_OUTPUT"
 
+      - name: Load prompt for Claude Code
+        id: load_prompt
+        if: steps.checks.outputs.missing_required == 'false' && steps.idempotency.outputs.already_launched != 'true' && steps.comments.outputs.no_comments != 'true'
+        uses: ./.github/actions/load-prompt
+        with:
+          prompt_path: ${{ steps.prompt.outputs.prompt_path }}
+
       - name: Run Claude Bot Review Agent
         if: steps.checks.outputs.missing_required == 'false' && steps.idempotency.outputs.already_launched != 'true' && steps.comments.outputs.no_comments != 'true'
-        uses: anthropics/claude-code-action@beta
+        uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt_file: /tmp/pr-review-prompt.txt
-          allowed_tools: "Bash,Read,Write,Edit,Glob,Grep"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: ${{ steps.load_prompt.outputs.content }}
+          claude_args: --permission-mode bypassPermissions --max-turns 500
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}

@@ -19,7 +19,6 @@ permissions:
   pull-requests: write
   issues: write
   statuses: write
-  id-token: write
 
 env:
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -252,13 +251,21 @@ jobs:
         if: steps.idempotency.outputs.already_launched != 'true' && steps.prompt.outputs.no_prompt == 'true'
         run: echo "No merge-conflict prompt built; skipping agent launch."
 
+      - name: Load prompt for Claude Code
+        id: load_prompt
+        if: steps.idempotency.outputs.already_launched != 'true' && steps.prompt.outputs.no_prompt != 'true'
+        uses: ./.github/actions/load-prompt
+        with:
+          prompt_path: ${{ steps.prompt.outputs.prompt_path }}
+
       - name: Run Claude Merge Conflict Agent
         if: steps.idempotency.outputs.already_launched != 'true' && steps.prompt.outputs.no_prompt != 'true'
-        uses: anthropics/claude-code-action@beta
+        uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt_file: /tmp/merge-conflict-agent-prompt.txt
-          allowed_tools: "Bash,Read,Write,Edit,Glob,Grep"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: ${{ steps.load_prompt.outputs.content }}
+          claude_args: --permission-mode bypassPermissions --max-turns 300
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}

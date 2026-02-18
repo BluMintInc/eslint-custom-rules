@@ -9,7 +9,6 @@ permissions:
   pull-requests: write
   issues: write
   statuses: write
-  id-token: write
 
 env:
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -87,12 +86,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Load prompt for Claude Code
+        id: load_prompt
+        uses: ./.github/actions/load-prompt
+        with:
+          prompt_path: ${{ steps.vars.outputs.prompt_path }}
+
       - name: Run Claude Implementation Agent
-        uses: anthropics/claude-code-action@beta
+        uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt_file: ${{ steps.vars.outputs.prompt_path }}
-          allowed_tools: "Bash,Read,Write,Edit,Glob,Grep,Task"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: ${{ steps.load_prompt.outputs.content }}
+          claude_args: --permission-mode bypassPermissions --max-turns 2000
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
