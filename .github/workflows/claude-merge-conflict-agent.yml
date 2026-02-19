@@ -251,16 +251,16 @@ jobs:
         if: steps.idempotency.outputs.already_launched != 'true' && steps.prompt.outputs.no_prompt == 'true'
         run: echo "No merge-conflict prompt built; skipping agent launch."
 
-      - name: Verify Anthropic API key is configured
+      - name: Verify Claude OAuth token is configured
         if: steps.idempotency.outputs.already_launched != 'true' && steps.prompt.outputs.no_prompt != 'true'
         run: |
-          if [ -z "$ANTHROPIC_API_KEY" ]; then
-            echo "::error::ANTHROPIC_API_KEY secret is not set. Add it under Settings → Secrets and variables → Actions."
+          if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+            echo "::error::CLAUDE_CODE_OAUTH_TOKEN secret is not set. Run 'claude setup-token' locally, then add the output under Settings → Secrets and variables → Actions."
             exit 1
           fi
-          echo "ANTHROPIC_API_KEY is configured."
+          echo "CLAUDE_CODE_OAUTH_TOKEN is configured."
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
       - name: Load prompt for Claude Code
         id: load_prompt
@@ -273,7 +273,7 @@ jobs:
         if: steps.idempotency.outputs.already_launched != 'true' && steps.prompt.outputs.no_prompt != 'true'
         uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: ${{ steps.load_prompt.outputs.content }}
           claude_args: --permission-mode bypassPermissions --max-turns 300
