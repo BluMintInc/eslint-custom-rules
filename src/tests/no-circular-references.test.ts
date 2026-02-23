@@ -156,6 +156,60 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
     const arr = [];
     arr[0] = undefined;
     `,
+
+    // === MEMBER EXPRESSION PROPERTY VALUES (valid, non-circular) ===
+    // Property value is a MemberExpression resolving to an object (not circular)
+    `
+    const a = { nested: { value: 1 } };
+    const b = { prop: a.nested };
+    `,
+    // Accessing a literal property via MemberExpression (propValue is a Literal)
+    `
+    const a = { value: 42 };
+    const b = { count: a.value };
+    `,
+    // Accessing a function property via MemberExpression (propValue is a function)
+    `
+    const a = { fn: () => {} };
+    const b = { handler: a.fn };
+    `,
+    // Computed property access with string key (non-circular)
+    `
+    const a = { 'foo': { x: 1 } };
+    const b = { prop: a['foo'] };
+    `,
+    // MemberExpression where the source object is not tracked (undeclared)
+    `
+    const b = { ref: (window as any).document };
+    `,
+    // Property value is MemberExpression with identifier resolving to an object
+    `
+    const inner = {};
+    const a = { nested: inner };
+    const b = { prop: a.nested };
+    `,
+    // Computed non-literal key — key cannot be statically resolved, so safe
+    `
+    const key = 'foo';
+    const a = { foo: {} };
+    const b = { ref: a[key] };
+    `,
+    // Array with an object element (non-circular — object doesn't reference array)
+    `
+    const obj = {};
+    const arr = [obj];
+    `,
+    // Self-referential via MemberExpression but no cycle actually formed
+    `
+    const a = { b: {} };
+    const c = { d: a.b };
+    `,
+    // Accessing an array element by numeric index (non-circular)
+    `
+    const item = {};
+    const arr = [item];
+    const wrapper = { first: arr[0] };
+    `,
   ],
   invalid: [
     // === DIRECT CIRCULAR REFERENCE ===
@@ -196,6 +250,44 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
       a.b = b;
       b.c = c;
       c.a = a;
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // === CIRCULAR VIA MEMBER EXPRESSION ===
+    // Circular reference detected through nested MemberExpression access
+    {
+      code: `
+      const level1 = { a: {} };
+      const level2 = { b: level1.a };
+      const obj = { c: level2.b };
+      level1.a.ref = obj;
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Circular via computed literal property access
+    {
+      code: `
+      const obj = { 'foo': {} };
+      obj['foo'].self = obj;
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Circular via object in array element (ArrayExpression > * visitor)
+    {
+      code: `
+      const obj = {};
+      const arr = [obj];
+      obj.arr = arr;
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Circular via array literal element accessed by numeric index (arr[0])
+    {
+      code: `
+      const inner = {};
+      const arr = [inner];
+      const outer = { elem: arr[0] };
+      inner.outer = outer;
       `,
       errors: [{ messageId: 'circularReference' }],
     },
