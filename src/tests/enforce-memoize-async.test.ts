@@ -196,6 +196,36 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
         }
       `,
     },
+    // Direct Transaction parameter should be skipped
+    {
+      code: `
+        class Example {
+          async assertSpace(transaction: Transaction) {
+            return await transaction.get(ref);
+          }
+        }
+      `,
+    },
+    // Optional Transaction parameter should be skipped
+    {
+      code: `
+        class Example {
+          async fetchData(transaction?: Transaction) {
+            return await transaction?.get(ref);
+          }
+        }
+      `,
+    },
+    // Destructured parameter with transaction property should be skipped
+    {
+      code: `
+        class Example {
+          async dropAndSet({ memberId, transaction }: Props) {
+            return await transaction.get(ref);
+          }
+        }
+      `,
+    },
   ],
   invalid: [
     // Missing decorator on async method with no parameters

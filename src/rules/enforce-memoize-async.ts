@@ -44,6 +44,44 @@ function isMemoizeDecorator(
   return false;
 }
 
+/**
+ * Detects methods accepting a Firestore Transaction parameter.
+ * Pattern 1: Direct typed parameter — method(transaction: Transaction)
+ * Pattern 2: Destructured parameter with 'transaction' property — method({ memberId, transaction }: Props)
+ */
+function hasTransactionParam(params: TSESTree.Parameter[]): boolean {
+  for (const param of params) {
+    // Pattern 1: Direct Transaction type annotation
+    if (
+      param.type === AST_NODE_TYPES.Identifier &&
+      param.typeAnnotation?.typeAnnotation.type ===
+        AST_NODE_TYPES.TSTypeReference
+    ) {
+      const typeName = param.typeAnnotation.typeAnnotation.typeName;
+      if (
+        typeName.type === AST_NODE_TYPES.Identifier &&
+        typeName.name === 'Transaction'
+      ) {
+        return true;
+      }
+    }
+
+    // Pattern 2: Destructured param with 'transaction' property
+    if (param.type === AST_NODE_TYPES.ObjectPattern) {
+      for (const prop of param.properties) {
+        if (
+          prop.type === AST_NODE_TYPES.Property &&
+          prop.key.type === AST_NODE_TYPES.Identifier &&
+          prop.key.name === 'transaction'
+        ) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 export const enforceMemoizeAsync = createRule<Options, MessageIds>({
   name: 'enforce-memoize-async',
   meta: {
@@ -98,6 +136,13 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
 
         // Skip methods with more than one parameter
         if (node.value.params.length > 1) {
+          return;
+        }
+
+        // Skip methods whose parameter involves a Firestore Transaction.
+        // Memoizing these is pointless overhead — each transaction retry creates
+        // a different cache entry that is never reused.
+        if (hasTransactionParam(node.value.params)) {
           return;
         }
 
@@ -166,14 +211,14 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
                 // Find first alias from new package, fallback to any alias
                 const newPackageAlias = Array.from(
                   memoizeAliases.entries(),
-                ).find(([_, pkg]) => pkg === MEMOIZE_MODULE)?.[0];
+                ).find(([, pkg]) => pkg === MEMOIZE_MODULE)?.[0];
                 decoratorIdent =
                   newPackageAlias || Array.from(memoizeAliases.keys())[0];
               } else if (memoizeNamespaces.size > 0) {
                 // Prefer namespace from the new package if available
                 const newPackageNs = Array.from(
                   memoizeNamespaces.entries(),
-                ).find(([_, pkg]) => pkg === MEMOIZE_MODULE)?.[0];
+                ).find(([, pkg]) => pkg === MEMOIZE_MODULE)?.[0];
                 const selectedNs =
                   newPackageNs || Array.from(memoizeNamespaces.keys())[0];
                 decoratorIdent = `${selectedNs}.Memoize`;
@@ -197,6 +242,7 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
 
               if (anchorNode) {
                 const text = sourceCode.text;
+                // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
                 const anchorStart = anchorNode.range![0];
                 const lineStart = text.lastIndexOf('\n', anchorStart - 1) + 1;
                 const leadingWhitespace =
