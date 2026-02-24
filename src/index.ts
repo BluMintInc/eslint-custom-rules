@@ -165,6 +165,7 @@ import { testFileLocationEnforcement } from './rules/test-file-location-enforcem
 import { preventChildrenClobber } from './rules/prevent-children-clobber';
 import { requireMigrationScriptMetadata } from './rules/require-migration-script-metadata';
 import { warnHttpsErrorMessageUserFriendly } from './rules/warn-https-error-message-user-friendly';
+import { preferMemoizedProps } from './rules/prefer-memoized-props';
 
 const NO_FRONTEND_IMPORTS_FROM_FUNCTIONS_MESSAGE =
   'Backend Cloud Functions (.f.ts under functions/) must not import frontend modules from the repo root src/**. Frontend code can depend on browser-only APIs and bundling it into Cloud Functions breaks server execution; move shared logic into functions/src or a shared package.';
@@ -377,6 +378,7 @@ module.exports = {
         '@blumintinc/blumint/test-file-location-enforcement': 'error',
         '@blumintinc/blumint/require-migration-script-metadata': 'error',
         '@blumintinc/blumint/warn-https-error-message-user-friendly': 'warn',
+        '@blumintinc/blumint/prefer-memoized-props': 'error',
       },
       /**
        * Depth-specific overrides block only import strings that traverse to the
@@ -646,5 +648,6 @@ module.exports = {
     'test-file-location-enforcement': testFileLocationEnforcement,
     'require-migration-script-metadata': requireMigrationScriptMetadata,
     'warn-https-error-message-user-friendly': warnHttpsErrorMessageUserFriendly,
+    'prefer-memoized-props': preferMemoizedProps,
   },
 };
