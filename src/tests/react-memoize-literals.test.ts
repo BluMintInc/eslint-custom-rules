@@ -424,6 +424,70 @@ const Overlay = () => (
 );
       `,
     },
+    // sx with a conditional (ternary) value — both branches are style objects
+    {
+      code: `
+const Toggle = ({ active }) => (
+  <div sx={active ? { color: 'red' } : { color: 'blue' }} />
+);
+      `,
+    },
+    // sx with a logical && fallback
+    {
+      code: `
+const Highlight = ({ active }) => (
+  <div sx={active && { fontWeight: 700 }} />
+);
+      `,
+    },
+    // sx with a logical || default
+    {
+      code: `
+const Themed = ({ custom }) => (
+  <div sx={custom || { p: 2 }} />
+);
+      `,
+    },
+    // sx as an array of style objects (supported by MUI)
+    {
+      code: `
+const Stacked = () => (
+  <div sx={[{ p: 2 }, { m: 1 }]} />
+);
+      `,
+    },
+    // sx array mixing a literal with a conditional style entry
+    {
+      code: `
+const Stacked = ({ active }) => (
+  <div sx={[{ p: 2 }, active && { color: 'red' }]} />
+);
+      `,
+    },
+    // sx object literal wrapped in an `as const` assertion
+    {
+      code: `
+const Pinned = () => (
+  <div sx={{ position: 'sticky', top: 0 } as const} />
+);
+      `,
+    },
+    // style with a conditional value
+    {
+      code: `
+const Drawer = ({ open }) => (
+  <div style={open ? { display: 'block' } : { display: 'none' }} />
+);
+      `,
+    },
+    // nested combination: ternary whose branches are an array and an object
+    {
+      code: `
+const Variant = ({ stacked }) => (
+  <div sx={stacked ? [{ p: 1 }, { m: 1 }] : { p: 2 }} />
+);
+      `,
+    },
   ],
   invalid: [
     // Variable with no usages (dead code) - should still be reported as unmemoized
@@ -1136,12 +1200,12 @@ const MyComponent = () => (
         },
       ],
     },
-    // REGRESSION GUARD: object literal nested deeper inside sx expression is NOT exempt
-    // (sx conditional value — the object inside the ternary is deeper, not the direct JSXExpressionContainer child)
+    // REGRESSION GUARD: an object literal passed to a function call still reports
+    // even when the call result feeds sx — the callee observes the reference.
     {
       code: `
 const MyComponent = ({ active }) => (
-  <div sx={active ? { color: 'red' } : { color: 'blue' }} />
+  <div sx={makeSx({ color: 'red' })} />
 );
       `,
       errors: [
@@ -1149,6 +1213,44 @@ const MyComponent = ({ active }) => (
           messageId: 'componentLiteral',
           data: {
             literalType: 'object literal',
+            context: 'component "MyComponent"',
+            memoHook: 'useMemo',
+          },
+        },
+      ],
+    },
+    // REGRESSION GUARD: an object literal as a JSX child expression (container
+    // parent is the element, not a style attribute) still reports.
+    {
+      code: `
+const MyComponent = () => (
+  <div>{{ a: 1 }}</div>
+);
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'object literal',
+            context: 'component "MyComponent"',
+            memoHook: 'useMemo',
+          },
+        },
+      ],
+    },
+    // REGRESSION GUARD: array/object literals under a non-style prop still report
+    // (the array is the direct value of `data`, and its element is nested within).
+    {
+      code: `
+const MyComponent = () => (
+  <SomeComponent data={[{ id: 1 }]} />
+);
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'array literal',
             context: 'component "MyComponent"',
             memoHook: 'useMemo',
           },
