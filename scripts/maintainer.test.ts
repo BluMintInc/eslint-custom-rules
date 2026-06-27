@@ -39,7 +39,9 @@ describe('classifyIssue', () => {
 describe('chooseAgent + branchNameFor', () => {
   it('routes rule-request to implement-rule', () => {
     expect(chooseAgent('rule-request')).toBe('implement-rule');
-    expect(branchNameFor('implement-rule', 42)).toBe('develop-implement-rule-42');
+    expect(branchNameFor('implement-rule', 42)).toBe(
+      'develop-implement-rule-42',
+    );
   });
   it('routes bug and other to fix-bug', () => {
     expect(chooseAgent('bug')).toBe('fix-bug');
@@ -99,7 +101,14 @@ describe('normalizeIssues', () => {
           createdAt: 'd',
         },
       ]),
-    ).toEqual([{ number: 5, title: 'T', labels: ['bug', 'priority-high'], createdAt: 'd' }]);
+    ).toEqual([
+      {
+        number: 5,
+        title: 'T',
+        labels: ['bug', 'priority-high'],
+        createdAt: 'd',
+      },
+    ]);
   });
 
   it('tolerates a missing labels array', () => {
@@ -110,36 +119,62 @@ describe('normalizeIssues', () => {
 });
 
 describe('validateViaStopHooks', () => {
-  it('runs build → lint → test in order and returns true when all pass', () => {
+  it('runs build → eslint on changed files → test, returning true when all pass', () => {
     const calls: string[] = [];
-    const ok = validateViaStopHooks((cmd, args) => calls.push(`${cmd} ${args.join(' ')}`));
+    const ok = validateViaStopHooks(
+      (cmd, args) => calls.push(`${cmd} ${args.join(' ')}`),
+      () => ['src/rules/foo.ts', 'src/util/bar.ts'],
+    );
     expect(ok).toBe(true);
-    expect(calls).toEqual(['npm run build', 'npm run lint', 'npm test']);
+    expect(calls).toEqual([
+      'npm run build',
+      'npx eslint src/rules/foo.ts src/util/bar.ts',
+      'npm test',
+    ]);
+  });
+
+  it('skips the lint step when no source files changed', () => {
+    const calls: string[] = [];
+    const ok = validateViaStopHooks(
+      (cmd, args) => calls.push(`${cmd} ${args.join(' ')}`),
+      () => [],
+    );
+    expect(ok).toBe(true);
+    expect(calls).toEqual(['npm run build', 'npm test']);
   });
 
   it('returns false and stops at the first failing step', () => {
     const calls: string[] = [];
-    const ok = validateViaStopHooks((cmd, args) => {
-      calls.push(`${cmd} ${args.join(' ')}`);
-      if (args.includes('lint')) {
-        throw new Error('lint failed');
-      }
-    });
+    const ok = validateViaStopHooks(
+      (cmd, args) => {
+        calls.push(`${cmd} ${args.join(' ')}`);
+        if (args.includes('eslint')) {
+          throw new Error('lint failed');
+        }
+      },
+      () => ['src/rules/foo.ts'],
+    );
     expect(ok).toBe(false);
-    expect(calls).toEqual(['npm run build', 'npm run lint']);
+    expect(calls).toEqual(['npm run build', 'npx eslint src/rules/foo.ts']);
   });
 });
 
 describe('mergeAndClose', () => {
   it('checks out develop, no-ff merges with a closes-#n message, pushes', () => {
     const calls: string[][] = [];
-    mergeAndClose(
-      { issue: 99, branch: 'develop-fix-bug-99' },
-      (cmd, args) => calls.push([cmd, ...args]),
+    mergeAndClose({ issue: 99, branch: 'develop-fix-bug-99' }, (cmd, args) =>
+      calls.push([cmd, ...args]),
     );
     expect(calls).toEqual([
       ['git', 'checkout', 'develop'],
-      ['git', 'merge', '--no-ff', 'develop-fix-bug-99', '-m', 'chore(repo): merge develop-fix-bug-99 (closes #99)'],
+      [
+        'git',
+        'merge',
+        '--no-ff',
+        'develop-fix-bug-99',
+        '-m',
+        'chore(repo): merge develop-fix-bug-99 (closes #99)',
+      ],
       ['git', 'push', 'origin', 'develop'],
     ]);
   });
@@ -156,9 +191,9 @@ describe('mergeAndClose', () => {
 
 describe('parseMergeArgs', () => {
   it('accepts a numeric --issue and a string --branch', () => {
-    expect(parseMergeArgs({ issue: '42', branch: 'develop-fix-bug-42' })).toEqual(
-      { issue: 42, branch: 'develop-fix-bug-42' },
-    );
+    expect(
+      parseMergeArgs({ issue: '42', branch: 'develop-fix-bug-42' }),
+    ).toEqual({ issue: 42, branch: 'develop-fix-bug-42' });
   });
 
   it('rejects a bare --issue (parsed to true ⇒ would coerce to 1)', () => {
@@ -196,7 +231,9 @@ describe('parseVersionArg', () => {
 describe('releaseIfEmpty', () => {
   it('back-merges origin/main into develop, then promotes develop→main when the queue is empty', () => {
     const calls: string[][] = [];
-    const released = releaseIfEmpty([], {}, (cmd, args) => calls.push([cmd, ...args]));
+    const released = releaseIfEmpty([], {}, (cmd, args) =>
+      calls.push([cmd, ...args]),
+    );
     expect(released).toBe(true);
     expect(calls).toEqual([
       ['git', 'fetch', 'origin', 'main'],
@@ -212,10 +249,8 @@ describe('releaseIfEmpty', () => {
 
   it('does nothing when issues remain', () => {
     const calls: string[][] = [];
-    const released = releaseIfEmpty(
-      [issue(1, ['bug'], 'd')],
-      {},
-      (cmd, args) => calls.push([cmd, ...args]),
+    const released = releaseIfEmpty([issue(1, ['bug'], 'd')], {}, (cmd, args) =>
+      calls.push([cmd, ...args]),
     );
     expect(released).toBe(false);
     expect(calls).toEqual([]);

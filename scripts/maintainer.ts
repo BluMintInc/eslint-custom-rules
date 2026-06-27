@@ -10,7 +10,8 @@
  * This module owns the parts that must be deterministic and unit-testable:
  *   - which issue to work next (bugs before features, oldest first)
  *   - which subagent + branch name an issue maps to
- *   - the pre-merge validation gate (the same commands the repo stop hook runs)
+ *   - the pre-merge validation gate (build + changed-file lint + test, matching
+ *     the repo stop hook — NOT whole-repo lint, which trips on unrelated debt)
  *   - on an empty queue, back-merge origin/main into develop (absorb the prior
  *     async release commit), then promote develop→main (cure drift)
  *   - notify agora of the published release
@@ -21,12 +22,13 @@
  * Subcommands:
  *   next                          → JSON of the next issue {number,title,kind,agent,branch} or null
  *   count                         → JSON {open, empty}
- *   validate                      → run the stop-hook gate (build + lint + test); exit 1 on failure
+ *   validate                      → run the stop-hook gate (build + changed-file lint + test); exit 1 on failure
  *   merge --issue=N --branch=B    → merge a fix branch into develop (closes #N) [--dry-run]
  *   release                       → if queue empty, sync develop from origin/main then promote develop→main [--dry-run]
  *   dispatch --version=V          → notify agora of a published release
  */
 import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { dispatch } = require('./dispatch-agora-release');
@@ -163,15 +165,57 @@ const defaultRunner: Runner = (cmd, args) => {
 };
 
 /**
- * Run the same gate the repo stop hook enforces (build → lint → test). Returns
- * true only if all three succeed. Mirrors agent-check.ts's quality checks.
+ * Source files changed on the current branch vs develop that the repo's lint
+ * gate would lint: `.ts/.tsx/.js/.jsx` that still exist, excluding tests,
+ * `.github/`, `node_modules`, and `.claude/tmp/`. Mirrors the filter in
+ * `scripts/claude-hooks/lint-diff.ts`.
  */
-export function validateViaStopHooks(run: Runner = defaultRunner): boolean {
-  const steps: Array<[string, string[]]> = [
-    ['npm', ['run', 'build']],
-    ['npm', ['run', 'lint']],
-    ['npm', ['test']],
-  ];
+function changedLintableFiles(): string[] {
+  let out = '';
+  try {
+    out = execFileSync('git', ['diff', '--name-only', DEVELOP], {
+      encoding: 'utf8',
+    });
+  } catch {
+    return [];
+  }
+  return out
+    .split('\n')
+    .map((file) => file.trim())
+    .filter(Boolean)
+    .filter(
+      (file) =>
+        /\.(ts|tsx|js|jsx)$/.test(file) &&
+        !file.startsWith('.github/') &&
+        !file.includes('node_modules') &&
+        !file.includes('.claude/tmp/') &&
+        !/\.(test|spec)\.(ts|tsx|js|jsx)$/.test(file) &&
+        existsSync(resolve(file)),
+    );
+}
+
+/**
+ * Run the gate the repo stop hook ACTUALLY enforces: build, then ESLint on the
+ * source files changed vs develop, then the test suite. Returns true only if
+ * all succeed.
+ *
+ * The lint step deliberately lints only changed files (mirroring
+ * agent-check.ts → lint-diff.ts) rather than a whole-repo `npm run lint`. A
+ * whole-repo lint trips on pre-existing debt in files the fix never touched
+ * (e.g. unrelated `lint:js` errors, or `lint:eslint-docs` drift), which would
+ * make the gate permanently red and force the maintainer to "reason past" a
+ * failure that isn't about its change.
+ */
+export function validateViaStopHooks(
+  run: Runner = defaultRunner,
+  getChangedFiles: () => string[] = changedLintableFiles,
+): boolean {
+  const files = getChangedFiles();
+  const steps: Array<[string, string[]]> = [['npm', ['run', 'build']]];
+  if (files.length > 0) {
+    steps.push(['npx', ['eslint', ...files]]);
+  }
+  steps.push(['npm', ['test']]);
   for (const [cmd, args] of steps) {
     try {
       run(cmd, args);
