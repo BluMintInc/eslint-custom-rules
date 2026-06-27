@@ -12,6 +12,7 @@ import {
   discardChanges,
   hasChanges,
   pushWithRebaseRetry,
+  undoLastCommit,
 } from './gitOps';
 
 const writePrompt = (cwd: string, content: string): string => {
@@ -114,13 +115,19 @@ export const runCheckFixingPhase = async (
       continue;
     }
 
-    commitAll(cwd, `fix failing ${check.name} CI check`);
-    const pushed = pushWithRebaseRetry(cwd);
+    const committed = commitAll(cwd, `fix failing ${check.name} CI check`);
+    const pushed = committed && pushWithRebaseRetry(cwd);
     if (pushed) {
-      /** Consume the attempt only once the fix is pushed. A failed push leaves a
-       * local commit the next cycle re-pushes, so burning the budget here could
-       * exhaust the check without the already-made fix ever being retried. */
+      /** Consume the attempt only once the fix is pushed. A failed push is
+       * unwound below, so burning the budget here could exhaust the check
+       * without the already-made fix ever being retried. */
       attemptCounts.set(checkKey, attempts + 1);
+    } else if (committed) {
+      /** Push failed but a local commit was made: unwind it. A stranded commit
+       * leaves a clean worktree, and this phase only pushes when it makes a
+       * *new* commit — so the fix would never reach origin. Dropping it lets the
+       * still-failing check drive a fresh commit + push next cycle. */
+      undoLastCommit(cwd);
     }
     return pushed;
   }

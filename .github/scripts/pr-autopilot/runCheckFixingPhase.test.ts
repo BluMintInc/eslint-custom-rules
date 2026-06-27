@@ -2,7 +2,12 @@ import { runCheckFixingPhase } from './runCheckFixingPhase';
 import { getFailingChecks } from './fetchPrState';
 import { spawnClaude } from './spawnClaude';
 import { detectRateLimit } from './detectRateLimit';
-import { commitAll, hasChanges, pushWithRebaseRetry } from './gitOps';
+import {
+  commitAll,
+  hasChanges,
+  pushWithRebaseRetry,
+  undoLastCommit,
+} from './gitOps';
 import { MAX_CHECK_FIX_ATTEMPTS, type CheckStatus } from './types';
 
 jest.mock('node:fs', () => ({ mkdirSync: jest.fn(), writeFileSync: jest.fn() }));
@@ -34,6 +39,7 @@ const mockDetectRateLimit = detectRateLimit as unknown as jest.Mock;
 const mockCommitAll = commitAll as unknown as jest.Mock;
 const mockHasChanges = hasChanges as unknown as jest.Mock;
 const mockPush = pushWithRebaseRetry as unknown as jest.Mock;
+const mockUndoLastCommit = undoLastCommit as unknown as jest.Mock;
 
 const check = (name: string, workflow: string): CheckStatus => ({
   name,
@@ -85,6 +91,8 @@ describe('runCheckFixingPhase retry budget (#11 keying, #12 push-gated)', () => 
 
     expect(await runCheckFixingPhase(1, '/repo', attemptCounts)).toBe(true);
     expect(attemptCounts.get('CI:unit')).toBe(1);
+    /** A successful push must leave its commit in place. */
+    expect(mockUndoLastCommit).not.toHaveBeenCalled();
   });
 
   it('does NOT consume an attempt when the push fails', async () => {
@@ -93,9 +101,21 @@ describe('runCheckFixingPhase retry budget (#11 keying, #12 push-gated)', () => 
     const attemptCounts = new Map<string, number>();
 
     expect(await runCheckFixingPhase(1, '/repo', attemptCounts)).toBe(false);
-    /** A failed push leaves a local commit the next cycle re-pushes; burning the
-     * budget here could exhaust the check before the fix is ever retried. */
+    /** A failed push must not burn the budget before the fix is ever retried. */
     expect(attemptCounts.get('CI:unit')).toBeUndefined();
+  });
+
+  it('unwinds the local commit when the push fails', async () => {
+    mockGetFailingChecks.mockReturnValue([check('unit', 'CI')]);
+    mockCommitAll.mockReturnValue(true);
+    mockPush.mockReturnValue(false);
+    const attemptCounts = new Map<string, number>();
+
+    await runCheckFixingPhase(1, '/repo', attemptCounts);
+
+    /** A stranded commit leaves a clean worktree the next cycle never re-pushes,
+     * so a failed push must drop the just-made commit. */
+    expect(mockUndoLastCommit).toHaveBeenCalledWith('/repo');
   });
 
   it('consumes an attempt when Claude makes no changes', async () => {
