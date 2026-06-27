@@ -18,6 +18,7 @@ const ALLOWLIST = {
   domain: new Set([
     'ai',
     'blumint',
+    'main',
     'middleware',
     'noop',
     'nth',
