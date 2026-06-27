@@ -68,6 +68,17 @@ use this to rehearse).
    manual dispatch needed; `npx tsx scripts/maintainer.ts dispatch --version=<v>`
    exists only as a fallback.
 
+## Driving an open PR to clean (pr-autopilot)
+
+To drive any open PR to **review-clean + CI-green**, run
+`npm run pr-autopilot -- --pr=<n>`. It loops locally: merges the base
+(`develop`) to stay current, addresses unresolved CodeRabbit/human review
+comments, fixes failing CI checks, and commits + pushes each cycle — spawning a
+headless `claude` per task and relying on this repo's own Stop hook to validate.
+Flags: `--poll-interval=<seconds>`, `--max-idle-cycles=<n>` (exit once converged),
+`--max-runtime=<seconds>`. Use it for PRs you open, or for external/dependabot
+PRs that need their review feedback drained. A human can run it the same way.
+
 ## Notes
 
 - Every change you produce is gated by this repo's own stop hooks before it can

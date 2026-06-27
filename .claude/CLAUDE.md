@@ -548,6 +548,11 @@ empty queue promotes `develop → main` (firing the release) then fast-forwards
 removed — the maintainer acts on **all** open issues; `bug` / `rule-request`
 labels only choose which subagent fixes them.
 
+To drive any single open PR to review-clean + CI-green on demand (addressing
+CodeRabbit/human comments and fixing failing checks autonomously, committing +
+pushing each cycle), the maintainer or a human can run
+`npm run pr-autopilot -- --pr=<n>` (see `.github/scripts/pr-autopilot.ts`).
+
 ### Release manifest + scope contract
 
 Each release emits a strict, published `release-manifest.json`
