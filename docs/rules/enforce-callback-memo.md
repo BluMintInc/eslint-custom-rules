@@ -65,10 +65,6 @@ const renderers = useMemo(() => [() => renderItem(item), renderFallback], [
 )} />
 ```
 
-## Options
-
-This rule does not have any options.
-
 ## When Not To Use It
 
 - Components that intentionally pass unstable callbacks (e.g., testing instrumentation).

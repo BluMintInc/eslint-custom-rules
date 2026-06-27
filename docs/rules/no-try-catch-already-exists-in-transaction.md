@@ -15,10 +15,6 @@ Disallow handling Firestore `ALREADY_EXISTS` errors inside `runTransaction` call
 
 The rule reports any `try`/`catch` inside a `runTransaction` callback that checks for `ALREADY_EXISTS` by string (`'already-exists'`, `'ALREADY_EXISTS'`) or numeric code (`6`) using equality (`==`/`===`). Inequality checks (e.g., `!== 'already-exists'`) are allowed.
 
-### Options
-
-None.
-
 ## Incorrect
 
 ```ts

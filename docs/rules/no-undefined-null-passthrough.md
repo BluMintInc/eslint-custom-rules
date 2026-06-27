@@ -52,7 +52,3 @@ function deriveRounds(rounds) {
     .sort((a, b) => a.roundIndex - b.roundIndex);
 }
 ```
-
-## Options
-
-This rule has no options.

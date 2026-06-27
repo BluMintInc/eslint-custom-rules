@@ -49,10 +49,6 @@ Empty fenced blocks stay unlabeled because no content needs highlighting:
 ```
 ````
 
-## Options
-
-This rule does not have any options.
-
 ## When Not To Use It
 
 Disable this rule if your documentation intentionally leaves fenced blocks untyped (for example, when demonstrating plain text) or if you do not lint Markdown files with ESLint.

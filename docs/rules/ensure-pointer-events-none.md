@@ -92,10 +92,6 @@ const Overlay = styled.div`
 `;
 ```
 
-## Options
-
-This rule does not have any options.
-
 ## When Not To Use It
 
 - Pseudo-elements that are intentionally interactive (e.g., custom tooltip hit targets). Add `pointer-events: auto` and disable the rule locally if needed.

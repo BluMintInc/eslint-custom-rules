@@ -60,10 +60,6 @@ const UserCard = ({ user }: { user: User }) => <Card>{user.name}</Card>;
 function toNumber(value) { return +value; } // converter pattern allowed
 ```
 
-## Options
-
-This rule does not have any options.
-
 ## When not to use it
 
 - If your project intentionally names command functions with nouns or uses a different naming convention for functions and methods.

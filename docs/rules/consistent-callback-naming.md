@@ -48,10 +48,6 @@ class Modal {
 }
 ```
 
-## Options
-
-This rule does not have any options.
-
 ## When Not To Use It
 
 - Codebases that intentionally use `handle*` naming for callbacks and do not want automatic renames.

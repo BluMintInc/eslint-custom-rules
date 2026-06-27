@@ -36,10 +36,6 @@ jest.mock('firebase-admin', () => mockFirestore);
 const { db, firestore } = mockFirestore();
 ```
 
-## Options
-
-This rule does not have any options.
-
 ## When Not To Use It
 
 - Projects that do not rely on the shared Firestore test helper (e.g., if using a completely different mocking library across the repo).

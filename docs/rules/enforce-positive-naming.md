@@ -38,10 +38,6 @@ type State = { isReachable: boolean; doesExist: boolean };
 class Session { get isAllowed() { return this.isEnabled; } }
 ```
 
-## Options
-
-This rule does not have any options.
-
 ## When Not To Use It
 
 - Codebases that intentionally encode negation in names for readability conventions.

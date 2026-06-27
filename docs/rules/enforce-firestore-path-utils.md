@@ -46,10 +46,6 @@ firestore.collection(toUsersCollectionPath());
 firestore.doc(nextPathFromState(state));
 ```
 
-## Options
-
-This rule does not have any options.
-
 ## When Not To Use It
 
 - Prototype scripts or quick migrations where path helper churn is not a concern.

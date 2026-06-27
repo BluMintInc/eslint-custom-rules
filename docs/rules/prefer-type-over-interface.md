@@ -47,7 +47,3 @@ type TeamMember = UserProfile & {
 - Prevent declaration merging from silently altering an exported shape in another file or dependency.
 - Keep composition explicit with intersections so consumers see the full contract in one place.
 - Align with intersection-heavy patterns where property order and exact shape predictability matter.
-
-## Options
-
-This rule does not have any configuration options.

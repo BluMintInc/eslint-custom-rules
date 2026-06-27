@@ -18,10 +18,6 @@ This rule:
 - Leaves JSX-returning callbacks and render-prop patterns alone because `useCallback` is the right tool for memoizing rendered output.
 - Skips files in `node_modules` for performance so third-party code is untouched.
 
-### Options
-
-This rule has no options. It is fixable-only.
-
 ### ❌ Incorrect
 
 ```jsx

@@ -37,7 +37,3 @@ Scattering tests into separate `tests/` directories hides which code they protec
 /shared/helpers/slugify.js
 /shared/helpers/slugify.test.ts
 ```
-
-## Options
-
-This rule has no options.

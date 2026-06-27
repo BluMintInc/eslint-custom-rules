@@ -55,10 +55,6 @@ const { [dynamicKey]: renamedValue } = data;
 const update = { [dynamicKey]: renamedValue }; // computed keys are skipped
 ```
 
-### Options
-
-This rule has no options.
-
 ### When to disable
 
 - You intentionally rename a property and only reassign it to the same key for stylistic or compatibility reasons.
