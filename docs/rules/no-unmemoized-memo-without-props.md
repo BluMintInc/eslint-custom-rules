@@ -8,5 +8,5 @@
 
 This rule accepts an options object with the following properties:
 
-- `ignoreHooks` (`string[]`, default `[]`) — hook names whose inner components are exempt. A component defined inside a call to one of these hooks is not flagged.
+- `ignoreHooks` (`string[]`, default `[]`) — hook names that exempt a component. A component whose body calls one of these hooks is not flagged.
 - `ignoreHocs` (`string[]`, default `[]`) — higher-order-component names. A component wrapped by one of these HOCs is not flagged.
