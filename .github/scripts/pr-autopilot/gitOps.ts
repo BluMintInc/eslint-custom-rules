@@ -122,3 +122,15 @@ export const abortMerge = (cwd: string): void => {
     /** No merge in progress. */
   }
 };
+
+/**
+ * Resets the working tree to HEAD, dropping any partial edits and untracked
+ * files. Used when a spawned agent is killed mid-task (timeout): its work never
+ * passed the validation stop hook, so committing it is unsafe and leaving it
+ * dirty would break the next cycle's base merge. The loop is the sole writer of
+ * its own branch during a run, so discarding to HEAD is safe here.
+ */
+export const discardChanges = (cwd: string): void => {
+  execSync('git reset --hard HEAD', { cwd, stdio: 'pipe' });
+  execSync('git clean -fd', { cwd, stdio: 'pipe' });
+};

@@ -1,5 +1,6 @@
 import {
   DEFAULT_POLL_INTERVAL,
+  DEFAULT_SPAWN_TIMEOUT_SECONDS,
   parseAutopilotArgs,
 } from './parseAutopilotArgs';
 
@@ -7,6 +8,7 @@ describe('parseAutopilotArgs', () => {
   it('defaults to the default poll interval with no args', () => {
     const options = parseAutopilotArgs([]);
     expect(options.pollIntervalSeconds).toBe(DEFAULT_POLL_INTERVAL);
+    expect(options.spawnTimeoutSeconds).toBe(DEFAULT_SPAWN_TIMEOUT_SECONDS);
     expect(options.pr).toBeUndefined();
     expect(options.maxIdleCycles).toBeUndefined();
     expect(options.maxRuntimeSeconds).toBeUndefined();
@@ -16,12 +18,14 @@ describe('parseAutopilotArgs', () => {
     const options = parseAutopilotArgs([
       '--pr=1229',
       '--poll-interval=30',
+      '--spawn-timeout=120',
       '--max-idle-cycles=3',
       '--max-runtime=600',
     ]);
     expect(options).toEqual({
       pr: 1229,
       pollIntervalSeconds: 30,
+      spawnTimeoutSeconds: 120,
       maxIdleCycles: 3,
       maxRuntimeSeconds: 600,
     });
@@ -33,6 +37,8 @@ describe('parseAutopilotArgs', () => {
     ['--pr=abc'],
     ['--poll-interval=0'],
     ['--poll-interval=foo'],
+    ['--spawn-timeout=0'],
+    ['--spawn-timeout=foo'],
     ['--max-idle-cycles=0'],
     ['--max-runtime=0'],
   ])('throws on invalid value %s', (arg) => {

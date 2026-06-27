@@ -4,7 +4,7 @@ import { isInMergeConflictState } from '../../../scripts/cli/git-merge/isInMerge
 import { runCommand } from '../../../scripts/cli/git-utils';
 import { logWithTimestamp } from './logWithTimestamp';
 import { extractErrorMessage } from './types';
-import { spawnClaude } from './spawnClaude';
+import { spawnClaude, DEFAULT_SPAWN_TIMEOUT_MS } from './spawnClaude';
 import { detectRateLimit, waitForRateLimit } from './detectRateLimit';
 
 const MAX_ATTEMPTS = 3;
@@ -15,7 +15,10 @@ const MAX_ATTEMPTS = 3;
  * `git commit --no-edit` once no conflicted files remain. Returns true on a
  * committed resolution, false if it could not converge.
  */
-export const resolveConflicts = async (cwd: string): Promise<boolean> => {
+export const resolveConflicts = async (
+  cwd: string,
+  timeoutMs: number = DEFAULT_SPAWN_TIMEOUT_MS,
+): Promise<boolean> => {
   const repoRoot = runCommand('git rev-parse --show-toplevel', true);
   const scriptPath = path.join(
     repoRoot,
@@ -48,11 +51,17 @@ export const resolveConflicts = async (cwd: string): Promise<boolean> => {
       return false;
     }
 
-    const result = await spawnClaude(promptPath, cwd);
+    const result = await spawnClaude(promptPath, cwd, timeoutMs);
     const rateLimit = detectRateLimit(result);
     if (rateLimit.isRateLimited) {
       await waitForRateLimit(rateLimit, logWithTimestamp);
       continue;
+    }
+    if (result.timedOut) {
+      logWithTimestamp(
+        'Claude timed out resolving conflicts; aborting this attempt.',
+      );
+      return false;
     }
 
     if (!isInMergeConflictState()) {

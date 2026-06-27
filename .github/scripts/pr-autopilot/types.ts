@@ -9,6 +9,8 @@
 export type SpawnResult = {
   exitCode: number;
   stderr: string;
+  /** True when the session was killed for exceeding its timeout. */
+  timedOut: boolean;
 };
 
 /** One row from `gh pr checks --json name,bucket,state,workflow,link`. */

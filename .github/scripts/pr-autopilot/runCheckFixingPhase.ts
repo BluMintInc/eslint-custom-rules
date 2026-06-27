@@ -5,9 +5,14 @@ import { extractErrorMessage, MAX_CHECK_FIX_ATTEMPTS } from './types';
 import { getFailingChecks } from './fetchPrState';
 import { fetchCheckLogs } from './fetchCheckLogs';
 import { buildCheckFixPrompt } from './buildPrompt';
-import { spawnClaude } from './spawnClaude';
+import { spawnClaude, DEFAULT_SPAWN_TIMEOUT_MS } from './spawnClaude';
 import { detectRateLimit, waitForRateLimit } from './detectRateLimit';
-import { commitAll, hasChanges, pushWithRebaseRetry } from './gitOps';
+import {
+  commitAll,
+  discardChanges,
+  hasChanges,
+  pushWithRebaseRetry,
+} from './gitOps';
 
 const writePrompt = (cwd: string, content: string): string => {
   const promptDir = path.resolve(cwd, '.claude', 'tmp');
@@ -29,6 +34,7 @@ export const runCheckFixingPhase = async (
   pr: number,
   cwd: string,
   attemptCounts: Map<string, number>,
+  timeoutMs: number = DEFAULT_SPAWN_TIMEOUT_MS,
 ): Promise<boolean> => {
   const failingChecks = getFailingChecks(pr, cwd);
   if (failingChecks.length === 0) {
@@ -73,12 +79,21 @@ export const runCheckFixingPhase = async (
     }
 
     logWithTimestamp(`Spawning Claude to fix '${check.name}'...`);
-    const result = await spawnClaude(promptPath, cwd);
+    const result = await spawnClaude(promptPath, cwd, timeoutMs);
 
     const rateLimit = detectRateLimit(result);
     if (rateLimit.isRateLimited) {
       await waitForRateLimit(rateLimit, logWithTimestamp);
       return false;
+    }
+
+    if (result.timedOut) {
+      logWithTimestamp(
+        `Claude timed out fixing '${check.name}'; discarding partial changes.`,
+      );
+      discardChanges(cwd);
+      attemptCounts.set(check.name, attempts + 1);
+      continue;
     }
 
     if (result.exitCode !== 0) {

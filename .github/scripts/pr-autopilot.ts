@@ -20,6 +20,7 @@ import {
   type PrCiStatus,
 } from './pr-autopilot/fetchPrState';
 import { buildCommentPrompt } from './pr-autopilot/buildPrompt';
+import { ensureWorkspaceTrusted } from './pr-autopilot/ensureWorkspaceTrusted';
 import { spawnClaude } from './pr-autopilot/spawnClaude';
 import {
   detectRateLimit,
@@ -30,6 +31,7 @@ import { resolveConflicts } from './pr-autopilot/resolveConflicts';
 import {
   abortMerge,
   commitAll,
+  discardChanges,
   hasChanges,
   mergeBaseBranch,
   pushWithRebaseRetry,
@@ -84,11 +86,21 @@ const main = async (): Promise<void> => {
   ensureDependency('claude');
 
   const cwd = process.cwd();
+
+  /**
+   * Headless `claude --print` hangs forever in an un-trusted workspace, which
+   * would stall every cycle. Grant trust for this repo up front (idempotent) so
+   * spawned sessions actually start.
+   */
+  if (ensureWorkspaceTrusted(cwd)) {
+    logWithTimestamp(`Granted Claude workspace trust for '${cwd}'.`);
+  }
+
   const pr = resolvePr(options);
   const baseBranch = fetchBaseBranch(pr, cwd);
 
   logWithTimestamp(
-    `Watching PR #${pr} (base '${baseBranch}'). Poll interval: ${options.pollIntervalSeconds}s.`,
+    `Watching PR #${pr} (base '${baseBranch}'). Poll interval: ${options.pollIntervalSeconds}s, spawn timeout: ${options.spawnTimeoutSeconds}s.`,
   );
 
   const shutdown = () => {
@@ -208,22 +220,30 @@ const runCycle = async (arg: CycleArg): Promise<boolean> => {
     pr,
     cwd,
     baseBranch,
+    options,
     checkFixAttemptCounts,
     handledCommentUrls,
     onProgress,
     onIdle,
   } = arg;
+  const spawnTimeoutMs = options.spawnTimeoutSeconds * 1000;
 
   logWithTimestamp(`Merging '${baseBranch}' to keep PR current...`);
   const mergeResult = mergeBaseBranch(baseBranch);
   if (mergeResult === 'conflict') {
     logWithTimestamp('Merge conflicts detected. Resolving...');
-    const resolved = await resolveConflicts(cwd).catch((error) => {
-      logWithTimestamp(`resolveConflicts threw: ${extractErrorMessage(error)}`);
-      return false;
-    });
+    const resolved = await resolveConflicts(cwd, spawnTimeoutMs).catch(
+      (error) => {
+        logWithTimestamp(
+          `resolveConflicts threw: ${extractErrorMessage(error)}`,
+        );
+        return false;
+      },
+    );
     if (!resolved) {
-      logWithTimestamp('Could not resolve conflicts. Aborting merge; retrying next cycle.');
+      logWithTimestamp(
+        'Could not resolve conflicts. Aborting merge; retrying next cycle.',
+      );
       abortMerge(cwd);
       return false;
     }
@@ -244,6 +264,7 @@ const runCycle = async (arg: CycleArg): Promise<boolean> => {
       pr,
       cwd,
       checkFixAttemptCounts,
+      spawnTimeoutMs,
     ).catch((error) => {
       logWithTimestamp(`Check-fixing error: ${extractErrorMessage(error)}`);
       return false;
@@ -279,11 +300,18 @@ const runCycle = async (arg: CycleArg): Promise<boolean> => {
   }
 
   const promptPath = writeCommentPrompt(cwd, buildCommentPrompt(newComments));
-  const result = await spawnClaude(promptPath, cwd);
+  const result = await spawnClaude(promptPath, cwd, spawnTimeoutMs);
 
   const rateLimit = detectRateLimit(result);
   if (rateLimit.isRateLimited) {
     await waitForRateLimit(rateLimit, logWithTimestamp);
+    return false;
+  }
+  if (result.timedOut) {
+    logWithTimestamp(
+      'Claude timed out; discarding unvalidated partial changes and continuing.',
+    );
+    discardChanges(cwd);
     return false;
   }
   if (result.exitCode !== 0) {
