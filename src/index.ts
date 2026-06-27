@@ -31,6 +31,7 @@ import { noHungarian } from './rules/no-hungarian';
 import { noMisusedSwitchCase } from './rules/no-misused-switch-case';
 import { noUnpinnedDependencies } from './rules/no-unpinned-dependencies';
 import { noUnusedProps } from './rules/no-unused-props';
+import { noInlineComponentProp } from './rules/no-inline-component-prop';
 import { noUselessFragment } from './rules/no-useless-fragment';
 import { preferFragmentShorthand } from './rules/prefer-fragment-shorthand';
 import { preferGetterOverParameterlessMethod } from './rules/prefer-getter-over-parameterless-method';
@@ -248,6 +249,7 @@ module.exports = {
         '@blumintinc/blumint/no-misused-switch-case': 'error',
         '@blumintinc/blumint/no-unpinned-dependencies': 'error',
         '@blumintinc/blumint/no-unused-props': 'error',
+        '@blumintinc/blumint/no-inline-component-prop': 'error',
         '@blumintinc/blumint/no-uuidv4-base62-as-key': 'error',
         '@blumintinc/blumint/no-useless-fragment': 'error',
         '@blumintinc/blumint/no-useless-usememo-primitives': 'error',
@@ -508,6 +510,7 @@ module.exports = {
     'no-misused-switch-case': noMisusedSwitchCase,
     'no-unpinned-dependencies': noUnpinnedDependencies,
     'no-unused-props': noUnusedProps,
+    'no-inline-component-prop': noInlineComponentProp,
     'no-useless-fragment': noUselessFragment,
     'no-uuidv4-base62-as-key': noUuidv4Base62AsKey,
     'enforce-dynamic-file-naming': enforceDynamicFileNaming,
