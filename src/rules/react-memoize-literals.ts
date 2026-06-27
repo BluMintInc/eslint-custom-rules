@@ -580,33 +580,66 @@ function buildMemoSuggestions(
 }
 
 /**
- * Returns true when the node is the direct value of a JSX attribute that
- * carries style data consumed by a library rather than compared by reference.
- * Matches the pattern: JSXAttribute[name=sx|style] > JSXExpressionContainer > node.
- * Narrowly scoped to avoid exempting unrelated literals that appear deeper.
+ * Returns true when the node's value resolves to a JSX attribute that carries
+ * style data consumed by a library rather than compared by reference (MUI `sx`
+ * or the standard `style` prop).
+ *
+ * Walks up from the literal only through positions where it remains the
+ * attribute's resolved value: conditional branches (`sx={c ? {…} : {…}}`),
+ * logical fallbacks (`sx={c && {…}}`), array entries (MUI accepts `sx` arrays),
+ * and expression wrappers (`{…} as const`, parentheses). Any other parent — a
+ * function call, an object property, a spread — means the reference is observed
+ * or transformed before reaching the attribute, so the walk stops and the
+ * literal stays reported. This keeps the exemption tied to genuine style values
+ * without silencing unrelated literals that merely appear deeper in the tree.
  */
-function isDirectStyleJSXAttributeValue(node: TSESTree.Node): boolean {
-  const container = node.parent;
-  if (!container || container.type !== AST_NODE_TYPES.JSXExpressionContainer) {
-    return false;
+function isStyleJSXAttributeValue(node: TSESTree.Node): boolean {
+  let current: TSESTree.Node = node;
+  let parent = current.parent;
+  while (parent) {
+    switch (parent.type) {
+      case AST_NODE_TYPES.JSXExpressionContainer: {
+        if (parent.expression !== current) {
+          return false;
+        }
+        const attribute = parent.parent;
+        if (!attribute || attribute.type !== AST_NODE_TYPES.JSXAttribute) {
+          return false;
+        }
+        const { name } = attribute;
+        return (
+          name.type === AST_NODE_TYPES.JSXIdentifier &&
+          STYLE_JSX_ATTRIBUTE_NAMES.has(name.name)
+        );
+      }
+      case AST_NODE_TYPES.ConditionalExpression: {
+        if (parent.consequent !== current && parent.alternate !== current) {
+          return false;
+        }
+        break;
+      }
+      case AST_NODE_TYPES.LogicalExpression: {
+        if (parent.left !== current && parent.right !== current) {
+          return false;
+        }
+        break;
+      }
+      case AST_NODE_TYPES.ArrayExpression: {
+        if (!parent.elements.some((element) => element === current)) {
+          return false;
+        }
+        break;
+      }
+      default: {
+        if (!isExpressionWrapper(parent) || parent.expression !== current) {
+          return false;
+        }
+      }
+    }
+    current = parent;
+    parent = current.parent;
   }
-
-  // The expression inside the container must be exactly this node.
-  if ((container as TSESTree.JSXExpressionContainer).expression !== node) {
-    return false;
-  }
-
-  const attribute = container.parent;
-  if (!attribute || attribute.type !== AST_NODE_TYPES.JSXAttribute) {
-    return false;
-  }
-
-  const attrName = (attribute as TSESTree.JSXAttribute).name;
-  if (attrName.type !== AST_NODE_TYPES.JSXIdentifier) {
-    return false;
-  }
-
-  return STYLE_JSX_ATTRIBUTE_NAMES.has(attrName.name);
+  return false;
 }
 
 /**
@@ -793,10 +826,11 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
         return;
       }
 
-      // Inline object/array literals used as the direct value of style JSX
-      // attributes (sx, style) are consumed by the library without reference
-      // equality checks, so memoization adds no stability benefit.
-      if (isDirectStyleJSXAttributeValue(node)) {
+      // Inline literals that resolve to a style JSX attribute (sx, style),
+      // whether directly or via conditional/logical/array wrappers, are
+      // consumed by the library without reference equality checks, so
+      // memoization adds no stability benefit.
+      if (isStyleJSXAttributeValue(node)) {
         return;
       }
 
