@@ -70,6 +70,13 @@ const HOOKS_ALLOWING_NESTED_LITERALS = new Set([
   'useRef',
 ]);
 
+/**
+ * JSX attribute names whose values are style descriptors consumed by the
+ * library (not via referential equality), so inline object literals are safe.
+ * MUI's `sx` and the standard `style` prop both fall into this category.
+ */
+const STYLE_JSX_ATTRIBUTE_NAMES = new Set(['sx', 'style']);
+
 const MEMOIZATION_DEPS_TODO_PLACEHOLDER = '__TODO_MEMOIZATION_DEPENDENCIES__';
 const TODO_DEPS_COMMENT = `/* ${MEMOIZATION_DEPS_TODO_PLACEHOLDER} */`;
 const PARENTHESIZED_EXPRESSION_TYPE =
@@ -573,6 +580,36 @@ function buildMemoSuggestions(
 }
 
 /**
+ * Returns true when the node is the direct value of a JSX attribute that
+ * carries style data consumed by a library rather than compared by reference.
+ * Matches the pattern: JSXAttribute[name=sx|style] > JSXExpressionContainer > node.
+ * Narrowly scoped to avoid exempting unrelated literals that appear deeper.
+ */
+function isDirectStyleJSXAttributeValue(node: TSESTree.Node): boolean {
+  const container = node.parent;
+  if (!container || container.type !== AST_NODE_TYPES.JSXExpressionContainer) {
+    return false;
+  }
+
+  // The expression inside the container must be exactly this node.
+  if ((container as TSESTree.JSXExpressionContainer).expression !== node) {
+    return false;
+  }
+
+  const attribute = container.parent;
+  if (!attribute || attribute.type !== AST_NODE_TYPES.JSXAttribute) {
+    return false;
+  }
+
+  const attrName = (attribute as TSESTree.JSXAttribute).name;
+  if (attrName.type !== AST_NODE_TYPES.JSXIdentifier) {
+    return false;
+  }
+
+  return STYLE_JSX_ATTRIBUTE_NAMES.has(attrName.name);
+}
+
+/**
  * Formats a readable label for diagnostics based on the owning function.
  * @param fn Owning component or hook function.
  * @returns Human-friendly label for error messages.
@@ -753,6 +790,13 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
       }
 
       if (isTerminalUsage(node)) {
+        return;
+      }
+
+      // Inline object/array literals used as the direct value of style JSX
+      // attributes (sx, style) are consumed by the library without reference
+      // equality checks, so memoization adds no stability benefit.
+      if (isDirectStyleJSXAttributeValue(node)) {
         return;
       }
 
