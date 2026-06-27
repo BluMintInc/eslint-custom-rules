@@ -250,6 +250,29 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         const Parent = () => <Child format={fmt} />;
       `,
     },
+    // Bug #1182: union mixing a function with multiple non-function members.
+    {
+      code: `
+        type Validate = (value?: string) => boolean;
+        type ChildProps = {
+          rule: Validate | string | number;
+        };
+        const Child = (props: ChildProps) => <div />;
+        const fn: Validate = (v) => true;
+        const Parent = () => <Child rule={fn} />;
+      `,
+    },
+    // Bug #1182: union of a function and a boolean.
+    {
+      code: `
+        type ChildProps = {
+          toggle: (() => void) | boolean;
+        };
+        const Child = (props: ChildProps) => <div />;
+        const fn = () => {};
+        const Parent = () => <Child toggle={fn} />;
+      `,
+    },
   ],
   invalid: [
     // Bug #1182 control: an exclusively-function prop on a typed component must
@@ -291,6 +314,27 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         };
         const Child = (props: ChildProps) => <div />;
         const fn = (v: string) => true;
+        const Parent = () => <Child onSubmit={fn} />;
+      `,
+    },
+    // Bug #1182 control: a nullable pure callback (function | null) is not a
+    // mixed union once null is filtered, so it must still be flagged.
+    {
+      code: `
+        type ChildProps = {
+          submit: (() => void) | null;
+        };
+        const Child = (props: ChildProps) => <div />;
+        const fn = () => {};
+        const Parent = () => <Child submit={fn} />;
+      `,
+      errors: [{ messageId: 'callbackPropPrefix' }],
+      output: `
+        type ChildProps = {
+          submit: (() => void) | null;
+        };
+        const Child = (props: ChildProps) => <div />;
+        const fn = () => {};
         const Parent = () => <Child onSubmit={fn} />;
       `,
     },
