@@ -1,0 +1,318 @@
+#!/usr/bin/env tsx
+/* eslint-disable no-console */
+/**
+ * Deterministic toolkit for the autonomous `eslint-custom-rules` maintainer.
+ *
+ * The maintainer itself is a /goal-driven /loop Claude session (see
+ * .claude/commands/maintainer.md) that drains the open-issue queue to zero and
+ * cuts a release. The LLM-driven part (actually fixing/implementing a rule) is
+ * delegated to the `fix-bug` / `implement-rule` subagents via the Task tool.
+ * This module owns the parts that must be deterministic and unit-testable:
+ *   - which issue to work next (bugs before features, oldest first)
+ *   - which subagent + branch name an issue maps to
+ *   - the pre-merge validation gate (the same commands the repo stop hook runs)
+ *   - promote develop→main on an empty queue, then fast-forward develop (cure drift)
+ *   - notify agora of the published release
+ *
+ * Side-effecting subcommands accept `--dry-run` to print intended git/gh actions
+ * without performing them.
+ *
+ * Subcommands:
+ *   next                          → JSON of the next issue {number,title,kind,agent,branch} or null
+ *   count                         → JSON {open, empty}
+ *   validate                      → run the stop-hook gate (build + lint + test); exit 1 on failure
+ *   merge --issue=N --branch=B    → merge a fix branch into develop (closes #N) [--dry-run]
+ *   release                       → if queue empty, promote develop→main + ff develop [--dry-run]
+ *   dispatch --version=V          → notify agora of a published release
+ */
+import { execFileSync } from 'node:child_process';
+import { resolve } from 'node:path';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { dispatch } = require('./dispatch-agora-release');
+
+const REPO = 'BluMintInc/eslint-custom-rules';
+const DEVELOP = 'develop';
+const MAIN = 'main';
+
+export type IssueKind = 'bug' | 'rule-request' | 'other';
+
+export type Issue = {
+  readonly number: number;
+  readonly title: string;
+  readonly labels: readonly string[];
+  readonly createdAt: string;
+};
+
+export type NextIssue = {
+  readonly number: number;
+  readonly title: string;
+  readonly kind: IssueKind;
+  readonly agent: 'fix-bug' | 'implement-rule';
+  readonly branch: string;
+};
+
+/** Classify by label: a `bug` label wins; else `rule-request`; else `other`. */
+export function classifyIssue(issue: Issue): IssueKind {
+  if (issue.labels.includes('bug')) {
+    return 'bug';
+  }
+  if (issue.labels.includes('rule-request')) {
+    return 'rule-request';
+  }
+  return 'other';
+}
+
+/** rule-request → implement-rule; everything else → fix-bug (bug-shaped default). */
+export function chooseAgent(kind: IssueKind): NextIssue['agent'] {
+  return kind === 'rule-request' ? 'implement-rule' : 'fix-bug';
+}
+
+/** Branch convention link-pr-to-source-issue.yml understands: `develop-<agent>-<n>`. */
+export function branchNameFor(agent: NextIssue['agent'], issueNumber: number) {
+  return `${DEVELOP}-${agent}-${issueNumber}`;
+}
+
+/** Priority bucket: bugs (0) before features/other (1). */
+function priorityOf(kind: IssueKind) {
+  return kind === 'bug' ? 0 : 1;
+}
+
+/** Order: bugs before features; within a bucket, oldest first, then lowest number. */
+export function sortIssues(issues: readonly Issue[]): Issue[] {
+  return [...issues].sort((a, b) => {
+    const byPriority =
+      priorityOf(classifyIssue(a)) - priorityOf(classifyIssue(b));
+    if (byPriority !== 0) {
+      return byPriority;
+    }
+    const byAge = a.createdAt.localeCompare(b.createdAt);
+    if (byAge !== 0) {
+      return byAge;
+    }
+    return a.number - b.number;
+  });
+}
+
+/** The next issue to work, or null when the queue is empty. */
+export function selectNextIssue(issues: readonly Issue[]): NextIssue | null {
+  const sorted = sortIssues(issues);
+  const issue = sorted[0];
+  if (!issue) {
+    return null;
+  }
+  const kind = classifyIssue(issue);
+  const agent = chooseAgent(kind);
+  return {
+    number: issue.number,
+    title: issue.title,
+    kind,
+    agent,
+    branch: branchNameFor(agent, issue.number),
+  };
+}
+
+export function isQueueEmpty(issues: readonly Issue[]) {
+  return issues.length === 0;
+}
+
+type GhLabel = { readonly name: string };
+type GhIssue = {
+  readonly number: number;
+  readonly title: string;
+  readonly labels?: readonly GhLabel[];
+  readonly createdAt: string;
+};
+
+/** Normalize `gh issue list --json` output into the internal Issue shape. */
+export function normalizeIssues(raw: readonly GhIssue[]): Issue[] {
+  return raw.map((item) => ({
+    number: item.number,
+    title: item.title,
+    labels: (item.labels ?? []).map((label) => label.name),
+    createdAt: item.createdAt,
+  }));
+}
+
+export function fetchOpenIssues(
+  exec: typeof execFileSync = execFileSync,
+): Issue[] {
+  const out = exec(
+    'gh',
+    [
+      'issue',
+      'list',
+      '--repo',
+      REPO,
+      '--state',
+      'open',
+      '--json',
+      'number,title,labels,createdAt',
+      '--limit',
+      '500',
+    ],
+    { encoding: 'utf8' },
+  ) as string;
+  return normalizeIssues(JSON.parse(out));
+}
+
+type Runner = (cmd: string, args: string[]) => void;
+
+const defaultRunner: Runner = (cmd, args) => {
+  execFileSync(cmd, args, { stdio: 'inherit' });
+};
+
+/**
+ * Run the same gate the repo stop hook enforces (build → lint → test). Returns
+ * true only if all three succeed. Mirrors agent-check.ts's quality checks.
+ */
+export function validateViaStopHooks(run: Runner = defaultRunner): boolean {
+  const steps: Array<[string, string[]]> = [
+    ['npm', ['run', 'build']],
+    ['npm', ['run', 'lint']],
+    ['npm', ['test']],
+  ];
+  for (const [cmd, args] of steps) {
+    try {
+      run(cmd, args);
+    } catch {
+      console.error(
+        `maintainer: validation failed at \`${cmd} ${args.join(' ')}\``,
+      );
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Merge a completed fix/implement branch into develop (commit closes #issue). */
+export function mergeAndClose(
+  options: { issue: number; branch: string; dryRun?: boolean },
+  run: Runner = defaultRunner,
+) {
+  const { issue, branch, dryRun } = options;
+  const message = `chore(repo): merge ${branch} (closes #${issue})`;
+  const actions: Array<[string, string[]]> = [
+    ['git', ['checkout', DEVELOP]],
+    ['git', ['merge', '--no-ff', branch, '-m', message]],
+    ['git', ['push', 'origin', DEVELOP]],
+  ];
+  runActions(actions, dryRun, run);
+}
+
+/**
+ * If the queue is empty, promote develop→main (fires the release workflow) then
+ * fast-forward develop to main to cure the develop/main branch drift. No-op when
+ * issues remain.
+ */
+export function releaseIfEmpty(
+  issues: readonly Issue[],
+  options: { dryRun?: boolean } = {},
+  run: Runner = defaultRunner,
+): boolean {
+  if (!isQueueEmpty(issues)) {
+    console.log(
+      `maintainer: ${issues.length} open issue(s) remain — not releasing.`,
+    );
+    return false;
+  }
+  const actions: Array<[string, string[]]> = [
+    ['git', ['checkout', MAIN]],
+    ['git', ['merge', '--ff-only', DEVELOP]],
+    ['git', ['push', 'origin', MAIN]],
+    ['git', ['checkout', DEVELOP]],
+    ['git', ['merge', '--ff-only', MAIN]],
+    ['git', ['push', 'origin', DEVELOP]],
+  ];
+  runActions(actions, options.dryRun, run);
+  return true;
+}
+
+function runActions(
+  actions: ReadonlyArray<[string, string[]]>,
+  dryRun: boolean | undefined,
+  run: Runner,
+) {
+  for (const [cmd, args] of actions) {
+    if (dryRun) {
+      console.log(`[dry-run] ${cmd} ${args.join(' ')}`);
+    } else {
+      run(cmd, args);
+    }
+  }
+}
+
+/** Notify agora of a published release (fallback to the release workflow's successCmd). */
+export function dispatchToAgora(version: string) {
+  return dispatch({ version, token: process.env.AGORA_DISPATCH_TOKEN });
+}
+
+function parseArgs(argv: readonly string[]): Record<string, string | boolean> {
+  const args: Record<string, string | boolean> = {};
+  for (const token of argv) {
+    const match = /^--([\w-]+)(?:=(.*))?$/.exec(token);
+    if (match) {
+      args[match[1]] = match[2] ?? true;
+    }
+  }
+  return args;
+}
+
+function main() {
+  const [subcommand, ...rest] = process.argv.slice(2);
+  const args = parseArgs(rest);
+
+  switch (subcommand) {
+    case 'next': {
+      const next = selectNextIssue(fetchOpenIssues());
+      console.log(JSON.stringify(next));
+      return;
+    }
+    case 'count': {
+      const issues = fetchOpenIssues();
+      console.log(
+        JSON.stringify({ open: issues.length, empty: isQueueEmpty(issues) }),
+      );
+      return;
+    }
+    case 'validate': {
+      process.exit(validateViaStopHooks() ? 0 : 1);
+      return;
+    }
+    case 'merge': {
+      const issue = Number(args.issue);
+      const branch = String(args.branch);
+      if (!issue || !branch) {
+        console.error('maintainer merge: --issue and --branch are required');
+        process.exit(1);
+      }
+      mergeAndClose({ issue, branch, dryRun: Boolean(args['dry-run']) });
+      return;
+    }
+    case 'release': {
+      releaseIfEmpty(fetchOpenIssues(), { dryRun: Boolean(args['dry-run']) });
+      return;
+    }
+    case 'dispatch': {
+      const version = String(args.version || '');
+      if (!version) {
+        console.error('maintainer dispatch: --version is required');
+        process.exit(1);
+      }
+      dispatchToAgora(version);
+      return;
+    }
+    default:
+      console.error(
+        `maintainer: unknown subcommand "${
+          subcommand ?? ''
+        }". Use one of: next, count, validate, merge, release, dispatch.`,
+      );
+      process.exit(1);
+  }
+}
+
+if (process.env.JEST_WORKER_ID === undefined && require.main === module) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+  resolve(__dirname); // anchor cwd-independent resolution if extended later
+  main();
+}
