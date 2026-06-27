@@ -352,6 +352,78 @@ function MyComponent({ isError }) {
         }
       `,
     },
+    // MUI sx prop object literal should not be flagged (issue #1169)
+    {
+      code: `
+import Stack from '@mui/material/Stack';
+
+const Example = () => (
+  <Stack
+    sx={{
+      backgroundColor: 'red',
+      textWrap: 'nowrap',
+    }}
+  />
+);
+      `,
+    },
+    // standard style prop inline object is exempt
+    {
+      code: `
+const Box = () => (
+  <div style={{ display: 'flex', gap: 8 }} />
+);
+      `,
+    },
+    // sx on various MUI components
+    {
+      code: `
+import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
+
+const Card = () => (
+  <Box sx={{ p: 2, borderRadius: 1 }}>
+    <Typography sx={{ fontWeight: 700, color: 'primary.main' }}>
+      Hello
+    </Typography>
+  </Box>
+);
+      `,
+    },
+    // sx with many properties
+    {
+      code: `
+const Widget = () => (
+  <div
+    sx={{
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 2,
+      p: 3,
+      m: 1,
+      borderRadius: 2,
+      boxShadow: 3,
+    }}
+  />
+);
+      `,
+    },
+    // empty sx object is exempt
+    {
+      code: `
+const Widget = () => <div sx={{}} />;
+      `,
+    },
+    // style with multiple properties
+    {
+      code: `
+const Overlay = () => (
+  <div style={{ position: 'absolute', top: 0, left: 0, width: '100%' }} />
+);
+      `,
+    },
   ],
   invalid: [
     // Variable with no usages (dead code) - should still be reported as unmemoized
@@ -1006,6 +1078,87 @@ const MyComponent = () => {
             literalType: 'inline function',
             context: 'component "MyComponent"',
             memoHook: 'useCallback',
+          },
+        },
+      ],
+    },
+    // REGRESSION GUARD: non-style prop object literal must still be reported
+    {
+      code: `
+const MyComponent = () => (
+  <SomeComponent data={{ id: 1, label: 'hello' }} />
+);
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'object literal',
+            context: 'component "MyComponent"',
+            memoHook: 'useMemo',
+          },
+        },
+      ],
+    },
+    // REGRESSION GUARD: config prop object literal must still be reported
+    {
+      code: `
+const MyComponent = ({ id }) => (
+  <Chart config={{ type: 'bar', responsive: true }} />
+);
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'object literal',
+            context: 'component "MyComponent"',
+            memoHook: 'useMemo',
+          },
+        },
+      ],
+    },
+    // REGRESSION GUARD: options prop object literal must still be reported
+    {
+      code: `
+const MyComponent = () => (
+  <DatePicker options={{ format: 'yyyy-MM-dd' }} />
+);
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'object literal',
+            context: 'component "MyComponent"',
+            memoHook: 'useMemo',
+          },
+        },
+      ],
+    },
+    // REGRESSION GUARD: object literal nested deeper inside sx expression is NOT exempt
+    // (sx conditional value — the object inside the ternary is deeper, not the direct JSXExpressionContainer child)
+    {
+      code: `
+const MyComponent = ({ active }) => (
+  <div sx={active ? { color: 'red' } : { color: 'blue' }} />
+);
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'object literal',
+            context: 'component "MyComponent"',
+            memoHook: 'useMemo',
+          },
+        },
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'object literal',
+            context: 'component "MyComponent"',
+            memoHook: 'useMemo',
           },
         },
       ],
