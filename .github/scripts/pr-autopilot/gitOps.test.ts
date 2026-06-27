@@ -1,5 +1,5 @@
 import { execFileSync, execSync } from 'node:child_process';
-import { commitAll } from './gitOps';
+import { commitAll, undoLastCommit } from './gitOps';
 
 jest.mock('node:child_process', () => ({
   execSync: jest.fn(),
@@ -46,5 +46,24 @@ describe('commitAll', () => {
 
     expect(commitAll('/repo', 'whatever')).toBe(false);
     expect(mockExecFileSync).not.toHaveBeenCalled();
+  });
+});
+
+describe('undoLastCommit', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockExecSync.mockReturnValue(Buffer.from(''));
+  });
+
+  it('drops the most recent commit and any working-tree changes in the cwd', () => {
+    undoLastCommit('/repo');
+
+    const commands = mockExecSync.mock.calls.map((call) => call[0]);
+    /** HEAD~1 targets exactly the one commit just made; clean -fd also removes
+     * untracked files so the next cycle starts from a pristine pushed state. */
+    expect(commands).toEqual(['git reset --hard HEAD~1', 'git clean -fd']);
+    for (const call of mockExecSync.mock.calls) {
+      expect(call[1]).toMatchObject({ cwd: '/repo' });
+    }
   });
 });
