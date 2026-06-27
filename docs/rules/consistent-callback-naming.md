@@ -21,6 +21,8 @@ The rule reports when:
 - A function, method, class property, or parameter has a name like `handleSubmit` or `handleClick` (starts with `handle` followed by additional characters, but not the plain words `handler` or `handlers`), because the name should describe the action instead of the generic prefix.
 - React component props or PascalCase prop names are skipped to avoid renaming component references.
 
+Props whose type is a **union that mixes a function with a non-function** (for example `Validate<T> | readonly T[]`) are configuration props that merely accept a function as one option, not event handlers, so they are **not** flagged — even when a plain function value is passed. Both the value's own type and the prop's declared (contextual) type are inspected, and `undefined`/`null` members are ignored so plain optional callbacks (`(() => void) | undefined`) are still treated as exclusively functions.
+
 ### Examples of **incorrect** code for this rule:
 
 ```tsx
