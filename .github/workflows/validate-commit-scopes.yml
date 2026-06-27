@@ -1,0 +1,31 @@
+name: Validate commit scopes
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate-commit-scopes:
+    name: Validate commit scopes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      # Every fix/feat commit the PR adds must scope to a real rule name, so the
+      # release manifest stays a trustworthy version→rule map for agora's re-enable.
+      - name: Validate commit scopes
+        run: npx tsx scripts/validate-commit-scopes.ts --base=origin/${{ github.base_ref }}

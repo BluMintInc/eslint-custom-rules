@@ -47,6 +47,27 @@ Or use the recommended config:
 }
 ```
 
+## Autonomous maintenance
+
+This repo is maintained by an autonomous loop, not a human cutting releases on
+demand. See [.claude/skills/repo-maintenance/SKILL.md](.claude/skills/repo-maintenance/SKILL.md)
+for the operating model. Two contracts make it safe and self-healing:
+
+- **The maintainer** (`/maintainer`, backed by `scripts/maintainer.ts`) is the
+  sole operator: it drains the open-issue queue (bugs before features, oldest
+  first), self-merges fixes to `develop`, and on an empty queue promotes
+  `develop → main` (firing the release) then fast-forwards `develop`.
+- **`release-manifest.json`** is a strict, published `version → fixed-rules` map
+  (`scripts/generate-release-manifest.js`, a `@semantic-release/exec` prepareCmd)
+  so consumers re-enable disabled rules by exact rule name — never by parsing the
+  changelog. It's only reliable because **every `fix`/`feat` commit's scope must
+  be a real rule name**: enforced by the `blumint-rule-scope` commitlint rule and
+  the `validate-commit-scopes` CI gate. One rule per fix/feat commit.
+
+On publish, `scripts/dispatch-agora-release.js` fires a `repository_dispatch` to
+agora, which bumps its pin and re-enables the now-fixed rules (FP-audited). The
+full closed loop is documented in agora's `.claude/skills/eslint-autonomy/SKILL.md`.
+
 ## Rules
 
 <!-- begin auto-generated rules list -->

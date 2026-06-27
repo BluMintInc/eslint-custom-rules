@@ -15,7 +15,8 @@
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "node scripts/update-version.js"
+        "prepareCmd": "node scripts/update-version.js && node scripts/generate-release-manifest.js --version=${nextRelease.version} --git-tag=${nextRelease.gitTag} --prev-tag=${lastRelease.gitTag}",
+        "successCmd": "node scripts/dispatch-agora-release.js --version=${nextRelease.version}"
       }
     ],
     [
@@ -25,7 +26,8 @@
           "lib/**",
           "package.json",
           "CHANGELOG.md",
-          "src/index.ts"
+          "src/index.ts",
+          "release-manifest.json"
         ],
         "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
       }

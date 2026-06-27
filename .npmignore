@@ -6,6 +6,10 @@
 !lib/**/*.d.ts
 !lib/**/*.js.map
 
+# Ship the machine-readable release manifest so agora can re-enable OFF rules by
+# exact rule name from node_modules/@blumintinc/eslint-plugin-blumint/.
+!release-manifest.json
+
 # Ensure package.json stays in root only
 lib/package.json
 

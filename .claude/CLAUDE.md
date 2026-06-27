@@ -537,6 +537,43 @@ test: add edge case coverage for DEF rule
 npm run release:dry-run
 ```
 
+### Autonomous maintenance (the `maintainer`)
+
+This repo is operated by an autonomous `maintainer` (`/maintainer`, backed by the
+deterministic toolkit `scripts/maintainer.ts`), not by humans triaging labels.
+It drains the open-issue queue **bugs-before-features, oldest-first** (spawning
+`fix-bug` / `implement-rule` per issue), self-merges to `develop`, and on an
+empty queue promotes `develop → main` (firing the release) then fast-forwards
+`develop` to cure branch drift. The label-driven GitHub-Action agents were
+removed — the maintainer acts on **all** open issues; `bug` / `rule-request`
+labels only choose which subagent fixes them.
+
+To drive any single open PR to review-clean + CI-green on demand (addressing
+CodeRabbit/human comments and fixing failing checks autonomously, committing +
+pushing each cycle), the maintainer or a human can run
+`npm run pr-autopilot -- --pr=<n>` (see `.github/scripts/pr-autopilot.ts`).
+
+### Release manifest + scope contract
+
+Each release emits a strict, published `release-manifest.json`
+(`version → [{rule, changeType, issues, summary}]`) via
+`scripts/generate-release-manifest.js` (a `@semantic-release/exec` prepareCmd).
+agora re-enables disabled rules from this map by exact rule name — so it MUST be
+trustworthy:
+
+* **Every `fix`/`feat` commit's scope must be a real rule name** (one rule per
+  commit). Enforced by the `blumint-rule-scope` rule in `commitlint.config.js`
+  (commit-msg hook) and the `validate-commit-scopes` CI gate. Cross-cutting
+  exceptions are limited to the allowlist in `scripts/allowed-non-rule-scopes.js`.
+* The canonical rule-name set is parsed (build-free) from `src/index.ts`'s
+  `rules:` map by `scripts/load-rule-names.js` — shared by commitlint, the CI
+  gate, and the manifest generator.
+
+On publish, `scripts/dispatch-agora-release.js` fires a `repository_dispatch`
+(`eslint-rules-released`) to agora (needs the `AGORA_DISPATCH_TOKEN` secret;
+best-effort — dependabot is the backstop). The end-to-end loop is documented in
+agora's `.claude/skills/eslint-autonomy/SKILL.md`.
+
 ---
 
 ## Configuration Files

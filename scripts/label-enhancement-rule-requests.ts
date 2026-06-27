@@ -3,9 +3,10 @@
 /* eslint-disable import/no-unused-modules */
 /* eslint-disable max-lines */
 /**
- * Adds the rule-request and claude-research labels to all open enhancement
- * issues. Processes issues in batches to avoid rate limits and supports a
- * dry-run mode for verification.
+ * Adds the rule-request label to all open enhancement issues. Processes issues
+ * in batches to avoid rate limits and supports a dry-run mode for verification.
+ * (The maintainer acts on all open issues; `rule-request` only selects the
+ * implement-rule agent — the former `claude-research` trigger label is retired.)
  */
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -17,7 +18,7 @@ type IssueSearchItem = {
 
 const DEFAULT_BATCH_SIZE = 20 as const;
 const BATCH_DELAY_MS = 10 * 60 * 1000; // 10 minutes between batches
-const TARGET_LABELS = ['rule-request', 'claude-research'] as const;
+const TARGET_LABELS = ['rule-request'] as const;
 const DRY_RUN = process.argv.includes('--dry-run');
 
 const [defaultOwner, defaultRepo] = (

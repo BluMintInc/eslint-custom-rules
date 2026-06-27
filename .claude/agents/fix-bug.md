@@ -15,8 +15,8 @@ This agent guides fixing a bug in an existing ESLint rule. It builds the LLM pro
 
 ### 1. Reproduce the Bug
 
-- Create a test case with the code from the issue
-- Verify the bug behavior (false positive/negative)
+- **If the issue includes a ready-to-paste failing `RuleTester` case** (the autonomous report-bug agent authors one), drop it into `src/tests/<rule-name>.test.ts` verbatim and run `npm test` to confirm it FAILS first — that is the reproduction. Do not rewrite it; treat it as the acceptance test the fix must turn green.
+- Otherwise, create a test case from the code in the issue and verify the bug behavior (false positive/negative).
 
 ### 2. Diagnose Root Cause
 

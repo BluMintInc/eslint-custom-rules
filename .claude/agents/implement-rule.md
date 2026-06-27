@@ -13,6 +13,7 @@ This agent guides the implementation of a new custom ESLint rule for BluMint. Wh
 
 ## Using Issue Context
 
+- **If the issue includes ready-to-paste `RuleTester` cases**, drop them in verbatim as the acceptance tests the rule must satisfy, then expand around them.
 - Parse the issue body for example violations and add them as invalid test cases.
 - Pull out edge cases and turn them into separate valid/invalid tests.
 - Capture any described expected auto-fix behavior and add autofix tests with expected output.

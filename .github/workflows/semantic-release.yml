@@ -44,4 +44,8 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
           NPM_CONFIG_REGISTRY: https://registry.npmjs.org
+          # Cross-repo token (contents:write or repository-dispatch on BluMintInc/agora)
+          # consumed by the @semantic-release/exec successCmd → scripts/dispatch-agora-release.js.
+          # Optional: if unset, the dispatch is skipped and agora's dependabot is the backstop.
+          AGORA_DISPATCH_TOKEN: ${{ secrets.AGORA_DISPATCH_TOKEN }}
         run: npx semantic-release
