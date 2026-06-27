@@ -2,6 +2,7 @@ import {
   branchNameFor,
   chooseAgent,
   classifyIssue,
+  isLintablePath,
   isQueueEmpty,
   mergeAndClose,
   normalizeIssues,
@@ -115,6 +116,27 @@ describe('normalizeIssues', () => {
     expect(
       normalizeIssues([{ number: 6, title: 'T', createdAt: 'd' }]),
     ).toEqual([{ number: 6, title: 'T', labels: [], createdAt: 'd' }]);
+  });
+});
+
+describe('isLintablePath', () => {
+  it('accepts source ts/tsx/js/jsx files', () => {
+    expect(isLintablePath('src/rules/foo.ts')).toBe(true);
+    expect(isLintablePath('src/util/bar.tsx')).toBe(true);
+    expect(isLintablePath('scripts/baz.js')).toBe(true);
+  });
+
+  it('excludes tests, .github/, node_modules/, .claude/tmp/, and non-source', () => {
+    expect(isLintablePath('src/rules/foo.test.ts')).toBe(false);
+    expect(isLintablePath('src/rules/foo.spec.tsx')).toBe(false);
+    expect(isLintablePath('.github/scripts/x.ts')).toBe(false);
+    expect(isLintablePath('node_modules/pkg/index.ts')).toBe(false);
+    expect(isLintablePath('src/.claude/tmp/scratch.ts')).toBe(false);
+    expect(isLintablePath('docs/rules/foo.md')).toBe(false);
+  });
+
+  it('does NOT skip a source file whose name merely contains "node_modules"', () => {
+    expect(isLintablePath('src/util/node_modules_shim.ts')).toBe(true);
   });
 });
 

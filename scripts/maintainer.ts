@@ -165,15 +165,42 @@ const defaultRunner: Runner = (cmd, args) => {
 };
 
 /**
- * Source files changed on the current branch vs develop that the repo's lint
- * gate would lint: `.ts/.tsx/.js/.jsx` that still exist, excluding tests,
- * `.github/`, `node_modules`, and `.claude/tmp/`. Mirrors the filter in
- * `scripts/claude-hooks/lint-diff.ts`.
+ * Whether a path is one the repo's lint gate would lint: a source
+ * `.ts/.tsx/.js/.jsx` file, excluding tests, `.github/`, `node_modules`, and
+ * `.claude/tmp/`. Mirrors the filter in `scripts/claude-hooks/lint-diff.ts`
+ * (the `node_modules` match is path-segment-aware so a source file whose name
+ * merely contains the substring isn't skipped).
+ */
+export function isLintablePath(file: string): boolean {
+  return (
+    /\.(ts|tsx|js|jsx)$/.test(file) &&
+    !/\.(test|spec)\.(ts|tsx|js|jsx)$/.test(file) &&
+    !file.startsWith('.github/') &&
+    !/(^|\/)node_modules(\/|$)/.test(file) &&
+    !file.includes('.claude/tmp/')
+  );
+}
+
+/**
+ * Source files changed ON THIS BRANCH that the lint gate would lint. Diffs from
+ * the merge-base with develop (not the develop tip) so develop commits landed
+ * after this branch diverged don't drag unrelated debt into the gate; the
+ * two-dot diff against that base still includes UNCOMMITTED edits, which matters
+ * because validate runs before the maintainer commits the fix.
  */
 function changedLintableFiles(): string[] {
+  let base = DEVELOP;
+  try {
+    base =
+      execFileSync('git', ['merge-base', DEVELOP, 'HEAD'], {
+        encoding: 'utf8',
+      }).trim() || DEVELOP;
+  } catch {
+    /* fall back to the develop ref */
+  }
   let out = '';
   try {
-    out = execFileSync('git', ['diff', '--name-only', DEVELOP], {
+    out = execFileSync('git', ['diff', '--name-only', base], {
       encoding: 'utf8',
     });
   } catch {
@@ -183,15 +210,7 @@ function changedLintableFiles(): string[] {
     .split('\n')
     .map((file) => file.trim())
     .filter(Boolean)
-    .filter(
-      (file) =>
-        /\.(ts|tsx|js|jsx)$/.test(file) &&
-        !file.startsWith('.github/') &&
-        !file.includes('node_modules') &&
-        !file.includes('.claude/tmp/') &&
-        !/\.(test|spec)\.(ts|tsx|js|jsx)$/.test(file) &&
-        existsSync(resolve(file)),
-    );
+    .filter((file) => isLintablePath(file) && existsSync(resolve(file)));
 }
 
 /**
