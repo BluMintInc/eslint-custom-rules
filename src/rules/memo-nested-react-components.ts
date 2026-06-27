@@ -385,19 +385,182 @@ const getVariableName = (node: TSESTree.CallExpression): string | null => {
   return null;
 };
 
-const isInsideFunction = (node: TSESTree.Node): boolean => {
+type EnclosingFunction =
+  | TSESTree.ArrowFunctionExpression
+  | TSESTree.FunctionExpression
+  | TSESTree.FunctionDeclaration;
+
+const isEnclosingFunction = (
+  node: TSESTree.Node,
+): node is EnclosingFunction => {
+  return (
+    node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+    node.type === AST_NODE_TYPES.FunctionExpression ||
+    node.type === AST_NODE_TYPES.FunctionDeclaration
+  );
+};
+
+/**
+ * Nearest ancestor function whose body directly contains `node`. Climbs from
+ * the node's parent so a function node itself is not treated as its own
+ * enclosing function.
+ */
+const findEnclosingFunction = (
+  node: TSESTree.Node,
+): EnclosingFunction | null => {
   let parent = node.parent;
   while (parent) {
-    if (
-      parent.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-      parent.type === AST_NODE_TYPES.FunctionExpression ||
-      parent.type === AST_NODE_TYPES.FunctionDeclaration
-    ) {
-      return true;
+    if (isEnclosingFunction(parent)) {
+      return parent;
     }
     parent = parent.parent;
   }
+  return null;
+};
+
+const isInsideFunction = (node: TSESTree.Node): boolean => {
+  return findEnclosingFunction(node) !== null;
+};
+
+const isPascalCaseName = (name: string): boolean => /^[A-Z]/.test(name);
+
+/**
+ * A return value is a *component* (vs. rendered output) when it is a
+ * memo()/forwardRef() call, a PascalCase identifier (returned component
+ * reference), or an inline function that itself creates a component. Such a
+ * value identifies the surrounding function as an HOC factory rather than a
+ * render body.
+ */
+const returnExpressionIsComponent = (
+  expression: TSESTree.Expression | null,
+  reactImports: ReactImports,
+): boolean => {
+  if (!expression) {
+    return false;
+  }
+
+  const unwrapped = unwrapExpression(expression);
+
+  if (unwrapped.type === AST_NODE_TYPES.CallExpression) {
+    if (
+      isMemoCall(unwrapped, reactImports) ||
+      isForwardRefCall(unwrapped, reactImports)
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  if (unwrapped.type === AST_NODE_TYPES.Identifier) {
+    return isPascalCaseName(unwrapped.name);
+  }
+
+  if (isFunctionExpression(unwrapped)) {
+    return Boolean(functionCreatesComponent(unwrapped, reactImports));
+  }
+
   return false;
+};
+
+const returnExpressionIsJsx = (
+  expression: TSESTree.Expression | null,
+): boolean => {
+  if (!expression) {
+    return false;
+  }
+
+  const unwrapped = unwrapExpression(expression);
+  return (
+    unwrapped.type === AST_NODE_TYPES.JSXElement ||
+    unwrapped.type === AST_NODE_TYPES.JSXFragment
+  );
+};
+
+/**
+ * Direct return-statement arguments of a function, traversing control flow
+ * (if/switch/try/loops) but NOT descending into nested function definitions—
+ * returns inside nested functions belong to those functions, not this one.
+ */
+const collectDirectReturnExpressions = (
+  fn: EnclosingFunction,
+): Array<TSESTree.Expression | null> => {
+  if (fn.body.type !== AST_NODE_TYPES.BlockStatement) {
+    return [fn.body];
+  }
+
+  const returns: Array<TSESTree.Expression | null> = [];
+
+  const visitStatement = (statement: TSESTree.Statement): void => {
+    switch (statement.type) {
+      case AST_NODE_TYPES.ReturnStatement:
+        returns.push(statement.argument);
+        break;
+      case AST_NODE_TYPES.BlockStatement:
+        statement.body.forEach(visitStatement);
+        break;
+      case AST_NODE_TYPES.IfStatement:
+        visitStatement(statement.consequent);
+        if (statement.alternate) {
+          visitStatement(statement.alternate);
+        }
+        break;
+      case AST_NODE_TYPES.SwitchStatement:
+        for (const switchCase of statement.cases) {
+          switchCase.consequent.forEach(visitStatement);
+        }
+        break;
+      case AST_NODE_TYPES.ForStatement:
+      case AST_NODE_TYPES.ForInStatement:
+      case AST_NODE_TYPES.ForOfStatement:
+      case AST_NODE_TYPES.WhileStatement:
+      case AST_NODE_TYPES.DoWhileStatement:
+        visitStatement(statement.body);
+        break;
+      case AST_NODE_TYPES.TryStatement:
+        visitStatement(statement.block);
+        if (statement.handler) {
+          visitStatement(statement.handler.body);
+        }
+        if (statement.finalizer) {
+          visitStatement(statement.finalizer);
+        }
+        break;
+      default:
+        break;
+    }
+  };
+
+  fn.body.body.forEach(visitStatement);
+
+  return returns;
+};
+
+/**
+ * True when the nearest enclosing function is an HOC factory—it returns a
+ * component (memo/forwardRef/component reference) and never returns JSX. Such
+ * a function runs once per call, so components defined inside it have stable
+ * identities and must NOT be flagged. A function that returns JSX is a render
+ * body, where nested components DO remount and remain flagged.
+ */
+const isInsideHocFactory = (
+  node: TSESTree.Node,
+  reactImports: ReactImports,
+): boolean => {
+  const enclosing = findEnclosingFunction(node);
+  if (!enclosing) {
+    return false;
+  }
+
+  const returns = collectDirectReturnExpressions(enclosing);
+
+  const returnsComponent = returns.some((expression) =>
+    returnExpressionIsComponent(expression, reactImports),
+  );
+  const returnsJsx = returns.some((expression) =>
+    returnExpressionIsJsx(expression),
+  );
+
+  return returnsComponent && !returnsJsx;
 };
 
 export const memoNestedReactComponents = createRule<Options, MessageIds>({
@@ -495,8 +658,22 @@ See: https://react.dev/learn/your-first-component#nesting-and-organizing-compone
           }
         }
 
+        const variableName = getVariableName(node);
+
+        // A non-PascalCase binding (e.g. renderHit) is a render callback used
+        // with a render={...} prop, not a component—skip it.
+        if (variableName && !isPascalCaseName(variableName)) {
+          return;
+        }
+
+        // Inside an HOC factory the binding has a stable identity, so it does
+        // not remount on re-render and must not be flagged.
+        if (isInsideHocFactory(node, reactImports)) {
+          return;
+        }
+
         const componentName =
-          getVariableName(node) ??
+          variableName ??
           (isFunctionExpression(callback) &&
           callback.id?.type === AST_NODE_TYPES.Identifier
             ? callback.id.name
@@ -510,9 +687,13 @@ See: https://react.dev/learn/your-first-component#nesting-and-organizing-compone
         if (node.id.type !== AST_NODE_TYPES.Identifier) return;
 
         // Only check if name starts with uppercase (convention for components)
-        if (!/^[A-Z]/.test(node.id.name)) return;
+        if (!isPascalCaseName(node.id.name)) return;
 
         if (!isInsideFunction(node)) return;
+
+        // Inside an HOC factory the component has a stable identity (the factory
+        // runs once per call), so it does not remount and must not be flagged.
+        if (isInsideHocFactory(node, reactImports)) return;
 
         // Skip if it's already a hook call (handled by CallExpression visitor)
         if (node.init.type === AST_NODE_TYPES.CallExpression) {
@@ -533,8 +714,12 @@ See: https://react.dev/learn/your-first-component#nesting-and-organizing-compone
       },
 
       FunctionDeclaration(node) {
-        if (!node.id || !/^[A-Z]/.test(node.id.name)) return;
+        if (!node.id || !isPascalCaseName(node.id.name)) return;
         if (!isInsideFunction(node)) return;
+
+        // Inside an HOC factory the component has a stable identity (the factory
+        // runs once per call), so it does not remount and must not be flagged.
+        if (isInsideHocFactory(node, reactImports)) return;
 
         const componentMatch = functionCreatesComponent(node, reactImports);
         if (!componentMatch) return;
