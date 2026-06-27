@@ -82,10 +82,6 @@ type FooCtor = typeof Foo;
 const STATUS = 'ok' as const; // no explicit type annotation needed
 ```
 
-## Options
-
-This rule has no options and is not auto-fixable.
-
 ## When Not To Use It
 
 If your project intentionally encodes literal value types via `typeof` against same-file constants and you prefer that style, you can disable this rule.

@@ -79,10 +79,6 @@ const UserProfile: FC<UserProfileProps> = ({ userConfig }) => {
 - JSX in memo body: ignored, to avoid false positives with JSX-returning memos.
 - Performance hotspots: prefer memoizing dependencies instead of deep comparison when deep equality cost is a concern.
 
-### Options
-
-- None
-
 ### When Not To Use It
 
 - Performance hotspots where deep comparison overhead is undesirable. You can disable the rule for a specific line:

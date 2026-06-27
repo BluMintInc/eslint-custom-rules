@@ -45,10 +45,6 @@ type WithAudit = { createdAt: Timestamp; updatedAt: Timestamp };
 export type User = WithAudit & Identifiable & { email: string };
 ```
 
-## Options
-
-This rule does not have any options.
-
 ## When Not To Use It
 
 - Projects that do not follow the `functions/src/types/firestore/<Name>/index.ts` convention.

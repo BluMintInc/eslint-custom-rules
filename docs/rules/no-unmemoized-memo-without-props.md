@@ -4,4 +4,9 @@
 
 <!-- end auto-generated rule header -->
 
+## Options
 
+This rule accepts an options object with the following properties:
+
+- `ignoreHooks` (`string[]`, default `[]`) — hook names whose inner components are exempt. A component defined inside a call to one of these hooks is not flagged.
+- `ignoreHocs` (`string[]`, default `[]`) — higher-order-component names. A component wrapped by one of these HOCs is not flagged.

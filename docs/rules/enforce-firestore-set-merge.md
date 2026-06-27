@@ -39,10 +39,6 @@ await transaction.set(userRef, { visits: visits + 1 }, { merge: true });
 batchManager.batch.set({ ref: docRef, data: { score: 10 }, merge: true });
 ```
 
-## Options
-
-This rule does not have any options.
-
 ## When Not To Use It
 
 - Migration scripts that intentionally want `update()` to throw when the document is missing.

@@ -51,10 +51,6 @@ const rules = "allow read: if resource.data.get('fieldX', null) != null;";
 const rules = "allow update: if request.resource.data.get('fieldX', null).get('fieldY', null) != null;";
 ```
 
-## Options
-
-This rule has no options.
-
 ## When Not To Use It
 
 - If your project does not store or lint Firestore rules as strings or template literals in your codebase, this rule may be unnecessary.

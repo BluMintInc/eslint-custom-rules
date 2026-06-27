@@ -42,10 +42,6 @@ database().ref(toUserSettingsPath(userId, settingId));
 database().ref(toUsersPath()).child(userId);
 ```
 
-## Options
-
-This rule does not have any options.
-
 ## When Not To Use It
 
 - One-off scripts where centralizing RTDB paths provides little value.
