@@ -46,8 +46,9 @@ export const waitForRateLimit = async (
   const waitMinutes = Math.ceil(waitMs / ONE_MINUTE_MS);
   log(`Rate limited. Waiting ${waitMinutes} minute(s) before retrying...`);
   await new Promise<void>((resolve) => {
-    const timer = setTimeout(resolve, waitMs);
-    timer.unref?.();
+    /** Stays referenced: this awaited backoff is often the only live handle, so
+     * unref-ing it would let the process exit before the wait completes. */
+    setTimeout(resolve, waitMs);
   });
   log('Rate limit wait complete. Resuming...');
 };

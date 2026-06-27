@@ -11,7 +11,8 @@
  *   - which issue to work next (bugs before features, oldest first)
  *   - which subagent + branch name an issue maps to
  *   - the pre-merge validation gate (the same commands the repo stop hook runs)
- *   - promote develop→main on an empty queue, then fast-forward develop (cure drift)
+ *   - on an empty queue, back-merge origin/main into develop (absorb the prior
+ *     async release commit), then promote develop→main (cure drift)
  *   - notify agora of the published release
  *
  * Side-effecting subcommands accept `--dry-run` to print intended git/gh actions
@@ -22,7 +23,7 @@
  *   count                         → JSON {open, empty}
  *   validate                      → run the stop-hook gate (build + lint + test); exit 1 on failure
  *   merge --issue=N --branch=B    → merge a fix branch into develop (closes #N) [--dry-run]
- *   release                       → if queue empty, promote develop→main + ff develop [--dry-run]
+ *   release                       → if queue empty, sync develop from origin/main then promote develop→main [--dry-run]
  *   dispatch --version=V          → notify agora of a published release
  */
 import { execFileSync } from 'node:child_process';
@@ -200,9 +201,17 @@ export function mergeAndClose(
 }
 
 /**
- * If the queue is empty, promote develop→main (fires the release workflow) then
- * fast-forward develop to main to cure the develop/main branch drift. No-op when
- * issues remain.
+ * If the queue is empty, promote develop→main (fires the release workflow). No-op
+ * when issues remain.
+ *
+ * `@semantic-release/git` pushes a `chore(release): … [skip ci]` commit back to
+ * origin/main asynchronously, after CI runs — so by the next promotion origin/main
+ * is one commit ahead of develop. Syncing develop from the (pre-release) local
+ * main would miss it, and the next `merge --ff-only develop` into main could stop
+ * fast-forwarding. To cure the drift, this fetches origin/main and back-merges it
+ * into develop FIRST (fast-forwards when nothing diverged, else creates a back-
+ * merge commit absorbing the prior release), so develop ⊇ origin/main and the
+ * subsequent promotion is always a fast-forward.
  */
 export function releaseIfEmpty(
   issues: readonly Issue[],
@@ -216,12 +225,14 @@ export function releaseIfEmpty(
     return false;
   }
   const actions: Array<[string, string[]]> = [
+    ['git', ['fetch', 'origin', MAIN]],
+    ['git', ['checkout', DEVELOP]],
+    ['git', ['merge', '--no-edit', `origin/${MAIN}`]],
+    ['git', ['push', 'origin', DEVELOP]],
     ['git', ['checkout', MAIN]],
+    ['git', ['merge', '--ff-only', `origin/${MAIN}`]],
     ['git', ['merge', '--ff-only', DEVELOP]],
     ['git', ['push', 'origin', MAIN]],
-    ['git', ['checkout', DEVELOP]],
-    ['git', ['merge', '--ff-only', MAIN]],
-    ['git', ['push', 'origin', DEVELOP]],
   ];
   runActions(actions, options.dryRun, run);
   return true;
@@ -257,6 +268,32 @@ function parseArgs(argv: readonly string[]): Record<string, string | boolean> {
   return args;
 }
 
+type ParsedArgs = Record<string, string | boolean>;
+
+/**
+ * Validate the `merge` subcommand's flags. Returns null (CLI errors out) for a
+ * bare or missing flag: `parseArgs` stores a value-less `--issue`/`--branch` as
+ * boolean `true`, and `Number(true)===1` / `String(true)==='true'` would
+ * otherwise sneak past a naive truthiness check and operate on a bogus target.
+ */
+export function parseMergeArgs(
+  args: ParsedArgs,
+): { issue: number; branch: string } | null {
+  const issue = typeof args.issue === 'string' ? Number(args.issue) : NaN;
+  const branch = typeof args.branch === 'string' ? args.branch : '';
+  if (!Number.isInteger(issue) || issue <= 0 || !branch) {
+    return null;
+  }
+  return { issue, branch };
+}
+
+/** Validate the `dispatch` subcommand's `--version`; null for bare/missing. */
+export function parseVersionArg(args: ParsedArgs): string | null {
+  return typeof args.version === 'string' && args.version.length > 0
+    ? args.version
+    : null;
+}
+
 function main() {
   const [subcommand, ...rest] = process.argv.slice(2);
   const args = parseArgs(rest);
@@ -279,13 +316,12 @@ function main() {
       return;
     }
     case 'merge': {
-      const issue = Number(args.issue);
-      const branch = String(args.branch);
-      if (!issue || !branch) {
+      const merge = parseMergeArgs(args);
+      if (!merge) {
         console.error('maintainer merge: --issue and --branch are required');
         process.exit(1);
       }
-      mergeAndClose({ issue, branch, dryRun: Boolean(args['dry-run']) });
+      mergeAndClose({ ...merge, dryRun: Boolean(args['dry-run']) });
       return;
     }
     case 'release': {
@@ -293,7 +329,7 @@ function main() {
       return;
     }
     case 'dispatch': {
-      const version = String(args.version || '');
+      const version = parseVersionArg(args);
       if (!version) {
         console.error('maintainer dispatch: --version is required');
         process.exit(1);

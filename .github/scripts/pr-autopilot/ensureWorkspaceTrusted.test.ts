@@ -80,4 +80,16 @@ describe('ensureWorkspaceTrusted', () => {
       projects: { [DIR]: { hasTrustDialogAccepted: true } },
     });
   });
+
+  it('preserves the original restrictive file mode of the secrets file', () => {
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({ projects: { [DIR]: { hasTrustDialogAccepted: false } } }),
+    );
+    fs.chmodSync(configPath, 0o600);
+    expect(ensureWorkspaceTrusted(DIR, configPath)).toBe(true);
+    /** The temp-file + rename swap must carry over 0600, not widen to the
+     * umask default (commonly 0644) on this credentials file. */
+    expect(fs.statSync(configPath).mode & 0o777).toBe(0o600);
+  });
 });

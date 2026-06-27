@@ -36,6 +36,9 @@ export const fetchCheckLogs = (
       cwd,
       stdio: 'pipe',
       maxBuffer: 50 * 1024 * 1024,
+      /** Bound a stalled `gh` so a single hung call can't freeze the
+       * check-fixing loop; a timeout throws into the fallback below. */
+      timeout: 120_000,
     });
   } catch (error: unknown) {
     const stdout = (error as { stdout?: string }).stdout;

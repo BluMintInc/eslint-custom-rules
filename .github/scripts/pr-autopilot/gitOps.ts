@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import { runCommand } from '../../../scripts/cli/git-utils';
 import { logWithTimestamp } from './logWithTimestamp';
 import { extractErrorMessage } from './types';
@@ -49,8 +49,13 @@ export const commitAll = (cwd: string, subject: string): boolean => {
   if (!staged) {
     return false;
   }
-  const safeSubject = subject.replace(/"/g, "'");
-  execSync(`git commit -m "chore(repo): ${safeSubject}"`, {
+  /**
+   * Pass the message as an argv element via execFileSync (no shell): `subject`
+   * carries attacker-influenced data (e.g. a CI check name), so a shell here
+   * would let `$(…)`/backticks in it execute arbitrary commands — quote-escaping
+   * alone does not close that hole.
+   */
+  execFileSync('git', ['commit', '-m', `chore(repo): ${subject}`], {
     cwd,
     stdio: 'pipe',
   });

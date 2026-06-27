@@ -15,6 +15,9 @@ const path = require('node:path');
 /** Opener of the TOP-LEVEL `rules:` map (exactly 2-space indent). The deeper
  * `configs.recommended.rules` map sits at 6-space indent and is excluded. */
 const RULES_MAP_OPENER = /^ {2}rules: \{$/m;
+/** Closer of that map: the first line at the same 2-space indent that begins
+ * with `}`. Map entries are nested deeper, so this is the matching brace. */
+const RULES_MAP_CLOSER = /^ {2}\}/m;
 /** A rule key line: indentation + a single-quoted kebab-case key + colon. */
 const RULE_KEY = /^[ \t]+'([a-z0-9-]+)':/gm;
 
@@ -28,7 +31,13 @@ function parseRuleNamesFromIndexSource(source) {
   if (!opener) {
     return [];
   }
-  const mapBody = source.slice(opener.index + opener[0].length);
+  const afterOpener = source.slice(opener.index + opener[0].length);
+  /** Bound the scan to the matching closing brace so kebab-case keys in any
+   * later map (e.g. a future single-quoted config block) are NOT mistaken for
+   * rule names — the canonical set must not depend on `rules` being last. */
+  RULES_MAP_CLOSER.lastIndex = 0;
+  const closer = RULES_MAP_CLOSER.exec(afterOpener);
+  const mapBody = closer ? afterOpener.slice(0, closer.index) : afterOpener;
   const names = new Set();
   RULE_KEY.lastIndex = 0;
   let match = RULE_KEY.exec(mapBody);
@@ -45,12 +54,13 @@ function parseRuleNamesFromIndexSource(source) {
  */
 function loadRuleNames(repoRoot = path.resolve(__dirname, '..')) {
   const indexPath = path.join(repoRoot, 'src', 'index.ts');
-  try {
-    return parseRuleNamesFromIndexSource(fs.readFileSync(indexPath, 'utf8'));
-  } catch {
-    /** src/index.ts unreadable (never on a healthy checkout) → empty set. */
-    return [];
-  }
+  /**
+   * Read errors propagate by design: an unreadable src/index.ts is a broken
+   * checkout, not "zero rules". A silent empty set would make commitlint reject
+   * every fix/feat scope and let the release manifest generate from a phantom
+   * registry — failing fast surfaces the real cause instead.
+   */
+  return parseRuleNamesFromIndexSource(fs.readFileSync(indexPath, 'utf8'));
 }
 
 module.exports = { loadRuleNames, parseRuleNamesFromIndexSource };

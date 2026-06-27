@@ -113,9 +113,11 @@ const main = async (): Promise<void> => {
   /** Per-check attempt counts (circuit breaker), shared across cycles. */
   const checkFixAttemptCounts = new Map<string, number>();
   /**
-   * Comment URLs already handed to the agent this run. GraphQL threads cannot be
-   * cheaply resolved here, so we avoid re-addressing the same comment within one
-   * run; CodeRabbit re-reviews the new commit and emits fresh comment IDs.
+   * Comment URLs already addressed (committed AND pushed) this run. GraphQL
+   * threads cannot be cheaply resolved here, so we avoid re-addressing the same
+   * comment within one run; CodeRabbit re-reviews the new commit and emits fresh
+   * comment IDs. A URL is recorded only after its fix lands, so a rate-limited,
+   * timed-out, or unpushed cycle leaves the comment eligible for retry.
    */
   const handledCommentUrls = new Set<string>();
 
@@ -295,9 +297,6 @@ const runCycle = async (arg: CycleArg): Promise<boolean> => {
   logWithTimestamp(
     `${newComments.length} new unresolved comment(s). Spawning Claude...`,
   );
-  for (const comment of newComments) {
-    handledCommentUrls.add(comment.url);
-  }
 
   const promptPath = writeCommentPrompt(cwd, buildCommentPrompt(newComments));
   const result = await spawnClaude(promptPath, cwd, spawnTimeoutMs);
@@ -327,7 +326,14 @@ const runCycle = async (arg: CycleArg): Promise<boolean> => {
 
   commitAll(cwd, `address PR #${pr} review comments`);
   if (pushWithRebaseRetry(cwd)) {
-    /** New commit can trigger fresh CI — give exhausted checks another chance. */
+    /**
+     * The fix is committed and pushed, so these comments are truly handled —
+     * mark them only now. The new commit can also trigger fresh CI, so give
+     * exhausted checks another chance.
+     */
+    for (const comment of newComments) {
+      handledCommentUrls.add(comment.url);
+    }
     checkFixAttemptCounts.clear();
   }
   logWithTimestamp('Cycle complete.');

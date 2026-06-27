@@ -147,6 +147,25 @@ function gitCommits(prevTag, exec = execFileSync) {
     });
 }
 
+/**
+ * Load the existing manifest array, or [] for a first release.
+ *
+ * Only a missing file (ENOENT) means "no manifest yet". Malformed JSON or a
+ * read/permission error means the published history is present but unreadable —
+ * returning [] there would overwrite the file with only the current release and
+ * silently destroy that history, so those rethrow instead.
+ */
+function readExistingManifest(manifestPath, readFile = fs.readFileSync) {
+  try {
+    return JSON.parse(readFile(manifestPath, 'utf8'));
+  } catch (error) {
+    if (!error || error.code !== 'ENOENT') {
+      throw error;
+    }
+    return [];
+  }
+}
+
 function main() {
   const { version, prevTag } = parseArgs(process.argv.slice(2));
   if (!version) {
@@ -163,12 +182,7 @@ function main() {
     ruleNames,
   });
   const manifestPath = path.join(repoRoot, MANIFEST_FILENAME);
-  let existing = [];
-  try {
-    existing = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-  } catch {
-    existing = [];
-  }
+  const existing = readExistingManifest(manifestPath);
   const merged = mergeManifest(existing, entry);
   fs.writeFileSync(manifestPath, `${JSON.stringify(merged, null, 2)}\n`);
   console.log(
@@ -189,4 +203,5 @@ module.exports = {
   mergeManifest,
   parseArgs,
   gitCommits,
+  readExistingManifest,
 };

@@ -49,7 +49,11 @@ export const runCheckFixingPhase = async (
   );
 
   for (const check of failingChecks) {
-    const attempts = attemptCounts.get(check.name) ?? 0;
+    /** Distinct jobs can share a display name (e.g. matrix legs), so key the
+     * retry budget by workflow+name; otherwise one exhausted job suppresses a
+     * different failure that has never been tried. */
+    const checkKey = `${check.workflow}:${check.name}`;
+    const attempts = attemptCounts.get(checkKey) ?? 0;
     if (attempts >= MAX_CHECK_FIX_ATTEMPTS) {
       logWithTimestamp(
         `Skipping '${check.name}' — exceeded max fix attempts (${MAX_CHECK_FIX_ATTEMPTS}). Manual intervention required.`,
@@ -74,7 +78,7 @@ export const runCheckFixingPhase = async (
           error,
         )}. Skipping.`,
       );
-      attemptCounts.set(check.name, attempts + 1);
+      attemptCounts.set(checkKey, attempts + 1);
       continue;
     }
 
@@ -92,7 +96,7 @@ export const runCheckFixingPhase = async (
         `Claude timed out fixing '${check.name}'; discarding partial changes.`,
       );
       discardChanges(cwd);
-      attemptCounts.set(check.name, attempts + 1);
+      attemptCounts.set(checkKey, attempts + 1);
       continue;
     }
 
@@ -102,17 +106,23 @@ export const runCheckFixingPhase = async (
       );
     }
 
-    attemptCounts.set(check.name, attempts + 1);
-
     if (!hasChanges(cwd)) {
       logWithTimestamp(
         `Claude made no changes for '${check.name}'. Incrementing attempt counter.`,
       );
+      attemptCounts.set(checkKey, attempts + 1);
       continue;
     }
 
     commitAll(cwd, `fix failing ${check.name} CI check`);
-    return pushWithRebaseRetry(cwd);
+    const pushed = pushWithRebaseRetry(cwd);
+    if (pushed) {
+      /** Consume the attempt only once the fix is pushed. A failed push leaves a
+       * local commit the next cycle re-pushes, so burning the budget here could
+       * exhaust the check without the already-made fix ever being retried. */
+      attemptCounts.set(checkKey, attempts + 1);
+    }
+    return pushed;
   }
 
   logWithTimestamp('All failing checks either exhausted or skipped.');

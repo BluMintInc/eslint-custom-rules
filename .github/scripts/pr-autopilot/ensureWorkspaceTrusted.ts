@@ -56,8 +56,21 @@ export const ensureWorkspaceTrusted = (
   projects[dir] = entry;
   config.projects = projects;
 
+  /**
+   * ~/.claude.json holds credentials/tokens, so carry over the original file's
+   * mode: a freshly written temp file would otherwise take the umask default
+   * (commonly 0644), silently widening read access to a 0600 secrets file. Fall
+   * back to 0600 when the file is new or unstatable.
+   */
+  let mode: number;
+  try {
+    mode = fs.statSync(configPath).mode;
+  } catch {
+    mode = 0o600;
+  }
   const tmpPath = `${configPath}.pr-autopilot-${process.pid}.tmp`;
   fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2), 'utf8');
+  fs.chmodSync(tmpPath, mode);
   fs.renameSync(tmpPath, configPath);
   return true;
 };

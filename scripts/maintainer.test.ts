@@ -5,6 +5,8 @@ import {
   isQueueEmpty,
   mergeAndClose,
   normalizeIssues,
+  parseMergeArgs,
+  parseVersionArg,
   releaseIfEmpty,
   selectNextIssue,
   sortIssues,
@@ -152,18 +154,59 @@ describe('mergeAndClose', () => {
   });
 });
 
+describe('parseMergeArgs', () => {
+  it('accepts a numeric --issue and a string --branch', () => {
+    expect(parseMergeArgs({ issue: '42', branch: 'develop-fix-bug-42' })).toEqual(
+      { issue: 42, branch: 'develop-fix-bug-42' },
+    );
+  });
+
+  it('rejects a bare --issue (parsed to true ⇒ would coerce to 1)', () => {
+    expect(parseMergeArgs({ issue: true, branch: 'b' })).toBeNull();
+  });
+
+  it('rejects a bare --branch (parsed to true ⇒ would stringify to "true")', () => {
+    expect(parseMergeArgs({ issue: '1', branch: true })).toBeNull();
+  });
+
+  it('rejects a non-positive or non-integer issue', () => {
+    expect(parseMergeArgs({ issue: '0', branch: 'b' })).toBeNull();
+    expect(parseMergeArgs({ issue: '-3', branch: 'b' })).toBeNull();
+    expect(parseMergeArgs({ issue: '1.5', branch: 'b' })).toBeNull();
+    expect(parseMergeArgs({ issue: 'x', branch: 'b' })).toBeNull();
+  });
+
+  it('rejects missing flags', () => {
+    expect(parseMergeArgs({})).toBeNull();
+  });
+});
+
+describe('parseVersionArg', () => {
+  it('returns a string --version', () => {
+    expect(parseVersionArg({ version: '1.16.0' })).toBe('1.16.0');
+  });
+
+  it('rejects a bare --version (parsed to true) and a missing one', () => {
+    expect(parseVersionArg({ version: true })).toBeNull();
+    expect(parseVersionArg({ version: '' })).toBeNull();
+    expect(parseVersionArg({})).toBeNull();
+  });
+});
+
 describe('releaseIfEmpty', () => {
-  it('promotes develop→main then fast-forwards develop when the queue is empty', () => {
+  it('back-merges origin/main into develop, then promotes develop→main when the queue is empty', () => {
     const calls: string[][] = [];
     const released = releaseIfEmpty([], {}, (cmd, args) => calls.push([cmd, ...args]));
     expect(released).toBe(true);
     expect(calls).toEqual([
+      ['git', 'fetch', 'origin', 'main'],
+      ['git', 'checkout', 'develop'],
+      ['git', 'merge', '--no-edit', 'origin/main'],
+      ['git', 'push', 'origin', 'develop'],
       ['git', 'checkout', 'main'],
+      ['git', 'merge', '--ff-only', 'origin/main'],
       ['git', 'merge', '--ff-only', 'develop'],
       ['git', 'push', 'origin', 'main'],
-      ['git', 'checkout', 'develop'],
-      ['git', 'merge', '--ff-only', 'main'],
-      ['git', 'push', 'origin', 'develop'],
     ]);
   });
 

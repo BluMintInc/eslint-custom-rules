@@ -22,8 +22,14 @@ export interface ManifestEntry {
 }
 export const MANIFEST_FILENAME: string;
 export function extractIssues(text: string): number[];
-export function parseCommit(subject: string, body?: string): ParsedCommit | null;
-export function buildRuleEntries(commits: Commit[], ruleNames: string[]): RuleEntry[];
+export function parseCommit(
+  subject: string,
+  body?: string,
+): ParsedCommit | null;
+export function buildRuleEntries(
+  commits: Commit[],
+  ruleNames: string[],
+): RuleEntry[];
 export function buildManifestEntry(args: {
   version: string;
   date: string;
@@ -43,3 +49,7 @@ export function gitCommits(
   prevTag: string,
   exec?: (cmd: string, args: string[], opts: unknown) => string,
 ): Commit[];
+export function readExistingManifest(
+  manifestPath: string,
+  readFile?: (path: string, encoding: 'utf8') => string,
+): ManifestEntry[] | unknown;

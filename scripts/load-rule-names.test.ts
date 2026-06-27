@@ -34,6 +34,22 @@ describe('parseRuleNamesFromIndexSource', () => {
   it('returns an empty array when there is no rules map', () => {
     expect(parseRuleNamesFromIndexSource('const x = 1;')).toEqual([]);
   });
+
+  it('ignores kebab keys in a map that follows the rules map', () => {
+    const source = [
+      'module.exports = {',
+      '  rules: {',
+      "    'real-rule': realRule,",
+      '  },',
+      '  meta: {',
+      "    'not-a-rule': true,",
+      '  },',
+      '};',
+    ].join('\n');
+    /** Bounded to the rules map's closing brace: a later kebab key must NOT
+     * leak in, else commit-scope validation would accept a bogus scope. */
+    expect(parseRuleNamesFromIndexSource(source)).toEqual(['real-rule']);
+  });
 });
 
 describe('loadRuleNames (integration against the real src/index.ts)', () => {
@@ -55,5 +71,12 @@ describe('loadRuleNames (integration against the real src/index.ts)', () => {
   it('is sorted and de-duplicated', () => {
     expect([...names].sort()).toEqual(names);
     expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('throws (rather than returning []) when src/index.ts is unreadable', () => {
+    /** A broken checkout must fail loudly: a silent empty set would make
+     * commitlint reject every fix/feat scope and the manifest generate from a
+     * phantom registry. */
+    expect(() => loadRuleNames('/nonexistent/repo/root')).toThrow();
   });
 });

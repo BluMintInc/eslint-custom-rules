@@ -6,6 +6,7 @@ import {
   mergeManifest,
   parseArgs,
   gitCommits,
+  readExistingManifest,
 } from './generate-release-manifest';
 
 const RULE_NAMES = [
@@ -171,6 +172,44 @@ describe('mergeManifest', () => {
   it('tolerates a non-array existing manifest', () => {
     const next = { version: '1.0.0', date: 'd', rules: [] };
     expect(mergeManifest(undefined, next)).toEqual([next]);
+  });
+});
+
+describe('readExistingManifest', () => {
+  const enoent = () => {
+    const error = new Error('missing') as NodeJS.ErrnoException;
+    error.code = 'ENOENT';
+    throw error;
+  };
+
+  it('returns [] when the manifest file does not exist (first release)', () => {
+    expect(readExistingManifest('release-manifest.json', enoent)).toEqual([]);
+  });
+
+  it('parses and returns an existing manifest array', () => {
+    const existing = [{ version: '1.0.0', date: 'd', rules: [] }];
+    const readFile = () => JSON.stringify(existing);
+    expect(readExistingManifest('release-manifest.json', readFile)).toEqual(
+      existing,
+    );
+  });
+
+  it('rethrows malformed JSON rather than discarding history', () => {
+    const readFile = () => '{ not json';
+    expect(() =>
+      readExistingManifest('release-manifest.json', readFile),
+    ).toThrow();
+  });
+
+  it('rethrows non-ENOENT read errors rather than discarding history', () => {
+    const eacces = () => {
+      const error = new Error('denied') as NodeJS.ErrnoException;
+      error.code = 'EACCES';
+      throw error;
+    };
+    expect(() =>
+      readExistingManifest('release-manifest.json', eacces),
+    ).toThrow('denied');
   });
 });
 

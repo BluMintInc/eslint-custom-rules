@@ -63,6 +63,17 @@ export const resolveConflicts = async (
       );
       return false;
     }
+    /**
+     * A non-zero exit (failed run or failed stop-hook) means the resolution is
+     * untrustworthy. Bail before the conflict-state/commit checks below so a
+     * broken run can never produce a `git commit --no-edit` merge commit.
+     */
+    if (result.exitCode !== 0) {
+      logWithTimestamp(
+        `Claude exited with code ${result.exitCode} resolving conflicts; aborting.`,
+      );
+      return false;
+    }
 
     if (!isInMergeConflictState()) {
       logWithTimestamp('Merge conflicts resolved (merge already committed).');
