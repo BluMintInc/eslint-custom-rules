@@ -283,6 +283,22 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
       filename: 'MyComponent.ts',
       code: `function MyComponent(): React.FC { return null; }`,
     },
+
+    // main as a standalone entry-point function name (domain allowlist)
+    `function main() {}`,
+    `async function main() {}`,
+    `const main = () => {}`,
+    `const main = async () => {}`,
+    // main as a class method
+    {
+      code: `class App {
+        main() {}
+      }`,
+    },
+    // mainX compound names — first word is still "main", should also pass
+    // (domain allowlist matches on leading word, so mainProcess starts with "main")
+    `function mainProcess() {}`,
+    `const mainHandler = () => {}`,
   ],
   invalid: [
     {
