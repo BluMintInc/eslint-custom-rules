@@ -499,6 +499,101 @@ function ensureCompareDeeplyImportFixes(
   };
 }
 
+/**
+ * Names of React types that represent renderable UI or component references.
+ * Props typed as any of these are stable references (JSX elements, component
+ * constructors, render-prop functions) and do NOT benefit from deep value
+ * comparison — flagging them would produce false positives.
+ */
+const REACT_RENDER_TYPE_NAMES = new Set([
+  'ReactNode',
+  'ReactChild',
+  'ReactElement',
+  'ReactPortal',
+  'ReactFragment',
+  // JSX.Element resolves to a global symbol named 'Element' in the JSX namespace
+  'Element',
+  'Component',
+  'PureComponent',
+  'ComponentClass',
+  'FunctionComponent',
+  'FC',
+  'ComponentType',
+  'ExoticComponent',
+  'NamedExoticComponent',
+  'MemoExoticComponent',
+  'ForwardRefExoticComponent',
+  'LazyExoticComponent',
+  'JSXElementConstructor',
+  'RefObject',
+  'RefCallback',
+  'Ref',
+]);
+
+/**
+ * Returns true when `sym` is declared inside a `.d.ts` file whose path
+ * contains "react" — indicating it originates from @types/react rather than
+ * from user code that happens to use the same name.
+ *
+ * Also returns true when the symbol has NO declarations at all: this happens
+ * when TypeScript resolves the type as `any` because the source module (e.g.
+ * @types/react) is not included in the tsconfig `types` array.  A symbol with
+ * no declarations cannot be a user-defined type, so treating it as "from
+ * React" is safe — it avoids flagging props that would otherwise be excluded
+ * once the types are properly wired.
+ */
+function isSymbolFromReactDeclarationFile(
+  sym: import('typescript').Symbol,
+): boolean {
+  const declarations = sym.declarations;
+  // No declarations ⟹ the type was resolved from an unresolvable external
+  // module (common when @types/react is absent from the tsconfig types list).
+  // User-defined types always have at least one declaration.
+  if (!declarations || declarations.length === 0) return true;
+  return declarations.some((decl) => {
+    const fileName = decl.getSourceFile?.()?.fileName ?? '';
+    return fileName.endsWith('.d.ts') && /react/i.test(fileName);
+  });
+}
+
+/**
+ * Returns true when `type` is a React render-related type that should be
+ * excluded from the "complex prop" check.  Detects by matching the type's
+ * alias symbol or own symbol name against a known React-type allowlist AND
+ * verifying the matched symbol's declaration originates from a React `.d.ts`
+ * file to avoid false negatives for user types that coincidentally share the
+ * same name.
+ */
+function isReactRenderType(type: Type): boolean {
+  // Check the aliasSymbol first (covers type aliases like ReactNode, FC, etc.)
+  const aliasSymbol = (type as { aliasSymbol?: import('typescript').Symbol })
+    .aliasSymbol;
+  if (aliasSymbol) {
+    const name = aliasSymbol.escapedName as string;
+    if (
+      REACT_RENDER_TYPE_NAMES.has(name) &&
+      isSymbolFromReactDeclarationFile(aliasSymbol)
+    ) {
+      return true;
+    }
+  }
+
+  // Check the type's own symbol (covers interfaces / classes like ReactElement,
+  // ComponentClass, ForwardRefExoticComponent, etc.)
+  const sym = type.symbol;
+  if (sym) {
+    const name = sym.escapedName as string;
+    if (
+      REACT_RENDER_TYPE_NAMES.has(name) &&
+      isSymbolFromReactDeclarationFile(sym)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function isComplexType(
   ts: typeof import('typescript'),
   type: Type,
@@ -515,6 +610,14 @@ function isComplexTypeInternal(
 ): boolean {
   if (visited.has(type)) return false;
   visited.add(type);
+
+  // Exclude React render-related types before any structural checks.
+  // This must come early so that ReactElement (an object type) and ReactNode
+  // (a union containing ReactElement) are both short-circuited here rather
+  // than being caught by the isObjectType / checkUnionType branches below.
+  if (isReactRenderType(type)) {
+    return false;
+  }
 
   const flags = type.flags ?? 0;
 
@@ -670,18 +773,94 @@ function extractAnnotationType(
   return undefined;
 }
 
+/**
+ * Returns true when an annotation TypeNode (the explicit type written in
+ * source, e.g. `React.ComponentType` or `React.ReactNode | null`) resolves to
+ * a React render type that must be excluded from the complex-prop check.
+ *
+ * This path is taken when the prop type resolves to `any` (common when
+ * @types/react is not listed in the tsconfig `types` array) but the
+ * annotation still carries the original alias name via the TypeScript
+ * type-checker.
+ *
+ * For union annotation nodes (e.g. `ReactNode | null`), all non-null /
+ * non-undefined members must themselves be React render types for the whole
+ * union to be considered a React render type.
+ */
+function isAnnotationReactRenderType(
+  annotationType: import('typescript').TypeNode,
+  checker: TypeChecker,
+  ts: typeof import('typescript'),
+): boolean {
+  try {
+    const tsModule = ts;
+
+    // Handle union annotation nodes like `React.ReactNode | null`.
+    if (tsModule.isUnionTypeNode?.(annotationType)) {
+      const nonNullishMembers = annotationType.types.filter((member) => {
+        // Nullish keywords appearing directly (older TypeScript AST forms)
+        if (
+          member.kind === tsModule.SyntaxKind.NullKeyword ||
+          member.kind === tsModule.SyntaxKind.UndefinedKeyword ||
+          member.kind === tsModule.SyntaxKind.VoidKeyword
+        ) {
+          return false;
+        }
+        // `null` and `undefined` appear as LiteralTypeNode wrapping the
+        // corresponding keyword in modern TypeScript AST.
+        if (tsModule.isLiteralTypeNode?.(member)) {
+          const lit = (member as import('typescript').LiteralTypeNode).literal;
+          if (
+            lit.kind === tsModule.SyntaxKind.NullKeyword ||
+            lit.kind === tsModule.SyntaxKind.UndefinedKeyword
+          ) {
+            return false;
+          }
+        }
+        return true;
+      });
+      // If every non-nullish member is a React render type, the union is too.
+      return (
+        nonNullishMembers.length > 0 &&
+        nonNullishMembers.every((member) =>
+          isAnnotationReactRenderType(member, checker, ts),
+        )
+      );
+    }
+
+    // For plain TypeReference nodes (the common case), resolve via the checker.
+    const resolvedType = checker.getTypeFromTypeNode?.(annotationType);
+    if (!resolvedType) return false;
+    return isReactRenderType(resolvedType);
+  } catch {
+    return false;
+  }
+}
+
 function shouldTreatAnyAsComplex(
   prop: import('typescript').Symbol,
   propType: Type,
   ts: typeof import('typescript'),
   treatAnyAsComplex: boolean,
   parentTypeFlags: number,
+  checker?: TypeChecker,
 ): boolean {
   if (!(propType.flags & ts.TypeFlags.Any)) return false;
   if (treatAnyAsComplex) return true;
 
   const propDeclaration = extractPropertyDeclaration(prop);
   const annotationType = extractAnnotationType(propDeclaration);
+
+  // When the annotation resolves to a React render type, the prop is a
+  // stable component/render-prop reference that does not benefit from deep
+  // value comparison — exclude it regardless of the any-as-complex heuristic.
+  if (
+    annotationType &&
+    checker &&
+    isAnnotationReactRenderType(annotationType, checker, ts)
+  ) {
+    return false;
+  }
 
   return (
     (annotationType && annotationType.kind !== ts.SyntaxKind.AnyKeyword) ||
@@ -709,6 +888,7 @@ function isPropertyComplex(
     ts,
     treatAnyAsComplex,
     parentTypeFlags,
+    checker,
   );
 }
 
