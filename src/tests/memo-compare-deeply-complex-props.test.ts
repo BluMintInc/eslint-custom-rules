@@ -194,8 +194,186 @@ export const MyComponent = memo(({ name, sx, style, containerSx, wrapperStyle }:
 });
 `,
       },
+      // Bug #1179: React render types (ReactNode, ReactElement, ComponentType, FC, render-prop
+      // function types) must NOT be flagged as complex props.
+      {
+        filename: 'src/components/ReactNodeProp.tsx',
+        code: `
+import React, { memo } from 'react';
+type Props = { icon: React.ReactNode; label: string };
+const Comp = ({ icon, label }: Props) => <div>{icon}{label}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/ReactElementProp.tsx',
+        code: `
+import React, { memo } from 'react';
+type Props = { header: React.ReactElement; title: string };
+const Comp = ({ header, title }: Props) => <div>{header}<h1>{title}</h1></div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/ReactComponentTypeProp.tsx',
+        code: `
+import React, { memo } from 'react';
+type Props = { Avatar: React.ComponentType; name: string };
+const Comp = ({ Avatar, name }: Props) => <div><Avatar />{name}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/ReactFCProp.tsx',
+        code: `
+import React, { memo } from 'react';
+type Props = { Preview: React.FC<{ id: string }>; count: number };
+const Comp = ({ Preview, count }: Props) => <div><Preview id="x" />{count}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/MixedReactAndData.tsx',
+        code: `
+import React, { memo } from 'react';
+
+// Reproduces issue #1179: Avatar/Preview (render types) mixed with data objects.
+// Only the data objects should be flagged — Avatar and Preview must be excluded.
+type ChannelProps = {
+  Avatar: React.ComponentType;
+  Preview: React.FC<{ id: string }>;
+  activeChannel: { id: string; name: string };
+  watchers: { userId: string }[];
+};
+
+const ChannelPreview = ({ Avatar, Preview, activeChannel, watchers }: ChannelProps) => (
+  <div>{activeChannel.name}</div>
+);
+
+import { compareDeeply } from 'src/util/memo';
+export const Wrapped = memo(ChannelPreview, compareDeeply('activeChannel', 'watchers'));
+`,
+      },
+      {
+        filename: 'src/components/ReactNodeUnionNullable.tsx',
+        code: `
+import React, { memo } from 'react';
+// ReactNode already includes null/undefined; a nullable variant must also be excluded.
+type Props = { icon: React.ReactNode | null; label: string };
+const Comp = ({ icon, label }: Props) => <div>{icon}{label}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/MemoExoticProp.tsx',
+        code: `
+import React, { memo } from 'react';
+type Props = {
+  Inner: React.MemoExoticComponent<React.FC<{ id: string }>>;
+  title: string;
+};
+const Comp = ({ Inner, title }: Props) => <div><Inner id="x" />{title}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/ForwardRefExoticProp.tsx',
+        code: `
+import React, { memo } from 'react';
+type Props = {
+  Inner: React.ForwardRefExoticComponent<{ id: string }>;
+  title: string;
+};
+const Comp = ({ Inner, title }: Props) => <div><Inner id="x" />{title}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/RenderPropFunction.tsx',
+        code: `
+import React, { memo } from 'react';
+// A render-prop typed as a function returning ReactNode is a stable reference — not complex.
+type Props = {
+  renderHeader: (props: { title: string }) => React.ReactNode;
+  count: number;
+};
+const Comp = ({ renderHeader, count }: Props) => (
+  <div>{renderHeader({ title: 'hi' })}{count}</div>
+);
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/JSXElementProp.tsx',
+        code: `
+import React, { memo } from 'react';
+type Props = { node: JSX.Element; label: string };
+const Comp = ({ node, label }: Props) => <div>{node}{label}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
     ],
     invalid: [
+      // Bug #1179 regression: mixed React render types + data objects — only data props flagged.
+      {
+        filename: 'src/components/MixedReactAndDataInvalid.tsx',
+        code: `
+import React, { memo } from 'react';
+
+type ChannelProps = {
+  Avatar: React.ComponentType;
+  Preview: React.FC<{ id: string }>;
+  activeChannel: { id: string; name: string };
+  watchers: { userId: string }[];
+};
+
+const ChannelPreview = ({ Avatar, Preview, activeChannel, watchers }: ChannelProps) => (
+  <div>{activeChannel.name}</div>
+);
+
+export const Wrapped = memo(ChannelPreview);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import React, { memo } from 'react';
+
+type ChannelProps = {
+  Avatar: React.ComponentType;
+  Preview: React.FC<{ id: string }>;
+  activeChannel: { id: string; name: string };
+  watchers: { userId: string }[];
+};
+
+const ChannelPreview = ({ Avatar, Preview, activeChannel, watchers }: ChannelProps) => (
+  <div>{activeChannel.name}</div>
+);
+
+export const Wrapped = memo(ChannelPreview, compareDeeply('activeChannel', 'watchers'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      // A user-defined interface coincidentally named ReactNode (not from react) must still be flagged.
+      {
+        filename: 'src/components/FakeReactNodeProp.tsx',
+        code: `
+import { memo } from 'react';
+// This ReactNode is locally defined, not from @types/react — must still be flagged.
+interface ReactNode { value: string }
+type Props = { icon: ReactNode; label: string };
+const Comp = ({ icon, label }: Props) => <div>{label}</div>;
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+// This ReactNode is locally defined, not from @types/react — must still be flagged.
+interface ReactNode { value: string }
+type Props = { icon: ReactNode; label: string };
+const Comp = ({ icon, label }: Props) => <div>{label}</div>;
+export const Wrapped = memo(Comp, compareDeeply('icon'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
       {
         filename: 'src/components/MixedComplexProps.tsx',
         code: `
