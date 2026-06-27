@@ -203,8 +203,118 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         );
       `,
     },
+    // Bug #1182: prop whose declared type is a union of a function and a
+    // non-function (e.g. validator OR array of options). A plain function value
+    // is passed, but the prop is a configuration prop, not an event handler.
+    {
+      code: `
+        type Validate = (value?: string) => boolean;
+        type ChildProps = {
+          options?: Validate | readonly string[];
+        };
+        const Child = (props: ChildProps) => <div />;
+        const isAllowed: Validate = (v) => true;
+        const Parent = () => <Child options={isAllowed} />;
+      `,
+    },
+    // Bug #1182: the value itself has a union type (function | array).
+    {
+      code: `
+        type Validate = (value?: string) => boolean;
+        const Child = (props: any) => <div />;
+        const options: Validate | readonly string[] = (v) => true;
+        const Parent = () => <Child options={options} />;
+      `,
+    },
+    // Bug #1182: optional union prop (function | array | undefined). The
+    // undefined member is ignored, but the array member still makes it mixed.
+    {
+      code: `
+        type Validate = (value?: string) => boolean;
+        type ChildProps = {
+          validate?: Validate | readonly number[];
+        };
+        const Child = (props: ChildProps) => <div />;
+        const fn: Validate = (v) => true;
+        const Parent = () => <Child validate={fn} />;
+      `,
+    },
+    // Bug #1182: union of a function and a primitive (string).
+    {
+      code: `
+        type ChildProps = {
+          format: ((v: string) => string) | string;
+        };
+        const Child = (props: ChildProps) => <div />;
+        const fmt = (v: string) => v;
+        const Parent = () => <Child format={fmt} />;
+      `,
+    },
   ],
   invalid: [
+    // Bug #1182 control: an exclusively-function prop on a typed component must
+    // still be flagged — the union exemption must not suppress real callbacks.
+    {
+      code: `
+        type ChildProps = {
+          validate: (value: string) => boolean;
+        };
+        const Child = (props: ChildProps) => <div />;
+        const fn = (v: string) => true;
+        const Parent = () => <Child validate={fn} />;
+      `,
+      errors: [{ messageId: 'callbackPropPrefix' }],
+      output: `
+        type ChildProps = {
+          validate: (value: string) => boolean;
+        };
+        const Child = (props: ChildProps) => <div />;
+        const fn = (v: string) => true;
+        const Parent = () => <Child onValidate={fn} />;
+      `,
+    },
+    // Bug #1182 control: an optional pure callback (function | undefined) is not
+    // a mixed union, so it must still be flagged.
+    {
+      code: `
+        type ChildProps = {
+          submit?: (value: string) => boolean;
+        };
+        const Child = (props: ChildProps) => <div />;
+        const fn = (v: string) => true;
+        const Parent = () => <Child submit={fn} />;
+      `,
+      errors: [{ messageId: 'callbackPropPrefix' }],
+      output: `
+        type ChildProps = {
+          submit?: (value: string) => boolean;
+        };
+        const Child = (props: ChildProps) => <div />;
+        const fn = (v: string) => true;
+        const Parent = () => <Child onSubmit={fn} />;
+      `,
+    },
+    // Bug #1182 control: a union whose members are all functions has no
+    // non-function member, so it must still be flagged.
+    {
+      code: `
+        type ChildProps = {
+          validate: ((v: string) => boolean) | ((v: number) => boolean);
+        };
+        const Child = (props: ChildProps) => <div />;
+        const fn = (v: string) => true;
+        const Parent = () => <Child validate={fn} />;
+      `,
+      errors: [{ messageId: 'callbackPropPrefix' }],
+      output: `
+        type ChildProps = {
+          validate: ((v: string) => boolean) | ((v: number) => boolean);
+        };
+        const Child = (props: ChildProps) => <div />;
+        const fn = (v: string) => true;
+        const Parent = () => <Child onValidate={fn} />;
+      `,
+    },
     // Function returning HTMLElement should be flagged (not a React render prop)
     {
       code: `

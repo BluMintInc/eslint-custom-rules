@@ -103,6 +103,42 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
       return type.getCallSignatures().length > 0;
     }
 
+    // A union counts as "mixed" when it pairs a callable member with a
+    // non-callable one (e.g. `Validate<T> | readonly T[]`). `undefined`/`null`
+    // members are ignored so plain optional callbacks (`(() => void) | undefined`)
+    // remain pure functions.
+    function isMixedFunctionUnion(type: ts.Type | undefined): boolean {
+      if (!type || !type.isUnion()) {
+        return false;
+      }
+      const members = type.types.filter(
+        (member) =>
+          !(member.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null)),
+      );
+      const hasFunctionMember = members.some(
+        (member) => member.getCallSignatures().length > 0,
+      );
+      const hasNonFunctionMember = members.some(
+        (member) => member.getCallSignatures().length === 0,
+      );
+      return hasFunctionMember && hasNonFunctionMember;
+    }
+
+    // The `on` prefix is only meaningful for props that are *exclusively*
+    // callbacks. A prop typed `Validate<T> | readonly T[]` is a configuration
+    // prop that merely accepts a function as one option, so it must be skipped.
+    // The passed value may be a plain function even when the prop legitimately
+    // accepts non-function values, so the prop's contextual (declared) type is
+    // inspected alongside the value's own type.
+    function acceptsNonFunctionValue(node: TSESTree.Node): boolean {
+      const tsNode = parserServices!.esTreeNodeToTSNodeMap.get(node);
+      const valueType = checker.getTypeAtLocation(tsNode);
+      const contextualType = checker.getContextualType(tsNode as ts.Expression);
+      return (
+        isMixedFunctionUnion(valueType) || isMixedFunctionUnion(contextualType)
+      );
+    }
+
     function isRenderFunction(node: TSESTree.Node): boolean {
       const tsNode = parserServices!.esTreeNodeToTSNodeMap.get(node);
       const type = checker.getTypeAtLocation(tsNode);
@@ -189,6 +225,7 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
             propName &&
             !propName.startsWith('on') &&
             !propName.startsWith('render') &&
+            !acceptsNonFunctionValue(node.value.expression) &&
             !isRenderFunction(node.value.expression) &&
             !isReactComponentType(node.value.expression)
           ) {
