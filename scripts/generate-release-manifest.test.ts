@@ -211,6 +211,15 @@ describe('readExistingManifest', () => {
       readExistingManifest('release-manifest.json', eacces),
     ).toThrow('denied');
   });
+
+  it('rejects a valid-but-non-array payload rather than discarding history', () => {
+    /** `{}` parses fine but is not the manifest array; without this guard
+     * mergeManifest would silently treat it as empty and overwrite history. */
+    const readFile = () => '{}';
+    expect(() =>
+      readExistingManifest('release-manifest.json', readFile),
+    ).toThrow('must contain an array');
+  });
 });
 
 describe('parseArgs', () => {

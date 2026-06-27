@@ -83,6 +83,16 @@ export const pushWithRebaseRetry = (cwd: string): boolean => {
       return true;
     } catch (retryError) {
       logWithTimestamp(`Push retry failed: ${extractErrorMessage(retryError)}`);
+      /**
+       * A conflicting `pull --rebase` leaves a rebase half-applied; abort it so
+       * the branch returns to its pre-pull state (local commit intact, no
+       * dangling rebase) for the caller to unwind or retry cleanly.
+       */
+      try {
+        execSync('git rebase --abort', { cwd, stdio: 'pipe' });
+      } catch {
+        /** No rebase in progress. */
+      }
       return false;
     }
   }
@@ -137,5 +147,19 @@ export const abortMerge = (cwd: string): void => {
  */
 export const discardChanges = (cwd: string): void => {
   execSync('git reset --hard HEAD', { cwd, stdio: 'pipe' });
+  execSync('git clean -fd', { cwd, stdio: 'pipe' });
+};
+
+/**
+ * Drops the most recent commit and any working-tree changes, returning the
+ * branch to its pre-commit state. Used when a freshly-committed fix fails to
+ * push: an unpushed commit leaves a clean worktree, and the check-fixing phase
+ * only pushes when it makes a *new* commit — so a stranded commit would never be
+ * re-pushed. Discarding it lets the still-failing check drive a fresh commit and
+ * push next cycle. Each push failure unwinds its own commit, so HEAD~1 always
+ * targets exactly the one commit just made.
+ */
+export const undoLastCommit = (cwd: string): void => {
+  execSync('git reset --hard HEAD~1', { cwd, stdio: 'pipe' });
   execSync('git clean -fd', { cwd, stdio: 'pipe' });
 };
