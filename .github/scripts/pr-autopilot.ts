@@ -39,10 +39,15 @@ import {
 
 let isShuttingDown = false;
 
+/**
+ * Inter-cycle pacing wait. The timer is intentionally NOT unref'd: it is the
+ * only ref'd handle during the wait, so unref'ing it lets Node's event loop
+ * drain and the process exit after a single cycle — the loop must stay alive
+ * across cycles to run unattended.
+ */
 const sleep = (ms: number): Promise<void> => {
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    timer.unref?.();
+    setTimeout(resolve, ms);
   });
 };
 
