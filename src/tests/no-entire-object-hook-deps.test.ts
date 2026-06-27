@@ -550,6 +550,61 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
+    // Regression (#1176): a function returned via a shorthand property inside an
+    // `as const` object is a usage of the dependency, not an unused dependency.
+    // The dependency drives the memoized return value, so it must NOT be reported.
+    {
+      code: `
+        const useOAuthCustom = () => {
+          const connectOAuthCustom = useLatestCallback(async (method) => method);
+          return useMemo(() => {
+            return { connectOAuthCustom } as const;
+          }, [connectOAuthCustom]);
+        };
+      `,
+    },
+    // Regression (#1176): same pattern with a concise arrow body.
+    {
+      code: `
+        const useOAuthCustom = () => {
+          const connectOAuthCustom = useLatestCallback(async (method) => method);
+          return useMemo(() => ({ connectOAuthCustom } as const), [connectOAuthCustom]);
+        };
+      `,
+    },
+    // Regression (#1176): shorthand function alongside another shorthand value in
+    // an `as const` object — both dependencies are used in the returned object.
+    {
+      code: `
+        const useHandlers = () => {
+          const connectOAuthCustom = useLatestCallback(async (method) => method);
+          const disconnect = useLatestCallback(() => undefined);
+          return useMemo(() => {
+            return { connectOAuthCustom, disconnect } as const;
+          }, [connectOAuthCustom, disconnect]);
+        };
+      `,
+    },
+    // Regression (#1176): an object used only inside JSX within an `as const`
+    // memo return is a usage and must NOT be reported as unused.
+    {
+      code: `
+        const RolesCentralized = ({ obj, roles }) => {
+          const dialogProps = useMemo(() => {
+            return {
+              Wrapper: (
+                <Ctx.Provider dataOverride={obj}>
+                  <RoleProvider roles={roles}>
+                    <Fragment />
+                  </RoleProvider>
+                </Ctx.Provider>
+              ),
+            } as const;
+          }, [obj, roles]);
+          return dialogProps;
+        };
+      `,
+    },
   ],
   invalid: [
     // Optional chaining case
