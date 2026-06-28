@@ -119,6 +119,26 @@ ruleTesterTs.run('global-const-style', rule, {
       code: 'const EMAIL_REGEX = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;',
       filename: 'test.ts',
     },
+    // Issue #1186: null/undefined/boolean literals must NOT be flagged for
+    // `as const`. `null as const` is invalid TS (TS1355) — the autofix would
+    // produce uncompilable code — and `true`/`false`/undefined already carry
+    // their literal type, so the assertion is redundant.
+    {
+      code: 'const DEFAULT_FALLBACK = null;',
+      filename: 'test.ts',
+    },
+    {
+      code: 'const DEFAULT_UNDEFINED = undefined;',
+      filename: 'test.ts',
+    },
+    {
+      code: 'const DEFAULT_SHOW_ICONS = true;',
+      filename: 'test.ts',
+    },
+    {
+      code: 'const DEFAULT_IS_ENABLED = false;',
+      filename: 'test.ts',
+    },
     // Nested assertions that include as const should be accepted
     {
       code: 'const COLORS = ({ primary: "#000" } as const) as ThemeA;',
