@@ -78,6 +78,33 @@ function computeScoreViaAlgorithm(data) {}     // Algorithm choice matters
 /* eslint-enable @blumintinc/blumint/no-unnecessary-verb-suffix */
 ```
 
+### Phrasal-verb endings are not redundant suffixes
+
+A trailing `In`/`On` is **only** redundant when the word before it is a noun
+object whose value lives in the parameters (`searchItemsIn`, `processEventOn`).
+When the particle instead fuses with its verb into a phrasal verb, it is
+inseparable and the rule leaves the name alone — no disable needed:
+
+```ts
+// Past-participle adjectives describing state — the "In"/"Out" is part of the word
+const isLiveUserSignedIn = async () => {};
+function isSignedIn() {}
+function isLoggedIn() {}
+const optedIn = () => {};
+function hasZoomedIn() {}
+function wasLoggedOut() {}
+
+// Boolean predicates (is/has/was/should/can/will) — trailing word is a state adjective
+function isFeatureOn() {}
+function hasSessionOn() {}
+
+// Established compound phrasal verbs — the particle carries the action
+const useGuardSignIn = () => {};
+function handleSignIn() {}
+function handleLogOut() {}
+function handleCheckIn() {}
+```
+
 ## When Not To Use It
 
 You can disable this rule when the suffix carries domain meaning that parameters alone cannot convey (e.g., security mode, data partition, migration origin). Prefer targeted disables near the affected declarations so the exception stays visible to readers.
