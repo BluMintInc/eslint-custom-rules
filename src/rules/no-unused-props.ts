@@ -188,6 +188,58 @@ export const noUnusedProps = createRule({
       return null;
     };
 
+    /**
+     * Resolves the `*Props` type name from a parameter's type-annotation node.
+     * Unwraps parenthesized types and descends through generic wrapper type
+     * arguments (e.g. `Readonly<Foo>`, `Partial<...>`, `Readonly<Partial<Foo>>`)
+     * to find the underlying `*Props` reference. Returns the first `*Props`
+     * identifier found, or `null`. Uses the same `endsWith('Props')` heuristic
+     * as the direct path so forward-declared Props types still resolve.
+     */
+    const resolvePropsTypeName = (
+      typeNode: TSESTree.TypeNode | undefined,
+      visited: Set<TSESTree.TypeNode> = new Set(),
+    ): string | null => {
+      if (!typeNode || visited.has(typeNode)) {
+        return null;
+      }
+      visited.add(typeNode);
+
+      if (isTSParenthesizedType(typeNode)) {
+        return resolvePropsTypeName(typeNode.typeAnnotation, visited);
+      }
+
+      if (typeNode.type !== AST_NODE_TYPES.TSTypeReference) {
+        return null;
+      }
+
+      if (
+        typeNode.typeName.type === AST_NODE_TYPES.Identifier &&
+        typeNode.typeName.name.endsWith('Props')
+      ) {
+        return typeNode.typeName.name;
+      }
+
+      // Generic wrapper (Readonly/Partial/etc.): descend into its type arguments
+      // to find the nested *Props reference. typeParameters is the v5 AST shape;
+      // typeArguments is the v6+ shape — handle both for forward compatibility.
+      const typeArgs =
+        typeNode.typeParameters ??
+        (typeNode as { typeArguments?: TSESTree.TSTypeParameterInstantiation })
+          .typeArguments;
+
+      if (typeArgs) {
+        for (const arg of typeArgs.params) {
+          const resolved = resolvePropsTypeName(arg, visited);
+          if (resolved) {
+            return resolved;
+          }
+        }
+      }
+
+      return null;
+    };
+
     const isAnyPropFromSpreadTypeUsed = (
       spreadTypeName: string,
       used: Set<string>,
@@ -266,6 +318,206 @@ export const noUnusedProps = createRule({
       return false;
     };
 
+    /**
+     * Records which props an ObjectPattern consumes into `used`. A rest element
+     * (`...rest`) consumes all remaining props, so it flips `restUsed` and also
+     * marks spread-type keys used. Renamed bindings (`{ a: localA }`) still mark
+     * the original prop name `a`. Returns whether a rest element was present.
+     */
+    const collectUsedFromObjectPattern = (
+      pattern: TSESTree.ObjectPattern,
+      typeName: string,
+      used: Set<string>,
+    ): boolean => {
+      let restUsed = false;
+      pattern.properties.forEach((prop) => {
+        if (prop.type === AST_NODE_TYPES.Property) {
+          const propName = getStaticPropName(prop.key);
+          if (propName) {
+            used.add(propName);
+          }
+        } else if (
+          prop.type === AST_NODE_TYPES.RestElement &&
+          prop.argument.type === AST_NODE_TYPES.Identifier
+        ) {
+          // Rest spread (`{...rest}`): all remaining props are forwarded ⇒ used.
+          // Spread-type markers are also flagged so the spread-forwarding skip
+          // applies; remaining plain props are handled at report time via
+          // `restUsed` (the props map may be incomplete here on forward refs).
+          restUsed = true;
+          const propsType = propsTypes.get(typeName);
+          if (propsType) {
+            Object.keys(propsType).forEach((key) => {
+              if (key.startsWith('...')) {
+                used.add(key);
+              }
+            });
+          }
+        }
+      });
+      return restUsed;
+    };
+
+    /**
+     * Whether an Identifier node is a value-position *reference* to a variable
+     * (vs. a declaration binding, an object-property key, or the property of a
+     * member expression like `foo.paramName`). Used to detect opaque param use.
+     */
+    const isParamReference = (
+      parent: TSESTree.Node | null,
+      parentKey: string | null,
+    ): boolean => {
+      if (!parent) {
+        return false;
+      }
+
+      // `foo.paramName` — the identifier is the member's property, not the param.
+      if (
+        parent.type === AST_NODE_TYPES.MemberExpression &&
+        parentKey === 'property' &&
+        !parent.computed
+      ) {
+        return false;
+      }
+
+      // Non-shorthand object property key: `{ paramName: x }`.
+      if (
+        parent.type === AST_NODE_TYPES.Property &&
+        parentKey === 'key' &&
+        !parent.computed
+      ) {
+        return false;
+      }
+
+      // A binding position (declaration id, function param, etc.).
+      if (
+        (parent.type === AST_NODE_TYPES.VariableDeclarator &&
+          parentKey === 'id') ||
+        parentKey === 'params'
+      ) {
+        return false;
+      }
+
+      return true;
+    };
+
+    /**
+     * Scans a function body for `const { a, b } = <paramName>` destructuring of
+     * an identifier parameter and records the destructured prop names as used.
+     * Matches only the exact `paramName` binding so destructuring of a different
+     * variable does not mark props used. Does not descend into nested functions
+     * that shadow `paramName` (a redeclared binding is a different variable).
+     */
+    type BodyDestructuringResult = {
+      /** Number of `const { ... } = <paramName>` destructurings found. */
+      destructureCount: number;
+      /** A rest element appeared in some destructuring (`{ a, ...rest } = props`). */
+      restUsed: boolean;
+      /**
+       * The param is referenced in a way whose prop consumption can't be
+       * enumerated (member access `props.x`, spread `{...props}`, passed as a
+       * value/argument). Such usage opaquely consumes props ⇒ don't report.
+       */
+      hasOpaqueUsage: boolean;
+    };
+
+    const collectBodyDestructuring = (
+      body: TSESTree.Node,
+      paramName: string,
+      typeName: string,
+      used: Set<string>,
+    ): BodyDestructuringResult => {
+      const result: BodyDestructuringResult = {
+        destructureCount: 0,
+        restUsed: false,
+        hasOpaqueUsage: false,
+      };
+
+      const declaresParamName = (declarators: TSESTree.VariableDeclarator[]) =>
+        declarators.some(
+          (d) =>
+            d.id.type === AST_NODE_TYPES.Identifier && d.id.name === paramName,
+        );
+
+      /** Identifier nodes that are the `init` of a `const {} = props` declarator. */
+      const destructureInits = new Set<TSESTree.Node>();
+
+      const visit = (
+        node: TSESTree.Node | null | undefined,
+        parent: TSESTree.Node | null,
+        parentKey: string | null,
+      ): void => {
+        if (!node || typeof node.type !== 'string') {
+          return;
+        }
+
+        if (node.type === AST_NODE_TYPES.VariableDeclarator) {
+          if (
+            node.id.type === AST_NODE_TYPES.ObjectPattern &&
+            node.init?.type === AST_NODE_TYPES.Identifier &&
+            node.init.name === paramName
+          ) {
+            destructureInits.add(node.init);
+            result.destructureCount += 1;
+            if (collectUsedFromObjectPattern(node.id, typeName, used)) {
+              result.restUsed = true;
+            }
+          }
+        }
+
+        // A bare reference to the param that is NOT a destructuring init is an
+        // opaque consumption (member access, spread, argument, return, etc.).
+        if (
+          node.type === AST_NODE_TYPES.Identifier &&
+          node.name === paramName &&
+          !destructureInits.has(node) &&
+          isParamReference(parent, parentKey)
+        ) {
+          result.hasOpaqueUsage = true;
+        }
+
+        // Stop descending into nested functions that re-bind `paramName`, since
+        // that shadowing binding refers to a different variable.
+        if (
+          (node.type === AST_NODE_TYPES.FunctionDeclaration ||
+            node.type === AST_NODE_TYPES.FunctionExpression ||
+            node.type === AST_NODE_TYPES.ArrowFunctionExpression) &&
+          node.params.some(
+            (p) => p.type === AST_NODE_TYPES.Identifier && p.name === paramName,
+          )
+        ) {
+          return;
+        }
+        if (
+          node.type === AST_NODE_TYPES.VariableDeclaration &&
+          declaresParamName(node.declarations)
+        ) {
+          // A `const <paramName> = ...` rebind shadows the param from here on.
+          return;
+        }
+
+        for (const key of Object.keys(node)) {
+          if (key === 'parent') {
+            continue;
+          }
+          const value = (node as unknown as Record<string, unknown>)[key];
+          if (Array.isArray(value)) {
+            value.forEach((child) =>
+              visit(child as TSESTree.Node | null | undefined, node, key),
+            );
+          } else if (
+            value &&
+            typeof (value as { type?: unknown }).type === 'string'
+          ) {
+            visit(value as TSESTree.Node, node, key);
+          }
+        }
+      };
+
+      visit(body, null, null);
+      return result;
+    };
+
     const reportUnusedProps = (
       typeName: string,
       used: Set<string>,
@@ -293,6 +545,10 @@ export const noUnusedProps = createRule({
 
           // Skip reporting for generic type parameters (T, K, etc.)
           if (isGenericTypeSpread(prop)) {
+            shouldReport = false;
+          } else if (restUsed) {
+            // An explicit rest element (`{ a, ...rest }`) captures every prop not
+            // named before it, so the remaining props are forwarded ⇒ used.
             shouldReport = false;
           } else if (prop.startsWith('...')) {
             shouldReport = !shouldSkipSpreadType(
@@ -840,51 +1096,68 @@ export const noUnusedProps = createRule({
       },
 
       VariableDeclaration(node) {
-        if (node.declarations.length === 1) {
-          const declaration = node.declarations[0];
-          if (
-            declaration.init?.type === AST_NODE_TYPES.ArrowFunctionExpression
-          ) {
-            const param = declaration.init.params[0];
-            if (
-              param?.type === AST_NODE_TYPES.ObjectPattern &&
-              param.typeAnnotation?.typeAnnotation.type ===
-                AST_NODE_TYPES.TSTypeReference &&
-              param.typeAnnotation.typeAnnotation.typeName.type ===
-                AST_NODE_TYPES.Identifier
-            ) {
-              const typeName =
-                param.typeAnnotation.typeAnnotation.typeName.name;
-              if (typeName.endsWith('Props')) {
-                const used = new Set<string>();
-                let restUsed = false;
-                param.properties.forEach((prop) => {
-                  if (prop.type === AST_NODE_TYPES.Property) {
-                    const propName = getStaticPropName(prop.key);
-                    if (propName) {
-                      used.add(propName);
-                    }
-                  } else if (
-                    prop.type === AST_NODE_TYPES.RestElement &&
-                    prop.argument.type === AST_NODE_TYPES.Identifier
-                  ) {
-                    // Handle rest spread operator {...rest}
-                    // When a rest operator is used, all remaining props are considered used
-                    restUsed = true;
-                    const propsType = propsTypes.get(typeName);
-                    if (propsType) {
-                      Object.keys(propsType).forEach((key) => {
-                        if (key.startsWith('...')) {
-                          used.add(key);
-                        }
-                      });
-                    }
-                  }
-                });
-                currentComponent = { node, typeName, used, restUsed };
-              }
-            }
+        if (node.declarations.length !== 1) {
+          return;
+        }
+        const declaration = node.declarations[0];
+        if (declaration.init?.type !== AST_NODE_TYPES.ArrowFunctionExpression) {
+          return;
+        }
+        const fn = declaration.init;
+        const param = fn.params[0];
+
+        if (param?.type === AST_NODE_TYPES.ObjectPattern) {
+          // Resolve through generic wrappers (e.g. `Readonly<FooProps>`) as well
+          // as the plain `FooProps` annotation.
+          const typeName = resolvePropsTypeName(
+            param.typeAnnotation?.typeAnnotation,
+          );
+          if (typeName) {
+            const used = new Set<string>();
+            const restUsed = collectUsedFromObjectPattern(
+              param,
+              typeName,
+              used,
+            );
+            currentComponent = { node, typeName, used, restUsed };
           }
+          return;
+        }
+
+        if (param?.type === AST_NODE_TYPES.Identifier) {
+          // Identifier param (`props: FooProps`): the destructuring happens in
+          // the body. Resolve the Props type (unwrapping generic wrappers) and
+          // scan the body for `const { ... } = props`.
+          const typeName = resolvePropsTypeName(
+            param.typeAnnotation?.typeAnnotation,
+          );
+          if (!typeName) {
+            return;
+          }
+          const used = new Set<string>();
+          const { destructureCount, restUsed, hasOpaqueUsage } =
+            collectBodyDestructuring(fn.body, param.name, typeName, used);
+
+          // Only check when the body destructures the param at least once.
+          // Member access (`props.x`), spread (`{...props}`), passing `props`
+          // whole, or never referencing it (e.g. `_props`) is left to prior
+          // behavior (no report) — those usages can't be enumerated reliably.
+          if (destructureCount === 0) {
+            return;
+          }
+
+          // Mixed usage (some destructure + opaque consumption) forwards the
+          // remaining props, so treat every prop as used to avoid false reports.
+          if (hasOpaqueUsage) {
+            const propsType = propsTypes.get(typeName);
+            if (propsType) {
+              Object.keys(propsType).forEach((key) => used.add(key));
+            }
+            currentComponent = { node, typeName, used, restUsed: true };
+            return;
+          }
+
+          currentComponent = { node, typeName, used, restUsed };
         }
       },
 

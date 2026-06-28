@@ -321,6 +321,127 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         sourceType: 'module',
       },
     },
+    // Issue #1215 Case 1: generic wrapper on the param's type annotation.
+    // \`Readonly<UseRangeOnChangeProps>\` must resolve to the underlying *Props
+    // type so the inline destructure marks all props used.
+    {
+      code: `
+        export type UseRangeOnChangeProps = Readonly<{
+          value: number;
+          onChange: (value: number) => void;
+        }>;
+        export const UseRangeOnChange = ({ value, onChange }: Readonly<UseRangeOnChangeProps>) => (
+          <div onClick={() => onChange(value)}>{value}</div>
+        );
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // Issue #1215 Case 2: identifier param destructured in the body.
+    {
+      code: `
+        type WrapApiErrorProps = Readonly<{ error: unknown; message: string }>;
+        const WrapApiError = (props: WrapApiErrorProps) => {
+          const { error, message } = props;
+          return <div>{message}{String(error)}</div>;
+        };
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // Issue #1215: nested generic wrappers (\`Readonly<Partial<...>>\`) resolve.
+    {
+      code: `
+        type DeepProps = { a: string; b: string };
+        const Deep = ({ a, b }: Readonly<Partial<DeepProps>>) => <div>{a}{b}</div>;
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // Issue #1215: body destructure with a renamed binding (\`{ a: localA }\`)
+    // marks the original prop name \`a\` used.
+    {
+      code: `
+        type RenameProps = { a: string; b: string };
+        const Rename = (props: RenameProps) => {
+          const { a: localA, b } = props;
+          return <div>{localA}{b}</div>;
+        };
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // Issue #1215: body destructure with a rest element forwards remaining props.
+    {
+      code: `
+        type RestProps = { a: string; b: string; c: string };
+        const Rest = (props: RestProps) => {
+          const { a, ...rest } = props;
+          return <div {...rest}>{a}</div>;
+        };
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // Issue #1215: identifier param used opaquely (member access + spread)
+    // without body destructuring is left unchecked (no report), matching the
+    // prior behavior for \`(props: Props) => <div {...props}>{props.x}</div>\`.
+    {
+      code: `
+        type AccessProps = { title: string; content: string };
+        const Access = (props: AccessProps) => {
+          const { title } = props;
+          return <div {...props}>{title}</div>;
+        };
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // Issue #1215: non-component functions (hooks/utilities) are checked when
+    // their extension is configured as react-like; all-props-used ⇒ no report.
+    {
+      code: `
+        type UseRangeProps = { value: number; onChange: (v: number) => void };
+        const useRange = (props: UseRangeProps) => {
+          const { value, onChange } = props;
+          return () => onChange(value);
+        };
+      `,
+      filename: 'src/hooks/useRange.ts',
+      settings: {
+        'no-unused-props': {
+          reactLikeExtensions: ['.ts', '.tsx'],
+        },
+      },
+      parserOptions: {
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
   ],
   invalid: [
     {
@@ -554,6 +675,106 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         ecmaVersion: 2018,
         sourceType: 'module',
         jsx: true,
+      },
+    },
+    // Issue #1215 control: a generic-wrapped inline destructure that OMITS a
+    // declared prop must still report the omitted prop (no weakened positives).
+    {
+      code: `
+        type WrapProps = { error: unknown; message: string };
+        const Wrap = ({ error }: Readonly<WrapProps>) => <div>{String(error)}</div>;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'message' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // Issue #1215 control: an identifier-param body destructure that OMITS a
+    // declared prop must still report the omitted prop.
+    {
+      code: `
+        type BodyProps = { error: unknown; message: string };
+        const Body = (props: BodyProps) => {
+          const { error } = props;
+          return <div>{String(error)}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'message' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // Issue #1215 control: destructuring a DIFFERENT variable does not count as
+    // using the param's props. \`error\` comes from \`other\`, so it is unused;
+    // \`message\` comes from \`props\`, so it is used.
+    {
+      code: `
+        type OtherProps = { error: unknown; message: string };
+        const Other = (props: OtherProps) => {
+          const other = { error: 1, message: 2 };
+          const { error } = other;
+          const { message } = props;
+          return <div>{message}{String(error)}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'error' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // Issue #1215 control: a configured-react-like \`.ts\` hook with a genuinely
+    // unused prop is still reported (non-component checking is not a free pass).
+    {
+      code: `
+        type UseRangeProps = { value: number; onChange: (v: number) => void };
+        const useRange = (props: UseRangeProps) => {
+          const { value } = props;
+          return value;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'onChange' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'src/hooks/useRange.ts',
+      settings: {
+        'no-unused-props': {
+          reactLikeExtensions: ['.ts', '.tsx'],
+        },
+      },
+      parserOptions: {
+        ecmaVersion: 2018,
+        sourceType: 'module',
       },
     },
   ],
