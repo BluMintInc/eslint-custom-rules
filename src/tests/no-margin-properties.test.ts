@@ -149,6 +149,186 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         },
       },
     },
+    // Valid: margin in createTheme styleOverrides is container-controlled theme styling, not sibling spacing
+    {
+      code: `
+        import { createTheme } from '@mui/material/styles';
+
+        const theme = createTheme({
+          components: {
+            MuiButton: {
+              styleOverrides: {
+                root: {
+                  margin: 8,
+                },
+              },
+            },
+          },
+        });
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+    // Valid: margins across nested theme overrides (pseudo-selectors, multiple components) are theme styling
+    {
+      code: `
+        import { createTheme } from '@mui/material/styles';
+
+        const theme = createTheme({
+          components: {
+            MuiButton: {
+              styleOverrides: {
+                root: {
+                  padding: 8,
+                  '&:hover': {
+                    marginTop: 2
+                  }
+                },
+                startIcon: {
+                  marginRight: 8
+                }
+              },
+            },
+            MuiTextField: {
+              styleOverrides: {
+                root: {
+                  marginBottom: 16
+                }
+              }
+            }
+          },
+        });
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+    // Valid: margins across multiple components/slots in createTheme are theme styling
+    {
+      code: `
+        import { createTheme } from '@mui/material/styles';
+
+        const theme = createTheme({
+          components: {
+            MuiButton: {
+              styleOverrides: {
+                root: { margin: 8 },
+                outlined: { marginTop: 4 }
+              },
+            },
+            MuiCard: {
+              styleOverrides: {
+                root: { marginBottom: 16 }
+              }
+            }
+          },
+        });
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+    // Valid: issue #1214 repro — MuiDialog paper margin is viewport-inset control, not sibling spacing
+    {
+      code: `
+        import { createTheme } from '@mui/material/styles';
+
+        const theme = createTheme({
+          components: {
+            MuiDialog: {
+              styleOverrides: {
+                paper: {
+                  '& .MuiDialog-paper': {
+                    margin: '32px',
+                  },
+                },
+              },
+            },
+          },
+        });
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+    // Valid: issue #1214 repro — MuiAvatarGroup margin: 0 resets MUI's own built-in margin
+    {
+      code: `
+        import { createTheme } from '@mui/material/styles';
+
+        const theme = createTheme({
+          components: {
+            MuiAvatarGroup: {
+              styleOverrides: {
+                avatar: {
+                  margin: 0,
+                },
+              },
+            },
+          },
+        });
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+    // Valid: issue #1214 repro — MuiFormHelperText marginTop is MUI internal layout
+    {
+      code: `
+        import { createTheme } from '@mui/material/styles';
+
+        const theme = createTheme({
+          components: {
+            MuiFormHelperText: {
+              styleOverrides: {
+                root: {
+                  marginTop: 4,
+                },
+              },
+            },
+          },
+        });
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+    // Valid: issue #1214 repro — MuiFormControlLabel margin: 0 resets MUI's own built-in margin
+    {
+      code: `
+        import { createTheme } from '@mui/material/styles';
+
+        const theme = createTheme({
+          components: {
+            MuiFormControlLabel: {
+              styleOverrides: {
+                root: {
+                  margin: 0,
+                },
+              },
+            },
+          },
+        });
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
     // Valid usage of padding with MUI's css function
     {
       code: `
@@ -454,6 +634,60 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
     },
   ],
   invalid: [
+    // Control: inline style object with margin assigned to sx still fires (non-theme)
+    {
+      code: `
+        import Box from '@mui/material/Box';
+
+        const styles = { margin: 8 };
+
+        function App() {
+          return <Box sx={styles} />;
+        }
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('margin')],
+    },
+    // Control: JSX sx attribute object with margin still fires (non-theme)
+    {
+      code: `
+        import Box from '@mui/material/Box';
+
+        function App() {
+          return <Box sx={{ margin: 2 }} />;
+        }
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('margin')],
+    },
+    // Control: sx object property with margin still fires (non-theme)
+    {
+      code: `
+        const config = {
+          sx: {
+            margin: 2,
+          },
+        };
+      `,
+      errors: [marginError('margin')],
+    },
+    // Control: css() call with margin still fires (non-theme)
+    {
+      code: `
+        import { css } from '@mui/system';
+
+        const styles = css({ margin: 4 });
+      `,
+      errors: [marginError('margin')],
+    },
     // Invalid MUI Box with marginLeft
     {
       code: `
@@ -586,30 +820,6 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
       },
       errors: [marginError('margin')],
     },
-    // Invalid margins in theme overrides
-    {
-      code: `
-        import { createTheme } from '@mui/material/styles';
-
-        const theme = createTheme({
-          components: {
-            MuiButton: {
-              styleOverrides: {
-                root: {
-                  margin: 8,
-                },
-              },
-            },
-          },
-        });
-      `,
-      parserOptions: {
-        ecmaFeatures: {
-          jsx: true,
-        },
-      },
-      errors: [marginError('margin')],
-    },
     // Invalid margins in MUI's css function
     {
       code: `
@@ -727,47 +937,6 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         },
       },
       errors: [marginError('margin')],
-    },
-    // Invalid margins in complex nested theme structure
-    {
-      code: `
-        import { createTheme } from '@mui/material/styles';
-
-        const theme = createTheme({
-          components: {
-            MuiButton: {
-              styleOverrides: {
-                root: {
-                  padding: 8,
-                  '&:hover': {
-                    marginTop: 2
-                  }
-                },
-                startIcon: {
-                  marginRight: 8
-                }
-              },
-            },
-            MuiTextField: {
-              styleOverrides: {
-                root: {
-                  marginBottom: 16
-                }
-              }
-            }
-          },
-        });
-      `,
-      parserOptions: {
-        ecmaFeatures: {
-          jsx: true,
-        },
-      },
-      errors: [
-        marginError('marginTop'),
-        marginError('marginRight'),
-        marginError('marginBottom'),
-      ],
     },
     // Invalid margins with string literals
     {
@@ -1074,38 +1243,6 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         marginError('margin'),
         marginError('marginTop'),
         marginError('marginLeft'),
-      ],
-    },
-    // Invalid margins in createTheme with multiple components
-    {
-      code: `
-        import { createTheme } from '@mui/material/styles';
-
-        const theme = createTheme({
-          components: {
-            MuiButton: {
-              styleOverrides: {
-                root: { margin: 8 },
-                outlined: { marginTop: 4 }
-              },
-            },
-            MuiCard: {
-              styleOverrides: {
-                root: { marginBottom: 16 }
-              }
-            }
-          },
-        });
-      `,
-      parserOptions: {
-        ecmaFeatures: {
-          jsx: true,
-        },
-      },
-      errors: [
-        marginError('margin'),
-        marginError('marginTop'),
-        marginError('marginBottom'),
       ],
     },
     // Invalid margins with shorthand properties mixed with longhand
