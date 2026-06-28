@@ -310,6 +310,12 @@ function isTypeGuardFunction(node: TSESTree.Node): boolean {
   // Check for type predicates (is keyword)
   if (typeAnnotation.type === AST_NODE_TYPES.TSTypePredicate) return true;
 
+  // `never` is never inferred: TypeScript infers `void` for a function whose
+  // every path throws, so an explicit `: never` always carries more information
+  // than inference (callers rely on it for control-flow narrowing and
+  // exhaustiveness). Removing it would silently widen the type to `void`.
+  if (typeAnnotation.type === AST_NODE_TYPES.TSNeverKeyword) return true;
+
   // Check for assertion functions (asserts keyword)
   if (typeAnnotation.type === AST_NODE_TYPES.TSTypeReference) {
     const typeName = typeAnnotation.typeName;
