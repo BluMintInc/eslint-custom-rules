@@ -1,0 +1,1 @@
+export declare const noJsxWhitespaceLiteral: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"noWhitespaceLiteral", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;

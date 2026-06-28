@@ -1,0 +1,1 @@
+export declare const ensurePointerEventsNone: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"missingPointerEventsNone", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;

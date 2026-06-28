@@ -1,0 +1,1 @@
+export declare const optimizeObjectBooleanConditions: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"extractBooleanCondition", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;

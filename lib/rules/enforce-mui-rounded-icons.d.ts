@@ -1,0 +1,1 @@
+export declare const enforceMuiRoundedIcons: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"enforceRoundedVariant", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;
