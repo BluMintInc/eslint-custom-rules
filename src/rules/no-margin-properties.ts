@@ -79,7 +79,13 @@ export const noMarginProperties = createRule<Options, MessageIds>({
       return MARGIN_PROPERTIES.has(normalizedName);
     }
 
-    // Check if a node is within an sx prop context or theme override context
+    /**
+     * True if node is in a flagged MUI styling context (sx attribute, sx
+     * object property, or css() call). Excludes createTheme styleOverrides:
+     * theme margins ARE the container-controlled styling (viewport insets,
+     * resets of MUI's built-in margins, internal layout), not the
+     * sibling-spacing this rule targets.
+     */
     function isMuiStylingContext(node: TSESTree.Node): boolean {
       let current: TSESTree.Node | undefined = node;
 
@@ -98,16 +104,6 @@ export const noMarginProperties = createRule<Options, MessageIds>({
           current.parent.type === AST_NODE_TYPES.Property &&
           current.parent.key.type === AST_NODE_TYPES.Identifier &&
           current.parent.key.name === 'sx'
-        ) {
-          return true;
-        }
-
-        // Check for theme overrides (MUI's createTheme)
-        if (
-          current.parent.type === AST_NODE_TYPES.Property &&
-          current.parent.key.type === AST_NODE_TYPES.Identifier &&
-          (current.parent.key.name === 'styleOverrides' ||
-            current.parent.key.name === 'components')
         ) {
           return true;
         }
@@ -363,54 +359,6 @@ export const noMarginProperties = createRule<Options, MessageIds>({
           const arg = node.arguments[0];
           if (arg.type === AST_NODE_TYPES.ObjectExpression) {
             checkObjectExpression(arg);
-          }
-        }
-
-        // Handle createTheme for MUI theme overrides
-        if (
-          node.callee.type === AST_NODE_TYPES.Identifier &&
-          node.callee.name === 'createTheme' &&
-          node.arguments.length > 0 &&
-          node.arguments[0].type === AST_NODE_TYPES.ObjectExpression
-        ) {
-          const themeObj = node.arguments[0];
-
-          // Find components property in theme object
-          const componentsProperty = themeObj.properties.find(
-            (prop) =>
-              prop.type === AST_NODE_TYPES.Property &&
-              prop.key.type === AST_NODE_TYPES.Identifier &&
-              prop.key.name === 'components' &&
-              prop.value.type === AST_NODE_TYPES.ObjectExpression,
-          ) as TSESTree.Property | undefined;
-
-          if (
-            componentsProperty &&
-            componentsProperty.value.type === AST_NODE_TYPES.ObjectExpression
-          ) {
-            // Check each component override
-            componentsProperty.value.properties.forEach((componentProp) => {
-              if (
-                componentProp.type === AST_NODE_TYPES.Property &&
-                componentProp.value.type === AST_NODE_TYPES.ObjectExpression
-              ) {
-                // Find styleOverrides property
-                const styleOverrides = componentProp.value.properties.find(
-                  (prop) =>
-                    prop.type === AST_NODE_TYPES.Property &&
-                    prop.key.type === AST_NODE_TYPES.Identifier &&
-                    prop.key.name === 'styleOverrides' &&
-                    prop.value.type === AST_NODE_TYPES.ObjectExpression,
-                ) as TSESTree.Property | undefined;
-
-                if (
-                  styleOverrides &&
-                  styleOverrides.value.type === AST_NODE_TYPES.ObjectExpression
-                ) {
-                  checkObjectExpression(styleOverrides.value);
-                }
-              }
-            });
           }
         }
       },
