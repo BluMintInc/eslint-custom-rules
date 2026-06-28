@@ -112,8 +112,91 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
     'function process123() {}',
     'function handle456() {}',
     'const transform789 = () => {};',
+
+    // Phrasal-verb past-participle adjectives (the trailing particle fuses with
+    // a preceding "-ed" participle into a single state adjective; stripping it
+    // destroys the meaning). Regression: issue #1227.
+    'const isLiveUserSignedIn = async () => {};',
+    'function isSignedIn() {}',
+    'function isLoggedIn() {}',
+    'const signedIn = () => {};',
+    'const loggedIn = () => {};',
+    'const optedIn = () => {};',
+    'const zoomedIn = () => {};',
+    'function isOptedIn() {}',
+    'function hasZoomedIn() {}',
+    'function wasLoggedOut() {}',
+    'function isLoggedOut() {}',
+    'const signedOut = () => {};',
+
+    // Base-form compound phrasal verbs (the particle is inseparable from a
+    // known phrasal-verb stem). Regression: issue #1227.
+    'const useGuardSignIn = () => {};',
+    'const useGuardSignInGame = () => {};',
+    'function handleSignIn() {}',
+    'function handleLogIn() {}',
+    'function handleLogOut() {}',
+    'function handleOptIn() {}',
+    'function handleCheckIn() {}',
+    'function handleZoomIn() {}',
+    `class AuthService {
+      handleSignIn() {}
+      handleLogOut() {}
+    }`,
   ],
   invalid: [
+    // Controls (#1227): a NOUN object before the particle is a genuine
+    // redundant verb-preposition suffix — the phrasal-verb exemption must NOT
+    // swallow these. The pre-particle word ("widget", "embed", "items",
+    // "admin") is not a known phrasal-verb stem, so they still fire.
+    {
+      code: 'function isWidgetIn(container) {}',
+      errors: [
+        {
+          messageId: 'unnecessaryVerbSuffix',
+          data: { name: 'isWidgetIn', suffix: 'In', suggestion: 'isWidget' },
+        },
+      ],
+      output: 'function isWidget(container) {}',
+    },
+    {
+      code: 'function loadEmbedIn(target) {}',
+      errors: [
+        {
+          messageId: 'unnecessaryVerbSuffix',
+          data: { name: 'loadEmbedIn', suffix: 'In', suggestion: 'loadEmbed' },
+        },
+      ],
+      output: 'function loadEmbed(target) {}',
+    },
+    {
+      code: 'function canRenderItemsIn(container) {}',
+      errors: [
+        {
+          messageId: 'unnecessaryVerbSuffix',
+          data: {
+            name: 'canRenderItemsIn',
+            suffix: 'In',
+            suggestion: 'canRenderItems',
+          },
+        },
+      ],
+      output: 'function canRenderItems(container) {}',
+    },
+    {
+      code: 'function isUserAdminOn(platform) {}',
+      errors: [
+        {
+          messageId: 'unnecessaryVerbSuffix',
+          data: {
+            name: 'isUserAdminOn',
+            suffix: 'On',
+            suggestion: 'isUserAdmin',
+          },
+        },
+      ],
+      output: 'function isUserAdmin(platform) {}',
+    },
     // Function declarations with basic prepositions
     {
       code: 'function createMatchFor(player) {}',
@@ -562,6 +645,86 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
         },
       ],
       output: 'function $specialHandle() {}',
+    },
+
+    // Controls for the phrasal-verb exemption (issue #1227): genuine
+    // verb-preposition suffixes whose token before the particle is a NOUN
+    // object (not a participle or phrasal stem) MUST still be flagged.
+    {
+      code: 'function loadFeedIn(scope) {}',
+      errors: [
+        {
+          messageId: 'unnecessaryVerbSuffix',
+          data: {
+            name: 'loadFeedIn',
+            suffix: 'In',
+            suggestion: 'loadFeed',
+          },
+        },
+      ],
+      output: 'function loadFeed(scope) {}',
+    },
+    {
+      code: 'function renderItemsIn(container) {}',
+      errors: [
+        {
+          messageId: 'unnecessaryVerbSuffix',
+          data: {
+            name: 'renderItemsIn',
+            suffix: 'In',
+            suggestion: 'renderItems',
+          },
+        },
+      ],
+      output: 'function renderItems(container) {}',
+    },
+    // Non-predicate prefix with a noun-before-particle: the boolean-predicate
+    // exemption must NOT trigger, so this still fires.
+    {
+      code: 'function fetchModalOn(element) {}',
+      errors: [
+        {
+          messageId: 'unnecessaryVerbSuffix',
+          data: {
+            name: 'fetchModalOn',
+            suffix: 'On',
+            suggestion: 'fetchModal',
+          },
+        },
+      ],
+      output: 'function fetchModal(element) {}',
+    },
+    // Past-participle exemption must remain particle-scoped: a participle before
+    // a NON-particle preposition ("From") is still a redundant suffix.
+    {
+      code: 'function loadCachedFrom(source) {}',
+      errors: [
+        {
+          messageId: 'unnecessaryVerbSuffix',
+          data: {
+            name: 'loadCachedFrom',
+            suffix: 'From',
+            suggestion: 'loadCached',
+          },
+        },
+      ],
+      output: 'function loadCached(source) {}',
+    },
+    // "is"-prefixed name whose suffix is NOT a phrasal particle: the
+    // boolean-predicate exemption is particle-scoped, so "From" still fires.
+    {
+      code: 'function isolateDataFrom(source) {}',
+      errors: [
+        {
+          messageId: 'unnecessaryVerbSuffix',
+          data: {
+            name: 'isolateDataFrom',
+            suffix: 'From',
+            suggestion: 'isolateData',
+          },
+        },
+      ],
+      output: 'function isolateData(source) {}',
     },
 
     // Multiple unnecessary suffixes
