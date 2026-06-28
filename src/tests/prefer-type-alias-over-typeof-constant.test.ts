@@ -126,6 +126,18 @@ ruleTesterTs.run(
           'export type ErrorMessageUserFriendly = (typeof ERROR_MESSAGES_USER_FRIENDLY)[number];',
         ].join('\n'),
       },
+      // Good: direct typeof in a type alias for a DEEPLY NESTED as-const object
+      // (Issue #1220). typeof is the single-source-of-truth alias here; an
+      // explicit type would duplicate the whole shape and drift from the value.
+      {
+        code: [
+          'export const SCROLLBARS = {',
+          "  primary: { '::-webkit-scrollbar': { width: '16px' }, '::-webkit-scrollbar-thumb': { background: 'red', border: '4px solid transparent' } },",
+          "  secondary: { '::-webkit-scrollbar': { width: '8px' } },",
+          '} as const;',
+          'export type Scrollbar = typeof SCROLLBARS;',
+        ].join('\n'),
+      },
       // Good: TS import type + union usage
       {
         code: [
