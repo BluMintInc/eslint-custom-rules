@@ -35,6 +35,22 @@ const COMPOSITING_VALUES = new Set([
   'transparent',
 ]);
 
+// CSS reset/identity values that explicitly DON'T promote a layer for a given
+// property. These are the opt-out counterparts to COMPOSITING_VALUES: `none`
+// removes the effect, `auto`/global keywords disable the hint, and the default
+// keyword leaves the element un-promoted. Keyed by normalized property name so
+// the allowlist stays property-specific (e.g. `none` clears `transform` but is
+// not a valid no-op for `opacity`).
+const NON_COMPOSITING_VALUES: Record<string, ReadonlySet<string>> = {
+  filter: new Set(['none']),
+  'backdrop-filter': new Set(['none']),
+  transform: new Set(['none']),
+  contain: new Set(['none']),
+  perspective: new Set(['none']),
+  'will-change': new Set(['auto', 'unset', 'initial', 'inherit', 'revert']),
+  'backface-visibility': new Set(['visible']),
+};
+
 export const noCompositingLayerProps = createRule<[], MessageIds>({
   name: 'no-compositing-layer-props',
   meta: {
@@ -63,6 +79,15 @@ export const noCompositingLayerProps = createRule<[], MessageIds>({
       );
     }
 
+    // Strip `!important` and normalize casing so reset/identity values written
+    // as e.g. `none !important` are still recognized as non-promoting.
+    function normalizePropertyValue(value: string): string {
+      return value
+        .replace(/\s*!important\s*$/i, '')
+        .trim()
+        .toLowerCase();
+    }
+
     function checkProperty(
       propertyName: string,
       propertyValue?: string,
@@ -75,6 +100,16 @@ export const noCompositingLayerProps = createRule<[], MessageIds>({
           const numValue = Number.parseFloat(propertyValue);
           if (Number.isNaN(numValue)) return false;
           return numValue > 0 && numValue < 1;
+        }
+        // CSS reset/identity values can't create a compositing layer, so don't
+        // flag them (mirrors the opacity value-awareness for the other props).
+        const allowedValues = NON_COMPOSITING_VALUES[normalizedName];
+        if (
+          allowedValues &&
+          propertyValue &&
+          allowedValues.has(normalizePropertyValue(propertyValue))
+        ) {
+          return false;
         }
         return true;
       }
