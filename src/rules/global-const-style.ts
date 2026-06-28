@@ -209,6 +209,17 @@ export default createRule<[], MessageIds>({
               if (target.type === AST_NODE_TYPES.Literal && 'regex' in target) {
                 return false;
               }
+              // Skip null and boolean literals. `null as const` is invalid
+              // TypeScript (TS1355), so the autofix would produce uncompilable
+              // code; `true`/`false` already have literal types, so `as const`
+              // is redundant. (`undefined` is an Identifier, not a Literal, so
+              // it never reaches the literal branch below.)
+              if (
+                target.type === AST_NODE_TYPES.Literal &&
+                (target.value === null || typeof target.value === 'boolean')
+              ) {
+                return false;
+              }
               return (
                 target.type === AST_NODE_TYPES.Literal ||
                 target.type === AST_NODE_TYPES.ArrayExpression ||
