@@ -24,6 +24,14 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
     'function assertNonNull<T>(value: T | null | undefined): asserts value is T { if (value == null) throw new Error("Value is null or undefined"); }',
     'function assert(condition: unknown): asserts condition { if (!condition) throw new Error("Assertion failed"); }',
 
+    // Explicit `never` return type (issue #1216): never inferred (TS infers
+    // `void` for all-throwing functions), so it is always significant — removing
+    // it would widen to `void` and break caller control-flow narrowing.
+    'const wrapApiError = (message: string): never => { throw new Error(message); };',
+    'function fail(message: string): never { throw new Error(message); }',
+    'const failConditional = (error: unknown, message: string): never => { if (error instanceof TypeError) { throw new Error(`Type error: ${message}`); } throw new Error(message); };',
+    'class Thrower { raise(message: string): never { throw new Error(message); } }',
+
     // Recursive functions with explicit return type
     {
       code: 'function factorial(n: number): number { if (n <= 1) return 1; return n * factorial(n - 1); }',
