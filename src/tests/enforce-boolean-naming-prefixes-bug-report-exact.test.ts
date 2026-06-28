@@ -199,6 +199,7 @@ ruleTesterTs.run(
           }>
         >();
         `,
+        options: [{ enforceForPropertySignatures: true }],
         errors: [
           {
             messageId: 'missingBooleanPrefix',
@@ -223,6 +224,7 @@ ruleTesterTs.run(
           enabled: boolean; // Invalid - doesn't start with underscore or approved prefix
         }
         `,
+        options: [{ enforceForPropertySignatures: true }],
         errors: [
           {
             messageId: 'missingBooleanPrefix',

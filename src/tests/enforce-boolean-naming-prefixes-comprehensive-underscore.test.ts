@@ -451,6 +451,7 @@ ruleTesterTs.run(
           _isValid: boolean; // This should be valid
         }
         `,
+        options: [{ enforceForPropertySignatures: true }],
         errors: [
           {
             messageId: 'missingBooleanPrefix',
@@ -588,6 +589,7 @@ ruleTesterTs.run(
           };
         }
         `,
+        options: [{ enforceForPropertySignatures: true }],
         errors: [
           {
             messageId: 'missingBooleanPrefix',

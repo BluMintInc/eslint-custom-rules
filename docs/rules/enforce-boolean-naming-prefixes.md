@@ -23,8 +23,11 @@ This rule requires your boolean-typed or boolean-valued identifiers to start wit
 - Your variable declarations typed or inferred as boolean (including arrow functions returning boolean).
 - Your functions and methods that return boolean values.
 - Your function parameters typed as boolean and boolean properties inside parameter object type literals.
-- Your object literal properties, class properties, and interface/type property signatures with boolean types or values.
+- Your class properties with boolean types or values.
+- Boolean property signatures in interfaces and type aliases **only when you opt in** via [`enforceForPropertySignatures`](#enforceforpropertysignatures). They are skipped by default because their names are frequently dictated by contracts you cannot rename (external API shapes, third-party interfaces, persisted data-model schemas such as Firestore fields).
 - The rule excludes type predicates and identifiers starting with `_`, which are treated as internal state.
+
+> **Note:** Object literal property names are intentionally **not** checked. Their names are dictated by the type the object satisfies, which may be an external contract.
 
 ### Common approved prefixes
 
@@ -65,13 +68,6 @@ class UserAccount {
     return this.failedAttempts > 3;
   }
 }
-
-interface UserState {
-  active: boolean;
-  subscription: boolean;
-}
-
-const settings = { enabled: true, feature: false };
 
 function authorized(): boolean { return checkAuth(); }
 function userExists(id: string): boolean { /* ... */ }
@@ -203,6 +199,24 @@ const [userInternal, setUserInternal] = useState<
 >(findItem(FIREBASE_USER_LOCAL_KEY_REGEX) || undefined);
 ```
 
+#### Property signatures in interfaces and type aliases
+
+Boolean property signatures in interfaces and type aliases are **not** checked by default. Property names in type definitions are commonly imposed by contracts you cannot rename — external API request/response shapes, third-party library interfaces, and persisted data-model schemas (for example, Firestore document fields). Enforcing prefixes there produces unavoidable false positives, so it is opt-in:
+
+```ts
+// Not flagged by default — the name mirrors an external API/data-model contract.
+interface CoinflowWithdrawRequest {
+  waitForConfirmation: boolean;
+}
+
+interface Tournament {
+  registrationOpen: boolean; // Firestore field name
+  optional: boolean;         // Firestore field name
+}
+```
+
+Set [`enforceForPropertySignatures`](#enforceforpropertysignatures) to `true` for codebases that fully control their type definitions and want prefixes enforced on them.
+
 ## Options
 
 This rule accepts an options object with the following properties:
@@ -210,7 +224,8 @@ This rule accepts an options object with the following properties:
 ```ts
 {
   "prefixes": string[],
-  "ignoreOverriddenGetters": boolean
+  "ignoreOverriddenGetters": boolean,
+  "enforceForPropertySignatures": boolean
 }
 ```
 
@@ -235,6 +250,20 @@ With this configuration, only the prefixes "is", "has", "can", and "should" will
 ### `ignoreOverriddenGetters`
 
 When `true`, getters marked `override` or declared as abstract are ignored. Use this when renaming getters would break inheritance contracts or interface compliance. Defaults to `false` so boolean prefixes are enforced on getters unless explicitly opted out.
+
+### `enforceForPropertySignatures`
+
+When `true`, boolean property signatures in interfaces and type aliases are required to use an approved prefix. Defaults to `false` because property names in type definitions are frequently dictated by external API contracts or persisted data-model schemas that cannot be renamed. Enable it only for codebases that fully control their type definitions.
+
+```json
+{
+  "rules": {
+    "@blumint/enforce-boolean-naming-prefixes": ["error", {
+      "enforceForPropertySignatures": true
+    }]
+  }
+}
+```
 
 ## When Not To Use It
 

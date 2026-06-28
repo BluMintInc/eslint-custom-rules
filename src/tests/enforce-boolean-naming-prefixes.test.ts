@@ -72,6 +72,56 @@ ruleTesterTs.run(
     }
     `,
 
+      // Regression (#1219): interface/type-alias boolean property signatures are
+      // NOT flagged by default — their names are frequently dictated by external
+      // API contracts and persisted data-model schemas the author cannot rename.
+      // Case 1: external API request contract.
+      `interface CoinflowWithdrawRequest { waitForConfirmation: boolean; }`,
+      // Case 2: Firestore document field names.
+      `
+    interface Tournament {
+      registrationOpen: boolean;
+      optional: boolean;
+    }
+    `,
+      // Case 2b: the same applies to type aliases.
+      `type TournamentDoc = { registrationOpen: boolean; optional: boolean; };`,
+      // Optional and union-typed property signatures are likewise exempt by default.
+      `interface Settings { darkMode?: boolean; }`,
+      `type FeatureFlags = { betaAccess: boolean | undefined };`,
+      // Interface extending another type still does not flag its own boolean fields.
+      `
+    interface Base { name: string; }
+    interface Account extends Base { suspended: boolean; }
+    `,
+      // Nested type-literal property signatures are exempt by default.
+      `type Wrapper = { meta: { archived: boolean } };`,
+      // Case 3: an object constant whose declared type is an object (not boolean)
+      // must not be flagged based on its inner boolean property.
+      `type GuardCancellation = { _isCancelled: boolean }; const CANCELLATION: GuardCancellation = { _isCancelled: true };`,
+      // Case 4: object-literal property names are dictated by the type they satisfy.
+      `const requestBody = { waitForConfirmation: false };`,
+      // Case 4b: object-literal property nested inside a call argument.
+      `const serialized = JSON.stringify({ waitForConfirmation: false });`,
+      // Case 5: underscore-prefixed boolean property inside a generic type argument.
+      `type FirebaseUserLocal = { uid: string }; const identity = <T,>(): T | undefined => undefined; const user = identity<FirebaseUserLocal & { _isFetchedFromRemote?: boolean }>();`,
+
+      // Opting in still allows already-prefixed property signatures (no false positive).
+      {
+        code: `
+    interface UserState {
+      isActive: boolean;
+      hasSubscription: boolean;
+    }
+    `,
+        options: [{ enforceForPropertySignatures: true }],
+      },
+      // Underscore-prefixed property signatures remain exempt even when opted in.
+      {
+        code: `interface Internal { _isReady: boolean; }`,
+        options: [{ enforceForPropertySignatures: true }],
+      },
+
       // Type predicates (special case that should pass regardless)
       'function isString(value: any): value is string { return typeof value === "string"; }',
       'function isUser(obj: any): obj is User { return obj && obj.id && obj.name; }',
@@ -297,7 +347,8 @@ ruleTesterTs.run(
         ],
       },
 
-      // Interface properties without proper boolean prefixes
+      // Interface properties without proper boolean prefixes are flagged only
+      // when property-signature enforcement is opted in.
       {
         code: `
       interface UserState {
@@ -305,6 +356,7 @@ ruleTesterTs.run(
         subscription: boolean;
       }
       `,
+        options: [{ enforceForPropertySignatures: true }],
         errors: [
           buildError({
             type: 'property',
@@ -316,6 +368,34 @@ ruleTesterTs.run(
             type: 'property',
             name: 'subscription',
             capitalizedName: 'Subscription',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+
+      // Opt-in also enforces type-alias property signatures.
+      {
+        code: `type Config = { darkMode: boolean; };`,
+        options: [{ enforceForPropertySignatures: true }],
+        errors: [
+          buildError({
+            type: 'property',
+            name: 'darkMode',
+            capitalizedName: 'DarkMode',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+
+      // Opt-in reaches nested type-literal property signatures.
+      {
+        code: `interface Wrapper { meta: { archived: boolean }; }`,
+        options: [{ enforceForPropertySignatures: true }],
+        errors: [
+          buildError({
+            type: 'property',
+            name: 'archived',
+            capitalizedName: 'Archived',
             prefixes: defaultPrefixes,
           }),
         ],

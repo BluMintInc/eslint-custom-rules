@@ -61,6 +61,7 @@ ruleTesterTs.run(
           name: string;
         }
         `,
+        options: [{ enforceForPropertySignatures: true }],
         errors: [
           {
             messageId: 'missingBooleanPrefix',

@@ -186,9 +186,11 @@ ruleTesterTs.run(
         ],
       },
 
-      // Test that interface properties without prefixes are caught
+      // Test that interface properties without prefixes are caught when
+      // property-signature enforcement is opted in.
       {
         code: `interface BadInterface { active: boolean; ready: boolean; }`,
+        options: [{ enforceForPropertySignatures: true }],
         errors: [
           {
             messageId: 'missingBooleanPrefix',

@@ -8,6 +8,7 @@ type Options = [
   {
     prefixes?: string[];
     ignoreOverriddenGetters?: boolean;
+    enforceForPropertySignatures?: boolean;
   },
 ];
 
@@ -38,6 +39,14 @@ const DEFAULT_BOOLEAN_PREFIXES = [
 const DEFAULT_OPTIONS: Required<Options[0]> = {
   prefixes: DEFAULT_BOOLEAN_PREFIXES,
   ignoreOverriddenGetters: false,
+  // Property names declared in interfaces and type aliases are frequently
+  // dictated by contracts the author cannot rename: external API request/response
+  // shapes, third-party library interfaces, and persisted data-model schemas
+  // (e.g. Firestore document fields). Flagging those produces unavoidable false
+  // positives, so property-signature enforcement is opt-in. Names the author does
+  // choose freshly — variables, function returns, class fields, parameters — stay
+  // enforced by default.
+  enforceForPropertySignatures: false,
 };
 
 const BOOLEANISH_BINARY_OPERATORS = new Set<
@@ -68,6 +77,10 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
             type: 'boolean',
             default: false,
           },
+          enforceForPropertySignatures: {
+            type: 'boolean',
+            default: false,
+          },
         },
         additionalProperties: false,
       },
@@ -88,6 +101,9 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     const ignoreOverriddenGetters =
       options.ignoreOverriddenGetters ??
       DEFAULT_OPTIONS.ignoreOverriddenGetters;
+    const enforceForPropertySignatures =
+      options.enforceForPropertySignatures ??
+      DEFAULT_OPTIONS.enforceForPropertySignatures;
 
     function findVariableInScopes(
       name: string,
@@ -1403,6 +1419,11 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
      * Check property signatures in interfaces/types for boolean types
      */
     function checkPropertySignature(node: TSESTree.TSPropertySignature) {
+      // Interface/type-alias property names are commonly imposed by contracts the
+      // author cannot rename (external APIs, data-model schemas), so they are only
+      // enforced when explicitly opted in.
+      if (!enforceForPropertySignatures) return;
+
       if (node.key.type !== AST_NODE_TYPES.Identifier) return;
 
       const propertyName = node.key.name;
