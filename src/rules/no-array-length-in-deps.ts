@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 // React hooks to check
 const HOOK_NAMES = new Set(['useEffect', 'useCallback', 'useMemo']);
@@ -89,7 +90,7 @@ function getLastPropertyName(expr: TSESTree.Expression): string | null {
 }
 
 function generateUniqueName(base: string, taken: Set<string>): string {
-  let candidate = `${base}Hash`;
+  const candidate = `${base}Hash`;
   if (!taken.has(candidate)) return candidate;
   let i = 2;
   while (taken.has(`${candidate}${i}`)) {
@@ -160,6 +161,91 @@ function isUseMemoImported(sourceCode: TSESLint.SourceCode): boolean {
     }
   }
   return false;
+}
+
+/**
+ * Hook callback = first function-typed argument (the effect/factory/memo fn).
+ * Deps array is the LAST argument; the callback precedes it.
+ */
+function getHookCallback(
+  node: TSESTree.CallExpression,
+): TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression | null {
+  for (const arg of node.arguments) {
+    if (
+      arg.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+      arg.type === AST_NODE_TYPES.FunctionExpression
+    ) {
+      return arg;
+    }
+  }
+  return null;
+}
+
+function rangeContains(outer: TSESTree.Node, inner: TSESTree.Node): boolean {
+  return inner.range[0] >= outer.range[0] && inner.range[1] <= outer.range[1];
+}
+
+/**
+ * True when `identifier` is the object of a non-computed `.length` access,
+ * i.e. the reference reads only the array's length, not its contents.
+ */
+function isLengthAccessOf(
+  identifier: TSESTree.Identifier | TSESTree.JSXIdentifier,
+): boolean {
+  const parent = identifier.parent as TSESTree.Node | undefined;
+  return (
+    !!parent &&
+    parent.type === AST_NODE_TYPES.MemberExpression &&
+    !parent.computed &&
+    parent.object === (identifier as TSESTree.Expression) &&
+    parent.property.type === AST_NODE_TYPES.Identifier &&
+    parent.property.name === 'length'
+  );
+}
+
+/**
+ * Decide whether a `<array>.length` dependency is safe to keep (suppress the
+ * report) by inspecting how the hook callback body uses the array binding.
+ *
+ * Safe (suppress) only when the array is referenced at least once inside the
+ * callback body AND every such reference is the object of a `.length` access —
+ * then depending on `.length` correctly avoids reruns on content changes.
+ *
+ * Returns false (keep reporting) for any non-`.length` use (element access,
+ * spread, iteration/method calls, bare reference, passed as an argument), when
+ * the array is never referenced in the body, and whenever the base cannot be
+ * confidently resolved (complex member-chain bases) — never hide a real bug.
+ */
+function isLengthOnlyUsage(
+  context: Readonly<TSESLint.RuleContext<MessageIds, Options>>,
+  callback: TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression,
+  baseExpr: TSESTree.Expression,
+): boolean {
+  // Only resolvable for a bare identifier base (e.g. `items` in `items.length`).
+  // Member-chain bases (`a.b`, `data?.items`) have no single binding to track.
+  if (baseExpr.type !== AST_NODE_TYPES.Identifier) {
+    return false;
+  }
+
+  // Resolve the binding the DEP refers to (from the deps-array identifier's
+  // scope), so a binding shadowed inside the callback body is not mistaken for
+  // it — the outer binding then has zero body references and we keep reporting.
+  const scope = ASTHelpers.getScope(context, baseExpr);
+  const variable = ASTHelpers.findVariableInScope(scope, baseExpr.name);
+  if (!variable) {
+    return false;
+  }
+
+  const bodyReferences = variable.references.filter((ref) =>
+    rangeContains(callback.body as TSESTree.Node, ref.identifier),
+  );
+
+  // No body usage → not the content-vs-length bug, but keep current behavior.
+  if (bodyReferences.length === 0) {
+    return false;
+  }
+
+  return bodyReferences.every((ref) => isLengthAccessOf(ref.identifier));
 }
 
 function isStableHashImported(
@@ -244,13 +330,21 @@ export const noArrayLengthInDeps = createRule<Options, MessageIds>({
           element: TSESTree.Expression;
           member: TSESTree.MemberExpression;
         }[] = [];
+        const callback = getHookCallback(node);
         for (const el of depsArg.elements) {
           if (!el) continue;
           if (el.type === AST_NODE_TYPES.SpreadElement) continue;
           const member = getLengthMember(el as TSESTree.Expression);
-          if (member) {
-            lengthDeps.push({ element: el as TSESTree.Expression, member });
+          if (!member) continue;
+          // Suppress when the callback body reads only `<array>.length`, never
+          // the array's contents — then `.length` is the correct dependency.
+          if (
+            callback &&
+            isLengthOnlyUsage(context, callback, getBaseExpression(member))
+          ) {
+            continue;
           }
+          lengthDeps.push({ element: el as TSESTree.Expression, member });
         }
 
         if (lengthDeps.length === 0) return;
