@@ -403,16 +403,50 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
     {
       code: `
         import { processDataWithHungarianParams, variableString } from './external-module';
-        
+
         // Using the imported function with Hungarian notation parameters
         const result = processDataWithHungarianParams(variableString, 5, true);
-        
+
         function foo(data: string) {
           // Local function with clean parameters
           return processDataWithHungarianParams(variableString, 10, false);
         }
       `,
     },
+
+    // Issue #1217 Category 1: TypeScript generic type parameters with a `T`
+    // prefix are a TS naming convention ("Type parameter"), never Hungarian.
+    // The declaration and any reference to it must be exempt.
+    'function identity<TNumber>(x: TNumber): TNumber { return x; }',
+    'type ExtendFunctionProps<TFunc, TNewParams> = TFunc;',
+    'interface Container<TElement> { item: TElement; }',
+    'const wrap = <TKey,>(k: TKey): TKey => k;',
+    'function first<TArr extends unknown[]>(a: TArr) { return a; }',
+    'class Box<TValue> { value!: TValue; }',
+    'type Resolve<TArgs, TReturn> = (...args: TArgs[]) => TReturn;',
+    'type Paths<TObj, TDepth extends number = 5> = keyof TObj;',
+    'type ArrayOfLength<TLength extends number, TKeys> = TLength;',
+    'type Identity<TData> = TData;',
+    // Type parameter referenced inside a function body (must also be exempt)
+    'function clone<TObj>(o: TObj) { const copy: TObj = o; return copy; }',
+    // infer-introduced type parameters
+    'type Unwrap<TUnresolved> = TUnresolved extends (...a: infer TArgs) => infer TReturn ? TArgs : TReturn;',
+
+    // Issue #1217 Category 2: compound descriptive names where a type-like word
+    // carries domain meaning rather than tagging the entity's type.
+    // Plural domain nouns ("Numbers"/"Integers") describe what is validated.
+    'function areBothFiniteNumbers(a: number, b: number) { return true; }',
+    'function areBothPositiveIntegers(a: number, b: number) { return true; }',
+    // A FULL type word as an interior SCREAMING_SNAKE segment qualifies a variant.
+    'const EDITABLE_WRAPPER_NUMBER_PROPS_DEFAULT = { isEditing: true };',
+    // The rule judges the identifier name, never the type annotation text.
+    'type TeamSize = Readonly<Range<number>>;',
+    // Type-utility / conversion names: the type-word denotes a type concept.
+    'type StringToNumber<T extends string> = T extends `${infer N extends number}` ? N : never;',
+    'type ExtractNumber<T> = T;',
+    'type FuncKeys<T> = { [K in keyof T]: T[K] extends (...args: readonly any[]) => any ? K : never }[keyof T];',
+    'type PromiseOrValue<T> = T extends Promise<infer U> ? Promise<U> : Promise<T> | T;',
+    'type CapitalizedString = `${Capitalize<string>}`;',
   ],
   invalid: [
     {
@@ -635,6 +669,68 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
         errorFor('GET_STR_FULL_NAME'),
       ],
     },
+
+    // Issue #1217 regression guards: genuine Hungarian MUST still fire after the
+    // false-positive fixes above.
+    // Single-letter type prefixes (b=boolean, i=integer/index).
+    {
+      code: 'const bIsActive = true;',
+      errors: [errorFor('bIsActive')],
+    },
+    {
+      code: 'const bActive = true;',
+      errors: [errorFor('bActive')],
+    },
+    {
+      code: 'const iCount = 0;',
+      errors: [errorFor('iCount')],
+    },
+    // Abbreviation prefixes.
+    {
+      code: 'const strName = "John";',
+      errors: [errorFor('strName')],
+    },
+    {
+      code: 'const numCount = 5;',
+      errors: [errorFor('numCount')],
+    },
+    {
+      code: 'const arrItems = [];',
+      errors: [errorFor('arrItems')],
+    },
+    {
+      code: 'const arrUsers = [];',
+      errors: [errorFor('arrUsers')],
+    },
+    {
+      code: 'const objConfig = {};',
+      errors: [errorFor('objConfig')],
+    },
+    // Full type-word SUFFIX (the canonical Hungarian suffix form).
+    {
+      code: 'const nameString = "John";',
+      errors: [errorFor('nameString')],
+    },
+    // Abbreviation marker inside a TYPE name still fires (StringToNumber-style
+    // exemption is for FULL type-words only, not abbreviations).
+    {
+      code: 'type UserStrName = string;',
+      errors: [errorFor('UserStrName')],
+    },
+    {
+      code: 'interface ConfigArrSettings { value: string; }',
+      errors: [errorFor('ConfigArrSettings')],
+    },
+    {
+      code: 'class UserObjData {}',
+      errors: [errorFor('UserObjData')],
+    },
+    // A FULL type word in a TYPE name that is NOT a multi-word semantic concept
+    // (no other descriptive segment) still fires.
+    {
+      code: 'const stringValue = "x";',
+      errors: [errorFor('stringValue')],
+    },
   ],
 });
 
@@ -746,6 +842,12 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
     // Valid usage of type-like words
     'const Stringent = "strict";',
     'function parseIntended() {}',
+
+    // Issue #1217: a FULL type word as an interior SCREAMING_SNAKE segment (not
+    // prefix, suffix, or directly before the final noun) qualifies a variant and
+    // is descriptive, not Hungarian.
+    'const EDITABLE_WRAPPER_NUMBER_PROPS_DEFAULT = { isEditing: true };',
+    'const SELECTED_STRING_FILTER_OPTIONS = [];',
   ],
   invalid: [
     // Invalid SCREAMING_SNAKE_CASE examples - with Hungarian notation
@@ -930,7 +1032,10 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
       errors: [errorFor('configArrayOptions')],
     },
 
-    // Full words with SCREAMING_SNAKE_CASE
+    // Full words with SCREAMING_SNAKE_CASE.
+    // A FULL type word directly before the final noun (..._STRING_NAME) tags that
+    // noun -> Hungarian. (Contrast EDITABLE_WRAPPER_NUMBER_PROPS_DEFAULT in the
+    // valid set, where NUMBER is buried with multiple trailing segments.)
     {
       code: 'const USER_STRING_NAME = "John";',
       errors: [errorFor('USER_STRING_NAME')],
@@ -938,6 +1043,17 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
     {
       code: 'const CONFIG_ARRAY_OPTIONS = [];',
       errors: [errorFor('CONFIG_ARRAY_OPTIONS')],
+    },
+    // Issue #1217: an ABBREVIATION marker as an interior SCREAMING_SNAKE segment
+    // is always Hungarian (no English word is spelled STR/OBJ/...), even when a
+    // FULL type word in the same position would be exempt.
+    {
+      code: 'const APP_STR_LABEL_DEFAULT = "x";',
+      errors: [errorFor('APP_STR_LABEL_DEFAULT')],
+    },
+    {
+      code: 'const WRAPPER_OBJ_PROPS_DEFAULT = {};',
+      errors: [errorFor('WRAPPER_OBJ_PROPS_DEFAULT')],
     },
     {
       code: `

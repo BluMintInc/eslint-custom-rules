@@ -18,8 +18,17 @@ This rule disallows embedding type information in identifier names (Hungarian no
 
 - Locally declared identifiers that start or end with common type markers (camelCase, PascalCase, or SCREAMING_SNAKE_CASE).
 - Class members and parameters that reuse the same markers.
+- Single-letter type prefixes `b` (boolean) and `i` (integer/index) when followed by an uppercase letter, e.g. `bIsActive`, `iCount`.
 - The rule allows common compound nouns (for example, `PhoneNumber`, `EmailAddress`) and descriptive suffixes like `Formatted`, `Parsed`, or `Converted`.
 - Built-in methods and imported identifiers are ignored to avoid false positives for code you do not control.
+
+### What is NOT flagged
+
+- **Generic type parameters with a `T` prefix.** The leading `T` is the standard TypeScript convention for "Type parameter" (e.g. `TKey`, `TValue`, `TNumber`), not Hungarian notation. The declaration and every reference to it are exempt.
+- **Plural domain nouns.** A spelled-out type word that is the domain concept being described is not a type tag, e.g. `areBothFiniteNumbers`, `positiveIntegers`.
+- **Interior `SCREAMING_SNAKE_CASE` segments.** A full type word buried in the middle of a constant name (not a prefix, suffix, or the segment directly before the final noun) qualifies a variant rather than tagging the entity's type, e.g. `EDITABLE_WRAPPER_NUMBER_PROPS_DEFAULT`.
+- **Type names that denote a type concept or conversion.** A full type word used as one descriptive segment of a type alias / interface / class name reads as a concept, comparable to `PhoneNumber`, e.g. `StringToNumber`, `CapitalizedString`, `PromiseOrValue`, `FuncKeys`. Abbreviation markers (`str`, `arr`, `obj`, ...) are still flagged in type names because no English word is spelled that way (e.g. `UserStrName` is flagged).
+- **Type annotations.** The rule judges only the identifier name, never the annotation, so `type TeamSize = Readonly<Range<number>>` is allowed.
 
 ### How to fix
 
@@ -69,6 +78,31 @@ function checkPath(pathname) {
 
 // Imported identifiers are ignored
 import { userDataString } from './module';
+```
+
+```ts
+// Generic type parameters with a `T` prefix are a TypeScript convention
+function identity<TValue>(value: TValue): TValue {
+  return value;
+}
+type ExtendProps<TFunc, TNewParams> = TFunc;
+
+// Plural domain nouns describe what is validated, not a type
+function areBothFiniteNumbers(a: number, b: number) {
+  return Number.isFinite(a) && Number.isFinite(b);
+}
+
+// Type-utility names where the type word denotes a concept or conversion
+type StringToNumber<T extends string> = T extends `${infer N extends number}`
+  ? N
+  : never;
+type CapitalizedString = `${Capitalize<string>}`;
+
+// A full type word as an interior SCREAMING_SNAKE_CASE segment qualifies a variant
+const EDITABLE_WRAPPER_NUMBER_PROPS_DEFAULT = { isEditing: true };
+
+// The rule judges the name, never the type annotation
+type TeamSize = Readonly<Range<number>>;
 ```
 
 ## When Not To Use It
