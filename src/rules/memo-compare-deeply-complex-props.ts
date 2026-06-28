@@ -56,6 +56,21 @@ function isUtilMemoModulePath(path: string): boolean {
 }
 
 /**
+ * Reserved React slots that never reach a component's props object at runtime.
+ * React extracts `ref` and `key` before invoking the memo equality function, so
+ * a deep comparator can never observe them. Some prop-type sources (notably the
+ * `forwardRef<T, P>` exotic-component signature, whose params include the
+ * synthetic `RefAttributes<T> = { ref?: Ref<T> }` member) surface them as
+ * structural members anyway; flagging them would emit dead `compareDeeply('ref')`
+ * advice. Excluded the same way `children` is.
+ */
+const RESERVED_REACT_PROP_NAMES = new Set(['ref', 'key', 'children']);
+
+function isReservedReactPropName(name: string): boolean {
+  return RESERVED_REACT_PROP_NAMES.has(name);
+}
+
+/**
  * Checks if a property name is handled by the default deep equality logic
  * in our custom memo implementation (blumintAreEqual).
  */
@@ -904,7 +919,7 @@ function getComplexPropertiesFromType(
   const complexProps: string[] = [];
 
   for (const prop of properties) {
-    if (prop.name === 'children') continue;
+    if (isReservedReactPropName(prop.name)) continue;
 
     if (
       isPropertyComplex(
