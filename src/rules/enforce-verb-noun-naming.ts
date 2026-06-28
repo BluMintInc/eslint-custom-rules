@@ -405,6 +405,8 @@ const ALLOWLIST = {
     'brush',
     'bubble',
     'buck',
+    'bucket',
+    'bucketize',
     'buckle',
     'bud',
     'budge',

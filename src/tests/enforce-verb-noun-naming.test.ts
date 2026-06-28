@@ -232,6 +232,21 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
     `const blumintAreEqual = () => {}`,
     `const callableFactory = () => {}`,
     `const recursive = () => {}`,
+
+    // Regression tests for Issue #1225 — `bucket` is a transitive verb
+    // ("group/sort items into buckets"), idiomatic in data-engineering.
+    // NLP fallback (compromise) tags it noun-dominant, so it lives in the allowlist.
+    `function bucketMatchesByDepth() {}`,
+    `function bucketEventsByHour() {}`,
+    `function bucketRequestsByEndpoint() {}`,
+    `const bucketLogsByLevel = () => {}`,
+    `async function bucketItemsIntoTiers() {}`,
+    `function bucketizeHistogram() {}`,
+    {
+      code: `class Bracket {
+        bucketMatchesByDepth() {}
+      }`,
+    },
     {
       code: `function UnauthorizedPage() { return <div />; }`,
       parserOptions: {
@@ -341,6 +356,17 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
     {
       code: `const data = () => null;`,
       errors: [verbNounError('data')],
+    },
+
+    // Issue #1225 controls — adding `bucket` to the verb allowlist must NOT
+    // blanket-allow look-alike leading nouns; genuine noun-first names still fire.
+    {
+      code: `function socketHandler() { return null; }`,
+      errors: [verbNounError('socketHandler')],
+    },
+    {
+      code: `const payloadData = () => null;`,
+      errors: [verbNounError('payloadData')],
     },
 
     // Invalid class method names (not verb phrases)
