@@ -36,6 +36,81 @@ const C = ({ items }) => {
 };
 `,
     },
+    {
+      // Body reads ONLY items.length (returns it) -> .length is the correct dep
+      code: `
+const C = ({ items }) => {
+  const count = useMemo(() => {
+    return items.length;
+  }, [items.length]);
+  return count;
+};
+`,
+    },
+    {
+      // Body compares items.length === 0 -> still length-only
+      code: `
+const C = ({ items }) => {
+  const isEmpty = useMemo(() => items.length === 0, [items.length]);
+  return isEmpty;
+};
+`,
+    },
+    {
+      // Body compares items.length > 5 -> still length-only
+      code: `
+const C = ({ items }) => {
+  useEffect(() => {
+    if (items.length > 5) {
+      doSomething();
+    }
+  }, [items.length]);
+  return null;
+};
+`,
+    },
+    {
+      // Body passes items.length as a prop -> length-only access
+      code: `
+const C = ({ items }) => {
+  const node = useMemo(() => {
+    return <Badge count={items.length} />;
+  }, [items.length]);
+  return node;
+};
+`,
+    },
+    {
+      // Multiple arrays, each used only via .length in the body
+      code: `
+const C = ({ items, users }) => {
+  const total = useMemo(() => {
+    return items.length + users.length;
+  }, [items.length, users.length]);
+  return total;
+};
+`,
+    },
+    {
+      // length-only access alongside an unrelated non-array dependency
+      code: `
+const C = ({ items, id }) => {
+  useEffect(() => {
+    track(id, items.length);
+  }, [items.length, id]);
+  return null;
+};
+`,
+    },
+    {
+      // useCallback body reads only the length
+      code: `
+const C = ({ items }) => {
+  const cb = useCallback(() => items.length, [items.length]);
+  return cb;
+};
+`,
+    },
   ],
   invalid: [
     {
@@ -262,6 +337,216 @@ const itemsHash = useMemo(() => makeHash(items), [items]);
 
 const C = ({ items }) => {
   useEffect(() => {}, [itemsHash]);
+  return null;
+};
+`,
+    },
+    {
+      // Body iterates contents via forEach -> .length misses content changes
+      code: `
+const C = ({ items }) => {
+  useEffect(() => {
+    items.forEach((item) => console.log(item));
+    console.log(items.length);
+  }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: `import { useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const itemsHash = useMemo(() => stableHash(items), [items]);
+
+const C = ({ items }) => {
+  useEffect(() => {
+    items.forEach((item) => console.log(item));
+    console.log(items.length);
+  }, [itemsHash]);
+  return null;
+};
+`,
+    },
+    {
+      // Body maps over contents -> reads contents, must keep reporting
+      code: `
+const C = ({ items }) => {
+  const mapped = useMemo(() => {
+    return items.map((item) => item.id);
+  }, [items.length]);
+  return mapped;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: `import { useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const itemsHash = useMemo(() => stableHash(items), [items]);
+
+const C = ({ items }) => {
+  const mapped = useMemo(() => {
+    return items.map((item) => item.id);
+  }, [itemsHash]);
+  return mapped;
+};
+`,
+    },
+    {
+      // Body indexes into contents -> reads contents, must keep reporting
+      code: `
+const C = ({ items }) => {
+  const first = useMemo(() => {
+    return items[0];
+  }, [items.length]);
+  return first;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: `import { useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const itemsHash = useMemo(() => stableHash(items), [items]);
+
+const C = ({ items }) => {
+  const first = useMemo(() => {
+    return items[0];
+  }, [itemsHash]);
+  return first;
+};
+`,
+    },
+    {
+      // Body spreads contents -> reads contents, must keep reporting
+      code: `
+const C = ({ items }) => {
+  const copy = useMemo(() => {
+    return [...items];
+  }, [items.length]);
+  return copy;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: `import { useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const itemsHash = useMemo(() => stableHash(items), [items]);
+
+const C = ({ items }) => {
+  const copy = useMemo(() => {
+    return [...items];
+  }, [itemsHash]);
+  return copy;
+};
+`,
+    },
+    {
+      // Body passes the whole array as an argument -> reads contents
+      code: `
+const C = ({ items }) => {
+  useEffect(() => {
+    process(items);
+  }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: `import { useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const itemsHash = useMemo(() => stableHash(items), [items]);
+
+const C = ({ items }) => {
+  useEffect(() => {
+    process(items);
+  }, [itemsHash]);
+  return null;
+};
+`,
+    },
+    {
+      // Shadowed binding inside the body: the dep refers to the OUTER items,
+      // which the body never reads -> keep reporting (do not suppress).
+      code: `
+const C = ({ items }) => {
+  const value = useMemo(() => {
+    const items = getOther();
+    return items[0];
+  }, [items.length]);
+  return value;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: `import { useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const itemsHash = useMemo(() => stableHash(items), [items]);
+
+const C = ({ items }) => {
+  const value = useMemo(() => {
+    const items = getOther();
+    return items[0];
+  }, [itemsHash]);
+  return value;
+};
+`,
+    },
+    {
+      // Mixed: one array length-only (suppressed), one array read (reported)
+      code: `
+const C = ({ items, users }) => {
+  useEffect(() => {
+    users.forEach((user) => console.log(user));
+    console.log(items.length);
+  }, [items.length, users.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'users.length' },
+        },
+      ],
+      output: `import { useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const usersHash = useMemo(() => stableHash(users), [users]);
+
+const C = ({ items, users }) => {
+  useEffect(() => {
+    users.forEach((user) => console.log(user));
+    console.log(items.length);
+  }, [items.length, usersHash]);
   return null;
 };
 `,
