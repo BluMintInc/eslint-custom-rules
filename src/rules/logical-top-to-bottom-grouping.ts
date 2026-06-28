@@ -1140,6 +1140,13 @@ function handleDerivedGrouping(
   parent: BlockLike,
 ): void {
   const declaredIndices = new Map<string, number>();
+  /**
+   * Each binding name → the declarator that introduced it. Sibling bindings of
+   * one multi-target declarator (e.g. `const [a, b] = ...`) share one node, so
+   * a statement deriving from `a` is recognizable as a sibling of one deriving
+   * from `b` even though `a` separates `b` from its declaration.
+   */
+  const sourceDeclarators = new Map<string, TSESTree.VariableDeclarator>();
   const { sourceCode } = ruleContext;
 
   body.forEach((statement, index) => {
@@ -1150,12 +1157,14 @@ function handleDerivedGrouping(
         index,
         body,
         declaredIndices,
+        sourceDeclarators,
         parent,
         sourceCode,
       );
     }
 
     trackDeclaredNames(statement, index, declaredIndices);
+    trackSourceDeclarators(statement, sourceDeclarators);
   });
 }
 
@@ -1171,6 +1180,7 @@ function processVariableDeclaration(
   index: number,
   body: TSESTree.Statement[],
   declaredIndices: Map<string, number>,
+  sourceDeclarators: Map<string, TSESTree.VariableDeclarator>,
   parent: BlockLike,
   sourceCode: TSESLint.SourceCode,
 ): void {
@@ -1198,6 +1208,18 @@ function processVariableDeclaration(
 
   const declaredNames = getDeclaredNames(statement);
   const priorDependencySet = new Set(priorDependencies);
+
+  if (
+    interveningAreSiblingDerivations(
+      body,
+      lastDependencyIndex,
+      index,
+      priorDependencySet,
+      sourceDeclarators,
+    )
+  ) {
+    return;
+  }
 
   if (
     hasBlockers(
@@ -1321,6 +1343,105 @@ function trackDeclaredNames(
 ): void {
   const declared = getDeclaredNames(statement);
   declared.forEach((name) => declaredIndices.set(name, index));
+}
+
+function trackSourceDeclarators(
+  statement: TSESTree.Statement,
+  sourceDeclarators: Map<string, TSESTree.VariableDeclarator>,
+): void {
+  if (statement.type !== AST_NODE_TYPES.VariableDeclaration) {
+    return;
+  }
+  statement.declarations.forEach((declarator) => {
+    const names = new Set<string>();
+    collectDeclaredNamesFromPattern(
+      declarator.id as
+        | TSESTree.BindingName
+        | TSESTree.RestElement
+        | TSESTree.AssignmentPattern,
+      names,
+    );
+    names.forEach((name) => sourceDeclarators.set(name, declarator));
+  });
+}
+
+/**
+ * True when every statement between a dependency and the statement deriving from
+ * it is itself a pure derivation from a *sibling binding of the same declarator*.
+ *
+ * `const [a, b] = await Promise.all([...]); const x = a; const y = b;` is already
+ * grouped: `x` and `y` unpack one source declaration in order, so the `x` line is
+ * not "unrelated" separation between `b` and `y`. Suppressing here keeps such
+ * cohesive sibling-destructure groups intact instead of reordering them.
+ */
+function interveningAreSiblingDerivations(
+  body: TSESTree.Statement[],
+  lastDependencyIndex: number,
+  currentIndex: number,
+  priorDependencySet: Set<string>,
+  sourceDeclarators: Map<string, TSESTree.VariableDeclarator>,
+): boolean {
+  const sourceNodes = new Set<TSESTree.VariableDeclarator>();
+  priorDependencySet.forEach((name) => {
+    const declarator = sourceDeclarators.get(name);
+    if (declarator) {
+      sourceNodes.add(declarator);
+    }
+  });
+
+  if (sourceNodes.size === 0) {
+    return false;
+  }
+
+  const intervening = body.slice(lastDependencyIndex + 1, currentIndex);
+  if (intervening.length === 0) {
+    return false;
+  }
+
+  return intervening.every((between) =>
+    isSiblingSourceDerivation(between, sourceNodes, sourceDeclarators),
+  );
+}
+
+/**
+ * A statement is a sibling-source derivation when it is a pure declaration whose
+ * every prior-declared dependency was introduced by one of `sourceNodes` — i.e.
+ * it unpacks a sibling binding of the same multi-target declaration the dependent
+ * statement derives from.
+ */
+function isSiblingSourceDerivation(
+  statement: TSESTree.Statement,
+  sourceNodes: Set<TSESTree.VariableDeclarator>,
+  sourceDeclarators: Map<string, TSESTree.VariableDeclarator>,
+): boolean {
+  if (
+    statement.type !== AST_NODE_TYPES.VariableDeclaration ||
+    !isPureDeclaration(statement, { allowHooks: false })
+  ) {
+    return false;
+  }
+
+  const dependencies = collectDependencies(statement);
+  const siblingSourced = Array.from(dependencies).filter((name) => {
+    const declarator = sourceDeclarators.get(name);
+    return Boolean(declarator && sourceNodes.has(declarator));
+  });
+
+  if (siblingSourced.length === 0) {
+    return false;
+  }
+
+  /**
+   * Reject when the statement also pulls in any prior-declared name from outside
+   * the sibling source: that would be genuine extra coupling, not a clean sibling
+   * unpack.
+   */
+  return Array.from(dependencies).every((name) => {
+    if (siblingSourced.includes(name)) {
+      return true;
+    }
+    return !sourceDeclarators.has(name);
+  });
 }
 
 function handleLateDeclarations(

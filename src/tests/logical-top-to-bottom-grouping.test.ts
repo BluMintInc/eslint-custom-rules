@@ -295,6 +295,30 @@ const obj = {
 
 obj.call();
     `,
+    `
+const [firestoreModule, firebaseFirestoreModule] = await Promise.all([
+  import('../../config/firebase-client/firestore'),
+  import('firebase/firestore'),
+]);
+const { firestore } = firestoreModule;
+const { doc, updateDoc, setDoc } = firebaseFirestoreModule;
+    `,
+    `
+const { moduleA, moduleB } = await loadModules();
+const { helperA } = moduleA;
+const { helperB } = moduleB;
+    `,
+    `
+const [first, second] = splitPair();
+const x = first;
+const y = second;
+    `,
+    `
+const [alpha, beta, gamma] = getTriple();
+const a = alpha.value;
+const b = beta.value;
+const c = gamma.value;
+    `,
   ],
   invalid: [
     {
@@ -458,6 +482,21 @@ const other = 2;
 use(other);
       `,
       errors: [{ messageId: 'moveSideEffect' }],
+    },
+    {
+      code: `
+const [alpha, beta] = getPair();
+const a = alpha.value;
+const unrelated = 1;
+const b = beta.value;
+`,
+      output: `
+const [alpha, beta] = getPair();
+const b = beta.value;
+const a = alpha.value;
+const unrelated = 1;
+`,
+      errors: [{ messageId: 'groupDerived' }],
     },
   ],
 });
