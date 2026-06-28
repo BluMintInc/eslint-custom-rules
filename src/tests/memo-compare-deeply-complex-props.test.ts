@@ -312,6 +312,45 @@ const Comp = ({ node, label }: Props) => <div>{node}{label}</div>;
 export const Wrapped = memo(Comp);
 `,
       },
+      // Bug #1224 regression: a props type carrying React's reserved `ref` slot
+      // (object-typed, exactly as RefAttributes<T> = { ref?: { current: T } }
+      // injects into a resolved forwardRef signature) must NOT be flagged. React
+      // strips `ref` before the memo equality fn runs, so compareDeeply('ref')
+      // would be dead code. Skipped the same way `children` is.
+      {
+        filename: 'src/components/RefSlotOnly.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { ref?: { current: HTMLButtonElement | null }; onClick?: () => void };
+const Comp = ({ onClick }: Props) => <button onClick={onClick} />;
+export const Wrapped = memo(Comp);
+`,
+      },
+      // `key` is likewise a reserved React slot that never reaches the props
+      // object; an object-typed `key` member must also be skipped.
+      {
+        filename: 'src/components/KeySlotOnly.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { key?: { id: string }; label: string };
+const Comp = ({ label }: Props) => <span>{label}</span>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      // The reserved-slot exclusion must also apply on the component-signature
+      // analysis path (the fallback path the bug report traces through): a value
+      // typed as a render function whose first param carries a synthetic `ref`
+      // object member resolves via getCallSignatures, not the function-param
+      // path. Only genuine data props — none here — would be flagged.
+      {
+        filename: 'src/components/RefSlotViaSignature.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { ref?: { current: HTMLDivElement | null }; title: string };
+declare const Comp: (props: Props) => JSX.Element;
+export const Wrapped = memo(Comp);
+`,
+      },
     ],
     invalid: [
       // Bug #1179 regression: mixed React render types + data objects — only data props flagged.
@@ -889,6 +928,35 @@ const Base = React.forwardRef<HTMLDivElement, Props>(({ settings }, ref) => (
   <div ref={ref}>{settings.theme}</div>
 ));
 export const Wrapped = memo(Base, compareDeeply('settings'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      // Bug #1224 control: a props type carrying BOTH the reserved `ref`/`key`
+      // slots and a genuine object prop must STILL fire — only `settings` is
+      // flagged. Proves the skip-list does not suppress true positives sitting
+      // alongside reserved slots.
+      {
+        filename: 'src/components/RefSlotWithComplexInvalid.tsx',
+        code: `
+import { memo } from 'react';
+type Props = {
+  ref?: { current: HTMLDivElement | null };
+  key?: { id: string };
+  settings: { theme: string };
+};
+const Comp = ({ settings }: Props) => <div>{settings.theme}</div>;
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type Props = {
+  ref?: { current: HTMLDivElement | null };
+  key?: { id: string };
+  settings: { theme: string };
+};
+const Comp = ({ settings }: Props) => <div>{settings.theme}</div>;
+export const Wrapped = memo(Comp, compareDeeply('settings'));
 `,
         errors: [{ messageId: 'useCompareDeeply' }],
       },
