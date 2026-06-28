@@ -20,7 +20,11 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
+      with:
+        # Job runs a remote installer (curl | bash) in the same job; don't leave
+        # the checkout token in git config where a compromised installer could read it.
+        persist-credentials: false
 
     - name: Install git-quick-stats
       run: |
