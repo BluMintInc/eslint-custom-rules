@@ -12,8 +12,6 @@ const describeChild = (child: TSESTree.JSXChild): string => {
       return 'JSX element';
     case 'JSXFragment':
       return 'fragment';
-    case 'JSXExpressionContainer':
-      return 'expression result';
     case 'JSXText':
       return 'text node';
     case 'JSXSpreadChild':
@@ -29,6 +27,17 @@ export const noUselessFragment: TSESLint.RuleModule<'noUselessFragment', []> = {
       JSXFragment(node: TSESTree.JSXFragment) {
         if (node.children.length === 1) {
           const [child] = node.children;
+
+          /**
+           * A fragment whose only child is an expression container — e.g.
+           * `<>{portal}</>` — is NOT useless. Unwrapping it to a bare
+           * `{portal}` is invalid in statement/return position, and wrapping a
+           * single ReactNode expression in a fragment is the idiomatic way to
+           * render it. (Mirrors the upstream rule's `allowExpressions`.)
+           */
+          if (child.type === 'JSXExpressionContainer') {
+            return;
+          }
 
           context.report({
             node,
