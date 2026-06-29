@@ -1,0 +1,1 @@
+export declare const warnHttpsErrorMessageUserFriendly: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"warnHttpsErrorMessageUserFriendly", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;

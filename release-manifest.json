@@ -1,1 +1,166 @@
-[]
+[
+  {
+    "version": "1.16.0",
+    "date": "2026-06-29T19:34:27.787Z",
+    "rules": [
+      {
+        "name": "consistent-callback-naming",
+        "changeType": "fix",
+        "issues": [
+          1182
+        ],
+        "summary": "skip union props with non-function members (closes #1182)"
+      },
+      {
+        "name": "enforce-boolean-naming-prefixes",
+        "changeType": "fix",
+        "issues": [
+          1219
+        ],
+        "summary": "make property-signature checks opt-in (closes #1219)"
+      },
+      {
+        "name": "enforce-mui-rounded-icons",
+        "changeType": "fix",
+        "issues": [
+          1218
+        ],
+        "summary": "strip variant suffix in fix and skip brand icons (closes #1218)"
+      },
+      {
+        "name": "enforce-verb-noun-naming",
+        "changeType": "fix",
+        "issues": [
+          1177,
+          1225
+        ],
+        "summary": "add 'bucket'/'bucketize' to verbs allowlist (closes #1225); allow `main` as a function name (closes #1177)"
+      },
+      {
+        "name": "global-const-style",
+        "changeType": "fix",
+        "issues": [
+          1186
+        ],
+        "summary": "stop flagging null and boolean literals for `as const` (closes #1186)"
+      },
+      {
+        "name": "logical-top-to-bottom-grouping",
+        "changeType": "fix",
+        "issues": [
+          1191
+        ],
+        "summary": "keep sibling destructures from the same source declarator grouped (closes #1191)"
+      },
+      {
+        "name": "memo-compare-deeply-complex-props",
+        "changeType": "fix",
+        "issues": [
+          1179,
+          1224
+        ],
+        "summary": "skip reserved React ref/key slots (closes #1224); exclude React render types from complex-prop detection"
+      },
+      {
+        "name": "memo-nested-react-components",
+        "changeType": "fix",
+        "issues": [
+          1185
+        ],
+        "summary": "skip HOC factories and render-prop callbacks (closes #1185)"
+      },
+      {
+        "name": "no-array-length-in-deps",
+        "changeType": "fix",
+        "issues": [
+          1196
+        ],
+        "summary": "allow array.length in deps when the body uses only .length (closes #1196)"
+      },
+      {
+        "name": "no-circular-references",
+        "changeType": "fix",
+        "issues": [],
+        "summary": "fix recursive member resolution and use cross-version scope helper; fix false positive for function parameters"
+      },
+      {
+        "name": "no-compositing-layer-props",
+        "changeType": "fix",
+        "issues": [
+          1228
+        ],
+        "summary": "don't flag CSS reset/identity values (closes #1228)"
+      },
+      {
+        "name": "no-entire-object-hook-deps",
+        "changeType": "fix",
+        "issues": [
+          1176
+        ],
+        "summary": "lock in shorthand/JSX usage detection for as-const memo returns (closes #1176); correctly handle TS assertions and optional chaining in parent traversal; resolve PR review comments on TS assertion handling in object literals"
+      },
+      {
+        "name": "no-explicit-return-type",
+        "changeType": "fix",
+        "issues": [
+          1216
+        ],
+        "summary": "exempt explicit `never` return types (closes #1216)"
+      },
+      {
+        "name": "no-hungarian",
+        "changeType": "fix",
+        "issues": [
+          1217
+        ],
+        "summary": "exempt generic type parameters and semantic type-concept names (closes #1217)"
+      },
+      {
+        "name": "no-margin-properties",
+        "changeType": "fix",
+        "issues": [
+          1214
+        ],
+        "summary": "don't flag margins inside createTheme() overrides (closes #1214)"
+      },
+      {
+        "name": "no-unnecessary-verb-suffix",
+        "changeType": "fix",
+        "issues": [
+          1227
+        ],
+        "summary": "exempt phrasal-verb particle endings (closes #1227)"
+      },
+      {
+        "name": "no-unused-props",
+        "changeType": "fix",
+        "issues": [
+          1215
+        ],
+        "summary": "track props through generic wrappers and body destructuring (closes #1215)"
+      },
+      {
+        "name": "no-useless-fragment",
+        "changeType": "fix",
+        "issues": [
+          1195
+        ],
+        "summary": "keep fragments wrapping a single expression container (closes #1195)"
+      },
+      {
+        "name": "react-memoize-literals",
+        "changeType": "fix",
+        "issues": [
+          1169
+        ],
+        "summary": "extend sx/style exemption to conditional, logical, and array values (refs #1169); exempt inline sx/style JSX attribute literals (closes #1169)"
+      },
+      {
+        "name": "require-migration-script-metadata",
+        "changeType": "fix",
+        "issues": [],
+        "summary": "fix @migrationDependencies logic and update filename access for ESLint v9 compatibility; address review comments on JSDoc tag parsing and validation"
+      }
+    ]
+  }
+]

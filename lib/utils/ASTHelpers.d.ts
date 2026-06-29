@@ -47,6 +47,21 @@ export declare class ASTHelpers {
      */
     static getDeclaredVariables(context: Readonly<TSESLint.RuleContext<string, readonly unknown[]>>, node: TSESTree.Node): readonly TSESLint.Scope.Variable[];
     /**
+     * Checks if a call expression or new expression is a call to HttpsError.
+     * Handles both 'HttpsError' and 'https.HttpsError'.
+     */
+    static isHttpsErrorCall(callee: TSESTree.LeftHandSideExpression): boolean;
+    /**
+     * Checks if a call expression is a call to toHttpsError.
+     * Handles both 'toHttpsError' and 'https.toHttpsError'.
+     */
+    static isToHttpsErrorCall(callee: TSESTree.LeftHandSideExpression): boolean;
+    /**
+     * Unwraps TypeScript-specific nodes (assertions, non-null, satisfies) and
+     * parenthesized expressions to get to the underlying expression.
+     */
+    static unwrapTSAssertions(node: TSESTree.Node): TSESTree.Node;
+    /**
      * Helper to get ancestors of a node in a way that is compatible with both ESLint v8 and v9.
      * In ESLint v9, context.getAncestors() is deprecated and moved to context.sourceCode.getAncestors(node).
      */
