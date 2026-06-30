@@ -27,100 +27,158 @@ const withDefaults = ({
 
 ruleTesterJsx.run('requireMemo', requireMemo, {
   valid: [
-    {
-      code: `const Component = memo(() => <div />)`,
-    },
-    {
-      code: `const ComponentUnmemoized = ({foo}) => <div>{foo}</div>`,
-    },
-    {
-      code: `export function UnmemoizedThing({foo}) {
+    ...[
+      {
+        code: `const Component = memo(() => <div />)`,
+      },
+      {
+        code: `const ComponentUnmemoized = ({foo}) => <div>{foo}</div>`,
+      },
+      {
+        code: `export function UnmemoizedThing({foo}) {
                 return (
                   <div>{foo}</div>
                 )
               }`,
-    },
-    {
-      code: `const Component = memo(({foo}) => <div>{foo}</div>)`,
-    },
-    {
-      code: `const Component = memo(({foo}) => <div>{foo}</div>, (oldProps,newProps) => true)`,
-    },
-    {
-      code: `const Component = memo(useRef(() => <div />))`,
-    },
-    {
-      code: `const myFunction = wrapper(() => <div />)`,
-    },
-    {
-      code: `const Component = memo(function Component() { return <div />; });`,
-    },
-    {
-      code: `const myFunction = () => <div />`,
-    },
-    {
-      code: `const myFunction = wrapper(() => <div />)`,
-    },
-    {
-      code: `function myFunction() { return <div />; }`,
-    },
-    {
-      code: `const myFunction = wrapper(function() { return <div /> })`,
-    },
-    {
-      code: `const Component = () => <div />`,
-    },
-    {
-      code: `export const Wizard = wrappedWithHOF(
+      },
+      {
+        code: `const Component = memo(({foo}) => <div>{foo}</div>)`,
+      },
+      {
+        code: `const Component = memo(({foo}) => <div>{foo}</div>, (oldProps,newProps) => true)`,
+      },
+      {
+        code: `const Component = memo(useRef(() => <div />))`,
+      },
+      {
+        code: `const myFunction = wrapper(() => <div />)`,
+      },
+      {
+        code: `const Component = memo(function Component() { return <div />; });`,
+      },
+      {
+        code: `const myFunction = () => <div />`,
+      },
+      {
+        code: `const myFunction = wrapper(() => <div />)`,
+      },
+      {
+        code: `function myFunction() { return <div />; }`,
+      },
+      {
+        code: `const myFunction = wrapper(function() { return <div /> })`,
+      },
+      {
+        code: `const Component = () => <div />`,
+      },
+      {
+        code: `export const Wizard = wrappedWithHOF(
         (props) => {
          return <Component {...props} />;
        })`,
-    },
-    {
-      code: `export const Wizard = wrappedWithHOF(
+      },
+      {
+        code: `export const Wizard = wrappedWithHOF(
         function (props) {
          return <Component {...props} />;
        })`,
-    },
-    {
-      code: `function withHOC(Component) {
+      },
+      {
+        code: `function withHOC(Component) {
             return function WrappedComponent(props) {
               return <Component {...props} />;
             }};
           `,
-    },
-    {
-      code: `const shorthandHOC = (Component) => (props) => <Component {...props} />;`,
-    },
-    {
-      code: `function useComponent() {
+      },
+      {
+        code: `const shorthandHOC = (Component) => (props) => <Component {...props} />;`,
+      },
+      {
+        code: `function useComponent() {
             return function HookComponent() {
               return <div>From Hook</div>;
             };
           }`,
-    },
-    {
-      code: `function GetUserInfo() {
+      },
+      {
+        code: `function GetUserInfo() {
             // some logic here...
             return userData;
           }`,
+      },
+      {
+        code: `import { memo } from 'src/util/memo';
+      const Component = memo(() => <div />)`,
+      },
+      {
+        code: `import { memo } from '../util/memo';
+      const Component = memo(() => <div />)`,
+      },
+      {
+        code: `import { memo } from '../../util/memo';
+      const Component = memo(() => <div />)`,
+      },
+    ].map((testCase) => ({
+      ...testCase,
+      filename: 'SomeComponent.tsx',
+    })),
+    // camelCase render-prop callbacks — NOT React components (issue #1243)
+    {
+      filename: 'rankColumn.tsx',
+      code: `
+    import type { GridRenderCellParams } from '@mui/x-data-grid';
+    import { Rank } from 'src/components/Rank';
+    const renderRankCellOrdinal = ({ row }: Readonly<GridRenderCellParams>) => {
+      return <Rank rank={row.rank} />;
+    };
+    export const col = { field: 'rank', renderCell: renderRankCellOrdinal };
+  `,
     },
     {
-      code: `import { memo } from 'src/util/memo';
-      const Component = memo(() => <div />)`,
+      filename: 'render.tsx',
+      code: `const renderItem = (item) => <li>{item.label}</li>;`,
     },
+    // camelCase FunctionDeclaration at Program level — not a component
     {
-      code: `import { memo } from '../util/memo';
-      const Component = memo(() => <div />)`,
+      filename: 'cellRenderers.tsx',
+      code: `function renderCell(props) { return <td>{props.value}</td>; }`,
     },
+    // exported camelCase FunctionDeclaration — not a component
     {
-      code: `import { memo } from '../../util/memo';
-      const Component = memo(() => <div />)`,
+      filename: 'cellRenderers.tsx',
+      code: `export function renderCell({ row }) { return <div>{row.id}</div>; }`,
     },
-  ].map((testCase) => ({
-    ...testCase,
-    filename: 'SomeComponent.tsx',
-  })),
+    // lowercase single-word camelCase arrow function with destructuring
+    {
+      filename: 'utils.tsx',
+      code: `const render = ({ data }) => <span>{data}</span>;`,
+    },
+    // underscore-prefixed name — does not start with uppercase
+    {
+      filename: 'utils.tsx',
+      code: `const _renderItem = ({ item }) => <li>{item.name}</li>;`,
+    },
+    // multi-segment camelCase arrow function with typed params
+    {
+      filename: 'grid.tsx',
+      code: `const getRowElement = ({ id, label }: { id: string; label: string }) => <tr key={id}><td>{label}</td></tr>;`,
+    },
+    // camelCase function declaration with multiple params
+    {
+      filename: 'helpers.tsx',
+      code: `function formatCell({ value, style }) { return <span style={style}>{value}</span>; }`,
+    },
+    // exported camelCase arrow render callback
+    {
+      filename: 'table.tsx',
+      code: `export const renderRow = ({ row, index }) => <div data-index={index}>{row.id}</div>;`,
+    },
+    // camelCase name with "handle" prefix — still not PascalCase
+    {
+      filename: 'grid.tsx',
+      code: `const handleRenderItem = ({ item }) => <li>{item.name}</li>;`,
+    },
+  ],
   invalid: [
     withDefaults({
       code: `function Component({foo}) { return <div>{foo}</div>; }`,
@@ -295,6 +353,27 @@ const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</
 const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
       filename: 'src\\components\\SomeComponent.tsx',
       name: 'Component',
+    }),
+    // Confirm PascalCase arrow functions are still flagged (no false negatives from fix)
+    withDefaults({
+      code: `const RenderItem = ({ item }) => <li>{item.label}</li>;`,
+      name: 'RenderItem',
+    }),
+    // Confirm PascalCase function declarations are still flagged
+    withDefaults({
+      code: `function RenderCell({ value }) { return <span>{value}</span>; }`,
+      output: `import { memo } from '../util/memo';
+const RenderCell = memo(function RenderCellUnmemoized({ value }) { return <span>{value}</span>; });`,
+      filename: 'src/components/SomeComponent.tsx',
+      name: 'RenderCell',
+    }),
+    // Confirm exported PascalCase function declarations are still flagged
+    withDefaults({
+      code: `export function RenderRow({ row }) { return <tr><td>{row.id}</td></tr>; }`,
+      output: `import { memo } from '../util/memo';
+export const RenderRow = memo(function RenderRowUnmemoized({ row }) { return <tr><td>{row.id}</td></tr>; });`,
+      filename: 'src/components/SomeComponent.tsx',
+      name: 'RenderRow',
     }),
   ],
 });
