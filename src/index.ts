@@ -5,6 +5,7 @@ import { classMethodsReadTopToBottom } from './rules/class-methods-read-top-to-b
 import { default as consistentCallbackNaming } from './rules/consistent-callback-naming';
 import { noHandlerSuffix } from './rules/no-handler-suffix';
 import { parallelizeAsyncOperations } from './rules/parallelize-async-operations';
+import { parallelizeLoopAwaits } from './rules/parallelize-loop-awaits';
 import { dynamicHttpsErrors } from './rules/dynamic-https-errors';
 import { enforceEmptyObjectCheck } from './rules/enforce-empty-object-check';
 import { enforceIdentifiableFirestoreType } from './rules/enforce-identifiable-firestore-type';
@@ -216,6 +217,7 @@ module.exports = {
         '@blumintinc/blumint/key-only-outermost-element': 'error',
         '@blumintinc/blumint/logical-top-to-bottom-grouping': 'error',
         '@blumintinc/blumint/parallelize-async-operations': 'error',
+        '@blumintinc/blumint/parallelize-loop-awaits': 'error',
         '@blumintinc/blumint/avoid-utils-directory': 'error',
         '@blumintinc/blumint/enforce-firestore-path-utils': 'error',
         '@blumintinc/blumint/enforce-firestore-rules-get-access': 'error',
@@ -490,6 +492,7 @@ module.exports = {
     'class-methods-read-top-to-bottom': classMethodsReadTopToBottom,
     'consistent-callback-naming': consistentCallbackNaming,
     'parallelize-async-operations': parallelizeAsyncOperations,
+    'parallelize-loop-awaits': parallelizeLoopAwaits,
     'dynamic-https-errors': dynamicHttpsErrors,
     'enforce-empty-object-check': enforceEmptyObjectCheck,
     'enforce-identifiable-firestore-type': enforceIdentifiableFirestoreType,
