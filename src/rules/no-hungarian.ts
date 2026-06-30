@@ -414,6 +414,18 @@ export const noHungarian = createRule<[], MessageIds>({
           return true;
         }
 
+        // Abbreviation markers (str, num, int, bool, arr, obj, fn, func) are
+        // short enough that the raw-character boundary heuristic below can fire
+        // on them as substrings inside real English words (e.g. "int" inside
+        // "Mint", "str" inside "stream"). For these markers, require an exact
+        // match against a full camelCase token so that "Mint" → ["Mint"] never
+        // matches "int", while genuine Hungarian like intValue → ["int","Value"]
+        // still does.
+        if (ABBREVIATION_MARKER_SET.has(normalizedMarker)) {
+          const segments = splitCamelSegments(variableName);
+          return segments.some((s) => s.toLowerCase() === normalizedMarker);
+        }
+
         // Check for word boundaries to avoid matching substrings
         // For example, avoid matching "int" in "points" or "str" in "stream"
         const markerIndex = normalizedVarName.indexOf(normalizedMarker);
