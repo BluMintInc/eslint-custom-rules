@@ -1,11 +1,14 @@
 import { createRule } from '../utils/createRule';
 import { Minimatch } from 'minimatch';
+import { builtinModules } from 'module';
 
 export const RULE_NAME = 'enforce-dynamic-imports';
 
 type Options = [
   {
+    libraries?: string[];
     ignoredLibraries?: string[];
+    internalPrefixes?: string[];
     allowImportType?: boolean;
   },
 ];
@@ -26,6 +29,18 @@ export const DEFAULT_IGNORED_LIBRARIES = [
   'tailwind-merge',
 ];
 
+export const DEFAULT_INTERNAL_PREFIXES = ['src/', 'functions/'];
+
+// Pre-built set of Node.js core module names for O(1) lookup.
+const NODE_BUILTINS = new Set(builtinModules);
+
+// Returns true for any source that resolves to a Node builtin: bare name
+// ('crypto'), node:-prefixed ('node:fs'), or path form ('fs/promises').
+const isNodeBuiltin = (source: string): boolean =>
+  source.startsWith('node:') ||
+  NODE_BUILTINS.has(source) ||
+  NODE_BUILTINS.has(source.split('/')[0]);
+
 export default createRule<Options, 'dynamicImportRequired'>({
   name: RULE_NAME,
   meta: {
@@ -39,7 +54,19 @@ export default createRule<Options, 'dynamicImportRequired'>({
       {
         type: 'object',
         properties: {
+          libraries: {
+            type: 'array',
+            items: {
+              type: 'string',
+            },
+          },
           ignoredLibraries: {
+            type: 'array',
+            items: {
+              type: 'string',
+            },
+          },
+          internalPrefixes: {
             type: 'array',
             items: {
               type: 'string',
@@ -60,37 +87,57 @@ export default createRule<Options, 'dynamicImportRequired'>({
   defaultOptions: [
     {
       ignoredLibraries: DEFAULT_IGNORED_LIBRARIES,
+      internalPrefixes: DEFAULT_INTERNAL_PREFIXES,
       allowImportType: true,
     },
   ],
   create(context, [options]) {
     const {
+      libraries,
       ignoredLibraries = DEFAULT_IGNORED_LIBRARIES,
+      internalPrefixes = DEFAULT_INTERNAL_PREFIXES,
       allowImportType = true,
     } = options;
 
-    const exactIgnored = new Set<string>();
-    const globIgnored: Minimatch[] = [];
+    // When `libraries` is provided, the rule operates in whitelist mode:
+    // only the explicitly listed libraries are enforced. This preserves
+    // backwards-compatibility with pre-1.16.0 consumer configurations.
+    // When `libraries` is absent, enforce-by-default mode applies:
+    // all external imports are flagged unless in `ignoredLibraries`.
+    const isWhitelistMode = libraries !== undefined;
 
-    for (const lib of ignoredLibraries) {
-      const mm = new Minimatch(lib);
-      if (mm.hasMagic()) {
-        globIgnored.push(mm);
-      } else {
-        exactIgnored.add(lib);
+    // Build an O(1) + glob matcher from a list of library patterns.
+    const buildMatcher = (list: string[]) => {
+      const exactSet = new Set<string>();
+      const globs: Minimatch[] = [];
+      for (const lib of list) {
+        const mm = new Minimatch(lib);
+        if (mm.hasMagic()) {
+          globs.push(mm);
+        } else {
+          exactSet.add(lib);
+        }
       }
-    }
-
-    const isIgnored = (source: string): boolean => {
-      return (
-        exactIgnored.has(source) ||
-        globIgnored.some((mm) => mm.match(source))
-      );
+      return (source: string): boolean =>
+        exactSet.has(source) || globs.some((mm) => mm.match(source));
     };
 
+    // In whitelist mode, `libraries` is defined (checked above). In
+    // enforce-by-default mode, `ignoredLibraries` is used instead.
+    const isListedInWhitelist = buildMatcher(libraries ?? []);
+    const isIgnoredLibrary = buildMatcher(ignoredLibraries);
+
+    // A source is external only if it looks like an npm package specifier AND
+    // is not a known-internal path. Node builtins and configured internal
+    // prefixes (e.g. src/, functions/) are excluded to avoid false positives
+    // on TypeScript baseUrl imports and Node core modules.
     const isExternal = (source: string): boolean => {
-      // Treat npm-style specifiers (including numeric names like '3d-force-graph') as external; internal paths are excluded.
-      return /^[a-z0-9@]/i.test(source) && !source.startsWith('@/');
+      return (
+        /^[a-z0-9@]/i.test(source) &&
+        !source.startsWith('@/') &&
+        !isNodeBuiltin(source) &&
+        !internalPrefixes.some((prefix) => source.startsWith(prefix))
+      );
     };
 
     return {
@@ -114,8 +161,21 @@ export default createRule<Options, 'dynamicImportRequired'>({
           }
         }
 
-        // Only enforce for external libraries that are NOT ignored
-        if (isExternal(importSource) && !isIgnored(importSource)) {
+        let shouldReport: boolean;
+
+        if (isWhitelistMode) {
+          // Whitelist mode: report only if the source matches an explicitly
+          // listed library. External detection and ignoredLibraries are not
+          // consulted, so unlisted npm packages are silently allowed.
+          shouldReport = isListedInWhitelist(importSource);
+        } else {
+          // Enforce-by-default mode: report if the source is an external
+          // package and is not in the ignored list.
+          shouldReport =
+            isExternal(importSource) && !isIgnoredLibrary(importSource);
+        }
+
+        if (shouldReport) {
           context.report({
             node,
             messageId: 'dynamicImportRequired',
