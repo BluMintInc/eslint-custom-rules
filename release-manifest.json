@@ -1,5 +1,35 @@
 [
   {
+    "version": "1.16.1",
+    "date": "2026-06-30T15:58:17.558Z",
+    "rules": [
+      {
+        "name": "enforce-assert-safe-object-key",
+        "changeType": "fix",
+        "issues": [
+          1245
+        ],
+        "summary": "treat assertSafe-cached variables as validated (closes #1245)"
+      },
+      {
+        "name": "enforce-dynamic-imports",
+        "changeType": "fix",
+        "issues": [
+          1244
+        ],
+        "summary": "restore libraries whitelist mode and exempt builtins/internal paths (closes #1244)"
+      },
+      {
+        "name": "require-memo",
+        "changeType": "fix",
+        "issues": [
+          1243
+        ],
+        "summary": "exempt camelCase render-prop callbacks (closes #1243)"
+      }
+    ]
+  },
+  {
     "version": "1.16.0",
     "date": "2026-06-29T19:34:27.787Z",
     "rules": [

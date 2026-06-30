@@ -1,3 +1,12 @@
+## [1.16.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.16.0...v1.16.1) (2026-06-30)
+
+
+### Bug Fixes
+
+* **enforce-assert-safe-object-key:** treat assertSafe-cached variables as validated (closes [#1245](https://github.com/BluMintInc/eslint-custom-rules/issues/1245)) ([1b94c7c](https://github.com/BluMintInc/eslint-custom-rules/commit/1b94c7cfa5b9e488f49b11d6caf999e885adaaf9))
+* **enforce-dynamic-imports:** restore libraries whitelist mode and exempt builtins/internal paths (closes [#1244](https://github.com/BluMintInc/eslint-custom-rules/issues/1244)) ([dcc22a5](https://github.com/BluMintInc/eslint-custom-rules/commit/dcc22a570252c81cc2ba25f0955a8ecc350be7c5))
+* **require-memo:** exempt camelCase render-prop callbacks (closes [#1243](https://github.com/BluMintInc/eslint-custom-rules/issues/1243)) ([46f05fa](https://github.com/BluMintInc/eslint-custom-rules/commit/46f05fa3636a3bb15ab44265ba65956dcd6552d3))
+
 # [1.16.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.15.0...v1.16.0) (2026-06-29)
 
 
