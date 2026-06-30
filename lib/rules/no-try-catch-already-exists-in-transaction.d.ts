@@ -1,1 +1,0 @@
-export declare const noTryCatchAlreadyExistsInTransaction: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"noAlreadyExistsCatchInTransaction", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;

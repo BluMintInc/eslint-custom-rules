@@ -1,1 +1,0 @@
-export declare const testFileLocationEnforcement: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"misplacedTestFile", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;

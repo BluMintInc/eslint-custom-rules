@@ -1,1 +1,0 @@
-export declare const noStaleStateAcrossAwait: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"staleStateAcrossAwait", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;
