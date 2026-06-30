@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.16.2",
+    "date": "2026-06-30T22:17:37.457Z",
+    "rules": [
+      {
+        "name": "logical-top-to-bottom-grouping",
+        "changeType": "fix",
+        "issues": [
+          1247
+        ],
+        "summary": "restore loop-mutation guard and indentation-preserving idempotent autofix (closes #1247)"
+      },
+      {
+        "name": "no-hungarian",
+        "changeType": "fix",
+        "issues": [
+          1246
+        ],
+        "summary": "only flag abbreviation markers at camelCase token boundaries (closes #1246)"
+      }
+    ]
+  },
+  {
     "version": "1.16.1",
     "date": "2026-06-30T15:58:17.558Z",
     "rules": [
