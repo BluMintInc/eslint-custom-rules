@@ -165,6 +165,7 @@ import { testFileLocationEnforcement } from './rules/test-file-location-enforcem
 import { preventChildrenClobber } from './rules/prevent-children-clobber';
 import { requireMigrationScriptMetadata } from './rules/require-migration-script-metadata';
 import { warnHttpsErrorMessageUserFriendly } from './rules/warn-https-error-message-user-friendly';
+import { noStablehashReactNodes } from './rules/no-stablehash-react-nodes';
 
 const NO_FRONTEND_IMPORTS_FROM_FUNCTIONS_MESSAGE =
   'Backend Cloud Functions (.f.ts under functions/) must not import frontend modules from the repo root src/**. Frontend code can depend on browser-only APIs and bundling it into Cloud Functions breaks server execution; move shared logic into functions/src or a shared package.';
@@ -363,6 +364,7 @@ module.exports = {
         '@blumintinc/blumint/no-res-error-status-in-onrequest': 'error',
         '@blumintinc/blumint/no-array-length-in-deps': 'error',
         '@blumintinc/blumint/enforce-stable-hash-spread-props': 'error',
+        '@blumintinc/blumint/no-stablehash-react-nodes': 'error',
         '@blumintinc/blumint/prefer-use-deep-compare-memo': 'error',
         '@blumintinc/blumint/memo-nested-react-components': 'error',
         '@blumintinc/blumint/memo-compare-deeply-complex-props': 'error',
@@ -576,6 +578,7 @@ module.exports = {
     'enforce-assert-safe-object-key': enforceAssertSafeObjectKey,
     'enforce-object-literal-as-const': enforceObjectLiteralAsConst,
     'enforce-stable-hash-spread-props': enforceStableHashSpreadProps,
+    'no-stablehash-react-nodes': noStablehashReactNodes,
     'enforce-positive-naming': enforcePositiveNaming,
     'no-type-assertion-returns': noTypeAssertionReturns,
     'prefer-utility-function-over-private-static':
