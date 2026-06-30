@@ -1,8 +1,21 @@
 {
-  "model": "sonnet",
+  "statusLine": {
+    "type": "command",
+    "command": "sh .claude/statusline-command.sh",
+    "refreshInterval": 60
+  },
+  "model": "fable",
+  "fallbackModel": ["opus"],
   "cleanupPeriodDays": 500,
   "disableAllHooks": false,
   "respectGitignore": false,
+  "remoteControlAtStartup": true,
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "BASH_DEFAULT_TIMEOUT_MS": "3600000",
+    "BASH_MAX_TIMEOUT_MS": "7200000",
+    "CLAUDE_CODE_EFFORT_LEVEL": "xhigh"
+  },
   "hooks": {
     "PostToolUse": [
       {
@@ -49,10 +62,26 @@
     "deny": [
       "Read(.env*)",
       "Read(**/.env*)",
+      "Edit(.env*)",
+      "Edit(**/.env*)",
+      "Write(.env*)",
+      "Write(**/.env*)",
       "Read(node_modules/**)",
       "Read(coverage/**)",
       "Read(lib/**)",
-      "Read(package-lock.json)"
-    ]
+      "Read(**/*.js.map)",
+      "Read(package-lock.json)",
+      "Read(tsconfig.tsbuildinfo)",
+      "Read(CHANGELOG.md)",
+      "Edit(CHANGELOG.md)",
+      "Write(CHANGELOG.md)",
+      "Read(**/*.log)",
+      "Read(**/*.DS_Store)",
+      "Bash(git push * main)",
+      "Bash(git push * develop)",
+      "Bash(git push --force*)",
+      "Bash(git reset --hard*)"
+    ],
+    "defaultMode": "bypassPermissions"
   }
 }
