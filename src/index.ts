@@ -169,6 +169,7 @@ import { warnHttpsErrorMessageUserFriendly } from './rules/warn-https-error-mess
 import { noStablehashReactNodes } from './rules/no-stablehash-react-nodes';
 import { requirePropsComposition } from './rules/require-props-composition';
 import { requireServerTimestampForFirestoreDates } from './rules/require-server-timestamp-for-firestore-dates';
+import { preferSpreadOverReassembly } from './rules/prefer-spread-over-reassembly';
 
 const NO_FRONTEND_IMPORTS_FROM_FUNCTIONS_MESSAGE =
   'Backend Cloud Functions (.f.ts under functions/) must not import frontend modules from the repo root src/**. Frontend code can depend on browser-only APIs and bundling it into Cloud Functions breaks server execution; move shared logic into functions/src or a shared package.';
@@ -386,6 +387,7 @@ module.exports = {
         '@blumintinc/blumint/require-props-composition': 'warn',
         '@blumintinc/blumint/require-server-timestamp-for-firestore-dates':
           'error',
+        '@blumintinc/blumint/prefer-spread-over-reassembly': 'error',
       },
       /**
        * Depth-specific overrides block only import strings that traverse to the
@@ -660,5 +662,6 @@ module.exports = {
     'require-props-composition': requirePropsComposition,
     'require-server-timestamp-for-firestore-dates':
       requireServerTimestampForFirestoreDates,
+    'prefer-spread-over-reassembly': preferSpreadOverReassembly,
   },
 };
