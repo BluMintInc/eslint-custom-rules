@@ -1,1 +1,0 @@
-export declare const noFirestoreObjectArrays: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"noObjectArrays", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;

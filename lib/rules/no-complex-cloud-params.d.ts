@@ -1,1 +1,0 @@
-export declare const noComplexCloudParams: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"noComplexObjects", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;

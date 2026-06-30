@@ -1,1 +1,0 @@
-export declare const noCompositingLayerProps: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"compositingLayer", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;

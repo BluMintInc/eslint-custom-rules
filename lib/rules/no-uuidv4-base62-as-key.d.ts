@@ -1,1 +1,0 @@
-export declare const noUuidv4Base62AsKey: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"noUuidv4Base62AsKey", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;
