@@ -319,6 +319,90 @@ const a = alpha.value;
 const b = beta.value;
 const c = gamma.value;
     `,
+    // loop accumulator before a for-of; only use is in-loop compound assignment
+    `function backfill(items: readonly string[]) {
+  let fieldsWritten = 0;
+  let skipped = 0;
+
+  for (const item of items) {
+    if (item === '') {
+      skipped += 1;
+      continue;
+    }
+    fieldsWritten += 1;
+  }
+
+  return { fieldsWritten, skipped };
+}`,
+    // while-loop accumulator, no read after loop
+    `function count(n: number) {
+  let total = 0;
+  while (total < n) {
+    total += 1;
+  }
+  return total;
+}`,
+    // ++ accumulator inside a for loop
+    `function sumUp(n: number) {
+  let i = 0;
+  const limit = n;
+  for (; i < limit; ) {
+    i++;
+  }
+  return i;
+}`,
+    // reassignment inside a loop (x = x + 1 form)
+    `function accumulate(items: number[]) {
+  let total = 0;
+  const factor = 1;
+  for (const item of items) {
+    total = total + item * factor;
+  }
+  return total;
+}`,
+    // nested loops — accumulator must stay before outer loop
+    `function countNested(matrix: number[][]) {
+  let count = 0;
+  const rows = matrix;
+  for (const row of rows) {
+    for (const cell of row) {
+      if (cell > 0) {
+        count += 1;
+      }
+    }
+  }
+  return count;
+}`,
+    // do-while accumulator
+    `function retry(maxAttempts: number) {
+  let attempts = 0;
+  do {
+    attempts += 1;
+  } while (attempts < maxAttempts);
+  return attempts;
+}`,
+    // for-in loop accumulator
+    `function collectKeys(obj: Record<string, unknown>) {
+  let keyCount = 0;
+  const src = obj;
+  for (const key in src) {
+    keyCount += 1;
+  }
+  return keyCount;
+}`,
+    // Idempotency check: output of the indented moveDeclarationCloser fix (function f)
+    `function f(a: number, b: number) {
+  const unrelated = a * b;
+  const x = 1;
+  return x + unrelated;
+}`,
+    // Idempotency check: output of the indented moveDeclarationCloser fix (function process)
+    `function process(value: number) {
+  const a = value + 2;
+  const b = value + 3;
+  const x = 1;
+  return x + a + b;
+}`,
   ],
   invalid: [
     {
@@ -497,6 +581,37 @@ const a = alpha.value;
 const unrelated = 1;
 `,
       errors: [{ messageId: 'groupDerived' }],
+    },
+    // Indented invalid case: move preserves indentation and the fix is idempotent
+    {
+      code: `function f(a: number, b: number) {
+  const x = 1;
+  const unrelated = a * b;
+  return x + unrelated;
+}`,
+      output: `function f(a: number, b: number) {
+  const unrelated = a * b;
+  const x = 1;
+  return x + unrelated;
+}`,
+      errors: [{ messageId: 'moveDeclarationCloser' }],
+    },
+    // Non-loop late declaration inside a function: simple initializer still flagged
+    // and the move preserves indentation on all adjacent statements
+    {
+      code: `function process(value: number) {
+  const x = 1;
+  const a = value + 2;
+  const b = value + 3;
+  return x + a + b;
+}`,
+      output: `function process(value: number) {
+  const a = value + 2;
+  const b = value + 3;
+  const x = 1;
+  return x + a + b;
+}`,
+      errors: [{ messageId: 'moveDeclarationCloser' }],
     },
   ],
 });
