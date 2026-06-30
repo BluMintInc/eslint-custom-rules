@@ -4,14 +4,17 @@ import {
   classifyIssue,
   isLintablePath,
   isQueueEmpty,
+  isRuleImplPath,
   mergeAndClose,
   normalizeIssues,
   parseMergeArgs,
   parseVersionArg,
   releaseIfEmpty,
+  ruleScopeFromDiff,
   selectNextIssue,
   sortIssues,
   validateViaStopHooks,
+  type ChangedFile,
   type Issue,
 } from './maintainer';
 
@@ -293,5 +296,90 @@ describe('releaseIfEmpty', () => {
     );
     expect(released).toBe(false);
     expect(calls).toEqual([]);
+  });
+});
+
+describe('isRuleImplPath', () => {
+  it('accepts a kebab-case rule implementation file', () => {
+    expect(isRuleImplPath('src/rules/no-stablehash-react-nodes.ts')).toBe(true);
+    expect(isRuleImplPath('src/rules/require-memo.ts')).toBe(true);
+  });
+
+  it('rejects tests, docs, declaration files, and non-rule sources', () => {
+    expect(isRuleImplPath('src/tests/require-memo.test.ts')).toBe(false);
+    expect(isRuleImplPath('src/rules/require-memo.d.ts')).toBe(false);
+    expect(isRuleImplPath('docs/rules/require-memo.md')).toBe(false);
+    expect(isRuleImplPath('src/index.ts')).toBe(false);
+    expect(isRuleImplPath('src/utils/ASTHelpers.ts')).toBe(false);
+    expect(isRuleImplPath('src/rules/nested/foo.ts')).toBe(false);
+  });
+});
+
+describe('ruleScopeFromDiff', () => {
+  const diff = (entries: ChangedFile[]) => (): ChangedFile[] => entries;
+  const known = (names: string[]) => (): string[] => names;
+
+  it('maps a newly added rule file to feat, ignoring its sibling files', () => {
+    const scope = ruleScopeFromDiff(
+      diff([
+        { status: 'A', file: 'src/rules/no-foo.ts' },
+        { status: 'A', file: 'src/tests/no-foo.test.ts' },
+        { status: 'A', file: 'docs/rules/no-foo.md' },
+        { status: 'M', file: 'src/index.ts' },
+        { status: 'M', file: 'README.md' },
+      ]),
+      known(['no-foo']),
+    );
+    expect(scope).toEqual({ rule: 'no-foo', changeType: 'feat' });
+  });
+
+  it('maps a modified rule file to fix', () => {
+    const scope = ruleScopeFromDiff(
+      diff([
+        { status: 'M', file: 'src/rules/require-memo.ts' },
+        { status: 'M', file: 'src/tests/require-memo.test.ts' },
+      ]),
+      known(['require-memo']),
+    );
+    expect(scope).toEqual({ rule: 'require-memo', changeType: 'fix' });
+  });
+
+  it('throws when no rule file changed', () => {
+    expect(() =>
+      ruleScopeFromDiff(
+        diff([{ status: 'M', file: 'src/utils/ASTHelpers.ts' }]),
+        known(['require-memo']),
+      ),
+    ).toThrow(/no src\/rules\/\*\.ts file changed/);
+  });
+
+  it('throws when more than one rule file changed (one rule per commit)', () => {
+    expect(() =>
+      ruleScopeFromDiff(
+        diff([
+          { status: 'M', file: 'src/rules/no-foo.ts' },
+          { status: 'M', file: 'src/rules/no-bar.ts' },
+        ]),
+        known(['no-foo', 'no-bar']),
+      ),
+    ).toThrow(/one rule per commit/);
+  });
+
+  it('throws when the derived rule is not registered in the rules map', () => {
+    expect(() =>
+      ruleScopeFromDiff(
+        diff([{ status: 'A', file: 'src/rules/no-foo.ts' }]),
+        known(['require-memo']),
+      ),
+    ).toThrow(/not registered in src\/index\.ts/);
+  });
+
+  it('throws on an unexpected git status for the rule file', () => {
+    expect(() =>
+      ruleScopeFromDiff(
+        diff([{ status: 'D', file: 'src/rules/no-foo.ts' }]),
+        known(['no-foo']),
+      ),
+    ).toThrow(/unexpected git status/);
   });
 });

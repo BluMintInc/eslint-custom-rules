@@ -8,38 +8,28 @@ user-invocable: false
 
 ## Purpose
 
-This system automates the ESLint rule development lifecycle using **Claude Code Hooks** for local quality enforcement and **GitHub Workflows** for triggering agents on issue events.
+This system automates the ESLint rule development lifecycle using **Claude Code Hooks** for local quality enforcement. The repo is driven by the autonomous **maintainer** (`/maintainer`), which spawns the `fix-bug` / `implement-rule` subagents per issue; the **Stop Hook** gates every change before it can merge.
+
+> **Note:** The earlier label-driven GitHub-Action workflows (`claude-rule-research-agent.yml`, `claude-implement-rule-agent.yml`, `claude-fix-bug-agent.yml`) and the web-research step have been **removed**. Issues are no longer triggered by `claude-*` labels — the maintainer acts on all open issues directly, and `bug` / `rule-request` only choose the subagent. The Hooks documented below are still live and authoritative.
 
 ## Why the System Was Built
 
-Automation reduces manual toil by enforcing local quality gates and launching background agents so repetitive rule work does not block developers.
+Automation reduces manual toil by enforcing local quality gates at agent stop-time, so an agent can't finish a rule fix/implementation until build, scoped lint, scoped tests, and (for new rules) the required file structure all pass.
 
-## Architecture Overview
+## Lifecycle Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            GitHub Issue Created                              │
-│                          (with rule-request label)                           │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                      │
-                                      ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│               claude-rule-research-agent.yml (claude-research)               │
-│     • Searches web for existing ESLint rules                                 │
-│     • Posts findings as issue comment                                        │
-│     • Labels: research-complete, claude-implement (if NO MATCH)              │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                      │
-                        (if NO MATCH → claude-implement)
-                                      │
-                                      ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│             claude-implement-rule-agent.yml (claude-implement)               │
-│     • Creates new branch from develop                                        │
-│     • Implements rule using .claude/agents/implement-rule.md               │
-│     • Claude Code Hooks enforce quality (build, lint, tests, structure)    │
-│     • Opens PR on completion                                                 │
-└─────────────────────────────────────────────────────────────────────────────┘
+Open issue (bug | rule-request)
+        │  maintainer: `scripts/maintainer.ts next`  (bugs before features, oldest first)
+        ▼
+fix-bug  /  implement-rule  subagent   (chosen by label; no research step)
+        │  edits rule + tests (+ docs / index.ts / README for new rules)
+        ▼
+Stop Hook gate (.claude/hooks/stop.sh → agent-check.ts):
+        build → lint changed files → related tests → rule-structure (new rules)
+        │  green
+        ▼
+maintainer self-merges to develop (scope-correct commit) → release on empty queue
 ```
 
 ## Definitions
@@ -50,12 +40,12 @@ Automation reduces manual toil by enforcing local quality gates and launching ba
 | **Stop Hook** | Quality gate that blocks completion until required checks succeed |
 | **Validation Loop** | Iterative rerun cycle triggered by failing checks, bounded by MAX_LOOPS to avoid infinite prompting |
 | **Quality Gate** | Ordered set of build, lint, test, and structure checks applied before an agent can finish |
-| **Rule Implementation Lifecycle** | Multi-stage flow from issue triage through research, implementation, validation, and PR creation |
+| **Rule Implementation Lifecycle** | Multi-stage flow from issue selection through implementation, validation, and merge |
 
 ## Core Components
 
 - Claude Code Hooks: Local lifecycle scripts that enforce lint/build/test and prompt tracking on every agent run.
-- GitHub Workflows: Issue and review triggers that launch background agents for research, implementation, and bug fixes.
+- Maintainer toolkit (`scripts/maintainer.ts`): Selects the next issue, validates, derives the commit scope, merges, and releases.
 - Validation Layers: Stop hook checks that gate completion on build, lint, tests, and rule structure for reliability.
 - Change Log: Per-session file tracking that keeps prompts idempotent and resumes validation across loops.
 
@@ -109,71 +99,28 @@ scripts/
 │       ├── getAssociatedPr.ts
 │       ├── fetchPrMetadata.ts
 │       └── buildMergeContext.ts
-└── github/
-    └── post-research-comment.ts         # Post research findings to issue
-
-.github/workflows/
-├── claude-rule-research-agent.yml       # Research existing rules
-├── claude-implement-rule-agent.yml      # Implement new rules
-└── claude-fix-bug-agent.yml             # Fix bugs in rules
+├── github/                             # GitHub helper scripts
+└── maintainer.ts                       # Deterministic maintainer toolkit (next/count/validate/scope/merge/release)
 ```
 
 ## GitHub Labels
 
 | Label | Purpose |
 |-------|---------|
-| `rule-request` | New ESLint rule request |
-| `bug` | Bug in existing rule |
-| `claude-research` | Triggers research workflow |
-| `research-complete` | Research has been performed |
-| `claude-implement` | Triggers implementation workflow |
-| `claude-fix` | Triggers bug fix workflow |
+| `rule-request` | New ESLint rule request → routes to the `implement-rule` subagent |
+| `bug` | Bug in an existing rule → routes to the `fix-bug` subagent |
 
-## Workflow Details
+Labels **only choose the subagent**. There are no `claude-*` trigger labels and no research prerequisite; the maintainer acts on all open issues (an unlabeled issue defaults to `fix-bug`).
 
-### 1. Research Workflow (`claude-rule-research-agent.yml`)
+## Maintainer-Driven Lifecycle
 
-**Trigger**: Issue labeled with `claude-research`
+The maintainer (`.claude/commands/maintainer.md`) drives the loop per issue:
 
-**Purpose**: Search for existing ESLint rules before implementing
-
-**Flow**:
-1. Check if research comment already exists (short-circuit)
-2. Launch agent to search web
-3. Agent writes findings to `.claude/tmp/research-results.md`
-4. Agent runs `post-research-comment.ts` which:
-   - Posts findings as issue comment
-   - Removes `claude-research` label
-   - Adds `research-complete` label
-   - If NO MATCH: Adds `claude-implement` label
-
-### 2. Implementation Workflow (`claude-implement-rule-agent.yml`)
-
-**Trigger**: Issue labeled with `claude-implement` (requires `rule-request` + `research-complete`)
-
-**Purpose**: Implement new ESLint rule
-
-**Flow**:
-1. Create branch: `develop-implement-rule-{issue_number}`
-2. Build prompt from `.claude/agents/implement-rule.md` + issue body
-3. Include `<!-- rule-request -->` flag for expanded test prompts
-4. Launch Claude Code agent
-5. Claude Code Hooks enforce quality until completion
-6. Open PR targeting `develop`
-
-### 3. Bug Fix Workflow (`claude-fix-bug-agent.yml`)
-
-**Trigger**: Issue labeled with `claude-fix` (requires `bug`)
-
-**Purpose**: Fix bugs in existing rules
-
-**Flow**:
-1. Create branch: `develop-fix-bug-{issue_number}`
-2. Build prompt from `.claude/agents/fix-bug.md` + issue body
-3. No `<!-- rule-request -->` flag (skip expanded test prompts)
-4. Launch Claude Code agent
-5. Claude Code Hooks enforce quality until completion
-6. Open PR targeting `develop`
+1. **Select** — `scripts/maintainer.ts next` returns the next issue (bugs before features, oldest first), the routing subagent (`fix-bug` / `implement-rule`), and the branch (`develop-<agent>-<n>`).
+2. **Branch & implement** — check out the branch and spawn the subagent with the issue body. Rule-requests carry the `<!-- rule-request -->` flag so the Stop Hook emits the "Expand Tests" prompt.
+3. **Validate** — `scripts/maintainer.ts validate` runs the same gate the Stop Hook enforces (build + changed-file lint + related tests).
+4. **Commit & merge** — `scripts/maintainer.ts scope` derives `{rule, changeType}` from the diff for a scope-correct `fix(<rule>)` / `feat(<rule>)` commit; `scripts/maintainer.ts merge` merges to `develop` and closes the issue.
+5. **Release** — on an empty queue, `scripts/maintainer.ts release` promotes `develop → main`.
 
 ## Claude Code Hooks System
 
@@ -250,8 +197,8 @@ Output: `{ "decision": "block", "reason": "..." }` to block, `{}` to allow stop.
 3. **Merge Conflict Check (Priority 0)**: If a `git merge` is in progress and conflicts remain, block completion and provide a fresh conflict-resolution prompt. Use `npm run address-merge-conflicts` to generate the initial prompt.
 4. **PR Review Check (Priority 1)**: For PR review branches (`*-review-pr-*`), check for unresolved comments (see `.claude/skills/automated-review-addressing/SKILL.md`)
 5. **Build Validation**: `npm run build` must succeed
-6. **Linting Validation**: ESLint on changed files only
-7. **Test Validation**: `npm test` must pass
+6. **Linting Validation**: ESLint on changed files only (not whole-repo — avoids tripping on unrelated pre-existing debt)
+7. **Test Validation**: the tests related to the changed files must pass (`jest --findRelatedTests`), not the whole suite (which is slow and memory-heavy; the full suite is the CI backstop)
 8. **Rule Structure Validation**: For rule implementations, verify:
    - `src/rules/{rule-name}.ts` exists
    - `src/tests/{rule-name}.test.ts` exists
@@ -326,13 +273,6 @@ This triggers the "Expand Tests" prompt after the first "Check Your Work" prompt
 
 The system uses `MAX_LOOPS = 200` to prevent infinite loops. After 200 iterations, agents complete even if checks fail.
 
-## GitHub Secrets Required
-
-| Secret | Purpose |
-|--------|---------|
-| `CURSOR_API_KEY` | API authentication for background agents |
-| `GITHUB_TOKEN` | Auto-provided, used for issue/PR operations |
-
 ## Common Issues
 
 ### Agent Stuck in Loop
@@ -341,18 +281,6 @@ If an agent keeps failing the same check:
 - Check the error output in the agent conversation
 - The agent will auto-stop after MAX_LOOPS iterations
 - Review the failing validation and fix manually if needed
-
-### Research Workflow Not Triggering
-
-- Ensure issue has `claude-research` label
-- Check if research comment already exists (short-circuit logic)
-- Verify `CURSOR_API_KEY` secret is configured
-
-### Implementation Workflow Not Triggering
-
-- Requires all three labels: `rule-request`, `research-complete`, `claude-implement`
-- Research workflow auto-adds `claude-implement` only on NO MATCH
-- For MATCH cases, human must decide to proceed
 
 ### Structure Validation Failing
 

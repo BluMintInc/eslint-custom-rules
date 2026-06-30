@@ -51,10 +51,17 @@ use this to rehearse).
 5. **Validate.** `npx tsx scripts/maintainer.ts validate` (runs build + lint +
    test — the same gate the stop hook enforces). If it fails, iterate on the fix;
    do not proceed until green.
-6. **Commit + merge.** Commit with `fix(<rule>): … (closes #<n>)` (or `feat`).
-   Then `npx tsx scripts/maintainer.ts merge --issue=<n> --branch=<branch>`
-   (`--dry-run` to rehearse). The `closes #<n>` auto-closes the issue on merge to
-   develop.
+6. **Commit + merge.** Derive the scope deterministically — do not hand-author
+   it: `npx tsx scripts/maintainer.ts scope` → `{rule, changeType}`. It reads the
+   branch diff (incl. untracked new files): a new `src/rules/<rule>.ts` ⇒ `feat`,
+   an edit to an existing one ⇒ `fix`. It errors if the rule isn't yet registered
+   in `src/index.ts` or if more than one rule changed — so a wrong scope can't
+   reach commitlint. For a `feat` (rule-request), first run `npm run docs` to
+   regenerate `README.md` + `docs/rules/<rule>.md`. Stage with `git add -A` (a new
+   rule's files are untracked, so `commit -a` alone misses them), then commit
+   `<changeType>(<rule>): … (closes #<n>)`. Then
+   `npx tsx scripts/maintainer.ts merge --issue=<n> --branch=<branch>` (`--dry-run`
+   to rehearse). The `closes #<n>` auto-closes the issue on merge to develop.
 7. **Repeat** from step 1 until `next` returns `null` (respecting `--max-issues`).
 
 ## Release (queue empty)
