@@ -447,6 +447,28 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
     'type FuncKeys<T> = { [K in keyof T]: T[K] extends (...args: readonly any[]) => any ? K : never }[keyof T];',
     'type PromiseOrValue<T> = T extends Promise<infer U> ? Promise<U> : Promise<T> | T;',
     'type CapitalizedString = `${Capitalize<string>}`;',
+
+    // Issue #1246: false positives when an abbreviation marker is a substring
+    // inside a real word (not a standalone camelCase token).
+    `export type GuardFlowIdWelcomeMintCongrats = string;`,
+    `export const printBanner = 'printing';`,
+    `export const sprintCount = 0;`,
+    `export const mintToken = 'mint';`,
+    `export const pointValue = 0;`,
+    `export const streamData = new ReadableStream();`,
+    `export const enumerateItems = () => [];`,
+    `export const marriageDate = new Date();`,
+    `type WelcomeMintDialog = { open: boolean };`,
+    // Words that merely contain an abbreviation marker as a substring of a
+    // real English word — none of these are whole camelCase tokens.
+    `const objective = 'goal';`,
+    `const functional = () => {};`,
+    `const numeral = 1;`,
+    `const integer = 1;`,
+    `const stringent = 'strict';`,
+    `const printQueue = [];`,
+    `const constraint = 'x';`,
+    `const sprintBacklog = [];`,
   ],
   invalid: [
     {
@@ -730,6 +752,30 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
     {
       code: 'const stringValue = "x";',
       errors: [errorFor('stringValue')],
+    },
+    // Issue #1246: genuine Hungarian abbreviation markers MUST still fire after
+    // the false-positive fix (exact camelCase token match, not substring).
+    {
+      code: 'export const intValue = 42;',
+      errors: [errorFor('intValue')],
+    },
+    {
+      code: 'export const strName = "";',
+      errors: [errorFor('strName')],
+    },
+    {
+      code: 'export const arrItems = [];',
+      errors: [errorFor('arrItems')],
+    },
+    // Abbreviation marker as middle camelCase token still fires.
+    {
+      code: 'const userIntCount = 0;',
+      errors: [errorFor('userIntCount')],
+    },
+    // Abbreviation marker as suffix token still fires.
+    {
+      code: 'const valueStr = "";',
+      errors: [errorFor('valueStr')],
     },
   ],
 });
