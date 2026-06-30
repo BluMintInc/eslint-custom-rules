@@ -4,6 +4,7 @@ import { createRule } from '../utils/createRule';
 type OptionShape = {
   stripPrefixes?: string[];
   ignoredMethods?: string[];
+  factoryMethods?: string[];
   ignoreAsync?: boolean;
   ignoreVoidReturn?: boolean;
   ignoreAbstract?: boolean;
@@ -51,11 +52,19 @@ const DEFAULT_IGNORED_METHODS = [
   'stringify',
 ];
 
+/**
+ * Builder/factory terminal methods whose external callers (in other files)
+ * would break if converted to getters. These are imperative actions, not
+ * computed properties — per origin issue #990 edge case #4.
+ */
+const DEFAULT_FACTORY_METHODS = ['build', 'create', 'make'];
+
 const SIDE_EFFECT_TAGS = ['sideEffect', 'sideEffects', 'mutates'];
 
 const DEFAULT_OPTIONS: Required<OptionShape> = {
   stripPrefixes: DEFAULT_PREFIXES,
   ignoredMethods: DEFAULT_IGNORED_METHODS,
+  factoryMethods: DEFAULT_FACTORY_METHODS,
   ignoreAsync: true,
   ignoreVoidReturn: true,
   ignoreAbstract: true,
@@ -226,6 +235,10 @@ export const preferGetterOverParameterlessMethod = createRule<
             type: 'array',
             items: { type: 'string' },
           },
+          factoryMethods: {
+            type: 'array',
+            items: { type: 'string' },
+          },
           ignoreAsync: {
             type: 'boolean',
           },
@@ -262,9 +275,12 @@ export const preferGetterOverParameterlessMethod = createRule<
       stripPrefixes: userOptions.stripPrefixes ?? DEFAULT_OPTIONS.stripPrefixes,
       ignoredMethods:
         userOptions.ignoredMethods ?? DEFAULT_OPTIONS.ignoredMethods,
+      factoryMethods:
+        userOptions.factoryMethods ?? DEFAULT_OPTIONS.factoryMethods,
     };
 
     const ignoredMethods = new Set(config.ignoredMethods);
+    const factoryMethods = new Set(config.factoryMethods);
     const prefixList = config.stripPrefixes;
     const sourceCode = context.getSourceCode();
     const ignoredTraversalKeys = new Set(['parent', 'loc', 'range']);
@@ -465,6 +481,29 @@ export const preferGetterOverParameterlessMethod = createRule<
         pushChildNodes(current, stack);
       }
 
+      return false;
+    }
+
+    /**
+     * Returns true when the method body contains a ThrowStatement that is
+     * directly in the method's own scope (not inside a nested function/arrow).
+     * A method that can throw at the top level is an imperative assertion, not
+     * a computed property, so it must not become a getter.
+     */
+    function containsTopLevelThrow(body: TSESTree.BlockStatement): boolean {
+      const stack: TSESTree.Node[] = [...body.body];
+      while (stack.length) {
+        const current = stack.pop() as TSESTree.Node;
+        // Do not descend into nested function-like scopes — a throw there is
+        // that nested function's concern, not the method's.
+        if (isFunctionLikeNode(current)) {
+          continue;
+        }
+        if (current.type === AST_NODE_TYPES.ThrowStatement) {
+          return true;
+        }
+        pushChildNodes(current, stack);
+      }
       return false;
     }
 
@@ -803,6 +842,10 @@ export const preferGetterOverParameterlessMethod = createRule<
 
         const name = node.key.name;
         if (ignoredMethods.has(name)) return;
+        // Factory/builder terminal methods are imperative actions (issue #990 #4).
+        // Exemption takes precedence over stripPrefixes so names like "build"
+        // are never prefix-stripped into a getter candidate.
+        if (factoryMethods.has(name)) return;
         if (hasOverloadSignatures(node)) return;
 
         const body = node.value.body;
@@ -812,6 +855,10 @@ export const preferGetterOverParameterlessMethod = createRule<
 
         if (!returnsValue(node)) return;
         if (config.respectJsDocSideEffects && hasSideEffectTag(node)) return;
+
+        // A method that throws at the top level is an imperative assertion or
+        // command, not a computed property — getters must be pure/non-throwing.
+        if (containsTopLevelThrow(body)) return;
 
         const sideEffectReason = analyzeMutations(body);
         const suggestedName = suggestName(name);

@@ -130,6 +130,96 @@ ruleTesterTs.run(
         `,
         options: [{ ignoreVoidReturn: false }],
       },
+
+      // Throwing methods are assertions/commands, not computed properties.
+      {
+        code: `
+          class ParticipantsFactory {
+            private get participants() {
+              return [1, 2, 3];
+            }
+            private shuffleParticipants() {
+              const shuffled = [...this.participants];
+              if (shuffled.length < 2) {
+                throw new Error('Not enough participants');
+              }
+              return shuffled;
+            }
+          }
+        `,
+      },
+
+      // Builder/factory terminal methods are imperative actions (issue #990 #4).
+      {
+        code: `
+          class WidgetFactory {
+            private get parts() {
+              return [1, 2, 3];
+            }
+            public build() {
+              return this.parts;
+            }
+          }
+        `,
+      },
+
+      // Method that throws conditionally — still an action, must be exempt.
+      {
+        code: `
+          class Guard {
+            private value = 0;
+            validate() {
+              if (this.value < 0) {
+                throw new Error('negative value');
+              }
+              return this.value;
+            }
+          }
+        `,
+      },
+
+      // Method that throws via a non-Error constructor (HttpsError) — still exempt.
+      {
+        code: `
+          class Tournament {
+            private participants = [1, 2, 3];
+            seedOrderedParticipants() {
+              if (this.participants.length < 2) {
+                throw new HttpsError('failed-precondition', 'Too few participants');
+              }
+              return [...this.participants].sort();
+            }
+          }
+        `,
+      },
+
+      // create() and make() are factory terminals — must be exempt.
+      {
+        code: `
+          class InstanceFactory {
+            private config = { x: 1 };
+            create() {
+              return this.config;
+            }
+          }
+        `,
+      },
+      {
+        code: `
+          class Builder {
+            private data = [1];
+            make() {
+              return this.data;
+            }
+          }
+        `,
+      },
+
+      // A throw that is ONLY inside a nested callback does NOT count as a
+      // top-level throw — but this method still has no body mutations and
+      // returns a value, so it IS a getter candidate and is tested as invalid below.
+      // (This valid case shows a throw inside an arrow that is not top-level.)
+      // NOTE: the nested-throw method IS invalid (flagged) — see invalid section.
     ],
     invalid: [
       {
@@ -969,6 +1059,71 @@ ruleTesterTs.run(
           },
         ],
         output: null,
+      },
+
+      // A pure parameterless method — fix must NOT over-exempt this.
+      {
+        code: `
+        class NameHolder {
+          private first = 'Jane';
+          private last = 'Doe';
+          getFullName() {
+            return this.first + ' ' + this.last;
+          }
+        }
+        `,
+        output: `
+        class NameHolder {
+          private first = 'Jane';
+          private last = 'Doe';
+          get fullName() {
+            return this.first + ' ' + this.last;
+          }
+        }
+        `,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'getFullName', suggestedName: 'fullName' },
+          },
+        ],
+      },
+
+      // A throw that lives only inside a nested arrow callback does NOT count
+      // as a top-level throw, so the method is still a getter candidate.
+      {
+        code: `
+        class Processor {
+          private items = [1, 2, 3];
+          processItems() {
+            return this.items.map((item) => {
+              if (item < 0) {
+                throw new Error('negative');
+              }
+              return item * 2;
+            });
+          }
+        }
+        `,
+        output: `
+        class Processor {
+          private items = [1, 2, 3];
+          get processItems() {
+            return this.items.map((item) => {
+              if (item < 0) {
+                throw new Error('negative');
+              }
+              return item * 2;
+            });
+          }
+        }
+        `,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'processItems', suggestedName: 'processItems' },
+          },
+        ],
       },
     ],
   },
