@@ -14,6 +14,12 @@ export type ComponentNode =
 const isComponentExplicitlyUnmemoized = (componentName: string) =>
   componentName.toLowerCase().includes('unmemoized');
 
+// React's universal convention: only PascalCase-initial identifiers are
+// treated as components. camelCase names are render-prop callbacks or plain
+// helper functions that are invoked directly (e.g. MUI's renderCell(params)),
+// NOT React components — wrapping them in memo() would break callers.
+const startsWithUppercase = (name: string) => /^[A-Z]/.test(name);
+
 function isFunction(
   node: TSESTree.Node,
 ): node is
@@ -54,6 +60,7 @@ const isUnmemoizedArrowFunction = (parentNode: TSESTree.Node) => {
   return (
     parentNode.type === 'VariableDeclarator' &&
     parentNode.id.type === 'Identifier' &&
+    startsWithUppercase(parentNode.id.name) &&
     !isComponentExplicitlyUnmemoized(parentNode.id.name)
   );
 };
@@ -66,6 +73,7 @@ const isUnmemoizedFunctionComponent = (
     node.type === 'FunctionDeclaration' &&
     parentNode.type === 'Program' &&
     node.id &&
+    startsWithUppercase(node.id.name) &&
     !isComponentExplicitlyUnmemoized(node.id.name)
   );
 };
@@ -78,6 +86,7 @@ const isUnmemoizedExportedFunctionComponent = (
     node.type === 'FunctionDeclaration' &&
     parentNode.type === 'ExportNamedDeclaration' &&
     node.id &&
+    startsWithUppercase(node.id.name) &&
     !isComponentExplicitlyUnmemoized(node.id.name)
   );
 };
