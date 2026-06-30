@@ -172,6 +172,7 @@ import { requireServerTimestampForFirestoreDates } from './rules/require-server-
 import { preferSpreadOverReassembly } from './rules/prefer-spread-over-reassembly';
 import { preferSxPropOverSystemProps } from './rules/prefer-sx-prop-over-system-props';
 import { enforceM3SentenceCase } from './rules/enforce-m3-sentence-case';
+import { noRedundantBooleanCallbackProps } from './rules/no-redundant-boolean-callback-props';
 
 const NO_FRONTEND_IMPORTS_FROM_FUNCTIONS_MESSAGE =
   'Backend Cloud Functions (.f.ts under functions/) must not import frontend modules from the repo root src/**. Frontend code can depend on browser-only APIs and bundling it into Cloud Functions breaks server execution; move shared logic into functions/src or a shared package.';
@@ -392,6 +393,7 @@ module.exports = {
         '@blumintinc/blumint/prefer-spread-over-reassembly': 'error',
         '@blumintinc/blumint/prefer-sx-prop-over-system-props': 'error',
         '@blumintinc/blumint/enforce-m3-sentence-case': 'warn',
+        '@blumintinc/blumint/no-redundant-boolean-callback-props': 'error',
       },
       /**
        * Depth-specific overrides block only import strings that traverse to the
@@ -669,5 +671,6 @@ module.exports = {
     'prefer-spread-over-reassembly': preferSpreadOverReassembly,
     'prefer-sx-prop-over-system-props': preferSxPropOverSystemProps,
     'enforce-m3-sentence-case': enforceM3SentenceCase,
+    'no-redundant-boolean-callback-props': noRedundantBooleanCallbackProps,
   },
 };
