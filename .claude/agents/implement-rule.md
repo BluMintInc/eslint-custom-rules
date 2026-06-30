@@ -148,7 +148,7 @@ Add the rule to the rules table in `README.md`
 
 ### 7. Verify
 
-- Run `npm test` - all tests must pass
+- Run `npx jest src/tests/<rule-name>.test.ts` - the new rule's tests must pass. Scope jest to your rule's test file rather than running the whole suite (it is slow and memory-heavy); the full suite runs in CI and the stop hook runs `--findRelatedTests` on your changed files automatically.
 - Run `npm run lint:fix` - no linting errors
 - Run `npm run build` - build must succeed
 
