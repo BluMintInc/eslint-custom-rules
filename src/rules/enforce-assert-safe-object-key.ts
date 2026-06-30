@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds = 'useAssertSafe';
 type Options = [
@@ -89,6 +90,34 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
           return createFixes(fixer, node, expressionText);
         },
       });
+
+    /**
+     * Returns true when the identifier was initialized directly from an
+     * assertSafe(...) call, e.g. `const safeKey = assertSafe(rawKey)`.
+     * Only direct, single-step initializers count — transitive aliases
+     * (const b = a) are not followed so they continue to be flagged.
+     * findVariableInScope returns the nearest binding, so an inner variable
+     * that shadows an outer assertSafe-initialized one is correctly not exempt.
+     */
+    const isAssertSafeValidatedIdentifier = (
+      node: TSESTree.Identifier,
+    ): boolean => {
+      const scope = ASTHelpers.getScope(context, node);
+      const variable = ASTHelpers.findVariableInScope(scope, node.name);
+      if (!variable) return false;
+      return variable.defs.some((def) => {
+        const init =
+          def.node.type === AST_NODE_TYPES.VariableDeclarator
+            ? def.node.init
+            : null;
+        return (
+          !!init &&
+          init.type === AST_NODE_TYPES.CallExpression &&
+          init.callee.type === AST_NODE_TYPES.Identifier &&
+          init.callee.name === 'assertSafe'
+        );
+      });
+    };
 
     return {
       ImportDeclaration(node: TSESTree.ImportDeclaration) {
@@ -255,6 +284,12 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
 
             // If it looks like an array access, allow it
             if (isLikelyArray) {
+              return;
+            }
+
+            // Variables initialized directly from assertSafe(...) are already
+            // validated — no need to double-wrap them.
+            if (isAssertSafeValidatedIdentifier(property)) {
               return;
             }
 

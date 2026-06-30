@@ -85,6 +85,67 @@ const condition = true;
 console.log(obj[assertSafe(condition ? 'key1' : 'key2')]);
       `,
     },
+    {
+      // Repro from issue #1245: cached assertSafe identifier used across multiple member accesses
+      code: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const keys = ['key1', 'key2'];
+const userBalance = { key1: 100, key2: 200 };
+const remaining = { key1: 50, key2: 75 };
+const entryFee = { key1: 10, key2: 20 };
+keys.map((key) => {
+  const safeKey = assertSafe(key);
+  const balance = userBalance[safeKey];
+  const rem = remaining[safeKey];
+  const fee = entryFee[safeKey];
+});
+      `,
+    },
+    {
+      // let-initialized assertSafe variable is also exempt
+      code: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { key1: 'value1', key2: 'value2' };
+const rawKey = 'key1';
+let safeKey = assertSafe(rawKey);
+console.log(obj[safeKey]);
+      `,
+    },
+    {
+      // assertSafe cached variable in a nested closure scope is exempt
+      code: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const data = { a: 1, b: 2 };
+function process(rawKey) {
+  const safeKey = assertSafe(rawKey);
+  return data[safeKey];
+}
+      `,
+    },
+    {
+      // Regression guard: safeKey from assertSafe used as `in` left-operand is
+      // handled by the BinaryExpression visitor which never flags bare identifiers —
+      // confirm it does not become a new false positive.
+      code: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { key1: 'value1' };
+const rawKey = 'key1';
+const safeKey = assertSafe(rawKey);
+const exists = safeKey in obj;
+      `,
+    },
+    {
+      // Regression guard: safeKey from assertSafe in computed destructuring is
+      // handled by the Property visitor which never flags bare identifiers —
+      // confirm it does not become a new false positive.
+      code: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { key1: 'value1' };
+const rawKey = 'key1';
+const safeKey = assertSafe(rawKey);
+const { [safeKey]: value } = obj;
+      `,
+    },
   ],
   invalid: [
     {
@@ -382,6 +443,82 @@ import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const getId = () => 'key1';
 console.log(obj[assertSafe(getId())]);
+      `,
+    },
+    {
+      // Plain alias (const k = rawKey) is NOT assertSafe-validated and must be flagged
+      code: `
+const obj = { key1: 'value1', key2: 'value2' };
+const rawKey = 'key1';
+const k = rawKey;
+console.log(obj[k]);
+      `,
+      errors: [lintError('k')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { key1: 'value1', key2: 'value2' };
+const rawKey = 'key1';
+const k = rawKey;
+console.log(obj[assertSafe(k)]);
+      `,
+    },
+    {
+      // Variable initialized from a non-assertSafe call must still be flagged
+      code: `
+const obj = { key1: 'value1', key2: 'value2' };
+const rawKey = 'key1';
+const k = sanitize(rawKey);
+console.log(obj[k]);
+      `,
+      errors: [lintError('k')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { key1: 'value1', key2: 'value2' };
+const rawKey = 'key1';
+const k = sanitize(rawKey);
+console.log(obj[assertSafe(k)]);
+      `,
+    },
+    {
+      // Similar-but-different callee name (assertUnsafe) must still be flagged
+      code: `
+const obj = { key1: 'value1', key2: 'value2' };
+const rawKey = 'key1';
+const k = assertUnsafe(rawKey);
+console.log(obj[k]);
+      `,
+      errors: [lintError('k')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { key1: 'value1', key2: 'value2' };
+const rawKey = 'key1';
+const k = assertUnsafe(rawKey);
+console.log(obj[assertSafe(k)]);
+      `,
+    },
+    {
+      // Shadowing: inner const safeKey = rawKey shadows the outer assertSafe
+      // safeKey — the inner binding is NOT from assertSafe and must be flagged.
+      code: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { key1: 'value1', key2: 'value2' };
+const rawKey = 'key1';
+const safeKey = assertSafe(rawKey);
+function inner() {
+  const safeKey = rawKey;
+  return obj[safeKey];
+}
+      `,
+      errors: [lintError('safeKey')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { key1: 'value1', key2: 'value2' };
+const rawKey = 'key1';
+const safeKey = assertSafe(rawKey);
+function inner() {
+  const safeKey = rawKey;
+  return obj[assertSafe(safeKey)];
+}
       `,
     },
   ],

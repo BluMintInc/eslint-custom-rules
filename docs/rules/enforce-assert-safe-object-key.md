@@ -40,6 +40,20 @@ console.log(obj[assertSafe(`${id}_suffix`)]);
 const hasKey = assertSafe(id) in obj;
 ```
 
+Caching the validated value in a variable is also accepted — the rule recognises
+identifiers that are initialised directly from `assertSafe(...)` and does not
+require a second wrapping:
+
+```js
+import { assertSafe } from 'functions/src/util/assertSafe';
+
+// safeKey holds an already-validated key; obj[safeKey] is fine.
+const safeKey = assertSafe(rawKey);
+const a = objA[safeKey];
+const b = objB[safeKey];
+const c = objC[safeKey];
+```
+
 ## Options
 
 - `assertSafeImportPath` (string, default: `functions/src/util/assertSafe`): override the import path used by the fixer when inserting `assertSafe`. Set this to your local helper path when consuming the plugin outside BluMint.
