@@ -214,9 +214,48 @@ function changedLintableFiles(): string[] {
 }
 
 /**
+ * TypeScript files changed on this branch (vs the develop merge-base),
+ * INCLUDING test files. Used to scope `jest --findRelatedTests` so the gate
+ * runs only the suites related to the change rather than the whole codebase
+ * (mirroring the stop hook's agent-check.ts). Like the lint list this includes
+ * uncommitted edits, since validate runs before the maintainer commits.
+ */
+export function changedTestRelevantFiles(): string[] {
+  let base = DEVELOP;
+  try {
+    base =
+      execFileSync('git', ['merge-base', DEVELOP, 'HEAD'], {
+        encoding: 'utf8',
+      }).trim() || DEVELOP;
+  } catch {
+    /* fall back to the develop ref */
+  }
+  let out = '';
+  try {
+    out = execFileSync('git', ['diff', '--name-only', base], {
+      encoding: 'utf8',
+    });
+  } catch {
+    return [];
+  }
+  return out
+    .split('\n')
+    .map((file) => file.trim())
+    .filter(Boolean)
+    .filter(
+      (file) =>
+        /\.(ts|tsx)$/.test(file) &&
+        !file.startsWith('.github/') &&
+        !/(^|\/)node_modules(\/|$)/.test(file) &&
+        !file.includes('.claude/tmp/') &&
+        existsSync(resolve(file)),
+    );
+}
+
+/**
  * Run the gate the repo stop hook ACTUALLY enforces: build, then ESLint on the
- * source files changed vs develop, then the test suite. Returns true only if
- * all succeed.
+ * source files changed vs develop, then the tests related to the change.
+ * Returns true only if all succeed.
  *
  * The lint step deliberately lints only changed files (mirroring
  * agent-check.ts → lint-diff.ts) rather than a whole-repo `npm run lint`. A
@@ -224,17 +263,28 @@ function changedLintableFiles(): string[] {
  * (e.g. unrelated `lint:js` errors, or `lint:eslint-docs` drift), which would
  * make the gate permanently red and force the maintainer to "reason past" a
  * failure that isn't about its change.
+ *
+ * The test step likewise scopes jest to `--findRelatedTests` on the changed
+ * TypeScript files (mirroring agent-check.ts) rather than the whole suite,
+ * which is slow and memory-heavy. The full suite is the CI backstop.
  */
 export function validateViaStopHooks(
   run: Runner = defaultRunner,
   getChangedFiles: () => string[] = changedLintableFiles,
+  getTestFiles: () => string[] = changedTestRelevantFiles,
 ): boolean {
   const files = getChangedFiles();
   const steps: Array<[string, string[]]> = [['npm', ['run', 'build']]];
   if (files.length > 0) {
     steps.push(['npx', ['eslint', ...files]]);
   }
-  steps.push(['npm', ['test']]);
+  const testFiles = getTestFiles();
+  if (testFiles.length > 0) {
+    steps.push([
+      'npx',
+      ['jest', '--findRelatedTests', ...testFiles, '--passWithNoTests'],
+    ]);
+  }
   for (const [cmd, args] of steps) {
     try {
       run(cmd, args);

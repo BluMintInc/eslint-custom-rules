@@ -141,28 +141,44 @@ describe('isLintablePath', () => {
 });
 
 describe('validateViaStopHooks', () => {
-  it('runs build → eslint on changed files → test, returning true when all pass', () => {
+  it('runs build → eslint on changed files → jest scoped to related tests, returning true when all pass', () => {
     const calls: string[] = [];
     const ok = validateViaStopHooks(
       (cmd, args) => calls.push(`${cmd} ${args.join(' ')}`),
       () => ['src/rules/foo.ts', 'src/util/bar.ts'],
+      () => ['src/rules/foo.ts', 'src/tests/foo.test.ts'],
     );
     expect(ok).toBe(true);
     expect(calls).toEqual([
       'npm run build',
       'npx eslint src/rules/foo.ts src/util/bar.ts',
-      'npm test',
+      'npx jest --findRelatedTests src/rules/foo.ts src/tests/foo.test.ts --passWithNoTests',
     ]);
   });
 
-  it('skips the lint step when no source files changed', () => {
+  it('skips the lint step when no source files changed but still runs related tests', () => {
     const calls: string[] = [];
     const ok = validateViaStopHooks(
       (cmd, args) => calls.push(`${cmd} ${args.join(' ')}`),
       () => [],
+      () => ['src/tests/foo.test.ts'],
     );
     expect(ok).toBe(true);
-    expect(calls).toEqual(['npm run build', 'npm test']);
+    expect(calls).toEqual([
+      'npm run build',
+      'npx jest --findRelatedTests src/tests/foo.test.ts --passWithNoTests',
+    ]);
+  });
+
+  it('skips the test step when no TypeScript files changed', () => {
+    const calls: string[] = [];
+    const ok = validateViaStopHooks(
+      (cmd, args) => calls.push(`${cmd} ${args.join(' ')}`),
+      () => [],
+      () => [],
+    );
+    expect(ok).toBe(true);
+    expect(calls).toEqual(['npm run build']);
   });
 
   it('returns false and stops at the first failing step', () => {
@@ -174,6 +190,7 @@ describe('validateViaStopHooks', () => {
           throw new Error('lint failed');
         }
       },
+      () => ['src/rules/foo.ts'],
       () => ['src/rules/foo.ts'],
     );
     expect(ok).toBe(false);

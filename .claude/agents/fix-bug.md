@@ -15,8 +15,10 @@ This agent guides fixing a bug in an existing ESLint rule. It builds the LLM pro
 
 ### 1. Reproduce the Bug
 
-- **If the issue includes a ready-to-paste failing `RuleTester` case** (the autonomous report-bug agent authors one), drop it into `src/tests/<rule-name>.test.ts` verbatim and run `npm test` to confirm it FAILS first — that is the reproduction. Do not rewrite it; treat it as the acceptance test the fix must turn green.
+- **If the issue includes a ready-to-paste failing `RuleTester` case** (the autonomous report-bug agent authors one), drop it into `src/tests/<rule-name>.test.ts` verbatim and run `npx jest src/tests/<rule-name>.test.ts` to confirm it FAILS first — that is the reproduction. Do not rewrite it; treat it as the acceptance test the fix must turn green.
 - Otherwise, create a test case from the code in the issue and verify the bug behavior (false positive/negative).
+
+> **Scope jest to the rule(s) you change.** Run `npx jest src/tests/<rule-name>.test.ts` (pass several paths if you touch a shared util), not the whole suite — the full run is slow and memory-heavy. The full suite runs in CI; the stop hook also runs `--findRelatedTests` on your changed files automatically.
 
 ### 2. Diagnose Root Cause
 
@@ -31,7 +33,7 @@ This agent guides fixing a bug in an existing ESLint rule. It builds the LLM pro
 ### 4. Add Regression Tests
 
 - Add test case(s) that would have caught this bug
-- Verify fix with `npm test`
+- Verify the fix with `npx jest src/tests/<rule-name>.test.ts` (scoped to the rule you changed — not the whole suite)
 
 ### 5. Verify
 
