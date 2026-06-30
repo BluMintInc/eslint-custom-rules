@@ -56,7 +56,11 @@ use this to rehearse).
    branch diff (incl. untracked new files): a new `src/rules/<rule>.ts` ⇒ `feat`,
    an edit to an existing one ⇒ `fix`. It errors if the rule isn't yet registered
    in `src/index.ts` or if more than one rule changed — so a wrong scope can't
-   reach commitlint. For a `feat` (rule-request), first run `npm run docs` to
+   reach commitlint. **Before staging, confirm the working tree holds only the
+   target rule's files** (`git status`); if a subagent ran a repo-wide
+   `npm run lint:fix` and reformatted unrelated files with pre-existing debt,
+   discard them — `git checkout HEAD -- <unrelated paths>` — so the commit stays
+   one-rule scoped. For a `feat` (rule-request), first run `npm run docs` to
    regenerate `README.md` + `docs/rules/<rule>.md`. Stage with `git add -A` (a new
    rule's files are untracked, so `commit -a` alone misses them), then commit
    `<changeType>(<rule>): … (closes #<n>)`. Then

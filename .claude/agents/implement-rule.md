@@ -151,7 +151,7 @@ Add the rule to the rules table in `README.md`
 ### 7. Verify
 
 - Run `npx jest src/tests/<rule-name>.test.ts` - the new rule's tests must pass. Scope jest to your rule's test file rather than running the whole suite (it is slow and memory-heavy); the full suite runs in CI and the stop hook runs `--findRelatedTests` on your changed files automatically.
-- Run `npm run lint:fix` - no linting errors
+- Lint **only the files you created/changed**: `npx eslint --fix src/rules/<rule-name>.ts src/index.ts` (plus any other files you touched). Do **NOT** run `npm run lint:fix` — it is repo-wide (`eslint ./src/**/* --fix`) and auto-reformats unrelated files with pre-existing debt, polluting your branch with changes that don't belong to this rule (and breaking the maintainer's one-rule-per-commit scope).
 - Run `npm run build` - build must succeed
 - Run `npm run docs` - regenerates `README.md`'s rule table and the generated markers in `docs/rules/<rule-name>.md` from your rule's metadata (your hand-written doc body is preserved). Run it after the rule is registered in `src/index.ts` so the generator sees it.
 
