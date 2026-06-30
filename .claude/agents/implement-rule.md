@@ -72,6 +72,8 @@ export const yourRuleName = createRule<[], MessageIds>({
 });
 ```
 
+**Type-aware rules (important constraint):** The shared `ruleTester` instances in `src/utils/ruleTester.ts` set **no** `parserOptions.project`, so full type information is **not** available during tests. If your rule reaches for type info (`getParserServices`, `getTypeChecker`, `esTreeNodeToTSNodeMap`), it must **guard for missing parser services and degrade to syntactic detection** — mirror `src/rules/no-entire-object-hook-deps.ts`, which checks `parserServices?.esTreeNodeToTSNodeMap && typeof parserServices.program.getTypeChecker === 'function'` before touching the checker. Write your tests against the syntactic paths that work without a program. If the rule **fundamentally cannot decide** without resolved types, do not ship a version that only "passes" because the checker is absent — comment on the issue explaining the limitation and defer for human input rather than merging a rule whose core logic is untested.
+
 ### 3. Create Tests
 
 Create `src/tests/<rule-name>.test.ts`:
@@ -151,6 +153,7 @@ Add the rule to the rules table in `README.md`
 - Run `npx jest src/tests/<rule-name>.test.ts` - the new rule's tests must pass. Scope jest to your rule's test file rather than running the whole suite (it is slow and memory-heavy); the full suite runs in CI and the stop hook runs `--findRelatedTests` on your changed files automatically.
 - Run `npm run lint:fix` - no linting errors
 - Run `npm run build` - build must succeed
+- Run `npm run docs` - regenerates `README.md`'s rule table and the generated markers in `docs/rules/<rule-name>.md` from your rule's metadata (your hand-written doc body is preserved). Run it after the rule is registered in `src/index.ts` so the generator sees it.
 
 ## Quality Checklist
 
