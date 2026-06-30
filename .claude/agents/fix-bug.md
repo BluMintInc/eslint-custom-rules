@@ -39,7 +39,8 @@ This agent guides fixing a bug in an existing ESLint rule. It builds the LLM pro
 
 - All existing tests still pass
 - New regression test passes
-- No linting errors
+- Lint **only the files you changed**: `npx eslint --fix <changed files>` (e.g. `npx eslint --fix src/rules/<rule-name>.ts`). Do **NOT** run `npm run lint:fix` — it is repo-wide (`eslint ./src/**/* --fix`) and auto-reformats unrelated files that carry pre-existing debt, polluting your branch with changes that don't belong to this fix (and breaking the maintainer's one-rule-per-commit scope).
+- `npm run build` succeeds
 
 ## Quality Checklist
 
