@@ -94,7 +94,12 @@ PRs that need their review feedback drained. A human can run it the same way.
 
 - Every change you produce is gated by this repo's own stop hooks before it can
   merge — lean on them; do not reinvent validation.
-- If an issue is genuinely unactionable (e.g. needs human product input), comment
-  on it explaining why and move on; do not block the queue.
+- If an issue is genuinely unactionable by an autonomous agent — needs human
+  product input, or is a rule whose core correctness needs type information the
+  `RuleTester` can't provide (no `parserOptions.project`), so it can't be
+  implemented/tested syntactically — comment on it explaining why, apply the
+  `human` label, and move on. `next`/`count`/`release` skip `human`-labeled
+  issues (`filterActionable` in `scripts/maintainer.ts`), so deferring one does
+  not block the queue or the eventual release.
 - Keep going. The first run clears a multi-month backlog and cuts the first
   release in months — expect it to take a while.

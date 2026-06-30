@@ -126,6 +126,27 @@ export function isQueueEmpty(issues: readonly Issue[]) {
   return issues.length === 0;
 }
 
+/**
+ * Labels that take an issue OUT of the autonomous queue: it needs a human
+ * decision the maintainer can't make (e.g. a rule whose core correctness needs
+ * type information and so can't be implemented/tested syntactically). The
+ * maintainer comments its rationale, applies the label, and moves on — `next`,
+ * `count`, and `release` all ignore these, so the loop drains everything
+ * actionable and still reaches "empty" (firing the release) instead of looping
+ * forever on an issue it has already, deliberately, set aside.
+ */
+export const DEFERRED_LABELS = new Set(['human']);
+
+/** Whether an issue has been deferred to a human (see DEFERRED_LABELS). */
+export function isDeferred(issue: Issue): boolean {
+  return issue.labels.some((label) => DEFERRED_LABELS.has(label));
+}
+
+/** The actionable subset of a queue: open issues not deferred to a human. */
+export function filterActionable(issues: readonly Issue[]): Issue[] {
+  return issues.filter((issue) => !isDeferred(issue));
+}
+
 type GhLabel = { readonly name: string };
 type GhIssue = {
   readonly number: number;
@@ -163,7 +184,7 @@ export function fetchOpenIssues(
     ],
     { encoding: 'utf8' },
   ) as string;
-  return normalizeIssues(JSON.parse(out));
+  return filterActionable(normalizeIssues(JSON.parse(out)));
 }
 
 type Runner = (cmd: string, args: string[]) => void;

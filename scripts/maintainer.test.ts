@@ -2,6 +2,8 @@ import {
   branchNameFor,
   chooseAgent,
   classifyIssue,
+  filterActionable,
+  isDeferred,
   isLintablePath,
   isQueueEmpty,
   isRuleImplPath,
@@ -91,6 +93,33 @@ describe('sortIssues / selectNextIssue', () => {
   it('returns null on an empty queue', () => {
     expect(selectNextIssue([])).toBeNull();
     expect(isQueueEmpty([])).toBe(true);
+  });
+});
+
+describe('isDeferred / filterActionable', () => {
+  it('treats an issue labeled human as deferred', () => {
+    expect(isDeferred(issue(1, ['rule-request', 'human'], 'x'))).toBe(true);
+    expect(isDeferred(issue(2, ['rule-request'], 'x'))).toBe(false);
+    expect(isDeferred(issue(3, ['bug'], 'x'))).toBe(false);
+  });
+
+  it('drops human-labeled issues from the actionable queue', () => {
+    const issues = [
+      issue(10, ['rule-request'], 'a'),
+      issue(11, ['rule-request', 'human'], 'b'),
+      issue(12, ['bug'], 'c'),
+    ];
+    expect(filterActionable(issues).map((i) => i.number)).toEqual([10, 12]);
+  });
+
+  it('a queue of only deferred issues filters to empty (release can fire)', () => {
+    const issues = [
+      issue(20, ['rule-request', 'human'], 'a'),
+      issue(21, ['enhancement', 'human'], 'b'),
+    ];
+    const actionable = filterActionable(issues);
+    expect(actionable).toEqual([]);
+    expect(isQueueEmpty(actionable)).toBe(true);
   });
 });
 
