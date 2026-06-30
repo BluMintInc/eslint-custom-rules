@@ -542,19 +542,30 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           return identifierReturnsBoolean(calleeName) ? 'boolean' : 'unknown';
         }
 
+        // Treat the callee as returning boolean when it has a boolean-indicating
+        // prefix at a proper name boundary. We check both the approved output
+        // prefixes (is/has/can/…) and additional callee-specific indicators
+        // (check, auth, valid, enabled, boolean). The critical constraint is
+        // boundary-correct starts-with: `checkAuth` (check + Auth, uppercase
+        // boundary) → boolean; `preserveUsersCheckedIn` (check is a substring
+        // mid-word, not a boundary prefix) → not boolean. Using
+        // isPrefixedByBooleanKeyword for all checks prevents the false-positive
+        // that raw String.includes() caused.
+        const calleeBooleanPrefixes = [
+          ...approvedPrefixesWithoutAsserts,
+          'check',
+          'auth',
+          'valid',
+          'enabled',
+          'boolean',
+        ];
+
         const matchesPrefix = isPrefixedByBooleanKeyword(
           calleeName,
-          approvedPrefixesWithoutAsserts,
+          calleeBooleanPrefixes,
         );
 
-        if (
-          matchesPrefix ||
-          lowerCallee.includes('boolean') ||
-          lowerCallee.includes('enabled') ||
-          lowerCallee.includes('auth') ||
-          lowerCallee.includes('valid') ||
-          lowerCallee.includes('check')
-        ) {
+        if (matchesPrefix) {
           return 'boolean';
         }
 
@@ -580,19 +591,22 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           return 'unknown';
         }
 
+        // Same boundary-aware prefix check for method names on member expressions.
+        const methodBooleanPrefixes = [
+          ...approvedPrefixesWithoutAsserts,
+          'check',
+          'auth',
+          'valid',
+          'enabled',
+          'boolean',
+        ];
+
         const matchesPrefix = isPrefixedByBooleanKeyword(
           methodName,
-          approvedPrefixesWithoutAsserts,
+          methodBooleanPrefixes,
         );
 
-        if (
-          matchesPrefix ||
-          lowerMethodName.includes('boolean') ||
-          lowerMethodName.includes('enabled') ||
-          lowerMethodName.includes('auth') ||
-          lowerMethodName.includes('valid') ||
-          lowerMethodName.includes('check')
-        ) {
+        if (matchesPrefix) {
           return 'boolean';
         }
       }
