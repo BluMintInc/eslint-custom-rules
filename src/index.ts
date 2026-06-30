@@ -167,6 +167,7 @@ import { requireMigrationScriptMetadata } from './rules/require-migration-script
 import { warnHttpsErrorMessageUserFriendly } from './rules/warn-https-error-message-user-friendly';
 import { noStablehashReactNodes } from './rules/no-stablehash-react-nodes';
 import { requirePropsComposition } from './rules/require-props-composition';
+import { requireServerTimestampForFirestoreDates } from './rules/require-server-timestamp-for-firestore-dates';
 
 const NO_FRONTEND_IMPORTS_FROM_FUNCTIONS_MESSAGE =
   'Backend Cloud Functions (.f.ts under functions/) must not import frontend modules from the repo root src/**. Frontend code can depend on browser-only APIs and bundling it into Cloud Functions breaks server execution; move shared logic into functions/src or a shared package.';
@@ -381,6 +382,8 @@ module.exports = {
         '@blumintinc/blumint/require-migration-script-metadata': 'error',
         '@blumintinc/blumint/warn-https-error-message-user-friendly': 'warn',
         '@blumintinc/blumint/require-props-composition': 'warn',
+        '@blumintinc/blumint/require-server-timestamp-for-firestore-dates':
+          'error',
       },
       /**
        * Depth-specific overrides block only import strings that traverse to the
@@ -652,5 +655,7 @@ module.exports = {
     'require-migration-script-metadata': requireMigrationScriptMetadata,
     'warn-https-error-message-user-friendly': warnHttpsErrorMessageUserFriendly,
     'require-props-composition': requirePropsComposition,
+    'require-server-timestamp-for-firestore-dates':
+      requireServerTimestampForFirestoreDates,
   },
 };
