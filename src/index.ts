@@ -12,6 +12,7 @@ import { enforceIdentifiableFirestoreType } from './rules/enforce-identifiable-f
 import { default as enforceCallbackMemo } from './rules/enforce-callback-memo';
 import { reactMemoizeLiterals } from './rules/react-memoize-literals';
 import { enforceCallableTypes } from './rules/enforce-callable-types';
+import { enforceCloudFunctionIdLength } from './rules/enforce-cloud-function-id-length';
 import { enforceConsoleError } from './rules/enforce-console-error';
 import enforceFirebaseImports from './rules/enforce-dynamic-firebase-imports';
 import { enforceMuiRoundedIcons } from './rules/enforce-mui-rounded-icons';
@@ -245,6 +246,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-callback-memo': 'error',
         '@blumintinc/blumint/react-memoize-literals': 'error',
         '@blumintinc/blumint/enforce-callable-types': 'error',
+        '@blumintinc/blumint/enforce-cloud-function-id-length': 'error',
         '@blumintinc/blumint/enforce-console-error': 'error',
         '@blumintinc/blumint/enforce-dynamic-firebase-imports': 'error',
         '@blumintinc/blumint/enforce-react-type-naming': 'error',
@@ -527,6 +529,7 @@ module.exports = {
     'enforce-react-type-naming': enforceReactTypeNaming,
     'enforce-firestore-rules-get-access': enforceFirestoreRulesGetAccess,
     'enforce-callable-types': enforceCallableTypes,
+    'enforce-cloud-function-id-length': enforceCloudFunctionIdLength,
     'enforce-console-error': enforceConsoleError,
     'enforce-dynamic-firebase-imports': enforceFirebaseImports,
     'enforce-mui-rounded-icons': enforceMuiRoundedIcons,
