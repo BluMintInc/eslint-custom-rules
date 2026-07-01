@@ -173,6 +173,7 @@ import { preferSpreadOverReassembly } from './rules/prefer-spread-over-reassembl
 import { preferSxPropOverSystemProps } from './rules/prefer-sx-prop-over-system-props';
 import { enforceM3SentenceCase } from './rules/enforce-m3-sentence-case';
 import { noRedundantBooleanCallbackProps } from './rules/no-redundant-boolean-callback-props';
+import { enforceIsPrefixValidators } from './rules/enforce-is-prefix-validators';
 
 const NO_FRONTEND_IMPORTS_FROM_FUNCTIONS_MESSAGE =
   'Backend Cloud Functions (.f.ts under functions/) must not import frontend modules from the repo root src/**. Frontend code can depend on browser-only APIs and bundling it into Cloud Functions breaks server execution; move shared logic into functions/src or a shared package.';
@@ -394,6 +395,7 @@ module.exports = {
         '@blumintinc/blumint/prefer-sx-prop-over-system-props': 'error',
         '@blumintinc/blumint/enforce-m3-sentence-case': 'warn',
         '@blumintinc/blumint/no-redundant-boolean-callback-props': 'error',
+        '@blumintinc/blumint/enforce-is-prefix-validators': 'error',
       },
       /**
        * Depth-specific overrides block only import strings that traverse to the
@@ -672,5 +674,6 @@ module.exports = {
     'prefer-sx-prop-over-system-props': preferSxPropOverSystemProps,
     'enforce-m3-sentence-case': enforceM3SentenceCase,
     'no-redundant-boolean-callback-props': noRedundantBooleanCallbackProps,
+    'enforce-is-prefix-validators': enforceIsPrefixValidators,
   },
 };
