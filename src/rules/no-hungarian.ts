@@ -415,44 +415,29 @@ export const noHungarian = createRule<[], MessageIds>({
         }
 
         // Abbreviation markers (str, num, int, bool, arr, obj, fn, func) are
-        // short enough that the raw-character boundary heuristic below can fire
-        // on them as substrings inside real English words (e.g. "int" inside
-        // "Mint", "str" inside "stream"). For these markers, require an exact
-        // match against a full camelCase token so that "Mint" → ["Mint"] never
-        // matches "int", while genuine Hungarian like intValue → ["int","Value"]
-        // still does.
+        // short enough that a raw-character boundary check can fire on them as
+        // substrings inside real English words (e.g. "int" inside "Mint", "str"
+        // inside "stream"). Require an exact match against a full camelCase
+        // token so that "Mint" → ["Mint"] never matches "int", while genuine
+        // Hungarian like intValue → ["int","Value"] still does.
         if (ABBREVIATION_MARKER_SET.has(normalizedMarker)) {
           const segments = splitCamelSegments(variableName);
           return segments.some((s) => s.toLowerCase() === normalizedMarker);
         }
 
-        // Check for word boundaries to avoid matching substrings
-        // For example, avoid matching "int" in "points" or "str" in "stream"
-        const markerIndex = normalizedVarName.indexOf(normalizedMarker);
-        if (markerIndex === -1) {
-          return false;
-        }
-
-        const preMarkerPrefix =
-          markerIndex > 0 ? variableName[markerIndex - 1] : '';
-        const suffix =
-          variableName[markerIndex + normalizedMarker.length] ?? '';
-
-        // Ensure we have proper word boundaries
-        // A word boundary is defined by:
-        // 1. Start of string OR underscore OR capital letter before the marker
-        // 2. End of string OR underscore OR capital letter after the marker
-        const hasStartBoundary =
-          markerIndex === 0 ||
-          preMarkerPrefix === '_' ||
-          /[A-Z]/.test(preMarkerPrefix) ||
-          /[A-Z]/.test(variableName[markerIndex]);
-        const hasEndBoundary =
-          markerIndex + normalizedMarker.length === normalizedVarName.length ||
-          suffix === '_' ||
-          /[A-Z]/.test(suffix);
-
-        return hasStartBoundary && hasEndBoundary;
+        // Full type-word markers (non-abbreviations: String, Number, Function,
+        // Array, Object, Boolean, …) are Hungarian only when they occupy the
+        // first or last camelCase segment — a genuine prefix or suffix that
+        // tags the entity's runtime type. The prefix/suffix character checks
+        // above already return `true` for those positions, so reaching this
+        // point means the marker sits in a middle segment of the identifier
+        // (e.g. cloud·Function·Registry, user·String·Name). A middle
+        // full-type-word qualifies a domain concept ("a registry of cloud
+        // functions") rather than redundantly encoding the entity's type.
+        // Accepting the resulting false negatives is the deliberate trade-off:
+        // middle-segment full-type-words are overwhelmingly domain vocabulary,
+        // not type tags.
+        return false;
       });
     }
 
