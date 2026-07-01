@@ -469,6 +469,29 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
     `const printQueue = [];`,
     `const constraint = 'x';`,
     `const sprintBacklog = [];`,
+
+    // Issue #1250: full-type-word markers must not be flagged when they
+    // appear as middle camelCase segments (domain nouns, not type tags).
+    'export function useRegistrationFunctionBase() { return { a: 1 }; }',
+    'const useRegistrationFunctionBase = () => ({ a: 1 });',
+    'const cloudFunctionRegistry = {};',
+    'function registrationFunctionFactory() { return () => 1; }',
+    'const serverlessFunctionConfig = {};',
+    // Middle-segment occurrences of other full-type-words are also domain nouns.
+    'const userStringName = "John";',
+    'const dataNumberCount = 42;',
+    'function getUserObjectData() { return {}; }',
+    'const configArrayOptions = [];',
+    'const checkBooleanResult = true;',
+    'const parsePromiseValue = () => {};',
+    'const getObjectMergeResult = () => {};',
+    // React hooks with a full-type-word as a middle segment.
+    'export const useCloudFunctionHandler = () => {};',
+    'function useAsyncFunctionQueue() { return []; }',
+    // Full-type-word as middle segment in multi-segment names (various positions).
+    'const registrationFunctionFactory = () => () => 1;',
+    'const cloudFunctionConfig = {};',
+    'const httpFunctionRegistry = {};',
   ],
   invalid: [
     {
@@ -616,7 +639,9 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
           }
         }
       `,
-      errors: [errorFor('processArrayItems'), errorFor('itemsArray')],
+      // processArrayItems has Array as a MIDDLE segment (process·Array·Items)
+      // — a domain description, not a type tag. Only itemsArray fires (suffix).
+      errors: [errorFor('itemsArray')],
     },
     {
       code: `
@@ -894,6 +919,25 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
     // is descriptive, not Hungarian.
     'const EDITABLE_WRAPPER_NUMBER_PROPS_DEFAULT = { isEditing: true };',
     'const SELECTED_STRING_FILTER_OPTIONS = [];',
+
+    // Issue #1250: camelCase names where a full-type-word is a MIDDLE segment
+    // are domain names, not Hungarian notation. These must NOT be flagged.
+    'const userStringName = "John";',
+    'const dataNumberCount = 42;',
+    'function getUserObjectData() { return {}; }',
+    'const configArrayOptions = [];',
+    // Function as middle segment in varied positions.
+    'const cloudFunctionRegistry = {};',
+    'const serverlessFunctionConfig = {};',
+    'function registrationFunctionFactory() { return () => 1; }',
+    'export function useRegistrationFunctionBase() { return { a: 1 }; }',
+    // Boolean / Promise / Array as middle segments.
+    'const checkBooleanResult = true;',
+    'const parsePromiseValue = () => {};',
+    'const configArraySettings = {};',
+    // Multi-segment names where the full-type-word is neither first nor last.
+    'const getObjectMergeResult = () => {};',
+    'function processStringParser() { return ""; }',
   ],
   invalid: [
     // Invalid SCREAMING_SNAKE_CASE examples - with Hungarian notation
@@ -1060,22 +1104,23 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
       errors: [errorFor('UserStrName')],
     },
 
-    // Full Words with Capitalization
+    // Full-type-words as TRUE prefix or suffix still fire (Issue #1250
+    // only exempts MIDDLE-segment occurrences).
     {
-      code: 'const userStringName = "John";',
-      errors: [errorFor('userStringName')],
+      code: 'const functionFactory = () => {};',
+      errors: [errorFor('functionFactory')],
     },
     {
-      code: 'const dataNumberCount = 42;',
-      errors: [errorFor('dataNumberCount')],
+      code: 'const userFunction = () => {};',
+      errors: [errorFor('userFunction')],
     },
     {
-      code: 'function getUserObjectData() { return {}; }',
-      errors: [errorFor('getUserObjectData')],
+      code: 'const stringValue = "x";',
+      errors: [errorFor('stringValue')],
     },
     {
-      code: 'const configArrayOptions = [];',
-      errors: [errorFor('configArrayOptions')],
+      code: 'const userNumber = 0;',
+      errors: [errorFor('userNumber')],
     },
 
     // Full words with SCREAMING_SNAKE_CASE.
