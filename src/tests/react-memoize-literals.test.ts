@@ -578,6 +578,22 @@ export function useMixedPortals() {
 }
       `,
     },
+    // Concise-arrow hook (non-block body) returning object with inline JSX.
+    // Tests the ArrowFunctionExpression concise-body path in isReturnValueFromHook.
+    {
+      code: `
+const usePanel = () => ({ Portal: <section /> });
+      `,
+    },
+    // JSX value wrapped in TS assertion — unwrapNestedExpressions must strip
+    // the assertion before isJSXNode sees the JSXElement.
+    {
+      code: `
+export function useAlert() {
+  return { Portal: <div /> as unknown };
+}
+      `,
+    },
   ],
   invalid: [
     // Variable with no usages (dead code) - should still be reported as unmemoized
@@ -966,6 +982,59 @@ function useIds() {
           data: {
             literalType: 'array literal',
             hookName: 'useIds',
+          },
+        },
+      ],
+    },
+    // Regression guard (#1251): shorthand property whose binding is NOT a JSX
+    // element must still be flagged — the guard must not over-exempt.
+    {
+      code: `
+function useTheme() {
+  const Portal = 'dark';
+  return { Portal };
+}
+      `,
+      errors: [
+        {
+          messageId: 'hookReturnLiteral',
+          data: {
+            literalType: 'object literal',
+            hookName: 'useTheme',
+          },
+        },
+      ],
+    },
+    // Regression guard (#1251): plain-data object return from a hook — must
+    // still fire even when property names superficially resemble JSX patterns.
+    {
+      code: `
+function usePortalConfig() {
+  return { portalId: 'main', enabled: true };
+}
+      `,
+      errors: [
+        {
+          messageId: 'hookReturnLiteral',
+          data: {
+            literalType: 'object literal',
+            hookName: 'usePortalConfig',
+          },
+        },
+      ],
+    },
+    // Regression guard (#1251): concise-arrow hook returning plain object with
+    // no JSX must still be reported.
+    {
+      code: `
+const useConfig = () => ({ theme: 'dark', mode: 'auto' });
+      `,
+      errors: [
+        {
+          messageId: 'hookReturnLiteral',
+          data: {
+            literalType: 'object literal',
+            hookName: 'useConfig',
           },
         },
       ],
