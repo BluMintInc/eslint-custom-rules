@@ -180,6 +180,7 @@ import { noDirectFunctionState } from './rules/no-direct-function-state';
 import { noFillTemplateMutation } from './rules/no-fill-template-mutation';
 import { enforceSnapshotStateNarrowing } from './rules/enforce-snapshot-state-narrowing';
 import { preferFlatTransformEachKeys } from './rules/prefer-flat-transform-each-keys';
+import { preferUseTheme } from './rules/prefer-use-theme';
 
 const NO_FRONTEND_IMPORTS_FROM_FUNCTIONS_MESSAGE =
   'Backend Cloud Functions (.f.ts under functions/) must not import frontend modules from the repo root src/**. Frontend code can depend on browser-only APIs and bundling it into Cloud Functions breaks server execution; move shared logic into functions/src or a shared package.';
@@ -408,6 +409,7 @@ module.exports = {
         '@blumintinc/blumint/no-fill-template-mutation': 'error',
         '@blumintinc/blumint/enforce-snapshot-state-narrowing': 'error',
         '@blumintinc/blumint/prefer-flat-transform-each-keys': 'warn',
+        '@blumintinc/blumint/prefer-use-theme': 'error',
       },
       /**
        * Depth-specific overrides block only import strings that traverse to the
@@ -693,5 +695,6 @@ module.exports = {
     'no-fill-template-mutation': noFillTemplateMutation,
     'enforce-snapshot-state-narrowing': enforceSnapshotStateNarrowing,
     'prefer-flat-transform-each-keys': preferFlatTransformEachKeys,
+    'prefer-use-theme': preferUseTheme,
   },
 };
