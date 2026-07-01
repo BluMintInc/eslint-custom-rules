@@ -183,6 +183,7 @@ import { enforceSnapshotStateNarrowing } from './rules/enforce-snapshot-state-na
 import { preferFlatTransformEachKeys } from './rules/prefer-flat-transform-each-keys';
 import { preferUseTheme } from './rules/prefer-use-theme';
 import { noSingleDismissDialogButton } from './rules/no-single-dismiss-dialog-button';
+import { noPortalInsideTooltip } from './rules/no-portal-inside-tooltip';
 
 const NO_FRONTEND_IMPORTS_FROM_FUNCTIONS_MESSAGE =
   'Backend Cloud Functions (.f.ts under functions/) must not import frontend modules from the repo root src/**. Frontend code can depend on browser-only APIs and bundling it into Cloud Functions breaks server execution; move shared logic into functions/src or a shared package.';
@@ -414,6 +415,7 @@ module.exports = {
         '@blumintinc/blumint/prefer-flat-transform-each-keys': 'warn',
         '@blumintinc/blumint/prefer-use-theme': 'error',
         '@blumintinc/blumint/no-single-dismiss-dialog-button': 'error',
+        '@blumintinc/blumint/no-portal-inside-tooltip': 'error',
       },
       /**
        * Depth-specific overrides block only import strings that traverse to the
@@ -702,5 +704,6 @@ module.exports = {
     'prefer-flat-transform-each-keys': preferFlatTransformEachKeys,
     'prefer-use-theme': preferUseTheme,
     'no-single-dismiss-dialog-button': noSingleDismissDialogButton,
+    'no-portal-inside-tooltip': noPortalInsideTooltip,
   },
 };
