@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.17.1",
+    "date": "2026-07-01T22:31:34.840Z",
+    "rules": [
+      {
+        "name": "no-hungarian",
+        "changeType": "fix",
+        "issues": [
+          1250
+        ],
+        "summary": "exempt middle-segment full-type-words from Hungarian detection (closes #1250)"
+      },
+      {
+        "name": "react-memoize-literals",
+        "changeType": "fix",
+        "issues": [
+          1251
+        ],
+        "summary": "exempt hook returns containing JSX-valued members (closes #1251)"
+      }
+    ]
+  },
+  {
     "version": "1.17.0",
     "date": "2026-07-01T05:16:18.225Z",
     "rules": [

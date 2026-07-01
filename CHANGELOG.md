@@ -1,3 +1,11 @@
+## [1.17.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.17.0...v1.17.1) (2026-07-01)
+
+
+### Bug Fixes
+
+* **no-hungarian:** exempt middle-segment full-type-words from Hungarian detection (closes [#1250](https://github.com/BluMintInc/eslint-custom-rules/issues/1250)) ([021e1fd](https://github.com/BluMintInc/eslint-custom-rules/commit/021e1fd8ac85dae46c54061cc7af160a2fa3f548)), closes [#1246](https://github.com/BluMintInc/eslint-custom-rules/issues/1246)
+* **react-memoize-literals:** exempt hook returns containing JSX-valued members (closes [#1251](https://github.com/BluMintInc/eslint-custom-rules/issues/1251)) ([c53db0b](https://github.com/BluMintInc/eslint-custom-rules/commit/c53db0b37cdd0746cfd1de1f9dcebdf6bafa2a22))
+
 # [1.17.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.16.2...v1.17.0) (2026-07-01)
 
 
