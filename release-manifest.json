@@ -1,5 +1,195 @@
 [
   {
+    "version": "1.17.0",
+    "date": "2026-07-01T05:16:18.225Z",
+    "rules": [
+      {
+        "name": "enforce-boolean-naming-prefixes",
+        "changeType": "fix",
+        "issues": [
+          1249
+        ],
+        "summary": "require boolean prefix at a name boundary in callExpressionLooksBoolean (closes #1249)"
+      },
+      {
+        "name": "enforce-cloud-function-id-length",
+        "changeType": "feat",
+        "issues": [
+          1222
+        ],
+        "summary": "flag .f.ts paths deriving Firebase IDs over 62 chars (closes #1222)"
+      },
+      {
+        "name": "enforce-is-prefix-validators",
+        "changeType": "feat",
+        "issues": [
+          1193
+        ],
+        "summary": "require is-prefix on exported validators (closes #1193)"
+      },
+      {
+        "name": "enforce-m3-sentence-case",
+        "changeType": "feat",
+        "issues": [
+          1190
+        ],
+        "summary": "warn on Title Case / ALL CAPS user-facing text (closes #1190)"
+      },
+      {
+        "name": "enforce-snapshot-state-narrowing",
+        "changeType": "feat",
+        "issues": [
+          1210
+        ],
+        "summary": "require isSnapshotReady over falsy/typeof checks (closes #1210)"
+      },
+      {
+        "name": "enforce-types-directory-placement",
+        "changeType": "feat",
+        "issues": [
+          1194
+        ],
+        "summary": "flag type-only files outside functions/src/types (closes #1194)"
+      },
+      {
+        "name": "no-direct-function-state",
+        "changeType": "feat",
+        "issues": [
+          1208
+        ],
+        "summary": "flag functions passed directly to useState setters (closes #1208)"
+      },
+      {
+        "name": "no-fill-template-mutation",
+        "changeType": "feat",
+        "issues": [
+          1209
+        ],
+        "summary": "forbid mutating fillTemplate() results (closes #1209)"
+      },
+      {
+        "name": "no-portal-inside-tooltip",
+        "changeType": "feat",
+        "issues": [
+          1223
+        ],
+        "summary": "flag portals nested in tooltip wrappers (closes #1223)"
+      },
+      {
+        "name": "no-redundant-boolean-callback-props",
+        "changeType": "feat",
+        "issues": [
+          1192
+        ],
+        "summary": "flag boolean props redundant with a callback's presence (closes #1192)"
+      },
+      {
+        "name": "no-satisfies-in-frontend-bundle",
+        "changeType": "feat",
+        "issues": [
+          1226
+        ],
+        "summary": "ban satisfies in webpack-bundled files (closes #1226)"
+      },
+      {
+        "name": "no-single-dismiss-dialog-button",
+        "changeType": "feat",
+        "issues": [
+          1221
+        ],
+        "summary": "flag lone dismiss button in dialog buttons array (closes #1221)"
+      },
+      {
+        "name": "no-stablehash-react-nodes",
+        "changeType": "feat",
+        "issues": [
+          1134
+        ],
+        "summary": "flag stableHash() on ReactNodes/KeyedNodes (closes #1134)"
+      },
+      {
+        "name": "parallelize-loop-awaits",
+        "changeType": "feat",
+        "issues": [
+          1184
+        ],
+        "summary": "flag sequential await in loops parallelizable via Promise.all (closes #1184)"
+      },
+      {
+        "name": "prefer-flat-transform-each-keys",
+        "changeType": "feat",
+        "issues": [
+          1212
+        ],
+        "summary": "flag nested objects in propagation transformEach returns (closes #1212)"
+      },
+      {
+        "name": "prefer-getter-over-parameterless-method",
+        "changeType": "fix",
+        "issues": [
+          1248
+        ],
+        "summary": "exempt throwing and builder/factory methods (closes #1248)"
+      },
+      {
+        "name": "prefer-spread-over-reassembly",
+        "changeType": "feat",
+        "issues": [
+          1188
+        ],
+        "summary": "flag destructure-then-reassemble prop forwarding (closes #1188)"
+      },
+      {
+        "name": "prefer-sx-prop-over-system-props",
+        "changeType": "feat",
+        "issues": [
+          1189
+        ],
+        "summary": "migrate deprecated MUI system props into sx (closes #1189)"
+      },
+      {
+        "name": "prefer-use-base62-id",
+        "changeType": "feat",
+        "issues": [
+          1206
+        ],
+        "summary": "prefer useBase62Id() over useState/useRef/useMemo + uuidv4Base62() (closes #1206)"
+      },
+      {
+        "name": "prefer-use-theme",
+        "changeType": "feat",
+        "issues": [
+          1213
+        ],
+        "summary": "flag direct theme-constant imports over useTheme() (closes #1213)"
+      },
+      {
+        "name": "prefer-utility-function-own-file",
+        "changeType": "feat",
+        "issues": [
+          1234
+        ],
+        "summary": "flag sizable co-located utility functions (closes #1234)"
+      },
+      {
+        "name": "require-props-composition",
+        "changeType": "feat",
+        "issues": [
+          1181
+        ],
+        "summary": "flag component Props that don't compose with rendered children (closes #1181)"
+      },
+      {
+        "name": "require-server-timestamp-for-firestore-dates",
+        "changeType": "feat",
+        "issues": [
+          1183
+        ],
+        "summary": "flag new Date() in Firestore-typed objects (closes #1183)"
+      }
+    ]
+  },
+  {
     "version": "1.16.2",
     "date": "2026-06-30T22:17:37.457Z",
     "rules": [

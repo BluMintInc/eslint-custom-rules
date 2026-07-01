@@ -1,3 +1,36 @@
+# [1.17.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.16.2...v1.17.0) (2026-07-01)
+
+
+### Bug Fixes
+
+* **enforce-boolean-naming-prefixes:** require boolean prefix at a name boundary in callExpressionLooksBoolean (closes [#1249](https://github.com/BluMintInc/eslint-custom-rules/issues/1249)) ([0112e0d](https://github.com/BluMintInc/eslint-custom-rules/commit/0112e0dd31d674b1bd0a606d0265dcc17216c257))
+* **prefer-getter-over-parameterless-method:** exempt throwing and builder/factory methods (closes [#1248](https://github.com/BluMintInc/eslint-custom-rules/issues/1248)) ([c9d800d](https://github.com/BluMintInc/eslint-custom-rules/commit/c9d800d807534d9ce8ecb5d5345a5cbc0f15994b)), closes [#990](https://github.com/BluMintInc/eslint-custom-rules/issues/990) [#4](https://github.com/BluMintInc/eslint-custom-rules/issues/4)
+
+
+### Features
+
+* **enforce-cloud-function-id-length:** flag .f.ts paths deriving Firebase IDs over 62 chars (closes [#1222](https://github.com/BluMintInc/eslint-custom-rules/issues/1222)) ([238908f](https://github.com/BluMintInc/eslint-custom-rules/commit/238908fdf488322e83ce0b58403f026d39ce6400))
+* **enforce-is-prefix-validators:** require is-prefix on exported validators (closes [#1193](https://github.com/BluMintInc/eslint-custom-rules/issues/1193)) ([9088ff7](https://github.com/BluMintInc/eslint-custom-rules/commit/9088ff7192fba974db86973dec9bac3b5c80433b))
+* **enforce-m3-sentence-case:** warn on Title Case / ALL CAPS user-facing text (closes [#1190](https://github.com/BluMintInc/eslint-custom-rules/issues/1190)) ([94e0c95](https://github.com/BluMintInc/eslint-custom-rules/commit/94e0c95542210afaf5ab2f7db367d135a58ddd65))
+* **enforce-snapshot-state-narrowing:** require isSnapshotReady over falsy/typeof checks (closes [#1210](https://github.com/BluMintInc/eslint-custom-rules/issues/1210)) ([31e9d4d](https://github.com/BluMintInc/eslint-custom-rules/commit/31e9d4d507d7728201ba8a37d322d366402b6815))
+* **enforce-types-directory-placement:** flag type-only files outside functions/src/types (closes [#1194](https://github.com/BluMintInc/eslint-custom-rules/issues/1194)) ([529b599](https://github.com/BluMintInc/eslint-custom-rules/commit/529b5998030189f5c3e93ff87e6a02009edd2e4d))
+* **no-direct-function-state:** flag functions passed directly to useState setters (closes [#1208](https://github.com/BluMintInc/eslint-custom-rules/issues/1208)) ([934c5fa](https://github.com/BluMintInc/eslint-custom-rules/commit/934c5fac203817848b06312584e1b39b29202361))
+* **no-fill-template-mutation:** forbid mutating fillTemplate() results (closes [#1209](https://github.com/BluMintInc/eslint-custom-rules/issues/1209)) ([473890e](https://github.com/BluMintInc/eslint-custom-rules/commit/473890e4c5a463535342407a9f4ebc4abefc7384))
+* **no-portal-inside-tooltip:** flag portals nested in tooltip wrappers (closes [#1223](https://github.com/BluMintInc/eslint-custom-rules/issues/1223)) ([85e7a73](https://github.com/BluMintInc/eslint-custom-rules/commit/85e7a73d5d023e4d7f879473fca209277f3798c1))
+* **no-redundant-boolean-callback-props:** flag boolean props redundant with a callback's presence (closes [#1192](https://github.com/BluMintInc/eslint-custom-rules/issues/1192)) ([ba9dfe4](https://github.com/BluMintInc/eslint-custom-rules/commit/ba9dfe4f9f6a4dda198de7b91f146d8de9926864))
+* **no-satisfies-in-frontend-bundle:** ban satisfies in webpack-bundled files (closes [#1226](https://github.com/BluMintInc/eslint-custom-rules/issues/1226)) ([0719960](https://github.com/BluMintInc/eslint-custom-rules/commit/071996089fd8f81455570b32db4970d14358f22b))
+* **no-single-dismiss-dialog-button:** flag lone dismiss button in dialog buttons array (closes [#1221](https://github.com/BluMintInc/eslint-custom-rules/issues/1221)) ([9c5eacf](https://github.com/BluMintInc/eslint-custom-rules/commit/9c5eacfdde72dbb0dc311dd2ab0da0c128128f8c))
+* **no-stablehash-react-nodes:** flag stableHash() on ReactNodes/KeyedNodes (closes [#1134](https://github.com/BluMintInc/eslint-custom-rules/issues/1134)) ([256f96d](https://github.com/BluMintInc/eslint-custom-rules/commit/256f96dd84aa03e3b69be1de94b7cc7b48453f58))
+* **parallelize-loop-awaits:** flag sequential await in loops parallelizable via Promise.all (closes [#1184](https://github.com/BluMintInc/eslint-custom-rules/issues/1184)) ([c8206e7](https://github.com/BluMintInc/eslint-custom-rules/commit/c8206e71a02b42caaa4f57c768b7f4cd6fccbf2f))
+* **prefer-flat-transform-each-keys:** flag nested objects in propagation transformEach returns (closes [#1212](https://github.com/BluMintInc/eslint-custom-rules/issues/1212)) ([a4d0957](https://github.com/BluMintInc/eslint-custom-rules/commit/a4d09578409829ffe99e7754854bd7a9da3df570))
+* **prefer-spread-over-reassembly:** flag destructure-then-reassemble prop forwarding (closes [#1188](https://github.com/BluMintInc/eslint-custom-rules/issues/1188)) ([b3b99c8](https://github.com/BluMintInc/eslint-custom-rules/commit/b3b99c8aa3c1b8ed7c086ab3167e53b033905df1))
+* **prefer-sx-prop-over-system-props:** migrate deprecated MUI system props into sx (closes [#1189](https://github.com/BluMintInc/eslint-custom-rules/issues/1189)) ([a9556f2](https://github.com/BluMintInc/eslint-custom-rules/commit/a9556f26575ce3c7cc29a7e771fd0ae7afce5aca))
+* **prefer-use-base62-id:** prefer useBase62Id() over useState/useRef/useMemo + uuidv4Base62() (closes [#1206](https://github.com/BluMintInc/eslint-custom-rules/issues/1206)) ([7b10eb4](https://github.com/BluMintInc/eslint-custom-rules/commit/7b10eb459173bffe994deaaeaab848dd0dc163ee))
+* **prefer-use-theme:** flag direct theme-constant imports over useTheme() (closes [#1213](https://github.com/BluMintInc/eslint-custom-rules/issues/1213)) ([b88b833](https://github.com/BluMintInc/eslint-custom-rules/commit/b88b8338b81c9297c169b2babd7246d80f6d8d3e))
+* **prefer-utility-function-own-file:** flag sizable co-located utility functions (closes [#1234](https://github.com/BluMintInc/eslint-custom-rules/issues/1234)) ([8e6b41e](https://github.com/BluMintInc/eslint-custom-rules/commit/8e6b41e0933dd6c52f73444ee9ebd8a06d1c487d))
+* **require-props-composition:** flag component Props that don't compose with rendered children (closes [#1181](https://github.com/BluMintInc/eslint-custom-rules/issues/1181)) ([88cd675](https://github.com/BluMintInc/eslint-custom-rules/commit/88cd675feb3fa182a1a2c4169e10dc7533429594))
+* **require-server-timestamp-for-firestore-dates:** flag new Date() in Firestore-typed objects (closes [#1183](https://github.com/BluMintInc/eslint-custom-rules/issues/1183)) ([81beda6](https://github.com/BluMintInc/eslint-custom-rules/commit/81beda6fee708e7590824a9a3ba5b8ca10ac3a31))
+
 ## [1.16.2](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.16.1...v1.16.2) (2026-06-30)
 
 
