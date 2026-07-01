@@ -643,6 +643,116 @@ function isStyleJSXAttributeValue(node: TSESTree.Node): boolean {
 }
 
 /**
+ * Returns true when the node is a JSX element or fragment. JSX nodes are
+ * always fresh references each render — wrapping a containing literal in
+ * useMemo provides no referential-stability benefit because the JSX member
+ * changes on every call regardless of the wrapper.
+ */
+function isJSXNode(node: TSESTree.Node): boolean {
+  return (
+    node.type === AST_NODE_TYPES.JSXElement ||
+    node.type === AST_NODE_TYPES.JSXFragment
+  );
+}
+
+/**
+ * Collects the names of variables declared in the owning function's top-level
+ * block body whose initializers resolve to JSX elements or fragments. Used to
+ * detect shorthand object properties like `{ Portal }` where
+ * `const Portal = <div />` precedes the return statement.
+ *
+ * Only top-level declarations are scanned; inner function scopes have their
+ * own render lifecycles and are not candidates for this exemption.
+ */
+function collectLocalJSXBindings(
+  owner:
+    | TSESTree.FunctionDeclaration
+    | TSESTree.FunctionExpression
+    | TSESTree.ArrowFunctionExpression,
+): Set<string> {
+  const bindings = new Set<string>();
+  const body = owner.body;
+  if (body.type !== AST_NODE_TYPES.BlockStatement) return bindings;
+
+  for (const stmt of body.body) {
+    if (stmt.type !== AST_NODE_TYPES.VariableDeclaration) continue;
+    for (const declarator of stmt.declarations) {
+      if (declarator.id.type !== AST_NODE_TYPES.Identifier) continue;
+      if (!declarator.init) continue;
+      const unwrapped = unwrapNestedExpressions(declarator.init);
+      if (isJSXNode(unwrapped)) {
+        bindings.add(declarator.id.name);
+      }
+    }
+  }
+
+  return bindings;
+}
+
+/**
+ * Returns true when an ObjectExpression returned from a hook contains at
+ * least one property whose value is a JSX element or fragment — either
+ * directly inline (`{ Portal: <div /> }`) or via a shorthand identifier
+ * (`{ Portal }`) that resolves to a JSX initializer in the same function
+ * scope. Such objects cannot be stabilised by wrapping them in useMemo
+ * because the JSX member is a fresh reference on every render regardless of
+ * the wrapper. This is the same "no stability benefit" rationale applied to
+ * sx/style JSX attribute values.
+ */
+function objectLiteralContainsJSXValue(
+  node: TSESTree.ObjectExpression,
+  owner:
+    | TSESTree.FunctionDeclaration
+    | TSESTree.FunctionExpression
+    | TSESTree.ArrowFunctionExpression,
+): boolean {
+  // Resolve shorthand bindings lazily — only when at least one shorthand
+  // property is present, to avoid the body scan for the common inline case.
+  let localJSXBindings: Set<string> | null = null;
+
+  for (const prop of node.properties) {
+    if (prop.type === AST_NODE_TYPES.SpreadElement) continue;
+
+    const value = unwrapNestedExpressions(prop.value as TSESTree.Node);
+
+    // Direct inline JSX: { Portal: <div /> } or { el: <></> }
+    if (isJSXNode(value)) {
+      return true;
+    }
+
+    // Shorthand identifier: { Portal } — resolve to a local JSX binding.
+    if (prop.shorthand && value.type === AST_NODE_TYPES.Identifier) {
+      if (!localJSXBindings) {
+        localJSXBindings = collectLocalJSXBindings(owner);
+      }
+      if (localJSXBindings.has(value.name)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Returns true when an ArrayExpression returned from a hook contains at least
+ * one element that is a JSX element or fragment (after unwrapping expression
+ * wrappers). The same "no stability benefit" rationale applies: a JSX element
+ * is a fresh reference each render, so wrapping the array in useMemo would
+ * recompute on every call without improving referential stability.
+ */
+function arrayLiteralContainsJSXValue(node: TSESTree.ArrayExpression): boolean {
+  for (const element of node.elements) {
+    if (!element) continue;
+    const unwrapped = unwrapNestedExpressions(element as TSESTree.Node);
+    if (isJSXNode(unwrapped)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Formats a readable label for diagnostics based on the owning function.
  * @param fn Owning component or hook function.
  * @returns Human-friendly label for error messages.
@@ -676,7 +786,7 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
       nestedHookLiteral:
         'Nested {{literalType}} inside {{hookName}} arguments is recreated on every render → Dependency/reference comparisons change each time and defeat memoization/caching → Extract it into a memoized value (useMemo/useCallback) or hoist it to a module constant before passing it to {{hookName}}.',
       hookReturnLiteral:
-        '{{hookName}} returns a {{literalType}} literal on each render → Callers receive a fresh reference and may re-render or re-run effects → Memoize the returned value with useMemo/useCallback or return pre-memoized pieces so callers see stable references.',
+        '{{hookName}} returns an {{literalType}} on each render → Callers receive a fresh reference and may re-render or re-run effects → Memoize the returned value with useMemo/useCallback or return pre-memoized pieces so callers see stable references.',
       memoizeLiteralSuggestion:
         'This {{literalType}} is created inline → It produces a new reference each render → Wrap it in {{memoHook}} and include every closed-over value in the dependency array.',
     },
@@ -858,6 +968,27 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
       }
 
       if (isReturnValueFromHook(node, owner)) {
+        // A returned literal whose members include a JSX element or fragment
+        // cannot be stabilised by useMemo: JSX nodes are inherently fresh
+        // references each render, so the wrapper recomputes every call
+        // regardless. This mirrors the "no stability benefit" carve-out for
+        // sx/style JSX attribute values (see isStyleJSXAttributeValue).
+        if (
+          node.type === AST_NODE_TYPES.ObjectExpression &&
+          objectLiteralContainsJSXValue(
+            node as TSESTree.ObjectExpression,
+            owner,
+          )
+        ) {
+          return;
+        }
+        if (
+          node.type === AST_NODE_TYPES.ArrayExpression &&
+          arrayLiteralContainsJSXValue(node as TSESTree.ArrayExpression)
+        ) {
+          return;
+        }
+
         const hookName = getFunctionName(owner) ?? 'this hook';
         context.report({
           node,
