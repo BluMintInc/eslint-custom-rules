@@ -1,3 +1,11 @@
+## [1.16.2](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.16.1...v1.16.2) (2026-06-30)
+
+
+### Bug Fixes
+
+* **logical-top-to-bottom-grouping:** restore loop-mutation guard and indentation-preserving idempotent autofix (closes [#1247](https://github.com/BluMintInc/eslint-custom-rules/issues/1247)) ([96102e5](https://github.com/BluMintInc/eslint-custom-rules/commit/96102e5891f6b27b4807d8bf1e6a23b04e123dff)), closes [1113/#1121](https://github.com/BluMintInc/eslint-custom-rules/issues/1121)
+* **no-hungarian:** only flag abbreviation markers at camelCase token boundaries (closes [#1246](https://github.com/BluMintInc/eslint-custom-rules/issues/1246)) ([7dcff09](https://github.com/BluMintInc/eslint-custom-rules/commit/7dcff09f1b6b3995a2c72c085c30efd30b1e9f0e))
+
 ## [1.16.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.16.0...v1.16.1) (2026-06-30)
 
 
