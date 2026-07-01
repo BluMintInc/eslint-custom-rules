@@ -68,6 +68,7 @@ Implementations that accompany overload signatures are skipped entirely because 
 
 - `stripPrefixes` (string[]): verb prefixes to drop when deriving the getter name. Boolean prefixes (`is/has/can/should/will/did/was`) are preserved.
 - `ignoredMethods` (string[]): method names that should never be converted.
+- `factoryMethods` (string[]): builder/factory terminal method names that are exempt (never converted), because they are imperative actions whose external callers would break as getters. Default `['build', 'create', 'make']`. (Independently, a parameterless method whose body can `throw` at the top level is always exempt — a getter must be a pure, non-throwing property read.)
 - `ignoreAsync` (boolean): skip `async` methods. Default `true`.
 - `ignoreVoidReturn` (boolean): skip methods that only return `void`/`undefined`. Default `true`. Explicit `void`/`undefined` return types are always treated as non-value-returning and are not auto-fixed.
 - `ignoreAbstract` (boolean): skip abstract methods. Default `true`.

@@ -175,6 +175,7 @@ import { enforceM3SentenceCase } from './rules/enforce-m3-sentence-case';
 import { noRedundantBooleanCallbackProps } from './rules/no-redundant-boolean-callback-props';
 import { enforceIsPrefixValidators } from './rules/enforce-is-prefix-validators';
 import { enforceTypesDirectoryPlacement } from './rules/enforce-types-directory-placement';
+import { preferUseBase62Id } from './rules/prefer-use-base62-id';
 
 const NO_FRONTEND_IMPORTS_FROM_FUNCTIONS_MESSAGE =
   'Backend Cloud Functions (.f.ts under functions/) must not import frontend modules from the repo root src/**. Frontend code can depend on browser-only APIs and bundling it into Cloud Functions breaks server execution; move shared logic into functions/src or a shared package.';
@@ -398,6 +399,7 @@ module.exports = {
         '@blumintinc/blumint/no-redundant-boolean-callback-props': 'error',
         '@blumintinc/blumint/enforce-is-prefix-validators': 'error',
         '@blumintinc/blumint/enforce-types-directory-placement': 'error',
+        '@blumintinc/blumint/prefer-use-base62-id': 'error',
       },
       /**
        * Depth-specific overrides block only import strings that traverse to the
@@ -678,5 +680,6 @@ module.exports = {
     'no-redundant-boolean-callback-props': noRedundantBooleanCallbackProps,
     'enforce-is-prefix-validators': enforceIsPrefixValidators,
     'enforce-types-directory-placement': enforceTypesDirectoryPlacement,
+    'prefer-use-base62-id': preferUseBase62Id,
   },
 };
