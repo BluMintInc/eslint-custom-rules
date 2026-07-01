@@ -488,6 +488,96 @@ const Variant = ({ stacked }) => (
 );
       `,
     },
+    // Issue #1251: a hook returning an object literal whose members include a
+    // JSX element (a "Portal") must NOT be flagged as hookReturnLiteral. A React
+    // element is a fresh reference on every render by design, so the returned
+    // object can never be stabilised by useMemo — same "no stability benefit"
+    // rationale as the sx/style JSX-attribute exemption (#1169/#1108).
+    // Shorthand property referencing a local JSX binding.
+    {
+      code: `
+export function useWidget() {
+  const Portal = <div />;
+  return { Portal };
+}
+      `,
+    },
+    // Realistic shape: stable callback + primitive + JSX Portal, returned as const.
+    {
+      code: `
+import { useCallback } from 'react';
+export function useThing({ id }) {
+  const onClick = useCallback(() => id, [id]);
+  const Portal = <span>{id}</span>;
+  return { onClick, Portal } as const;
+}
+      `,
+    },
+    // Inline JSX-valued property.
+    {
+      code: `
+export function useDialog() {
+  return { Portal: <div /> };
+}
+      `,
+    },
+    // Inline JSX fragment value.
+    {
+      code: `
+export function useDrawer() {
+  return { Portal: <></> };
+}
+      `,
+    },
+    // Shorthand referencing a local JSX fragment binding.
+    {
+      code: `
+export function useSnackbarAlert() {
+  const Portal = <>alert</>;
+  return { Portal };
+}
+      `,
+    },
+    // Canonical BluMint Portal-hook pattern: memoized callback + JSX Portal.
+    {
+      code: `
+import { useCallback } from 'react';
+export function useGuardFlow() {
+  const guard = useCallback(() => true, []);
+  const Portal = <div />;
+  return { guard, Portal } as const;
+}
+      `,
+    },
+    // JSX Portal alongside plain-data members is still exempt (the JSX member
+    // alone makes the whole object non-stabilisable).
+    {
+      code: `
+import { useCallback } from 'react';
+export function useErrorAlert() {
+  const catchError = useCallback(() => {}, []);
+  const Portal = <div />;
+  return { catchError, Portal, retries: 0 };
+}
+      `,
+    },
+    // Array literal returned from a hook containing an inline JSX element.
+    {
+      code: `
+export function usePortals() {
+  return [<div />];
+}
+      `,
+    },
+    // Array literal mixing a JSX binding and an inline JSX element.
+    {
+      code: `
+export function useMixedPortals() {
+  const Portal = <div />;
+  return [Portal, <span />];
+}
+      `,
+    },
   ],
   invalid: [
     // Variable with no usages (dead code) - should still be reported as unmemoized
@@ -858,6 +948,24 @@ function useTypedSettings() {
           data: {
             literalType: 'object literal',
             hookName: 'useTypedSettings',
+          },
+        },
+      ],
+    },
+    // Regression guard (#1251): a hook returning a plain array literal with no
+    // JSX members is fully stabilisable and must STAY flagged.
+    {
+      code: `
+function useIds() {
+  return [1, 2, 3];
+}
+      `,
+      errors: [
+        {
+          messageId: 'hookReturnLiteral',
+          data: {
+            literalType: 'array literal',
+            hookName: 'useIds',
           },
         },
       ],

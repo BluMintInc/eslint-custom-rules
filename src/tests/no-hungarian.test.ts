@@ -1106,6 +1106,7 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
 
     // Full-type-words as TRUE prefix or suffix still fire (Issue #1250
     // only exempts MIDDLE-segment occurrences).
+    // Function as prefix and suffix.
     {
       code: 'const functionFactory = () => {};',
       errors: [errorFor('functionFactory')],
@@ -1114,13 +1115,41 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
       code: 'const userFunction = () => {};',
       errors: [errorFor('userFunction')],
     },
+    // String as prefix and suffix.
     {
       code: 'const stringValue = "x";',
       errors: [errorFor('stringValue')],
     },
     {
+      code: 'const userString = "x";',
+      errors: [errorFor('userString')],
+    },
+    // Number as prefix and suffix.
+    {
+      code: 'const numberCount = 0;',
+      errors: [errorFor('numberCount')],
+    },
+    {
       code: 'const userNumber = 0;',
       errors: [errorFor('userNumber')],
+    },
+    // Boolean as prefix and suffix.
+    {
+      code: 'const booleanValue = true;',
+      errors: [errorFor('booleanValue')],
+    },
+    {
+      code: 'const activeBoolean = true;',
+      errors: [errorFor('activeBoolean')],
+    },
+    // Array as prefix and suffix.
+    {
+      code: 'const arrayResults = [];',
+      errors: [errorFor('arrayResults')],
+    },
+    {
+      code: 'const resultArray = [];',
+      errors: [errorFor('resultArray')],
     },
 
     // Full words with SCREAMING_SNAKE_CASE.
