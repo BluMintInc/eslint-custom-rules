@@ -178,6 +178,7 @@ import { enforceTypesDirectoryPlacement } from './rules/enforce-types-directory-
 import { preferUseBase62Id } from './rules/prefer-use-base62-id';
 import { noDirectFunctionState } from './rules/no-direct-function-state';
 import { noFillTemplateMutation } from './rules/no-fill-template-mutation';
+import { enforceSnapshotStateNarrowing } from './rules/enforce-snapshot-state-narrowing';
 
 const NO_FRONTEND_IMPORTS_FROM_FUNCTIONS_MESSAGE =
   'Backend Cloud Functions (.f.ts under functions/) must not import frontend modules from the repo root src/**. Frontend code can depend on browser-only APIs and bundling it into Cloud Functions breaks server execution; move shared logic into functions/src or a shared package.';
@@ -404,6 +405,7 @@ module.exports = {
         '@blumintinc/blumint/prefer-use-base62-id': 'error',
         '@blumintinc/blumint/no-direct-function-state': 'error',
         '@blumintinc/blumint/no-fill-template-mutation': 'error',
+        '@blumintinc/blumint/enforce-snapshot-state-narrowing': 'error',
       },
       /**
        * Depth-specific overrides block only import strings that traverse to the
@@ -687,5 +689,6 @@ module.exports = {
     'prefer-use-base62-id': preferUseBase62Id,
     'no-direct-function-state': noDirectFunctionState,
     'no-fill-template-mutation': noFillTemplateMutation,
+    'enforce-snapshot-state-narrowing': enforceSnapshotStateNarrowing,
   },
 };
