@@ -143,6 +143,53 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       handleSignIn() {}
       handleLogOut() {}
     }`,
+
+    // Async/Sync suffixes encode execution model (async vs sync variant), not a
+    // parameter relationship — stripping them produces name collisions with sync
+    // siblings and destroys the paired-variant convention. Regression: issue #1252.
+
+    // Paired sync sibling: auto-fix would collide with the sibling name.
+    'function executeCommand(command) {}\nfunction executeCommandAsync(command) {}',
+
+    // Standalone async function declarations
+    'function fetchDataAsync(url) {}',
+    'function loadConfigAsync(path) {}',
+    'function executeAsync(task) {}',
+    'function processAsync(data) {}',
+
+    // Standalone sync function declarations
+    'function loadConfigSync(path) {}',
+    'function processSync(data) {}',
+    'function readFileSync(path) {}',
+
+    // Arrow function consts
+    'const runTaskAsync = (task) => task;',
+    'const fetchResultsAsync = (query) => query;',
+    'const computeSync = (val) => val;',
+
+    // Object methods
+    'const obj = { saveRecordAsync(record) { return record; } };',
+    'const obj = { loadDataSync(path) { return path; } };',
+
+    // Class instance methods
+    `class Runner {
+      executeAsync(command) {}
+      runSync(command) {}
+    }`,
+
+    // Class static methods
+    `class FileUtils {
+      static readAsync(path) {}
+      static writeSync(path, data) {}
+    }`,
+
+    // Multi-word names with Async/Sync suffix
+    'function initializeGameAsync(options) {}',
+    'function calculateScoreSync(results) {}',
+    `class DataService {
+      fetchUserProfileAsync(id) {}
+      updateCacheSync(key, value) {}
+    }`,
   ],
   invalid: [
     // Controls (#1227): a NOUN object before the particle is a genuine
@@ -401,36 +448,6 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
         },
       ],
       output: 'function start(task) {}',
-    },
-
-    // Function declarations with programming-specific suffixes
-    {
-      code: 'function executeAsync(task) {}',
-      errors: [
-        {
-          messageId: 'unnecessaryVerbSuffix',
-          data: {
-            name: 'executeAsync',
-            suffix: 'Async',
-            suggestion: 'execute',
-          },
-        },
-      ],
-      output: 'function execute(task) {}',
-    },
-    {
-      code: 'function processSync(data) {}',
-      errors: [
-        {
-          messageId: 'unnecessaryVerbSuffix',
-          data: {
-            name: 'processSync',
-            suffix: 'Sync',
-            suggestion: 'process',
-          },
-        },
-      ],
-      output: 'function process(data) {}',
     },
 
     // Class methods

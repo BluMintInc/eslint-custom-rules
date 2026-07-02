@@ -62,10 +62,6 @@ const COMMON_PREPOSITION_SUFFIXES = new Set([
   'Where',
   'When',
   'While',
-
-  // Programming-specific suffixes
-  'Async',
-  'Sync',
 ]);
 
 /**
