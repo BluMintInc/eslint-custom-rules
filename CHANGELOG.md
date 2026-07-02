@@ -1,3 +1,13 @@
+## [1.17.2](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.17.1...v1.17.2) (2026-07-02)
+
+
+### Bug Fixes
+
+* **no-explicit-return-type:** exempt read-only widening return types from removal (closes [#1253](https://github.com/BluMintInc/eslint-custom-rules/issues/1253)) ([9c50fc5](https://github.com/BluMintInc/eslint-custom-rules/commit/9c50fc59d8f666d1d04a81cf68bedfb877659ed3)), closes [#1216](https://github.com/BluMintInc/eslint-custom-rules/issues/1216)
+* **no-hungarian:** treat Fn/Func/Function as function-role designators, not type tags (closes [#1255](https://github.com/BluMintInc/eslint-custom-rules/issues/1255)) ([f4b7956](https://github.com/BluMintInc/eslint-custom-rules/commit/f4b7956f8f1b9f02d3b72b32619b51c896b4e9d2))
+* **no-type-assertion-returns:** allow type assertions as call/new arguments in return position (closes [#1254](https://github.com/BluMintInc/eslint-custom-rules/issues/1254)) ([883cbc1](https://github.com/BluMintInc/eslint-custom-rules/commit/883cbc1bdc351787ed0a6741bde197074c8e34ea)), closes [530/#565](https://github.com/BluMintInc/eslint-custom-rules/issues/565)
+* **no-unnecessary-verb-suffix:** stop flagging Async/Sync execution-model suffixes (closes [#1252](https://github.com/BluMintInc/eslint-custom-rules/issues/1252)) ([6c46e08](https://github.com/BluMintInc/eslint-custom-rules/commit/6c46e08c79e5b21d7d9208098a219ff1c02c9ea9))
+
 ## [1.17.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.17.0...v1.17.1) (2026-07-01)
 
 

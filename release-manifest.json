@@ -1,5 +1,43 @@
 [
   {
+    "version": "1.17.2",
+    "date": "2026-07-02T12:29:19.590Z",
+    "rules": [
+      {
+        "name": "no-explicit-return-type",
+        "changeType": "fix",
+        "issues": [
+          1253
+        ],
+        "summary": "exempt read-only widening return types from removal (closes #1253)"
+      },
+      {
+        "name": "no-hungarian",
+        "changeType": "fix",
+        "issues": [
+          1255
+        ],
+        "summary": "treat Fn/Func/Function as function-role designators, not type tags (closes #1255)"
+      },
+      {
+        "name": "no-type-assertion-returns",
+        "changeType": "fix",
+        "issues": [
+          1254
+        ],
+        "summary": "allow type assertions as call/new arguments in return position (closes #1254)"
+      },
+      {
+        "name": "no-unnecessary-verb-suffix",
+        "changeType": "fix",
+        "issues": [
+          1252
+        ],
+        "summary": "stop flagging Async/Sync execution-model suffixes (closes #1252)"
+      }
+    ]
+  },
+  {
     "version": "1.17.1",
     "date": "2026-07-01T22:31:34.840Z",
     "rules": [
