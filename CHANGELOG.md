@@ -1,3 +1,10 @@
+# [1.18.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.17.3...v1.18.0) (2026-07-02)
+
+
+### Features
+
+* **no-inline-component-prop:** register the orphaned rule in the plugin ([#1233](https://github.com/BluMintInc/eslint-custom-rules/issues/1233)) ([76b4be5](https://github.com/BluMintInc/eslint-custom-rules/commit/76b4be55b17959c4546797daa9f588f7f62ec12b)), closes [#833](https://github.com/BluMintInc/eslint-custom-rules/issues/833) [#833](https://github.com/BluMintInc/eslint-custom-rules/issues/833)
+
 ## [1.17.3](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.17.2...v1.17.3) (2026-07-02)
 
 
