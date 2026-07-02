@@ -450,7 +450,10 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       output: 'function start(task) {}',
     },
 
-    // Class methods
+    // Class methods: violation is reported, but the fix is SUPPRESSED —
+    // methods are called via member expressions (this.x()/instance.x()) the
+    // scope manager cannot resolve, so renaming the key would orphan call
+    // sites (#1256). output === code proves no unsafe fix is applied.
     {
       code: `class TournamentService {
         initializeGameFor(player) {}
@@ -466,7 +469,7 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
         },
       ],
       output: `class TournamentService {
-        initializeGame(player) {}
+        initializeGameFor(player) {}
       }`,
     },
     {
@@ -484,7 +487,7 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
         },
       ],
       output: `class TournamentService {
-        calculateScore(results) {}
+        calculateScoreFrom(results) {}
       }`,
     },
     {
@@ -520,9 +523,9 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
         },
       ],
       output: `class DataService {
-        updateState(data) {}
-        transformData(format) {}
-        filterUsers(criteria) {}
+        updateStateWith(data) {}
+        transformDataTo(format) {}
+        filterUsersBy(criteria) {}
       }`,
     },
 
@@ -584,7 +587,8 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       output: 'const search = (scope) => {};',
     },
 
-    // Object methods
+    // Object methods: reported but fix SUPPRESSED — accessed via member
+    // expressions (api.method()) the scope manager does not track. output === code.
     {
       code: `const api = {
         getUserFrom(source) {},
@@ -627,10 +631,10 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
         },
       ],
       output: `const api = {
-        getUser(source) {},
-        createUser(data) {},
-        updateUser(id, data) {},
-        deleteUser(id) {}
+        getUserFrom(source) {},
+        createUserWith(data) {},
+        updateUserTo(id, data) {},
+        deleteUserBy(id) {}
       };`,
     },
 
@@ -758,6 +762,242 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
         },
       ],
       output: 'function extractConfigFromWithToVia() {}',
+    },
+
+    // FunctionDeclaration branch: fixer must rename the call site too.
+    {
+      code: [
+        'function elementAt(arr: number[], index: number) {',
+        '  return arr[index];',
+        '}',
+        'const first = elementAt([10, 20, 30], 0);',
+      ].join('\n'),
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: [
+        'function element(arr: number[], index: number) {',
+        '  return arr[index];',
+        '}',
+        'const first = element([10, 20, 30], 0);',
+      ].join('\n'),
+    },
+    // VariableDeclarator (arrow) branch: same requirement.
+    {
+      code: [
+        'const hoursBetween = (start: Date, end: Date) => {',
+        '  return (end.getTime() - start.getTime()) / 3_600_000;',
+        '};',
+        'const elapsed = hoursBetween(new Date(0), new Date());',
+      ].join('\n'),
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: [
+        'const hours = (start: Date, end: Date) => {',
+        '  return (end.getTime() - start.getTime()) / 3_600_000;',
+        '};',
+        'const elapsed = hours(new Date(0), new Date());',
+      ].join('\n'),
+    },
+
+    // Multiple call sites: all references must be renamed.
+    {
+      code: [
+        'function elementAt(arr: number[], index: number) {',
+        '  return arr[index];',
+        '}',
+        'const a = elementAt([1, 2, 3], 0);',
+        'const b = elementAt([4, 5, 6], 1);',
+        'const c = elementAt([7, 8, 9], 2);',
+      ].join('\n'),
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: [
+        'function element(arr: number[], index: number) {',
+        '  return arr[index];',
+        '}',
+        'const a = element([1, 2, 3], 0);',
+        'const b = element([4, 5, 6], 1);',
+        'const c = element([7, 8, 9], 2);',
+      ].join('\n'),
+    },
+
+    // Object Property arrow WITH a member-expression call site: the fix must be
+    // SUPPRESSED entirely. Renaming only the key to `computeValue` while leaving
+    // `utils.computeValueFrom(...)` would orphan the call site (a runtime
+    // ReferenceError / TS error). Since the scope manager cannot resolve the
+    // member reference, no fix is offered — output === code.
+    {
+      code: [
+        'const utils = {',
+        '  computeValueFrom: (data: number[]) => data.reduce((a, b) => a + b, 0),',
+        '};',
+        'const result = utils.computeValueFrom([1, 2, 3]);',
+      ].join('\n'),
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: [
+        'const utils = {',
+        '  computeValueFrom: (data: number[]) => data.reduce((a, b) => a + b, 0),',
+        '};',
+        'const result = utils.computeValueFrom([1, 2, 3]);',
+      ].join('\n'),
+    },
+
+    // Exported FunctionDeclaration: fix must be suppressed (output === code).
+    {
+      code: [
+        'export function elementAt(arr: number[], index: number) {',
+        '  return arr[index];',
+        '}',
+        'const first = elementAt([10, 20, 30], 0);',
+      ].join('\n'),
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      // Fix suppressed for exported symbol — output unchanged.
+      output: [
+        'export function elementAt(arr: number[], index: number) {',
+        '  return arr[index];',
+        '}',
+        'const first = elementAt([10, 20, 30], 0);',
+      ].join('\n'),
+    },
+
+    // Exported arrow const: fix must be suppressed.
+    {
+      code: [
+        'export const hoursBetween = (start: Date, end: Date) => {',
+        '  return (end.getTime() - start.getTime()) / 3_600_000;',
+        '};',
+        'const elapsed = hoursBetween(new Date(0), new Date());',
+      ].join('\n'),
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      // Fix suppressed for exported symbol — output unchanged.
+      output: [
+        'export const hoursBetween = (start: Date, end: Date) => {',
+        '  return (end.getTime() - start.getTime()) / 3_600_000;',
+        '};',
+        'const elapsed = hoursBetween(new Date(0), new Date());',
+      ].join('\n'),
+    },
+
+    // String literal with same text as function name must NOT be renamed.
+    {
+      code: [
+        'function elementAt(arr: number[], index: number) {',
+        '  return arr[index];',
+        '}',
+        "const name = 'elementAt';",
+        'const first = elementAt([10, 20, 30], 0);',
+      ].join('\n'),
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: [
+        'function element(arr: number[], index: number) {',
+        '  return arr[index];',
+        '}',
+        // String literal unchanged — only true references renamed.
+        "const name = 'elementAt';",
+        'const first = element([10, 20, 30], 0);',
+      ].join('\n'),
+    },
+
+    // Shadowing: inner scope redefines the name — each declaration is reported
+    // separately and its own references are renamed. The outer declaration's
+    // references (outer call site) are renamed; the inner shadow's reference
+    // (inner call site) is renamed independently.
+    {
+      code: [
+        'function elementAt(arr: number[], index: number) {',
+        '  return arr[index];',
+        '}',
+        'const outer = elementAt([1, 2, 3], 0);',
+        'function wrapper() {',
+        '  function elementAt(x: number) { return x; }',
+        '  return elementAt(42);',
+        '}',
+      ].join('\n'),
+      errors: [
+        { messageId: 'unnecessaryVerbSuffix' },
+        { messageId: 'unnecessaryVerbSuffix' },
+      ],
+      // After applying both fixes: outer declaration + outer call site renamed,
+      // inner shadow declaration + inner call site renamed.
+      output: [
+        'function element(arr: number[], index: number) {',
+        '  return arr[index];',
+        '}',
+        'const outer = element([1, 2, 3], 0);',
+        'function wrapper() {',
+        '  function element(x: number) { return x; }',
+        '  return element(42);',
+        '}',
+      ].join('\n'),
+    },
+
+    // MethodDefinition WITH a this.method() call site: the fix must be
+    // SUPPRESSED. Renaming only the method to `computeValue` while leaving
+    // `this.computeValueFrom(...)` is the exact ReferenceError bug from #1256.
+    // `this.x` is a member expression the scope manager does not track, so no
+    // fix is offered — output === code (violation still reported).
+    {
+      code: [
+        'class Calculator {',
+        '  computeValueFrom(data: number[]) {',
+        '    return data.reduce((a, b) => a + b, 0);',
+        '  }',
+        '  run() {',
+        '    return this.computeValueFrom([1, 2, 3]);',
+        '  }',
+        '}',
+      ].join('\n'),
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: [
+        'class Calculator {',
+        '  computeValueFrom(data: number[]) {',
+        '    return data.reduce((a, b) => a + b, 0);',
+        '  }',
+        '  run() {',
+        '    return this.computeValueFrom([1, 2, 3]);',
+        '  }',
+        '}',
+      ].join('\n'),
+    },
+
+    // Interface method signature (TSMethodSignature): reported but fix
+    // SUPPRESSED. The implementation and every call site live on implementers
+    // (member accesses) that a single-file syntactic fixer cannot reach, so no
+    // rename is offered — output === code.
+    {
+      code: [
+        'interface Repository {',
+        '  fetchRecordFrom(source: string): unknown;',
+        '}',
+      ].join('\n'),
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: [
+        'interface Repository {',
+        '  fetchRecordFrom(source: string): unknown;',
+        '}',
+      ].join('\n'),
+    },
+
+    // Class method with an EXTERNAL call site (instance.method()) — also a
+    // member expression, also suppressed. Guards against a future change that
+    // renames only same-name identifiers regardless of member context.
+    {
+      code: [
+        'class Store {',
+        '  loadItemsFrom(key: string) {',
+        '    return key;',
+        '  }',
+        '}',
+        'const store = new Store();',
+        "const items = store.loadItemsFrom('cache');",
+      ].join('\n'),
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: [
+        'class Store {',
+        '  loadItemsFrom(key: string) {',
+        '    return key;',
+        '  }',
+        '}',
+        'const store = new Store();',
+        "const items = store.loadItemsFrom('cache');",
+      ].join('\n'),
     },
   ],
 });

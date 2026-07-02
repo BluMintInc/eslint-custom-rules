@@ -139,6 +139,47 @@ function isPhrasalVerbEnding(name: string, suffix: string): boolean {
   return phrasalVerbStem(lastWord) !== null;
 }
 
+/**
+ * Returns true when `node` (or its relevant ancestor for the declaration kind)
+ * is directly wrapped in an export declaration. An exported symbol must not be
+ * auto-fixed because the fixer can only rename within the current file, leaving
+ * cross-file import references broken.
+ *
+ * Call this with:
+ *  - the FunctionDeclaration node for `function foo() {}`
+ *  - the ArrowFunctionExpression/FunctionExpression node for `const foo = () => {}`
+ *    (its parent chain: arrow → VariableDeclarator → VariableDeclaration → export?)
+ */
+function isExported(node: TSESTree.Node): boolean {
+  const parent = node.parent;
+  if (!parent) return false;
+
+  // FunctionDeclaration directly inside `export function foo() {}`
+  if (
+    parent.type === AST_NODE_TYPES.ExportNamedDeclaration ||
+    parent.type === AST_NODE_TYPES.ExportDefaultDeclaration
+  ) {
+    return true;
+  }
+
+  // Arrow/FunctionExpression assigned to a VariableDeclarator:
+  //   VariableDeclarator → VariableDeclaration → ExportNamedDeclaration
+  if (parent.type === AST_NODE_TYPES.VariableDeclarator) {
+    const varDecl = parent.parent; // VariableDeclaration
+    if (!varDecl) return false;
+    const varDeclParent = varDecl.parent; // possible ExportNamedDeclaration
+    if (
+      varDeclParent &&
+      (varDeclParent.type === AST_NODE_TYPES.ExportNamedDeclaration ||
+        varDeclParent.type === AST_NODE_TYPES.ExportDefaultDeclaration)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 type MessageIds = 'unnecessaryVerbSuffix';
 
 export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
@@ -165,6 +206,26 @@ export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
         | TSESTree.FunctionExpression
         | TSESTree.ArrowFunctionExpression,
       name: string | null,
+      /**
+       * The AST node that holds the identifier being renamed.
+       * For FunctionDeclaration this is `node.id`; for VariableDeclarator
+       * assigned arrows it is `declarator.id`; for Property/MethodDefinition
+       * it is the key node. Passing it explicitly avoids re-deriving it inside
+       * the fixer and allows the reference-rename loop to skip it cleanly.
+       */
+      declarationIdNode: TSESTree.Node | null,
+      /**
+       * The AST node whose declared variables the scope manager tracks.
+       * For FunctionDeclaration this is `node` itself; for a VariableDeclarator
+       * arrow it is the VariableDeclarator; for methods/properties it is null
+       * because member references are not in scope (resolved via `this.x`).
+       */
+      scopeNode: TSESTree.Node | null,
+      /**
+       * Whether the symbol is exported. When true, the fix is suppressed so we
+       * don't produce broken cross-file renames.
+       */
+      exported: boolean,
     ): void {
       if (!name) return;
 
@@ -199,27 +260,51 @@ export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
                 suggestion,
               },
               fix(fixer) {
-                if (node.type === AST_NODE_TYPES.FunctionDeclaration) {
-                  return fixer.replaceText(node.id!, suggestion);
-                } else if (
-                  node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-                  node.type === AST_NODE_TYPES.FunctionExpression
-                ) {
-                  const parent = node.parent;
-                  if (
-                    parent &&
-                    (parent.type === AST_NODE_TYPES.VariableDeclarator ||
-                      parent.type === AST_NODE_TYPES.Property ||
-                      parent.type === AST_NODE_TYPES.MethodDefinition)
-                  ) {
-                    if ('key' in parent) {
-                      return fixer.replaceText(parent.key, suggestion);
-                    } else if ('id' in parent && parent.id) {
-                      return fixer.replaceText(parent.id, suggestion);
-                    }
+                // An autofix here is only reference-safe when the fixer can
+                // rename EVERY use of the symbol, not just its declaration —
+                // otherwise call sites are orphaned and produce a ReferenceError
+                // (#1256). Two cases make that impossible, so the fix is
+                // suppressed (report only, no `--fix` change):
+                //
+                //  1. Exported symbols — a single-file fixer cannot reach
+                //     cross-file import references.
+                //  2. Member-accessed symbols (class methods, object-literal
+                //     properties, interface method signatures) — their call
+                //     sites are member expressions (`this.x()`, `obj.x()`) that
+                //     the scope manager does not track as variable references,
+                //     so they cannot be found and renamed syntactically.
+                //     `scopeNode` is null for exactly these declarations.
+                if (exported || !scopeNode || !declarationIdNode) {
+                  return null;
+                }
+
+                // Scope-tracked symbols (FunctionDeclaration, VariableDeclarator
+                // arrows/functions, named FunctionExpression): rename the
+                // declaration identifier and every in-file reference together so
+                // no call site is left pointing at the old name.
+                const fixes = [
+                  fixer.replaceText(declarationIdNode, suggestion),
+                ];
+
+                // Note: context.getDeclaredVariables is the API available in the
+                // pinned @typescript-eslint version (the SourceCode-based
+                // replacement is not yet in these type definitions).
+                const declaredVars = context.getDeclaredVariables(scopeNode);
+                // getDeclaredVariables returns ALL variables the node declares
+                // (e.g. for a FunctionDeclaration it includes the function name
+                // variable AND its parameter variables). Filter to the one whose
+                // name matches the symbol being renamed so we only follow
+                // references to the name, not parameters.
+                for (const variable of declaredVars) {
+                  if (variable.name !== name) continue;
+                  for (const ref of variable.references) {
+                    // Skip the declaration identifier itself — already handled.
+                    if (ref.identifier === declarationIdNode) continue;
+                    fixes.push(fixer.replaceText(ref.identifier, suggestion));
                   }
                 }
-                return null;
+
+                return fixes;
               },
             });
           }
@@ -230,7 +315,13 @@ export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
     return {
       FunctionDeclaration(node): void {
         if (node.id) {
-          checkFunctionName(node, node.id.name);
+          checkFunctionName(
+            node,
+            node.id.name,
+            node.id,
+            node,
+            isExported(node),
+          );
         }
       },
       VariableDeclarator(node): void {
@@ -239,23 +330,43 @@ export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
           (node.init?.type === AST_NODE_TYPES.ArrowFunctionExpression ||
             node.init?.type === AST_NODE_TYPES.FunctionExpression)
         ) {
-          checkFunctionName(node.init, node.id.name);
+          checkFunctionName(
+            node.init,
+            node.id.name,
+            node.id,
+            node,
+            isExported(node.init),
+          );
         }
       },
       MethodDefinition(node): void {
         if (node.key.type === AST_NODE_TYPES.Identifier) {
+          // Class methods are called via member expressions (`this.method()`,
+          // `instance.method()`) that the scope manager does not track as
+          // references. A syntactic single-file fixer therefore cannot find and
+          // rename those call sites, so renaming the method would orphan them
+          // (#1256). Pass null for both the rename target and scopeNode so the
+          // violation is still reported but no unsafe fix is offered.
           checkFunctionName(
             node.value as TSESTree.FunctionExpression,
             node.key.name,
+            null,
+            null,
+            false,
           );
         }
       },
       TSMethodSignature(node): void {
-        // Handle interface method signatures
+        // Interface method signatures have their implementations and call sites
+        // elsewhere (member accesses on implementers), unreachable from this
+        // declaration. Report only — never offer a rename fix.
         if (node.key.type === AST_NODE_TYPES.Identifier) {
           checkFunctionName(
             node as unknown as TSESTree.FunctionExpression,
             node.key.name,
+            null,
+            null,
+            false,
           );
         }
       },
@@ -265,13 +376,22 @@ export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
           (node.value.type === AST_NODE_TYPES.ArrowFunctionExpression ||
             node.value.type === AST_NODE_TYPES.FunctionExpression)
         ) {
-          checkFunctionName(node.value, node.key.name);
+          // Object-literal method properties are accessed via member expressions
+          // (`obj.method()`) the scope manager does not track. As with class
+          // methods, the fix is suppressed to avoid orphaning call sites.
+          checkFunctionName(node.value, node.key.name, null, null, false);
         }
       },
       FunctionExpression(node): void {
         // Handle named function expressions
         if (node.id) {
-          checkFunctionName(node, node.id.name);
+          checkFunctionName(
+            node,
+            node.id.name,
+            node.id,
+            node,
+            isExported(node),
+          );
         }
       },
     };
