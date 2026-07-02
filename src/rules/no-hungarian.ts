@@ -10,7 +10,12 @@ const COMMON_TYPES = [
   'Boolean',
   'Array',
   'Object',
-  'Function',
+  // 'Function' is intentionally excluded. Unlike an incidental, rot-prone data
+  // type (String/Number/...), a value named *Function is intrinsically and
+  // permanently callable, so the marker can never become misleading. Fn/Func/
+  // Function are function-ROLE designators (like callback/handler/predicate),
+  // not Hungarian type tags — compareFn/mapFn are the ECMAScript/MDN-canonical
+  // parameter names. See the ABBREVIATION_MARKERS note and issue #1255.
   // 'Date', too many false positives
   'RegExp',
   'Promise',
@@ -21,16 +26,11 @@ const COMMON_TYPES = [
 // Abbreviation type markers (e.g. str, arr, obj). No English word is spelled this
 // way, so their presence as a segment — even in the middle of a name — is
 // unambiguously a type tag (strName, USER_STR_NAME, ConfigArrSettings).
-const ABBREVIATION_MARKERS = [
-  'str',
-  'num',
-  'int',
-  'bool',
-  'arr',
-  'obj',
-  'fn',
-  'func',
-];
+// `fn`/`func` are deliberately excluded: they abbreviate a value's callable ROLE
+// (like callback/handler/predicate), which is intrinsic and never rots, so
+// checkFn/compareFn/mapFn/renderFunc are legitimate role names, not Hungarian
+// type tags (#1255).
+const ABBREVIATION_MARKERS = ['str', 'num', 'int', 'bool', 'arr', 'obj'];
 
 // Combined type markers (former Hungarian prefixes and type suffixes)
 const TYPE_MARKERS = [
@@ -58,9 +58,7 @@ const SINGLE_LETTER_PREFIXES = new Set(['b', 'i']);
 // allowed compound noun PhoneNumber. Abbreviation markers (str/arr/obj/...) are
 // deliberately excluded: no English word is spelled that way, so their presence
 // as a segment is unambiguously a type tag even inside a type name.
-const FULL_TYPE_WORDS = new Set(
-  [...COMMON_TYPES, 'Func'].map((word) => word.toLowerCase()),
-);
+const FULL_TYPE_WORDS = new Set(COMMON_TYPES.map((word) => word.toLowerCase()));
 
 // Allowed descriptive suffixes that should not be flagged as Hungarian notation
 const ALLOWED_SUFFIXES = [
@@ -234,7 +232,7 @@ function splitCamelSegments(name: string): string[] {
 // A TYPE name (alias/interface/class) is exempt from a full-type-word marker when
 // that marker is one clean PascalCase segment among OTHER descriptive segments —
 // i.e. the word denotes a type concept/relation, not a redundant type tag.
-// Examples: StringToNumber, CapitalizedString, PromiseOrValue, FuncKeys.
+// Examples: StringToNumber, CapitalizedString, PromiseOrValue.
 // Abbreviation markers (str/arr/obj/...) never qualify, so genuine Hungarian type
 // names like UserStrName / ConfigArrSettings / UserObjData still fire.
 function isSemanticTypeConcept(typeName: string): boolean {
