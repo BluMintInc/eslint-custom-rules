@@ -63,8 +63,7 @@ maintainer self-merges to develop (scope-correct commit) → release on empty qu
 ├── hooks/
 │   ├── stop.sh                          # Stop hook entry point
 │   ├── track-changes.sh                 # File change tracking
-│   ├── track-prompt.sh                  # Prompt tracking & rule-request detection
-│   └── skill-activation-llm-eval.sh    # Forces explicit skill evaluation
+│   └── track-prompt.sh                  # Prompt tracking & rule-request detection
 ├── agents/
 │   ├── implement-rule.md                # New rule implementation guide
 │   └── fix-bug.md                       # Bug fix guide
@@ -138,8 +137,7 @@ The maintainer (`.claude/commands/maintainer.md`) drives the loop per issue:
     "UserPromptSubmit": [
       {
         "hooks": [
-          { "type": "command", "command": ".claude/hooks/track-prompt.sh" },
-          { "type": "command", "command": ".claude/hooks/skill-activation-llm-eval.sh" }
+          { "type": "command", "command": ".claude/hooks/track-prompt.sh" }
         ]
       }
     ],
