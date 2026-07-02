@@ -243,10 +243,14 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
         return true;
       }
 
-      // Allow type assertions within method calls like array.includes()
+      // Allow type assertions that are direct arguments of any call or new expression.
+      // The asserted value is an argument — TypeScript structurally checks it against the
+      // parameter type — so the returned value is the call's result, not the cast itself.
+      // This covers method calls (obj.method(x as T)), plain calls (fn(x as T)), and
+      // constructors (new Ctor(x as T)) uniformly.
       if (
-        node.parent?.type === AST_NODE_TYPES.CallExpression &&
-        node.parent.callee.type === AST_NODE_TYPES.MemberExpression
+        node.parent?.type === AST_NODE_TYPES.CallExpression ||
+        node.parent?.type === AST_NODE_TYPES.NewExpression
       ) {
         return true;
       }
@@ -267,34 +271,6 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
       // Allow type assertions used to access properties in conditional contexts
       if (isPropertyAccess(node) && isInsideConditionalStatement(node)) {
         return true;
-      }
-
-      // Allow type assertions in object instantiations (as constructor arguments)
-      if (
-        node.parent?.type === AST_NODE_TYPES.ObjectExpression &&
-        node.parent.parent?.type === AST_NODE_TYPES.NewExpression
-      ) {
-        return true;
-      }
-
-      // Allow type assertions as arguments to constructors
-      if (
-        node.parent?.type === AST_NODE_TYPES.NewExpression ||
-        (node.parent?.type === AST_NODE_TYPES.CallExpression &&
-          node.parent.parent?.type === AST_NODE_TYPES.NewExpression)
-      ) {
-        return true;
-      }
-
-      // Allow type assertions as arguments to constructor calls
-      if (node.parent?.type === AST_NODE_TYPES.CallExpression) {
-        let current: TSESTree.Node | undefined = node.parent;
-        while (current?.parent) {
-          if (current.parent.type === AST_NODE_TYPES.NewExpression) {
-            return true;
-          }
-          current = current.parent;
-        }
       }
 
       // Allow type assertions in JSX attributes/props or object properties

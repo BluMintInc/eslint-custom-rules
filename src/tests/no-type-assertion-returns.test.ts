@@ -424,6 +424,62 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
       );
     }
     `,
+
+    // ==================== PLAIN FUNCTION-CALL ARGUMENT CASES (bug #1254) ====================
+
+    // Good: Object literal cast passed as arg to a plain function call — the RESULT of exec() is returned
+    `
+    function executeCommandAsync(command: string, callback: () => void) {
+      return exec(
+        command,
+        { encoding: 'utf-8', timeout: 1000, detached: true } as ExecOptions & { detached: boolean },
+        callback,
+      );
+    }
+    `,
+
+    // Good: Non-object value cast passed as arg to a plain function call
+    `
+    function wrap(value: unknown) {
+      return normalize(value as Payload);
+    }
+    `,
+
+    // Good: Assertion nested deeper (2 levels) in plain-call args
+    `
+    function deepArgWrap(a: unknown, b: unknown) {
+      return compute(transform(a as InputType), b);
+    }
+    `,
+
+    // Good: Multiple cast args to a plain call — none is the return value
+    `
+    function multiCastArgs(x: unknown, y: unknown) {
+      return merge(x as TypeA, y as TypeB);
+    }
+    `,
+
+    // Good: Parity with method-call — assertion is an arg, not the returned value
+    `
+    function methodParity(value: unknown) {
+      return obj.process(value as SpecialType);
+    }
+    `,
+
+    // Good: Parity with constructor — assertion is an arg, not the returned value
+    `
+    function ctorParity(opts: unknown) {
+      return new MyClass(opts as CtorOptions);
+    }
+    `,
+
+    // Good: Asserted value stored in variable first — already allowed (regression guard)
+    `
+    function storedFirst(value: unknown) {
+      const x = plainFn({ a: 1, b: 2 } as Opts & { b: number });
+      return x;
+    }
+    `,
   ],
   invalid: [
     // ==================== BASIC INVALID CASES ====================
@@ -781,6 +837,60 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
       }
       `,
       errors: [typeAssertionError('CombinedObject')],
+    },
+
+    // ==================== REGRESSION GUARDS — plain-call argument fix (#1254) ====================
+
+    // Bad: Assertion IS the return value (direct `return x as T`) — must still fire
+    {
+      code: `
+      function bad1(x: unknown) {
+        return x as string;
+      }
+      `,
+      errors: [typeAssertionError('string')],
+    },
+
+    // Bad: Assertion of an object literal IS the return value — must still fire
+    {
+      code: `
+      function bad2() {
+        return { a: 1 } as SomeType;
+      }
+      `,
+      errors: [typeAssertionError('SomeType')],
+    },
+
+    // Bad: Asserting the RESULT of a plain call — the call is wrapped by the assertion,
+    // so the assertion is the return value, not an argument of a call
+    {
+      code: `
+      function bad3(data: unknown) {
+        return transform(data) as ProcessedData;
+      }
+      `,
+      errors: [typeAssertionError('ProcessedData')],
+    },
+
+    // Bad: Asserting the result of an array method chain — the assertion is the return value
+    {
+      code: `
+      function bad4() {
+        return arr.map(x => x) as string[];
+      }
+      `,
+      errors: [typeAssertionError('string[]')],
+    },
+
+    // Bad: Wrapping a plain call result in a cast — `plainFn(...)` is not an argument,
+    // it IS what is being cast, so the assertion is the returned expression
+    {
+      code: `
+      function bad5() {
+        return (plainFn({ a: 1 }) as SomeResult);
+      }
+      `,
+      errors: [typeAssertionError('SomeResult')],
     },
   ],
 });
