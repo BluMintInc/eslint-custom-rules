@@ -80,6 +80,153 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
       options: [{ allowDtsFiles: true }],
     },
 
+    // Read-only widening return types are never redundant — TypeScript infers
+    // the mutable concrete type, so stripping a ReadonlySet/ReadonlyMap/
+    // ReadonlyArray/Readonly/readonly-operator annotation changes the public
+    // API and allows callers to mutate protected internal state.
+
+    // ReadonlySet — function declaration
+    {
+      code: `
+        const activeChildren = new Set<number>();
+        export function retrieveActiveChildren(): ReadonlySet<number> {
+          return activeChildren;
+        }
+      `,
+    },
+
+    // readonly T[] (TSTypeOperator) — function declaration
+    {
+      code: `
+        const items: number[] = [];
+        export function getItems(): readonly number[] {
+          return items;
+        }
+      `,
+    },
+
+    // ReadonlyMap — function declaration
+    {
+      code: `
+        const cache = new Map<string, number>();
+        export function getCache(): ReadonlyMap<string, number> {
+          return cache;
+        }
+      `,
+    },
+
+    // Readonly<T> — arrow function
+    {
+      code: `
+        const state = { count: 0 };
+        export const getState = (): Readonly<{ count: number }> => {
+          return state;
+        };
+      `,
+    },
+
+    // ReadonlyArray<T> — function declaration
+    {
+      code: `
+        const items: number[] = [];
+        export function getReadonlyArray(): ReadonlyArray<number> {
+          return items;
+        }
+      `,
+    },
+
+    // ReadonlySet — arrow function
+    {
+      code: `
+        const s = new Set<string>();
+        export const getSet = (): ReadonlySet<string> => s;
+      `,
+    },
+
+    // ReadonlyMap — arrow function
+    {
+      code: `
+        const m = new Map<string, number>();
+        export const getMap = (): ReadonlyMap<string, number> => m;
+      `,
+    },
+
+    // readonly T[] — arrow function
+    {
+      code: `
+        const arr: string[] = [];
+        export const getArr = (): readonly string[] => arr;
+      `,
+    },
+
+    // ReadonlySet — function expression (object method)
+    {
+      code: `
+        const s = new Set<number>();
+        const obj = {
+          getSet: function(): ReadonlySet<number> {
+            return s;
+          },
+        };
+      `,
+    },
+
+    // ReadonlyMap — class instance method
+    {
+      code: `
+        class Cache {
+          private data = new Map<string, number>();
+          getCache(): ReadonlyMap<string, number> {
+            return this.data;
+          }
+        }
+      `,
+    },
+
+    // ReadonlySet — class static method
+    {
+      code: `
+        class Registry {
+          private static entries = new Set<string>();
+          static getEntries(): ReadonlySet<string> {
+            return Registry.entries;
+          }
+        }
+      `,
+    },
+
+    // readonly tuple — arrow function (TSTypeOperator covers tuples too)
+    {
+      code: `
+        const pair: [number, string] = [1, 'a'];
+        export const getPair = (): readonly [number, string] => pair;
+      `,
+    },
+
+    // Readonly<T> — class method
+    {
+      code: `
+        class Config {
+          private cfg = { debug: false };
+          getConfig(): Readonly<{ debug: boolean }> {
+            return this.cfg;
+          }
+        }
+      `,
+    },
+
+    // ReadonlyArray — object method (function expression)
+    {
+      code: `
+        const items: number[] = [];
+        const api = {
+          list: function(): ReadonlyArray<number> {
+            return items;
+          },
+        };
+      `,
+    },
+
     // Firestore function files
     {
       code: `
@@ -346,6 +493,69 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
         ) => {
           await deleteUserData(request.data.userId);
         };
+      `,
+    },
+
+    // Non-readonly redundant annotations must still be flagged (regression
+    // guards ensuring the readonly exemption does not over-exempt).
+    {
+      code: `
+        export function getItems(): Set<number> {
+          return new Set<number>();
+        }
+      `,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "getItems"' },
+        },
+      ],
+      output: `
+        export function getItems() {
+          return new Set<number>();
+        }
+      `,
+    },
+    {
+      code: 'function getNum(): number { return 1; }',
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "getNum"' },
+        },
+      ],
+      output: 'function getNum() { return 1; }',
+    },
+    {
+      code: 'const getNum = (): number => 1;',
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "getNum"' },
+        },
+      ],
+      output: 'const getNum = () => 1;',
+    },
+    {
+      code: `
+        class Foo {
+          getMap(): Map<string, number> {
+            return new Map<string, number>();
+          }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'class method "getMap"' },
+        },
+      ],
+      output: `
+        class Foo {
+          getMap() {
+            return new Map<string, number>();
+          }
+        }
       `,
     },
   ],
