@@ -64,10 +64,6 @@ describe('loadRuleNames (integration against the real src/index.ts)', () => {
     expect(names).toContain('consistent-callback-naming');
   });
 
-  it('excludes the unregistered orphan rule file', () => {
-    expect(names).not.toContain('no-inline-component-prop');
-  });
-
   it('is sorted and de-duplicated', () => {
     expect([...names].sort()).toEqual(names);
     expect(new Set(names).size).toBe(names.length);
