@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.17.3",
+    "date": "2026-07-02T16:07:25.816Z",
+    "rules": [
+      {
+        "name": "no-unnecessary-verb-suffix",
+        "changeType": "fix",
+        "issues": [
+          1256
+        ],
+        "summary": "make autofix reference-safe (closes #1256)"
+      }
+    ]
+  },
+  {
     "version": "1.17.2",
     "date": "2026-07-02T12:29:19.590Z",
     "rules": [

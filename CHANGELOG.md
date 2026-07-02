@@ -1,3 +1,10 @@
+## [1.17.3](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.17.2...v1.17.3) (2026-07-02)
+
+
+### Bug Fixes
+
+* **no-unnecessary-verb-suffix:** make autofix reference-safe (closes [#1256](https://github.com/BluMintInc/eslint-custom-rules/issues/1256)) ([2cadde0](https://github.com/BluMintInc/eslint-custom-rules/commit/2cadde08d9d968c3f8db9bed4bec1eb8d370a651))
+
 ## [1.17.2](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.17.1...v1.17.2) (2026-07-02)
 
 
