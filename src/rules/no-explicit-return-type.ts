@@ -330,6 +330,50 @@ function isTypeGuardFunction(node: TSESTree.Node): boolean {
   return false;
 }
 
+// The names below are the built-in TypeScript read-only wrapper types. When a
+// function is annotated with one of these, the annotation is NOT redundant:
+// TypeScript always infers the mutable concrete type (e.g. Set<T> not
+// ReadonlySet<T>), so stripping the annotation silently changes the public
+// return type and lets callers mutate internal state that the author intended
+// to protect.
+const READONLY_TYPE_NAMES = new Set([
+  'ReadonlySet',
+  'ReadonlyMap',
+  'ReadonlyArray',
+  'Readonly',
+]);
+
+/**
+ * Returns true when `returnType` is a read-only widening annotation — i.e.
+ * one that TypeScript would NOT infer on its own and whose removal therefore
+ * changes the public API. Two forms are covered:
+ *
+ *   TSTypeReference  — ReadonlySet<T>, ReadonlyMap<K,V>, ReadonlyArray<T>,
+ *                      Readonly<T>
+ *   TSTypeOperator   — `readonly T[]` and `readonly [a, b]` tuples
+ */
+function isReadonlyWideningReturnType(
+  returnType: TSESTree.TSTypeAnnotation,
+): boolean {
+  const typeAnnotation = returnType.typeAnnotation;
+
+  if (typeAnnotation.type === AST_NODE_TYPES.TSTypeReference) {
+    const typeName = typeAnnotation.typeName;
+    return (
+      typeName.type === AST_NODE_TYPES.Identifier &&
+      READONLY_TYPE_NAMES.has(typeName.name)
+    );
+  }
+
+  // `readonly T[]` and `readonly [a, b]` are represented as TSTypeOperator
+  // nodes with operator === 'readonly'.
+  if (typeAnnotation.type === AST_NODE_TYPES.TSTypeOperator) {
+    return typeAnnotation.operator === 'readonly';
+  }
+
+  return false;
+}
+
 export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
   createRule<Options, MessageIds>({
     name: 'no-explicit-return-type',
@@ -406,6 +450,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
 
           if (
             isTypeGuardFunction(node) ||
+            isReadonlyWideningReturnType(returnType) ||
             (mergedOptions.allowRecursiveFunctions && isRecursiveFunction(node))
           ) {
             return;
@@ -435,6 +480,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
 
           if (
             isTypeGuardFunction(node) ||
+            isReadonlyWideningReturnType(returnType) ||
             (mergedOptions.allowRecursiveFunctions && isRecursiveFunction(node))
           ) {
             return;
@@ -452,7 +498,10 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
           const returnType = node.returnType;
           if (!returnType) return;
 
-          if (isTypeGuardFunction(node)) {
+          if (
+            isTypeGuardFunction(node) ||
+            isReadonlyWideningReturnType(returnType)
+          ) {
             return;
           }
 
@@ -492,6 +541,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
 
           if (
             isTypeGuardFunction(node.value) ||
+            isReadonlyWideningReturnType(returnType) ||
             (mergedOptions.allowAbstractMethodSignatures &&
               isInterfaceOrAbstractMethodSignature(node))
           ) {
