@@ -105,6 +105,26 @@ function handleLogOut() {}
 function handleCheckIn() {}
 ```
 
+### Auto-fix is reference-safe
+
+The `--fix` autofix renames the declaration **and every in-file reference**
+together, so call sites never dangle. To guarantee this, the fix is applied
+only when all references are resolvable within the file, and is **withheld
+(the violation is still reported, but no automatic rename happens)** in cases
+where a rename could not be completed safely:
+
+- **Exported symbols** (`export function fooFrom() {}`, `export const barTo = …`)
+  — a single-file fixer cannot reach references in other modules that import
+  the symbol, so renaming here would break those consumers.
+- **Class methods, object-literal method properties, and interface method
+  signatures** — these are invoked through member expressions (`this.fooFrom()`,
+  `obj.fooFrom()`) that cannot be resolved to the declaration syntactically, so
+  their call sites cannot be found and updated.
+
+In these cases, rename the symbol and its usages manually (for example with an
+editor's rename-symbol / refactor command, which uses type information the lint
+fixer does not have).
+
 ## When Not To Use It
 
 You can disable this rule when the suffix carries domain meaning that parameters alone cannot convey (e.g., security mode, data partition, migration origin). Prefer targeted disables near the affected declarations so the exception stays visible to readers.
