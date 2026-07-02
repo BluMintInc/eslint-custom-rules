@@ -492,6 +492,28 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
     'const registrationFunctionFactory = () => () => 1;',
     'const cloudFunctionConfig = {};',
     'const httpFunctionRegistry = {};',
+
+    // Issue #1255: Fn/Func/Function are function-ROLE designators (like
+    // callback/handler/predicate), not rot-prone type tags — a *Fn value is
+    // intrinsically and permanently callable, so the marker never misleads.
+    // compareFn/mapFn are the ECMAScript/MDN-canonical parameter names.
+    'const checkFn = checkFunctions[0];',
+    'const compareFn = (a: number, b: number) => a - b;',
+    'const mapFn = (x: number) => x * 2;',
+    'const sortFn = (a: number, b: number) => a - b;',
+    'const handlerFn = () => {};',
+    'const transformFn = (input: string) => input.toUpperCase();',
+    // Func / Function full-word variants of the same role-suffix class.
+    'const renderFunc = () => null;',
+    'const onCompleteFunction = () => undefined;',
+    // customFunction is a function-role name (verb/domain + Function), exempt.
+    'function customFunction(param: string) { return param; }',
+    'const callCustomFunction = () => customFunction("test");',
+    // Fn as a parameter, mirroring the ECMAScript sort(compareFn) convention.
+    'function runSorted(items: number[], sortFn: (a: number, b: number) => number) { return [...items].sort(sortFn); }',
+    'function createProcessor(transformFn: (p: string) => string) { return (i: string) => transformFn(i); }',
+    // Fn/Func on class methods and members.
+    'class Runner { runFn = () => {}; buildFunc() { return 1; } }',
   ],
   invalid: [
     {
@@ -577,30 +599,26 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
       function customFunction(paramString: string) {
         return paramString.trim();
       }
-  
+
       function callCustomFunction() {
         return customFunction('test');
       }
       `,
-      errors: [
-        errorFor('customFunction'),
-        errorFor('paramString'),
-        errorFor('callCustomFunction'),
-      ],
+      // customFunction/callCustomFunction are function-role names and no longer
+      // fire (#1255); the incidental primitive tag paramString still does.
+      errors: [errorFor('paramString')],
     },
     {
       code: `
       function customFunction(paramString: string, paramNumber: number) {
         return paramString.repeat(paramNumber);
       }
-  
+
       const result = customFunction('hello', 3);
       `,
-      errors: [
-        errorFor('customFunction'),
-        errorFor('paramString'),
-        errorFor('paramNumber'),
-      ],
+      // customFunction is a function-role name and no longer fires (#1255); the
+      // incidental primitive tags paramString/paramNumber still do.
+      errors: [errorFor('paramString'), errorFor('paramNumber')],
     },
     {
       code: `
@@ -611,14 +629,6 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
     }
     `,
       errors: [errorFor('TestClass'), errorFor('inputString')],
-    },
-    {
-      code: `const fnF = function(param: string) {
-      return param.trim();
-    };
-
-    fnF('  test  ');`,
-      errors: [errorFor('fnF')],
     },
     // Tests for class methods with Hungarian notation
     {
@@ -1104,17 +1114,10 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
       errors: [errorFor('UserStrName')],
     },
 
-    // Full-type-words as TRUE prefix or suffix still fire (Issue #1250
-    // only exempts MIDDLE-segment occurrences).
-    // Function as prefix and suffix.
-    {
-      code: 'const functionFactory = () => {};',
-      errors: [errorFor('functionFactory')],
-    },
-    {
-      code: 'const userFunction = () => {};',
-      errors: [errorFor('userFunction')],
-    },
+    // Full-type-words as TRUE prefix or suffix still fire (Issue #1250 only
+    // exempts MIDDLE-segment occurrences). Function is excluded from this set
+    // entirely — it is a function-role designator, not a rot-prone type tag
+    // (#1255) — so functionFactory/userFunction are valid, tested below.
     // String as prefix and suffix.
     {
       code: 'const stringValue = "x";',
@@ -1174,18 +1177,6 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
     {
       code: 'const WRAPPER_OBJ_PROPS_DEFAULT = {};',
       errors: [errorFor('WRAPPER_OBJ_PROPS_DEFAULT')],
-    },
-    {
-      code: `
-      function createProcessor(transformFn: (param: string) => string) {
-        return function(input: string) {
-          return transformFn(input);
-        };
-      }
-  
-      const processor = createProcessor(param => param.toUpperCase());
-      `,
-      errors: [errorFor('transformFn')],
     },
   ],
 });
