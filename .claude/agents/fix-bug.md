@@ -2,7 +2,7 @@
 name: fix-bug
 description: "Use when fixing a bug in an existing ESLint rule without the rule-request flag."
 tools: Read, Grep, Glob, Edit, Write, Bash
-model: sonnet
+model: opus
 ---
 
 # Fix ESLint Rule Bug

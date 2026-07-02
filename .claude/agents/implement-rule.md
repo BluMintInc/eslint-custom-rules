@@ -2,7 +2,7 @@
 name: implement-rule
 description: "Use when implementing a new ESLint rule from a GitHub issue."
 tools: Read, Grep, Glob, Edit, Write, Bash
-model: sonnet
+model: opus
 ---
 
 # Implement ESLint Rule
