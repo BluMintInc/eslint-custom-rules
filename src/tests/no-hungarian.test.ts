@@ -514,6 +514,28 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
     'function createProcessor(transformFn: (p: string) => string) { return (i: string) => transformFn(i); }',
     // Fn/Func on class methods and members.
     'class Runner { runFn = () => {}; buildFunc() { return 1; } }',
+
+    // Issue #1258: a real English word whose terminal camelCase segment merely
+    // ENDS WITH an abbreviation marker (e.g. "Hint" ends with "int") must not be
+    // flagged. The segment's initial capital doubles as the raw suffix-boundary
+    // char, which previously short-circuited the exact-segment guard.
+    `const appendHoldHint = (hints: readonly string[]) => {
+      return [...hints, 'hold'];
+    };`,
+    'const showTapHint = () => undefined;',
+    "const raceCheckpoint = { id: 'cp1' };",
+    'function applyWetPaint(surface: string) { return surface; }',
+    // A plain const with a "Hint" tail is domain wording, not Hungarian.
+    "const iosHoldHint = 'x';",
+    // Additional terminal "int"-marker English-word tails (Blueprint, Waypoint,
+    // Checkpoint, Footprint, Constraint, Viewpoint, Fingerprint).
+    'const renderBlueprint = () => null;',
+    'const nextWaypoint = { x: 0, y: 0 };',
+    'const savedCheckpoint = { id: 1 };',
+    'const drawFootprint = () => {};',
+    "const applyConstraint = 'x';",
+    'const cameraViewpoint = { angle: 0 };',
+    "const scanFingerprint = () => 'match';",
   ],
   invalid: [
     {
@@ -811,6 +833,30 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
     {
       code: 'const valueStr = "";',
       errors: [errorFor('valueStr')],
+    },
+
+    // Issue #1258 regression guards: genuine Hungarian where the abbreviation
+    // marker IS a full camelCase segment MUST still fire after reordering the
+    // exact-segment guard ahead of the raw prefix/suffix boundary checks.
+    {
+      code: 'const resultStr = compute();',
+      errors: [errorFor('resultStr')],
+    },
+    {
+      code: 'const countNum = 5;',
+      errors: [errorFor('countNum')],
+    },
+    {
+      code: 'const intValue = 42;',
+      errors: [errorFor('intValue')],
+    },
+    {
+      code: 'const objData = {};',
+      errors: [errorFor('objData')],
+    },
+    {
+      code: 'const boolFlag = true;',
+      errors: [errorFor('boolFlag')],
     },
   ],
 });
