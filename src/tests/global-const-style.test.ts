@@ -3,6 +3,24 @@ import rule from '../rules/global-const-style';
 
 ruleTesterTs.run('global-const-style', rule, {
   valid: [
+    // Issue #1257: exported Next.js reserved `config` export must NOT be
+    // renamed to UPPER_SNAKE_CASE — Next.js only recognizes the literal
+    // export name `config`, so renaming silently breaks the framework.
+    {
+      code: `export const config = { api: { bodyParser: { sizeLimit: '16kb' } } } as const;`,
+      filename: 'pages/api/contact.ts',
+    },
+    // Issue #1257: edge-runtime config export is likewise exempt from rename.
+    {
+      code: `export const config = { runtime: 'experimental-edge' } as const;`,
+      filename: 'pages/api/time/now.ts',
+    },
+    // Issue #1257: the exemption covers other Next.js reserved export names,
+    // not just `config`, so the allowlist is consulted by name.
+    {
+      code: `export const getServerSideProps = { revalidate: 60 } as const;`,
+      filename: 'pages/index.ts',
+    },
     // Valid global constants with UPPER_SNAKE_CASE and as const in TypeScript
     {
       code: 'const API_ENDPOINT = "https://api.example.com" as const;',
@@ -181,6 +199,55 @@ ruleTesterTs.run('global-const-style', rule, {
     },
   ],
   invalid: [
+    // Issue #1257: the reserved-export exemption only suppresses the unsafe
+    // rename — the `as const` fix is still applied because it never touches
+    // the export name and is safe for Next.js.
+    {
+      code: `export const config = { runtime: 'experimental-edge' };`,
+      filename: 'pages/api/time/now.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: {
+            name: 'config',
+            valueKind: 'an object literal',
+          },
+        },
+      ],
+      output: `export const config = { runtime: 'experimental-edge' } as const;`,
+    },
+    // Issue #1257: a NON-exported `config` is a local, safe to rename, so it
+    // is still flagged and autofixed to UPPER_SNAKE_CASE.
+    {
+      code: 'const config = { timeout: 1000 } as const;',
+      filename: 'pages/api/example.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: {
+            name: 'config',
+            suggestedName: 'CONFIG',
+          },
+        },
+      ],
+      output: 'const CONFIG = { timeout: 1000 } as const;',
+    },
+    // Issue #1257: an exported name that is NOT a Next.js reserved export is
+    // still flagged and autofixed — the exemption is scoped to the allowlist.
+    {
+      code: 'export const appConfig = { timeout: 1000 } as const;',
+      filename: 'pages/api/example.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: {
+            name: 'appConfig',
+            suggestedName: 'APP_CONFIG',
+          },
+        },
+      ],
+      output: 'export const APP_CONFIG = { timeout: 1000 } as const;',
+    },
     // Missing UPPER_SNAKE_CASE and as const in TypeScript
     {
       code: 'const apiEndpoint = "https://api.example.com" as const;',

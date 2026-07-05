@@ -52,7 +52,22 @@ const { apiUrl, maxRetries } = config;
 // React components and hooks at module scope (not affected)
 const MyComponent = () => null;
 const memoized = memo(MyComponent);
+
+// Next.js reserved export names (not renamed — the literal export name is a
+// framework contract; renaming `config` would silently break the API route)
+export const config = { api: { bodyParser: { sizeLimit: '16kb' } } } as const;
 ```
+
+### Next.js reserved exports
+
+Next.js recognizes certain exports by their literal identifier (`config`,
+`getServerSideProps`, `getStaticProps`, `getStaticPaths`, `getInitialProps`,
+`middleware`). Renaming these to `UPPER_SNAKE_CASE` silently breaks the
+framework, so **exported** declarations using these reserved names are not
+flagged for renaming. Only the rename is suppressed — `as const` is still
+enforced because it never changes the export name. A local (unexported)
+constant sharing one of these names is still renamed, since renaming a value
+that Next.js never reads is safe.
 
 ## When Not To Use It
 
