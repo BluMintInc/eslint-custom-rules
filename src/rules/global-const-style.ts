@@ -4,6 +4,20 @@ import { createRule } from '../utils/createRule';
 const isUpperSnakeCase = (str: string): boolean =>
   /^[A-Z][A-Z0-9_]*$/.test(str);
 
+// Next.js recognizes these export names by their literal identifier, so
+// renaming them to UPPER_SNAKE_CASE silently breaks the framework contract
+// (e.g. `export const config` controls the API-route body parser / runtime).
+// Only the export name matters to Next.js, so the exemption is gated on the
+// declaration being exported — a local, unexported `config` is safe to rename.
+const NEXTJS_RESERVED_EXPORTS = new Set([
+  'config',
+  'getServerSideProps',
+  'getStaticProps',
+  'getStaticPaths',
+  'getInitialProps',
+  'middleware',
+]);
+
 type MessageIds = 'upperSnakeCase' | 'asConst';
 
 export default createRule<[], MessageIds>({
@@ -240,6 +254,17 @@ export default createRule<[], MessageIds>({
                 },
               });
             }
+          }
+
+          // Skip the rename for exported Next.js reserved export names. Their
+          // identifier is an external framework contract that cannot be
+          // statically verified as safe to rename, so autofixing the rename
+          // silently regresses behavior (Issue #1257). The `as const` check
+          // above still applies since it never touches the export name.
+          const isExported =
+            node.parent?.type === AST_NODE_TYPES.ExportNamedDeclaration;
+          if (isExported && NEXTJS_RESERVED_EXPORTS.has(name)) {
+            return;
           }
 
           // Check for UPPER_SNAKE_CASE
