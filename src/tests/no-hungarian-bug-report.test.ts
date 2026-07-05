@@ -37,6 +37,15 @@ ruleTesterTs.run('no-hungarian-bug-report', noHungarian, {
 
     export type ZIndex = typeof ZINDEX;
     `,
+
+    // Issue #1258: a domain identifier whose terminal camelCase segment is a
+    // real English word merely ENDING WITH an abbreviation marker ("Hint" ends
+    // with "int") was wrongly flagged, because the segment's initial capital
+    // doubled as the raw suffix-boundary char and short-circuited the
+    // exact-segment guard.
+    `const appendHoldHint = (hints: readonly string[]) => {
+      return [...hints, 'hold'];
+    };`,
   ],
   invalid: [],
 });

@@ -389,7 +389,33 @@ export const noHungarian = createRule<[], MessageIds>({
           return false;
         }
 
-        // Check if it's a prefix with proper boundary (e.g., strName, numCount)
+        // Abbreviation markers (str, num, int, bool, arr, obj) are short enough
+        // that the raw-character boundary checks below fire on them as
+        // substrings inside real English words (e.g. "int" inside "Mint", "str"
+        // inside "stream"). The ONLY correct test for an abbreviation marker is
+        // therefore an exact match against a full camelCase segment: "Mint" →
+        // ["Mint"] never matches "int", while genuine Hungarian like intValue →
+        // ["int","Value"] still does.
+        //
+        // This guard MUST run before the prefix/suffix boundary checks. A
+        // capitalized terminal segment makes its own initial capital double as
+        // the raw suffix-boundary character: "appendHoldHint" ends with the
+        // marker "int" AND its preceding char is the capital "H" of "Hint", so
+        // the suffix check below would short-circuit to `true` and short-circuit
+        // this guard entirely (issue #1258). Because it always returns, an
+        // abbreviation marker never reaches the raw-character heuristics, so
+        // words like Hint/Blueprint/Waypoint/Checkpoint/Paint are spared.
+        if (ABBREVIATION_MARKER_SET.has(normalizedMarker)) {
+          const segments = splitCamelSegments(variableName);
+          return segments.some((s) => s.toLowerCase() === normalizedMarker);
+        }
+
+        // The prefix/suffix boundary checks below apply only to FULL type-word
+        // markers (String, Number, Boolean, Array, Object, ...); abbreviation
+        // markers have already returned above.
+
+        // Check if it's a prefix with proper boundary (e.g., stringValue,
+        // numberCount)
         if (
           normalizedVarName.startsWith(normalizedMarker) &&
           normalizedVarName.length > normalizedMarker.length &&
@@ -410,17 +436,6 @@ export const noHungarian = createRule<[], MessageIds>({
             ))
         ) {
           return true;
-        }
-
-        // Abbreviation markers (str, num, int, bool, arr, obj, fn, func) are
-        // short enough that a raw-character boundary check can fire on them as
-        // substrings inside real English words (e.g. "int" inside "Mint", "str"
-        // inside "stream"). Require an exact match against a full camelCase
-        // token so that "Mint" → ["Mint"] never matches "int", while genuine
-        // Hungarian like intValue → ["int","Value"] still does.
-        if (ABBREVIATION_MARKER_SET.has(normalizedMarker)) {
-          const segments = splitCamelSegments(variableName);
-          return segments.some((s) => s.toLowerCase() === normalizedMarker);
         }
 
         // Full type-word markers (non-abbreviations: String, Number, Function,
