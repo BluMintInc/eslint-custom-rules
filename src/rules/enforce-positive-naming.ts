@@ -855,6 +855,12 @@ const DIS_EXCEPTIONS = [
   'disputed',
   'disputes',
   'disputing',
+  // "disabled" is a single English adjective and the native HTML/React/MUI prop
+  // name; its "dis" is a bound morpheme, not a separable negation of "abled".
+  'disable',
+  'disabled',
+  'disables',
+  'disabling',
 ];
 
 // Words that contain negative prefixes but should be treated as valid

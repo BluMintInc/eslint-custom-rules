@@ -46,10 +46,12 @@ ruleTesterTs.run('enforce-positive-naming-display', enforcePositiveNaming, {
     },
   ],
   invalid: [
-    // Verify that actual negative terms are still flagged
+    // Verify that actual negative terms are still flagged. "isDisallowed" is a
+    // genuine "dis" double-negation (prefer "isAllowed"); "isDisabled" is NOT —
+    // "disabled" is a single English word and the native prop name (see #1261).
     {
       code: `
-        const isDisabled = true;
+        const isDisallowed = true;
       `,
       filename: 'Component.tsx',
       errors: [
