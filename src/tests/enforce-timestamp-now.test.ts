@@ -5,6 +5,8 @@ import { enforceTimestampNow } from '../rules/enforce-timestamp-now';
 const backendFilePath = 'functions/src/some/path/file.ts';
 const frontendFilePath = 'src/components/SomeComponent.tsx';
 const backendTestFilePath = 'functions/src/some/path/file.test.ts';
+// Windows backslash form of a backend path (issue #1266).
+const windowsBackendFilePath = 'C:\\repo\\functions\\src\\some\\path\\file.ts';
 
 ruleTesterTs.run('enforce-timestamp-now', enforceTimestampNow, {
   valid: [
@@ -63,6 +65,15 @@ ruleTesterTs.run('enforce-timestamp-now', enforceTimestampNow, {
         const mockTimestamp = Timestamp.fromDate(new Date('2023-01-01'));
       `,
       filename: backendTestFilePath,
+    },
+    // Issue #1266: a Windows backslash FRONTEND path stays exempt after
+    // separator normalization — the rule only applies to functions/src.
+    {
+      code: `
+        import { Timestamp } from 'firebase/firestore';
+        const timestamp = Timestamp.fromDate(new Date());
+      `,
+      filename: 'C:\\repo\\src\\components\\SomeComponent.tsx',
     },
     // Valid usage with custom date calculation
     {
@@ -230,6 +241,29 @@ ruleTesterTs.run('enforce-timestamp-now', enforceTimestampNow, {
         const timestamp = Timestamp.now();
       `,
       filename: backendFilePath,
+    },
+    // Issue #1266: a Windows backslash backend path must be enforced. Before
+    // separator normalization the forward-slash `functions/src/` fragment never
+    // matched, so the rule silently no-op'd on Windows.
+    {
+      code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        const timestamp = Timestamp.fromDate(new Date());
+      `,
+      errors: [
+        {
+          messageId: 'preferTimestampNow',
+          data: {
+            expression: 'Timestamp.fromDate(new Date())',
+            timestampAlias: 'Timestamp',
+          },
+        },
+      ],
+      output: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        const timestamp = Timestamp.now();
+      `,
+      filename: windowsBackendFilePath,
     },
   ],
 });
