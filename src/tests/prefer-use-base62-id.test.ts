@@ -4,6 +4,12 @@ import { preferUseBase62Id } from '../rules/prefer-use-base62-id';
 const IN_SCOPE_FILE = 'src/components/example/ExamplePanel.tsx';
 const IN_SCOPE_HOOK = 'src/hooks/useExample.ts';
 const OUT_OF_SCOPE_FILE = 'src/util/lookupSessionId.ts';
+// Issue #1267: getFilename() is absolute/platform-native in production; the rule
+// must resolve these against the repo-relative target globs.
+const ABSOLUTE_IN_SCOPE_FILE =
+  '/Users/dev/agora/src/components/example/ExamplePanel.tsx';
+const WINDOWS_IN_SCOPE_HOOK = 'C:\\repo\\src\\hooks\\useExample.ts';
+const ABSOLUTE_OUT_OF_SCOPE_FILE = '/Users/dev/agora/src/util/lookupSessionId.ts';
 
 ruleTesterJsx.run('prefer-use-base62-id', preferUseBase62Id, {
   valid: [
@@ -114,6 +120,18 @@ const MyComponent = ({ attachments }) => {
     // 8. File outside target paths — do NOT flag
     {
       filename: OUT_OF_SCOPE_FILE,
+      code: `
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+const lookupSessionId = () => {
+  return uuidv4Base62();
+};
+`,
+    },
+
+    // 8b. Issue #1267: an ABSOLUTE path outside the target paths stays exempt
+    // after the repo-relative resolution.
+    {
+      filename: ABSOLUTE_OUT_OF_SCOPE_FILE,
       code: `
 import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
 const lookupSessionId = () => {
@@ -556,6 +574,36 @@ const MyComponent = () => {
 };
 `,
       errors: [{ messageId: 'preferUseBase62IdUseMemo' }],
+    },
+
+    // 22. Issue #1267: an ABSOLUTE (POSIX) in-scope path must be enforced.
+    // Before the repo-relative resolution, minimatch never matched an absolute
+    // path, so the rule silently no-op'd for every real (absolute) filename.
+    {
+      filename: ABSOLUTE_IN_SCOPE_FILE,
+      code: `
+import { useState } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+const ExamplePanel = () => {
+  const [placementId] = useState(() => uuidv4Base62());
+  return <div id={placementId}>Hello</div>;
+};
+`,
+      errors: [{ messageId: 'preferUseBase62IdHook' }],
+    },
+
+    // 23. Issue #1267: a Windows backslash in-scope path must be enforced too.
+    {
+      filename: WINDOWS_IN_SCOPE_HOOK,
+      code: `
+import { useRef } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+export function useExampleForm() {
+  const idRef = useRef(uuidv4Base62());
+  return { id: idRef.current };
+}
+`,
+      errors: [{ messageId: 'preferUseBase62IdHook' }],
     },
   ],
 });

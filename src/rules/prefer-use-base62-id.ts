@@ -257,11 +257,23 @@ export const preferUseBase62Id = createRule<Options, MessageIds>({
   create(context, [options]) {
     const targetPaths: string[] = options.targetPaths ?? DEFAULT_TARGET_PATHS;
 
-    // Check whether the current file is inside a target path
-    const filename = context.getFilename();
-    const isInTargetPath = targetPaths.some((pattern) =>
-      minimatch(filename, pattern, { matchBase: false }),
-    );
+    // Check whether the current file is inside a target path. `getFilename()`
+    // returns an absolute, platform-native path, but `targetPaths` are
+    // repo-relative globs (`src/hooks/**`), so a raw minimatch never matches an
+    // absolute path — on any platform. Normalize backslashes, then match the
+    // pattern against both the full path and the repo-relative slice (from
+    // `/src/`) so absolute POSIX and Windows paths both resolve (issue #1267).
+    const filename = context.getFilename().replace(/\\/g, '/');
+    const isInTargetPath = targetPaths.some((pattern) => {
+      if (minimatch(filename, pattern, { matchBase: false })) {
+        return true;
+      }
+      const srcIdx = filename.indexOf('/src/');
+      return (
+        srcIdx !== -1 &&
+        minimatch(filename.slice(srcIdx + 1), pattern, { matchBase: false })
+      );
+    });
     if (!isInTargetPath) return {};
 
     // Local names bound to the uuidv4Base62 export in the current file
