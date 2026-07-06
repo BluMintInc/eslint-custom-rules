@@ -3,6 +3,11 @@ import { enforceIsPrefixValidators } from '../rules/enforce-is-prefix-validators
 
 // All tests that target a validators file use filename: to exercise path matching.
 const VALIDATORS_FILE = 'src/util/edit/validators/string/isEmail.ts';
+// Issue #1269: Windows backslash form of a validators-directory path.
+const WINDOWS_VALIDATORS_FILE =
+  'C:\\repo\\src\\util\\edit\\validators\\string\\isEmail.ts';
+// A Windows path outside the validators directory (rule must not apply).
+const WINDOWS_NON_VALIDATORS_FILE = 'C:\\repo\\src\\util\\string\\helpers.ts';
 const NON_VALIDATORS_FILE = 'src/util/helpers/formatters.ts';
 const TEST_FILE = 'src/util/edit/validators/string/isEmail.test.ts';
 
@@ -190,6 +195,14 @@ ruleTesterTs.run('enforce-is-prefix-validators', enforceIsPrefixValidators, {
         },
       ],
     },
+
+    // Issue #1269: a Windows backslash path OUTSIDE the validators directory
+    // stays exempt after separator normalization — the rule only applies to
+    // validators files, so a validate-prefixed export elsewhere is not flagged.
+    {
+      filename: WINDOWS_NON_VALIDATORS_FILE,
+      code: `export const validateEmail = (v: string) => true;`,
+    },
   ],
 
   invalid: [
@@ -327,6 +340,26 @@ export const checkPhoneNumber = (v: string) => true;
       code: `export const checkValue = (v: string) => true;`,
       options: [{ targetPaths: ['**/asserters/**/*.ts'] }],
       errors: [{ messageId: 'disallowedPrefix' }],
+    },
+
+    // ── Issue #1269: Windows backslash validators path must be enforced ───────
+    // Before separator normalization the `**/validators/**` glob never matched a
+    // backslash path (Minimatch treats `\` as an escape), so the rule silently
+    // no-op'd on Windows.
+    {
+      filename: WINDOWS_VALIDATORS_FILE,
+      code: `export const validateEmail = (v: string) => true;`,
+      errors: [
+        {
+          messageId: 'disallowedPrefix',
+          data: {
+            name: 'validateEmail',
+            prefix: 'validate',
+            requiredPrefix: 'is',
+            suggestion: 'isEmail',
+          },
+        },
+      ],
     },
 
     // ── Custom disallowedPrefixes option ──────────────────────────────────────
