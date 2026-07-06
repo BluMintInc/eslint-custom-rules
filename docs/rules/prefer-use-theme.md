@@ -46,8 +46,8 @@ This rule flags direct imports of theme constants from `src/styles/*` modules in
 | `ZINDEX` | `src/styles/system` | `theme.zIndex` |
 | `ASPECT_RATIO` | `src/styles/system` | `theme.aspectRatio` |
 | `BREAKPOINTS` | `src/styles/system` | `theme.breakpoints` |
-| `BORDER_RADIUS` | `src/styles/layout` | `theme.shape.borderRadius` |
-| `CONTAINER_WIDTH` | `src/styles/layout` | (via theme mixins) |
+| `BORDER_RADIUS` | `src/styles/layout` | _no direct equivalent_ — reuse a token that carries the value (e.g. `theme.panels[n].borderRadius`) or add it to the theme |
+| `CONTAINER_WIDTH` | `src/styles/layout` | _no direct equivalent_ — add it to the theme and read via `useTheme()` |
 
 ## Examples
 

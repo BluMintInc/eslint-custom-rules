@@ -188,7 +188,9 @@ import { PALETTE } from '../../../styles/palette';
       ],
     },
 
-    // BORDER_RADIUS imported in a component file
+    // BORDER_RADIUS imported in a component file. It has no faithful theme
+    // location (theme.shape.borderRadius is MUI's default 4, not the M3 scale),
+    // so it uses the no-equivalent message (issue #1260).
     {
       filename: COMPONENT_FILE,
       code: `
@@ -196,11 +198,10 @@ import { BORDER_RADIUS } from '../../styles/layout';
 `,
       errors: [
         {
-          messageId: 'preferUseTheme',
+          messageId: 'preferUseThemeNoEquivalent',
           data: {
             importName: 'BORDER_RADIUS',
             sourceModule: '../../styles/layout',
-            themeEquivalent: 'theme.shape.borderRadius',
           },
         },
       ],
@@ -394,13 +395,14 @@ import { ASPECT_RATIO } from '../../styles/system';
       errors: [{ messageId: 'preferUseTheme' }],
     },
 
-    // CONTAINER_WIDTH imported from layout module
+    // CONTAINER_WIDTH imported from layout module. Not carried anywhere on the
+    // theme today, so it uses the no-equivalent message (issue #1260).
     {
       filename: COMPONENT_FILE,
       code: `
 import { CONTAINER_WIDTH } from '../../styles/layout';
 `,
-      errors: [{ messageId: 'preferUseTheme' }],
+      errors: [{ messageId: 'preferUseThemeNoEquivalent' }],
     },
 
     // Mixed import: banned constant alongside a type specifier — only the value is flagged
@@ -449,11 +451,10 @@ import { BORDER_RADIUS } from 'src/styles/layout';
 `,
       errors: [
         {
-          messageId: 'preferUseTheme',
+          messageId: 'preferUseThemeNoEquivalent',
           data: {
             importName: 'BORDER_RADIUS',
             sourceModule: 'src/styles/layout',
-            themeEquivalent: 'theme.shape.borderRadius',
           },
         },
       ],
@@ -466,6 +467,22 @@ import { BORDER_RADIUS } from 'src/styles/layout';
 import { PALETTE } from '../../styles/palette';
 `,
       errors: [{ messageId: 'preferUseTheme' }],
+    },
+
+    // Issue #1260: the rendered message must NOT direct developers to
+    // theme.shape.borderRadius (MUI's default 4, not the M3 scale). Asserting the
+    // full message locks the truthful guidance in place.
+    {
+      filename: COMPONENT_FILE,
+      code: `
+import { BORDER_RADIUS } from 'src/styles/layout';
+`,
+      errors: [
+        {
+          message:
+            "Import 'BORDER_RADIUS' from 'src/styles/layout' bypasses the MUI theme system. This constant has no direct equivalent on the theme object: reuse a theme token that already carries the value (e.g. theme.panels[n].borderRadius) or add BORDER_RADIUS to the theme in src/styles/theme.ts and read it via useTheme().",
+        },
+      ],
     },
   ],
 });
