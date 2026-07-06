@@ -1,7 +1,7 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
-type MessageIds = 'preferUseTheme';
+type MessageIds = 'preferUseTheme' | 'preferUseThemeNoEquivalent';
 
 /**
  * The style module path fragments that contain theme constants. Matching is
@@ -52,7 +52,9 @@ const BANNED_CONSTANTS = new Set([
 /**
  * Map from constant name to its theme-object equivalent path, used in the
  * error message so that developers know exactly where to find the value on the
- * theme object.
+ * theme object. Only constants that map to a value the theme actually carries
+ * appear here; constants without a faithful location are listed in
+ * CONSTANTS_WITHOUT_THEME_EQUIVALENT and get the no-equivalent message instead.
  */
 const THEME_EQUIVALENTS: Record<string, string> = {
   PALETTE: 'theme.palette',
@@ -72,9 +74,21 @@ const THEME_EQUIVALENTS: Record<string, string> = {
   ZINDEX: 'theme.zIndex',
   ASPECT_RATIO: 'theme.aspectRatio',
   BREAKPOINTS: 'theme.breakpoints',
-  BORDER_RADIUS: 'theme.shape.borderRadius',
-  CONTAINER_WIDTH: 'theme.mixins',
 };
+
+/**
+ * Banned constants that have NO faithful single location on the theme object:
+ * - BORDER_RADIUS is the full M3 shape scale; `theme.shape.borderRadius` is
+ *   MUI's default `4`, not this scale — following that hint ships a visual
+ *   regression, so the message points at real alternatives instead.
+ * - CONTAINER_WIDTH is not carried anywhere on the theme today.
+ * These still bypass the theme system, so they remain flagged — but with the
+ * no-equivalent message rather than a mapping that misdirects developers.
+ */
+const CONSTANTS_WITHOUT_THEME_EQUIVALENT = new Set([
+  'BORDER_RADIUS',
+  'CONTAINER_WIDTH',
+]);
 
 /**
  * Target file path fragments that the rule enforces inside. Files outside
@@ -142,6 +156,8 @@ export const preferUseTheme = createRule<[], MessageIds>({
     messages: {
       preferUseTheme:
         "Import '{{importName}}' from '{{sourceModule}}' bypasses the MUI theme system. Use useTheme() and access {{themeEquivalent}} instead.",
+      preferUseThemeNoEquivalent:
+        "Import '{{importName}}' from '{{sourceModule}}' bypasses the MUI theme system. This constant has no direct equivalent on the theme object: reuse a theme token that already carries the value (e.g. theme.panels[n].borderRadius) or add {{importName}} to the theme in src/styles/theme.ts and read it via useTheme().",
     },
   },
   defaultOptions: [],
@@ -215,6 +231,20 @@ export const preferUseTheme = createRule<[], MessageIds>({
                 : '';
 
             if (!BANNED_CONSTANTS.has(importedName)) {
+              continue;
+            }
+
+            // Constants without a faithful theme location get guidance toward
+            // real alternatives rather than a mapping that misdirects (issue #1260).
+            if (CONSTANTS_WITHOUT_THEME_EQUIVALENT.has(importedName)) {
+              context.report({
+                node: specifier,
+                messageId: 'preferUseThemeNoEquivalent',
+                data: {
+                  importName: importedName,
+                  sourceModule: source,
+                },
+              });
               continue;
             }
 
