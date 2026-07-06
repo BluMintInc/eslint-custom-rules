@@ -24,6 +24,11 @@ ruleTesterTs.run('avoid-utils-directory', avoidUtilsDirectory, {
       code: 'const x = 1;',
       filename: 'node_modules/package/utils/helper.ts', // Should not flag node_modules
     },
+    {
+      code: 'const x = 1;',
+      // Issue #1270: a Windows backslash path NOT in a utils dir stays exempt.
+      filename: 'C:\\repo\\src\\util\\helper.ts',
+    },
   ],
   invalid: [
     {
@@ -40,6 +45,14 @@ ruleTesterTs.run('avoid-utils-directory', avoidUtilsDirectory, {
       code: 'const x = 1;',
       filename: 'src/Utils/helper.ts', // Case insensitive check
       errors: [formatError('src/Utils/helper.ts')],
+    },
+    {
+      code: 'const x = 1;',
+      // Issue #1270: a Windows backslash utils path must be flagged. Before
+      // separator normalization the forward-slash regex never matched, so the
+      // rule silently no-op'd on Windows. The reported path is normalized.
+      filename: 'C:\\repo\\src\\utils\\helper.ts',
+      errors: [formatError('C:/repo/src/utils/helper.ts')],
     },
   ],
 });
