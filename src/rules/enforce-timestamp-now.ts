@@ -24,8 +24,12 @@ export const enforceTimestampNow = createRule<[], MessageIds>({
   defaultOptions: [],
   create(context) {
     const sourceCode = context.getSourceCode();
-    // Only apply this rule to backend code (functions/src/)
-    const filename = context.getFilename();
+    // Only apply this rule to backend code (functions/src/). Normalize Windows
+    // backslash separators first so the forward-slash path check matches on
+    // every platform — otherwise `getFilename()` returns `C:\repo\functions\
+    // src\...` on Windows, the guard bails, and the rule silently enforces
+    // nothing (issue #1266).
+    const filename = context.getFilename().replace(/\\/g, '/');
     if (!filename.includes('functions/src/')) {
       return {};
     }
