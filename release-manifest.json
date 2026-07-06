@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.18.3",
+    "date": "2026-07-06T05:16:06.067Z",
+    "rules": [
+      {
+        "name": "avoid-utils-directory",
+        "changeType": "fix",
+        "issues": [
+          1270
+        ],
+        "summary": "normalize Windows path separators before regex match (closes #1270)"
+      },
+      {
+        "name": "enforce-identifiable-firestore-type",
+        "changeType": "fix",
+        "issues": [
+          1271
+        ],
+        "summary": "normalize Windows path separators before regex match (closes #1271)"
+      }
+    ]
+  },
+  {
     "version": "1.18.2",
     "date": "2026-07-06T05:00:28.741Z",
     "rules": [

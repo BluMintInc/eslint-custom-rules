@@ -1,3 +1,11 @@
+## [1.18.3](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.2...v1.18.3) (2026-07-06)
+
+
+### Bug Fixes
+
+* **avoid-utils-directory:** normalize Windows path separators before regex match (closes [#1270](https://github.com/BluMintInc/eslint-custom-rules/issues/1270)) ([d5f7251](https://github.com/BluMintInc/eslint-custom-rules/commit/d5f7251a14aa5148cb42557010d6499fef64dbbb)), closes [#1259](https://github.com/BluMintInc/eslint-custom-rules/issues/1259)
+* **enforce-identifiable-firestore-type:** normalize Windows path separators before regex match (closes [#1271](https://github.com/BluMintInc/eslint-custom-rules/issues/1271)) ([d42a742](https://github.com/BluMintInc/eslint-custom-rules/commit/d42a74201a5473f2fd36ac42267c05327f2f87ae)), closes [#1259](https://github.com/BluMintInc/eslint-custom-rules/issues/1259)
+
 ## [1.18.2](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.1...v1.18.2) (2026-07-06)
 
 
