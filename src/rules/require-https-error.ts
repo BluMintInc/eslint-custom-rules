@@ -20,7 +20,11 @@ export = createRule({
   },
   defaultOptions: [],
   create(context) {
-    const filename = context.getFilename();
+    // Normalize Windows backslash separators so the forward-slash path check
+    // below matches on every platform. Without this, `getFilename()` returns
+    // `C:\repo\functions\src\...` on Windows, the guard bails, and the rule
+    // silently enforces nothing (issue #1264).
+    const filename = context.getFilename().replace(/\\/g, '/');
 
     // Only apply rule to files in functions/src directory
     if (!filename.includes('functions/src')) {

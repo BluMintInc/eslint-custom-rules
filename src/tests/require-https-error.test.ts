@@ -35,6 +35,13 @@ ruleTesterTs.run('require-https-error', requireHttpsError, {
       code: 'import { auth as authDefault } from "firebase-admin";',
       filename: 'functions/src/test.ts',
     },
+    // Issue #1264: a Windows backslash filename OUTSIDE functions/src stays
+    // exempt after separator normalization — the rule only applies to
+    // functions/src, so a frontend file throwing Error is not flagged.
+    {
+      code: 'throw new Error("test error");',
+      filename: 'C:\\repo\\src\\components\\Foo.tsx',
+    },
   ],
   invalid: [
     // Should not allow throw new Error in functions/src
@@ -176,6 +183,14 @@ throw new functionsHttps.HttpsError("failed-precondition", "test error");
           ),
         ),
       ],
+    },
+    // Issue #1264: a Windows backslash filename inside functions/src must be
+    // enforced. Before separator normalization the forward-slash `functions/src`
+    // fragment never matched, so the rule silently no-op'd on Windows.
+    {
+      code: 'throw new Error("test error");',
+      filename: 'C:\\repo\\functions\\src\\util\\foo.ts',
+      errors: [expectMessage(useHttpsErrorMessage)],
     },
   ],
 });
