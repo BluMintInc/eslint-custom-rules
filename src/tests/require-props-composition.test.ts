@@ -2,6 +2,11 @@ import { ruleTesterJsx } from '../utils/ruleTester';
 import { requirePropsComposition } from '../rules/require-props-composition';
 
 const DEFAULT_FILENAME = 'src/components/MyComponent.tsx';
+// Issue #1268: getFilename() is absolute/platform-native in production; the rule
+// must resolve these against the repo-relative target globs.
+const ABSOLUTE_FILENAME = '/Users/dev/agora/src/components/MyComponent.tsx';
+const WINDOWS_FILENAME = 'C:\\repo\\src\\components\\MyComponent.tsx';
+const ABSOLUTE_OUT_OF_SCOPE = '/Users/dev/agora/src/util/HelperWidget.tsx';
 
 ruleTesterJsx.run('require-props-composition', requirePropsComposition, {
   valid: [
@@ -71,6 +76,17 @@ const SimpleButton = ({ label, onClick }) => {
 type MyHookProps = { value: string; };
 const MyComponent = ({ value }: MyHookProps) => {
   return <LoadingButton>{value}</LoadingButton>;
+};
+`,
+    },
+    // 6b. Issue #1268: an ABSOLUTE path outside the target paths stays exempt
+    // after repo-relative resolution (src/util is not src/components).
+    {
+      filename: ABSOLUTE_OUT_OF_SCOPE,
+      code: `
+type MyButtonProps = { label: string; disabled?: boolean; };
+const MyButton = ({ label, disabled }: MyButtonProps) => {
+  return <LoadingButton disabled={disabled}>{label}</LoadingButton>;
 };
 `,
     },
@@ -421,6 +437,30 @@ type ButtonProps = { label: string; };
 const Button = ({ label }: ButtonProps) => (
   <LoadingButton>{label}</LoadingButton>
 );
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 16. Issue #1268: an ABSOLUTE (POSIX) in-scope path must be enforced.
+    // Before repo-relative resolution the raw minimatch never matched an
+    // absolute path, so the rule silently no-op'd for every real filename.
+    {
+      filename: ABSOLUTE_FILENAME,
+      code: `
+type MyButtonProps = { label: string; disabled?: boolean; };
+const MyButton = ({ label, disabled }: MyButtonProps) => {
+  return <LoadingButton disabled={disabled}>{label}</LoadingButton>;
+};
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 17. Issue #1268: a Windows backslash in-scope path must be enforced too.
+    {
+      filename: WINDOWS_FILENAME,
+      code: `
+type MyButtonProps = { label: string; disabled?: boolean; };
+const MyButton = ({ label, disabled }: MyButtonProps) => {
+  return <LoadingButton disabled={disabled}>{label}</LoadingButton>;
+};
 `,
       errors: [{ messageId: 'missingPropsComposition' }],
     },
