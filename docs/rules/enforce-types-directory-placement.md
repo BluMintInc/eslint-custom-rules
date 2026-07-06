@@ -97,6 +97,13 @@ export const GRPC_CODE_MAP = { ok: 200, cancelled: 499 } as const;
 
   // Only enforce within these path globs. Files outside these paths are not checked.
   includePaths?: string[];  // default: ["src/**", "functions/src/**"]
+
+  // Module specifiers that mark a type file as frontend-coupled. A type-only
+  // file importing one of these cannot be relocated under the backend types
+  // directory (the backend must not import from `src/`), so it is exempt.
+  // Relative specifiers are resolved against the importing file before matching,
+  // so backend files importing relatively stay flagged.
+  frontendCoupledImportPatterns?: string[];  // default: ["src/components/**", "src/hooks/**"]
 }
 ```
 
