@@ -1,3 +1,15 @@
+## [1.18.2](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.1...v1.18.2) (2026-07-06)
+
+
+### Bug Fixes
+
+* **enforce-callable-types:** normalize Windows path separators before path check (closes [#1265](https://github.com/BluMintInc/eslint-custom-rules/issues/1265)) ([3c4333c](https://github.com/BluMintInc/eslint-custom-rules/commit/3c4333c1bc15c5815b934742d57127eb7c658d14))
+* **enforce-is-prefix-validators:** normalize Windows path separators before matching (closes [#1269](https://github.com/BluMintInc/eslint-custom-rules/issues/1269)) ([4f72935](https://github.com/BluMintInc/eslint-custom-rules/commit/4f729351512a8fbfb53561c5e659d7ac19b1fb20))
+* **enforce-timestamp-now:** normalize Windows path separators before path check (closes [#1266](https://github.com/BluMintInc/eslint-custom-rules/issues/1266)) ([8d165df](https://github.com/BluMintInc/eslint-custom-rules/commit/8d165df0d9651704f8b7d8dbe063b74e9f55e281))
+* **prefer-use-base62-id:** resolve absolute filenames against target path globs (closes [#1267](https://github.com/BluMintInc/eslint-custom-rules/issues/1267)) ([5450019](https://github.com/BluMintInc/eslint-custom-rules/commit/54500193841cacc9d7b17e6f9ce78dcab34bbd47)), closes [#1259](https://github.com/BluMintInc/eslint-custom-rules/issues/1259)
+* **require-https-error:** normalize Windows path separators before path check (closes [#1264](https://github.com/BluMintInc/eslint-custom-rules/issues/1264)) ([5f2184a](https://github.com/BluMintInc/eslint-custom-rules/commit/5f2184a8a8df52a5d01232b3f37ec37484d286b7))
+* **require-props-composition:** resolve absolute filenames against target path globs (closes [#1268](https://github.com/BluMintInc/eslint-custom-rules/issues/1268)) ([91b793b](https://github.com/BluMintInc/eslint-custom-rules/commit/91b793b18c7132c4b74b1a7e7d2be39b931ddcfd)), closes [#1267](https://github.com/BluMintInc/eslint-custom-rules/issues/1267) [#1259](https://github.com/BluMintInc/eslint-custom-rules/issues/1259)
+
 ## [1.18.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.0...v1.18.1) (2026-07-06)
 
 

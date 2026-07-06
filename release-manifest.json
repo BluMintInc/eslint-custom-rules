@@ -1,5 +1,59 @@
 [
   {
+    "version": "1.18.2",
+    "date": "2026-07-06T05:00:28.741Z",
+    "rules": [
+      {
+        "name": "enforce-callable-types",
+        "changeType": "fix",
+        "issues": [
+          1265
+        ],
+        "summary": "normalize Windows path separators before path check (closes #1265)"
+      },
+      {
+        "name": "enforce-is-prefix-validators",
+        "changeType": "fix",
+        "issues": [
+          1269
+        ],
+        "summary": "normalize Windows path separators before matching (closes #1269)"
+      },
+      {
+        "name": "enforce-timestamp-now",
+        "changeType": "fix",
+        "issues": [
+          1266
+        ],
+        "summary": "normalize Windows path separators before path check (closes #1266)"
+      },
+      {
+        "name": "prefer-use-base62-id",
+        "changeType": "fix",
+        "issues": [
+          1267
+        ],
+        "summary": "resolve absolute filenames against target path globs (closes #1267)"
+      },
+      {
+        "name": "require-https-error",
+        "changeType": "fix",
+        "issues": [
+          1264
+        ],
+        "summary": "normalize Windows path separators before path check (closes #1264)"
+      },
+      {
+        "name": "require-props-composition",
+        "changeType": "fix",
+        "issues": [
+          1268
+        ],
+        "summary": "resolve absolute filenames against target path globs (closes #1268)"
+      }
+    ]
+  },
+  {
     "version": "1.18.1",
     "date": "2026-07-06T03:35:53.804Z",
     "rules": [
