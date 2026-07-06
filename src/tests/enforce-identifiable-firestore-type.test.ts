@@ -17,6 +17,20 @@ ruleTesterTs.run(
         filename: 'functions/src/types/firestore/Connection/index.ts',
       },
       {
+        // Issue #1271: on a Windows backslash firestore path the rule now runs
+        // (via separator normalization) and correctly passes a valid type whose
+        // name matches its folder and extends Identifiable.
+        code: `
+        import { Identifiable } from 'functions/src/types/Identifiable';
+        export type Connection = Identifiable & {
+          userIdsConnected: string[];
+          documentPath: string;
+        };
+      `,
+        filename:
+          'C:\\repo\\functions\\src\\types\\firestore\\Connection\\index.ts',
+      },
+      {
         code: `
         import { Identifiable } from '../../Identifiable';
         import { Timestamp } from 'firebase-admin/firestore';
@@ -251,6 +265,25 @@ ruleTesterTs.run(
           {
             messageId: 'notExtendingIdentifiable',
             data: { typeName: 'Guild' },
+          },
+        ],
+      },
+      {
+        // Issue #1271: a Windows backslash firestore-types path must be enforced.
+        // Before separator normalization the forward-slash pattern never
+        // matched, so the rule silently no-op'd on Windows.
+        code: `
+        export type Connection = {
+          userIdsConnected: string[];
+          documentPath: string;
+        };
+      `,
+        filename:
+          'C:\\repo\\functions\\src\\types\\firestore\\Connection\\index.ts',
+        errors: [
+          {
+            messageId: 'notExtendingIdentifiable',
+            data: { typeName: 'Connection' },
           },
         ],
       },

@@ -25,7 +25,13 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const filename = context.getFilename();
+    // Normalize Windows backslash separators so the forward-slash pattern below
+    // matches on every platform. Without this, `getFilename()` returns
+    // `C:\repo\functions\src\types\firestore\...\index.ts` on Windows, the
+    // pattern never matches, the guard bails, and the rule silently enforces
+    // nothing (issue #1271). Forward slashes are valid separators for the
+    // path.basename/path.dirname calls below on all platforms.
+    const filename = context.getFilename().replace(/\\/g, '/');
     const firestoreTypesPattern =
       /functions\/src\/types\/firestore\/.*\/index\.ts$/;
 
