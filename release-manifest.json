@@ -1,5 +1,60 @@
 [
   {
+    "version": "1.18.1",
+    "date": "2026-07-06T03:35:53.804Z",
+    "rules": [
+      {
+        "name": "consistent-callback-naming",
+        "changeType": "fix",
+        "issues": [
+          1262
+        ],
+        "summary": "exempt value-returning accessor props (closes #1262)"
+      },
+      {
+        "name": "enforce-positive-naming",
+        "changeType": "fix",
+        "issues": [
+          1261
+        ],
+        "summary": "treat the \"disabled\" word family as valid (closes #1261)"
+      },
+      {
+        "name": "enforce-types-directory-placement",
+        "changeType": "fix",
+        "issues": [
+          1263
+        ],
+        "summary": "exempt frontend-coupled type files (closes #1263)"
+      },
+      {
+        "name": "global-const-style",
+        "changeType": "fix",
+        "issues": [
+          1257
+        ],
+        "summary": "exempt Next.js reserved exports from autofix rename (closes #1257)"
+      },
+      {
+        "name": "no-hungarian",
+        "changeType": "fix",
+        "issues": [
+          1258
+        ],
+        "summary": "don't flag words ending in an abbreviation marker (closes #1258)"
+      },
+      {
+        "name": "prefer-use-theme",
+        "changeType": "fix",
+        "issues": [
+          1259,
+          1260
+        ],
+        "summary": "stop pointing BORDER_RADIUS/CONTAINER_WIDTH at absent theme paths (closes #1260); normalize Windows path separators before path checks (closes #1259)"
+      }
+    ]
+  },
+  {
     "version": "1.18.0",
     "date": "2026-07-02T16:19:34.385Z",
     "rules": [

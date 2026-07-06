@@ -1,3 +1,16 @@
+## [1.18.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.0...v1.18.1) (2026-07-06)
+
+
+### Bug Fixes
+
+* **consistent-callback-naming:** exempt value-returning accessor props (closes [#1262](https://github.com/BluMintInc/eslint-custom-rules/issues/1262)) ([d92a1c6](https://github.com/BluMintInc/eslint-custom-rules/commit/d92a1c64320e95d6aeca967b8a14e0c381868f29)), closes [#1182](https://github.com/BluMintInc/eslint-custom-rules/issues/1182)
+* **enforce-positive-naming:** treat the "disabled" word family as valid (closes [#1261](https://github.com/BluMintInc/eslint-custom-rules/issues/1261)) ([17a8866](https://github.com/BluMintInc/eslint-custom-rules/commit/17a8866d4b12fb6dfe96c1c16d4f4e47f4c989e0)), closes [#772](https://github.com/BluMintInc/eslint-custom-rules/issues/772) [#634](https://github.com/BluMintInc/eslint-custom-rules/issues/634) [#859](https://github.com/BluMintInc/eslint-custom-rules/issues/859) [#569](https://github.com/BluMintInc/eslint-custom-rules/issues/569)
+* **enforce-types-directory-placement:** exempt frontend-coupled type files (closes [#1263](https://github.com/BluMintInc/eslint-custom-rules/issues/1263)) ([53cd837](https://github.com/BluMintInc/eslint-custom-rules/commit/53cd837ab5f4985c1d669134707ab8ac03d7a08a))
+* **global-const-style:** exempt Next.js reserved exports from autofix rename (closes [#1257](https://github.com/BluMintInc/eslint-custom-rules/issues/1257)) ([5664ba3](https://github.com/BluMintInc/eslint-custom-rules/commit/5664ba33e3f5b7db530b0f44953c78c69cda7796))
+* **no-hungarian:** don't flag words ending in an abbreviation marker (closes [#1258](https://github.com/BluMintInc/eslint-custom-rules/issues/1258)) ([fe08209](https://github.com/BluMintInc/eslint-custom-rules/commit/fe0820999e4792231deaf8eb8b4a9f7e022806a1))
+* **prefer-use-theme:** normalize Windows path separators before path checks (closes [#1259](https://github.com/BluMintInc/eslint-custom-rules/issues/1259)) ([d1cb8ff](https://github.com/BluMintInc/eslint-custom-rules/commit/d1cb8ff447269a7e5519069815c04e0661785a44))
+* **prefer-use-theme:** stop pointing BORDER_RADIUS/CONTAINER_WIDTH at absent theme paths (closes [#1260](https://github.com/BluMintInc/eslint-custom-rules/issues/1260)) ([6521d20](https://github.com/BluMintInc/eslint-custom-rules/commit/6521d20d0c90fe97a5342608851ab0d5d7fc8f43))
+
 # [1.18.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.17.3...v1.18.0) (2026-07-02)
 
 
