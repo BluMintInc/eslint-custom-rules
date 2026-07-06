@@ -22,7 +22,11 @@ export const avoidUtilsDirectory = createRule<[], MessageIds>({
   create(context) {
     return {
       Program(node) {
-        const filename = context.getFilename();
+        // Normalize Windows backslash separators so the forward-slash `utils/`
+        // regex below matches on every platform. Without this, `getFilename()`
+        // returns `C:\repo\src\utils\foo.ts` on Windows, the regex never
+        // matches, and the rule silently reports nothing (issue #1270).
+        const filename = context.getFilename().replace(/\\/g, '/');
         const relativePath = path.isAbsolute(filename)
           ? path.relative(process.cwd(), filename) || filename
           : filename;
