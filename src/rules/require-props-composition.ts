@@ -346,10 +346,22 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
     const requireAllDependencies = options?.requireAllDependencies ?? false;
 
     // Check whether the current file matches any of the targetPaths globs.
-    const filename = context.getFilename();
-    const matchesTargetPath = targetPaths.some((pattern) =>
-      minimatch(filename, pattern, { matchBase: false }),
-    );
+    // `getFilename()` returns an absolute, platform-native path, but the globs
+    // are repo-relative (`src/components/**`), so a raw minimatch never matches
+    // an absolute path — on any platform. Normalize backslashes, then match each
+    // pattern against both the full path and the repo-relative slice (from
+    // `/src/`) so absolute POSIX and Windows paths both resolve (issue #1268).
+    const filename = context.getFilename().replace(/\\/g, '/');
+    const matchesTargetPath = targetPaths.some((pattern) => {
+      if (minimatch(filename, pattern, { matchBase: false })) {
+        return true;
+      }
+      const srcIdx = filename.indexOf('/src/');
+      return (
+        srcIdx !== -1 &&
+        minimatch(filename.slice(srcIdx + 1), pattern, { matchBase: false })
+      );
+    });
     if (!matchesTargetPath) {
       return {};
     }
