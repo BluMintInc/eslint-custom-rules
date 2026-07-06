@@ -146,10 +146,17 @@ export const preferUseTheme = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const filename =
+    const rawFilename =
       context.getFilename?.() ??
       (context as { filename?: string }).filename ??
       '';
+
+    // Normalize Windows backslash separators to forward slashes so the
+    // forward-slash path fragments below (`src/components/`, `src/styles/`,
+    // `__tests__/`) match on every platform. Without this, `getFilename()`
+    // returns `C:\repo\src\components\Foo.tsx` on Windows, `isInTargetPath`
+    // never matches, and the rule silently no-ops for every file (issue #1259).
+    const filename = rawFilename.replace(/\\/g, '/');
 
     // Files that build the theme are always exempt.
     if (isInStylesDir(filename)) {

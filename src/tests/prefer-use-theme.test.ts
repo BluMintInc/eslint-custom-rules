@@ -54,6 +54,16 @@ import { PALETTE } from '../../palette';
 `,
     },
 
+    // Issue #1259: a Windows backslash path inside src\styles\ must stay exempt
+    // after separator normalization — the file builds the theme, so importing a
+    // banned constant is legitimate and must not be flagged.
+    {
+      filename: 'C:\\repo\\src\\styles\\theme.ts',
+      code: `
+import { PALETTE } from './palette';
+`,
+    },
+
     // Test file is exempt — uses raw constants to assert expected values
     {
       filename: TEST_FILE,
@@ -425,6 +435,35 @@ import * as PaletteStyles from '../../styles/palette';
       filename: COMPONENT_FILE,
       code: `
 import { PALETTE } from 'src/styles/palette';
+`,
+      errors: [{ messageId: 'preferUseTheme' }],
+    },
+
+    // Issue #1259: Windows backslash filename in a target directory. Before
+    // normalization the forward-slash `src/components/` fragment never matched a
+    // backslash path, so the rule silently no-op'd and this sailed through.
+    {
+      filename: 'C:\\repo\\src\\components\\ui\\Foo.tsx',
+      code: `
+import { BORDER_RADIUS } from 'src/styles/layout';
+`,
+      errors: [
+        {
+          messageId: 'preferUseTheme',
+          data: {
+            importName: 'BORDER_RADIUS',
+            sourceModule: 'src/styles/layout',
+            themeEquivalent: 'theme.shape.borderRadius',
+          },
+        },
+      ],
+    },
+
+    // Issue #1259: Windows backslash filename under src\hooks — also a target dir.
+    {
+      filename: 'C:\\repo\\src\\hooks\\useFoo.ts',
+      code: `
+import { PALETTE } from '../../styles/palette';
 `,
       errors: [{ messageId: 'preferUseTheme' }],
     },
