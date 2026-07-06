@@ -222,7 +222,12 @@ export const enforceIsPrefixValidators = createRule<Options, MessageIds>({
     const excludeNames = options.excludeNames ?? DEFAULT_EXCLUDE_NAMES;
     const excludePatterns = options.excludePatterns ?? DEFAULT_EXCLUDE_PATTERNS;
 
-    const filename: string = context.getFilename();
+    // Normalize Windows backslash separators to forward slashes. `getFilename()`
+    // returns backslash paths on Windows, and Minimatch treats `\` as an escape
+    // character, so the `**/validators/**` globs never match — the rule silently
+    // no-ops on Windows (issue #1269). The `**/`-anchored globs already match
+    // absolute POSIX paths, so normalization alone closes the gap.
+    const filename: string = context.getFilename().replace(/\\/g, '/');
 
     // Build matchers once per file to avoid repeated Minimatch construction.
     const targetMatchers = targetPaths.map((p) => new Minimatch(p));
