@@ -31,7 +31,11 @@ export const enforceCallableTypes = createRule<Options, MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const filename = context.getFilename();
+    // Normalize Windows backslash separators so the forward-slash `/callable/`
+    // path checks below match on every platform. Without this, `getFilename()`
+    // returns `C:\repo\...\callable\foo.f.ts` on Windows, the guard bails, and
+    // the rule silently enforces nothing (issue #1265).
+    const filename = context.getFilename().replace(/\\/g, '/');
 
     // Only apply to .f.ts files in the callable directory, but ignore scripts directory
     if (

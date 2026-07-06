@@ -88,6 +88,20 @@ ruleTester.run('enforce-callable-types', enforceCallableTypes, {
       `,
       filename: 'src/callable/scripts/example.f.ts',
     },
+    {
+      // Issue #1265: the callable/scripts exemption must still hold on a Windows
+      // backslash path after separator normalization.
+      code: `
+        import { onCall } from '../../v2/https/onCall';
+
+        export function scriptHandler(req, res) {
+          return { success: true };
+        }
+
+        export default onCall(scriptHandler);
+      `,
+      filename: 'C:\\repo\\src\\callable\\scripts\\example.f.ts',
+    },
   ],
   invalid: [
     {
@@ -194,6 +208,26 @@ ruleTester.run('enforce-callable-types', enforceCallableTypes, {
       `,
       filename: 'src/callable/myFunction.f.ts',
       errors: [unusedResponseError],
+    },
+    {
+      // Issue #1265: a Windows backslash callable filename must be enforced.
+      // Before separator normalization the forward-slash `/callable/` fragment
+      // never matched, so the rule silently no-op'd on Windows.
+      code: `
+        import { onCall } from '../../v2/https/onCall';
+
+        export type Response = {
+          success: boolean;
+        };
+
+        const myCallableFunction = async () => {
+          return { success: true };
+        };
+
+        export default onCall(myCallableFunction);
+      `,
+      filename: 'C:\\repo\\src\\callable\\myFunction.f.ts',
+      errors: [missingPropsError, unusedResponseError],
     },
   ],
 });
