@@ -209,6 +209,39 @@ export type LegacyConfig = { version: number };
 var config = { version: 1 };
 `,
       },
+
+      // 21. Frontend-coupled type file (#1263): imports a React component prop
+      // type from src/components, so it cannot be relocated under
+      // functions/src/types/** (backend tsconfig would then compile a frontend
+      // import). Must NOT be flagged.
+      {
+        filename: '/project/src/hooks/guard/guardDialogTypes.ts',
+        code: `
+import type { DialogCenteredProps } from 'src/components/DialogCentered';
+export type GuardDialogProps = Readonly<
+  Pick<DialogCenteredProps, 'title' | 'navigation'> & { closeOnly?: boolean }
+>;
+`,
+      },
+
+      // 22. Frontend-coupled via a RELATIVE import that resolves under
+      // src/components — same rationale, must NOT be flagged.
+      {
+        filename: '/project/src/components/dialog/dialogTypes.ts',
+        code: `
+import type { DialogHeaderProps } from './DialogHeader';
+export type CenteredHeaderProps = Readonly<DialogHeaderProps & { compact?: boolean }>;
+`,
+      },
+
+      // 23. Frontend-coupled via a pure type re-export (`export type { ... } from
+      // 'src/hooks/...'`) — the export source is frontend-only, so exempt.
+      {
+        filename: '/project/src/components/panel/panelTypes.ts',
+        code: `
+export type { UseGuardResult } from 'src/hooks/guard/useGuard';
+`,
+      },
     ],
 
     // ─── Invalid Cases ──────────────────────────────────────────────────────
@@ -396,6 +429,31 @@ export type EditableWrapperProps<TValue> = Readonly<{
   ViewComponent: ComponentType<ViewComponentPropsBase<TValue>>;
   lock?: string;
 }>;
+`,
+        errors: [{ messageId: errorMessageId }],
+      },
+
+      // 16. Over-broadening guard (#1263): a src/ type-only file importing ONLY
+      // backend-safe / isomorphic modules (functions/src/types/**) has a valid
+      // backend target and must STILL be flagged — the frontend-coupled
+      // exemption must not leak to backend-safe imports.
+      {
+        filename: '/project/src/hooks/guard/guardResultTypes.ts',
+        code: `
+import type { AllSignInMethod } from 'functions/src/types/firestore/User/UserPrivate';
+export type GuardResult = Readonly<{ method: AllSignInMethod }>;
+`,
+        errors: [{ messageId: errorMessageId }],
+      },
+
+      // 17. Over-broadening guard (#1263): a RELATIVE import from a backend file
+      // resolves under functions/src/** (not a frontend path), so it must not be
+      // exempted — the file has a valid backend target and stays flagged.
+      {
+        filename: '/project/functions/src/util/session/sessionTypes.ts',
+        code: `
+import type { SessionRecord } from './records';
+export type SessionSummary = Readonly<{ record: SessionRecord }>;
 `,
         errors: [{ messageId: errorMessageId }],
       },

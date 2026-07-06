@@ -10,10 +10,24 @@ type Options = [
     typesDirectory?: string;
     excludePatterns?: string[];
     includePaths?: string[];
+    frontendCoupledImportPatterns?: string[];
   },
 ];
 
 const DEFAULT_TYPES_DIRECTORY = 'functions/src/types';
+
+// A type-only file that imports one of these frontend-only module families is
+// frontend-scoped: it cannot be relocated under `functions/src/types/**`, since
+// that directory is compiled by the backend tsconfig and the backend must not
+// import from `src/` (frontend). Such files have no valid backend target and
+// legitimately live under `src/`, so the rule exempts them. Matched against
+// absolute specifiers directly and against relative specifiers after resolving
+// them relative to the importing file (so backend files importing relatively —
+// which resolve to `functions/src/**` — stay flagged).
+const DEFAULT_FRONTEND_COUPLED_IMPORT_PATTERNS = [
+  'src/components/**',
+  'src/hooks/**',
+];
 
 const DEFAULT_EXCLUDE_PATTERNS = [
   '**/*.d.ts',
@@ -79,6 +93,67 @@ function suggestTargetPath(
   }
 
   return null;
+}
+
+/**
+ * Extracts the repo-relative portion of a path starting at `functions/src/`
+ * (backend) or `src/` (frontend), so absolute filenames and resolved relative
+ * specifiers match the same globs the rest of the rule uses. Backend is checked
+ * first because a backend path also contains `src/`.
+ */
+function toRepoRelative(filePath: string): string {
+  const normalized = normalizePath(filePath);
+  const match = normalized.match(/(?:^|\/)(functions\/src\/.*|src\/.*)$/);
+  return match ? match[1] : normalized;
+}
+
+/**
+ * Resolves an import/export module specifier to a repo-relative path for glob
+ * matching. Relative specifiers are resolved against the importing file's
+ * directory (so `./DialogHeader` from `src/components/dialog/x.ts` becomes
+ * `src/components/dialog/DialogHeader`); bare/absolute specifiers are used as-is.
+ */
+function resolveSpecifier(specifier: string, fromFile: string): string {
+  if (specifier.startsWith('.')) {
+    const dir = path.posix.dirname(normalizePath(fromFile));
+    return toRepoRelative(path.posix.join(dir, specifier));
+  }
+  return toRepoRelative(specifier);
+}
+
+/**
+ * Returns the module specifier of a top-level import/export statement that
+ * carries a `from '...'` source, or null for statements that don't.
+ */
+function importSourceOf(node: TSESTree.Statement): string | null {
+  if (
+    node.type === AST_NODE_TYPES.ImportDeclaration ||
+    node.type === AST_NODE_TYPES.ExportNamedDeclaration ||
+    node.type === AST_NODE_TYPES.ExportAllDeclaration
+  ) {
+    const source = node.source;
+    return source && typeof source.value === 'string' ? source.value : null;
+  }
+  return null;
+}
+
+/**
+ * Returns true when the file imports at least one frontend-coupled module,
+ * meaning it cannot be relocated under the backend types directory.
+ */
+function isFrontendCoupled(
+  body: TSESTree.Statement[],
+  fromFile: string,
+  matchers: Minimatch[],
+): boolean {
+  return body.some((stmt) => {
+    const specifier = importSourceOf(stmt);
+    if (specifier === null) {
+      return false;
+    }
+    const resolved = resolveSpecifier(specifier, fromFile);
+    return matchers.some((mm) => mm.match(resolved));
+  });
 }
 
 /**
@@ -231,6 +306,11 @@ export const enforceTypesDirectoryPlacement = createRule<Options, MessageIds>({
             items: { type: 'string' },
             default: DEFAULT_INCLUDE_PATHS,
           },
+          frontendCoupledImportPatterns: {
+            type: 'array',
+            items: { type: 'string' },
+            default: DEFAULT_FRONTEND_COUPLED_IMPORT_PATTERNS,
+          },
         },
         additionalProperties: false,
       },
@@ -246,12 +326,16 @@ export const enforceTypesDirectoryPlacement = createRule<Options, MessageIds>({
       typesDirectory: DEFAULT_TYPES_DIRECTORY,
       excludePatterns: DEFAULT_EXCLUDE_PATTERNS,
       includePaths: DEFAULT_INCLUDE_PATHS,
+      frontendCoupledImportPatterns: DEFAULT_FRONTEND_COUPLED_IMPORT_PATTERNS,
     },
   ],
   create(context, [options]) {
     const typesDirectory = options.typesDirectory ?? DEFAULT_TYPES_DIRECTORY;
     const excludePatterns = options.excludePatterns ?? DEFAULT_EXCLUDE_PATTERNS;
     const includePaths = options.includePaths ?? DEFAULT_INCLUDE_PATHS;
+    const frontendCoupledImportPatterns =
+      options.frontendCoupledImportPatterns ??
+      DEFAULT_FRONTEND_COUPLED_IMPORT_PATTERNS;
 
     const filename = context.getFilename();
 
@@ -306,9 +390,23 @@ export const enforceTypesDirectoryPlacement = createRule<Options, MessageIds>({
       }
     }
 
+    const frontendCoupledMatchers = frontendCoupledImportPatterns.map(
+      (pattern) => new Minimatch(pattern, { dot: true }),
+    );
+
     return {
       Program(programNode: TSESTree.Program) {
-        if (!isTypeOnlyFile(programNode.body as TSESTree.Statement[])) {
+        const body = programNode.body as TSESTree.Statement[];
+
+        if (!isTypeOnlyFile(body)) {
+          return;
+        }
+
+        // A frontend-coupled type file has no valid target under the backend
+        // types directory, so it must not be flagged (issue #1263).
+        if (
+          isFrontendCoupled(body, normalizedFilename, frontendCoupledMatchers)
+        ) {
           return;
         }
 
