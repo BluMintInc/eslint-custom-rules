@@ -273,47 +273,101 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         const Parent = () => <Child toggle={fn} />;
       `,
     },
+    // Bug #1262: an accessor / prop-deriver — a pure (non-union) function-typed
+    // prop whose return type is a consumed value (a config object) rather than a
+    // discarded void. Not an event handler, so the "on" prefix must not be
+    // required. Cf. MUI getRowId/valueGetter, Formik validate.
+    {
+      code: `
+        type OverlayProps = {
+          elementDeleteOverlayProps?: (index: number) => { readonly sx: object };
+        };
+        const Overlay = (props: OverlayProps) => {
+          return null;
+        };
+        const deriveHiddenOverlayProps = () => {
+          return { sx: { display: 'flex' } } as const;
+        };
+        const Wrapper = () => {
+          return <Overlay elementDeleteOverlayProps={deriveHiddenOverlayProps} />;
+        };
+      `,
+    },
+    // Bug #1262: a string-returning accessor (getRowId-style) is consumed by the
+    // component, not invoked as an event handler, so it is exempt too.
+    {
+      code: `
+        type ListProps = {
+          getRowId?: (row: { id: string }) => string;
+        };
+        const List = (props: ListProps) => {
+          return null;
+        };
+        const resolveRowId = (row: { id: string }) => {
+          return row.id;
+        };
+        const Wrapper = () => {
+          return <List getRowId={resolveRowId} />;
+        };
+      `,
+    },
+    // Bug #1262: a getter returning an HTMLElement is an accessor whose return is
+    // consumed — neither a React render prop (not JSX/ReactNode) nor an event
+    // handler — so it must not require the "on" prefix.
+    {
+      code: `
+        interface Props {
+          getElement: () => HTMLElement;
+        }
+        const Example = ({ getElement }: Props) => (
+          <div element={getElement} />
+        );
+      `,
+    },
   ],
   invalid: [
     // Bug #1182 control: an exclusively-function prop on a typed component must
     // still be flagged — the union exemption must not suppress real callbacks.
+    // The signature returns void (a genuine event handler), so the #1262
+    // accessor exemption does not apply.
     {
       code: `
         type ChildProps = {
-          validate: (value: string) => boolean;
+          validate: (value: string) => void;
         };
         const Child = (props: ChildProps) => <div />;
-        const fn = (v: string) => true;
+        const fn = (v: string) => {};
         const Parent = () => <Child validate={fn} />;
       `,
       errors: [{ messageId: 'callbackPropPrefix' }],
       output: `
         type ChildProps = {
-          validate: (value: string) => boolean;
+          validate: (value: string) => void;
         };
         const Child = (props: ChildProps) => <div />;
-        const fn = (v: string) => true;
+        const fn = (v: string) => {};
         const Parent = () => <Child onValidate={fn} />;
       `,
     },
     // Bug #1182 control: an optional pure callback (function | undefined) is not
-    // a mixed union, so it must still be flagged.
+    // a mixed union, so it must still be flagged. Void return => event handler,
+    // not a #1262 accessor.
     {
       code: `
         type ChildProps = {
-          submit?: (value: string) => boolean;
+          submit?: (value: string) => void;
         };
         const Child = (props: ChildProps) => <div />;
-        const fn = (v: string) => true;
+        const fn = (v: string) => {};
         const Parent = () => <Child submit={fn} />;
       `,
       errors: [{ messageId: 'callbackPropPrefix' }],
       output: `
         type ChildProps = {
-          submit?: (value: string) => boolean;
+          submit?: (value: string) => void;
         };
         const Child = (props: ChildProps) => <div />;
-        const fn = (v: string) => true;
+        const fn = (v: string) => {};
         const Parent = () => <Child onSubmit={fn} />;
       `,
     },
@@ -339,52 +393,35 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
       `,
     },
     // Bug #1182 control: a union whose members are all functions has no
-    // non-function member, so it must still be flagged.
+    // non-function member, so it must still be flagged. Every member returns
+    // void => event handler, so the #1262 accessor exemption does not apply.
     {
       code: `
         type ChildProps = {
-          validate: ((v: string) => boolean) | ((v: number) => boolean);
+          validate: ((v: string) => void) | ((v: number) => void);
         };
         const Child = (props: ChildProps) => <div />;
-        const fn = (v: string) => true;
+        const fn = (v: string) => {};
         const Parent = () => <Child validate={fn} />;
       `,
       errors: [{ messageId: 'callbackPropPrefix' }],
       output: `
         type ChildProps = {
-          validate: ((v: string) => boolean) | ((v: number) => boolean);
+          validate: ((v: string) => void) | ((v: number) => void);
         };
         const Child = (props: ChildProps) => <div />;
-        const fn = (v: string) => true;
+        const fn = (v: string) => {};
         const Parent = () => <Child onValidate={fn} />;
       `,
     },
-    // Function returning HTMLElement should be flagged (not a React render prop)
-    {
-      code: `
-        interface Props {
-          getElement: () => HTMLElement;
-        }
-        const Example = ({ getElement }: Props) => (
-          <div element={getElement} />
-        );
-      `,
-      errors: [{ messageId: 'callbackPropPrefix' }],
-      output: `
-        interface Props {
-          getElement: () => HTMLElement;
-        }
-        const Example = ({ getElement }: Props) => (
-          <div onElement={getElement} />
-        );
-      `,
-    },
-    // Function prop without 'on' prefix
+    // Function prop without 'on' prefix. The flagged prop returns void (a
+    // genuine handler); the #1262 accessor exemption applies only to
+    // value-returning function props.
     {
       code: `
         interface Props {
           submitForm: (data: FormData) => Promise<void>;
-          validateInput: (value: string) => boolean;
+          validateInput: (value: string) => void;
         }
 
         const Form = ({ submitForm, validateInput }: Props) => (
@@ -398,7 +435,7 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
       output: `
         interface Props {
           submitForm: (data: FormData) => Promise<void>;
-          validateInput: (value: string) => boolean;
+          validateInput: (value: string) => void;
         }
 
         const Form = ({ submitForm, validateInput }: Props) => (
@@ -464,7 +501,10 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         }
       `,
     },
-    // Multiple issues in one component
+    // Multiple issues in one component. The "handle" functions are still
+    // renamed, but the "validateInput" prop is exempt: its value returns a
+    // boolean (a consumed value), making it a #1262 accessor rather than an
+    // event handler, so it keeps its name.
     {
       code: `
         interface Props {
@@ -492,7 +532,6 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
       errors: [
         { messageId: 'callbackFunctionPrefix' },
         { messageId: 'callbackFunctionPrefix' },
-        { messageId: 'callbackPropPrefix' },
       ],
       output: `
         interface Props {
@@ -512,7 +551,7 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
 
           return (
             <form onSubmit={formSubmit}>
-              <input onValidateInput={handleValidation} />
+              <input validateInput={handleValidation} />
             </form>
           );
         };

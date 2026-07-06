@@ -168,6 +168,56 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
       });
     }
 
+    // An event-handler callback's return value is discarded: `void`, `undefined`,
+    // `never`, or a `Promise` thereof. Anything else is a value the caller
+    // consumes, which marks the prop as an accessor rather than a handler.
+    function returnsVoidLike(type: ts.Type): boolean {
+      if (type.isUnion()) {
+        return type.types.every((member) => returnsVoidLike(member));
+      }
+      if (
+        type.flags &
+        (ts.TypeFlags.Void | ts.TypeFlags.Undefined | ts.TypeFlags.Never)
+      ) {
+        return true;
+      }
+      // `Promise<void>` (async handlers) unwraps to its resolved type.
+      if (type.getSymbol()?.getName() === 'Promise') {
+        const typeArgs = checker.getTypeArguments(type as ts.TypeReference);
+        if (typeArgs.length === 1) {
+          return returnsVoidLike(typeArgs[0]);
+        }
+      }
+      return false;
+    }
+
+    // A function-typed prop is an accessor (getRowId, valueGetter, filterOptions,
+    // a per-item props deriver, ...) rather than an event handler when its call
+    // signature returns a value the component consumes instead of a discarded
+    // `void`. The `on` prefix signals event handlers, so accessors are exempt.
+    // The prop's declared (contextual) type is authoritative because the passed
+    // value's inferred return type can be wider than the prop contract.
+    function isValueAccessor(node: TSESTree.Node): boolean {
+      const tsNode = parserServices!.esTreeNodeToTSNodeMap.get(node);
+      const contextualType = checker.getContextualType(tsNode as ts.Expression);
+      const type = contextualType ?? checker.getTypeAtLocation(tsNode);
+
+      const members = type.isUnion() ? type.types : [type];
+      const signatures = members.flatMap((member) =>
+        member.getCallSignatures(),
+      );
+      if (signatures.length === 0) {
+        return false;
+      }
+
+      // Exempt only when every call signature returns a consumed value; a mix
+      // that includes a void-returning signature keeps the handler semantics.
+      return signatures.every(
+        (signature) =>
+          !returnsVoidLike(checker.getReturnTypeOfSignature(signature)),
+      );
+    }
+
     return {
       // Check JSX attributes for callback props
       JSXAttribute(node: TSESTree.JSXAttribute) {
@@ -226,6 +276,7 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
             !propName.startsWith('on') &&
             !propName.startsWith('render') &&
             !acceptsNonFunctionValue(node.value.expression) &&
+            !isValueAccessor(node.value.expression) &&
             !isRenderFunction(node.value.expression) &&
             !isReactComponentType(node.value.expression)
           ) {
