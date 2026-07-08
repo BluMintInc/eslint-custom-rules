@@ -19,6 +19,27 @@ describe('enforce-singular-type-names message', () => {
 
 ruleTesterTs.run('enforce-singular-type-names', enforceSingularTypeNames, {
   valid: [
+    // Container-type aliases: a plural name correctly models the collection.
+    // Bare array alias
+    'type Foos = number[];',
+    // Bare tuple alias
+    'type Bars = [number, string];',
+    // ReadonlyArray<T> generic reference
+    'type Bazzes = ReadonlyArray<number>;',
+    // Array<T> generic reference
+    'type Widgets = Array<string>;',
+    // readonly type-operator over an array
+    'type Corges = readonly number[];',
+    // Readonly<T[]> utility wrapper — the primary real-world case
+    'type Quuxes = Readonly<number[]>;',
+    // Readonly<> over an indexed-access array (the agora repro)
+    `const GLOBAL_STRATEGIES = [1, 2, 3] as const;
+     type GlobalStrategies = Readonly<(typeof GLOBAL_STRATEGIES)[number][]>;`,
+    // Readonly<> over a tuple spread (generic)
+    'type CombinedStrategies<T extends unknown[]> = Readonly<[...T, ...number[]]>;',
+    // readonly over a tuple
+    'type Coords = readonly [number, number];',
+
     // Singular type alias
     'type User = { id: number; name: string; };',
 
@@ -246,6 +267,20 @@ ruleTesterTs.run('enforce-singular-type-names', enforceSingularTypeNames, {
     {
       code: 'type Users = { id: number; name: string; };',
       errors: [error('Users', 'User')],
+    },
+
+    // Regression guard: Readonly<> over a NON-container (object) is not a
+    // collection — the identity wrapper must not blanket-exempt the name.
+    {
+      code: 'type Users = Readonly<{ id: string }>;',
+      errors: [error('Users', 'User')],
+    },
+
+    // Regression guard: a non-array generic reference (Record) is not a
+    // container and stays flagged.
+    {
+      code: 'type Records = Record<string, number>;',
+      errors: [error('Records', 'Record')],
     },
 
     // Plural interface
