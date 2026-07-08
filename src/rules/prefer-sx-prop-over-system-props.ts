@@ -149,6 +149,22 @@ const DEFAULT_MUI_COMPONENTS = new Set([
 ]);
 
 /**
+ * Components whose public prop API defines `color` as a closed semantic enum
+ * (a palette / variant selector like `'primary' | 'secondary' | 'error' | …`),
+ * not a CSS-forwarded system style prop. On these, `color` feeds
+ * `ownerState.color`, selecting theme variants and MUI's internal
+ * `.Mui*-color*` class selectors — moving it into `sx` both drops the variant
+ * selection and produces an invalid CSS `color` value. So `color` here is a
+ * first-class component prop, never a deprecated system prop.
+ */
+const COMPONENT_COLOR_IS_SEMANTIC = new Set([
+  'Button',
+  'IconButton',
+  'Chip',
+  'Badge',
+]);
+
+/**
  * Props that must never be moved to `sx` because they are genuine component
  * API props, not MUI system styling shorthands. `direction` and `spacing` are
  * the most critical — they control Stack's layout via MUI internals.
@@ -288,7 +304,13 @@ export const preferSxPropOverSystemProps = createRule<Options, MessageIds>({
       return false;
     }
 
-    function isSystemProp(name: string): boolean {
+    function isSystemProp(name: string, componentName: string): boolean {
+      // `color` is a semantic enum prop (not a CSS system prop) on components
+      // like Button/IconButton/Chip/Badge — exempt it there so the autofix
+      // never rewrites a variant selector into an invalid CSS color.
+      if (name === 'color' && COMPONENT_COLOR_IS_SEMANTIC.has(componentName)) {
+        return false;
+      }
       return MUI_SYSTEM_PROPS.has(name) && !isAllowedProp(name);
     }
 
@@ -310,7 +332,7 @@ export const preferSxPropOverSystemProps = createRule<Options, MessageIds>({
 
           if (name === 'sx') {
             sxAttr = attr;
-          } else if (isSystemProp(name)) {
+          } else if (isSystemProp(name, componentName)) {
             systemPropAttrs.push(attr);
           }
         }
