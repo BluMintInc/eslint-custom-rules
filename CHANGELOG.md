@@ -1,3 +1,13 @@
+## [1.18.4](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.3...v1.18.4) (2026-07-08)
+
+
+### Bug Fixes
+
+* **enforce-singular-type-names:** exempt container (array/tuple) type aliases (closes [#1275](https://github.com/BluMintInc/eslint-custom-rules/issues/1275)) ([d357e2f](https://github.com/BluMintInc/eslint-custom-rules/commit/d357e2f372b6c136a020945e8a28f8ea34c04adc))
+* **prefer-sx-prop-over-system-props:** exempt semantic `color` on Button/IconButton/Chip/Badge (closes [#1273](https://github.com/BluMintInc/eslint-custom-rules/issues/1273)) ([531c2ef](https://github.com/BluMintInc/eslint-custom-rules/commit/531c2ef8c316a3b45e4d2b43c3534fe9c8780999))
+* **react-memoize-literals:** follow sx/style exemption through variable-mediated values (closes [#1274](https://github.com/BluMintInc/eslint-custom-rules/issues/1274)) ([54e02c2](https://github.com/BluMintInc/eslint-custom-rules/commit/54e02c28a8dd9b050d105bb6a74f085e4680ff90)), closes [#1169](https://github.com/BluMintInc/eslint-custom-rules/issues/1169)
+* **require-server-timestamp-for-firestore-dates:** exempt local render seeds passed to React state setters (closes [#1272](https://github.com/BluMintInc/eslint-custom-rules/issues/1272)) ([c7a2af0](https://github.com/BluMintInc/eslint-custom-rules/commit/c7a2af07f4d507c43760d2639e60f68256365799))
+
 ## [1.18.3](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.2...v1.18.3) (2026-07-06)
 
 

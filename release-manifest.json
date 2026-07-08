@@ -1,5 +1,43 @@
 [
   {
+    "version": "1.18.4",
+    "date": "2026-07-08T07:14:09.487Z",
+    "rules": [
+      {
+        "name": "enforce-singular-type-names",
+        "changeType": "fix",
+        "issues": [
+          1275
+        ],
+        "summary": "exempt container (array/tuple) type aliases (closes #1275)"
+      },
+      {
+        "name": "prefer-sx-prop-over-system-props",
+        "changeType": "fix",
+        "issues": [
+          1273
+        ],
+        "summary": "exempt semantic `color` on Button/IconButton/Chip/Badge (closes #1273)"
+      },
+      {
+        "name": "react-memoize-literals",
+        "changeType": "fix",
+        "issues": [
+          1274
+        ],
+        "summary": "follow sx/style exemption through variable-mediated values (closes #1274)"
+      },
+      {
+        "name": "require-server-timestamp-for-firestore-dates",
+        "changeType": "fix",
+        "issues": [
+          1272
+        ],
+        "summary": "exempt local render seeds passed to React state setters (closes #1272)"
+      }
+    ]
+  },
+  {
     "version": "1.18.3",
     "date": "2026-07-06T05:16:06.067Z",
     "rules": [
