@@ -66,6 +66,18 @@ ruleTesterJsx.run(
         code: `<Typography color="primary" />`,
         options: [{ components: ['Typography'], allowedProps: ['color'] }],
       },
+
+      // `color` on components whose prop API defines it as a semantic enum
+      // (palette/variant selector) — NOT a CSS system prop. Must not be moved.
+      `<Button color="warning" variant="contained" sx={{ flexShrink: 0 }} />`,
+      `<Button color="error" variant="text" />`, // no sx present — still valid
+      `<IconButton color="primary" />`,
+      `<Chip color="secondary" />`,
+      `<Badge color="success" />`,
+
+      // Semantic `color` alongside other first-class props (variant, onClick):
+      // nothing to move into sx.
+      `<Chip color="secondary" variant="outlined" onClick={() => {}} />`,
     ],
 
     invalid: [
@@ -301,6 +313,23 @@ function B() { return <Box sx={{ mt: 2, display: 'flex' }} />; }
         code: `<Box color="#ff0000" />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'color' } }],
         output: `<Box sx={{ color: '#ff0000' }} />`,
+      },
+
+      // --- Regression guard: `color` on a true system/layout component IS a
+      // CSS passthrough and must still be flagged + merged into sx. The fix
+      // must NOT drop `color` from MUI_SYSTEM_PROPS globally. ---
+      {
+        code: `<Box color="#ff0000" sx={{ p: 2 }} />`,
+        errors: [{ messageId: 'preferSxProp', data: { prop: 'color' } }],
+        output: `<Box sx={{ color: '#ff0000', p: 2 }} />`,
+      },
+
+      // --- Semantic `color` is exempt on Button, but a genuine system prop on
+      // the SAME element (mt) still moves into sx; `color` is left untouched. ---
+      {
+        code: `<Button color="warning" mt={2} />`,
+        errors: [{ messageId: 'preferSxProp', data: { prop: 'mt' } }],
+        output: `<Button color="warning" sx={{ mt: 2 }} />`,
       },
     ],
   },
