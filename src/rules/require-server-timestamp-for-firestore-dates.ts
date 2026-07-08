@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { Minimatch } from 'minimatch';
 import { createRule } from '../utils/createRule';
 
@@ -194,6 +194,110 @@ function reportNewDatesInObject(
   }
 }
 
+// Bare Firestore write methods invoked on a document reference / DocSetter,
+// e.g. `docRef.set(payload)`, `batch.update(payload)`, `collection.add(payload)`.
+const FIRESTORE_WRITE_METHOD_NAMES = new Set(['set', 'update', 'add']);
+// Standalone Firestore write functions. These are `set`-prefixed but are writes,
+// not React state setters, so they must NOT be mistaken for a render-seed sink.
+const FIRESTORE_WRITE_FN_NAMES = new Set([
+  'setDoc',
+  'updateDoc',
+  'addDoc',
+  'setDocument',
+]);
+
+/**
+ * Walks up from an identifier reference through the value positions of object /
+ * array literals, spreads and casts to find the CallExpression it is an
+ * argument to. Returns that call, or null if the identifier does not flow into
+ * a call argument (e.g. it is the callee, or sits in some other position).
+ */
+function findEnclosingCallArgument(
+  idNode: TSESTree.Node,
+): TSESTree.CallExpression | null {
+  let node: TSESTree.Node = idNode;
+  let parent = node.parent as TSESTree.Node | undefined;
+  while (parent) {
+    if (parent.type === AST_NODE_TYPES.CallExpression) {
+      return parent.arguments.includes(node as TSESTree.CallExpressionArgument)
+        ? parent
+        : null;
+    }
+    const canAscend =
+      (parent.type === AST_NODE_TYPES.Property && parent.value === node) ||
+      parent.type === AST_NODE_TYPES.ObjectExpression ||
+      parent.type === AST_NODE_TYPES.ArrayExpression ||
+      parent.type === AST_NODE_TYPES.SpreadElement ||
+      parent.type === AST_NODE_TYPES.TSAsExpression ||
+      parent.type ===
+        (AST_NODE_TYPES as { TSSatisfiesExpression?: string })
+          .TSSatisfiesExpression ||
+      parent.type === AST_NODE_TYPES.TSNonNullExpression;
+    if (!canAscend) return null;
+    node = parent;
+    parent = parent.parent as TSESTree.Node | undefined;
+  }
+  return null;
+}
+
+/**
+ * True when the call is a Firestore write: a `.set()`/`.update()`/`.add()`
+ * member call, or a standalone `setDoc`/`updateDoc`/`addDoc`/`setDocument`.
+ */
+function isFirestoreWriteCall(call: TSESTree.CallExpression): boolean {
+  const callee = call.callee;
+  if (
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    !callee.computed &&
+    callee.property.type === AST_NODE_TYPES.Identifier &&
+    FIRESTORE_WRITE_METHOD_NAMES.has(callee.property.name)
+  ) {
+    return true;
+  }
+  return (
+    callee.type === AST_NODE_TYPES.Identifier &&
+    FIRESTORE_WRITE_FN_NAMES.has(callee.name)
+  );
+}
+
+/**
+ * True when the call hands its argument to a React state sink: a `setXxx`
+ * setter (the `useState` convention) or `useState` itself. Firestore write
+ * functions are excluded even though some share the `set` prefix.
+ */
+function isStateSetterCall(call: TSESTree.CallExpression): boolean {
+  const callee = call.callee;
+  if (callee.type !== AST_NODE_TYPES.Identifier) return false;
+  if (callee.name === 'useState') return true;
+  return (
+    /^set[A-Z]/.test(callee.name) && !FIRESTORE_WRITE_FN_NAMES.has(callee.name)
+  );
+}
+
+/**
+ * A local render seed is a variable that is handed to a React state setter (or
+ * useState) and never flows into a Firestore write. Such objects are annotated
+ * with a Firestore document type only so React state can be seeded with a
+ * document-shaped value; the client clock is correct for an optimistic render,
+ * and the authoritative timestamp arrives when the Firestore subscription
+ * replaces the seed. Being *typed* as a Firestore document is not evidence that
+ * the object is *written* to Firestore.
+ */
+function isLocalRenderSeedVariable(variable: TSESLint.Scope.Variable): boolean {
+  let flowsToStateSetter = false;
+  let flowsToWrite = false;
+  for (const ref of variable.references) {
+    const call = findEnclosingCallArgument(ref.identifier);
+    if (!call) continue;
+    if (isFirestoreWriteCall(call)) {
+      flowsToWrite = true;
+    } else if (isStateSetterCall(call)) {
+      flowsToStateSetter = true;
+    }
+  }
+  return flowsToStateSetter && !flowsToWrite;
+}
+
 export const requireServerTimestampForFirestoreDates = createRule<
   Options,
   MessageIds
@@ -298,6 +402,13 @@ export const requireServerTimestampForFirestoreDates = createRule<
           node.init &&
           node.init.type === AST_NODE_TYPES.ObjectExpression
         ) {
+          // Exempt local render seeds handed to React state, never written to
+          // Firestore — being typed as a Firestore doc is not a write.
+          if (
+            context.getDeclaredVariables(node).some(isLocalRenderSeedVariable)
+          ) {
+            return;
+          }
           reportNewDatesInObject(node.init, context);
         }
       },
@@ -315,6 +426,18 @@ export const requireServerTimestampForFirestoreDates = createRule<
           )
         )
           return;
+
+        // Exempt `const seed = { ... } as FirestoreType` when `seed` is a local
+        // render seed handed to React state and never written to Firestore.
+        const parent = node.parent as TSESTree.Node | undefined;
+        if (
+          parent &&
+          parent.type === AST_NODE_TYPES.VariableDeclarator &&
+          parent.init === node &&
+          context.getDeclaredVariables(parent).some(isLocalRenderSeedVariable)
+        ) {
+          return;
+        }
 
         const inner = unwrapCast(node.expression);
         if (inner.type === AST_NODE_TYPES.ObjectExpression) {
