@@ -921,6 +921,48 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
       return false;
     }
 
+    /**
+     * True when the literal is a variable initializer whose every usage resolves
+     * to a style JSX attribute value (sx/style). This extends the inline
+     * `isStyleJSXAttributeValue` exemption across a variable: extracting an
+     * `sx`/`style` object to a local for readability is common, and the library
+     * consumes it by merging/normalizing on each render, not by reference — so
+     * memoization adds no stability benefit whether the object is inline or
+     * lifted one line above the JSX.
+     *
+     * The exemption holds only if *every* reference is a style value. If any
+     * usage flows through a call, spread, or non-style prop, that consumer can
+     * observe the reference, so the literal stays reported — the
+     * variable-mediated analogue of the inline `sx={makeSx({ … })}` guard.
+     */
+    function isStyleVariableInitializer(node: TSESTree.Node): boolean {
+      const parent = node.parent;
+      if (
+        !parent ||
+        parent.type !== AST_NODE_TYPES.VariableDeclarator ||
+        parent.init !== node
+      ) {
+        return false;
+      }
+
+      const variables = ASTHelpers.getDeclaredVariables(
+        context as unknown as TSESLint.RuleContext<string, readonly unknown[]>,
+        parent,
+      );
+      if (variables.length === 0) {
+        return false;
+      }
+
+      const usages = variables[0].references.filter((ref) => !ref.init);
+      // No usages (dead code): can't prove the literal only feeds a style
+      // attribute, so leave it reported (mirrors isVariableAlwaysThrown).
+      if (usages.length === 0) {
+        return false;
+      }
+
+      return usages.every((ref) => isStyleJSXAttributeValue(ref.identifier));
+    }
+
     function reportLiteral(node: TSESTree.Node) {
       const descriptor = getLiteralDescriptor(node);
       if (!descriptor) return;
@@ -941,6 +983,13 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
       // consumed by the library without reference equality checks, so
       // memoization adds no stability benefit.
       if (isStyleJSXAttributeValue(node)) {
+        return;
+      }
+
+      // Same rationale, followed across a variable: a literal assigned to a
+      // local whose every usage is a style JSX attribute value gains nothing
+      // from memoization.
+      if (isStyleVariableInitializer(node)) {
         return;
       }
 
