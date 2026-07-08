@@ -133,6 +133,99 @@ const x: TokenMetadata<'offchain', Date> = {
 `,
         filename: 'src/hooks/useExample.ts',
       },
+      // Local client-side render seed: typed as a Firestore document type only
+      // so React state can paint before the Firestore subscription delivers the
+      // real doc. It is handed to a state setter, never written to Firestore.
+      // The sibling write above correctly uses serverTimestamp().
+      {
+        filename: 'src/hooks/wallet/useDraftOffchainTokenDocPath.ts',
+        code: `
+          import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+
+          declare function serverTimestamp(): Date;
+          declare function setDraftInfo(info: { initialData: TokenMetadata<'offchain', Date> }): void;
+
+          export function initializeDraft(
+            draft: TokenMetadata<'offchain', Date>,
+            uid: string,
+            writeDraftDoc: (payload: TokenMetadata<'offchain', Date>) => Promise<void>,
+          ) {
+            writeDraftDoc({
+              ...draft,
+              createdAt: serverTimestamp(),
+            });
+
+            const initialData: TokenMetadata<'offchain', Date> = {
+              ...draft,
+              rolesIds: { creator: [uid], minter: [] },
+              createdAt: new Date(),
+            };
+
+            setDraftInfo({ initialData });
+          }
+        `,
+      },
+      // Render seed passed directly (not nested) to a state setter.
+      {
+        code: `
+import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+declare function setDraft(value: TokenMetadata<'offchain', Date>): void;
+function seed(draft: TokenMetadata<'offchain', Date>) {
+  const initialData: TokenMetadata<'offchain', Date> = {
+    ...draft,
+    createdAt: new Date(),
+  };
+  setDraft(initialData);
+}
+`,
+        filename: 'src/hooks/useDraft.ts',
+      },
+      // Render seed passed as the initial value of useState.
+      {
+        code: `
+import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+declare function useState<T>(initial: T): [T, (v: T) => void];
+function seed(draft: TokenMetadata<'offchain', Date>) {
+  const initialData: TokenMetadata<'offchain', Date> = {
+    ...draft,
+    createdAt: new Date(),
+  };
+  const [state] = useState(initialData);
+  return state;
+}
+`,
+        filename: 'src/hooks/useDraft.ts',
+      },
+      // Cast render seed (const a = {...} as FirestoreType) handed to a state setter.
+      {
+        code: `
+import type { Advancement } from 'functions/src/types/firestore/Progression';
+declare function setAdvancement(v: Advancement<Date>): void;
+function seed() {
+  const a = {
+    id: '1',
+    createdAt: new Date(),
+  } as Advancement<Date>;
+  setAdvancement(a);
+}
+`,
+        filename: 'src/hooks/useDraft.ts',
+      },
+      // Nested new Date() in a render seed handed to a state setter.
+      {
+        code: `
+import type { Tournament } from 'functions/src/types/firestore/Tournament';
+declare function setTournament(v: Tournament): void;
+function seed() {
+  const t: Tournament = {
+    title: 'Championship',
+    schedule: { startDate: new Date() },
+  };
+  setTournament(t);
+}
+`,
+        filename: 'src/hooks/useDraft.ts',
+      },
     ],
 
     invalid: [
@@ -343,6 +436,60 @@ const x: TokenMetadata<'offchain', Date> = {
   id: 'abc',
   createdAt: new Date(),
 };
+`,
+        filename: 'src/hooks/useExample.ts',
+        errors: [{ messageId: 'useServerTimestamp' }],
+      },
+      // Typed const written to Firestore via a member .set() call — still flagged.
+      // The render-seed exemption must NOT apply when the object reaches a write.
+      {
+        code: `
+import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+declare const docRef: { set: (v: TokenMetadata<'offchain', Date>) => Promise<void> };
+async function write() {
+  const doc: TokenMetadata<'offchain', Date> = {
+    id: 'abc',
+    createdAt: new Date(),
+  };
+  await docRef.set(doc);
+}
+`,
+        filename: 'src/hooks/useExample.ts',
+        errors: [{ messageId: 'useServerTimestamp' }],
+      },
+      // Typed const passed to setDoc() — setDoc is a Firestore write, not a state
+      // setter, so it is still flagged despite the set-prefixed name.
+      {
+        code: `
+import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+declare function setDoc(ref: unknown, v: TokenMetadata<'offchain', Date>): Promise<void>;
+declare const ref: unknown;
+async function write() {
+  const doc: TokenMetadata<'offchain', Date> = {
+    id: 'abc',
+    createdAt: new Date(),
+  };
+  await setDoc(ref, doc);
+}
+`,
+        filename: 'src/hooks/useExample.ts',
+        errors: [{ messageId: 'useServerTimestamp' }],
+      },
+      // Passed to BOTH a state setter AND a Firestore write — still flagged
+      // because it reaches a write.
+      {
+        code: `
+import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+declare function setDraft(v: TokenMetadata<'offchain', Date>): void;
+declare const docRef: { set: (v: TokenMetadata<'offchain', Date>) => Promise<void> };
+async function write() {
+  const doc: TokenMetadata<'offchain', Date> = {
+    id: 'abc',
+    createdAt: new Date(),
+  };
+  setDraft(doc);
+  await docRef.set(doc);
+}
 `,
         filename: 'src/hooks/useExample.ts',
         errors: [{ messageId: 'useServerTimestamp' }],
