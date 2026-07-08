@@ -1444,3 +1444,113 @@ const MyComponent = () => (
     },
   ],
 });
+
+// Variable-mediated sx/style exemption (#1274): a literal whose every usage
+// resolves to a style JSX attribute value is exempt just like the inline form.
+ruleTesterJsx.run('react-memoize-literals', reactMemoizeLiterals, {
+  valid: [
+    // object literal assigned to a variable whose only use is an sx value
+    {
+      code: `
+const Panel = () => {
+  const panelSx = { px: 2, color: 'primary.main' };
+  return <Box sx={panelSx} />;
+};
+      `,
+    },
+    // variable used as a standard style attribute value
+    {
+      code: `
+const Overlay = () => {
+  const overlayStyle = { position: 'absolute', top: 0 };
+  return <div style={overlayStyle} />;
+};
+      `,
+    },
+    // every reference resolves to an sx value (used on two elements)
+    {
+      code: `
+const Pair = () => {
+  const sharedSx = { p: 2 };
+  return (
+    <>
+      <Box sx={sharedSx} />
+      <Box sx={sharedSx} />
+    </>
+  );
+};
+      `,
+    },
+    // variable consumed via an sx-supported form (array element inside sx)
+    {
+      code: `
+const Stacked = ({ active }) => {
+  const baseSx = { p: 2 };
+  return <Box sx={[baseSx, active && { color: 'red' }]} />;
+};
+      `,
+    },
+  ],
+  invalid: [
+    // REGRESSION GUARD: variable used as a NON-style prop still reports.
+    {
+      code: `
+const MyComponent = () => {
+  const data = { id: 1, label: 'hello' };
+  return <SomeComponent data={data} />;
+};
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'object literal',
+            context: 'component "MyComponent"',
+            memoHook: 'useMemo',
+          },
+        },
+      ],
+    },
+    // REGRESSION GUARD: reference passed through a function call still reports,
+    // even though the call result feeds sx — the callee observes the reference.
+    {
+      code: `
+const MyComponent = () => {
+  const maybeSx = { color: 'red' };
+  return <Box sx={combine(maybeSx)} />;
+};
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'object literal',
+            context: 'component "MyComponent"',
+            memoHook: 'useMemo',
+          },
+        },
+      ],
+    },
+    // REGRESSION GUARD: mixed usage — one sx reference plus one non-style
+    // reference — keeps the literal reported (not ALL usages are style values).
+    {
+      code: `
+const MyComponent = () => {
+  const styleish = { color: 'red' };
+  useEffect(() => { track(styleish); }, []);
+  return <Box sx={styleish} />;
+};
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'object literal',
+            context: 'component "MyComponent"',
+            memoHook: 'useMemo',
+          },
+        },
+      ],
+    },
+  ],
+});
