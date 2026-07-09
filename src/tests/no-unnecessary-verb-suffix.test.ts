@@ -999,5 +999,84 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
         "const items = store.loadItemsFrom('cache');",
       ].join('\n'),
     },
+
+    // Collision bail-out (#1278): the suggested name `line` is already bound at
+    // a call site AND inside the function body. The rule may still REPORT, but
+    // must NOT autofix — rewriting to `const line = line(lines, i)` produces a
+    // TDZ self-reference (TS2448/TS7022) that fails compilation. `output: null`
+    // asserts the fixer bails.
+    {
+      code: `
+export function parseBlocks(source: string) {
+  const lines = source.split('\\n');
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lineAt(lines, i);
+    out.push(line.trim());
+  }
+  return out;
+}
+
+function lineAt(lines: string[], index: number) {
+  const line = lines[Number(index)];
+  if (line === undefined) {
+    throw new Error('out of range');
+  }
+  return line;
+}
+`,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: null,
+    },
+
+    // Collision ONLY at the declaration site (no call sites): a `const line`
+    // sibling in the declaration scope would clash with the renamed function.
+    // Report-only.
+    {
+      code: [
+        'function lineAt(arr: number[], index: number) {',
+        '  return arr[Number(index)];',
+        '}',
+        "const line = 'reserved';",
+      ].join('\n'),
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: null,
+    },
+
+    // Collision ONLY at a call site's enclosing scope (declaration scope is
+    // clean): renaming would capture `lineAt(...)` onto the caller's local
+    // `line`. Report-only.
+    {
+      code: [
+        'function lineAt(arr: number[], index: number) {',
+        '  return arr[Number(index)];',
+        '}',
+        'function consumer() {',
+        "  const line = 'reserved';",
+        '  return lineAt([1, 2, 3], 0);',
+        '}',
+      ].join('\n'),
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: null,
+    },
+
+    // No collision anywhere: the strip-suffix rename still autofixes the
+    // declaration and every call site (guards against the collision check
+    // over-suppressing safe fixes).
+    {
+      code: [
+        'function lineAt(arr: number[], index: number) {',
+        '  return arr[Number(index)];',
+        '}',
+        'const first = lineAt([1, 2, 3], 0);',
+      ].join('\n'),
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: [
+        'function line(arr: number[], index: number) {',
+        '  return arr[Number(index)];',
+        '}',
+        'const first = line([1, 2, 3], 0);',
+      ].join('\n'),
+    },
   ],
 });
