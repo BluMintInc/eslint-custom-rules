@@ -1226,3 +1226,88 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
     },
   ],
 });
+
+// Issue #1277: <entity>Number compounds are NOT Hungarian notation. The trailing
+// "Number" is the head noun of the domain concept (the number OF an issue/line/
+// round/version — GitHub's REST field is literally `issue_number`), not a type
+// marker. Removing it yields a wrong name (`issue` = the whole object), so per
+// the rule's stated purpose the suffix CARRIES the domain concept rather than
+// hiding it. This generalizes the #640 PhoneNumber/EmailAddress/PostalCode
+// carve-out to the whole category. Scoped to the full-word `Number` marker only.
+ruleTesterTs.run('no-hungarian-domain-number-compounds', noHungarian, {
+  valid: [
+    // "Number" is the head noun of the domain concept, not a type marker.
+    `function disableRule(rule: string, issueNumber: number) { return \`\${rule}#\${issueNumber}\`; }`,
+    // Same identifier in variable position (Number(...) callee is unchecked).
+    `const issueNumber = Number(raw);`,
+    // Analogous domain compounds outside the hardcoded 3-entry allowlist.
+    `function jumpToLine(lineNumber: number) { return lineNumber + 1; }`,
+    `function advanceRound(roundNumber: number) { return roundNumber + 1; }`,
+    // The suffix carries the concept even when the annotated type is `string`;
+    // the rule is purely lexical and never inspects the type annotation.
+    `function pinRelease(versionNumber: string) { return versionNumber; }`,
+    // Further category members named in the issue.
+    `const accountNumber = getAccount().id;`,
+    `function scoreMatch(matchNumber: number) { return matchNumber; }`,
+    `const orderNumber = 1001;`,
+    // Prefixed variants generalize via the LAST head segment.
+    `const githubIssueNumber = 42;`,
+    `function goTo(currentLineNumber: number) { return currentLineNumber; }`,
+
+    // Regression: the #640 ALLOWED_COMPOUND_NOUNS entries must still pass. These
+    // were previously untested — locking them in.
+    `const phoneNumber = user.phone;`,
+    `function contact(phoneNumber: string) { return phoneNumber; }`,
+    `const emailAddress = user.email;`,
+    `const postalCode = address.zip;`,
+    // A compound-noun preceded by a non-type word remains allowed.
+    `const userPhoneNumber = user.phone;`,
+  ],
+  invalid: [
+    // The fix is scoped to `Number` ONLY. Every other type marker still fires.
+    // Abbreviation markers (str / num / obj / arr / bool) are unchanged.
+    { code: 'const strName = "John";', errors: [errorFor('strName')] },
+    // `num` (abbreviation) is distinct from the full word `Number`: numValue is
+    // still Hungarian, whereas issueNumber (above) is a domain compound.
+    { code: 'const numValue = 42;', errors: [errorFor('numValue')] },
+    { code: 'const objData = {};', errors: [errorFor('objData')] },
+    { code: 'const arrItems = [];', errors: [errorFor('arrItems')] },
+    { code: 'const boolFlag = true;', errors: [errorFor('boolFlag')] },
+    // Full-word type markers other than Number, as a suffix, still fire.
+    { code: 'const nameString = "x";', errors: [errorFor('nameString')] },
+    { code: 'const resultArray = [];', errors: [errorFor('resultArray')] },
+
+    // Numeric-QUANTITY heads keep firing: here "Number" is a redundant type tag,
+    // not the head noun of a concept (count/age/index ARE the number). Removing
+    // it leaves a valid, equivalent name (count/age/index), which is the exact
+    // signature of Hungarian notation.
+    { code: 'const countNumber = 5;', errors: [errorFor('countNumber')] },
+    { code: 'const ageNumber = 30;', errors: [errorFor('ageNumber')] },
+    {
+      code: 'for (let indexNumber = 0; indexNumber < 3; indexNumber++) {}',
+      errors: [errorFor('indexNumber')],
+    },
+    {
+      code: 'const maxCountNumber = 100;',
+      errors: [errorFor('maxCountNumber')],
+    },
+    // A generic (non-entity) head keeps firing — the head noun is not a domain
+    // concept that "has a number".
+    { code: 'const resultNumber = 5;', errors: [errorFor('resultNumber')] },
+    // Prefix `Number` is unaffected (out of scope): still Hungarian.
+    { code: 'const numberCount = 0;', errors: [errorFor('numberCount')] },
+    // A type-marker prefix glued to an allowed compound noun still fires: the
+    // leading `str` is an unambiguous abbreviation tag.
+    {
+      code: 'const strPhoneNumber = "x";',
+      errors: [errorFor('strPhoneNumber')],
+    },
+
+    // KNOWN, ACCEPTED TRADE-OFF (false negative): because the rule is purely
+    // lexical and never compares the suffix to the declared type, a genuinely
+    // mistyped domain compound such as `issueNumber: string` no longer fires.
+    // Per this repo's philosophy (false negatives acceptable, false positives
+    // not) this is the intended cost of unflagging the whole category. Documented
+    // here so the trade-off is explicit; there is no assertion for it.
+  ],
+});

@@ -75,6 +75,53 @@ const ALLOWED_SUFFIXES = [
 // Common compound nouns that should not be flagged as Hungarian notation
 const ALLOWED_COMPOUND_NOUNS = ['PhoneNumber', 'EmailAddress', 'PostalCode'];
 
+// Domain-entity head nouns that legitimately precede a "Number" suffix. In
+// <entity>Number the trailing "Number" is the HEAD NOUN of the domain concept
+// (the number OF an issue/line/round/version — GitHub's REST field is literally
+// `issue_number`), not a type marker bolted onto the name. Removing it yields a
+// wrong name (`issue` denotes the whole issue object, not its number), so these
+// are domain compounds, not Hungarian notation — the same reasoning that
+// motivated PhoneNumber/EmailAddress/PostalCode (#640), generalized to the whole
+// <entity>Number category (#1277). Words that are themselves quantities (count,
+// age, index, size, amount, ...) are intentionally ABSENT: for them "Number" is
+// a redundant type tag, so <quantity>Number stays flagged as Hungarian.
+const DOMAIN_NUMBER_HEAD_NOUNS = new Set([
+  'phone',
+  'issue',
+  'line',
+  'round',
+  'version',
+  'account',
+  'match',
+  'order',
+  'invoice',
+  'ticket',
+  'serial',
+  'model',
+  'page',
+  'reference',
+  'confirmation',
+  'tracking',
+  'license',
+  'part',
+  'revision',
+  'build',
+  'sequence',
+  'port',
+  'card',
+  'contract',
+  'document',
+  'receipt',
+  'registration',
+  'flight',
+  'room',
+  'seat',
+  'block',
+  'route',
+  'channel',
+  'badge',
+]);
+
 // Common built-in JavaScript prototype methods
 const BUILT_IN_METHODS = new Set([
   // String methods
@@ -250,6 +297,27 @@ function isSemanticTypeConcept(typeName: string): boolean {
   // concept (e.g. Extract+Number) rather than bare type tags glued together.
   return segments.some(
     (segment) => !FULL_TYPE_WORDS.has(segment.toLowerCase()),
+  );
+}
+
+// Is `name` a domain compound of the form <entity>Number, where the word directly
+// before the trailing "Number" is a known domain-entity noun (issueNumber,
+// lineNumber, roundNumber, versionNumber)? Only the LAST head segment is
+// consulted, so prefixed variants generalize (githubIssueNumber, currentLineNumber
+// pass) while numeric-head compounds still read as Hungarian (maxCountNumber ->
+// head segment "Count", not a domain entity -> still flagged).
+function isDomainNumberCompound(name: string): boolean {
+  if (!name.endsWith('Number')) {
+    return false;
+  }
+  const head = name.slice(0, -'Number'.length);
+  if (head.length === 0) {
+    return false;
+  }
+  const segments = splitCamelSegments(head);
+  const lastSegment = segments[segments.length - 1];
+  return (
+    !!lastSegment && DOMAIN_NUMBER_HEAD_NOUNS.has(lastSegment.toLowerCase())
   );
 }
 
@@ -435,6 +503,23 @@ export const noHungarian = createRule<[], MessageIds>({
               variableName[variableName.length - normalizedMarker.length],
             ))
         ) {
+          // A trailing "...Number" whose head noun is a domain entity
+          // (issueNumber, lineNumber, roundNumber, versionNumber) is a domain
+          // compound, not a Hungarian type tag: the suffix names WHAT the value
+          // is (the number OF an issue — GitHub's REST field is `issue_number`),
+          // and stripping it destroys the concept (`issue` = the whole object).
+          // Generalizes #640's PhoneNumber/EmailAddress/PostalCode carve-out to
+          // the whole <entity>Number category (#1277). Scoped to the full-word
+          // `Number` marker only: abbreviation tags (str/num/obj/arr/bool) are
+          // handled above and still fire, and numeric-quantity heads
+          // (countNumber, ageNumber, indexNumber) keep firing because such heads
+          // are deliberately absent from DOMAIN_NUMBER_HEAD_NOUNS.
+          if (
+            normalizedMarker === 'number' &&
+            isDomainNumberCompound(variableName)
+          ) {
+            return false;
+          }
           return true;
         }
 
