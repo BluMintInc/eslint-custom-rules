@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 const COMMON_PREPOSITION_SUFFIXES = new Set([
@@ -180,6 +180,55 @@ function isExported(node: TSESTree.Node): boolean {
   return false;
 }
 
+/**
+ * Walks a scope chain upward from `scope` (inclusive) and reports whether
+ * `targetName` is bound anywhere between `scope` and `stopScope` (inclusive).
+ * Mirrors how the engine resolves an identifier at a use site: the first scope
+ * on the chain that declares the name wins. Used to detect whether a rewritten
+ * reference would be captured by a binding sitting between it and the
+ * declaration it currently resolves to.
+ */
+function isNameBoundInChain(
+  scope: TSESLint.Scope.Scope | null,
+  stopScope: TSESLint.Scope.Scope | null,
+  targetName: string,
+): boolean {
+  let current: TSESLint.Scope.Scope | null = scope;
+  while (current) {
+    if (current.set.has(targetName)) {
+      return true;
+    }
+    if (current === stopScope) {
+      break;
+    }
+    current = current.upper;
+  }
+  return false;
+}
+
+/**
+ * Walks a scope subtree rooted at `root` and reports whether `targetName` is
+ * declared anywhere within it — the renamed function's own parameters and body
+ * bindings. A `suggestion` binding here would shadow the function's new name
+ * (the self-shadowing trap in #1278).
+ */
+function isNameBoundInSubtree(
+  root: TSESLint.Scope.Scope,
+  targetName: string,
+): boolean {
+  const stack: TSESLint.Scope.Scope[] = [root];
+  while (stack.length > 0) {
+    const scope = stack.pop() as TSESLint.Scope.Scope;
+    if (scope.set.has(targetName)) {
+      return true;
+    }
+    for (const child of scope.childScopes) {
+      stack.push(child);
+    }
+  }
+  return false;
+}
+
 type MessageIds = 'unnecessaryVerbSuffix';
 
 export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
@@ -200,6 +249,58 @@ export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
+    /**
+     * Returns true when renaming the symbol to `suggestion` would collide with
+     * an existing binding in any scope the rename touches, making the autofix
+     * semantics-changing (and thus unsafe). The strip-suffix fix rewrites the
+     * declaration plus every in-file reference to `suggestion`; if `suggestion`
+     * already resolves to a different binding the rewrite would:
+     *   - redeclare a name already bound in the declaration scope,
+     *   - capture a call site onto an intervening binding (e.g. turning
+     *     `const line = lineAt(...)` into the TDZ self-reference
+     *     `const line = line(...)`, #1278), or
+     *   - shadow the function's own new name from inside its body.
+     * In every such case the fix is suppressed (report-only) so the developer
+     * picks a non-colliding name — the safety standard core rename fixers hold.
+     */
+    function renameWouldCollide(
+      functionNode: TSESTree.Node,
+      variable: TSESLint.Scope.Variable | null,
+      suggestion: string,
+    ): boolean {
+      const scopeManager = context.sourceCode.scopeManager;
+      const functionScope = scopeManager?.acquire(functionNode) ?? null;
+      const declarationScope = variable?.scope ?? functionScope?.upper ?? null;
+
+      // (1) Declaration site: a `suggestion` already bound in the scope that
+      //     holds the declaration would make the rename a redeclaration/shadow.
+      if (declarationScope?.set.has(suggestion)) {
+        return true;
+      }
+
+      // (2) Reference sites: a binding sitting between a reference and the
+      //     declaration scope would swallow the rewritten identifier — the
+      //     reference would resolve to that binding instead of the function.
+      if (variable && declarationScope) {
+        for (const ref of variable.references) {
+          const referenceScope = ref.from ?? declarationScope;
+          if (
+            isNameBoundInChain(referenceScope, declarationScope, suggestion)
+          ) {
+            return true;
+          }
+        }
+      }
+
+      // (3) The function's own parameters/body: a `suggestion` binding there
+      //     would shadow the function's new name.
+      if (functionScope && isNameBoundInSubtree(functionScope, suggestion)) {
+        return true;
+      }
+
+      return false;
+    }
+
     function checkFunctionName(
       node:
         | TSESTree.FunctionDeclaration
@@ -278,6 +379,27 @@ export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
                   return null;
                 }
 
+                // Note: context.getDeclaredVariables is the API available in the
+                // pinned @typescript-eslint version (the SourceCode-based
+                // replacement is not yet in these type definitions).
+                // getDeclaredVariables returns ALL variables the node declares
+                // (e.g. for a FunctionDeclaration it includes the function name
+                // variable AND its parameter variables). Pick the one whose name
+                // matches the symbol being renamed so we only follow references
+                // to the name, not parameters.
+                const declaredVars = context.getDeclaredVariables(scopeNode);
+                const targetVariable =
+                  declaredVars.find((variable) => variable.name === name) ??
+                  null;
+
+                // Suppress the fix when the suggested name already binds
+                // something in a scope the rename would touch — a rename fixer
+                // must never change program semantics or break compilation
+                // (#1278).
+                if (renameWouldCollide(node, targetVariable, suggestion)) {
+                  return null;
+                }
+
                 // Scope-tracked symbols (FunctionDeclaration, VariableDeclarator
                 // arrows/functions, named FunctionExpression): rename the
                 // declaration identifier and every in-file reference together so
@@ -285,19 +407,8 @@ export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
                 const fixes = [
                   fixer.replaceText(declarationIdNode, suggestion),
                 ];
-
-                // Note: context.getDeclaredVariables is the API available in the
-                // pinned @typescript-eslint version (the SourceCode-based
-                // replacement is not yet in these type definitions).
-                const declaredVars = context.getDeclaredVariables(scopeNode);
-                // getDeclaredVariables returns ALL variables the node declares
-                // (e.g. for a FunctionDeclaration it includes the function name
-                // variable AND its parameter variables). Filter to the one whose
-                // name matches the symbol being renamed so we only follow
-                // references to the name, not parameters.
-                for (const variable of declaredVars) {
-                  if (variable.name !== name) continue;
-                  for (const ref of variable.references) {
+                if (targetVariable) {
+                  for (const ref of targetVariable.references) {
                     // Skip the declaration identifier itself — already handled.
                     if (ref.identifier === declarationIdNode) continue;
                     fixes.push(fixer.replaceText(ref.identifier, suggestion));
