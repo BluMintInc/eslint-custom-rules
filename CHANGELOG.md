@@ -1,3 +1,10 @@
+## [1.18.5](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.4...v1.18.5) (2026-07-09)
+
+
+### Bug Fixes
+
+* **enforce-props-argument-name:** exempt subclass parameter properties to avoid TS2415/TS2304 (closes [#1276](https://github.com/BluMintInc/eslint-custom-rules/issues/1276)) ([b70a1df](https://github.com/BluMintInc/eslint-custom-rules/commit/b70a1dfb90fc4846acac389ceb47d4140f3cb0bf))
+
 ## [1.18.4](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.3...v1.18.4) (2026-07-08)
 
 

@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.18.5",
+    "date": "2026-07-09T03:26:45.486Z",
+    "rules": [
+      {
+        "name": "enforce-props-argument-name",
+        "changeType": "fix",
+        "issues": [
+          1276
+        ],
+        "summary": "exempt subclass parameter properties to avoid TS2415/TS2304 (closes #1276)"
+      }
+    ]
+  },
+  {
     "version": "1.18.4",
     "date": "2026-07-08T07:14:09.487Z",
     "rules": [
