@@ -35,3 +35,7 @@ const Modal: React.FC<ModalProps> = (props) => {
   return <div>{props.title}</div>;
 };
 ```
+
+### Known Limitations
+
+- **Subclass constructor parameter properties**: the rule does not report on a `*Props`-typed constructor parameter property (e.g. `constructor(private readonly fullProps: ExtendedManagerProps)`) when the enclosing class has an `extends` clause. The rule is purely syntactic and has no visibility into whether the base class already declares a `props` field; renaming the subclass parameter to `props` in that case is unsafe (it can produce a `TS2415` private-property collision) or outright impossible to do correctly. A distinct name on a subclass parameter property is treated as intentional.
