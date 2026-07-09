@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds = 'usePropsParameterName' | 'usePropsParameterNameWithPrefix';
 type Options = [];
@@ -264,14 +265,110 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
       });
     }
 
+    // Determine whether renaming a constructor parameter property is unsafe to
+    // autofix. A parameter property (`private readonly foo: T`) creates BOTH a
+    // constructor-local binding and a `this.foo` class field, so a
+    // declaration-only rename would leave dangling references: plain `foo`
+    // usages inside the constructor (e.g. `super(foo)`) and `this.foo` accesses
+    // anywhere in the class. Mirrors #1123 — when a rename cannot be applied
+    // everywhere syntactically, emit no fix rather than corrupt the code.
+    function parameterPropertyRenameIsUnsafe(
+      classNode: TSESTree.ClassDeclaration | TSESTree.ClassExpression,
+      name: string,
+      declarationId: TSESTree.Identifier,
+    ): boolean {
+      let unsafe = false;
+
+      const visit = (node: TSESTree.Node): void => {
+        if (unsafe) {
+          return;
+        }
+
+        if (
+          node.type === AST_NODE_TYPES.MemberExpression &&
+          node.object.type === AST_NODE_TYPES.ThisExpression &&
+          node.property.type === AST_NODE_TYPES.Identifier &&
+          node.property.name === name
+        ) {
+          unsafe = true;
+          return;
+        }
+
+        if (
+          node.type === AST_NODE_TYPES.Identifier &&
+          node.name === name &&
+          node !== declarationId
+        ) {
+          unsafe = true;
+          return;
+        }
+
+        for (const key of Object.keys(node)) {
+          if (key === 'parent') {
+            continue;
+          }
+          const value = (node as unknown as Record<string, unknown>)[key];
+          if (Array.isArray(value)) {
+            for (const child of value) {
+              if (ASTHelpers.isNode(child)) {
+                visit(child);
+              }
+            }
+          } else if (ASTHelpers.isNode(value)) {
+            visit(value);
+          }
+        }
+      };
+
+      visit(classNode);
+      return unsafe;
+    }
+
+    // Find the class (declaration or expression) that owns a method definition.
+    function getEnclosingClass(
+      node: TSESTree.MethodDefinition,
+    ): TSESTree.ClassDeclaration | TSESTree.ClassExpression | null {
+      const classBody = node.parent;
+      if (classBody && classBody.type === AST_NODE_TYPES.ClassBody) {
+        const classNode = classBody.parent;
+        if (
+          classNode &&
+          (classNode.type === AST_NODE_TYPES.ClassDeclaration ||
+            classNode.type === AST_NODE_TYPES.ClassExpression)
+        ) {
+          return classNode;
+        }
+      }
+      return null;
+    }
+
     // Check class method parameters (including constructors)
     function checkClassMethod(node: TSESTree.MethodDefinition): void {
       const method = node.value;
       const sourceCode = context.sourceCode;
       const propsParams = getPropsParams(method.params);
 
+      // When the enclosing class extends a base class, a constructor parameter
+      // property (e.g. `private readonly fullProps: SubProps`) cannot be safely
+      // renamed to `props`: the base class may already declare a private `props`
+      // field/parameter-property, so the rename would create a TS2415 private-
+      // field collision, and it would also leave `super(fullProps)` / `this.
+      // fullProps` references dangling. The rule is purely syntactic and cannot
+      // inspect the base class, so it defers to TypeScript correctness here and
+      // does not report on parameter properties in subclasses (this repo prefers
+      // false negatives over false positives).
+      const enclosingClass = getEnclosingClass(node);
+      const classExtendsBase = !!enclosingClass?.superClass;
+
       method.params.forEach((param) => {
         if (isDestructuredParameter(param)) {
+          return;
+        }
+
+        if (
+          classExtendsBase &&
+          param.type === AST_NODE_TYPES.TSParameterProperty
+        ) {
           return;
         }
 
@@ -301,6 +398,17 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
                   suggestedName,
                 },
                 fix: (fixer) => {
+                  // A parameter-property rename touches both the parameter and
+                  // the `this.<name>` field; refuse to autofix when the name is
+                  // referenced elsewhere, since a declaration-only rename would
+                  // leave dangling references.
+                  if (
+                    param.type === AST_NODE_TYPES.TSParameterProperty &&
+                    enclosingClass &&
+                    parameterPropertyRenameIsUnsafe(enclosingClass, id.name, id)
+                  ) {
+                    return null;
+                  }
                   const token = sourceCode.getFirstToken(id);
                   if (!token) return null;
                   return fixer.replaceTextRange(

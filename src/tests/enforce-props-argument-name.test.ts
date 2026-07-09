@@ -191,6 +191,82 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
       `,
     },
 
+    // Subclass parameter property MUST keep a distinct name: the base class
+    // already declares a private `props` parameter-property, so renaming the
+    // subclass param to `props` collides (TS2415). The rule must not report.
+    {
+      code: `
+        type ManagerProps = { config: string };
+        type ExtendedManagerProps = ManagerProps & { extra: string };
+        class Manager {
+          public constructor(private readonly props: ManagerProps) {}
+          public get config() { return this.props.config; }
+        }
+        class ExtendedManager extends Manager {
+          public constructor(private readonly fullProps: ExtendedManagerProps) {
+            super(fullProps);
+          }
+          public get extra() { return this.fullProps.extra; }
+        }
+      `,
+    },
+
+    // Subclass with a superClass that is a member expression (React.Component)
+    // and a distinctly-named parameter property must not be reported.
+    {
+      code: `
+        type WidgetProps = { id: string };
+        class ExtendedWidget extends Some.Base.Widget {
+          constructor(private readonly widgetProps: WidgetProps) {
+            super(widgetProps);
+          }
+        }
+      `,
+    },
+
+    // Subclass with a superClass that is a call expression (mixin) and a
+    // distinctly-named parameter property must not be reported.
+    {
+      code: `
+        type PanelProps = { title: string };
+        class ExtendedPanel extends withMixin(BasePanel) {
+          constructor(private readonly panelSettings: PanelProps) {
+            super(panelSettings);
+          }
+        }
+      `,
+    },
+
+    // Subclass parameter property that already forwards to super but happens to
+    // be named `props` is fine (no rename needed, no report).
+    {
+      code: `
+        type BaseProps = { config: string };
+        class Base {
+          constructor(private readonly props: BaseProps) {}
+        }
+        class Derived extends Base {
+          constructor(private readonly props: BaseProps) {
+            super(props);
+          }
+        }
+      `,
+    },
+
+    // A non-parameter-property constructor param in a subclass is unaffected by
+    // the guard when it is already correctly named `props`.
+    {
+      code: `
+        type ThingProps = { id: string };
+        class Base {}
+        class Thing extends Base {
+          constructor(props: ThingProps) {
+            super();
+          }
+        }
+      `,
+    },
+
     // Multiple parameters where only one has Props type
     {
       code: `
@@ -644,6 +720,99 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
         type UserProps = { name: string };
         function createUser(id: string, props: UserProps, callback: Function) {
           return callback({ id, ...userData });
+        }
+      `,
+    },
+
+    // Parameter property in a NON-extends class is still reported and safely
+    // autofixed when the name is unreferenced (empty body, no this.<name>).
+    {
+      code: `
+        type ManagerProps = { config: Config };
+        class Manager {
+          constructor(private readonly settings: ManagerProps) {}
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'ManagerProps' },
+        },
+      ],
+      output: `
+        type ManagerProps = { config: Config };
+        class Manager {
+          constructor(private readonly props: ManagerProps) {}
+        }
+      `,
+    },
+
+    // Defense in depth: parameter property in a NON-extends class is reported
+    // but NOT autofixed when the name is referenced via `this.<name>`, since a
+    // declaration-only rename would leave that access dangling.
+    {
+      code: `
+        type ManagerProps = { config: string };
+        class Manager {
+          constructor(private readonly settings: ManagerProps) {}
+          get config() { return this.settings.config; }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'ManagerProps' },
+        },
+      ],
+      output: null,
+    },
+
+    // Defense in depth: parameter property referenced by a plain identifier in
+    // the constructor body is reported but NOT autofixed.
+    {
+      code: `
+        type ManagerProps = { config: string };
+        class Manager {
+          constructor(private readonly settings: ManagerProps) {
+            console.log(settings);
+          }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'ManagerProps' },
+        },
+      ],
+      output: null,
+    },
+
+    // A REGULAR (non-parameter-property) constructor param in a subclass is not
+    // covered by the parameter-property guard, so it is still reported and
+    // autofixed (a plain local rename cannot collide with an inherited field).
+    {
+      code: `
+        type ThingProps = { id: string };
+        class Base {}
+        class Thing extends Base {
+          constructor(settings: ThingProps) {
+            super();
+          }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'ThingProps' },
+        },
+      ],
+      output: `
+        type ThingProps = { id: string };
+        class Base {}
+        class Thing extends Base {
+          constructor(props: ThingProps) {
+            super();
+          }
         }
       `,
     },
