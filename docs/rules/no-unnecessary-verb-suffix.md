@@ -120,6 +120,13 @@ where a rename could not be completed safely:
   signatures** — these are invoked through member expressions (`this.fooFrom()`,
   `obj.fooFrom()`) that cannot be resolved to the declaration syntactically, so
   their call sites cannot be found and updated.
+- **Renames that would collide with an existing binding.** If the suggested
+  name is already bound in the declaration's scope, in the scope chain between
+  a call site and that declaration, or inside the function's own body, the
+  rename is withheld. Applying it anyway could produce a TDZ self-reference
+  (`const line = lineAt(...)` rewritten to `const line = line(...)`, which
+  fails to compile) or silently shadow the function's new name from within its
+  own body.
 
 In these cases, rename the symbol and its usages manually (for example with an
 editor's rename-symbol / refactor command, which uses type information the lint
