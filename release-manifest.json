@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.18.6",
+    "date": "2026-07-09T08:45:37.007Z",
+    "rules": [
+      {
+        "name": "no-hungarian",
+        "changeType": "fix",
+        "issues": [
+          1277
+        ],
+        "summary": "exempt domain-entity <noun>Number compounds (closes #1277)"
+      },
+      {
+        "name": "no-unnecessary-verb-suffix",
+        "changeType": "fix",
+        "issues": [
+          1278
+        ],
+        "summary": "bail autofix on rename collision (closes #1278)"
+      }
+    ]
+  },
+  {
     "version": "1.18.5",
     "date": "2026-07-09T03:26:45.486Z",
     "rules": [

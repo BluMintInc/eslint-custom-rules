@@ -1,3 +1,11 @@
+## [1.18.6](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.5...v1.18.6) (2026-07-09)
+
+
+### Bug Fixes
+
+* **no-hungarian:** exempt domain-entity <noun>Number compounds (closes [#1277](https://github.com/BluMintInc/eslint-custom-rules/issues/1277)) ([7ad5e6e](https://github.com/BluMintInc/eslint-custom-rules/commit/7ad5e6e3f0697ea684eae7b827799a9e62e47147)), closes [#640](https://github.com/BluMintInc/eslint-custom-rules/issues/640)
+* **no-unnecessary-verb-suffix:** bail autofix on rename collision (closes [#1278](https://github.com/BluMintInc/eslint-custom-rules/issues/1278)) ([aa096d1](https://github.com/BluMintInc/eslint-custom-rules/commit/aa096d150b6d8d3dee5b9624e0c32537070eaab7))
+
 ## [1.18.5](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.4...v1.18.5) (2026-07-09)
 
 
