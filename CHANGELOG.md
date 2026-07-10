@@ -1,3 +1,10 @@
+## [1.18.7](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.6...v1.18.7) (2026-07-10)
+
+
+### Bug Fixes
+
+* **class-methods-read-top-to-bottom:** preserve abstract members during autofix (closes [#1279](https://github.com/BluMintInc/eslint-custom-rules/issues/1279)) ([24b694c](https://github.com/BluMintInc/eslint-custom-rules/commit/24b694c71234ae5532f9370c6492263640c045ce))
+
 ## [1.18.6](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.5...v1.18.6) (2026-07-09)
 
 
