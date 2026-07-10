@@ -1,3 +1,11 @@
+## [1.18.8](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.7...v1.18.8) (2026-07-10)
+
+
+### Bug Fixes
+
+* **enforce-positive-naming:** whitelist "unknown" and derive real suggestions for non-is prefixes (closes [#1281](https://github.com/BluMintInc/eslint-custom-rules/issues/1281)) ([f5741b2](https://github.com/BluMintInc/eslint-custom-rules/commit/f5741b288e0806539dce3e9187b85d6d4a1249ac))
+* **react-memoize-literals:** exempt nested object literals inside sx/style values (closes [#1280](https://github.com/BluMintInc/eslint-custom-rules/issues/1280)) ([d283b99](https://github.com/BluMintInc/eslint-custom-rules/commit/d283b99a88e90b093e14a91175b39a81c5a43017))
+
 ## [1.18.7](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.6...v1.18.7) (2026-07-10)
 
 

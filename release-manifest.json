@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.18.8",
+    "date": "2026-07-10T21:29:12.501Z",
+    "rules": [
+      {
+        "name": "enforce-positive-naming",
+        "changeType": "fix",
+        "issues": [
+          1281
+        ],
+        "summary": "whitelist \"unknown\" and derive real suggestions for non-is prefixes (closes #1281)"
+      },
+      {
+        "name": "react-memoize-literals",
+        "changeType": "fix",
+        "issues": [
+          1280
+        ],
+        "summary": "exempt nested object literals inside sx/style values (closes #1280)"
+      }
+    ]
+  },
+  {
     "version": "1.18.7",
     "date": "2026-07-10T02:31:44.580Z",
     "rules": [
