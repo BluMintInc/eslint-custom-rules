@@ -732,6 +732,8 @@ const UN_EXCEPTIONS = [
   'universes',
   'universities',
   'university',
+  'unknown',
+  'unknowns',
   'unless',
   'until',
   'unto',
@@ -1097,19 +1099,36 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
                 return { isNegative: true, alternatives: directMatch };
               }
 
+              const restOfName = name.replace(pattern, '');
+              const capitalizedRest = restOfName
+                ? restOfName.charAt(0).toUpperCase() + restOfName.slice(1)
+                : '';
               const alternatives = BOOLEAN_POSITIVE_ALTERNATIVES[key] || [];
               if (alternatives.length > 0) {
                 // Suggest the positive version with the rest of the name
-                const restOfName = name.replace(pattern, '');
                 const suggestedAlternatives = alternatives.map(
-                  (alt) =>
-                    `${alt}${
-                      restOfName.charAt(0).toUpperCase() + restOfName.slice(1)
-                    }`,
+                  (alt) => `${alt}${capitalizedRest}`,
                 );
                 return {
                   isNegative: true,
                   alternatives: suggestedAlternatives,
+                };
+              }
+              // No hand-maintained mapping covers this boolean+negative prefix
+              // combination (e.g. `hasUn`, `canNo`). Derive the positive form by
+              // dropping the negative prefix while keeping the boolean prefix
+              // (hasUnavailableItems -> hasAvailableItems), mirroring the
+              // `is`-prefix behavior so the report always names a real
+              // alternative rather than the "a positive alternative" placeholder.
+              const matched = name.match(pattern);
+              if (matched && capitalizedRest) {
+                const positivePrefix = matched[0].slice(
+                  0,
+                  matched[0].length - prefix.length,
+                );
+                return {
+                  isNegative: true,
+                  alternatives: [`${positivePrefix}${capitalizedRest}`],
                 };
               }
               return {
