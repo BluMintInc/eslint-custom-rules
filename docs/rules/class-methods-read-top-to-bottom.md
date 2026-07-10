@@ -55,3 +55,11 @@ class CorrectlyOrdered {
 ```
 
 In the correct version, fields lead, the constructor sets the initial flow, and each caller appears before the helper it relies on, allowing the class to be read straight down. When the rule reports a violation, move the reported dependency above the caller so the class flows from state, to constructor, to callers, and finally to helpers—no backward scrolling required.
+
+## Abstract classes
+
+Abstract member signatures—abstract methods (`protected abstract foo(): number;`), abstract properties, and abstract accessors—participate in the ordering exactly like concrete members: a caller still precedes the abstract helper it invokes, and the autofix relocates the signature rather than dropping it.
+
+## Non-destructive autofix
+
+The autofix rewrites the class body from the members the rule tracks. To guarantee it never removes source it does not track, it bails when the class contains a member it cannot safely relocate—such as a `static {}` initialization block or a computed-key method—leaving the class untouched instead of emitting a body that would omit that member.
