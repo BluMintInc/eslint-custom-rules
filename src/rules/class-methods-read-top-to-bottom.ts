@@ -5,7 +5,10 @@ import { ClassGraphBuilder } from '../utils/graph/ClassGraphBuilder';
 function getMemberName(member: TSESTree.ClassElement): string | null {
   if (
     member.type === 'MethodDefinition' ||
-    member.type === 'PropertyDefinition'
+    member.type === 'PropertyDefinition' ||
+    member.type === 'TSAbstractMethodDefinition' ||
+    member.type === 'TSAbstractPropertyDefinition' ||
+    member.type === 'TSAbstractAccessorProperty'
   ) {
     return member.key.type === 'Identifier' ? member.key.name : null;
   }
@@ -49,12 +52,7 @@ export const classMethodsReadTopToBottom: TSESLint.RuleModule<
         const graphBuilder = new ClassGraphBuilder(className, node);
         const sortedOrder = graphBuilder.memberNamesSorted;
         const actualOrder = node.body
-          .map((member) =>
-            member.type === 'MethodDefinition' ||
-            member.type === 'PropertyDefinition'
-              ? (member.key as TSESTree.Identifier).name
-              : null,
-          )
+          .map((member) => getMemberName(member))
           .filter(Boolean) as string[];
 
         // Check if we have the same number of methods in both arrays
@@ -67,6 +65,20 @@ export const classMethodsReadTopToBottom: TSESLint.RuleModule<
         const uniqueMethodNames = new Set(actualOrder);
         if (uniqueMethodNames.size !== actualOrder.length) {
           return; // Skip if there are actual duplicates
+        }
+
+        // Defense-in-depth: the fixer overwrites the ENTIRE class body from the
+        // tracked members. If any member is not tracked (unknown node type,
+        // non-Identifier/computed key, static block, index signature, etc.), it
+        // would be silently dropped by the rewrite. Bail rather than emit a body
+        // that deletes source the rule does not track.
+        const trackedNames = new Set(sortedOrder);
+        const allMembersRepresented = node.body.every((member) => {
+          const name = getMemberName(member);
+          return name !== null && trackedNames.has(name);
+        });
+        if (!allMembersRepresented) {
+          return;
         }
 
         for (let i = 0; i < actualOrder.length; i++) {
