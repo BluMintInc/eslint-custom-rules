@@ -21,7 +21,12 @@ type ClassPropertyASTNode =
   | TSESTree.PropertyDefinitionComputedName
   | TSESTree.PropertyDefinitionNonComputedName;
 
-type ClassMemberASTNode = ClassMethodASTNode | ClassPropertyASTNode;
+type ClassMemberASTNode =
+  | ClassMethodASTNode
+  | ClassPropertyASTNode
+  | TSESTree.TSAbstractMethodDefinition
+  | TSESTree.TSAbstractPropertyDefinition
+  | TSESTree.TSAbstractAccessorProperty;
 
 /**
  * Builds a graph of class methods and properties with their dependencies from a class declaration.
@@ -64,7 +69,11 @@ export class ClassGraphBuilder {
     node: TSESTree.ClassElement,
   ): node is ClassMemberASTNode {
     return (
-      node.type === 'MethodDefinition' || node.type === 'PropertyDefinition'
+      node.type === 'MethodDefinition' ||
+      node.type === 'PropertyDefinition' ||
+      node.type === 'TSAbstractMethodDefinition' ||
+      node.type === 'TSAbstractPropertyDefinition' ||
+      node.type === 'TSAbstractAccessorProperty'
     );
   }
 
@@ -85,6 +94,10 @@ export class ClassGraphBuilder {
   ): 'method' | 'property' | 'constructor' {
     if (member.type === 'MethodDefinition') {
       return member.kind === 'constructor' ? 'constructor' : 'method';
+    }
+    // Abstract methods can never be constructors, so they are always methods.
+    if (member.type === 'TSAbstractMethodDefinition') {
+      return 'method';
     }
     return 'property';
   }

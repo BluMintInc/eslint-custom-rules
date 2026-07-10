@@ -364,6 +364,69 @@ ruleTesterTs.run(
           }
         }`,
       },
+      {
+        // Abstract class already in correct top-to-bottom order: caller before
+        // helper, trailing abstract signature. Abstract members must not perturb
+        // an already-sorted class (no false positive).
+        code: `export abstract class Repro {
+  public run() {
+    return this.helper();
+  }
+
+  private helper() {
+    return this.compute();
+  }
+
+  public abstract compute(): number;
+}`,
+      },
+      {
+        // Abstract class with an abstract property already in correct order:
+        // property first, then caller, then helper.
+        code: `export abstract class Repro {
+  protected abstract readonly config: number;
+
+  public run() {
+    return this.helper();
+  }
+
+  private helper() {
+    return this.config;
+  }
+}`,
+      },
+      {
+        // Defense-in-depth (Part B): body contains an out-of-order pair PLUS an
+        // untracked static initialization block. The rule must BAIL rather than
+        // emit a rewritten body that silently deletes the static block.
+        code: `export abstract class Repro {
+  static {
+    console.log('init');
+  }
+  private helper() {
+    return 1;
+  }
+  public run() {
+    return this.helper();
+  }
+}`,
+      },
+      {
+        // Defense-in-depth (Part B): body contains an out-of-order pair PLUS an
+        // untracked computed-key method. The rule must BAIL rather than delete
+        // the untracked member.
+        code: `export class Repro {
+  ['dynamic']() {
+    return 1;
+  }
+  private helper() {
+    return 1;
+  }
+  public run() {
+    return this.helper();
+  }
+}`,
+      },
     ],
     invalid: [
       {
@@ -591,6 +654,105 @@ private methodC() {
              *
              */
           }}`,
+      },
+      {
+        // plain methods + trailing abstract signature: abstract member must be relocated AND preserved
+        code: `export abstract class Repro {
+  private helper() {
+    return this.compute();
+  }
+
+  public run() {
+    return this.helper();
+  }
+
+  public abstract compute(): number;
+}`,
+        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+        output: `export abstract class Repro {public run() {
+    return this.helper();
+  }
+private helper() {
+    return this.compute();
+  }
+public abstract compute(): number;}`,
+      },
+      {
+        // decorated getter interleaved + trailing abstract signature
+        code: `import { Memoize } from '@blumintinc/typescript-memoize';
+
+export abstract class Repro {
+  private helper() {
+    return this.compute();
+  }
+
+  @Memoize()
+  public get value() {
+    return this.helper();
+  }
+
+  public abstract compute(): number;
+}`,
+        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+
+export abstract class Repro {@Memoize()
+  public get value() {
+    return this.helper();
+  }
+private helper() {
+    return this.compute();
+  }
+public abstract compute(): number;}`,
+      },
+      {
+        // Abstract PROPERTY (TSAbstractPropertyDefinition) referenced by a
+        // concrete method: the abstract property must be relocated AND preserved.
+        code: `export abstract class Repro {
+  private helper() {
+    return this.config;
+  }
+
+  public run() {
+    return this.helper();
+  }
+
+  protected abstract readonly config: number;
+}`,
+        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+        output: `export abstract class Repro {protected abstract readonly config: number;
+public run() {
+    return this.helper();
+  }
+private helper() {
+    return this.config;
+  }}`,
+      },
+      {
+        // Mixed abstract method + abstract property, both out of order and both
+        // referenced by concrete members: every abstract signature is preserved.
+        code: `export abstract class Repro {
+  private helper() {
+    return this.compute() + this.config;
+  }
+
+  public run() {
+    return this.helper();
+  }
+
+  protected abstract readonly config: number;
+
+  public abstract compute(): number;
+}`,
+        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+        output: `export abstract class Repro {protected abstract readonly config: number;
+public run() {
+    return this.helper();
+  }
+private helper() {
+    return this.compute() + this.config;
+  }
+public abstract compute(): number;}`,
       },
     ],
   },
