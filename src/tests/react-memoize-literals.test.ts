@@ -488,6 +488,54 @@ const Variant = ({ stacked }) => (
 );
       `,
     },
+    // Issue #1280: a nested object literal inside a responsive inline sx value
+    // must be exempt, just like the flat inline sx value already is. MUI
+    // reprocesses the whole sx object subtree each render, so no nested part of
+    // it benefits from referential stability.
+    {
+      code: `
+const HostEventButton = () => {
+  return (
+    <Box component="span" sx={{ display: { xs: 'none', md: 'inline' } }}>
+      Host
+    </Box>
+  );
+};
+      `,
+    },
+    // Issue #1280 regression guard: deeply-nested style objects must be exempt.
+    {
+      code: `
+const Panel = () => {
+  return <Box sx={{ '& .child': { p: { xs: 1, md: 2 } } }} />;
+};
+      `,
+    },
+    // Issue #1280: nested object under a standard style prop is exempt too.
+    {
+      code: `
+const Overlay = () => (
+  <div style={{ inset: { top: 0, left: 0 } }} />
+);
+      `,
+    },
+    // Issue #1280: a nested object reached through a conditional sx branch is
+    // still under the sx attribute, so it must be exempt.
+    {
+      code: `
+const Toggle = ({ active }) => (
+  <div sx={active ? { display: { xs: 'none', md: 'inline' } } : { display: 'flex' }} />
+);
+      `,
+    },
+    // Issue #1280: a nested object inside an sx array entry is exempt.
+    {
+      code: `
+const Stacked = () => (
+  <div sx={[{ p: 2 }, { display: { xs: 'none', md: 'inline' } }]} />
+);
+      `,
+    },
     // Issue #1251: a hook returning an object literal whose members include a
     // JSX element (a "Portal") must NOT be flagged as hookReturnLiteral. A React
     // element is a fresh reference on every render by design, so the returned
