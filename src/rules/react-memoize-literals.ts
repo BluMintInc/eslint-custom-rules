@@ -584,14 +584,18 @@ function buildMemoSuggestions(
  * style data consumed by a library rather than compared by reference (MUI `sx`
  * or the standard `style` prop).
  *
- * Walks up from the literal only through positions where it remains the
- * attribute's resolved value: conditional branches (`sx={c ? {…} : {…}}`),
- * logical fallbacks (`sx={c && {…}}`), array entries (MUI accepts `sx` arrays),
- * and expression wrappers (`{…} as const`, parentheses). Any other parent — a
- * function call, an object property, a spread — means the reference is observed
- * or transformed before reaching the attribute, so the walk stops and the
- * literal stays reported. This keeps the exemption tied to genuine style values
- * without silencing unrelated literals that merely appear deeper in the tree.
+ * Walks up from the literal only through positions where it remains part of the
+ * attribute's style value: conditional branches (`sx={c ? {…} : {…}}`), logical
+ * fallbacks (`sx={c && {…}}`), array entries (MUI accepts `sx` arrays), nested
+ * object property values (`sx={{ display: { xs: 'none', md: 'inline' } }}` —
+ * MUI's responsive breakpoint syntax), and expression wrappers (`{…} as const`,
+ * parentheses). MUI reprocesses the entire `sx`/`style` object subtree on every
+ * render, so nested values benefit no more from referential stability than the
+ * top-level object does. Any other parent — a function call, a spread — means
+ * the reference is observed or transformed before reaching the attribute, so the
+ * walk stops and the literal stays reported. This keeps the exemption tied to
+ * genuine style values without silencing unrelated literals that merely appear
+ * deeper in the tree.
  */
 function isStyleJSXAttributeValue(node: TSESTree.Node): boolean {
   let current: TSESTree.Node = node;
@@ -626,6 +630,18 @@ function isStyleJSXAttributeValue(node: TSESTree.Node): boolean {
       }
       case AST_NODE_TYPES.ArrayExpression: {
         if (!parent.elements.some((element) => element === current)) {
+          return false;
+        }
+        break;
+      }
+      case AST_NODE_TYPES.Property: {
+        if (parent.value !== current) {
+          return false;
+        }
+        break;
+      }
+      case AST_NODE_TYPES.ObjectExpression: {
+        if (!parent.properties.some((property) => property === current)) {
           return false;
         }
         break;
