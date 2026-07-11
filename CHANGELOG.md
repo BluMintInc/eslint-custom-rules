@@ -1,3 +1,20 @@
+## [1.18.9](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.8...v1.18.9) (2026-07-11)
+
+
+### Bug Fixes
+
+* **class-methods-read-top-to-bottom:** align recommended meta with error config (closes [#1282](https://github.com/BluMintInc/eslint-custom-rules/issues/1282)) ([ec174c0](https://github.com/BluMintInc/eslint-custom-rules/commit/ec174c026c17fa4281d5c6713a662f63fa0474d1))
+* **enforce-m3-sentence-case:** bump recommended severity to error (closes [#1282](https://github.com/BluMintInc/eslint-custom-rules/issues/1282)) ([6ae43c4](https://github.com/BluMintInc/eslint-custom-rules/commit/6ae43c4f87cae316a0e1bf3d0db9dfa3ee1ba492))
+* **enforce-props-naming-consistency:** align recommended meta with error config (closes [#1282](https://github.com/BluMintInc/eslint-custom-rules/issues/1282)) ([37d4e88](https://github.com/BluMintInc/eslint-custom-rules/commit/37d4e88a93e5d3da9f7450350d653b074b90a6bf))
+* **no-console-error:** bump recommended severity to error (closes [#1282](https://github.com/BluMintInc/eslint-custom-rules/issues/1282)) ([3790adb](https://github.com/BluMintInc/eslint-custom-rules/commit/3790adb51d6f9c0c9471fc760945891087952587))
+* **no-firestore-object-arrays:** align recommended meta with error config (closes [#1282](https://github.com/BluMintInc/eslint-custom-rules/issues/1282)) ([4956ec7](https://github.com/BluMintInc/eslint-custom-rules/commit/4956ec7539aa2710fe2b44ce1e5a419838d861b1))
+* **no-margin-properties:** align recommended meta with error config (closes [#1282](https://github.com/BluMintInc/eslint-custom-rules/issues/1282)) ([f74c803](https://github.com/BluMintInc/eslint-custom-rules/commit/f74c80321dd9591f9557d3b75a29242bd9ca867a))
+* **prefer-field-paths-in-transforms:** bump recommended severity to error (closes [#1282](https://github.com/BluMintInc/eslint-custom-rules/issues/1282)) ([3579437](https://github.com/BluMintInc/eslint-custom-rules/commit/3579437cc4cbdb93b37474d1fd8ff4e1df12b69d))
+* **prefer-flat-transform-each-keys:** bump recommended severity to error (closes [#1282](https://github.com/BluMintInc/eslint-custom-rules/issues/1282)) ([8f11c34](https://github.com/BluMintInc/eslint-custom-rules/commit/8f11c34f787a991f68bf8a46ce90f3f8349d73de))
+* **prefer-utility-function-own-file:** bump recommended severity to error (closes [#1282](https://github.com/BluMintInc/eslint-custom-rules/issues/1282)) ([81eba99](https://github.com/BluMintInc/eslint-custom-rules/commit/81eba999f9d8b7f6cc87a7849c8e5b63ad9d7c80)), closes [#43365](https://github.com/BluMintInc/eslint-custom-rules/issues/43365)
+* **require-props-composition:** bump recommended severity to error (closes [#1282](https://github.com/BluMintInc/eslint-custom-rules/issues/1282)) ([5fb8051](https://github.com/BluMintInc/eslint-custom-rules/commit/5fb80518b44c94d9611f841d9b127defe586ccf3)), closes [#1181](https://github.com/BluMintInc/eslint-custom-rules/issues/1181)
+* **warn-https-error-message-user-friendly:** bump recommended severity to error (closes [#1282](https://github.com/BluMintInc/eslint-custom-rules/issues/1282)) ([a124211](https://github.com/BluMintInc/eslint-custom-rules/commit/a1242110e912e81bc84c8ff7822d0cc2720c0eec))
+
 ## [1.18.8](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.7...v1.18.8) (2026-07-10)
 
 

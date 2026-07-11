@@ -1,5 +1,99 @@
 [
   {
+    "version": "1.18.9",
+    "date": "2026-07-11T01:51:22.294Z",
+    "rules": [
+      {
+        "name": "class-methods-read-top-to-bottom",
+        "changeType": "fix",
+        "issues": [
+          1282
+        ],
+        "summary": "align recommended meta with error config (closes #1282)"
+      },
+      {
+        "name": "enforce-m3-sentence-case",
+        "changeType": "fix",
+        "issues": [
+          1282
+        ],
+        "summary": "bump recommended severity to error (closes #1282)"
+      },
+      {
+        "name": "enforce-props-naming-consistency",
+        "changeType": "fix",
+        "issues": [
+          1282
+        ],
+        "summary": "align recommended meta with error config (closes #1282)"
+      },
+      {
+        "name": "no-console-error",
+        "changeType": "fix",
+        "issues": [
+          1282
+        ],
+        "summary": "bump recommended severity to error (closes #1282)"
+      },
+      {
+        "name": "no-firestore-object-arrays",
+        "changeType": "fix",
+        "issues": [
+          1282
+        ],
+        "summary": "align recommended meta with error config (closes #1282)"
+      },
+      {
+        "name": "no-margin-properties",
+        "changeType": "fix",
+        "issues": [
+          1282
+        ],
+        "summary": "align recommended meta with error config (closes #1282)"
+      },
+      {
+        "name": "prefer-field-paths-in-transforms",
+        "changeType": "fix",
+        "issues": [
+          1282
+        ],
+        "summary": "bump recommended severity to error (closes #1282)"
+      },
+      {
+        "name": "prefer-flat-transform-each-keys",
+        "changeType": "fix",
+        "issues": [
+          1282
+        ],
+        "summary": "bump recommended severity to error (closes #1282)"
+      },
+      {
+        "name": "prefer-utility-function-own-file",
+        "changeType": "fix",
+        "issues": [
+          1282
+        ],
+        "summary": "bump recommended severity to error (closes #1282)"
+      },
+      {
+        "name": "require-props-composition",
+        "changeType": "fix",
+        "issues": [
+          1282
+        ],
+        "summary": "bump recommended severity to error (closes #1282)"
+      },
+      {
+        "name": "warn-https-error-message-user-friendly",
+        "changeType": "fix",
+        "issues": [
+          1282
+        ],
+        "summary": "bump recommended severity to error (closes #1282)"
+      }
+    ]
+  },
+  {
     "version": "1.18.8",
     "date": "2026-07-10T21:29:12.501Z",
     "rules": [
