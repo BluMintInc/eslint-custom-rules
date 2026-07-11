@@ -7,6 +7,7 @@ import {
   isLintablePath,
   isQueueEmpty,
   isRuleImplPath,
+  maintainerGitEnv,
   mergeAndClose,
   normalizeIssues,
   parseMergeArgs,
@@ -257,6 +258,28 @@ describe('mergeAndClose', () => {
       (cmd, args) => calls.push([cmd, ...args]),
     );
     expect(calls).toEqual([]);
+  });
+});
+
+describe('maintainerGitEnv', () => {
+  it('disables husky hooks so package-change hooks cannot dirty the tree mid-merge', () => {
+    expect(maintainerGitEnv({ PATH: '/usr/bin' }).HUSKY).toBe('0');
+  });
+
+  it('preserves the rest of the base environment', () => {
+    const env = maintainerGitEnv({ PATH: '/usr/bin', HOME: '/home/ci' });
+    expect(env.PATH).toBe('/usr/bin');
+    expect(env.HOME).toBe('/home/ci');
+  });
+
+  it('overrides a pre-existing HUSKY value in the base environment', () => {
+    expect(maintainerGitEnv({ HUSKY: '1' }).HUSKY).toBe('0');
+  });
+
+  it('does not mutate the base environment object', () => {
+    const base: NodeJS.ProcessEnv = { PATH: '/usr/bin' };
+    maintainerGitEnv(base);
+    expect(base.HUSKY).toBeUndefined();
   });
 });
 

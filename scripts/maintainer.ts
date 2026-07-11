@@ -189,19 +189,26 @@ export function fetchOpenIssues(
 
 type Runner = (cmd: string, args: string[]) => void;
 
+/**
+ * Environment for the git/npm subprocesses this toolkit spawns, with husky git
+ * hooks disabled via `HUSKY=0` (honored by `.husky/_/h`).
+ *
+ * The repo's post-checkout/post-merge hooks (`.husky/`) run `npm install`
+ * whenever a branch switch or merge changes package.json/package-lock.json.
+ * During a release the ff-only promotion switches between develop and main;
+ * because package-lock.json is not a `@semantic-release/git` asset it drifts
+ * stale on main, so that npm install regenerates the lockfile and leaves the
+ * tree dirty — which makes the very next `git merge --ff-only` abort. Disabling
+ * the hooks keeps these git operations immune to that working-tree churn.
+ */
+export function maintainerGitEnv(
+  base: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  return { ...base, HUSKY: '0' };
+}
+
 const defaultRunner: Runner = (cmd, args) => {
-  // Disable husky git hooks for every command this toolkit runs. The repo's
-  // post-checkout/post-merge hooks (.husky/) run `npm install` whenever a branch
-  // switch or merge changes package.json/package-lock.json. During a release the
-  // ff-only promotion switches between develop and main; because package-lock.json
-  // is not a @semantic-release/git asset it drifts stale on main, so that npm
-  // install regenerates the lockfile and leaves the tree dirty — which makes the
-  // very next `git merge --ff-only` abort. HUSKY=0 (honored by .husky/_/h) skips
-  // the hooks so these git operations are never disrupted by working-tree churn.
-  execFileSync(cmd, args, {
-    stdio: 'inherit',
-    env: { ...process.env, HUSKY: '0' },
-  });
+  execFileSync(cmd, args, { stdio: 'inherit', env: maintainerGitEnv() });
 };
 
 /**
