@@ -199,7 +199,7 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
     docs: {
       description:
         'Disallow arrays of object types in Firestore models. Prefer Record maps keyed by id with an index field, or subcollections/arrays of IDs.',
-      recommended: 'warn',
+      recommended: 'error',
       requiresTypeChecking: false,
     },
     schema: [],
