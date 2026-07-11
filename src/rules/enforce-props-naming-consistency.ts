@@ -11,7 +11,7 @@ export const enforcePropsNamingConsistency = createRule<Options, MessageIds>({
     docs: {
       description:
         'Prefer naming single "Props"-typed parameters as "props"; enforcement defers to enforce-props-argument-name for multi-Props cases',
-      recommended: 'warn',
+      recommended: 'error',
     },
     fixable: 'code',
     schema: [],
