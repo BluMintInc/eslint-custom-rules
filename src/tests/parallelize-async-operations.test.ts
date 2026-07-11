@@ -480,6 +480,21 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
       await unitofwork.doSomethingElse();
     }
     `,
+    // Regression (#1283): COORDINATOR_PATTERN must match the literal identifier
+    // "coordinator" itself, not just batch/manager/transaction/etc.
+    `
+    async function processWithCoordinator() {
+      await coordinator.doSomething();
+      await coordinator.doSomethingElse();
+    }
+    `,
+    // Regression (#1283): "aggregator" is a coordinator-like identifier too.
+    `
+    async function processWithAggregator() {
+      await aggregator.doSomething();
+      await aggregator.doSomethingElse();
+    }
+    `,
     // property-based coordinator
     `
     async function propertyCoordinator() {
