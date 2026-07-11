@@ -402,7 +402,7 @@ module.exports = {
         '@blumintinc/blumint/no-static-constants-in-dynamic-files': 'error',
         '@blumintinc/blumint/test-file-location-enforcement': 'error',
         '@blumintinc/blumint/require-migration-script-metadata': 'error',
-        '@blumintinc/blumint/warn-https-error-message-user-friendly': 'warn',
+        '@blumintinc/blumint/warn-https-error-message-user-friendly': 'error',
         '@blumintinc/blumint/require-props-composition': 'warn',
         '@blumintinc/blumint/require-server-timestamp-for-firestore-dates':
           'error',
