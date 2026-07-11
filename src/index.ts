@@ -408,7 +408,7 @@ module.exports = {
           'error',
         '@blumintinc/blumint/prefer-spread-over-reassembly': 'error',
         '@blumintinc/blumint/prefer-sx-prop-over-system-props': 'error',
-        '@blumintinc/blumint/enforce-m3-sentence-case': 'warn',
+        '@blumintinc/blumint/enforce-m3-sentence-case': 'error',
         '@blumintinc/blumint/no-redundant-boolean-callback-props': 'error',
         '@blumintinc/blumint/enforce-is-prefix-validators': 'error',
         '@blumintinc/blumint/enforce-types-directory-placement': 'error',

@@ -272,7 +272,7 @@ export const enforceM3SentenceCase = createRule<Options, MessageIds>({
     docs: {
       description:
         'Enforce Material Design 3 sentence-case capitalisation for user-facing text — flag Title Case and ALL CAPS strings in JSX text and configured string props.',
-      recommended: 'warn',
+      recommended: 'error',
     },
     hasSuggestions: true,
     schema: [
