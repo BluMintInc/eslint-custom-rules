@@ -378,7 +378,7 @@ module.exports = {
         '@blumintinc/blumint/no-separate-loading-state': 'error',
         '@blumintinc/blumint/optimize-object-boolean-conditions': 'error',
         '@blumintinc/blumint/prefer-params-over-parent-id': 'error',
-        '@blumintinc/blumint/prefer-field-paths-in-transforms': 'warn',
+        '@blumintinc/blumint/prefer-field-paths-in-transforms': 'error',
         '@blumintinc/blumint/no-misleading-boolean-prefixes': 'error',
         '@blumintinc/blumint/prefer-url-tostring-over-tojson': 'error',
         '@blumintinc/blumint/prefer-next-dynamic': 'error',
