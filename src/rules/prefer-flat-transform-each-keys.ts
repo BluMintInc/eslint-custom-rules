@@ -195,7 +195,7 @@ export const preferFlatTransformEachKeys = createRule<[], MessageIds>({
     docs: {
       description:
         'Warn when transformEach in a propagation strategy returns nested object values instead of flat dot-notation keys.',
-      recommended: 'warn',
+      recommended: 'error',
     },
     fixable: undefined,
     schema: [],

@@ -416,7 +416,7 @@ module.exports = {
         '@blumintinc/blumint/no-direct-function-state': 'error',
         '@blumintinc/blumint/no-fill-template-mutation': 'error',
         '@blumintinc/blumint/enforce-snapshot-state-narrowing': 'error',
-        '@blumintinc/blumint/prefer-flat-transform-each-keys': 'warn',
+        '@blumintinc/blumint/prefer-flat-transform-each-keys': 'error',
         '@blumintinc/blumint/prefer-use-theme': 'error',
         '@blumintinc/blumint/no-single-dismiss-dialog-button': 'error',
         '@blumintinc/blumint/no-portal-inside-tooltip': 'error',
