@@ -218,7 +218,7 @@ export const preferFieldPathsInTransforms = createRule<
     docs: {
       description:
         'Flatten aggregation updates inside transformEach so diff-based deletes remove only the intended fields instead of wiping sibling data.',
-      recommended: 'warn',
+      recommended: 'error',
     },
     fixable: 'code',
     schema: [

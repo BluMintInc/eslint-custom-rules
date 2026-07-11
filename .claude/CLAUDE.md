@@ -199,7 +199,7 @@ export const yourRuleName = createRule<[], MessageIds>({
     type: 'suggestion', // or 'problem' or 'layout'
     docs: {
       description: 'Clear description of what the rule enforces',
-      recommended: 'error', // 'error' | 'warn' | 'strict' | false
+      recommended: 'error', // Default to 'error'. See "Rule Severity Policy" below before choosing anything else.
     },
     fixable: 'code', // 'code' | 'whitespace' | null
     schema: [], // or your options schema
@@ -215,6 +215,30 @@ export const yourRuleName = createRule<[], MessageIds>({
   },
 });
 ```
+
+### Rule Severity Policy
+
+**Default new rules to `'error'`.** Downstream CI, the `PostToolUse` eslint hook,
+stop hooks, and agent tooling all key on **error** exit codes — a `'warn'` rule
+is invisible to every one of them, so it is effectively unenforced documentation,
+not a gate. A finding that only warns ships unaddressed.
+
+Use `'warn'` **only** with a specific, documented reason recorded on the rule's
+docs page:
+
+* **"Gradual migration"** is a valid reason *only* if you also record concrete
+  graduation criteria and the date/owner for the promotion to `'error'`. An
+  open-ended warn with no graduation plan never graduates.
+* **"Legitimate exceptions exist"** is **NOT** a reason to use `'warn'`. Handle
+  exceptions with inline `eslint-disable-next-line` comments (which force a
+  conscious, reviewable opt-out) or with rule options (`ignoredWords`,
+  `allowNestedIn`, etc.) — the rule can still be `'error'`.
+
+Declare the severity in **both** places and keep them identical:
+`configs.recommended.rules` in `src/index.ts` **and** `meta.docs.recommended` in
+the rule source. `src/tests/recommended-severity-consistency.test.ts` asserts
+every enabled rule's `meta.docs.recommended` matches its shipped config severity,
+so the two cannot silently drift.
 
 ### 2. Rule Naming and Organization
 
@@ -459,7 +483,7 @@ After implementing and testing your rule:
      recommended: {
        rules: {
          // ... existing rules
-         '@blumintinc/blumint/your-rule-name': 'error', // or 'warn'
+         '@blumintinc/blumint/your-rule-name': 'error', // Default 'error'; 'warn' needs a documented reason (see "Rule Severity Policy"). Must equal the rule's meta.docs.recommended.
        }
      }
    }

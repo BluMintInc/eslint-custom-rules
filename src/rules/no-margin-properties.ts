@@ -49,7 +49,7 @@ export const noMarginProperties = createRule<Options, MessageIds>({
     docs: {
       description:
         'Prevent margin properties (margin, marginLeft, marginRight, marginTop, marginBottom, mx, my, etc.) in MUI styling because margins fight container-controlled spacing, double gutters, and misaligned breakpoints; keep spacing centralized with padding, gap, or spacing props instead.',
-      recommended: 'warn',
+      recommended: 'error',
     },
     schema: [
       {

@@ -72,6 +72,17 @@ export const yourRuleName = createRule<[], MessageIds>({
 });
 ```
 
+**Severity policy (default to `'error'`):** When the source issue does not
+explicitly ask for `'warn'`, ship the rule at `'error'` — in both
+`meta.docs.recommended` (above) and `configs.recommended.rules` in `src/index.ts`,
+and keep the two identical. Downstream CI and the agent lint hooks gate only on
+**errors**, so a `'warn'` rule never actually blocks anything and ships as
+unenforced documentation. Only use `'warn'` when the issue gives a specific,
+documented reason — and "legitimate exceptions exist" is not one (use inline
+`eslint-disable` comments or rule options instead). "Gradual migration" is valid
+only with recorded graduation criteria. `src/tests/recommended-severity-consistency.test.ts`
+fails the build if `meta.docs.recommended` and the config severity disagree.
+
 **Type-aware rules (important constraint):** The shared `ruleTester` instances in `src/utils/ruleTester.ts` set **no** `parserOptions.project`, so full type information is **not** available during tests. If your rule reaches for type info (`getParserServices`, `getTypeChecker`, `esTreeNodeToTSNodeMap`), it must **guard for missing parser services and degrade to syntactic detection** — mirror `src/rules/no-entire-object-hook-deps.ts`, which checks `parserServices?.esTreeNodeToTSNodeMap && typeof parserServices.program.getTypeChecker === 'function'` before touching the checker. Write your tests against the syntactic paths that work without a program. If the rule **fundamentally cannot decide** without resolved types, do not ship a version that only "passes" because the checker is absent — comment on the issue explaining the limitation and defer for human input rather than merging a rule whose core logic is untested.
 
 ### 3. Create Tests

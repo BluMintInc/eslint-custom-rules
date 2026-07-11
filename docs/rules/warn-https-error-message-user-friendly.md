@@ -1,6 +1,6 @@
 # Warn when messageUserFriendly is used in HttpsError or toHttpsError to ensure it is truly a user-caused error (`@blumintinc/blumint/warn-https-error-message-user-friendly`)
 
-⚠️ This rule _warns_ in the ✅ `recommended` config.
+💼 This rule is enabled in the ✅ `recommended` config.
 
 <!-- end auto-generated rule header -->
 
@@ -15,6 +15,17 @@ The use of `messageUserFriendly` is an intentional speed bump to re-evaluate whe
 BluMint's error monitoring systems often treat errors with user-friendly messages as "expected" user errors, which means they might not trigger alerts or incidents. If a real code defect is labeled with `messageUserFriendly`, it might go unnoticed.
 
 This rule does not forbid usage, but requires developers to consciously decide and use `// eslint-disable-next-line` when appropriate.
+
+## Severity
+
+This rule is `error` in the recommended config. Despite the historical `warn-`
+prefix in its name, a *warning* cannot enforce the "consciously decide" workflow
+above: downstream CI and agent lint hooks gate only on errors, so a warning is
+skipped silently and `messageUserFriendly` misuse ships unreviewed. At `error`,
+every legitimate use must carry an explicit
+`// eslint-disable-next-line @blumintinc/blumint/warn-https-error-message-user-friendly`
+(see the Correct example below) — which is exactly the intended conscious,
+reviewable opt-in, at the cost of a disable comment on each deliberate use.
 
 ## Examples
 

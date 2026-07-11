@@ -11,7 +11,7 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
     docs: {
       description:
         'Warn when messageUserFriendly is used in HttpsError or toHttpsError to ensure it is truly a user-caused error.',
-      recommended: 'warn',
+      recommended: 'error',
     },
     fixable: undefined, // Not automatically fixable
     schema: [],
@@ -186,10 +186,7 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
           visited.add(calleeName);
 
           const scope = ASTHelpers.getScope(context, unwrappedNode.callee);
-          const variable = ASTHelpers.findVariableInScope(
-            scope,
-            calleeName,
-          );
+          const variable = ASTHelpers.findVariableInScope(scope, calleeName);
           if (variable) {
             for (const def of variable.defs) {
               if (

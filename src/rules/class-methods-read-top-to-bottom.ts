@@ -25,7 +25,7 @@ export const classMethodsReadTopToBottom: TSESLint.RuleModule<
     docs: {
       description:
         'Enforces a top-to-bottom class layout so callers lead into the helpers they rely on.',
-      recommended: 'warn',
+      recommended: 'error',
     },
     schema: [],
     messages: {

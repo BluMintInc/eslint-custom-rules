@@ -304,7 +304,7 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
     docs: {
       description:
         'Require React component Props types to compose (via Pick/Omit) with the props types of non-leaf child components rendered in JSX',
-      recommended: 'warn',
+      recommended: 'error',
     },
     fixable: undefined,
     schema: [
