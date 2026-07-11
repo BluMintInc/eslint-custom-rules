@@ -33,6 +33,9 @@ function getData() {
 **Additional Notes**
 Include any specific guidance, edge cases, or known limitations for this rule. If the rule ties into other BluMint coding standards, mention them here.
 
+**Severity**
+Rules default to `'error'` — downstream CI and agent lint hooks gate only on errors, so a `'warn'` rule is effectively unenforced. Leave this blank to get `'error'`. If you want `'warn'`, state the specific reason here. Note: "legitimate exceptions exist" is not a reason (use inline `eslint-disable` comments or rule options instead), and "gradual migration" needs concrete graduation criteria (what triggers the promotion to `'error'`, and when).
+
 
 ## **Edge Cases**
 List out any edge cases you can think of. Help the LLM think traps to avoid.
