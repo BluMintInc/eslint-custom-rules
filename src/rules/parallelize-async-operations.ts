@@ -227,6 +227,52 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
       /batch|manager|collector|transaction|tx|coordinator|unitofwork|accumulator|aggregator/i;
 
     /**
+     * Matches guard/assertion callees by their leading verb. Anchored at the
+     * start so it fires on the callee's own verb (assertStartable,
+     * validateInput, ensureExists, requireAuth, checkAccess, verifyOwnership,
+     * guardAgainstX) rather than on an arbitrary substring elsewhere in the
+     * name.
+     */
+    const GUARD_PATTERN =
+      /^(assert|ensure|require|validate|verify|guard|check)/i;
+
+    /**
+     * Extracts the callee's method name (the identifier bearing the leading
+     * verb) from an await expression argument. Handles both direct
+     * CallExpressions and optional-call ChainExpressions, and both bare
+     * identifier callees and member-expression callees.
+     */
+    function getCalleeMethodName(
+      awaitExpr: TSESTree.AwaitExpression,
+    ): string | null {
+      let callExpr: TSESTree.CallExpression | null = null;
+      if (awaitExpr.argument.type === AST_NODE_TYPES.CallExpression) {
+        callExpr = awaitExpr.argument;
+      } else if (
+        awaitExpr.argument.type === AST_NODE_TYPES.ChainExpression &&
+        awaitExpr.argument.expression.type === AST_NODE_TYPES.CallExpression
+      ) {
+        callExpr = awaitExpr.argument.expression;
+      }
+
+      if (!callExpr) {
+        return null;
+      }
+
+      const callee = callExpr.callee;
+      if (
+        callee.type === AST_NODE_TYPES.MemberExpression &&
+        callee.property.type === AST_NODE_TYPES.Identifier
+      ) {
+        return callee.property.name;
+      }
+      if (callee.type === AST_NODE_TYPES.Identifier) {
+        return callee.name;
+      }
+      return null;
+    }
+
+    /**
      * Checks if there are dependencies between await expressions
      */
     function hasDependencies(
@@ -278,35 +324,37 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
 
         // 3. Check for operations that might have side effects
         // If any node has a side effect, we should not parallelize the sequence
-        let callExpr: TSESTree.CallExpression | null = null;
-        if (awaitExpr.argument.type === AST_NODE_TYPES.CallExpression) {
-          callExpr = awaitExpr.argument;
-        } else if (
-          awaitExpr.argument.type === AST_NODE_TYPES.ChainExpression &&
-          awaitExpr.argument.expression.type === AST_NODE_TYPES.CallExpression
+        const methodName = getCalleeMethodName(awaitExpr);
+        if (
+          methodName &&
+          sideEffectPatterns.some((pattern) => pattern.test(methodName))
         ) {
-          callExpr = awaitExpr.argument.expression;
+          return true;
         }
+      }
 
-        if (callExpr) {
-          const callee = callExpr.callee;
-          let methodName: string | null = null;
-
-          if (
-            callee.type === AST_NODE_TYPES.MemberExpression &&
-            callee.property.type === AST_NODE_TYPES.Identifier
-          ) {
-            methodName = callee.property.name;
-          } else if (callee.type === AST_NODE_TYPES.Identifier) {
-            methodName = callee.name;
-          }
-
-          if (
-            methodName &&
-            sideEffectPatterns.some((pattern) => pattern.test(methodName!))
-          ) {
-            return true;
-          }
+      // 4. Guard-then-side-effect ordering barrier. A discarded-result await
+      // whose callee reads as a guard/assertion (assert*, ensure*, validate*,
+      // ...) is a control-flow gate: it throws to abort the run when its
+      // precondition fails, so any await after it must run ONLY if the guard
+      // resolves. Promise.all invokes every operand eagerly, so it would fire
+      // the gated side effect even when the guard rejects. Treat the guard's
+      // presence (when something follows it) as a sequencing dependency that
+      // blocks parallelizing the whole run. Only discarded-result awaits
+      // (ExpressionStatements) qualify; `const ok = await validate(x)` has a
+      // variable and is handled by the data-dependency path above.
+      for (let i = 0; i < awaitNodes.length - 1; i++) {
+        const node = awaitNodes[i];
+        if (node.type !== AST_NODE_TYPES.ExpressionStatement) {
+          continue;
+        }
+        const awaitExpr = getAwaitExpression(node);
+        if (!awaitExpr) {
+          continue;
+        }
+        const methodName = getCalleeMethodName(awaitExpr);
+        if (methodName && GUARD_PATTERN.test(methodName)) {
+          return true;
         }
       }
 
