@@ -602,7 +602,7 @@ export const noConsoleError = createRule<Options, MessageIds>({
     docs: {
       description:
         'Disallow console.error so errors flow through structured handling (HttpsError/useErrorAlert on frontend, structured loggers on backend).',
-      recommended: 'warn',
+      recommended: 'error',
     },
     schema: [
       {
