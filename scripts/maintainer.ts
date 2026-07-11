@@ -190,7 +190,18 @@ export function fetchOpenIssues(
 type Runner = (cmd: string, args: string[]) => void;
 
 const defaultRunner: Runner = (cmd, args) => {
-  execFileSync(cmd, args, { stdio: 'inherit' });
+  // Disable husky git hooks for every command this toolkit runs. The repo's
+  // post-checkout/post-merge hooks (.husky/) run `npm install` whenever a branch
+  // switch or merge changes package.json/package-lock.json. During a release the
+  // ff-only promotion switches between develop and main; because package-lock.json
+  // is not a @semantic-release/git asset it drifts stale on main, so that npm
+  // install regenerates the lockfile and leaves the tree dirty — which makes the
+  // very next `git merge --ff-only` abort. HUSKY=0 (honored by .husky/_/h) skips
+  // the hooks so these git operations are never disrupted by working-tree churn.
+  execFileSync(cmd, args, {
+    stdio: 'inherit',
+    env: { ...process.env, HUSKY: '0' },
+  });
 };
 
 /**
