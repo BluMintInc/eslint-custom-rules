@@ -509,6 +509,81 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
       await batchManager?.flush();
     }
     `,
+    // Gate-then-side-effect: no DATA dependency, but a control-flow / side-effect
+    // ordering dependency. The first await is a guard that throws to abort; the
+    // second must run ONLY if the gate passed. Promise.all would invoke
+    // activateBracket even when assertStartable rejects, so these must stay
+    // sequential and the rule must NOT flag them.
+    `
+async function startTournament(tournamentId: string) {
+  await assertStartable(tournamentId);
+  await activateBracket(tournamentId);
+}
+`,
+    // Guard verb: validate*
+    `
+async function saveIfValid(input) {
+  await validateInput(input);
+  await persistRecord(input);
+}
+`,
+    // Guard verb: ensure*
+    `
+async function ensureThenMutate(id) {
+  await ensureExists(id);
+  await deleteRecord(id);
+}
+`,
+    // Guard verb: require*
+    `
+async function requireThenAct(user) {
+  await requireAuth(user);
+  await performAction(user);
+}
+`,
+    // Guard verb: verify*
+    `
+async function verifyThenTransfer(account) {
+  await verifyOwnership(account);
+  await transferFunds(account);
+}
+`,
+    // Guard verb: guard*
+    `
+async function guardThenRun(ctx) {
+  await guardAgainstAbuse(ctx);
+  await runJob(ctx);
+}
+`,
+    // Guard verb: check*
+    `
+async function checkThenSend(recipient) {
+  await checkAccess(recipient);
+  await sendMessage(recipient);
+}
+`,
+    // Member-expression guard callee gating a member-expression side effect.
+    `
+async function memberGuard(x) {
+  await validator.assertValid(x);
+  await repo.save(x);
+}
+`,
+    // Optional-call (ChainExpression) guard callee gating a side effect.
+    `
+async function optionalGuard(x) {
+  await guards?.assert(x);
+  await mutate(x);
+}
+`,
+    // Three awaits: a leading guard gates the two side effects that follow.
+    `
+async function guardBeforeTwo(orderId) {
+  await assertPayable(orderId);
+  await capturePayment(orderId);
+  await markPaid(orderId);
+}
+`,
   ],
   invalid: [
     // Basic case: two sequential awaits with realtimeDb
@@ -1298,6 +1373,75 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
   -getValue2()
 ]);
         return 'calculated';
+      }
+      `,
+    },
+
+    // Guard-barrier fix must NOT suppress genuinely independent value reads.
+    // Two variable-declaration awaits with no data dependency, no guard, no
+    // coordinator: still parallelizable.
+    {
+      code: `
+      async function independentReads() {
+        const a = await fetchA();
+        const b = await fetchB();
+        return { a, b };
+      }
+      `,
+      errors: [error(2)],
+      output: `
+      async function independentReads() {
+        const [a, b] = await Promise.all([
+  fetchA(),
+  fetchB()
+]);
+        return { a, b };
+      }
+      `,
+    },
+
+    // Two independent discarded-result awaits whose callees do NOT read as
+    // guards (no leading assert/ensure/validate/... verb): still parallelizable.
+    {
+      code: `
+      async function independentSideEffects() {
+        await logEvent(x);
+        await sendEmail(y);
+        return true;
+      }
+      `,
+      errors: [error(2)],
+      output: `
+      async function independentSideEffects() {
+        await Promise.all([
+  logEvent(x),
+  sendEmail(y)
+]);
+        return true;
+      }
+      `,
+    },
+
+    // A guard-verb callee whose result is ASSIGNED to a variable is NOT a
+    // discarded-result guard barrier: it has a value and is governed by the
+    // data-dependency path. Since `other` does not consume `ok`, the two reads
+    // are independent and remain parallelizable.
+    {
+      code: `
+      async function assignedGuardStillFlagged() {
+        const ok = await validateThing(x);
+        const other = await fetchOther();
+        return { ok, other };
+      }
+      `,
+      errors: [error(2)],
+      output: `
+      async function assignedGuardStillFlagged() {
+        const [ok, other] = await Promise.all([
+  validateThing(x),
+  fetchOther()
+]);
+        return { ok, other };
       }
       `,
     },
