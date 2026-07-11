@@ -421,7 +421,7 @@ module.exports = {
         '@blumintinc/blumint/no-single-dismiss-dialog-button': 'error',
         '@blumintinc/blumint/no-portal-inside-tooltip': 'error',
         '@blumintinc/blumint/no-satisfies-in-frontend-bundle': 'error',
-        '@blumintinc/blumint/prefer-utility-function-own-file': 'warn',
+        '@blumintinc/blumint/prefer-utility-function-own-file': 'error',
       },
       /**
        * Depth-specific overrides block only import strings that traverse to the

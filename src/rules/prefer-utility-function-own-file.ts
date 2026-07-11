@@ -268,7 +268,7 @@ export const preferUtilityFunctionOwnFile = createRule<Options, MessageIds>({
     docs: {
       description:
         'Enforce that sizable utility functions live in their own file rather than being co-located inside an entry-point or consumer file',
-      recommended: 'warn',
+      recommended: 'error',
     },
     schema: [
       {

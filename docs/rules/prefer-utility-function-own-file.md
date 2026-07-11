@@ -1,6 +1,6 @@
 # Enforce that sizable utility functions live in their own file rather than being co-located inside an entry-point or consumer file (`@blumintinc/blumint/prefer-utility-function-own-file`)
 
-⚠️ This rule _warns_ in the ✅ `recommended` config.
+💼 This rule is enabled in the ✅ `recommended` config.
 
 <!-- end auto-generated rule header -->
 
