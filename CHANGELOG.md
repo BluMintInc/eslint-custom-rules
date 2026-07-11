@@ -1,3 +1,10 @@
+## [1.18.10](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.9...v1.18.10) (2026-07-11)
+
+
+### Bug Fixes
+
+* **parallelize-async-operations:** restore coordinator to COORDINATOR_PATTERN (closes [#1283](https://github.com/BluMintInc/eslint-custom-rules/issues/1283)) ([a9ae52d](https://github.com/BluMintInc/eslint-custom-rules/commit/a9ae52d2601b606fb4b751e8168a8e8091499659))
+
 ## [1.18.9](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.8...v1.18.9) (2026-07-11)
 
 
