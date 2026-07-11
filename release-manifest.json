@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.18.11",
+    "date": "2026-07-11T16:25:05.418Z",
+    "rules": [
+      {
+        "name": "parallelize-async-operations",
+        "changeType": "fix",
+        "issues": [
+          1284
+        ],
+        "summary": "treat throw-gated guard awaits as a sequencing barrier (closes #1284)"
+      }
+    ]
+  },
+  {
     "version": "1.18.10",
     "date": "2026-07-11T15:24:03.394Z",
     "rules": [

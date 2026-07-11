@@ -1,3 +1,10 @@
+## [1.18.11](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.10...v1.18.11) (2026-07-11)
+
+
+### Bug Fixes
+
+* **parallelize-async-operations:** treat throw-gated guard awaits as a sequencing barrier (closes [#1284](https://github.com/BluMintInc/eslint-custom-rules/issues/1284)) ([d5c257e](https://github.com/BluMintInc/eslint-custom-rules/commit/d5c257ed4f72934c7a5a3eca5ce5ac44eab5270a))
+
 ## [1.18.10](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.9...v1.18.10) (2026-07-11)
 
 
