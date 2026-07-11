@@ -1,6 +1,6 @@
 # Require React component Props types to compose (via Pick/Omit) with the props types of non-leaf child components rendered in JSX (`@blumintinc/blumint/require-props-composition`)
 
-⚠️ This rule _warns_ in the ✅ `recommended` config.
+💼 This rule is enabled in the ✅ `recommended` config.
 
 <!-- end auto-generated rule header -->
 

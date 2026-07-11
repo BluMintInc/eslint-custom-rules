@@ -403,7 +403,7 @@ module.exports = {
         '@blumintinc/blumint/test-file-location-enforcement': 'error',
         '@blumintinc/blumint/require-migration-script-metadata': 'error',
         '@blumintinc/blumint/warn-https-error-message-user-friendly': 'error',
-        '@blumintinc/blumint/require-props-composition': 'warn',
+        '@blumintinc/blumint/require-props-composition': 'error',
         '@blumintinc/blumint/require-server-timestamp-for-firestore-dates':
           'error',
         '@blumintinc/blumint/prefer-spread-over-reassembly': 'error',
