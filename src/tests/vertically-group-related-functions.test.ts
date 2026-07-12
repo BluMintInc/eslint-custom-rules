@@ -61,15 +61,54 @@ ruleTesterTs.run(
         options: [{ exportPlacement: 'top' }],
       },
       {
+        // Group order still governs functions with no call relationship: with
+        // utilities-first, the independent utility precedes the independent
+        // handler.
         code: `
         const buildQuery = () => {};
-        const handleAction = () => buildQuery();
+        const handleAction = () => ({});
         `,
         options: [
           {
             groupOrder: ['utilities', 'event-handlers', 'other'],
           },
         ],
+      },
+      {
+        // Diamond call graph in its natural callers-first order: the caller
+        // fans out to two independent helper chains, each grouped beneath it.
+        // Verb prefixes (compute/fetch = "utilities", bucket/tally/find =
+        // "other") must NOT reorder the chains.
+        name: 'diamond call graph in natural callers-first order with grouped helper chains',
+        code: `
+        export async function computeGithubActivity(login: string) {
+          const titles = await fetchIssueActivity(login);
+          const closers = await fetchIssuesClosedByActor(login);
+          return { titles, closers };
+        }
+
+        async function fetchIssueActivity(login: string) {
+          const pages = [[login]];
+          return bucketTitles(pages.flat());
+        }
+
+        function bucketTitles(titles: string[]) {
+          return titles.map((title) => title.toUpperCase());
+        }
+
+        async function fetchIssuesClosedByActor(login: string) {
+          const pages = [[login]];
+          return pages.map((page) => tallyClosersFromPage(page));
+        }
+
+        function tallyClosersFromPage(page: string[]) {
+          return findLatestInWindowCloser(page);
+        }
+
+        function findLatestInWindowCloser(page: string[]) {
+          return page[page.length - 1];
+        }
+        `,
       },
       `
       const onClose = () => {
@@ -203,13 +242,13 @@ function utility() {}
         options: [{ dependencyDirection: 'callees-first' }],
         errors: [{ messageId: 'misorderedFunction' }],
         output: `
-        function handleClick() {
+        function transform() {}
+
+function handleClick() {
           return transform();
         }
 
 function onClose() {}
-
-function transform() {}
         `,
       },
       {
@@ -372,6 +411,78 @@ function helper() {}
         const handleClick = () => helper();
 
 const helper = () => {};
+        `,
+      },
+      {
+        // Dependency now overrides group order: even with utilities-first, a
+        // caller must sit above the helper it invokes (previously group order
+        // wrongly kept the utility on top, contradicting callers-first).
+        code: `
+        const buildQuery = () => {};
+        const handleAction = () => buildQuery();
+        `,
+        options: [
+          {
+            groupOrder: ['utilities', 'event-handlers', 'other'],
+          },
+        ],
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: `
+        const handleAction = () => buildQuery();
+
+const buildQuery = () => {};
+        `,
+      },
+      {
+        // Misordered diamond (helpers above their caller) converges to the
+        // natural callers-first order in a single fix.
+        code: `
+        function bucketTitles(titles: string[]) {
+          return titles;
+        }
+        function fetchIssueActivity(login: string) {
+          return bucketTitles([login]);
+        }
+        export function computeGithubActivity(login: string) {
+          return fetchIssueActivity(login);
+        }
+        `,
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: `
+        export function computeGithubActivity(login: string) {
+          return fetchIssueActivity(login);
+        }
+
+function fetchIssueActivity(login: string) {
+          return bucketTitles([login]);
+        }
+
+function bucketTitles(titles: string[]) {
+          return titles;
+        }
+        `,
+      },
+      {
+        // Fixer reorders functions in place around interleaved non-function
+        // statements (a const, here) instead of bailing.
+        code: `
+        function helper() {
+          return OFFSET;
+        }
+        const OFFSET = 2;
+        function main() {
+          return helper();
+        }
+        `,
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: `
+        function main() {
+          return helper();
+        }
+        const OFFSET = 2;
+        function helper() {
+          return OFFSET;
+        }
         `,
       },
     ],

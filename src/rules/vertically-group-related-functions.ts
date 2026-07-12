@@ -338,22 +338,34 @@ function collectDependencies(
 function dependencyOrder(
   functions: FunctionInfo[],
   direction: DependencyDirection,
+  groupOrder: GroupName[],
 ): string[] {
   const dependencyMap = new Map<string, string[]>();
   const originalIndexMap = new Map(
     functions.map((fn) => [fn.name, fn.originalIndex] as const),
+  );
+  const groupRankMap = new Map(
+    functions.map(
+      (fn) => [fn.name, groupOrder.indexOf(classifyGroup(fn))] as const,
+    ),
   );
 
   functions.forEach((fn) => {
     dependencyMap.set(fn.name, fn.dependencies);
   });
 
+  // Tiebreak among functions the call graph does NOT order relative to each
+  // other (independent roots, sibling callees, cycle members): configured
+  // group order first, then original source position. Both keys are intrinsic
+  // to the function rather than its current arrangement, so the traversal is a
+  // fixed point once reached — obeying a move never spawns a contradicting one.
+  const tiebreak = (a: string, b: string) =>
+    (groupRankMap.get(a) ?? 0) - (groupRankMap.get(b) ?? 0) ||
+    (originalIndexMap.get(a) ?? 0) - (originalIndexMap.get(b) ?? 0);
+
   const visited = new Set<string>();
   const order: string[] = [];
-  const namesInOriginalOrder = functions
-    .slice()
-    .sort((a, b) => a.originalIndex - b.originalIndex)
-    .map((fn) => fn.name);
+  const namesInTiebreakOrder = functions.map((fn) => fn.name).sort(tiebreak);
 
   const incomingCount = new Map<string, number>();
   functions.forEach((fn) => {
@@ -365,7 +377,7 @@ function dependencyOrder(
     });
   });
 
-  const roots = namesInOriginalOrder.filter(
+  const roots = namesInTiebreakOrder.filter(
     (name) => (incomingCount.get(name) || 0) === 0,
   );
 
@@ -374,15 +386,7 @@ function dependencyOrder(
       return;
     }
     visited.add(name);
-    const deps =
-      dependencyMap
-        .get(name)
-        ?.slice()
-        .sort((a, b) => {
-          return (
-            (originalIndexMap.get(a) || 0) - (originalIndexMap.get(b) || 0)
-          );
-        }) || [];
+    const deps = dependencyMap.get(name)?.slice().sort(tiebreak) || [];
     if (direction === 'callees-first') {
       deps.forEach(visit);
       order.push(name);
@@ -392,7 +396,10 @@ function dependencyOrder(
     }
   };
 
-  [...roots, ...namesInOriginalOrder].forEach(visit);
+  // Depth-first from roots keeps each caller immediately above its own helper
+  // subtree (callers-first) — grouping call chains vertically. The call graph
+  // is primary; group order only breaks ties the graph leaves open.
+  [...roots, ...namesInTiebreakOrder].forEach(visit);
 
   return order;
 }
@@ -405,6 +412,7 @@ function computeExpectedOrder(
   const dependencySequence = dependencyOrder(
     functions,
     options.dependencyDirection,
+    groupOrder,
   );
   const dependencyRank = new Map(
     dependencySequence.map((name, idx) => [name, idx]),
@@ -420,13 +428,13 @@ function computeExpectedOrder(
     return fn.isExported ? 1 : 0;
   };
 
-  const groupRank = (fn: FunctionInfo) =>
-    groupOrder.indexOf(classifyGroup(fn as FunctionInfo));
-
+  // Export placement is the only concern allowed to outrank the call graph.
+  // The dependency sequence already folds group order in as a tiebreak, so a
+  // caller is never sorted below the helpers it invokes on account of its verb
+  // prefix — the defect that produced self-contradicting move instructions.
   return functions.slice().sort((a, b) => {
     return (
       exportRank(a) - exportRank(b) ||
-      groupRank(a) - groupRank(b) ||
       (dependencyRank.get(a.name) ?? Number.MAX_SAFE_INTEGER) -
         (dependencyRank.get(b.name) ?? Number.MAX_SAFE_INTEGER) ||
       a.originalIndex - b.originalIndex
@@ -622,7 +630,11 @@ export const verticallyGroupRelatedFunctions: TSESLint.RuleModule<
 
         const group = classifyGroup(misplacedInfo);
         const groupOrder = normalizeGroupOrder(normalizedOptions.groupOrder);
+        // Group order only settles ties the call graph leaves open, so cite it
+        // as a reason only when this function has no helpers of its own — never
+        // paired with "callers should sit above the helpers they invoke".
         const groupReason =
+          misplacedInfo.dependencies.length === 0 &&
           groupOrder.indexOf(group) > 0
             ? `${group.replace(
                 '-',
@@ -698,7 +710,19 @@ export const verticallyGroupRelatedFunctions: TSESLint.RuleModule<
             );
 
             if (!blockContainsOnlyFunctions) {
-              return null;
+              // Real modules interleave type aliases, consts, and top-level
+              // calls (e.g. `void autoRunIfMain();`) between functions. Rather
+              // than bail, reorder only the function statements among their own
+              // slots, leaving every other statement exactly where it is. Plain
+              // node ranges keep the edits disjoint (no comment-span overlap
+              // with the interleaved statements).
+              return sourceOrderedInfos.map((info, idx) => {
+                const target = expectedOrderInfos[idx];
+                return fixer.replaceTextRange(
+                  info.statementNode.range,
+                  sourceCode.getText(target.statementNode),
+                );
+              });
             }
 
             const [start] =
