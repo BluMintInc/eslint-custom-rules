@@ -44,6 +44,8 @@ function collectReferencedIdentifiers(node: TSESTree.Node): Set<string> {
         // Record parameter names as locals
         for (const param of fn.params) {
           collectPatternNames(param, locals);
+          // Default values inside a parameter pattern may reference module scope
+          walkPatternDefaults(param);
         }
         walk(fn.body);
         break;
@@ -52,6 +54,10 @@ function collectReferencedIdentifiers(node: TSESTree.Node): Set<string> {
       case AST_NODE_TYPES.VariableDeclarator: {
         const decl = n as TSESTree.VariableDeclarator;
         collectPatternNames(decl.id, locals);
+        // Default values inside a destructuring pattern may reference module
+        // scope (e.g. `const { runner = runCli } = props`) — the binding names
+        // are locals, but the default expressions are real references.
+        walkPatternDefaults(decl.id);
         walk(decl.init);
         break;
       }
@@ -72,6 +78,43 @@ function collectReferencedIdentifiers(node: TSESTree.Node): Set<string> {
           }
         }
       }
+    }
+  }
+
+  // Walks only the right-hand sides of AssignmentPattern defaults nested inside
+  // a binding pattern. The binding names themselves are locals; their defaults
+  // are ordinary references that `walk` (which skips patterns via the dedicated
+  // VariableDeclarator/function cases) would otherwise never visit.
+  function walkPatternDefaults(p: TSESTree.Node | null | undefined): void {
+    if (!p) return;
+    switch (p.type) {
+      case AST_NODE_TYPES.AssignmentPattern:
+        walk((p as TSESTree.AssignmentPattern).right);
+        walkPatternDefaults((p as TSESTree.AssignmentPattern).left);
+        break;
+
+      case AST_NODE_TYPES.ArrayPattern:
+        for (const el of (p as TSESTree.ArrayPattern).elements) {
+          walkPatternDefaults(el);
+        }
+        break;
+
+      case AST_NODE_TYPES.ObjectPattern:
+        for (const prop of (p as TSESTree.ObjectPattern).properties) {
+          if (prop.type === AST_NODE_TYPES.RestElement) {
+            walkPatternDefaults((prop as TSESTree.RestElement).argument);
+          } else {
+            walkPatternDefaults((prop as TSESTree.Property).value);
+          }
+        }
+        break;
+
+      case AST_NODE_TYPES.RestElement:
+        walkPatternDefaults((p as TSESTree.RestElement).argument);
+        break;
+
+      default:
+        break;
     }
   }
 
@@ -261,6 +304,46 @@ function isExemptFile(filename: string): boolean {
   return false;
 }
 
+/**
+ * Returns true if the module top-level self-invokes one of its own functions,
+ * e.g. `void autoRunIfMain();` or `main();`. This is the signature of a CLI
+ * entry-point module whose colocated helpers ARE its purpose, not foreign
+ * utilities that should be extracted.
+ */
+function hasTopLevelSelfInvocation(
+  program: TSESTree.Program,
+  topLevelFunctionNames: Set<string>,
+): boolean {
+  for (const statement of program.body) {
+    if (statement.type !== AST_NODE_TYPES.ExpressionStatement) continue;
+
+    // Unwrap `void expr`, `await expr`, and parenthesized wrappers to reach the
+    // underlying call (e.g. `void autoRunIfMain();`).
+    let expr: TSESTree.Node | undefined = statement.expression;
+    while (
+      expr &&
+      ((expr.type === AST_NODE_TYPES.UnaryExpression &&
+        (expr as TSESTree.UnaryExpression).operator === 'void') ||
+        expr.type === AST_NODE_TYPES.AwaitExpression ||
+        (expr as { type: string }).type === 'ParenthesizedExpression')
+    ) {
+      expr =
+        (expr as { argument?: TSESTree.Node }).argument ??
+        (expr as { expression?: TSESTree.Node }).expression;
+    }
+
+    if (!expr || expr.type !== AST_NODE_TYPES.CallExpression) continue;
+    const callee = (expr as TSESTree.CallExpression).callee;
+    if (
+      callee.type === AST_NODE_TYPES.Identifier &&
+      topLevelFunctionNames.has(callee.name)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export const preferUtilityFunctionOwnFile = createRule<Options, MessageIds>({
   name: 'prefer-utility-function-own-file',
   meta: {
@@ -328,6 +411,14 @@ export const preferUtilityFunctionOwnFile = createRule<Options, MessageIds>({
     const topLevelFunctions: FuncInfo[] = [];
     let hasExportDefault = false;
 
+    // Names of every top-level binding (functions, consts, lets, destructured
+    // bindings). Used by the closure exemption: a function that references any
+    // of these closes over module scope, so extraction would sever that link.
+    const topLevelBindingNames = new Set<string>();
+
+    // Whether the module references `require.main` — a CLI entry-point signal.
+    let referencesRequireMain = false;
+
     // Names that appear as the handler inside `export default someWrapper(name)`
     const wrappedDefaultHandlerNames = new Set<string>();
 
@@ -338,6 +429,19 @@ export const preferUtilityFunctionOwnFile = createRule<Options, MessageIds>({
     const specifierExportedNames = new Set<string>();
 
     return {
+      // Detect `require.main` references (CLI entry-point signal)
+      MemberExpression(node: TSESTree.MemberExpression) {
+        if (
+          !node.computed &&
+          node.object.type === AST_NODE_TYPES.Identifier &&
+          node.object.name === 'require' &&
+          node.property.type === AST_NODE_TYPES.Identifier &&
+          node.property.name === 'main'
+        ) {
+          referencesRequireMain = true;
+        }
+      },
+
       // Collect export default declarations
       ExportDefaultDeclaration(node: TSESTree.ExportDefaultDeclaration) {
         hasExportDefault = true;
@@ -407,6 +511,7 @@ export const preferUtilityFunctionOwnFile = createRule<Options, MessageIds>({
         if (!node.id) return;
 
         const name = node.id.name;
+        topLevelBindingNames.add(name);
         const isNamedExport =
           parent?.type === AST_NODE_TYPES.ExportNamedDeclaration;
         const isDefaultExport =
@@ -435,6 +540,13 @@ export const preferUtilityFunctionOwnFile = createRule<Options, MessageIds>({
           parent?.type === AST_NODE_TYPES.ExportNamedDeclaration;
 
         for (const declarator of node.declarations) {
+          // Every top-level binding (including non-function consts like a
+          // registry array and destructured bindings) is a closure target.
+          collectPatternNames(
+            declarator.id as TSESTree.Parameter,
+            topLevelBindingNames,
+          );
+
           if (declarator.id.type !== AST_NODE_TYPES.Identifier) continue;
           const name = (declarator.id as TSESTree.Identifier).name;
           const fn = extractFunctionInit(declarator.init);
@@ -450,7 +562,22 @@ export const preferUtilityFunctionOwnFile = createRule<Options, MessageIds>({
         }
       },
 
-      'Program:exit'() {
+      'Program:exit'(programNode: TSESTree.Program) {
+        // CLI entry-point modules deliberately colocate their parser/printer/
+        // guard/compute helpers — those functions ARE the file's purpose, not
+        // foreign utilities. Recognize them via a `require.main` reference or a
+        // top-level self-invocation of one of their own functions
+        // (`void autoRunIfMain();`) and exempt the whole file.
+        const topLevelFunctionNames = new Set(
+          topLevelFunctions.map((f) => f.name),
+        );
+        if (
+          referencesRequireMain ||
+          hasTopLevelSelfInvocation(programNode, topLevelFunctionNames)
+        ) {
+          return;
+        }
+
         // Determine the file's primary export name (basename heuristic)
         // e.g. "modifyRoleMembers" in "modifyRoleMembers.f.ts"
         const primaryName = basename;
@@ -513,7 +640,7 @@ export const preferUtilityFunctionOwnFile = createRule<Options, MessageIds>({
           if (ignoreClosures) {
             const closesOverModuleScope = functionClosesOverModuleScope(
               fn,
-              topLevelFunctions,
+              topLevelBindingNames,
             );
             if (closesOverModuleScope) continue;
           }
@@ -548,9 +675,9 @@ export const preferUtilityFunctionOwnFile = createRule<Options, MessageIds>({
  * passed as parameters, making it non-trivially extractable.
  *
  * We identify "module-scope" identifiers as names of other top-level
- * declarations in the file (functions, variables) that are NOT imported.
- * Imported names and standard globals are considered "extractable" (you'd
- * just re-import them).
+ * declarations in the file (functions, variables, destructured bindings) that
+ * are NOT imported. Imported names and standard globals are considered
+ * "extractable" (you'd just re-import them).
  *
  * Strategy: collect referenced identifiers in the body, subtract param names,
  * then check if any remain that are names of other top-level declarations.
@@ -560,7 +687,7 @@ function functionClosesOverModuleScope(
     | TSESTree.FunctionDeclaration
     | TSESTree.FunctionExpression
     | TSESTree.ArrowFunctionExpression,
-  topLevelFunctions: Array<{ name: string }>,
+  topLevelBindingNames: Set<string>,
 ): boolean {
   const body = getFunctionBody(fn);
   if (!body) return false;
@@ -579,13 +706,10 @@ function functionClosesOverModuleScope(
     referencedIds.delete(param);
   }
 
-  // Get the set of top-level sibling function names
-  const topLevelNames = new Set(topLevelFunctions.map((f) => f.name));
-
-  // If ANY referenced identifier is a top-level sibling function name,
-  // then this function closes over a module-scope binding.
+  // If ANY referenced identifier is a top-level sibling binding name, then this
+  // function closes over module scope.
   for (const ref of referencedIds) {
-    if (topLevelNames.has(ref)) {
+    if (topLevelBindingNames.has(ref)) {
       return true;
     }
   }
