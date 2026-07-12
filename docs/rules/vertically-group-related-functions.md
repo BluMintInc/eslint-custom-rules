@@ -8,6 +8,8 @@
 
 Keep top-level functions together so readers can scan call chains from top to bottom without jumping around the file. The rule prefers grouping entry points (event handlers and exported functions) above the helpers they invoke and supports configurable grouping for exports, event handlers, and utilities.
 
+The **call graph takes precedence over `groupOrder`**: `dependencyDirection` orders any functions related by a call, and the name-prefix buckets (`groupOrder`, `eventHandlerPattern`, `utilityPattern`) only settle ties among functions the call graph does not relate. A caller is therefore never placed below the helpers it invokes on account of its verb prefix — so a diamond fan-out (one caller invoking several independent helper chains) reads cleanly in its natural callers-first order.
+
 ## Rule Details
 
 You'll see this rule applied to named, top-level function declarations and variable declarations whose initializer is an arrow/function expression. The rule ignores nested functions, inline callbacks, and methods defined inside object literals.
