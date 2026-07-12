@@ -14,6 +14,14 @@ This rule flags a module-level (top-level) function — declaration or arrow-con
 
 When these conditions are met, the suggestion is to move the function to its own file (e.g. under `util/`) so it is discoverable and reusable.
 
+### Files and functions that are never flagged
+
+Some modules are cohesive by design, so the rule exempts them:
+
+- **Test/spec files, `__mocks__/` directories, and `types/**` files** are exempt entirely.
+- **CLI entry-point modules** are exempt entirely. A file is treated as a CLI entry point when it references `require.main` or top-level self-invokes one of its own functions (e.g. `void autoRunIfMain();`). Its `parse*`/`print*`/guard/compute helpers ARE the file's purpose — they are not foreign utilities.
+- **Functions that close over module scope** are skipped while `ignoreClosures` is `true` (the default). This covers any top-level binding — including a `const` such as a registry array a finder reads (`DEVELOPER_REGISTRY.find(...)`) and sibling names referenced through destructuring defaults (`const { runner = runCli } = props`) — because such a function cannot move to its own file without also moving what it depends on.
+
 ### Motivation
 
 When an AI agent or a developer encapsulates logic into a utility function, the function is often defined in the same file where it first became needed instead of getting its own module. This:
