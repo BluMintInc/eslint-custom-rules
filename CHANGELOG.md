@@ -1,3 +1,11 @@
+## [1.18.12](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.11...v1.18.12) (2026-07-12)
+
+
+### Bug Fixes
+
+* **prefer-utility-function-own-file:** exempt CLI entry-point and registry modules (closes [#1285](https://github.com/BluMintInc/eslint-custom-rules/issues/1285)) ([f07eae1](https://github.com/BluMintInc/eslint-custom-rules/commit/f07eae134e1a533401f1b699b7abf91e56f77cad))
+* **vertically-group-related-functions:** make call graph primary over name-prefix groups (closes [#1286](https://github.com/BluMintInc/eslint-custom-rules/issues/1286)) ([c26280c](https://github.com/BluMintInc/eslint-custom-rules/commit/c26280c2e6be336e92bbffc4c4a28d382691489c))
+
 ## [1.18.11](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.10...v1.18.11) (2026-07-11)
 
 
