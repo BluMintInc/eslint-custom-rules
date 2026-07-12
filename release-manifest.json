@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.18.12",
+    "date": "2026-07-12T03:45:44.071Z",
+    "rules": [
+      {
+        "name": "prefer-utility-function-own-file",
+        "changeType": "fix",
+        "issues": [
+          1285
+        ],
+        "summary": "exempt CLI entry-point and registry modules (closes #1285)"
+      },
+      {
+        "name": "vertically-group-related-functions",
+        "changeType": "fix",
+        "issues": [
+          1286
+        ],
+        "summary": "make call graph primary over name-prefix groups (closes #1286)"
+      }
+    ]
+  },
+  {
     "version": "1.18.11",
     "date": "2026-07-11T16:25:05.418Z",
     "rules": [
