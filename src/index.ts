@@ -40,6 +40,7 @@ import { preferFragmentShorthand } from './rules/prefer-fragment-shorthand';
 import { preferGetterOverParameterlessMethod } from './rules/prefer-getter-over-parameterless-method';
 import { preferTypeOverInterface } from './rules/prefer-type-over-interface';
 import { preferTypeAliasOverTypeofConstant } from './rules/prefer-type-alias-over-typeof-constant';
+import { preferUnionFromConstArray } from './rules/prefer-union-from-const-array';
 import { requireMemo } from './rules/require-memo';
 import { requireMemoizeJsxReturners } from './rules/require-memoize-jsx-returners';
 import { noJsxWhitespaceLiteral } from './rules/no-jsx-whitespace-literal';
@@ -283,6 +284,7 @@ module.exports = {
         '@blumintinc/blumint/prefer-getter-over-parameterless-method': 'error',
         '@blumintinc/blumint/prefer-type-over-interface': 'error',
         '@blumintinc/blumint/prefer-type-alias-over-typeof-constant': 'error',
+        '@blumintinc/blumint/prefer-union-from-const-array': 'error',
         '@blumintinc/blumint/require-memo': 'error',
         '@blumintinc/blumint/require-memoize-jsx-returners': 'error',
         '@blumintinc/blumint/no-unmemoized-memo-without-props': 'error',
@@ -569,6 +571,7 @@ module.exports = {
       preferGetterOverParameterlessMethod,
     'prefer-type-over-interface': preferTypeOverInterface,
     'prefer-type-alias-over-typeof-constant': preferTypeAliasOverTypeofConstant,
+    'prefer-union-from-const-array': preferUnionFromConstArray,
     'require-memo': requireMemo,
     'require-memoize-jsx-returners': requireMemoizeJsxReturners,
     'no-unmemoized-memo-without-props': noUnmemoizedMemoWithoutProps,
