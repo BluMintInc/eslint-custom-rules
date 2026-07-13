@@ -232,6 +232,81 @@ const Wrapper = ({ children }: WrapperProps) => (
 );
 `,
     },
+    // 19. Inverse composition: the child derives its props FROM the parent via
+    // Omit<ParentProps, ...> and there is no named ChildProps. The parent is the
+    // single shared source of truth, so the rule must NOT require the parent to
+    // compose from a non-existent LiveProps. (issue #1289)
+    {
+      filename: 'src/components/LiveBadge.tsx',
+      code: `
+import Box from '@mui/material/Box';
+import { Fragment } from 'react';
+
+type LiveBadgeProps = {
+  children?: JSX.Element;
+  size?: string;
+};
+
+function LiveUnmemoized({ size }: Omit<LiveBadgeProps, 'children'>) {
+  return <Box>{size}</Box>;
+}
+const Live = LiveUnmemoized;
+
+function LiveBadgeUnmemoized({ children, size }: LiveBadgeProps) {
+  return (
+    <Fragment>
+      {children}
+      <Live size={size} />
+    </Fragment>
+  );
+}
+export const LiveBadge = LiveBadgeUnmemoized;
+`,
+    },
+    // 20. Inverse composition, real agora shape: child props are
+    // Readonly<Omit<ParentProps, ...>> and the child is defined inline as an
+    // arrow component. (issue #1289)
+    {
+      filename: 'src/components/LiveBadge.tsx',
+      code: `
+type LiveBadgeProps = {
+  children?: JSX.Element;
+  size?: string;
+};
+
+const Live = ({ size }: Readonly<Omit<LiveBadgeProps, 'children'>>) => (
+  <span>{size}</span>
+);
+
+const LiveBadge = ({ children, size }: LiveBadgeProps) => (
+  <div>
+    {children}
+    <Live size={size} />
+  </div>
+);
+`,
+    },
+    // 21. Inverse composition through a named LiveProps alias that itself
+    // derives from the parent. (issue #1289)
+    {
+      filename: 'src/components/LiveBadge.tsx',
+      code: `
+type LiveBadgeProps = {
+  children?: JSX.Element;
+  size?: string;
+};
+type LiveProps = Pick<LiveBadgeProps, 'size'>;
+
+const Live = ({ size }: LiveProps) => <span>{size}</span>;
+
+const LiveBadge = ({ children, size }: LiveBadgeProps) => (
+  <div>
+    {children}
+    <Live size={size} />
+  </div>
+);
+`,
+    },
   ],
 
   invalid: [

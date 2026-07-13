@@ -29,6 +29,30 @@ type CopyButtonProps = {
 };
 ```
 
+### Inverse composition
+
+Composition is recognized in **both directions**. If a rendered child instead
+derives *its* props from the parent's props type — via `Pick<ParentProps, ...>`,
+`Omit<ParentProps, ...>`, or `Readonly<...>` of either — the parent is the single
+shared source of truth and the anti-duplication guarantee is already met, so the
+child is treated as composed. This holds whether the child has a named
+`{Child}Props` alias or the derivation is written inline on the child's first
+parameter (with no `{Child}Props` type at all):
+
+```tsx
+type LiveBadgeProps = { children?: JSX.Element; size?: string };
+
+// Child derives from the parent — no LiveProps needed.
+const Live = ({ size }: Omit<LiveBadgeProps, 'children'>) => <span>{size}</span>;
+
+const LiveBadge = ({ children, size }: LiveBadgeProps) => (
+  <>
+    {children}
+    <Live size={size} />
+  </>
+);
+```
+
 ## Options
 
 ```js
