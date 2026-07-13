@@ -1,3 +1,11 @@
+## [1.18.16](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.15...v1.18.16) (2026-07-13)
+
+
+### Bug Fixes
+
+* **memo-nested-react-components:** recognize project-local memo/forwardRef re-exports in HOC-factory escape hatch (closes [#1293](https://github.com/BluMintInc/eslint-custom-rules/issues/1293)) ([cd549b7](https://github.com/BluMintInc/eslint-custom-rules/commit/cd549b7b1f301e469954eeab84b457bf0b39f3bf))
+* **no-hungarian:** exempt interior type-word segments in SCREAMING_SNAKE_CASE constants (closes [#1294](https://github.com/BluMintInc/eslint-custom-rules/issues/1294)) ([3513403](https://github.com/BluMintInc/eslint-custom-rules/commit/3513403327a0d343c82faa74571c9f0848a9a27b))
+
 ## [1.18.15](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.14...v1.18.15) (2026-07-13)
 
 

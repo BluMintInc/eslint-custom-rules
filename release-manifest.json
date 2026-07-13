@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.18.16",
+    "date": "2026-07-13T17:31:09.661Z",
+    "rules": [
+      {
+        "name": "memo-nested-react-components",
+        "changeType": "fix",
+        "issues": [
+          1293
+        ],
+        "summary": "recognize project-local memo/forwardRef re-exports in HOC-factory escape hatch (closes #1293)"
+      },
+      {
+        "name": "no-hungarian",
+        "changeType": "fix",
+        "issues": [
+          1294
+        ],
+        "summary": "exempt interior type-word segments in SCREAMING_SNAKE_CASE constants (closes #1294)"
+      }
+    ]
+  },
+  {
     "version": "1.18.15",
     "date": "2026-07-13T15:25:03.959Z",
     "rules": [
