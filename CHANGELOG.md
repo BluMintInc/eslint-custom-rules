@@ -1,3 +1,10 @@
+## [1.18.14](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.13...v1.18.14) (2026-07-13)
+
+
+### Bug Fixes
+
+* **no-entire-object-hook-deps:** treat non-literal computed keys as whole-object access (closes [#1291](https://github.com/BluMintInc/eslint-custom-rules/issues/1291)) ([412adda](https://github.com/BluMintInc/eslint-custom-rules/commit/412adda209be8201ca58c2495430a2cbe767c03f))
+
 ## [1.18.13](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.12...v1.18.13) (2026-07-13)
 
 

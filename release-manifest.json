@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.18.14",
+    "date": "2026-07-13T08:30:23.444Z",
+    "rules": [
+      {
+        "name": "no-entire-object-hook-deps",
+        "changeType": "fix",
+        "issues": [
+          1291
+        ],
+        "summary": "treat non-literal computed keys as whole-object access (closes #1291)"
+      }
+    ]
+  },
+  {
     "version": "1.18.13",
     "date": "2026-07-13T01:43:11.918Z",
     "rules": [
