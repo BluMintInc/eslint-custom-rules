@@ -119,6 +119,46 @@ export const noCompositingLayerProps = createRule<[], MessageIds>({
       return false;
     }
 
+    // A property key names a `@keyframes` at-rule when it is a string literal
+    // (`'@keyframes spin'`) or a template literal whose leading text starts the
+    // at-rule (`` [`@keyframes ${name}`] `` for a dynamically-named animation).
+    function keyNamesKeyframes(key: TSESTree.Node): boolean {
+      if (
+        key.type === AST_NODE_TYPES.Literal &&
+        typeof key.value === 'string'
+      ) {
+        return /^\s*@keyframes/i.test(key.value);
+      }
+      if (
+        key.type === AST_NODE_TYPES.TemplateLiteral &&
+        key.quasis.length > 0
+      ) {
+        const leading = key.quasis[0].value.cooked ?? key.quasis[0].value.raw;
+        return /^\s*@keyframes/i.test(leading);
+      }
+      return false;
+    }
+
+    // Compositing props declared inside a `@keyframes` block are exempt.
+    // Animating `transform`/`opacity` via `@keyframes` is the web-standard,
+    // GPU-accelerated animation pattern; this rule targets gratuitous *static*
+    // layer promotion, not a deliberate keyframe animation. Scoped to
+    // descendants of the `@keyframes` value object, so a static compositing prop
+    // sitting as a *sibling* of the `@keyframes` key is still flagged.
+    function isInKeyframes(node: TSESTree.Node): boolean {
+      let current: TSESTree.Node | undefined = node.parent;
+      while (current) {
+        if (
+          current.type === AST_NODE_TYPES.Property &&
+          keyNamesKeyframes(current.key)
+        ) {
+          return true;
+        }
+        current = current.parent;
+      }
+      return false;
+    }
+
     function isStyleContext(node: TSESTree.Node): boolean {
       let current: TSESTree.Node | undefined = node;
       while (current?.parent) {
@@ -172,6 +212,9 @@ export const noCompositingLayerProps = createRule<[], MessageIds>({
 
       // Skip if not in a style context
       if (!isStyleContext(node)) return;
+
+      // Skip compositing props inside a @keyframes animation definition
+      if (isInKeyframes(node)) return;
 
       let propertyName = '';
       let propertyValue = '';

@@ -169,6 +169,73 @@ ruleTesterTs.run('no-compositing-layer-props', noCompositingLayerProps, {
         },
       },
     },
+    // @keyframes animation stops: animating transform is the web-standard
+    // GPU-accelerated pattern and must not be flagged (canonical spinner). (#1288)
+    {
+      code: `
+        const Component = () => (
+          <Box
+            sx={{
+              animation: 'spin 1s linear infinite',
+              '@keyframes spin': {
+                '0%': { transform: 'rotate(0deg)' },
+                '100%': { transform: 'rotate(360deg)' },
+              },
+            }}
+          />
+        );
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+    // Fractional opacity inside @keyframes (real LiveBadge pulse repro). (#1288)
+    {
+      code: `
+        const Component = () => (
+          <Box
+            sx={{
+              animation: 'pulse 1600ms linear infinite',
+              '@keyframes pulse': {
+                '0%': { opacity: 1 },
+                '50%': { opacity: 0.3 },
+                '100%': { opacity: 1 },
+              },
+            }}
+          />
+        );
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+    // Other compositing props (filter) inside @keyframes are exempt too. (#1288)
+    {
+      code: `
+        const style = {
+          '@keyframes glow': {
+            '0%': { filter: 'blur(0px)' },
+            '100%': { filter: 'blur(4px)' },
+          },
+        };
+      `,
+    },
+    // Dynamically-named @keyframes via a computed template-literal key must
+    // still exempt its animation stops. (#1288)
+    {
+      code: `
+        const animationStyle = {
+          [\`@keyframes \${name}\`]: {
+            from: { transform: 'scale(1)' },
+            to: { transform: 'scale(1.5)' },
+          },
+        };
+      `,
+    },
   ],
   invalid: [
     // Invalid inline styles
@@ -321,6 +388,30 @@ ruleTesterTs.run('no-compositing-layer-props', noCompositingLayerProps, {
           transform: 'visible',
         };
       `,
+      errors: [error('transform')],
+    },
+    // Regression control: the @keyframes exemption is scoped to descendants of
+    // the @keyframes value object only. A STATIC compositing prop sitting as a
+    // sibling of the @keyframes key is still flagged. (#1288)
+    {
+      code: `
+        const Component = () => (
+          <Box
+            sx={{
+              transform: 'rotate(45deg)',
+              '@keyframes spin': {
+                '0%': { transform: 'rotate(0deg)' },
+                '100%': { transform: 'rotate(360deg)' },
+              },
+            }}
+          />
+        );
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
       errors: [error('transform')],
     },
   ],

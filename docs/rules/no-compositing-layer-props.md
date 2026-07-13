@@ -22,6 +22,12 @@ GPU layers (including `translate3d`, `scale3d`, `translateZ`, and `transparent`)
 - Flags values that imply GPU promotion even when the property itself is safe,
   such as `translate3d(...)`, `scale3d(...)`, `translateZ(...)`, or
   `transparent`.
+- Exempts compositing properties declared inside a `@keyframes` block. Animating
+  `transform` and `opacity` via `@keyframes` is the web-standard,
+  GPU-accelerated animation pattern, not a gratuitous static layer. The
+  exemption is scoped to descendants of the `@keyframes` value object, so a
+  static compositing prop sitting as a *sibling* of the `@keyframes` key is
+  still flagged.
 
 ### Examples of **incorrect** code for this rule:
 
@@ -53,6 +59,17 @@ const config = {
 };
 
 <div sx={{ opacity: 1, marginTop: 8 }} />;
+
+// Animating transform/opacity inside @keyframes is the recommended pattern.
+<Box
+  sx={{
+    animation: 'spin 1s linear infinite',
+    '@keyframes spin': {
+      '0%': { transform: 'rotate(0deg)' },
+      '100%': { transform: 'rotate(360deg)' },
+    },
+  }}
+/>;
 ```
 
 ## Making an intentional exception
