@@ -119,11 +119,18 @@ function isHookName(name: string | null | undefined): name is string {
 
 /**
  * Detects PascalCase identifiers commonly used for React components.
+ *
+ * SCREAMING_SNAKE_CASE names (`CHANNEL_OPTIONS`, `MAX_COUNT`, `SPACING`) are
+ * constants by convention, not components, so they are excluded even though
+ * they begin with an uppercase letter. Treating them as components would
+ * misclassify a module-scope constant's `.map`/`.filter` callback body as a
+ * render body and flag literals that are only ever built once at import.
  * @param name Candidate identifier name.
- * @returns True when the name begins with an uppercase character.
+ * @returns True when the name is PascalCase (starts uppercase and contains a
+ * lowercase letter), false for all-caps constants.
  */
 function isComponentName(name: string | null | undefined): name is string {
-  return !!name && /^[A-Z]/.test(name);
+  return !!name && /^[A-Z]/.test(name) && !/^[A-Z][A-Z0-9_]*$/.test(name);
 }
 
 /**

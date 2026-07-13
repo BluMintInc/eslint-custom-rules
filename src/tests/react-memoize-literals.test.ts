@@ -3,6 +3,25 @@ import { reactMemoizeLiterals } from '../rules/react-memoize-literals';
 
 ruleTesterJsx.run('react-memoize-literals', reactMemoizeLiterals, {
   valid: [
+    {
+      // Module-scope SCREAMING_SNAKE_CASE constant is NOT a component; the object
+      // returned from its .map callback is created once at import, never per render.
+      code: `
+        const CHANNEL_OPTIONS = ['push', 'sms'].map((channel) => {
+          return { value: channel, label: channel };
+        });
+        export { CHANNEL_OPTIONS };
+      `,
+    },
+    {
+      // Same shape with an inline array literal returned from the callback.
+      code: `
+        const MENU_ITEMS = ['a', 'b'].map((id) => {
+          return [id, id];
+        });
+        export { MENU_ITEMS };
+      `,
+    },
     // Memoized references for objects, arrays, and functions
     {
       code: `
@@ -721,6 +740,18 @@ export function useAlert() {
     },
   ],
   invalid: [
+    // REGRESSION GUARD — the SCREAMING_SNAKE_CASE fix must NOT over-correct: a
+    // real PascalCase component that builds an object literal in its body must
+    // STILL report componentLiteral.
+    {
+      code: `
+        export const MyComponent = () => {
+          const style = { color: 'red' };
+          return style;
+        };
+      `,
+      errors: [{ messageId: 'componentLiteral' }],
+    },
     // Variable with no usages (dead code) - should still be reported as unmemoized
     {
       code: `
