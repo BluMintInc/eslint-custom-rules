@@ -297,6 +297,116 @@ function getPropsTypeNameFromParam(
   return null;
 }
 
+type ComponentFunction =
+  | TSESTree.ArrowFunctionExpression
+  | TSESTree.FunctionExpression
+  | TSESTree.FunctionDeclaration;
+
+/**
+ * Returns the first-parameter type annotation node of a component function, or
+ * null when the parameter is untyped or a rest element. Unlike
+ * getPropsTypeNameFromParam, this returns the raw TypeNode (e.g. the whole
+ * `Omit<ParentProps, 'children'>`) so it can be tested for composition.
+ */
+function getFirstParamTypeNode(
+  funcNode: ComponentFunction,
+): TSESTree.TypeNode | null {
+  const firstParam = funcNode.params[0];
+  if (!firstParam) return null;
+  if (
+    (firstParam.type === AST_NODE_TYPES.Identifier ||
+      firstParam.type === AST_NODE_TYPES.ObjectPattern) &&
+    firstParam.typeAnnotation
+  ) {
+    return firstParam.typeAnnotation.typeAnnotation;
+  }
+  return null;
+}
+
+/**
+ * Resolve the function node for a component name in the program, following a
+ * single-identifier alias (`const Live = LiveUnmemoized`) and unwrapping a HOC
+ * call (`memo((props) => ...)`). Returns null when no function is found. The
+ * `seen` set guards against alias cycles.
+ */
+function findComponentFunction(
+  program: TSESTree.Program,
+  name: string,
+  seen: Set<string> = new Set<string>(),
+): ComponentFunction | null {
+  if (seen.has(name)) return null;
+  seen.add(name);
+
+  for (const stmt of program.body) {
+    const decl =
+      stmt.type === AST_NODE_TYPES.ExportNamedDeclaration
+        ? stmt.declaration
+        : stmt;
+    if (!decl) continue;
+
+    if (
+      decl.type === AST_NODE_TYPES.FunctionDeclaration &&
+      decl.id?.name === name
+    ) {
+      return decl;
+    }
+
+    if (decl.type === AST_NODE_TYPES.VariableDeclaration) {
+      for (const declarator of decl.declarations) {
+        if (
+          declarator.id.type !== AST_NODE_TYPES.Identifier ||
+          declarator.id.name !== name ||
+          !declarator.init
+        ) {
+          continue;
+        }
+        const init = declarator.init;
+        if (
+          init.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+          init.type === AST_NODE_TYPES.FunctionExpression
+        ) {
+          return init;
+        }
+        if (init.type === AST_NODE_TYPES.CallExpression) {
+          const arg0 = init.arguments[0];
+          if (
+            arg0 &&
+            (arg0.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+              arg0.type === AST_NODE_TYPES.FunctionExpression)
+          ) {
+            return arg0;
+          }
+        }
+        if (init.type === AST_NODE_TYPES.Identifier) {
+          return findComponentFunction(program, init.name, seen);
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Resolve the type node that defines a rendered dependency's props: its
+ * `{Dep}Props` alias if one exists, otherwise the dependency component's
+ * first-parameter type annotation. Used to detect inverse composition, where
+ * the child derives its props from the parent's props type.
+ */
+function getDependencyPropsSourceType(
+  program: TSESTree.Program,
+  depName: string,
+): TSESTree.TypeNode | null {
+  const alias = findPropsTypeAliasByName(program, toPropsTypeName(depName));
+  if (alias) {
+    return alias.typeAnnotation;
+  }
+  const fn = findComponentFunction(program, depName);
+  if (fn) {
+    return getFirstParamTypeNode(fn);
+  }
+  return null;
+}
+
 export const requirePropsComposition = createRule<Options, MessageIds>({
   name: 'require-props-composition',
   meta: {
@@ -488,10 +598,25 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
 
       for (const dep of depComponents) {
         const expectedPropsType = toPropsTypeName(dep);
-        const composes = typeNodeComposesWithProps(
+        let composes = typeNodeComposesWithProps(
           propsTypeNode,
           expectedPropsType,
         );
+        // Inverse composition: the child derives its props FROM this parent's
+        // props type (e.g. `Omit<ParentProps, 'children'>`, often with no named
+        // ChildProps at all). The parent is then the single shared source of
+        // truth, so the DRY guarantee is already met; requiring the parent to
+        // *also* compose from ChildProps would invert the source of truth or
+        // create a circular dependency.
+        if (!composes && propsTypeName) {
+          const depPropsSource = getDependencyPropsSourceType(prog, dep);
+          if (
+            depPropsSource &&
+            typeNodeComposesWithProps(depPropsSource, propsTypeName)
+          ) {
+            composes = true;
+          }
+        }
         if (composes) {
           composedWith.add(dep);
         } else {
