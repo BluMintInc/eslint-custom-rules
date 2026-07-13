@@ -14,6 +14,7 @@ React re-runs your component and hook bodies on every render. Inline object, arr
 - Flags nested literals inside hook argument objects/arrays (e.g., `useQuery({ options: { cache: {...} } })`) while allowing the top-level argument itself.
 - Detects custom hooks that return object/array/function literals directly, since callers receive a fresh reference each render.
 - Skips literals that are destined to be thrown (e.g., `throw { message: 'error' }` or a variable where every usage is in a `throw` statement), as throwing aborts the render cycle and referential stability is irrelevant.
+- Skips a function literal passed directly as the callback to an Array iteration method (`map`, `filter`, `forEach`, `reduce`, `reduceRight`, `some`, `every`, `find`, `findIndex`, `findLast`, `findLastIndex`, `flatMap`, `sort`), e.g. `items.map((item) => <li key={item}>{item}</li>)`. The callback is invoked synchronously during render and then discarded, so its identity is never observed by a hook, prop, effect, or memoized child — and the rule's advice is unfollowable there anyway (the callback closes over loop scope, so it can't be hoisted, and `useCallback` can't run inside a `.map` loop). An inline function passed as a JSX-attribute prop *inside* the callback body (e.g. `onClick={() => ...}` on a child) is a separate node whose identity is observed, so it remains reported.
 - Skips literals already inside callbacks passed to stable hooks (`useMemo`, `useCallback`, `useEffect`, `useLayoutEffect`, `useInsertionEffect`, `useImperativeHandle`, `useState`, `useReducer`, `useRef`, `useSyncExternalStore`, `useDeferredValue`, `useTransition`, `useId`, `useLatestCallback`, `useDeepCompareMemo`, `useDeepCompareCallback`, `useDeepCompareEffect`, `useProgressionCallback`) and module-level constants.
 - Skips literals that resolve to a JSX attribute named `sx` or `style` (e.g. `<Stack sx={{ ... }} />`, `<div style={{ ... }} />`). The exemption follows the value through conditional branches (`sx={active ? { ... } : { ... }}`), logical fallbacks (`sx={active && { ... }}`), array entries (`sx={[{ ... }, { ... }]}`, supported by MUI), nested object property values (`sx={{ display: { xs: 'none', md: 'inline' } }}`, MUI's responsive breakpoint syntax), and `as const`/parenthesized wrappers. These style descriptors are consumed by the library without referential equality checks, so inlining them does not break memoization or trigger extra renders. Literals that are instead passed through a function call (`sx={makeSx({ ... })}`) or attached to a non-style prop remain reported, since those references can be observed or stored.
 - Accounts for `async` function boundaries, skipping literals inside `async` function expressions or declarations. While the synchronous portion before the first `await` runs immediately, async functions are typically used as event handlers or effect callbacks where internal literal references do not affect render stability.
@@ -80,6 +81,22 @@ function useUserSettings() {
       onChange,
     }),
     [onChange],
+  );
+}
+```
+
+```tsx
+// Array iteration callbacks are invoked synchronously and discarded, so the
+// inline map/filter callbacks are fine — no memoization needed.
+function List({ items }) {
+  return (
+    <ul>
+      {items
+        .filter((item) => item.active)
+        .map((item) => (
+          <li key={item.id}>{item.name}</li>
+        ))}
+    </ul>
   );
 }
 ```
