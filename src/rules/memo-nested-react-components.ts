@@ -154,18 +154,58 @@ const isHookCall = (
   return null;
 };
 
+/**
+ * Recognizes a callee named exactly `name`, whether a bare identifier (`memo`)
+ * or a non-computed member access (`X.memo`), regardless of import source.
+ *
+ * memo/forwardRef are commonly re-exported from project-local wrapper modules
+ * (e.g. `import { memo } from 'src/util/memo'`, which the sibling
+ * `use-custom-memo` rule actively enforces). Resolving these purely against
+ * react's import table would miss the wrapper form and misclassify an HOC
+ * factory as a render body. By-name recognition is safe here because callers
+ * are already gated by PascalCase naming and the surrounding factory analysis.
+ *
+ * Note: this deliberately does NOT apply to `createElement`, which must stay
+ * bound to a react import so unrelated factories (e.g. `Factory.createElement`)
+ * are not misread as element creation.
+ */
+const calleeMatchesName = (
+  callee: TSESTree.LeftHandSideExpression,
+  name: string,
+): boolean => {
+  if (callee.type === AST_NODE_TYPES.Identifier) {
+    return callee.name === name;
+  }
+
+  if (
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    !callee.computed &&
+    callee.property.type === AST_NODE_TYPES.Identifier
+  ) {
+    return callee.property.name === name;
+  }
+
+  return false;
+};
+
 const isForwardRefCall = (
   node: TSESTree.CallExpression,
   reactImports: ReactImports,
 ): boolean => {
-  return calleeMatchesReactMember(node.callee, reactImports, 'forwardRef');
+  return (
+    calleeMatchesReactMember(node.callee, reactImports, 'forwardRef') ||
+    calleeMatchesName(node.callee, 'forwardRef')
+  );
 };
 
 const isMemoCall = (
   node: TSESTree.CallExpression,
   reactImports: ReactImports,
 ): boolean => {
-  return calleeMatchesReactMember(node.callee, reactImports, 'memo');
+  return (
+    calleeMatchesReactMember(node.callee, reactImports, 'memo') ||
+    calleeMatchesName(node.callee, 'memo')
+  );
 };
 
 const filterPresentResults = (

@@ -206,6 +206,61 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
         };
       `,
     },
+    {
+      name: 'HOC factory returning custom-memo(Inner) — memo re-exported from a project module',
+      code: `
+        import { memo } from 'src/util/memo';
+        export const buildCadenceCustomView = (featureId) => {
+          const CadenceCustomViewUnmemoized = ({ value }) => {
+            return <Typography>{value}</Typography>;
+          };
+          return memo(CadenceCustomViewUnmemoized);
+        };
+      `,
+    },
+    {
+      name: 'HOC factory returning custom-forwardRef(Inner) — forwardRef re-exported from a project module',
+      code: `
+        import { forwardRef } from 'src/util/forwardRef';
+        export const buildRefView = () => {
+          const InnerUnmemoized = (props, ref) => <div ref={ref} />;
+          return forwardRef(InnerUnmemoized);
+        };
+      `,
+    },
+    {
+      name: 'HOC factory returning namespaced .memo(Inner) member call from a project module',
+      code: `
+        import * as CustomReact from 'src/util/react';
+        export const buildView = () => {
+          const InnerUnmemoized = ({ value }) => <span>{value}</span>;
+          return CustomReact.memo(InnerUnmemoized);
+        };
+      `,
+    },
+    {
+      name: 'HOC factory returning React.memo(Inner) member call from react namespace',
+      code: `
+        import * as React from 'react';
+        export const buildReactView = () => {
+          const InnerUnmemoized = ({ value }) => <span>{value}</span>;
+          return React.memo(InnerUnmemoized);
+        };
+      `,
+    },
+    {
+      name: 'HOC factory returning custom memo(forwardRef(Inner)) — both re-exported from a project module',
+      code: `
+        import { memo, forwardRef } from 'src/util/memo';
+        export const buildDatePicker = (options) => {
+          const InnerReflessUnmemoized = (props, ref) => (
+            <div ref={ref} options={options} />
+          );
+          const InnerUnmemoized = forwardRef(InnerReflessUnmemoized);
+          return memo(InnerUnmemoized);
+        };
+      `,
+    },
   ],
   invalid: [
     {
@@ -531,6 +586,42 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
           }
           return memo(InnerUnmemoized);
         }
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'InnerUnmemoized',
+            locationDescription: 'a render body',
+          },
+        },
+      ],
+    },
+    {
+      name: 'factory with a custom-memo import that also returns JSX still reports',
+      code: `
+        import { memo } from 'src/util/memo';
+        function withWeird(WrappedComponent) {
+          const InnerUnmemoized = (props) => <WrappedComponent {...props} />;
+          if (shouldRenderInline) {
+            return <InnerUnmemoized />;
+          }
+          return memo(InnerUnmemoized);
+        }
+      `,
+      errors: [{ messageId: 'memoizeNestedComponent' }],
+    },
+    {
+      // by-name recognition must stay scoped to memo/forwardRef: a factory
+      // returning some other call like styled(Inner) is NOT an HOC factory and
+      // the nested inline component must still be flagged.
+      name: 'factory returning styled(Inner) is not exempted by the by-name change',
+      code: `
+        import { styled } from 'src/util/styled';
+        export const buildStyled = () => {
+          const InnerUnmemoized = () => <div />;
+          return styled(InnerUnmemoized);
+        };
       `,
       errors: [
         {
