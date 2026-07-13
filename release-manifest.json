@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.18.15",
+    "date": "2026-07-13T15:25:03.959Z",
+    "rules": [
+      {
+        "name": "react-memoize-literals",
+        "changeType": "fix",
+        "issues": [
+          1292
+        ],
+        "summary": "exclude SCREAMING_SNAKE_CASE constants from component detection (closes #1292)"
+      }
+    ]
+  },
+  {
     "version": "1.18.14",
     "date": "2026-07-13T08:30:23.444Z",
     "rules": [

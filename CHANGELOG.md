@@ -1,3 +1,10 @@
+## [1.18.15](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.14...v1.18.15) (2026-07-13)
+
+
+### Bug Fixes
+
+* **react-memoize-literals:** exclude SCREAMING_SNAKE_CASE constants from component detection (closes [#1292](https://github.com/BluMintInc/eslint-custom-rules/issues/1292)) ([967f781](https://github.com/BluMintInc/eslint-custom-rules/commit/967f781d2b681967477e0902fe7e32c83a44c11f))
+
 ## [1.18.14](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.13...v1.18.14) (2026-07-13)
 
 
