@@ -77,6 +77,31 @@ const HOOKS_ALLOWING_NESTED_LITERALS = new Set([
  */
 const STYLE_JSX_ATTRIBUTE_NAMES = new Set(['sx', 'style']);
 
+/**
+ * Array iteration higher-order methods that invoke their callback argument
+ * synchronously and then discard it. A function literal passed directly as such
+ * a callback is never observed by any hook dependency, prop, effect, or memoized
+ * child, so re-creating it each render costs nothing and memoizing it buys
+ * nothing — the same "identity is never observably compared" rationale that
+ * exempts throw-argument literals. Matched by (non-computed) method name only;
+ * the rule is not type-aware, mirroring how the hook-argument sets work.
+ */
+const ITERATION_METHODS = new Set([
+  'map',
+  'filter',
+  'forEach',
+  'reduce',
+  'reduceRight',
+  'some',
+  'every',
+  'find',
+  'findIndex',
+  'findLast',
+  'findLastIndex',
+  'flatMap',
+  'sort',
+]);
+
 const MEMOIZATION_DEPS_TODO_PLACEHOLDER = '__TODO_MEMOIZATION_DEPENDENCIES__';
 const TODO_DEPS_COMMENT = `/* ${MEMOIZATION_DEPS_TODO_PLACEHOLDER} */`;
 const PARENTHESIZED_EXPRESSION_TYPE =
@@ -99,6 +124,40 @@ function isHookName(name: string | null | undefined): name is string {
  */
 function isComponentName(name: string | null | undefined): name is string {
   return !!name && /^[A-Z]/.test(name);
+}
+
+/**
+ * True when `node` is a function literal passed directly as an argument to an
+ * Array iteration method call (`items.map((x) => ...)`,
+ * `list.filter(fn)`, `xs.reduce(fn, init)`, ...). Such a callback is invoked
+ * synchronously during render and then discarded, so its referential identity
+ * is never observed. Matched by (non-computed) method name only, since the rule
+ * is not type-aware.
+ */
+function isIterationMethodCallback(node: TSESTree.Node): boolean {
+  if (
+    node.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
+    node.type !== AST_NODE_TYPES.FunctionExpression
+  ) {
+    return false;
+  }
+
+  const parent = node.parent;
+  if (
+    !parent ||
+    parent.type !== AST_NODE_TYPES.CallExpression ||
+    !parent.arguments.includes(node)
+  ) {
+    return false;
+  }
+
+  const callee = parent.callee;
+  return (
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    !callee.computed &&
+    callee.property.type === AST_NODE_TYPES.Identifier &&
+    ITERATION_METHODS.has(callee.property.name)
+  );
 }
 
 /**
@@ -991,6 +1050,19 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
       }
 
       if (isTerminalUsage(node)) {
+        return;
+      }
+
+      // A function literal passed directly as the callback to an Array
+      // iteration method (.map/.filter/.reduce/.forEach/...) is invoked
+      // synchronously during render and then discarded, so its identity is
+      // never observed by a hook dependency, prop, effect, or memoized child —
+      // memoizing it buys nothing. The rule's own advice is also unfollowable
+      // here: the callback closes over loop/render scope so it can't be hoisted
+      // to module level, and useCallback can't run inside a .map loop. Inline
+      // functions passed as JSX-attribute props *inside* the callback body are
+      // separate nodes and remain flagged.
+      if (isIterationMethodCallback(node)) {
         return;
       }
 

@@ -642,6 +642,83 @@ export function useAlert() {
 }
       `,
     },
+    // Iteration-method callbacks are invoked synchronously during render and
+    // discarded; their identity is never observed, so they must not be flagged.
+    // (issue #1290)
+    //
+    // Idiomatic list render — the .map callback's identity is never observed.
+    {
+      code: `
+        const List = ({ items }) => (
+          <ul>
+            {items.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        );
+      `,
+    },
+    // Block-body map callback returning JSX.
+    {
+      code: `
+        const Picker = ({ presets, labels }) => (
+          <ul>
+            {presets.map((preset) => {
+              const label = labels[preset];
+              return <li key={preset}>{label}</li>;
+            })}
+          </ul>
+        );
+      `,
+    },
+    // Chained iteration callbacks (.filter then .map) are equally safe.
+    {
+      code: `
+        const Filtered = ({ items }) => (
+          <ul>
+            {items
+              .filter((item) => item.active)
+              .map((item) => (
+                <li key={item.id}>{item.name}</li>
+              ))}
+          </ul>
+        );
+      `,
+    },
+    // .forEach callback with a block body and side effects.
+    {
+      code: `
+        const Logger = ({ items }) => {
+          items.forEach((item) => {
+            trackImpression(item);
+          });
+          return null;
+        };
+      `,
+    },
+    // .reduce callback (two-argument form) is exempt too.
+    {
+      code: `
+        const Summary = ({ items }) => {
+          const total = items.reduce((sum, item) => sum + item.value, 0);
+          return <span>{total}</span>;
+        };
+      `,
+    },
+    // .sort comparator inside a component is a synchronously-invoked callback.
+    {
+      code: `
+        const Sorted = ({ items }) => (
+          <ul>
+            {items
+              .sort((a, b) => a.rank - b.rank)
+              .map((item) => (
+                <li key={item.id}>{item.name}</li>
+              ))}
+          </ul>
+        );
+      `,
+    },
   ],
   invalid: [
     // Variable with no usages (dead code) - should still be reported as unmemoized
@@ -664,7 +741,10 @@ export function useAlert() {
       `,
       errors: [{ messageId: 'componentLiteral' }],
     },
-    // Literal nested in an expression that is assigned and thrown (should NOT be exempt)
+    // Literal nested in an expression that is assigned and thrown (should NOT be
+    // exempt). The array literal and its nested object literal are still flagged
+    // even though the result is thrown; the `.map` callback `i => i` is exempt as
+    // a synchronously-invoked iteration callback (issue #1290), so 2 errors.
     {
       code: `
         function Component() {
@@ -675,7 +755,6 @@ export function useAlert() {
         }
       `,
       errors: [
-        { messageId: 'componentLiteral' },
         { messageId: 'componentLiteral' },
         { messageId: 'componentLiteral' },
       ],
@@ -1486,6 +1565,31 @@ const MyComponent = () => (
             literalType: 'object literal',
             context: 'component "MyComponent"',
             memoHook: 'useMemo',
+          },
+        },
+      ],
+    },
+    // Scope control (#1290): the .map callback itself is exempt, but an inline
+    // function passed as a JSX-attribute prop *inside* the callback body is a
+    // separate node whose identity IS observed by the child, so it stays
+    // flagged. Only the onClick handler is reported, not the map callback.
+    {
+      code: `
+const List = ({ items, onSelect }) => (
+  <ul>
+    {items.map((item) => (
+      <li key={item.id} onClick={() => onSelect(item.id)}>{item.name}</li>
+    ))}
+  </ul>
+);
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'inline function',
+            context: 'component "List"',
+            memoHook: 'useCallback',
           },
         },
       ],
