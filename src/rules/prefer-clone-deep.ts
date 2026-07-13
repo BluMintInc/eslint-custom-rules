@@ -57,14 +57,19 @@ export const preferCloneDeep = createRule<[], MessageIds>({
           hasSymbol = true;
         }
 
-        // Visit child nodes without traversing parent references
+        // Visit child nodes without traversing parent references. Depth tracks
+        // object-nesting level: an object's OWN direct properties stay at the
+        // object's depth, and only descending into a property's value (a
+        // genuinely nested child) increments it. This keeps the top-level
+        // object's own `...spread` at depth 0 so it is never miscounted as a
+        // nested spread.
         if (node.type === AST_NODE_TYPES.ObjectExpression) {
           if (depth > 0) {
             hasNestedObject = true;
           }
-          node.properties.forEach((prop) => visit(prop, depth + 1));
+          node.properties.forEach((prop) => visit(prop, depth));
         } else if (node.type === AST_NODE_TYPES.Property) {
-          visit(node.value, depth);
+          visit(node.value, depth + 1);
         } else if (node.type === AST_NODE_TYPES.SpreadElement) {
           visit(node.argument, depth);
         }
