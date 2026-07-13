@@ -584,8 +584,87 @@ async function guardBeforeTwo(orderId) {
   await markPaid(orderId);
 }
 `,
+    // Read-after-write on the SAME receiver: NOT parallelizable. The `.get()`
+    // must observe the value written by the preceding `.set()`; running them
+    // in Promise.all would race the read against the write. (Issue #1287)
+    `
+        declare function makeRef(): {
+          set: (v: unknown) => Promise<void>;
+          get: () => Promise<number>;
+        };
+        export const bumpVersion = async () => {
+          const ref = makeRef();
+          await ref.set(1);
+          const value = await ref.get();
+          return value;
+        };
+      `,
+    // Shared receiver with the write result captured in an (unused) variable:
+    // the shared receiver still carries the ordering dependency. (Issue #1287)
+    `
+        declare function makeRef(): {
+          set: (v: unknown) => Promise<void>;
+          get: () => Promise<number>;
+        };
+        export const bumpVersion = async () => {
+          const ref = makeRef();
+          const writeResult = await ref.set(1);
+          const value = await ref.get();
+          return { writeResult, value };
+        };
+      `,
+    // Two reads on the same receiver are conservatively kept sequential: a
+    // shared mutable receiver can carry hidden state (e.g. a paginated cursor),
+    // so skipping the flag is a safe no-op. (Issue #1287)
+    `
+      async function methodCallAwaits() {
+        await api.getData();
+        await api.getMoreData();
+        await api.getEvenMoreData();
+        return true;
+      }
+      `,
+    // Computed-member calls on the same receiver identifier are also kept
+    // sequential (the receiver `api` is shared even though the method is a
+    // string literal). (Issue #1287)
+    `
+      async function computedPropertyAccess() {
+        await api['getData']();
+        await api['processData']();
+        await api['saveData']();
+        return 'completed';
+      }
+      `,
   ],
   invalid: [
+    // Control: different receivers, genuinely independent -> still flagged.
+    // Proves the shared-receiver barrier does not suppress real parallelization
+    // opportunities. (Issue #1287)
+    {
+      code: `
+        declare function makeRef(): { get: () => Promise<number> };
+        export const readBoth = async () => {
+          const refA = makeRef();
+          const refB = makeRef();
+          const a = await refA.get();
+          const b = await refB.get();
+          return { a, b };
+        };
+      `,
+      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      output: `
+        declare function makeRef(): { get: () => Promise<number> };
+        export const readBoth = async () => {
+          const refA = makeRef();
+          const refB = makeRef();
+          const [a, b] = await Promise.all([
+  refA.get(),
+  refB.get()
+]);
+          return { a, b };
+        };
+      `,
+    },
     // Basic case: two sequential awaits with realtimeDb
     {
       code: `
@@ -784,29 +863,6 @@ async function guardBeforeTwo(orderId) {
   fetchData2()
 ]);
         return { data1, data2 };
-      }
-      `,
-    },
-
-    // Sequential awaits with method calls
-    {
-      code: `
-      async function methodCallAwaits() {
-        await api.getData();
-        await api.getMoreData();
-        await api.getEvenMoreData();
-        return true;
-      }
-      `,
-      errors: [error(3)],
-      output: `
-      async function methodCallAwaits() {
-        await Promise.all([
-  api.getData(),
-  api.getMoreData(),
-  api.getEvenMoreData()
-]);
-        return true;
       }
       `,
     },
@@ -1105,29 +1161,6 @@ async function guardBeforeTwo(orderId) {
   api.comments.getLatest()
 ]);
         return 'fetched';
-      }
-      `,
-    },
-
-    // Edge case: Sequential awaits with computed property access
-    {
-      code: `
-      async function computedPropertyAccess() {
-        await api['getData']();
-        await api['processData']();
-        await api['saveData']();
-        return 'completed';
-      }
-      `,
-      errors: [error(3)],
-      output: `
-      async function computedPropertyAccess() {
-        await Promise.all([
-  api['getData'](),
-  api['processData'](),
-  api['saveData']()
-]);
-        return 'completed';
       }
       `,
     },
