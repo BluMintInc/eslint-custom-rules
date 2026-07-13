@@ -130,6 +130,21 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
         };
       `,
     },
+    // Regression #1299: a top-level spread alongside a sibling nested object
+    // literal that contains NO spread of its own is not a multi-level spread
+    // chain — there is nothing for cloneDeep to protect, so it must not flag.
+    {
+      code: `const x = { ...prev, address: { city: 'X' } };`,
+    },
+    // Regression #1299: conditional-spread idiom with a sibling nested object,
+    // still no spread nested inside a child object.
+    {
+      code: `const patch = { ...(condition && { field: 'value' }), other: { nested: true } };`,
+    },
+    // Regression #1299: an empty nested object has no inner spread at all.
+    {
+      code: `function f() { return { ...base, key: {} }; }`,
+    },
   ],
   invalid: [
     // Basic nested spread
@@ -397,6 +412,17 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
           }
         } as const);
       `,
+    },
+    // Regression #1299: a spread genuinely nested two levels deep inside child
+    // objects is the rule's real target (per #365) and must keep firing.
+    {
+      code: `const x = { ...a, nested: { ...b, deeper: { ...c } } };`,
+      errors: [expectPreferCloneDeepError],
+      output: `const x = cloneDeep(a, {
+          nested: {
+            deeper: {}
+          }
+        } as const);`,
     },
   ],
 });
