@@ -91,8 +91,6 @@ function unwrapExpression(expr: TSESTree.Node): TSESTree.Node {
 function getObjectUsagesInHook(
   hookBody: TSESTree.Node,
   objectName: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  context: any,
 ): { usages: Set<string>; needsEntireObject: boolean; notUsed: boolean } {
   const usages = new Map<string, number>(); // Track usage and its position
   const visited = new Set<TSESTree.Node>();
@@ -164,8 +162,15 @@ function getObjectUsagesInHook(
 
       // Handle computed properties (like array indices)
       if (memberExpr.computed) {
-        // For computed properties with variables (like user[key]), we need the entire object
-        if (memberExpr.property.type === AST_NODE_TYPES.Identifier) {
+        // why: only a *literal* computed key (obj[0], obj['special-key'])
+        // narrows to a single, stable field. EVERY other computed key —
+        // Identifier (obj[i]), CallExpression (obj[assertSafe(i)]),
+        // BinaryExpression (obj[i+1]), MemberExpression (obj[keys[j]]),
+        // TSAsExpression (obj[k as K]), TemplateLiteral (obj[`row-${i}`]), etc.
+        // — is a dynamic access that can read arbitrary elements across an
+        // iteration. There is no single narrowable field, so the whole object
+        // is a legitimate dependency: resolve the base and mark it accordingly.
+        if (memberExpr.property.type !== AST_NODE_TYPES.Literal) {
           // Check if this is accessing our target object
           let currentBase = unwrapExpression(memberExpr.object);
           while (currentBase.type === AST_NODE_TYPES.MemberExpression) {
@@ -177,34 +182,22 @@ function getObjectUsagesInHook(
             currentBase.type === AST_NODE_TYPES.Identifier &&
             currentBase.name === objectName
           ) {
-            // This is a computed property access on our target object, so we need the entire object
+            // This is a dynamic computed property access on our target object,
+            // so we need the entire object (no narrowable field exists).
             needsEntireObject = true;
           }
           return null;
         }
 
         // For computed properties with literals
-        if (memberExpr.property.type === AST_NODE_TYPES.Literal) {
-          const literalProp = memberExpr.property as TSESTree.Literal;
-          if (typeof literalProp.value === 'number') {
-            parts.unshift(`[${literalProp.value}]`);
-          } else if (typeof literalProp.value === 'string') {
-            parts.unshift(`[${JSON.stringify(literalProp.value)}]`);
-          } else {
-            // For other computed properties, use a wildcard
-            parts.unshift('[*]');
-          }
+        const literalProp = memberExpr.property as TSESTree.Literal;
+        if (typeof literalProp.value === 'number') {
+          parts.unshift(`[${literalProp.value}]`);
+        } else if (typeof literalProp.value === 'string') {
+          parts.unshift(`[${JSON.stringify(literalProp.value)}]`);
         } else {
-          // For other computed properties, use the exact expression
-          try {
-            const propertyText = context.sourceCode.getText(
-              memberExpr.property,
-            );
-            parts.unshift(`[${propertyText}]`);
-          } catch (e) {
-            // Fallback to wildcard if we can't get the source text
-            parts.unshift('[*]');
-          }
+          // For other literal computed properties (e.g. boolean/null), wildcard
+          parts.unshift('[*]');
         }
       } else {
         // Regular property access
@@ -220,7 +213,7 @@ function getObjectUsagesInHook(
         ) {
           // Check if this is accessing our target object or a property of it
           let currentBase = unwrapExpression(memberExpr.object);
-          let pathParts: string[] = [];
+          const pathParts: string[] = [];
           let hasOptionalChainingInMethod = false;
 
           // Build the path to the array/string being accessed
@@ -422,7 +415,8 @@ function getObjectUsagesInHook(
         effectiveParent = effectiveParent.parent;
       }
       const isIntermediate =
-        effectiveParent && effectiveParent.type === AST_NODE_TYPES.MemberExpression;
+        effectiveParent &&
+        effectiveParent.type === AST_NODE_TYPES.MemberExpression;
 
       if (!isIntermediate) {
         // Check if this member expression involves our target object
@@ -434,10 +428,13 @@ function getObjectUsagesInHook(
         while (current.type === AST_NODE_TYPES.MemberExpression) {
           const currentMember = current as TSESTree.MemberExpression;
 
-          // Check if this level uses dynamic computed property access
+          // Check if this level uses dynamic computed property access.
+          // why: any non-literal computed key reads arbitrary elements, so it
+          // requires the entire object. Only a literal key (obj[0], obj['k'])
+          // narrows to a single, stable field.
           if (
             currentMember.computed &&
-            currentMember.property.type === AST_NODE_TYPES.Identifier
+            currentMember.property.type !== AST_NODE_TYPES.Literal
           ) {
             hasDynamicComputed = true;
           }
@@ -708,7 +705,6 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
                   | TSESTree.FunctionExpression
               ).body,
               objectName,
-              context,
             );
 
             // If the object is not used at all, suggest removing it

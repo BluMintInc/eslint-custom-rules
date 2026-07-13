@@ -605,6 +605,136 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
+    // Regression (#1291): the hook indexes into the dependency with a computed
+    // key that is neither a plain identifier nor a literal. In these shapes the
+    // access reads arbitrary elements across an iteration, so there is no single
+    // narrowable field and the whole-object dependency is correct. The rule must
+    // NOT report (and must not suggest an out-of-scope "field" like the index var).
+    //
+    // Exact issue repro: podiumGroups[assertSafe(index)] inside a sibling .map()
+    // callback whose own `index` iterates a *different* array.
+    {
+      code: `
+        const MyComponent = ({ podiumGroups }) => {
+          const placements = useMemo(() => {
+            return PODIUM_SLOT_PLACEMENTS.map((slotPlacement, index) => {
+              const group = podiumGroups[assertSafe(index)];
+              return group?.placement ?? slotPlacement;
+            });
+          }, [podiumGroups]);
+          return <div>{placements}</div>;
+        };
+      `,
+    },
+    // Literal-index variant with the loop index identifier (regression guard —
+    // an Identifier computed key already needed the entire object; lock it in).
+    {
+      code: `
+        const MyComponent = ({ podiumGroups }) => {
+          const placements = useMemo(() => {
+            return PODIUM_SLOT_PLACEMENTS.map((slotPlacement, index) => {
+              const group = podiumGroups[index];
+              return group?.placement ?? slotPlacement;
+            });
+          }, [podiumGroups]);
+          return <div>{placements}</div>;
+        };
+      `,
+    },
+    // Non-literal computed key: BinaryExpression obj[i + 1]
+    {
+      code: `
+        const MyComponent = ({ obj }) => {
+          const value = useMemo(() => {
+            return items.map((item, i) => obj[i + 1]);
+          }, [obj]);
+          return <div>{value}</div>;
+        };
+      `,
+    },
+    // Non-literal computed key: MemberExpression obj[keys[j]]
+    {
+      code: `
+        const MyComponent = ({ obj, keys }) => {
+          const value = useMemo(() => {
+            return keys.map((key, j) => obj[keys[j]]);
+          }, [obj, keys]);
+          return <div>{value}</div>;
+        };
+      `,
+    },
+    // Non-literal computed key: CallExpression obj[getKey()]
+    {
+      code: `
+        const MyComponent = ({ obj }) => {
+          const value = useMemo(() => {
+            return obj[getKey()];
+          }, [obj]);
+          return <div>{value}</div>;
+        };
+      `,
+    },
+    // Non-literal computed key: TSAsExpression obj[k as string]
+    {
+      code: `
+        const MyComponent = ({ obj, k }) => {
+          const value = useMemo(() => {
+            return obj[k as string];
+          }, [obj]);
+          return <div>{value}</div>;
+        };
+      `,
+    },
+    // Non-literal computed key on a nested property: obj.rows[fn(i)]
+    {
+      code: `
+        const MyComponent = ({ obj }) => {
+          const value = useMemo(() => {
+            return list.map((item, i) => obj.rows[fn(i)]);
+          }, [obj]);
+          return <div>{value}</div>;
+        };
+      `,
+    },
+    // useCallback variant with dynamic computed key
+    {
+      code: `
+        const MyComponent = ({ podiumGroups }) => {
+          const handler = useCallback(() => {
+            return PODIUM_SLOT_PLACEMENTS.map((slotPlacement, index) => {
+              const group = podiumGroups[assertSafe(index)];
+              return group?.placement ?? slotPlacement;
+            });
+          }, [podiumGroups]);
+          return <button onClick={handler}>Go</button>;
+        };
+      `,
+    },
+    // useEffect variant with dynamic computed key
+    {
+      code: `
+        const MyComponent = ({ podiumGroups }) => {
+          useEffect(() => {
+            PODIUM_SLOT_PLACEMENTS.forEach((slotPlacement, index) => {
+              const group = podiumGroups[assertSafe(index)];
+              log(group?.placement ?? slotPlacement);
+            });
+          }, [podiumGroups]);
+          return <div />;
+        };
+      `,
+    },
+    // Template literal computed key: obj[`row-${i}`]
+    {
+      code: `
+        const MyComponent = ({ obj }) => {
+          const value = useMemo(() => {
+            return list.map((item, i) => obj[\`row-\${i}\`]);
+          }, [obj]);
+          return <div>{value}</div>;
+        };
+      `,
+    },
   ],
   invalid: [
     // Optional chaining case
