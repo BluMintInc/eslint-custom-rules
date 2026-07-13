@@ -1,5 +1,43 @@
 [
   {
+    "version": "1.18.13",
+    "date": "2026-07-13T01:43:11.918Z",
+    "rules": [
+      {
+        "name": "no-compositing-layer-props",
+        "changeType": "fix",
+        "issues": [
+          1288
+        ],
+        "summary": "exempt transform/opacity inside @keyframes (closes #1288)"
+      },
+      {
+        "name": "parallelize-async-operations",
+        "changeType": "fix",
+        "issues": [
+          1287
+        ],
+        "summary": "don't flag write-then-read on the same receiver (closes #1287)"
+      },
+      {
+        "name": "react-memoize-literals",
+        "changeType": "fix",
+        "issues": [
+          1290
+        ],
+        "summary": "exempt Array iteration callbacks (.map/.filter/...) (closes #1290)"
+      },
+      {
+        "name": "require-props-composition",
+        "changeType": "fix",
+        "issues": [
+          1289
+        ],
+        "summary": "recognize inverse composition (child derives from parent) (closes #1289)"
+      }
+    ]
+  },
+  {
     "version": "1.18.12",
     "date": "2026-07-12T03:45:44.071Z",
     "rules": [

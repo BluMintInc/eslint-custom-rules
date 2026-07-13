@@ -1,3 +1,13 @@
+## [1.18.13](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.12...v1.18.13) (2026-07-13)
+
+
+### Bug Fixes
+
+* **no-compositing-layer-props:** exempt transform/opacity inside [@keyframes](https://github.com/keyframes) (closes [#1288](https://github.com/BluMintInc/eslint-custom-rules/issues/1288)) ([bdea3e5](https://github.com/BluMintInc/eslint-custom-rules/commit/bdea3e58889abfc99437e3e27698d4ae1a367332)), closes [#182](https://github.com/BluMintInc/eslint-custom-rules/issues/182)
+* **parallelize-async-operations:** don't flag write-then-read on the same receiver (closes [#1287](https://github.com/BluMintInc/eslint-custom-rules/issues/1287)) ([bef96c5](https://github.com/BluMintInc/eslint-custom-rules/commit/bef96c55b44fc7ab7138debc644d6cfe6ca979fc))
+* **react-memoize-literals:** exempt Array iteration callbacks (.map/.filter/...) (closes [#1290](https://github.com/BluMintInc/eslint-custom-rules/issues/1290)) ([1a24edc](https://github.com/BluMintInc/eslint-custom-rules/commit/1a24edc32e17f25442257811fdd75fcae83c84b9)), closes [#1093](https://github.com/BluMintInc/eslint-custom-rules/issues/1093)
+* **require-props-composition:** recognize inverse composition (child derives from parent) (closes [#1289](https://github.com/BluMintInc/eslint-custom-rules/issues/1289)) ([cada7a9](https://github.com/BluMintInc/eslint-custom-rules/commit/cada7a93d46294c59a14a6ceffc255141eee4883))
+
 ## [1.18.12](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.11...v1.18.12) (2026-07-12)
 
 
