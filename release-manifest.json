@@ -1,5 +1,51 @@
 [
   {
+    "version": "1.19.0",
+    "date": "2026-07-13T23:57:00.324Z",
+    "rules": [
+      {
+        "name": "enforce-single-exported-unit-per-file",
+        "changeType": "feat",
+        "issues": [
+          1295
+        ],
+        "summary": "limit each file to one exported component/class (closes #1295)"
+      },
+      {
+        "name": "no-harness-coupled-disables",
+        "changeType": "feat",
+        "issues": [
+          1296
+        ],
+        "summary": "flag eslint-disable justifications coupled to the dev harness (closes #1296)"
+      },
+      {
+        "name": "prefer-clone-deep",
+        "changeType": "fix",
+        "issues": [
+          1299
+        ],
+        "summary": "stop flagging top-level spread beside a sibling nested object (closes #1299)"
+      },
+      {
+        "name": "prefer-map-over-conditional-dispatch",
+        "changeType": "feat",
+        "issues": [
+          1298
+        ],
+        "summary": "flag literal-union dispatch that should be a Record lookup (closes #1298)"
+      },
+      {
+        "name": "prefer-union-from-const-array",
+        "changeType": "feat",
+        "issues": [
+          1297
+        ],
+        "summary": "derive string-literal union types from an as-const array (closes #1297)"
+      }
+    ]
+  },
+  {
     "version": "1.18.16",
     "date": "2026-07-13T17:31:09.661Z",
     "rules": [

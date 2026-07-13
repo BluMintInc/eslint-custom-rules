@@ -1,3 +1,18 @@
+# [1.19.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.16...v1.19.0) (2026-07-13)
+
+
+### Bug Fixes
+
+* **prefer-clone-deep:** stop flagging top-level spread beside a sibling nested object (closes [#1299](https://github.com/BluMintInc/eslint-custom-rules/issues/1299)) ([685cb93](https://github.com/BluMintInc/eslint-custom-rules/commit/685cb93f19f5989c25dba7dd8354faaede1e53d7))
+
+
+### Features
+
+* **enforce-single-exported-unit-per-file:** limit each file to one exported component/class (closes [#1295](https://github.com/BluMintInc/eslint-custom-rules/issues/1295)) ([47b4bc3](https://github.com/BluMintInc/eslint-custom-rules/commit/47b4bc31a4794df57f6f3fc06d6dcb09b35db5b6))
+* **no-harness-coupled-disables:** flag eslint-disable justifications coupled to the dev harness (closes [#1296](https://github.com/BluMintInc/eslint-custom-rules/issues/1296)) ([8b9110f](https://github.com/BluMintInc/eslint-custom-rules/commit/8b9110f8389536834a487e0098a342773de22338))
+* **prefer-map-over-conditional-dispatch:** flag literal-union dispatch that should be a Record lookup (closes [#1298](https://github.com/BluMintInc/eslint-custom-rules/issues/1298)) ([09b1225](https://github.com/BluMintInc/eslint-custom-rules/commit/09b1225a95ce4158d709ae66805c758de42a6454))
+* **prefer-union-from-const-array:** derive string-literal union types from an as-const array (closes [#1297](https://github.com/BluMintInc/eslint-custom-rules/issues/1297)) ([8c8d5e9](https://github.com/BluMintInc/eslint-custom-rules/commit/8c8d5e99e408fec0fbebca835c22aa1ffe97d3b7))
+
 ## [1.18.16](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.15...v1.18.16) (2026-07-13)
 
 
