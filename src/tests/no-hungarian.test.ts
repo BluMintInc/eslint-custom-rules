@@ -976,6 +976,12 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
     'const EDITABLE_WRAPPER_NUMBER_PROPS_DEFAULT = { isEditing: true };',
     'const SELECTED_STRING_FILTER_OPTIONS = [];',
 
+    // Issue #1294: SCREAMING_SNAKE names where a full-type-word is an INTERIOR
+    // segment (not the leading prefix or trailing head-noun) are domain variants,
+    // not Hungarian notation — mirroring their camelCase counterparts (#1250).
+    'const USER_STRING_NAME = "John";',
+    'const CONFIG_ARRAY_OPTIONS = [];',
+
     // Issue #1250: camelCase names where a full-type-word is a MIDDLE segment
     // are domain names, not Hungarian notation. These must NOT be flagged.
     'const userStringName = "John";',
@@ -1202,16 +1208,17 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
     },
 
     // Full words with SCREAMING_SNAKE_CASE.
-    // A FULL type word directly before the final noun (..._STRING_NAME) tags that
-    // noun -> Hungarian. (Contrast EDITABLE_WRAPPER_NUMBER_PROPS_DEFAULT in the
-    // valid set, where NUMBER is buried with multiple trailing segments.)
+    // A FULL type word as a TRUE trailing head-noun (..._NAME_STRING) or leading
+    // prefix (STRING_NAME_...) still tags the entity's type -> Hungarian. An
+    // INTERIOR full-type-word (USER_STRING_NAME) is a domain variant and is
+    // exempt — see the valid set and issue #1294.
     {
-      code: 'const USER_STRING_NAME = "John";',
-      errors: [errorFor('USER_STRING_NAME')],
+      code: 'const USER_ROLES_STRING = "admin,user";',
+      errors: [errorFor('USER_ROLES_STRING')],
     },
     {
-      code: 'const CONFIG_ARRAY_OPTIONS = [];',
-      errors: [errorFor('CONFIG_ARRAY_OPTIONS')],
+      code: 'const OPTIONS_ARRAY = [];',
+      errors: [errorFor('OPTIONS_ARRAY')],
     },
     // Issue #1217: an ABBREVIATION marker as an interior SCREAMING_SNAKE segment
     // is always Hungarian (no English word is spelled STR/OBJ/...), even when a
@@ -1311,3 +1318,63 @@ ruleTesterTs.run('no-hungarian-domain-number-compounds', noHungarian, {
     // here so the trade-off is explicit; there is no assertion for it.
   ],
 });
+
+// Issue #1294: a full type-word (NUMBER/STRING/...) as an INTERIOR/modifier
+// segment of a SCREAMING_SNAKE_CASE constant was wrongly flagged, while the exact
+// same word in the same position in camelCase/PascalCase is correctly exempt
+// (#1250). The head noun is the true trailing segment (EDITORS); the interior
+// NUMBER/STRING is a domain modifier describing what the editors edit, not a
+// type tag. The snake-case branch is brought in line with the camelCase branch:
+// a full type-word is Hungarian only as a genuine leading prefix (index 0) or
+// trailing head-noun (last segment), and a trailing "..._NUMBER" whose preceding
+// head noun is a domain entity (MATCH_NUMBER) is a domain compound (#1277).
+ruleTesterTs.run(
+  'no-hungarian-screaming-snake-interior-type-word',
+  noHungarian,
+  {
+    valid: [
+      // The crux of #1294: interior full-type-word must NOT be flagged.
+      'const CADENCE_NUMBER_EDITORS = { periodicAnnouncements: 1 };',
+      'const CADENCE_STRING_EDITORS = { periodicAnnouncements: 1 };',
+      // The camelCase counterpart, exempt since #1250 — the casing asymmetry the
+      // fix removes.
+      'const CadenceNumberEditor = () => null;',
+      // >=4 segment names with an interior type-word are likewise domain variants.
+      'const FOO_NUMBER_BAR_EDITORS = {};',
+      'const SELECTED_STRING_FILTER_OPTIONS = [];',
+      'const EDITABLE_WRAPPER_NUMBER_PROPS_DEFAULT = { isEditing: true };',
+      // Snake-case <entity>_NUMBER domain compound, mirroring camelCase matchNumber.
+      'const MATCH_NUMBER = 5;',
+      'const ISSUE_NUMBER = 42;',
+      'const CURRENT_LINE_NUMBER = 10;',
+      'const githubIssueNumber = 42;',
+    ],
+    invalid: [
+      // Regression guards against over-correcting: leading/trailing full type-words
+      // in a two-segment snake-case name MUST still fire.
+      {
+        code: 'const NAME_STRING = "x";',
+        errors: [{ messageId: 'noHungarian' }],
+      },
+      {
+        code: 'const STRING_NAME = "x";',
+        errors: [{ messageId: 'noHungarian' }],
+      },
+      // A true trailing type-word head-noun still fires.
+      {
+        code: 'const USER_STRING = "x";',
+        errors: [{ messageId: 'noHungarian' }],
+      },
+      // A trailing "..._NUMBER" whose head is a numeric QUANTITY (not a domain
+      // entity) is still a redundant type tag and keeps firing.
+      {
+        code: 'const MAX_RETRY_NUMBER = 5;',
+        errors: [{ messageId: 'noHungarian' }],
+      },
+      {
+        code: 'const COUNT_NUMBER = 5;',
+        errors: [{ messageId: 'noHungarian' }],
+      },
+    ],
+  },
+);

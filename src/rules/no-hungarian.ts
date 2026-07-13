@@ -321,6 +321,16 @@ function isDomainNumberCompound(name: string): boolean {
   );
 }
 
+// Rebuild a SCREAMING_SNAKE_CASE identifier's segments into a PascalCase compound
+// (["MATCH","NUMBER"] -> "MatchNumber") so the snake-case branch can reuse the
+// camelCase isDomainNumberCompound / DOMAIN_NUMBER_HEAD_NOUNS exemption verbatim,
+// keeping MATCH_NUMBER and matchNumber on a single code path (#1294).
+function screamingSnakePartsToPascalCase(parts: readonly string[]): string {
+  return parts
+    .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
+    .join('');
+}
+
 export const noHungarian = createRule<[], MessageIds>({
   name: 'no-hungarian',
   meta: {
@@ -436,14 +446,33 @@ export const noHungarian = createRule<[], MessageIds>({
             if (isAbbreviation) {
               return true;
             }
-            // A FULL type word tags the entity's type only at the start (prefix),
-            // the end (suffix), or directly before the final noun
-            // (..._STRING_NAME). Buried deeper (EDITABLE_WRAPPER_NUMBER_PROPS_…)
-            // it qualifies an intermediate segment — a descriptive variant, not a
-            // type tag.
-            return (
-              index === 0 || index === lastIndex || index === lastIndex - 1
-            );
+            // A FULL type word tags the entity's runtime type only as a genuine
+            // leading prefix (index 0) or trailing head-noun (last segment).
+            // Mirror the camelCase/PascalCase branch, which never flags a
+            // full-type-word in a MIDDLE segment: an interior NUMBER/STRING is a
+            // domain modifier describing a variant (CADENCE_NUMBER_EDITORS —
+            // "editors of a numeric cadence"), not a redundant type tag. The
+            // previous `index === lastIndex - 1` allowance produced a casing
+            // asymmetry — CadenceNumberEditor was exempt (#1250) but
+            // CADENCE_NUMBER_EDITORS fired (#1294).
+            if (index !== 0 && index !== lastIndex) {
+              return false;
+            }
+            // A trailing "..._NUMBER" whose preceding head noun is a domain
+            // entity (MATCH_NUMBER, ISSUE_NUMBER, CURRENT_LINE_NUMBER) is a
+            // domain compound, not a Hungarian type tag — route through the same
+            // isDomainNumberCompound carve-out used for camelCase matchNumber
+            // (#1277), so numeric-quantity heads (COUNT_NUMBER, MAX_RETRY_NUMBER)
+            // still fire because those heads are absent from
+            // DOMAIN_NUMBER_HEAD_NOUNS.
+            if (
+              normalizedMarker === 'number' &&
+              index === lastIndex &&
+              isDomainNumberCompound(screamingSnakePartsToPascalCase(parts))
+            ) {
+              return false;
+            }
+            return true;
           });
         });
       }
