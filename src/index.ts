@@ -38,6 +38,7 @@ import { noInlineComponentProp } from './rules/no-inline-component-prop';
 import { noUselessFragment } from './rules/no-useless-fragment';
 import { preferFragmentShorthand } from './rules/prefer-fragment-shorthand';
 import { preferGetterOverParameterlessMethod } from './rules/prefer-getter-over-parameterless-method';
+import { preferMapOverConditionalDispatch } from './rules/prefer-map-over-conditional-dispatch';
 import { preferTypeOverInterface } from './rules/prefer-type-over-interface';
 import { preferTypeAliasOverTypeofConstant } from './rules/prefer-type-alias-over-typeof-constant';
 import { preferUnionFromConstArray } from './rules/prefer-union-from-const-array';
@@ -282,6 +283,7 @@ module.exports = {
         '@blumintinc/blumint/no-useless-usememo-primitives': 'error',
         '@blumintinc/blumint/prefer-fragment-shorthand': 'error',
         '@blumintinc/blumint/prefer-getter-over-parameterless-method': 'error',
+        '@blumintinc/blumint/prefer-map-over-conditional-dispatch': 'error',
         '@blumintinc/blumint/prefer-type-over-interface': 'error',
         '@blumintinc/blumint/prefer-type-alias-over-typeof-constant': 'error',
         '@blumintinc/blumint/prefer-union-from-const-array': 'error',
@@ -569,6 +571,7 @@ module.exports = {
     'prefer-fragment-shorthand': preferFragmentShorthand,
     'prefer-getter-over-parameterless-method':
       preferGetterOverParameterlessMethod,
+    'prefer-map-over-conditional-dispatch': preferMapOverConditionalDispatch,
     'prefer-type-over-interface': preferTypeOverInterface,
     'prefer-type-alias-over-typeof-constant': preferTypeAliasOverTypeofConstant,
     'prefer-union-from-const-array': preferUnionFromConstArray,
