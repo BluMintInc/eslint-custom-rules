@@ -65,6 +65,7 @@ import { useCustomMemo } from './rules/use-custom-memo';
 import { memoizeRootLevelHocs } from './rules/memoize-root-level-hocs';
 import { useCustomLink } from './rules/use-custom-link';
 import { default as enforceSerializableParams } from './rules/enforce-serializable-params';
+import { enforceSingleExportedUnitPerFile } from './rules/enforce-single-exported-unit-per-file';
 import { enforceRealtimedbPathUtils } from './rules/enforce-realtimedb-path-utils';
 import { enforceMemoizeAsync } from './rules/enforce-memoize-async';
 import { enforceExportedFunctionTypes } from './rules/enforce-exported-function-types';
@@ -304,6 +305,7 @@ module.exports = {
         '@blumintinc/blumint/use-custom-memo': 'error',
         '@blumintinc/blumint/use-custom-link': 'error',
         '@blumintinc/blumint/enforce-serializable-params': 'error',
+        '@blumintinc/blumint/enforce-single-exported-unit-per-file': 'error',
         '@blumintinc/blumint/enforce-realtimedb-path-utils': 'error',
         '@blumintinc/blumint/enforce-memoize-async': 'error',
         '@blumintinc/blumint/enforce-exported-function-types': 'error',
@@ -591,6 +593,7 @@ module.exports = {
     'use-custom-memo': useCustomMemo,
     'use-custom-link': useCustomLink,
     'enforce-serializable-params': enforceSerializableParams,
+    'enforce-single-exported-unit-per-file': enforceSingleExportedUnitPerFile,
     'enforce-realtimedb-path-utils': enforceRealtimedbPathUtils,
     'enforce-memoize-async': enforceMemoizeAsync,
     'enforce-exported-function-types': enforceExportedFunctionTypes,
