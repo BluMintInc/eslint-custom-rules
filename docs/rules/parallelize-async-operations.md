@@ -16,6 +16,7 @@ The rule reports when all of these are true:
 - Two or more awaits or await-based variable declarations appear consecutively.
 - Later awaits do not reference identifiers created by earlier awaits (direct identifier reference-based dependency check).
 - Later awaits do not share "coordinator" identifiers (like `batchManager`, `transaction`, or `collector`) with earlier awaits.
+- The awaited calls do not invoke methods on the **same receiver identifier** (e.g. `ref.set(...)` then `ref.get()`), which can carry a read-after-write / write-after-write ordering dependency on that shared object.
 - The awaits are not inside try blocks or loops, which signal intentional ordering or per-call error handling.
 - The calls do not match a small list of side-effect-heavy patterns (e.g., `updatecounter`, `commit`, `flush`, `saveall`) that should stay ordered.
 
@@ -61,6 +62,20 @@ async function processBatch(batchManager: BatchManager, item1: Item, item2: Item
   await batchManager.commit(); // depends on previous adds
 }
 ```
+
+### ✅ Correct (shared receiver ordering)
+
+These must remain sequential because both awaits call methods on the **same receiver identifier** (`versionRef`). The `.get()` must observe the value written by the preceding `.set()`; rewriting to `Promise.all([...])` would race the read against the write and can return the stale value.
+
+```typescript
+async function bumpVersion(versionRef: VersionRef) {
+  await versionRef.set(ServerValue.increment(1));
+  const snapshot = await versionRef.get(); // read-after-write on the same ref
+  return snapshot.val();
+}
+```
+
+The receiver must be a bare identifier. A distinct nested member (`api.users.get()` vs `api.posts.get()`), a fresh chain per call (`db.collection(a).get()` vs `db.collection(b).get()`), or a numeric/dynamic index (`operations[0]()` vs `operations[1]()`) selects a different target each time and is still flagged. Two pure reads on one receiver are conservatively kept sequential as well, since a shared receiver can hold hidden state (for example a paginated cursor)—the worst case is a missed parallelization, which is safer than reordering a real dependency.
 
 ### ✅ Correct (with assignments)
 

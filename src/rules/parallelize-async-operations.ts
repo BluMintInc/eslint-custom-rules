@@ -273,6 +273,60 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     }
 
     /**
+     * Extracts the bare receiver identifier of an awaited *named-method* call:
+     * the `object` of a `MemberExpression` callee when that object is a plain
+     * identifier and the accessed member is a named method -- either a
+     * non-computed property (`versionRef.set(...)`) or a computed string-literal
+     * key (`api['getData']()`). Both denote invoking a method on the shared
+     * receiver, so they are equivalent for ordering purposes.
+     *
+     * Returns null when the receiver is not a bare identifier -- a computed
+     * chain (`realtimeDb.ref(path).remove()`), a nested member
+     * (`api.users.getAll()`), a `this`/`super` receiver, or a non-member callee.
+     * Also returns null for a numeric or dynamic index (`operations[0]()`,
+     * `operations[i]()`): those select a distinct callable from a container
+     * rather than invoking a method on a stateful receiver, so they are
+     * genuinely independent and must not be collapsed onto a shared receiver.
+     * Handles optional-call ChainExpressions.
+     */
+    function getCalleeReceiverName(
+      awaitExpr: TSESTree.AwaitExpression,
+    ): string | null {
+      let callExpr: TSESTree.CallExpression | null = null;
+      if (awaitExpr.argument.type === AST_NODE_TYPES.CallExpression) {
+        callExpr = awaitExpr.argument;
+      } else if (
+        awaitExpr.argument.type === AST_NODE_TYPES.ChainExpression &&
+        awaitExpr.argument.expression.type === AST_NODE_TYPES.CallExpression
+      ) {
+        callExpr = awaitExpr.argument.expression;
+      }
+
+      if (!callExpr) {
+        return null;
+      }
+
+      const callee = callExpr.callee;
+      if (
+        callee.type !== AST_NODE_TYPES.MemberExpression ||
+        callee.object.type !== AST_NODE_TYPES.Identifier
+      ) {
+        return null;
+      }
+
+      const property = callee.property;
+      const isNamedMember = callee.computed
+        ? property.type === AST_NODE_TYPES.Literal &&
+          typeof property.value === 'string'
+        : property.type === AST_NODE_TYPES.Identifier;
+      if (!isNamedMember) {
+        return null;
+      }
+
+      return callee.object.name;
+    }
+
+    /**
      * Checks if there are dependencies between await expressions
      */
     function hasDependencies(
@@ -365,6 +419,31 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
             if (declaration.id.type === AST_NODE_TYPES.ObjectPattern) {
               return true;
             }
+          }
+        }
+      }
+
+      // 6. Shared-receiver ordering barrier. Two awaited calls whose callees are
+      // member expressions on the SAME receiver identifier (e.g. `ref.set(x)`
+      // then `ref.get()`) can carry a read-after-write / write-after-write
+      // dependency: the later call may observe or overwrite state the earlier
+      // one produced on that shared object. Promise.all runs its operands
+      // concurrently, so it would race that ordering and let the read see the
+      // stale value. Keep such a run sequential. Skipping a genuinely
+      // independent pair of reads on one receiver is only a missed
+      // parallelization (a safe no-op), which is preferable to silently
+      // reordering a real data dependency. The receiver must be a bare
+      // identifier; computed chains and nested members are left untouched.
+      const receiverNames = awaitNodes.map((node) => {
+        const awaitExpr = getAwaitExpression(node);
+        return awaitExpr ? getCalleeReceiverName(awaitExpr) : null;
+      });
+      for (let i = 1; i < receiverNames.length; i++) {
+        const receiver = receiverNames[i];
+        if (!receiver) continue;
+        for (let j = 0; j < i; j++) {
+          if (receiverNames[j] === receiver) {
+            return true;
           }
         }
       }
