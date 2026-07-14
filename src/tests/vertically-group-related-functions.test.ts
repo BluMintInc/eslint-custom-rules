@@ -143,6 +143,55 @@ ruleTesterTs.run(
         console.log(fetchData);
       });
       `,
+      {
+        // Transitive chain whose leaf helper (runCommand) is shared by a second
+        // caller chain. Every caller already sits above every helper it invokes
+        // and the shared primitive sits last, below all its callers — a layout
+        // that satisfies callers-first for every edge. The greedy DFS used to
+        // inline the shared leaf under its first caller and then flag this,
+        // instructing a move that violates its own stated principle.
+        name: 'transitive chain with shared leaf helper: every caller already above its helpers, shared primitive last',
+        filename: 'scripts/cli/git-utils.ts',
+        code: `
+        import { execSync } from 'node:child_process';
+
+        export function ensureDependency(tool: string) {
+          runCommand(\`command -v \${tool}\`, true);
+        }
+
+        export function ensureGhScopes(
+          requiredScopes: readonly string[] = ['workflow'],
+        ) {
+          const grantedScopes = fetchGhScopes();
+          const missing = requiredScopes.filter(
+            (scope) => !grantedScopes.includes(scope),
+          );
+          if (missing.length > 0) {
+            console.error(\`Missing: \${missing.join(', ')}\`);
+            process.exit(1);
+          }
+        }
+
+        function fetchGhScopes() {
+          const output = runCommand('gh auth status', true);
+          const scopesLine = output
+            .split('\\n')
+            .find((line) => line.includes('Token scopes:'));
+          if (!scopesLine) {
+            return [];
+          }
+          return [...scopesLine.matchAll(/'([^']+)'/g)].map((match) => match[1]);
+        }
+
+        export function runCommand(command: string, suppressOutput = false) {
+          const result = execSync(command, {
+            encoding: 'utf8',
+            stdio: suppressOutput ? 'pipe' : 'inherit',
+          });
+          return result.trim();
+        }
+        `,
+      },
     ],
     invalid: [
       {
