@@ -53,6 +53,64 @@ export const FancyInput = (props) => { return <input {...props} />; };
 export const FancyInputMemo = memo(forwardRef(FancyInput));
 `,
       },
+      // React.memo (member-expression wrapper) collapses with its sibling source.
+      {
+        ...tsx('Toolbar'),
+        code: `
+export const ToolbarUnmemoized = () => { return <header />; };
+export const Toolbar = React.memo(ToolbarUnmemoized);
+`,
+      },
+      // A multi-level collapse chain (source -> memo -> memo) is still ONE unit;
+      // exercises union-find path compression across three linked exports.
+      {
+        ...tsx('Badge'),
+        code: `
+export const BadgeUnmemoized = () => { return <div />; };
+export const Badge = memo(BadgeUnmemoized);
+export const BadgeWrapped = memo(Badge);
+`,
+      },
+      // A lone class-expression component (const = class extends Component) is
+      // one component unit.
+      {
+        ...tsx('Boxed'),
+        code: `
+export const Boxed = class extends Component {
+  render() { return <div />; }
+};
+`,
+      },
+      // A curried HOC (connect(mapState)(Base)) is still one component; the
+      // call-callee is itself a call, which yields no simple callee name.
+      {
+        ...tsx('Connected'),
+        code: `export const Connected = connect(mapState)(BaseComponent);`,
+      },
+      // A PascalCase const from a factory call with no component-like argument
+      // is not a component, so it never counts against the single component.
+      {
+        ...tsx('AppShell'),
+        code: `
+export const Store = makeStore('config', 123);
+export const AppShell = () => { return <div />; };
+`,
+      },
+      // An exported uninitialized binding (no initializer) is not a unit and
+      // never counts against the single component.
+      {
+        ...tsx('Deferred'),
+        code: `
+export let deferredHandle;
+export const Deferred = () => { return <div />; };
+`,
+      },
+      // A component initializer wrapped in an `as` cast is unwrapped before
+      // classification, so the cast does not hide the single component.
+      {
+        ...tsx('CastCard'),
+        code: `export const CastCard = (() => { return <div />; }) as any;`,
+      },
       // Edge Case 4: createContext result is not a component.
       {
         ...tsx('ValueOriginContext'),
@@ -233,6 +291,58 @@ export const C = () => { return <p />; };
           },
         ],
       },
+      // Edge Case 9: React.Component (member-expression superclass) class
+      // component + functional fallback -> two components.
+      {
+        ...tsx('Boundary'),
+        code: `
+export class Boundary extends React.Component {
+  render() { return <div />; }
+}
+export const BoundaryFallback = () => { return <div />; };
+`,
+        errors: [{ messageId: 'multipleExportedComponents' }],
+      },
+      // A generic HOC wrapping a nested wrapper call (withTheme(memo(fn))) is a
+      // component; sits beside another component -> flag.
+      {
+        ...tsx('Themed'),
+        code: `
+export const Themed = withTheme(memo(() => { return <div />; }));
+export const Plain = () => { return <span />; };
+`,
+        errors: [{ messageId: 'multipleExportedComponents' }],
+      },
+      // Anonymous default-exported function component + a named component.
+      {
+        ...tsx('Sidebar'),
+        code: `
+export default function () { return <aside />; }
+export const SidebarToggle = () => { return <button />; };
+`,
+        errors: [{ messageId: 'multipleExportedComponents' }],
+      },
+      // Default export whose declaration is a bare memo(...) expression, beside
+      // a named component.
+      {
+        ...tsx('NavBar'),
+        code: `
+export const NavLink = () => { return <a />; };
+export default memo(() => { return <nav />; });
+`,
+        errors: [{ messageId: 'multipleExportedComponents' }],
+      },
+      // Default export that is a parenthesized class expression component.
+      {
+        ...tsx('Overlay'),
+        code: `
+export const OverlayTrigger = () => { return <button />; };
+export default (class extends Component {
+  render() { return <div />; }
+});
+`,
+        errors: [{ messageId: 'multipleExportedComponents' }],
+      },
       // One component (within budget) but two plain classes -> class flag.
       {
         ...tsx('Mixed'),
@@ -390,6 +500,16 @@ export class RichError extends BaseError {
 class Alpha { run() { return 1; } }
 class Beta { run() { return 2; } }
 export { Alpha, Beta };
+`,
+        errors: [{ messageId: 'multipleExportedClasses' }],
+      },
+      // Classes extending mixin-call superclasses have no resolvable base name,
+      // so they cannot form a shared-base hierarchy -> flag.
+      {
+        filename: 'src/services/mixed-bases.ts',
+        code: `
+export class Widget extends mixin(Base) { constructor() { super(); } }
+export class Gadget extends compose(Other) { constructor() { super(); } }
 `,
         errors: [{ messageId: 'multipleExportedClasses' }],
       },
