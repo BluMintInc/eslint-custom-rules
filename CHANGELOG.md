@@ -1,3 +1,11 @@
+## [1.19.2](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.1...v1.19.2) (2026-07-14)
+
+
+### Bug Fixes
+
+* **prefer-utility-function-own-file:** exempt shared primitive of cohesive multi-export utility modules (closes [#1303](https://github.com/BluMintInc/eslint-custom-rules/issues/1303)) ([323b121](https://github.com/BluMintInc/eslint-custom-rules/commit/323b121342ed1cc35717706b83bc58c158543c66)), closes [#2](https://github.com/BluMintInc/eslint-custom-rules/issues/2)
+* **vertically-group-related-functions:** defer shared callees until all callers emitted (closes [#1304](https://github.com/BluMintInc/eslint-custom-rules/issues/1304)) ([3b7bacd](https://github.com/BluMintInc/eslint-custom-rules/commit/3b7bacd37d961e2d04ff9673f7e1fc04aabe9aef))
+
 ## [1.19.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.0...v1.19.1) (2026-07-14)
 
 

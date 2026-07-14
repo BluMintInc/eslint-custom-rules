@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.19.2",
+    "date": "2026-07-14T07:32:08.575Z",
+    "rules": [
+      {
+        "name": "prefer-utility-function-own-file",
+        "changeType": "fix",
+        "issues": [
+          1303
+        ],
+        "summary": "exempt shared primitive of cohesive multi-export utility modules (closes #1303)"
+      },
+      {
+        "name": "vertically-group-related-functions",
+        "changeType": "fix",
+        "issues": [
+          1304
+        ],
+        "summary": "defer shared callees until all callers emitted (closes #1304)"
+      }
+    ]
+  },
+  {
     "version": "1.19.1",
     "date": "2026-07-14T01:28:36.352Z",
     "rules": [
