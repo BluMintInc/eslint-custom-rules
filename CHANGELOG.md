@@ -1,3 +1,10 @@
+## [1.19.3](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.2...v1.19.3) (2026-07-14)
+
+
+### Bug Fixes
+
+* **prefer-utility-function-own-file:** exempt factory consumed only by sibling const initializer literal (closes [#1305](https://github.com/BluMintInc/eslint-custom-rules/issues/1305)) ([22643c4](https://github.com/BluMintInc/eslint-custom-rules/commit/22643c40f40f969033ba8657bd0ff9ae1c451a80)), closes [#1303](https://github.com/BluMintInc/eslint-custom-rules/issues/1303)
+
 ## [1.19.2](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.1...v1.19.2) (2026-07-14)
 
 

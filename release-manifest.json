@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.19.3",
+    "date": "2026-07-14T11:28:07.708Z",
+    "rules": [
+      {
+        "name": "prefer-utility-function-own-file",
+        "changeType": "fix",
+        "issues": [
+          1305
+        ],
+        "summary": "exempt factory consumed only by sibling const initializer literal (closes #1305)"
+      }
+    ]
+  },
+  {
     "version": "1.19.2",
     "date": "2026-07-14T07:32:08.575Z",
     "rules": [
