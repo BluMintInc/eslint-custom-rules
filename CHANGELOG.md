@@ -1,3 +1,10 @@
+## [1.19.4](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.3...v1.19.4) (2026-07-14)
+
+
+### Bug Fixes
+
+* **require-props-composition:** exclude decorative *Icon leaf components (closes [#1307](https://github.com/BluMintInc/eslint-custom-rules/issues/1307)) ([a6ad3a0](https://github.com/BluMintInc/eslint-custom-rules/commit/a6ad3a08263ab650268ae1af4a05a8889aa862d9))
+
 ## [1.19.3](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.2...v1.19.3) (2026-07-14)
 
 

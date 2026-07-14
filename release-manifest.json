@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.19.4",
+    "date": "2026-07-14T18:24:36.895Z",
+    "rules": [
+      {
+        "name": "require-props-composition",
+        "changeType": "fix",
+        "issues": [
+          1307
+        ],
+        "summary": "exclude decorative *Icon leaf components (closes #1307)"
+      }
+    ]
+  },
+  {
     "version": "1.19.3",
     "date": "2026-07-14T11:28:07.708Z",
     "rules": [
