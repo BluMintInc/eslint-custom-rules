@@ -11,7 +11,7 @@ Callback naming should communicate intent at call sites. This rule enforces two 
 - **Props that accept functions** must use the `onX` pattern (`onClick`, `onSubmit`) so consumers immediately know a prop is a callback.
 - **Callback implementations** should use action verbs (`submitOrder`, `saveDraft`) rather than the vague `handle` prefix, which hides what the function actually does.
 
-> The rule requires parser `project` settings so it can use TypeScript type info to detect function-typed props.
+> The rule uses TypeScript type info (via parser `project` settings) to detect function-typed props. Files parsed without type information — plain-Node `.mjs` scripts, config files, or anything outside the TS project — are silently skipped rather than causing an error, so mixing them into a lint run is safe.
 
 ## Rule Details
 
@@ -53,7 +53,7 @@ class Modal {
 ## When Not To Use It
 
 - Codebases that intentionally use `handle*` naming for callbacks and do not want automatic renames.
-- Projects that cannot enable TypeScript `project` settings for linting (the rule will throw without type information).
+- Projects that cannot enable TypeScript `project` settings for linting (without type information the rule cannot detect function-typed props, so it skips every file and enforces nothing).
 
 ## Further Reading
 
