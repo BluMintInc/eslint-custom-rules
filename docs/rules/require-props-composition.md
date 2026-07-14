@@ -78,6 +78,8 @@ const LiveBadge = ({ children, size }: LiveBadgeProps) => (
 The built-in list includes layout and utility primitives that don't benefit from composition:
 `Box`, `Stack`, `Typography`, `Fragment`, `Divider`, `Container`, `Grid`, `Paper`, `Card`, `CardContent`, `CardHeader`, `CardActions`, `List`, `ListItem`, `Table`, `TableBody`, `TableCell`, `TableHead`, `TableRow`, `Toolbar`, `AppBar`, `Drawer`, `Modal`, `Backdrop`, `Collapse`, `Fade`, `Grow`, `Slide`, `Zoom`, `CircularProgress`, `LinearProgress`, `Skeleton`, `Suspense`, `StrictMode`, `Profiler`, `ErrorBoundary`, `React.Fragment`, `React.Suspense`, `React.StrictMode`.
 
+Any component whose name ends in `Icon` (e.g. `CheckIcon`, `RefreshIcon` from `@mui/icons-material`) is also treated as a decorative leaf and excluded — icons expose no composable customization surface a parent should re-expose. Interactive components like `IconButton` are unaffected (they end in `Button`, not `Icon`).
+
 ## Examples
 
 ### Incorrect
