@@ -768,3 +768,117 @@ export default MyComponent;
     ],
   },
 );
+
+ruleTesterJsx.run(
+  'prefer-utility-function-own-file registry-initializer consumer',
+  preferUtilityFunctionOwnFile,
+  {
+    valid: [
+      {
+        filename: 'src/components/overlay/keyedOverlayContentRenderers.tsx',
+        code: `
+          import type { ReactElement } from 'react';
+
+          export type OverlayId = 'a' | 'b' | 'c';
+
+          export type Renderer = (
+            uid: string,
+            settings: string | undefined,
+            seed: number | undefined,
+          ) => ReactElement;
+
+          const renderAlerts: Renderer = (uid, settings) => {
+            return (
+              <div data-settings={settings}>
+                <span data-uid={uid} />
+              </div>
+            );
+          };
+
+          const buildRenderer = (overlayId: OverlayId) => {
+            const render: Renderer = (uid, _settings, seed) => {
+              return (
+                <div data-seed={seed}>
+                  <span data-overlay={overlayId} data-uid={uid}>
+                    {overlayId}
+                  </span>
+                </div>
+              );
+            };
+            return render;
+          };
+
+          export const RENDERERS: Record<OverlayId, Renderer> = {
+            a: renderAlerts,
+            b: buildRenderer('b'),
+            c: buildRenderer('c'),
+          };
+        `,
+      },
+
+      // A factory referenced from a sibling top-level ARRAY literal is exempt
+      // too — the generalized reverse-closure walk descends ArrayExpression
+      // entries, not just object-literal property values.
+      {
+        filename: 'src/components/gallery/overlayRendererList.tsx',
+        code: `
+          import type { ReactElement } from 'react';
+
+          export type Renderer = () => ReactElement;
+
+          const buildRenderer = (seed: number) => {
+            const render: Renderer = () => {
+              return (
+                <div data-seed={seed}>
+                  <span data-label="row">
+                    {seed}
+                  </span>
+                </div>
+              );
+            };
+            return render;
+          };
+
+          function Gallery() {
+            return <div />;
+          }
+          export default Gallery;
+
+          export const RENDERERS: Renderer[] = [
+            buildRenderer(1),
+            buildRenderer(2),
+            buildRenderer(3),
+          ];
+        `,
+      },
+    ],
+    invalid: [
+      // The exemption is scoped to the referenced helper only. A genuinely
+      // reusable, sizable helper that no sibling function OR sibling const
+      // initializer consumes is still flagged, even when a registry literal
+      // sits alongside it referencing a *different* helper.
+      {
+        filename: 'src/components/overlay/keyedOverlayContentRenderers.tsx',
+        code: `
+          import type { ReactElement } from 'react';
+
+          export type OverlayId = 'a' | 'b';
+
+          export type Renderer = (uid: string) => ReactElement;
+
+          const renderAlerts: Renderer = (uid) => {
+            return <div data-uid={uid} />;
+          };
+
+          ${sizableArrowConst('formatOverlayLabel', 9)}
+
+          export const RENDERERS: Record<OverlayId, Renderer> = {
+            a: renderAlerts,
+            b: renderAlerts,
+          };
+        `,
+        errors: [{ messageId: 'extractUtility' }],
+      },
+    ],
+  },
+);

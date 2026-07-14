@@ -442,6 +442,15 @@ export const preferUtilityFunctionOwnFile = createRule<Options, MessageIds>({
     };
 
     const topLevelFunctions: FuncInfo[] = [];
+
+    // Top-level `VariableDeclarator` initializer expressions that are NOT
+    // themselves functions — e.g. a `Record` registry object literal or an
+    // array literal whose entries invoke a factory helper. These are the
+    // sibling consumers a reverse-closure walk over function bodies alone would
+    // miss, so we retain them to complete the "does the file need the
+    // candidate?" check.
+    const nonFunctionInitializers: TSESTree.Expression[] = [];
+
     let hasExportDefault = false;
 
     // Names of every top-level binding (functions, consts, lets, destructured
@@ -583,7 +592,13 @@ export const preferUtilityFunctionOwnFile = createRule<Options, MessageIds>({
           if (declarator.id.type !== AST_NODE_TYPES.Identifier) continue;
           const name = (declarator.id as TSESTree.Identifier).name;
           const fn = extractFunctionInit(declarator.init);
-          if (!fn) continue;
+          if (!fn) {
+            // A non-function initializer (object/array literal, call, etc.) may
+            // still consume a sibling helper by name; retain it for the
+            // reverse-closure exemption.
+            if (declarator.init) nonFunctionInitializers.push(declarator.init);
+            continue;
+          }
 
           topLevelFunctions.push({
             node: declarator,
@@ -681,7 +696,14 @@ export const preferUtilityFunctionOwnFile = createRule<Options, MessageIds>({
             // primitive its sibling exports build on. A cohesive multi-export
             // utility module is already a utility file; extracting its core
             // would sever the file's internal cohesion.
-            if (isReferencedBySibling(info, topLevelFunctions)) continue;
+            if (
+              isReferencedBySibling(
+                info,
+                topLevelFunctions,
+                nonFunctionInitializers,
+              )
+            )
+              continue;
           }
 
           // --- Co-location gate: file must have a distinct primary export ---
@@ -757,11 +779,19 @@ function functionClosesOverModuleScope(
 }
 
 /**
- * Returns true if any *other* top-level function in the file references the
- * candidate by name in its body. When sibling exports build on the candidate,
- * the candidate is the module's shared internal primitive — a cohesive
- * multi-export utility module is already a utility file, and extracting its core
- * would orphan the siblings from the primitive they depend on.
+ * Returns true if any *other* top-level sibling in the file references the
+ * candidate by name. When sibling exports build on the candidate, the candidate
+ * is the module's shared internal primitive — a cohesive multi-export utility
+ * module is already a utility file, and extracting its core would orphan the
+ * siblings from the primitive they depend on.
+ *
+ * Two kinds of sibling can consume the candidate:
+ * - Another top-level function that references it in its body.
+ * - A non-function top-level initializer expression that references it — e.g. a
+ *   `Record` registry object literal or array literal whose entries invoke the
+ *   candidate factory (`export const RENDERERS = { b: buildRenderer('b') }`).
+ *   The function-body walk cannot see these, so the initializer expressions are
+ *   inspected directly.
  *
  * This is the mirror of the closure exemption: `functionClosesOverModuleScope`
  * asks "does the candidate need the file?"; this asks "does the file need the
@@ -778,12 +808,17 @@ function isReferencedBySibling(
       | TSESTree.FunctionExpression
       | TSESTree.ArrowFunctionExpression;
   }>,
+  nonFunctionInitializers: TSESTree.Expression[] = [],
 ): boolean {
   for (const other of allFunctions) {
     if (other.name === candidate.name) continue;
     const body = getFunctionBody(other.fn);
     if (!body) continue;
     const refs = collectReferencedIdentifiers(body);
+    if (refs.has(candidate.name)) return true;
+  }
+  for (const init of nonFunctionInitializers) {
+    const refs = collectReferencedIdentifiers(init);
     if (refs.has(candidate.name)) return true;
   }
   return false;
