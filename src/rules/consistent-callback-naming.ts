@@ -3,7 +3,19 @@ import { createRule } from '../utils/createRule';
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import * as ts from 'typescript';
 
-// Temp
+// The "handle" prefix the rule targets is the verb-phrase pattern
+// `handle<Something>` — six letters immediately followed by a capitalized word
+// (handleClick, handleSubmit, handleFormSubmit). When "handle" is followed by a
+// lowercase letter the six letters are part of an ordinary word, not the prefix:
+// the past participle "handled" (and derived names like "handledFingerprints"),
+// the noun "handler(s)", "handles", "handling", the adjective "handleable". Those
+// are plain identifiers, so flagging them — and worse, autofix-stripping the
+// leading "handle" to leave nonsense like `d`/`dFingerprints` — silently corrupts
+// unrelated code (Bug #1301). A bare "handle" is likewise a whole word, not a
+// prefix.
+function hasHandlePrefix(name: string): boolean {
+  return /^handle[A-Z]/.test(name);
+}
 
 export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
   name: 'consistent-callback-naming',
@@ -305,17 +317,7 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
         const functionName =
           node.id?.type === 'Identifier' ? node.id.name : undefined;
 
-        if (functionName && functionName.startsWith('handle') && node.id) {
-          // Skip autofixing for "handler" and "handlers"
-          if (functionName === 'handler' || functionName === 'handlers') {
-            context.report({
-              node,
-              messageId: 'callbackFunctionPrefix',
-              data: { functionName },
-            });
-            return;
-          }
-
+        if (functionName && hasHandlePrefix(functionName) && node.id) {
           // Skip autofixing for class parameters and getters
           const parent = node.parent;
           if (
@@ -421,19 +423,9 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
         if (
           node.key.type === 'Identifier' &&
           node.key.name &&
-          node.key.name.startsWith('handle')
+          hasHandlePrefix(node.key.name)
         ) {
           const name = node.key.name;
-
-          // Skip autofixing for "handler" and "handlers"
-          if (name === 'handler' || name === 'handlers') {
-            context.report({
-              node: node.key,
-              messageId: 'callbackFunctionPrefix',
-              data: { functionName: name },
-            });
-            return;
-          }
 
           // Skip autofixing for class parameters and getters
           if (node.type === 'MethodDefinition' && node.kind === 'get') {
@@ -463,7 +455,7 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
       TSParameterProperty(node: TSESTree.TSParameterProperty) {
         if (
           node.parameter.type === 'Identifier' &&
-          node.parameter.name.startsWith('handle')
+          hasHandlePrefix(node.parameter.name)
         ) {
           context.report({
             node,
