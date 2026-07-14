@@ -420,6 +420,67 @@ export function computeReport(opts: { helper?: typeof computeBase } = {}) {
 `,
         filename: 'scripts/report-utils.ts',
       },
+
+      // 25. Cohesive multi-export utility module: the shared primitive
+      // (runCommand) is called by a co-equal sibling export. No default export,
+      // no CLI guard, no registry const — the file IS a utility module, so its
+      // shared core must not be told to move to "its own file" (reverse-closure
+      // exemption: the file needs the candidate).
+      {
+        name: 'cohesive multi-export utility module: shared primitive called by co-equal sibling exports (no default export, no CLI guard, no registry const)',
+        filename: 'scripts/cli/git-utils.ts',
+        code: `
+import { execSync } from 'node:child_process';
+
+export function runCommand(command: string, suppressOutput = false) {
+  try {
+    const result = execSync(command, {
+      encoding: 'utf8',
+      stdio: suppressOutput ? 'pipe' : ['pipe', 'pipe', 'inherit'],
+    });
+    const trimmed = result.trim();
+    return trimmed;
+  } catch (error: unknown) {
+    throw new Error(\`Command failed: \${command}\\n\${String(error)}\`);
+  }
+}
+
+export function ensureGitClean() {
+  try {
+    runCommand('git diff --quiet', true);
+    runCommand('git diff --cached --quiet', true);
+  } catch {
+    console.error('Error: You have uncommitted changes.');
+    process.exit(1);
+  }
+}
+`,
+      },
+
+      // 26. "Sizable" must not be driven by body comments/blank lines: a
+      // function with only a handful of statements is not sizable just because
+      // it is heavily commented. Identical code with/without JSDoc must lint
+      // identically (comment/blank lines are stripped from the line count).
+      {
+        name: 'function padded with body comments/blank lines is not sizable (comment lines must not count toward the line-span threshold)',
+        filename: 'someEntry.f.ts',
+        code: `
+const documentedHelper = (x: number) => {
+  // step one: seed the accumulator
+  const a = x + 1;
+  // step two: fold again
+
+  // step three: keep folding
+  const b = a + 1;
+
+  // step four
+  const c = b + 1;
+  // step five
+  return c;
+};
+export default onCall(handler);
+`,
+      },
     ],
 
     invalid: [

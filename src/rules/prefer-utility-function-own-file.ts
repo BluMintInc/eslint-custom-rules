@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
 
@@ -214,16 +214,48 @@ function countStatements(
 }
 
 /**
- * Counts the number of source lines spanned by a function node.
+ * Counts the number of significant source lines spanned by a function node —
+ * lines that carry actual code. Blank lines and comment-only lines are ignored
+ * so a function's "size" does not depend on how heavily it is commented:
+ * identical code with and without JSDoc/inline comments lints identically.
  */
 function countLines(
   fn:
     | TSESTree.FunctionDeclaration
     | TSESTree.FunctionExpression
     | TSESTree.ArrowFunctionExpression,
+  sourceCode: TSESLint.SourceCode,
 ): number {
   if (!fn.loc) return 0;
-  return fn.loc.end.line - fn.loc.start.line + 1;
+  const startLine = fn.loc.start.line;
+  const endLine = fn.loc.end.line;
+  const lines = sourceCode.lines;
+
+  let count = 0;
+  for (let line = startLine; line <= endLine; line++) {
+    const text = lines[line - 1] ?? '';
+    if (text.trim() === '') continue;
+
+    // Blank out any character ranges on this line covered by a comment, then
+    // check whether any non-whitespace code remains.
+    const chars = text.split('');
+    for (const comment of sourceCode.getAllComments()) {
+      if (!comment.loc) continue;
+      if (comment.loc.start.line > line || comment.loc.end.line < line) {
+        continue;
+      }
+      const from =
+        comment.loc.start.line === line ? comment.loc.start.column : 0;
+      const to =
+        comment.loc.end.line === line ? comment.loc.end.column : chars.length;
+      for (let col = from; col < to && col < chars.length; col++) {
+        chars[col] = ' ';
+      }
+    }
+    if (chars.join('').trim() === '') continue;
+    count++;
+  }
+  return count;
 }
 
 /**
@@ -387,6 +419,7 @@ export const preferUtilityFunctionOwnFile = createRule<Options, MessageIds>({
     const ignoreClosures = options.ignoreClosures ?? DEFAULT_IGNORE_CLOSURES;
 
     const filename = context.getFilename();
+    const sourceCode = context.getSourceCode();
 
     // Exempt test/mock/type files entirely
     if (isExemptFile(filename)) return {};
@@ -632,7 +665,7 @@ export const preferUtilityFunctionOwnFile = createRule<Options, MessageIds>({
 
           // --- Size check: must be sizable ---
           const stmts = countStatements(fn);
-          const lines = countLines(fn);
+          const lines = countLines(fn, sourceCode);
           const isSizable = stmts >= minStatements || lines >= minLines;
           if (!isSizable) continue;
 
@@ -643,6 +676,12 @@ export const preferUtilityFunctionOwnFile = createRule<Options, MessageIds>({
               topLevelBindingNames,
             );
             if (closesOverModuleScope) continue;
+
+            // Reverse-closure exemption: the candidate is the shared internal
+            // primitive its sibling exports build on. A cohesive multi-export
+            // utility module is already a utility file; extracting its core
+            // would sever the file's internal cohesion.
+            if (isReferencedBySibling(info, topLevelFunctions)) continue;
           }
 
           // --- Co-location gate: file must have a distinct primary export ---
@@ -714,6 +753,39 @@ function functionClosesOverModuleScope(
     }
   }
 
+  return false;
+}
+
+/**
+ * Returns true if any *other* top-level function in the file references the
+ * candidate by name in its body. When sibling exports build on the candidate,
+ * the candidate is the module's shared internal primitive — a cohesive
+ * multi-export utility module is already a utility file, and extracting its core
+ * would orphan the siblings from the primitive they depend on.
+ *
+ * This is the mirror of the closure exemption: `functionClosesOverModuleScope`
+ * asks "does the candidate need the file?"; this asks "does the file need the
+ * candidate?". Either direction of dependency means extraction severs cohesion.
+ */
+function isReferencedBySibling(
+  candidate: {
+    name: string;
+  },
+  allFunctions: Array<{
+    name: string;
+    fn:
+      | TSESTree.FunctionDeclaration
+      | TSESTree.FunctionExpression
+      | TSESTree.ArrowFunctionExpression;
+  }>,
+): boolean {
+  for (const other of allFunctions) {
+    if (other.name === candidate.name) continue;
+    const body = getFunctionBody(other.fn);
+    if (!body) continue;
+    const refs = collectReferencedIdentifiers(body);
+    if (refs.has(candidate.name)) return true;
+  }
   return false;
 }
 
