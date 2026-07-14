@@ -1,5 +1,20 @@
 [
   {
+    "version": "1.19.1",
+    "date": "2026-07-14T01:28:36.352Z",
+    "rules": [
+      {
+        "name": "consistent-callback-naming",
+        "changeType": "fix",
+        "issues": [
+          1301,
+          1302
+        ],
+        "summary": "skip files without TS project services instead of aborting the run (closes #1302); require uppercase after \"handle\" so past-participle identifiers aren't stripped (closes #1301)"
+      }
+    ]
+  },
+  {
     "version": "1.19.0",
     "date": "2026-07-13T23:57:00.324Z",
     "rules": [

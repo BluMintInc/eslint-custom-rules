@@ -1,3 +1,11 @@
+## [1.19.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.0...v1.19.1) (2026-07-14)
+
+
+### Bug Fixes
+
+* **consistent-callback-naming:** require uppercase after "handle" so past-participle identifiers aren't stripped (closes [#1301](https://github.com/BluMintInc/eslint-custom-rules/issues/1301)) ([ab1cb76](https://github.com/BluMintInc/eslint-custom-rules/commit/ab1cb7686642c2314ce70fb769da4722c4c8c7a4))
+* **consistent-callback-naming:** skip files without TS project services instead of aborting the run (closes [#1302](https://github.com/BluMintInc/eslint-custom-rules/issues/1302)) ([bc51cd9](https://github.com/BluMintInc/eslint-custom-rules/commit/bc51cd9bd2f21cc49e4790fc4abe57d9ed744331))
+
 # [1.19.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.18.16...v1.19.0) (2026-07-13)
 
 
