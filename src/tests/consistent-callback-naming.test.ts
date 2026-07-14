@@ -324,6 +324,49 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         );
       `,
     },
+    // Bug #1301: identifiers where "handle" is followed by a lowercase letter are
+    // ordinary words (the past participle "handled", not the "handle" verb
+    // prefix). They must NOT be flagged or autofix-stripped (handledFingerprints
+    // must never become dFingerprints).
+    {
+      code: `
+        const handledFingerprints = { ...manifest.handledFingerprints };
+        for (const handled of commit.handled) {
+          handledFingerprints[handled.fingerprint] = handled.issueNumber;
+        }
+      `,
+    },
+    // Bug #1301: the noun "handler" / plural "handlers" and other "handle" +
+    // lowercase words ("handles", "handling", "handleable", "handledBy") are
+    // legitimate identifiers, not the handler-verb prefix.
+    {
+      code: `
+        const handler = (event: Event) => console.log(event);
+        const handlers = [handler];
+        const handles = { primary: handler };
+        const handling = true;
+        const handleable = ['a', 'b'];
+        const handledBy = 'system';
+      `,
+    },
+    // Bug #1301: a bare "handle" identifier is a whole word, not a prefix.
+    {
+      code: `
+        const handle = getWindowHandle();
+        const fileHandle = handle;
+      `,
+    },
+    // Bug #1301: object literal / destructuring properties named with a
+    // "handle" + lowercase word must not be flagged.
+    {
+      code: `
+        const config = {
+          handled: true,
+          handler: () => {},
+          handledCount: 0,
+        };
+      `,
+    },
   ],
   invalid: [
     // Bug #1182 control: an exclusively-function prop on a typed component must
@@ -601,6 +644,44 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
             this.handler(event);
           }
         }
+      `,
+    },
+    // Bug #1301 disambiguation: a genuine "handle" + capitalized handler is still
+    // flagged and autofixed even when a past-participle word ("handled") that
+    // must be left untouched sits right beside it in the same scope.
+    {
+      code: `
+        const Component = () => {
+          const handled = new Set();
+          const handleClick = (id: string): void => {
+            handled.add(id);
+          };
+          return <button onClick={() => handleClick('x')} />;
+        };
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `
+        const Component = () => {
+          const handled = new Set();
+          const click = (id: string): void => {
+            handled.add(id);
+          };
+          return <button onClick={() => click('x')} />;
+        };
+      `,
+    },
+    // Bug #1301 boundary: "handleUpdate" (handle + capital U) is the prefix
+    // pattern, so it is flagged; the neighbouring "handledCount" data variable is
+    // not.
+    {
+      code: `
+        const handledCount = 0;
+        const handleUpdate = (): void => {};
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `
+        const handledCount = 0;
+        const update = (): void => {};
       `,
     },
     // Class with parameters and references
