@@ -367,6 +367,17 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         };
       `,
     },
+    // Bug #1302: a file parsed without TypeScript project services (a plain
+    // Node .mjs script, a config file, anything outside the TS project) provides
+    // no `parserServices.program`. The rule must silently no-op on such files —
+    // NOT throw at rule-load time, which would abort the entire eslint run for
+    // every file in the invocation. Even a name that would normally be flagged
+    // (handleClick) produces no report here because the visitor is skipped.
+    {
+      code: `const handleClick = () => {};`,
+      parser: require.resolve('espree'),
+      parserOptions: { ecmaVersion: 2020 },
+    },
   ],
   invalid: [
     // Bug #1182 control: an exclusively-function prop on a typed component must

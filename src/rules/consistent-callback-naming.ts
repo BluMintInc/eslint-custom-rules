@@ -43,11 +43,15 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
   create(context) {
     const parserServices = context.parserServices;
 
-    // Check if we have access to TypeScript services
+    // This rule is type-aware, but a single eslint invocation routinely mixes
+    // in-project files with out-of-project ones (plain-Node `.mjs` scripts,
+    // config files, etc.) that the TS `project` never parses. Throwing here
+    // aborts rule loading for the ENTIRE run — one out-of-project file in argv
+    // kills diagnostics for every file (Bug #1302). Degrade gracefully instead:
+    // skip files without type information with a no-op visitor, matching how
+    // @typescript-eslint rules tolerate missing parser services per file.
     if (!parserServices?.program || !parserServices?.esTreeNodeToTSNodeMap) {
-      throw new Error(
-        'You have to enable the `project` setting in parser options to use this rule',
-      );
+      return {};
     }
 
     const checker = parserServices.program.getTypeChecker();
