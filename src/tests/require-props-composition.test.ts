@@ -307,6 +307,57 @@ const LiveBadge = ({ children, size }: LiveBadgeProps) => (
 );
 `,
     },
+    // 22. MUI icon components are decorative leaves — rendering them alongside
+    // excluded primitives must NOT demand props composition. (issue #1307)
+    {
+      filename: 'src/components/IconLabel.tsx',
+      code: `
+import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
+import CheckIcon from '@mui/icons-material/CheckRounded';
+import LinkIcon from '@mui/icons-material/LinkRounded';
+
+type IconLabelProps = Readonly<{
+  label: string;
+  active: boolean;
+}>;
+
+const IconLabel = ({ label, active }: IconLabelProps) => {
+  return (
+    <Box>
+      {active ? <CheckIcon /> : <LinkIcon />}
+      <Typography>{label}</Typography>
+    </Box>
+  );
+};
+`,
+    },
+    // 23. A single icon dependency is not enough to trip the rule. (issue #1307)
+    {
+      filename: 'src/components/StatusDot.tsx',
+      code: `
+type StatusDotProps = { active: boolean; };
+const StatusDot = ({ active }: StatusDotProps) => {
+  return active ? <CheckIcon /> : <CloseIcon />;
+};
+`,
+    },
+    // 24. Icons are dropped from the dep set even when composition-eligible
+    // non-leaf children are present and DO compose. (issue #1307)
+    {
+      filename: 'src/components/DecoratedButton.tsx',
+      code: `
+type LoadingButtonProps = { sx?: object; size?: string; };
+type DecoratedButtonProps = Pick<LoadingButtonProps, 'sx'>;
+const DecoratedButton = (props: DecoratedButtonProps) => {
+  return (
+    <LoadingButton {...props}>
+      <RefreshIcon />
+    </LoadingButton>
+  );
+};
+`,
+    },
   ],
 
   invalid: [
@@ -535,6 +586,36 @@ const MyButton = ({ label, disabled }: MyButtonProps) => {
 type MyButtonProps = { label: string; disabled?: boolean; };
 const MyButton = ({ label, disabled }: MyButtonProps) => {
   return <LoadingButton disabled={disabled}>{label}</LoadingButton>;
+};
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 18. Issue #1307: the `*Icon` exclusion must NOT swallow IconButton — it
+    // ends in "Button", is an interactive component with a real customization
+    // surface, and remains a composition dependency.
+    {
+      filename: 'src/components/RetryControl.tsx',
+      code: `
+type RetryControlProps = { onRetry: () => void; };
+const RetryControl = ({ onRetry }: RetryControlProps) => {
+  return <IconButton onClick={onRetry}>Retry</IconButton>;
+};
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 19. Issue #1307: dropping the icon still leaves a genuine non-leaf child
+    // (Tooltip) in the dep set, so a non-composing component still fires.
+    {
+      filename: 'src/components/CopyButton.tsx',
+      code: `
+type CopyButtonProps = { overlayLinkId: string; onRetry: () => void; };
+const CopyButton = ({ overlayLinkId, onRetry }: CopyButtonProps) => {
+  return (
+    <Tooltip title="Copy">
+      <RefreshIcon onClick={onRetry} />
+      <span>{overlayLinkId}</span>
+    </Tooltip>
+  );
 };
 `,
       errors: [{ messageId: 'missingPropsComposition' }],

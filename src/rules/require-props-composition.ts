@@ -58,6 +58,19 @@ const DEFAULT_EXCLUDED_COMPONENTS = new Set([
 const DEFAULT_TARGET_PATHS = ['src/components/**/*.tsx'];
 
 /**
+ * Icon components (e.g. CheckIcon, RefreshIcon from @mui/icons-material) are
+ * decorative leaf elements — the same category as the layout/decorative
+ * primitives in DEFAULT_EXCLUDED_COMPONENTS. They expose no composable
+ * customization surface a parent should re-expose, so rendering one is never a
+ * composition dependency. Matched by the conventional `*Icon` suffix, which
+ * excludes CheckIcon/LinkIcon/RefreshIcon without touching interactive
+ * components like IconButton (issue #1307).
+ */
+function isDecorativeIcon(name: string): boolean {
+  return /Icon$/.test(name);
+}
+
+/**
  * Derives the expected Props type name for a JSX element name.
  * e.g. "LoadingButton" → "LoadingButtonProps"
  */
@@ -557,7 +570,10 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
 
       // Filter to non-excluded custom components
       const depComponents = Array.from(allJsxNames).filter(
-        (name) => !excludeComponents.has(name) && name !== componentName,
+        (name) =>
+          !excludeComponents.has(name) &&
+          !isDecorativeIcon(name) &&
+          name !== componentName,
       );
 
       if (depComponents.length < minDependencyCount) {
