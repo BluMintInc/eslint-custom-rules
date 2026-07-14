@@ -381,6 +381,13 @@ function dependencyOrder(
     (name) => (incomingCount.get(name) || 0) === 0,
   );
 
+  // Remaining unemitted callers per function, seeded from incomingCount. Used
+  // (callers-first only) to defer a shared callee until every caller that
+  // reaches it has been emitted, so the shared primitive lands below all of its
+  // callers rather than being greedily inlined beneath whichever caller the DFS
+  // reaches first — which would place its other callers below their own helper.
+  const remainingCallers = new Map(incomingCount);
+
   const visit = (name: string) => {
     if (visited.has(name)) {
       return;
@@ -392,7 +399,18 @@ function dependencyOrder(
       order.push(name);
     } else {
       order.push(name);
-      deps.forEach(visit);
+      for (const dep of deps) {
+        const remaining = (remainingCallers.get(dep) ?? 0) - 1;
+        remainingCallers.set(dep, remaining);
+        // Descend into the callee only once its last caller has been emitted.
+        // A shared callee is deferred here and picked up when the caller that
+        // drives its counter to zero recurses into it. If a callee is never
+        // driven to zero (e.g. a dependency cycle), the top-level sweep below
+        // still visits it, so no function is dropped from the order.
+        if (remaining <= 0) {
+          visit(dep);
+        }
+      }
     }
   };
 
