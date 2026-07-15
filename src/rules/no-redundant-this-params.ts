@@ -196,7 +196,14 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
           member.type === AST_NODE_TYPES.MethodDefinition ||
           member.type === AST_NODE_TYPES.TSAbstractMethodDefinition
         ) {
-          if (member.kind === 'constructor') {
+          // Only genuine methods (`kind: 'method'`) are invoked directly as
+          // `this.x(args)`. A `get`/`set` accessor is also a MethodDefinition,
+          // but `this.accessor(args)` evaluates the accessor with zero arguments
+          // and then calls its RETURN VALUE — so when that value is an
+          // externally-supplied function it legitimately needs instance state
+          // threaded in, and flagging it is a false positive (issue #1308). The
+          // constructor is likewise never called as `this.constructor(...)`.
+          if (member.kind !== 'method') {
             continue;
           }
 
