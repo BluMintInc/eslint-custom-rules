@@ -1,3 +1,10 @@
+## [1.19.5](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.4...v1.19.5) (2026-07-15)
+
+
+### Bug Fixes
+
+* **no-redundant-this-params:** skip get/set accessors when resolving callees (closes [#1308](https://github.com/BluMintInc/eslint-custom-rules/issues/1308)) ([1fe11b4](https://github.com/BluMintInc/eslint-custom-rules/commit/1fe11b4cbcdd06ae0d7ce67c5e6c802d459290ea))
+
 ## [1.19.4](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.3...v1.19.4) (2026-07-14)
 
 
