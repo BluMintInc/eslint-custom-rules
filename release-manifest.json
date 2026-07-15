@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.19.5",
+    "date": "2026-07-15T15:24:16.132Z",
+    "rules": [
+      {
+        "name": "no-redundant-this-params",
+        "changeType": "fix",
+        "issues": [
+          1308
+        ],
+        "summary": "skip get/set accessors when resolving callees (closes #1308)"
+      }
+    ]
+  },
+  {
     "version": "1.19.4",
     "date": "2026-07-14T18:24:36.895Z",
     "rules": [
