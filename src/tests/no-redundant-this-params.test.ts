@@ -198,6 +198,71 @@ ruleTesterTs.run('no-redundant-this-params', noRedundantThisParams, {
       }
     }
     `,
+    // Getter-returned external function: `callback` is a `get` accessor forwarding a
+    // constructor-injected function. Calling `this.callback(this.event)` invokes the
+    // getter's RETURN VALUE, not a class method — the external function cannot read
+    // `this.event` off the orchestrator's `this`, so the argument is mandatory.
+    `
+type Handler = (event: unknown) => Promise<void>;
+class DebounceOrchestrator {
+  constructor(
+    private readonly props: { event: unknown; callback: Handler },
+  ) {}
+  public async orchestrate() {
+    await this.callback(this.event);
+  }
+  private get callback() {
+    return this.props.callback;
+  }
+  private get event() {
+    return this.props.event;
+  }
+}
+`,
+    // Public getter returning a locally-built function still invokes the return value,
+    // never the accessor with arguments — passing instance state remains correct.
+    `
+    class Dispatcher {
+      private target = 'x';
+      get send() {
+        return (payload: string) => payload;
+      }
+      run() {
+        return this.send(this.target);
+      }
+    }
+    `,
+    // A getter with a matching setter (accessor pair) must not be registered as a
+    // callable method under either kind; invoking the getter's return value is fine.
+    `
+    class Store {
+      private _run: (v: number) => number = (v) => v;
+      private value = 1;
+      get run() {
+        return this._run;
+      }
+      set run(fn: (v: number) => number) {
+        this._run = fn;
+      }
+      execute() {
+        return this.run(this.value);
+      }
+    }
+    `,
+    // Set-accessor-only member: the setter is never a direct callable, so a call whose
+    // callee syntactically matches its name must not be flagged.
+    `
+    class Sink {
+      private value = 1;
+      set write(fn: (v: number) => number) {
+        this.handler = fn;
+      }
+      private handler: (v: number) => number = (v) => v;
+      run() {
+        return this.write(this.value);
+      }
+    }
+    `,
   ],
   invalid: [
     {
