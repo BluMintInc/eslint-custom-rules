@@ -621,6 +621,63 @@ function leaf() {
 }
 `,
       },
+      {
+        // The interleaved statement carries its OWN own-line leading comment.
+        // Reordering the functions around it must leave that comment attached
+        // to the const it documents — it must not be swallowed into the
+        // trailing range of the function above and dragged away.
+        code: `
+function helper() {
+  return OFFSET * 2;
+}
+
+// comment describing OFFSET
+const OFFSET = 2;
+
+function main() {
+  return helper();
+}
+`,
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: `
+function main() {
+  return helper();
+}
+
+// comment describing OFFSET
+const OFFSET = 2;
+
+function helper() {
+  return OFFSET * 2;
+}
+`,
+      },
+      {
+        // A preceding interleaved statement carries a SAME-LINE trailing
+        // comment. That comment belongs to the const, not to the function
+        // beneath it, so it must stay with the const rather than travel down
+        // as part of the relocated function's leading block.
+        code: `
+const OFFSET = 2; // offset value
+function helper() {
+  return OFFSET * 2;
+}
+function main() {
+  return helper();
+}
+`,
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: `
+const OFFSET = 2; // offset value
+function main() {
+  return helper();
+}
+
+function helper() {
+  return OFFSET * 2;
+}
+`,
+      },
     ],
   },
 );

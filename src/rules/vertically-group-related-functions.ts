@@ -464,18 +464,32 @@ function getStatementRangeWithComments(
   statement: FunctionStatementNode,
   sourceCode: Readonly<TSESLint.SourceCode>,
   consumedComments?: Set<TSESTree.Comment>,
-  nextStatement?: FunctionStatementNode,
+  nextStatement?: TSESTree.Node,
 ): [number, number] {
   const filterComments = (comments: TSESTree.Comment[]) =>
     (comments || []).filter(
       (comment) => !consumedComments || !consumedComments.has(comment),
     );
 
-  const commentsBefore = filterComments(
-    sourceCode.getCommentsBefore(statement) || [],
-  );
+  // A comment sharing a line with the code token immediately before it is a
+  // trailing comment of that preceding statement (e.g. `const x = 2; // note`),
+  // not a leading comment of the node beneath it. Attributing it to the node
+  // below would drag an interleaved statement's own end-of-line comment along
+  // when the following function is relocated. Only own-line comments count as
+  // leading comments.
+  const leadingCommentsOf = (target: TSESTree.Node) =>
+    filterComments(sourceCode.getCommentsBefore(target) || []).filter(
+      (comment) => {
+        const tokenBefore = sourceCode.getTokenBefore(comment);
+        return (
+          !tokenBefore || tokenBefore.loc.end.line !== comment.loc.start.line
+        );
+      },
+    );
+
+  const commentsBefore = leadingCommentsOf(statement);
   const nextLeadingComments = nextStatement
-    ? new Set(filterComments(sourceCode.getCommentsBefore(nextStatement) || []))
+    ? new Set(leadingCommentsOf(nextStatement))
     : new Set<TSESTree.Comment>();
   const trailingCandidates = filterComments(
     sourceCode.getCommentsAfter(statement) || [],
@@ -680,13 +694,22 @@ export const verticallyGroupRelatedFunctions: TSESLint.RuleModule<
           FunctionStatementNode,
           [number, number]
         >();
-        sourceOrderedInfos.forEach((info, idx) => {
-          const nextInfo = sourceOrderedInfos[idx + 1];
+        sourceOrderedInfos.forEach((info) => {
+          // Bound each function's trailing comments by the statement that
+          // physically follows it in the block — which may be an interleaved
+          // non-function statement, not the next function — so an interleaved
+          // statement's own leading comment is never swallowed into the
+          // function above it.
+          const bodyIndex = node.body.indexOf(
+            info.statementNode as TSESTree.Statement,
+          );
+          const nextStatement =
+            bodyIndex >= 0 ? node.body[bodyIndex + 1] : undefined;
           const [rangeStart, rangeEnd] = getStatementRangeWithComments(
             info.statementNode,
             sourceCode,
             consumedComments,
-            nextInfo?.statementNode,
+            nextStatement,
           );
           statementRanges.set(info.statementNode, [rangeStart, rangeEnd]);
         });
