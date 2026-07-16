@@ -1,3 +1,10 @@
+## [1.19.7](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.6...v1.19.7) (2026-07-16)
+
+
+### Bug Fixes
+
+* **no-redundant-this-params:** treat trailing-export classes as reachable ([6255cee](https://github.com/BluMintInc/eslint-custom-rules/commit/6255cee9e46e2372aacd884ad8c9fa2737e8644e)), closes [#1309](https://github.com/BluMintInc/eslint-custom-rules/issues/1309)
+
 ## [1.19.6](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.5...v1.19.6) (2026-07-16)
 
 
