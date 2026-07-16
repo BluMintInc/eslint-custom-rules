@@ -369,6 +369,71 @@ class DebounceOrchestrator {
       }
     };
     `,
+    // A class exported by a trailing `export { Foo }` statement is reachable from
+    // subclasses in other files just as an inline `export class` is.
+    `
+    class TrailingExport {
+      private target = 'x';
+
+      run() {
+        return this.send(this.target);
+      }
+
+      send(value: string) {
+        return value;
+      }
+    }
+
+    export { TrailingExport };
+    `,
+    // Renamed trailing export (`export { Foo as Bar }`) still exposes the class.
+    `
+    class RenamedExport {
+      protected stage = 'a';
+
+      run() {
+        return this.process(this.stage);
+      }
+
+      protected process(name: string) {
+        return name;
+      }
+    }
+
+    export { RenamedExport as PublicName };
+    `,
+    // `export default Foo` referencing an earlier declaration exposes the class.
+    `
+    class DefaultExported {
+      private route = '/';
+
+      dispatch() {
+        return this.navigate(this.route);
+      }
+
+      navigate(path: string) {
+        return path;
+      }
+    }
+
+    export default DefaultExported;
+    `,
+    // `const Foo = class {}` exported by a later `export { Foo }` is reachable too.
+    `
+    const DeferredClassExpr = class {
+      private target = 'x';
+
+      run() {
+        return this.send(this.target);
+      }
+
+      protected send(value: string) {
+        return value;
+      }
+    };
+
+    export { DeferredClassExpr };
+    `,
   ],
   invalid: [
     {
@@ -729,6 +794,27 @@ class DebounceOrchestrator {
     {
       code: `
       class LocalOnly {
+        private cfg = { value: 1 };
+
+        run() {
+          return this.handle(this.cfg);
+        }
+
+        protected handle(config: { value: number }) {
+          return config.value;
+        }
+      }
+      `,
+      errors: [{ messageId: 'redundantInstanceArg' }],
+    },
+    // Export detection is name-precise: a class that is NOT itself exported still
+    // reports even when an unrelated binding is exported from the same file.
+    {
+      code: `
+      const helperValue = 1;
+      export { helperValue };
+
+      class NotExported {
         private cfg = { value: 1 };
 
         run() {

@@ -169,6 +169,68 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
       return [];
     }
 
+    function isBindingExportedInScope(
+      scopeBody: TSESTree.ProgramStatement[],
+      bindingName: string,
+    ): boolean {
+      // A class bound at module (or namespace) scope can be exported by a
+      // statement separate from its declaration — `export { Foo }`,
+      // `export { Foo as Bar }`, `export default Foo`, or `export = Foo`. Any of
+      // these exposes it to subclassing from another file just as an inline
+      // export does.
+      for (const statement of scopeBody) {
+        if (
+          statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
+          !statement.source
+        ) {
+          for (const specifier of statement.specifiers) {
+            if (
+              specifier.local.type === AST_NODE_TYPES.Identifier &&
+              specifier.local.name === bindingName
+            ) {
+              return true;
+            }
+          }
+        }
+
+        if (
+          statement.type === AST_NODE_TYPES.ExportDefaultDeclaration &&
+          statement.declaration.type === AST_NODE_TYPES.Identifier &&
+          statement.declaration.name === bindingName
+        ) {
+          return true;
+        }
+
+        if (
+          statement.type === AST_NODE_TYPES.TSExportAssignment &&
+          statement.expression.type === AST_NODE_TYPES.Identifier &&
+          statement.expression.name === bindingName
+        ) {
+          return true;
+        }
+      }
+
+      return false;
+    }
+
+    function getEnclosingScopeBody(
+      node: TSESTree.Node | null | undefined,
+    ): TSESTree.ProgramStatement[] | null {
+      if (!node) {
+        return null;
+      }
+
+      if (node.type === AST_NODE_TYPES.Program) {
+        return node.body;
+      }
+
+      if (node.type === AST_NODE_TYPES.TSModuleBlock) {
+        return node.body as TSESTree.ProgramStatement[];
+      }
+
+      return null;
+    }
+
     function isExportedClass(
       node: TSESTree.ClassDeclaration | TSESTree.ClassExpression,
     ): boolean {
@@ -184,18 +246,42 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
         return true;
       }
 
-      // `export const Foo = class { ... }` exposes the class expression to other
-      // files just as an exported declaration does.
+      // A `class Foo {}` declaration exported by a later `export { Foo }` /
+      // `export default Foo` in the same scope is still reachable cross-file.
+      if (
+        node.type === AST_NODE_TYPES.ClassDeclaration &&
+        node.id &&
+        (parent.type === AST_NODE_TYPES.Program ||
+          parent.type === AST_NODE_TYPES.TSModuleBlock)
+      ) {
+        const scopeBody = getEnclosingScopeBody(parent);
+        if (scopeBody && isBindingExportedInScope(scopeBody, node.id.name)) {
+          return true;
+        }
+      }
+
+      // `export const Foo = class { ... }`, or `const Foo = class {}` exported by
+      // a later statement, both expose the class expression like an exported
+      // declaration does.
       if (
         node.type === AST_NODE_TYPES.ClassExpression &&
-        parent.type === AST_NODE_TYPES.VariableDeclarator
+        parent.type === AST_NODE_TYPES.VariableDeclarator &&
+        parent.id.type === AST_NODE_TYPES.Identifier
       ) {
         const declaration = parent.parent;
         const exportNode = declaration?.parent;
-        return (
+
+        if (
           exportNode?.type === AST_NODE_TYPES.ExportNamedDeclaration ||
           exportNode?.type === AST_NODE_TYPES.ExportDefaultDeclaration
-        );
+        ) {
+          return true;
+        }
+
+        const scopeBody = getEnclosingScopeBody(exportNode);
+        if (scopeBody && isBindingExportedInScope(scopeBody, parent.id.name)) {
+          return true;
+        }
       }
 
       return false;
