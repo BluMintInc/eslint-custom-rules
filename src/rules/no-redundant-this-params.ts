@@ -7,6 +7,14 @@ type MethodMeta = {
   params: TSESTree.Parameter[];
   isStatic: boolean;
   isAbstract: boolean;
+  /**
+   * Whether the method can be invoked as `this.method(...)` from a subclass in
+   * another file. When true, this single-file rule cannot enumerate the full
+   * call-site set, so it cannot prove a parameter is always the same
+   * `this.<member>` and must not report (a subclass may thread a different
+   * member through the same parameter). See issue #1309.
+   */
+  externallyReachable: boolean;
 };
 
 type ClassInfo = {
@@ -161,10 +169,67 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
       return [];
     }
 
+    function isExportedClass(
+      node: TSESTree.ClassDeclaration | TSESTree.ClassExpression,
+    ): boolean {
+      const parent = node.parent;
+      if (!parent) {
+        return false;
+      }
+
+      if (
+        parent.type === AST_NODE_TYPES.ExportNamedDeclaration ||
+        parent.type === AST_NODE_TYPES.ExportDefaultDeclaration
+      ) {
+        return true;
+      }
+
+      // `export const Foo = class { ... }` exposes the class expression to other
+      // files just as an exported declaration does.
+      if (
+        node.type === AST_NODE_TYPES.ClassExpression &&
+        parent.type === AST_NODE_TYPES.VariableDeclarator
+      ) {
+        const declaration = parent.parent;
+        const exportNode = declaration?.parent;
+        return (
+          exportNode?.type === AST_NODE_TYPES.ExportNamedDeclaration ||
+          exportNode?.type === AST_NODE_TYPES.ExportDefaultDeclaration
+        );
+      }
+
+      return false;
+    }
+
     function collectClassInfo(
       node: TSESTree.ClassDeclaration | TSESTree.ClassExpression,
     ): void {
       const methods = new Map<string, MethodMeta>();
+
+      // A method's `this.method(...)` call sites are confined to this file only
+      // when the class cannot be extended from another file. An `abstract` class
+      // exists to be subclassed, and an exported class can be subclassed
+      // anywhere; either way subclasses may call an inherited non-private method
+      // with a different `this.<member>`, so those methods are externally
+      // reachable and must not be reported. See issue #1309.
+      const classIsExtensible =
+        Boolean((node as { abstract?: boolean }).abstract) ||
+        isExportedClass(node);
+
+      function computeExternallyReachable(
+        methodName: string,
+        accessibility: TSESTree.Accessibility | undefined,
+      ): boolean {
+        if (!classIsExtensible) {
+          return false;
+        }
+
+        // `private` (TS) and `#name` (ECMAScript) methods are never inherited,
+        // so all of their call sites live in the declaring class body.
+        const isPrivate =
+          accessibility === 'private' || methodName.startsWith('#');
+        return !isPrivate;
+      }
 
       function setMethod(methodName: string, meta: MethodMeta): void {
         /**
@@ -217,6 +282,10 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
             isStatic: Boolean(member.static),
             isAbstract:
               member.type === AST_NODE_TYPES.TSAbstractMethodDefinition,
+            externallyReachable: computeExternallyReachable(
+              methodName,
+              member.accessibility,
+            ),
           });
         } else if (member.type === AST_NODE_TYPES.PropertyDefinition) {
           const methodName = member.key
@@ -236,6 +305,10 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
             params,
             isStatic: false,
             isAbstract: false,
+            externallyReachable: computeExternallyReachable(
+              methodName,
+              member.accessibility,
+            ),
           });
         }
       }
@@ -627,6 +700,13 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
             for (const [, propStats] of argProperties) {
               if (propStats.callsWithProperty === methodStats.totalCalls) {
                 for (const violation of propStats.violations) {
+                  // Skip methods whose call sites are not provably confined to
+                  // this file: a subclass elsewhere may thread a different
+                  // `this.<member>` through the same parameter (issue #1309).
+                  if (violation.methodMeta.externallyReachable) {
+                    continue;
+                  }
+
                   reportAccess(
                     methodName,
                     violation.methodMeta,
