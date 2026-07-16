@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.19.6",
+    "date": "2026-07-16T01:27:07.130Z",
+    "rules": [
+      {
+        "name": "no-redundant-this-params",
+        "changeType": "fix",
+        "issues": [
+          1309
+        ],
+        "summary": "skip externally-reachable methods (closes #1309)"
+      }
+    ]
+  },
+  {
     "version": "1.19.5",
     "date": "2026-07-15T15:24:16.132Z",
     "rules": [

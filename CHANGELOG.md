@@ -1,3 +1,10 @@
+## [1.19.6](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.5...v1.19.6) (2026-07-16)
+
+
+### Bug Fixes
+
+* **no-redundant-this-params:** skip externally-reachable methods (closes [#1309](https://github.com/BluMintInc/eslint-custom-rules/issues/1309)) ([a7d4425](https://github.com/BluMintInc/eslint-custom-rules/commit/a7d4425affc585642442e3068bd7b2559c47fbe6))
+
 ## [1.19.5](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.4...v1.19.5) (2026-07-15)
 
 
