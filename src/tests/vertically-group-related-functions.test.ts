@@ -534,6 +534,93 @@ function bucketTitles(titles: string[]) {
         }
         `,
       },
+      {
+        // Interleaved non-function statement (const) forces the in-place
+        // reorder branch; each function's leading JSDoc must travel with it.
+        code: `
+/**
+ * DOC-FOR-HELPER: returns OFFSET doubled.
+ */
+function helper() {
+  return OFFSET * 2;
+}
+
+const OFFSET = 2;
+
+/**
+ * DOC-FOR-MAIN: entry point, calls helper.
+ */
+function main() {
+  return helper();
+}
+`,
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: `
+/**
+ * DOC-FOR-MAIN: entry point, calls helper.
+ */
+function main() {
+  return helper();
+}
+
+const OFFSET = 2;
+
+/**
+ * DOC-FOR-HELPER: returns OFFSET doubled.
+ */
+function helper() {
+  return OFFSET * 2;
+}
+`,
+      },
+      {
+        // Three functions interleaved with non-function statements (a const and
+        // a type alias), each carrying a distinguishing leading comment. The
+        // fully-reversed source order forces an N-way rotation across the
+        // function slots; every leading comment must rotate together with the
+        // function it documents (no orphaned or duplicated comment).
+        code: `
+// DOC-FOR-LEAF: reads VALUE.
+function leaf() {
+  return VALUE;
+}
+
+const VALUE = 1;
+
+// DOC-FOR-MIDDLE: calls leaf.
+function middle() {
+  return leaf();
+}
+
+type Marker = string;
+
+// DOC-FOR-ENTRY: calls middle.
+function entry(): Marker {
+  return middle();
+}
+`,
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: `
+// DOC-FOR-ENTRY: calls middle.
+function entry(): Marker {
+  return middle();
+}
+
+const VALUE = 1;
+
+// DOC-FOR-MIDDLE: calls leaf.
+function middle() {
+  return leaf();
+}
+
+type Marker = string;
+
+// DOC-FOR-LEAF: reads VALUE.
+function leaf() {
+  return VALUE;
+}
+`,
+      },
     ],
   },
 );
