@@ -263,6 +263,112 @@ class DebounceOrchestrator {
       }
     }
     `,
+    // Issue #1309: a protected method on an abstract base class whose polymorphic
+    // parameter receives DIFFERENT instance members across the base and a subclass.
+    // The parameter cannot be inlined to a single `this.<member>`, so the rule must
+    // not report. The subclass call site (this.beforeSource) is outside the declaring
+    // class body — in production it lives in another file, making the base call site
+    // the only one the single-file rule can enumerate.
+    `
+    abstract class Base {
+      protected abstract get beforeSource(): string;
+      protected abstract get afterSource(): string;
+
+      protected transform(sourceLocated: string, targetRef: string) {
+        return \`\${sourceLocated}:\${targetRef}\`;
+      }
+
+      protected buildAfter(targetRef: string) {
+        return this.transform(this.afterSource, targetRef);
+      }
+    }
+
+    class Derived extends Base {
+      protected get beforeSource() { return 'b'; }
+      protected get afterSource() { return 'a'; }
+
+      protected buildBefore(targetRef: string) {
+        return this.transform(this.beforeSource, targetRef);
+      }
+    }
+    `,
+    // A protected abstract method on an abstract class: subclasses in other files may
+    // call it with a different member, so the single visible base call site cannot
+    // prove redundancy. (Formerly an invalid case; corrected by #1309.)
+    `
+    abstract class BaseProcessor {
+      constructor(protected readonly config: Config) {}
+
+      process() {
+        return this.execute(this.config);
+      }
+
+      protected abstract execute(cfg: Config): Result;
+    }
+
+    class ConcreteProcessor extends BaseProcessor {
+      protected execute(cfg: Config): Result {
+        return { value: cfg.value };
+      }
+    }
+    `,
+    // A public method on an exported class is reachable from subclasses in other
+    // files; the rule cannot enumerate those call sites, so it must not report.
+    `
+    export class Widget {
+      private x = 1;
+
+      compute() {
+        return this.helper(this.x);
+      }
+
+      helper(value: number) {
+        return value;
+      }
+    }
+    `,
+    // Exported abstract class with a protected method: externally reachable, so no report.
+    `
+    export abstract class Pipeline {
+      protected stage = 'a';
+
+      run() {
+        return this.process(this.stage);
+      }
+
+      protected process(name: string) {
+        return name;
+      }
+    }
+    `,
+    // `export default` (non-abstract) class exposes its public method to subclasses elsewhere.
+    `
+    export default class Router {
+      private route = '/';
+
+      dispatch() {
+        return this.navigate(this.route);
+      }
+
+      navigate(path: string) {
+        return path;
+      }
+    }
+    `,
+    // `export const X = class { ... }` is just as reachable as an exported declaration.
+    `
+    export const Handler = class {
+      private target = 'x';
+
+      run() {
+        return this.send(this.target);
+      }
+
+      protected send(value: string) {
+        return value;
+      }
+    };
+    `,
   ],
   invalid: [
     {
@@ -335,35 +441,6 @@ class DebounceOrchestrator {
       errors: [
         { messageId: 'redundantInstanceArg' },
         { messageId: 'redundantInstanceArg' },
-      ],
-    },
-    {
-      code: `
-      abstract class BaseProcessor {
-        constructor(protected readonly config: Config) {}
-
-        process() {
-          return this.execute(this.config);
-        }
-
-        protected abstract execute(cfg: Config): Result;
-      }
-
-      class ConcreteProcessor extends BaseProcessor {
-        protected execute(cfg: Config): Result {
-          return { value: cfg.value };
-        }
-      }
-      `,
-      errors: [
-        {
-          messageId: 'redundantInstanceArg',
-          data: {
-            methodName: 'execute',
-            memberText: 'this.config',
-            parameterNote: ' (parameter "cfg")',
-          },
-        },
       ],
     },
     {
@@ -588,6 +665,78 @@ class DebounceOrchestrator {
 
         run() {
           return this.process(this.value);
+        }
+      }
+      `,
+      errors: [{ messageId: 'redundantInstanceArg' }],
+    },
+    // Export does not hide a `private` method: it is never inherited, so its call
+    // sites are provably confined to the declaring class body and remain reportable.
+    {
+      code: `
+      export class ExportedWithPrivate {
+        private value = 1;
+
+        run() {
+          return this.useValue(this.value);
+        }
+
+        private useValue(value: number) {
+          return value * 2;
+        }
+      }
+      `,
+      errors: [{ messageId: 'redundantInstanceArg' }],
+    },
+    // An abstract class does not hide a `private` method either — private members
+    // cannot be threaded differently by a subclass.
+    {
+      code: `
+      abstract class AbstractWithPrivate {
+        private value = 1;
+
+        run() {
+          return this.useValue(this.value);
+        }
+
+        private useValue(value: number) {
+          return value * 2;
+        }
+      }
+      `,
+      errors: [{ messageId: 'redundantInstanceArg' }],
+    },
+    // A `#private` method is inaccessible to subclasses, so an exported class does
+    // not make it externally reachable.
+    {
+      code: `
+      export class ExportedWithBrandPrivate {
+        value = 1;
+
+        run() {
+          return this.#consume(this.value);
+        }
+
+        #consume(value: number) {
+          return value * 2;
+        }
+      }
+      `,
+      errors: [{ messageId: 'redundantInstanceArg' }],
+    },
+    // A protected method on a plain (non-exported, non-abstract) class cannot be
+    // subclassed from another file, so its visible call sites are exhaustive.
+    {
+      code: `
+      class LocalOnly {
+        private cfg = { value: 1 };
+
+        run() {
+          return this.handle(this.cfg);
+        }
+
+        protected handle(config: { value: number }) {
+          return config.value;
         }
       }
       `,
