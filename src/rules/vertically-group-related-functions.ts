@@ -731,14 +731,29 @@ export const verticallyGroupRelatedFunctions: TSESLint.RuleModule<
               // Real modules interleave type aliases, consts, and top-level
               // calls (e.g. `void autoRunIfMain();`) between functions. Rather
               // than bail, reorder only the function statements among their own
-              // slots, leaving every other statement exactly where it is. Plain
-              // node ranges keep the edits disjoint (no comment-span overlap
-              // with the interleaved statements).
+              // slots, leaving every other statement exactly where it is. Both
+              // the destination slot and the source text use the same
+              // comment-inclusive ranges Path A relies on, so each function's
+              // leading JSDoc travels with it instead of being left orphaned in
+              // its old slot. The precomputed `statementRanges` already exclude
+              // each interleaved statement's own leading comments (they are
+              // treated as the next function's leading comments), so the widened
+              // edits stay disjoint from one another and from the interleaved
+              // statements — no comment-span overlap.
               return sourceOrderedInfos.map((info, idx) => {
                 const target = expectedOrderInfos[idx];
+                const destRange =
+                  statementRanges.get(info.statementNode) ||
+                  getStatementRangeWithComments(info.statementNode, sourceCode);
+                const [targetStart, targetEnd] =
+                  statementRanges.get(target.statementNode) ||
+                  getStatementRangeWithComments(
+                    target.statementNode,
+                    sourceCode,
+                  );
                 return fixer.replaceTextRange(
-                  info.statementNode.range,
-                  sourceCode.getText(target.statementNode),
+                  destRange,
+                  sourceCode.text.slice(targetStart, targetEnd),
                 );
               });
             }
