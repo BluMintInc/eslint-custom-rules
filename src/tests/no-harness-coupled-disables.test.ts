@@ -81,6 +81,43 @@ const l = 15;`,
     `// deps are stable across renders
 // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
 const m = 16;`,
+    // A /** */ JSDoc block documents the declaration below; its incidental
+    // "claude-hooks" mention (a real directory name) is NOT part of the
+    // adjacent disable's own rationale, which is purely code-level. A JSDoc
+    // docblock is a distinct comment class, not a `//` continuation of the
+    // disable directive, so it must not merge into the scanned justification.
+    `/**
+ * Exported so the claude-hooks frontend gate shares this exact predicate.
+ */
+// eslint-disable-next-line react-hooks/exhaustive-deps -- onSnap is a stable ref from useLatestCallback, deps intentionally omitted
+const isVerifiableRun = 1;`,
+    // A JSDoc carrying "worktree" documents the declaration; the directive
+    // below owns a substantive code-level reason and does not defer, so the
+    // docblock's harness word must not merge in.
+    `/**
+ * Sets up the worktree layout used by the local dev tooling.
+ */
+// eslint-disable-next-line react-hooks/exhaustive-deps -- effect syncs once on mount, deps intentionally omitted
+const setupLayout = 1;`,
+    // A `//` line doc-comment (not a directive, not a deferral) carrying a
+    // harness term above a self-contained directive must not merge either.
+    `// this maps onto the worktree layout used by local dev tooling
+// eslint-disable-next-line react-hooks/exhaustive-deps -- onSnap is a stable ref, deps intentionally omitted
+const mappedLayout = 1;`,
+    // "as needed" is not a deferral pointer, so a preceding claude JSDoc does
+    // not merge into this self-contained directive.
+    `/**
+ * Runs inside the claude session harness during local dev.
+ */
+// eslint-disable-next-line react-hooks/exhaustive-deps -- effect runs as needed on each mount, deps intentionally omitted
+const runsAsNeeded = 1;`,
+    // Deferral to a preceding comment that has NO harness term stays valid,
+    // mirroring case `m` but with a JSDoc docblock as the deferral target.
+    `/**
+ * deps are stable across renders
+ */
+// eslint-disable-next-line react-hooks/exhaustive-deps -- see above
+const deferNoHarness = 1;`,
   ],
   invalid: [
     // worktree, lowercase, next-line form.
@@ -283,6 +320,38 @@ const v = 25;`,
     {
       code: `/* eslint-disable import/order -- functions/src resolves differently across worktree vs primary-repo lint cwd, oscillating its position; freeze the order */
 const w = 26;`,
+      errors: [
+        { messageId: 'harnessCoupled', data: { matchedTerm: 'worktree' } },
+      ],
+    },
+    // Deferral to a preceding JSDoc still merges (#1296 Edge Case 6): the
+    // directive says "see above", so the docblock's "claude-hooks" IS its
+    // rationale. Proves the fix keys on deferral, not on comment class.
+    {
+      code: `/**
+ * Exported so the claude-hooks frontend gate shares this exact predicate.
+ */
+// eslint-disable-next-line react-hooks/exhaustive-deps -- see above
+const x = 27;`,
+      errors: [
+        { messageId: 'harnessCoupled', data: { matchedTerm: 'claude' } },
+      ],
+    },
+    // Contentless "^" deferral to a preceding harness-carrying line comment.
+    {
+      code: `// the real cause is the worktree cwd resolver
+// eslint-disable-next-line import/order -- ^
+const y = 28;`,
+      errors: [
+        { messageId: 'harnessCoupled', data: { matchedTerm: 'worktree' } },
+      ],
+    },
+    // "per the note above" deferral (intervening words) still merges the
+    // preceding harness-carrying comment.
+    {
+      code: `// the real cause is the worktree cwd resolver
+// eslint-disable-next-line import/order -- per the note above
+const z = 29;`,
       errors: [
         { messageId: 'harnessCoupled', data: { matchedTerm: 'worktree' } },
       ],

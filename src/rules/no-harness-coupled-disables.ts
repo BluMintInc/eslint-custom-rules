@@ -50,6 +50,32 @@ function isDirectiveComment(comment: TSESTree.Comment): boolean {
 }
 
 /**
+ * Pointer phrasing by which a directive DEFERS its rationale to an adjacent
+ * comment: "see above", "per the note below", "as noted in the comment".
+ * Up to two intervening words ("the note", "the preceding") are tolerated so
+ * natural phrasings still register as deferrals.
+ */
+const DEFERRAL_PATTERN =
+  /\b(?:see|per|as)\s+(?:\w+\s+){0,2}(?:above|below|note|comment|preceding)\b/i;
+
+/**
+ * A directive defers to its preceding comment only when its own `--` text is a
+ * mere pointer to that comment ("see above") or carries no substantive words at
+ * all (a bare "^" gesture). This is the discriminating signal for #1296's
+ * split-justification support: a directive that already states a substantive,
+ * self-contained reason owns its rationale outright, so an unrelated docblock or
+ * line comment that merely sits above it — documenting the declaration, not the
+ * suppression — must never contribute its incidental harness keywords (#1312).
+ */
+function defersToPreceding(justification: string): boolean {
+  const text = justification.trim();
+  if (DEFERRAL_PATTERN.test(text)) {
+    return true;
+  }
+  return text.replace(/[^a-z]/gi, '') === '';
+}
+
+/**
  * Isolates the justification text of a directive comment: everything after the
  * first `--` separator, spanning every line of a multi-line block body. The
  * directive keyword and the comma-separated rule-name list both precede the
@@ -122,13 +148,17 @@ export const noHarnessCoupledDisables = createRule<[], MessageIds>({
 
           // Split-justification style: an immediately-adjacent preceding
           // non-directive comment (no intervening blank line or code) is part
-          // of the directive's rationale when the directive defers to it.
+          // of the directive's rationale ONLY when the directive defers to it.
+          // Without the deferral gate, an unrelated docblock above the
+          // declaration bleeds its incidental harness words into a directive
+          // that already carries a self-contained code-level reason (#1312).
           let scanned = justification;
           const previous = comments[index - 1];
           if (
             previous &&
             !isDirectiveComment(previous) &&
-            comment.loc.start.line - previous.loc.end.line <= 1
+            comment.loc.start.line - previous.loc.end.line <= 1 &&
+            defersToPreceding(justification)
           ) {
             scanned = `${previous.value}\n${scanned}`;
           }
