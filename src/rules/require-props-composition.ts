@@ -144,6 +144,13 @@ function typeNodeComposesWithProps(
 ): boolean {
   switch (typeNode.type) {
     case AST_NODE_TYPES.TSTypeReference: {
+      // A direct reference to the child's whole props type (bare `ChildProps`
+      // or generic-instantiated `ChildProps<T>`) is the maximal form of
+      // composition: the entire surface is inherited verbatim, strictly
+      // stronger than Pick/Omit, so no duplication/drift is possible.
+      if (getTypeReferenceName(typeNode) === propsTypeName) {
+        return true;
+      }
       if (typeReferenceContainsPickOrOmit(typeNode, propsTypeName)) {
         return true;
       }
@@ -400,6 +407,17 @@ function findComponentFunction(
 }
 
 /**
+ * A rendered child that resolves in-file to a component function taking no
+ * parameters has no props surface to compose with, so it is not a composition
+ * dependency (same category as a decorative icon). Only in-file resolution is
+ * used; imported children are left to the normal composition check.
+ */
+function isZeroPropComponent(program: TSESTree.Program, name: string): boolean {
+  const fn = findComponentFunction(program, name);
+  return fn !== null && fn.params.length === 0;
+}
+
+/**
  * Resolve the type node that defines a rendered dependency's props: its
  * `{Dep}Props` alias if one exists, otherwise the dependency component's
  * first-parameter type annotation. Used to detect inverse composition, where
@@ -573,7 +591,8 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
         (name) =>
           !excludeComponents.has(name) &&
           !isDecorativeIcon(name) &&
-          name !== componentName,
+          name !== componentName &&
+          !isZeroPropComponent(prog, name),
       );
 
       if (depComponents.length < minDependencyCount) {
