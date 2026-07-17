@@ -21,6 +21,38 @@ The rule allows:
 - Pseudo-elements that already specify `pointer-events`.
 - Explicit `pointer-events: auto` for intentionally interactive pseudo-elements.
 - Non-pseudo-element styles.
+- Hit-slop touch-target extensions (see [Exceptions](#exceptions)).
+
+## Exceptions
+
+### Hit-slop touch-target extensions
+
+A pseudo-element whose inset offsets only **extend beyond** the origin element's box is a hit-slop overlay that enlarges the tappable area of the control it decorates. Because a browser attributes pointer events on a pseudo-element to its **origin element** (the control itself), such an overlay cannot occlude anything — the rule's rationale ("positioned overlays capture clicks, blocking the underlying control") does not apply. Adding `pointer-events: none` here would silently **shrink** the tap target, the exact accessibility regression this rule exists to prevent.
+
+The rule treats an object-literal pseudo-element style as a hit-slop extension (and does **not** flag it) when all of the following hold:
+
+- it sets `position: 'absolute'` or `'fixed'`, and
+- at least one of the inset offsets `top`/`right`/`bottom`/`left` is a clearly-negative length, and
+- none of the parseable inset offsets is positive (zero and negative are allowed).
+
+This distinguishes a hit-slop (extends outward) from a full-cover overlay such as `{ top: 0, right: 0, bottom: 0, left: 0 }` (all zero → still flagged) or an inward positive-offset overlay (still flagged).
+
+```tsx
+// Not flagged: hit-slop extends the button's tappable area outward
+const buttonStyles = {
+  position: 'relative',
+  '&::before': {
+    content: '""',
+    position: 'absolute',
+    top: '-6px',
+    bottom: '-6px',
+    left: 0,
+    right: 0,
+  },
+};
+```
+
+If a positioned pseudo-element is genuinely interactive for another reason, the `pointerEvents: 'auto'` opt-out remains available and documents that intent explicitly.
 
 ## How to fix
 

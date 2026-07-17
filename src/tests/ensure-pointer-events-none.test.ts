@@ -8,6 +8,83 @@ const pointerEventsError = (selector = '::before') => ({
 
 ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
   valid: [
+    // Valid case: hit-slop touch-target extension — negative offsets only EXTEND
+    // beyond the origin element's box; pointer events on a pseudo-element are
+    // attributed to the origin element, so it cannot block the control
+    `
+      const buttonStyles = {
+        position: 'relative',
+        '&::before': {
+          content: '""',
+          position: 'absolute',
+          top: '-6px',
+          bottom: '-6px',
+          left: 0,
+          right: 0,
+        },
+      };
+    `,
+    // Valid case: hit-slop with negative numeric offsets (no unit)
+    `
+      const style = {
+        '&::before': {
+          content: '""',
+          position: 'absolute',
+          top: -6,
+          bottom: -6,
+          left: 0,
+          right: 0,
+        },
+      };
+    `,
+    // Valid case: hit-slop with a single negative offset present (others absent)
+    `
+      const style = {
+        '&::after': {
+          content: '""',
+          position: 'absolute',
+          top: '-8px',
+        },
+      };
+    `,
+    // Valid case: horizontal hit-slop — negative on left/right only
+    `
+      const style = {
+        '&::before': {
+          content: '""',
+          position: 'absolute',
+          left: '-4px',
+          right: '-4px',
+        },
+      };
+    `,
+    // Valid case: '&::after' hit-slop with negative offsets
+    `
+      const style = {
+        '&::after': {
+          content: '""',
+          position: 'fixed',
+          top: '-10px',
+          bottom: '-10px',
+          left: '-10px',
+          right: '-10px',
+        },
+      };
+    `,
+    // Valid case: hit-slop mixing negative + zero + unknown non-inset props
+    `
+      const style = {
+        '&::before': {
+          content: '""',
+          position: 'absolute',
+          top: '-6px',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          width: '100%',
+        },
+      };
+    `,
     // Valid case: pseudo-element with position: absolute and pointer-events: none
     {
       code: `
@@ -871,5 +948,108 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
 
     // Note: The rule doesn't detect position values with different casing
     // These would be invalid cases in a more advanced implementation
+
+    // Invalid case: full-cover overlay — all inset offsets zero (no negative),
+    // so it is not a hit-slop extension and must still be flagged
+    {
+      code: `
+        const style = {
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0
+          }
+        };
+      `,
+      errors: [pointerEventsError('::before')],
+      output: `
+        const style = {
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0, pointerEvents: 'none'
+          }
+        };
+      `,
+    },
+    // Invalid case: positive-offset overlay — a positive inset is not hit-slop
+    {
+      code: `
+        const style = {
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            top: '10px',
+            left: 0
+          }
+        };
+      `,
+      errors: [pointerEventsError('::before')],
+      output: `
+        const style = {
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            top: '10px',
+            left: 0, pointerEvents: 'none'
+          }
+        };
+      `,
+    },
+    // Invalid case: mixed offsets — one negative but one positive, so it is not
+    // a pure hit-slop extension and must still be flagged
+    {
+      code: `
+        const style = {
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            top: '-6px',
+            bottom: '10px'
+          }
+        };
+      `,
+      errors: [pointerEventsError('::before')],
+      output: `
+        const style = {
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            top: '-6px',
+            bottom: '10px', pointerEvents: 'none'
+          }
+        };
+      `,
+    },
+    // Invalid case: absolute overlay sized to cover with no inset offsets at all
+    {
+      code: `
+        const style = {
+          '&::after': {
+            content: '""',
+            position: 'absolute',
+            width: '100%',
+            height: '100%'
+          }
+        };
+      `,
+      errors: [pointerEventsError('::after')],
+      output: `
+        const style = {
+          '&::after': {
+            content: '""',
+            position: 'absolute',
+            width: '100%',
+            height: '100%', pointerEvents: 'none'
+          }
+        };
+      `,
+    },
   ],
 });

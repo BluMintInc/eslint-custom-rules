@@ -29,6 +29,58 @@ function isPointerEventsProperty(propertyName: string): boolean {
   return propertyName === 'pointerEvents' || propertyName === 'pointer-events';
 }
 
+/**
+ * The inset offsets that position a pseudo-element relative to its origin box.
+ */
+const INSET_PROPERTIES = new Set(['top', 'right', 'bottom', 'left']);
+
+type OffsetSign = 'positive' | 'negative' | 'zero' | 'unknown';
+
+/**
+ * Classifies the sign of a leading numeric length in a string offset value
+ * (e.g. '-6px' -> negative, '0'/'0px' -> zero, '6px' -> positive). Anything
+ * that does not start with an optional-minus number is unknown.
+ */
+function classifyOffsetString(raw: string): OffsetSign {
+  const match = raw.trim().match(/^(-?)(\d+(?:\.\d+)?|\.\d+)/);
+  if (!match) return 'unknown';
+  const numericPart = parseFloat(match[2]);
+  if (numericPart === 0) return 'zero';
+  return match[1] === '-' ? 'negative' : 'positive';
+}
+
+/**
+ * Classifies an inset offset property value (top/right/bottom/left) as a
+ * positive, negative, zero, or unknown length. Only the shapes that can be
+ * resolved statically are classified; variables, member expressions, template
+ * literals, and calls are treated as unknown and never counted toward the
+ * hit-slop exemption.
+ */
+function classifyOffsetValue(value: TSESTree.Node): OffsetSign {
+  if (value.type === AST_NODE_TYPES.Literal) {
+    if (typeof value.value === 'number') {
+      if (value.value === 0) return 'zero';
+      return value.value < 0 ? 'negative' : 'positive';
+    }
+    if (typeof value.value === 'string') {
+      return classifyOffsetString(value.value);
+    }
+    return 'unknown';
+  }
+
+  // Negative numeric literals parse as `-` UnaryExpression over a number.
+  if (
+    value.type === AST_NODE_TYPES.UnaryExpression &&
+    value.operator === '-' &&
+    value.argument.type === AST_NODE_TYPES.Literal &&
+    typeof value.argument.value === 'number'
+  ) {
+    return value.argument.value === 0 ? 'zero' : 'negative';
+  }
+
+  return 'unknown';
+}
+
 function formatSelector(selector?: string): string {
   if (!selector) return 'pseudo-element';
   const trimmedSelector = selector.trim();
@@ -80,12 +132,22 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
       string
     >();
 
+    // Track style objects that are hit-slop touch-target extensions: an
+    // absolute/fixed overlay whose inset offsets only extend beyond the origin
+    // box (>=1 negative, none positive). A browser attributes pointer events on
+    // a pseudo-element to its origin element, so such an overlay cannot occlude
+    // the control and must not be flagged (its autofix would shrink the tap
+    // target, the very accessibility regression this rule exists to prevent).
+    const hitSlopStyles = new Map<TSESTree.ObjectExpression, boolean>();
+
     /**
      * Process a CSS-in-JS style object to check for position: absolute/fixed and pointer-events
      */
     function processStyleObject(node: TSESTree.ObjectExpression) {
       let hasAbsolutePosition = false;
       let pointerEventsValue: string | undefined;
+      let hasNegativeOffset = false;
+      let hasPositiveOffset = false;
 
       // Check each property in the style object
       for (const property of node.properties) {
@@ -124,6 +186,16 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
             pointerEventsValue = property.value.name;
           }
         }
+
+        // Track inset offsets to detect hit-slop touch-target extensions
+        if (INSET_PROPERTIES.has(propertyName)) {
+          const sign = classifyOffsetValue(property.value);
+          if (sign === 'negative') {
+            hasNegativeOffset = true;
+          } else if (sign === 'positive') {
+            hasPositiveOffset = true;
+          }
+        }
       }
 
       // Store the results for this style object
@@ -131,6 +203,14 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
       if (pointerEventsValue !== undefined) {
         stylesWithPointerEvents.set(node, pointerEventsValue);
       }
+
+      // A hit-slop extension only enlarges the tappable area: it is
+      // absolute/fixed and its inset offsets extend outward (>=1 negative, none
+      // positive). Such overlays cannot occlude the control they belong to.
+      hitSlopStyles.set(
+        node,
+        hasAbsolutePosition && hasNegativeOffset && !hasPositiveOffset,
+      );
     }
 
     /**
@@ -143,6 +223,14 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
       const isPseudoElement = selector && hasPseudoElementSelector(selector);
       const isAbsolutePositioned = absolutePositionedStyles.get(node) || false;
       const pointerEventsValue = stylesWithPointerEvents.get(node);
+
+      // A hit-slop touch-target extension extends the origin element's tappable
+      // area outward; because pointer events on it are attributed to the origin
+      // control, it cannot block anything. Skip reporting (and its destructive
+      // shrink-the-tap-target autofix).
+      if (hitSlopStyles.get(node)) {
+        return;
+      }
 
       // If this is a pseudo-element with absolute positioning but no pointer-events
       if (
