@@ -270,10 +270,58 @@ const BUILT_IN_METHODS = new Set([
   'finally',
 ]);
 
+// The camelCase/PascalCase splitter's core pattern. Kept separate from
+// splitCamelSegments so precomputed constants (below) can fragment known type
+// words without recursing through the merge step.
+const CAMEL_SEGMENT_REGEX = /[A-Z]+(?![a-z])|[A-Z]?[a-z0-9]+|[A-Z]/g;
+
+function splitCamelSegmentsRaw(name: string): string[] {
+  return name.match(CAMEL_SEGMENT_REGEX) ?? [];
+}
+
+// COMMON_TYPES words containing an internal capital — only `BigInt` today — are
+// fragmented by the splitter into parts (["Big","Int"]) where a fragment ("Int")
+// collides with an abbreviation marker ("int"), so ANY identifier containing
+// BigInt would spuriously match that marker regardless of position (#1317).
+// Precompute those fragment sequences so splitCamelSegments can re-merge them
+// into a single atomic segment, ensuring a built-in type word is never mistaken
+// for a Hungarian abbreviation tag.
+const MULTI_CAPITAL_TYPE_WORD_PARTS = COMMON_TYPES.map(
+  splitCamelSegmentsRaw,
+).filter((parts) => parts.length > 1);
+
+// Re-merge any consecutive segments that reconstitute a multi-capital built-in
+// type word (Big + Int -> BigInt). Case-insensitive so lower/upper camelCase
+// variants collapse identically.
+function mergeMultiCapitalTypeWords(segments: string[]): string[] {
+  if (MULTI_CAPITAL_TYPE_WORD_PARTS.length === 0) {
+    return segments;
+  }
+  const merged: string[] = [];
+  let index = 0;
+  while (index < segments.length) {
+    const match = MULTI_CAPITAL_TYPE_WORD_PARTS.find((parts) =>
+      parts.every(
+        (part, offset) =>
+          segments[index + offset]?.toLowerCase() === part.toLowerCase(),
+      ),
+    );
+    if (match) {
+      merged.push(segments.slice(index, index + match.length).join(''));
+      index += match.length;
+    } else {
+      merged.push(segments[index]);
+      index += 1;
+    }
+  }
+  return merged;
+}
+
 // Split a PascalCase/camelCase identifier into its word segments
 // (e.g. "StringToNumber" -> ["String","To","Number"], "FuncKeys" -> ["Func","Keys"]).
+// Multi-capital built-in type words (BigInt) are kept as one atomic segment.
 function splitCamelSegments(name: string): string[] {
-  return name.match(/[A-Z]+(?![a-z])|[A-Z]?[a-z0-9]+|[A-Z]/g) ?? [];
+  return mergeMultiCapitalTypeWords(splitCamelSegmentsRaw(name));
 }
 
 // A TYPE name (alias/interface/class) is exempt from a full-type-word marker when
@@ -298,6 +346,14 @@ function isSemanticTypeConcept(typeName: string): boolean {
   return segments.some(
     (segment) => !FULL_TYPE_WORDS.has(segment.toLowerCase()),
   );
+}
+
+// A PascalCase declaration name (leading capital, at least one lowercase letter):
+// a component, class, or type identifier. Distinguished from SCREAMING_SNAKE_CASE
+// constants (all caps) and lowercase-initial variables, which are handled on their
+// own code paths.
+function isPascalCaseName(name: string): boolean {
+  return /^[A-Z]/.test(name) && name !== name.toUpperCase();
 }
 
 // Is `name` a domain compound of the form <entity>Number, where the word directly
@@ -364,7 +420,19 @@ export const noHungarian = createRule<[], MessageIds>({
       // Type names whose type-word denotes a concept/relation (StringToNumber,
       // CapitalizedString, FuncKeys, PromiseOrValue) are not Hungarian — the word
       // is part of the type's meaning, like the allowed compound noun PhoneNumber.
-      if (isTypeName && isSemanticTypeConcept(variableName)) {
+      //
+      // Extended to any PascalCase declaration (components, classes, functions):
+      // when a built-in type word qualifies a DIFFERENT head noun the value is a
+      // component / props type, never a number/bigint (NumberAmountEditor,
+      // BigIntAmountEditorProps) — the leading-position analog of the
+      // DOMAIN_NUMBER_HEAD_NOUNS suffix carve-out, mirroring Intl.NumberFormat /
+      // StringBuilder / NumberFormatter. Keyed on PascalCase because a
+      // lowercase-initial variable (numberCount, stringValue) DOES encode its own
+      // value's type and must keep firing (#1317).
+      if (
+        (isTypeName || isPascalCaseName(variableName)) &&
+        isSemanticTypeConcept(variableName)
+      ) {
         return false;
       }
 
