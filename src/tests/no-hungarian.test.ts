@@ -536,6 +536,24 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
     "const applyConstraint = 'x';",
     'const cameraViewpoint = { angle: 0 };',
     "const scanFingerprint = () => 'match';",
+
+    // Issue #1317: a PascalCase declaration whose built-in type word qualifies a
+    // DIFFERENT head noun (a component / props type, never a number/bigint) is a
+    // domain compound, not Hungarian notation.
+    // Defect A — leading full-type-word qualifies a DIFFERENT head noun (a
+    // component, not a number).
+    'const NumberAmountEditor = () => null;',
+    'function NumberAmountEditorUnmemoized() { return null; }',
+    // Defect B — `BigInt` splits into ["Big","Int"]; "Int" collides with the
+    // `int` abbreviation marker, so BigInt must stay atomic.
+    'const BigIntAmountEditor = () => null;',
+    'function BigIntAmountEditorUnmemoized() { return null; }',
+    'type BigIntAmountEditorProps = { maxValue: string };',
+    // Defect B is positionless: a middle-segment BigInt must not fire either,
+    // just as the already-valid CadenceNumberEditor does not.
+    'const CadenceBigIntEditor = () => null;',
+    // Anchor: already valid today (interior full type-word).
+    'const CadenceNumberEditor = () => null;',
   ],
   invalid: [
     {
@@ -857,6 +875,22 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
     {
       code: 'const boolFlag = true;',
       errors: [errorFor('boolFlag')],
+    },
+
+    // Issue #1317 regression guards: lowercase-initial variables that DO encode
+    // their own value's type must keep firing; the PascalCase carve-out is scoped
+    // to declaration names (components/classes/types), not these.
+    {
+      code: 'const numberCount = 0;',
+      errors: [errorFor('numberCount')],
+    },
+    {
+      code: 'const stringValue = "x";',
+      errors: [errorFor('stringValue')],
+    },
+    {
+      code: 'type UserStrName = string;',
+      errors: [errorFor('UserStrName')],
     },
   ],
 });
