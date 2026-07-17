@@ -428,13 +428,40 @@ export default createRule<[], MessageIds>({
                   ),
                 ];
                 for (const ref of declaredVariable.references) {
+                  const refId = ref.identifier;
                   // The declaration write reference is the id node itself and
                   // is already handled above. Skipping it also avoids emitting
                   // overlapping fix ranges, which ESLint rejects.
-                  if (ref.identifier === idNode) {
+                  if (refId === idNode) {
                     continue;
                   }
-                  fixes.push(fixer.replaceText(ref.identifier, newName));
+
+                  const refParent = refId.parent;
+
+                  // An object-literal shorthand `{ fooBar }` desugars to
+                  // `{ fooBar: fooBar }`: the one token is both the property key
+                  // and its value. Rewriting it to `{ FOO_BAR }` would rename
+                  // the KEY too, silently changing the object's shape. Expand to
+                  // `oldKey: NEW_NAME` so only the value is renamed.
+                  if (
+                    refParent?.type === AST_NODE_TYPES.Property &&
+                    refParent.shorthand &&
+                    refParent.parent?.type === AST_NODE_TYPES.ObjectExpression
+                  ) {
+                    fixes.push(fixer.replaceText(refId, `${name}: ${newName}`));
+                    continue;
+                  }
+
+                  // A re-export specifier `export { fooBar }` binds the public
+                  // export name to this identifier. Renaming it would change the
+                  // exported name — a cross-file contract a single-file fixer
+                  // cannot safely rewrite (the declaration-level export guard
+                  // above only catches inline `export const`). Decline the fix.
+                  if (refParent?.type === AST_NODE_TYPES.ExportSpecifier) {
+                    return null;
+                  }
+
+                  fixes.push(fixer.replaceText(refId, newName));
                 }
 
                 return fixes;
