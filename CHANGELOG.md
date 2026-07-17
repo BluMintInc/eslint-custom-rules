@@ -1,3 +1,10 @@
+## [1.19.11](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.10...v1.19.11) (2026-07-17)
+
+
+### Bug Fixes
+
+* **global-const-style:** keep rename autofix reference-safe for shorthand props and re-exports (refs [#1313](https://github.com/BluMintInc/eslint-custom-rules/issues/1313)) ([3a78f39](https://github.com/BluMintInc/eslint-custom-rules/commit/3a78f395f2a3d360cfb75e533f5acb75b31a6c21))
+
 ## [1.19.10](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.9...v1.19.10) (2026-07-17)
 
 

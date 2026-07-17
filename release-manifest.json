@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.19.11",
+    "date": "2026-07-17T10:46:20.593Z",
+    "rules": [
+      {
+        "name": "global-const-style",
+        "changeType": "fix",
+        "issues": [
+          1313
+        ],
+        "summary": "keep rename autofix reference-safe for shorthand props and re-exports (refs #1313)"
+      }
+    ]
+  },
+  {
     "version": "1.19.10",
     "date": "2026-07-17T10:33:03.696Z",
     "rules": [
