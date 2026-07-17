@@ -1,3 +1,10 @@
+## [1.19.14](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.13...v1.19.14) (2026-07-17)
+
+
+### Bug Fixes
+
+* **require-props-composition:** recognize direct whole-props refs and skip zero-prop children (closes [#1316](https://github.com/BluMintInc/eslint-custom-rules/issues/1316)) ([50edb74](https://github.com/BluMintInc/eslint-custom-rules/commit/50edb74e4388b1705d6a378a6666cfac84fd0e3a))
+
 ## [1.19.13](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.12...v1.19.13) (2026-07-17)
 
 

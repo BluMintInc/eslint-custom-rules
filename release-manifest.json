@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.19.14",
+    "date": "2026-07-17T21:35:22.880Z",
+    "rules": [
+      {
+        "name": "require-props-composition",
+        "changeType": "fix",
+        "issues": [
+          1316
+        ],
+        "summary": "recognize direct whole-props refs and skip zero-prop children (closes #1316)"
+      }
+    ]
+  },
+  {
     "version": "1.19.13",
     "date": "2026-07-17T21:25:11.513Z",
     "rules": [
