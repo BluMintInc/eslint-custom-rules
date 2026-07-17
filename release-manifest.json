@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.19.13",
+    "date": "2026-07-17T21:25:11.513Z",
+    "rules": [
+      {
+        "name": "ensure-pointer-events-none",
+        "changeType": "fix",
+        "issues": [
+          1315
+        ],
+        "summary": "exempt hit-slop touch-target pseudo-elements (closes #1315)"
+      }
+    ]
+  },
+  {
     "version": "1.19.12",
     "date": "2026-07-17T19:23:55.157Z",
     "rules": [

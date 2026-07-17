@@ -1,3 +1,10 @@
+## [1.19.13](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.12...v1.19.13) (2026-07-17)
+
+
+### Bug Fixes
+
+* **ensure-pointer-events-none:** exempt hit-slop touch-target pseudo-elements (closes [#1315](https://github.com/BluMintInc/eslint-custom-rules/issues/1315)) ([e907eec](https://github.com/BluMintInc/eslint-custom-rules/commit/e907eec08644617c4f3fd840725f3b2f732df6b0))
+
 ## [1.19.12](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.11...v1.19.12) (2026-07-17)
 
 
