@@ -53,6 +53,53 @@ const LiveBadge = ({ children, size }: LiveBadgeProps) => (
 );
 ```
 
+### Direct whole-props references
+
+Referencing a rendered child's **entire** props type directly — as a bare
+`ChildProps`, a generic-instantiated `ChildProps<T>`, or any intersection /
+`Readonly<...>` member of it — satisfies the composition requirement. Inheriting
+the whole surface verbatim is the maximal form of composition, strictly stronger
+than `Pick`/`Omit`: nothing is duplicated and nothing can drift, so demanding an
+`Omit<ChildProps, never>` here would only add noise.
+
+```tsx
+type ChildPlainProps = { hits: readonly string[]; label: string };
+
+// The whole child props type is intersected verbatim — this composes.
+export type ParentProps = ChildPlainProps & Readonly<{ title: string }>;
+
+const Parent = ({ title, ...props }: ParentProps) => (
+  <div>
+    {title}
+    <ChildPlain {...props} />
+  </div>
+);
+```
+
+### Zero-prop children
+
+Rendering a component that takes **no props** does not by itself require
+composition. A props-less child (e.g. `const Icon = () => <svg />`) has no
+customization surface to compose with — the same category as a decorative icon —
+so it is dropped from the dependency set and never demands a nonexistent
+`{Child}Props` type. This applies only when the child resolves in-file to a
+component function with zero parameters; imported children are still checked
+normally.
+
+```tsx
+const ChildNoProps = () => <div />;
+
+export type ParentProps = Readonly<{ title: string }>;
+
+// Renders only a zero-prop child — no composition required.
+const Parent = ({ title }: ParentProps) => (
+  <div>
+    {title}
+    <ChildNoProps />
+  </div>
+);
+```
+
 ## Options
 
 ```js

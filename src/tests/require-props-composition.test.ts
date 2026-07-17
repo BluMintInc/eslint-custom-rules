@@ -358,6 +358,125 @@ const DecoratedButton = (props: DecoratedButtonProps) => {
 };
 `,
     },
+    // 25. Issue #1316 FP shape 1: a direct intersection with the child's WHOLE
+    // props type is the maximal form of composition (the whole surface is
+    // inherited verbatim, strictly stronger than Pick/Omit), so it must NOT flag.
+    {
+      filename: 'src/components/MyComponent.tsx',
+      code: `
+type ChildPlainProps = { hits: readonly string[]; label: string };
+export type ParentCProps = ChildPlainProps & Readonly<{ title: string }>;
+const ParentC = ({ title, ...props }: ParentCProps) => {
+  return (
+    <div>
+      {title}
+      <ChildPlain {...props} />
+    </div>
+  );
+};
+`,
+    },
+    // 26. Issue #1316 FP shape 1 variant: generic-instantiated child props type
+    // (ChildGenericProps<string>) intersected verbatim is still maximal
+    // composition — must NOT flag.
+    {
+      filename: 'src/components/MyComponent.tsx',
+      code: `
+type ChildGenericProps<T> = { hits: readonly T[]; label: string };
+export type ParentBProps = ChildGenericProps<string> & Readonly<{ title: string }>;
+const ParentB = ({ title, ...props }: ParentBProps) => {
+  return (
+    <div>
+      {title}
+      <ChildGeneric {...props} />
+    </div>
+  );
+};
+`,
+    },
+    // 27. Issue #1316 FP shape 2: a rendered child that takes no props has no
+    // customization surface to compose with (same category as a decorative
+    // icon), so it must NOT demand a nonexistent ChildNoPropsProps.
+    {
+      filename: 'src/components/MyComponent.tsx',
+      code: `
+const ChildNoProps = () => {
+  return <div />;
+};
+export type ParentAProps = Readonly<{ title: string }>;
+const ParentA = ({ title }: ParentAProps) => {
+  return (
+    <div>
+      {title}
+      <ChildNoProps />
+    </div>
+  );
+};
+`,
+    },
+    // 28. Issue #1316 FP shape 1: a bare direct reference to the child's whole
+    // props type (no intersection at all) is maximal composition — no flag.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildPlainProps = { hits: readonly string[]; label: string };
+export type ParentProps = ChildPlainProps;
+const Parent = (props: ParentProps) => {
+  return <ChildPlain {...props} />;
+};
+`,
+    },
+    // 29. Issue #1316 FP shape 1: Readonly<ChildPlainProps> directly wraps the
+    // whole child props type — recursion into the Readonly param hits the
+    // direct-name check, so it composes — no flag.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildPlainProps = { hits: readonly string[]; label: string };
+export type ParentProps = Readonly<ChildPlainProps>;
+const Parent = (props: ParentProps) => {
+  return <ChildPlain {...props} />;
+};
+`,
+    },
+    // 30. Issue #1316 FP shape 2: zero-prop child declared as a FunctionDeclaration
+    // (not an arrow) is still filtered out — no flag.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+function ChildNoProps() {
+  return <div />;
+}
+export type ParentAProps = Readonly<{ title: string }>;
+const ParentA = ({ title }: ParentAProps) => {
+  return (
+    <div>
+      {title}
+      <ChildNoProps />
+    </div>
+  );
+};
+`,
+    },
+    // 31. Issue #1316 FP shape 2: a zero-prop child rendered alongside a genuine
+    // composing child stays valid even under requireAllDependencies:true — the
+    // zero-prop child is dropped from the dep set, so only the composing child
+    // is checked.
+    {
+      filename: DEFAULT_FILENAME,
+      options: [{ requireAllDependencies: true }],
+      code: `
+type LoadingButtonProps = { sx?: object; };
+type ParentProps = Pick<LoadingButtonProps, 'sx'>;
+const ZeroChild = () => <div />;
+const Parent = (props: ParentProps) => (
+  <div>
+    <LoadingButton {...props} />
+    <ZeroChild />
+  </div>
+);
+`,
+    },
   ],
 
   invalid: [
@@ -615,6 +734,42 @@ const CopyButton = ({ overlayLinkId, onRetry }: CopyButtonProps) => {
       <RefreshIcon onClick={onRetry} />
       <span>{overlayLinkId}</span>
     </Tooltip>
+  );
+};
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 20. Issue #1316: the direct-name check must match the DEP's props type name
+    // exactly. A Props type that intersects a differently-named type
+    // (SomeOtherProps, not ChildPlainProps) still fails to compose with the
+    // rendered ChildPlain — still flagged.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type SomeOtherProps = { hits: readonly string[]; };
+export type ParentProps = SomeOtherProps & { x: string };
+const Parent = (props: ParentProps) => {
+  return <ChildPlain {...props} />;
+};
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 21. Issue #1316: the zero-param filter must NOT catch an in-file child that
+    // DOES take props. ChildWithProps has one parameter, so it stays a
+    // composition dependency; the parent does not compose with
+    // ChildWithPropsProps — still flagged.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildWithPropsProps = { value: string; };
+const ChildWithProps = (props: ChildWithPropsProps) => <div>{props.value}</div>;
+type ParentProps = { title: string; };
+const Parent = ({ title }: ParentProps) => {
+  return (
+    <div>
+      {title}
+      <ChildWithProps value={title} />
+    </div>
   );
 };
 `,
