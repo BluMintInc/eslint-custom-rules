@@ -1,8 +1,104 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 const isUpperSnakeCase = (str: string): boolean =>
   /^[A-Z][A-Z0-9_]*$/.test(str);
+
+// Jest mock handles produced by an `as` cast to a `jest.Mock*` type are
+// stateful test doubles that are reassigned/mutated through
+// `.mockImplementation()`, `.mockReturnValue()`, etc. They are not immutable
+// module configuration, and the `mockedX` camelCase spelling is the established
+// idiom, so they are exempt from the UPPER_SNAKE_CASE rename requirement.
+const JEST_MOCK_TYPE_NAMES = new Set([
+  'Mock',
+  'MockedFunction',
+  'Mocked',
+  'MockedClass',
+]);
+
+// Match `expr as jest.Mock<...>` / `jest.MockedFunction<...>` /
+// `jest.Mocked<...>` / `jest.MockedClass<...>`. The match is kept deliberately
+// narrow — a qualified `jest.<MockType>` type reference — so unrelated `as`
+// casts keep triggering the rename check.
+const isJestMockCast = (node: TSESTree.Node): boolean => {
+  if (node.type !== AST_NODE_TYPES.TSAsExpression) {
+    return false;
+  }
+  const typeAnnotation = node.typeAnnotation;
+  if (typeAnnotation.type !== AST_NODE_TYPES.TSTypeReference) {
+    return false;
+  }
+  const { typeName } = typeAnnotation;
+  return (
+    typeName.type === AST_NODE_TYPES.TSQualifiedName &&
+    typeName.left.type === AST_NODE_TYPES.Identifier &&
+    typeName.left.name === 'jest' &&
+    typeName.right.type === AST_NODE_TYPES.Identifier &&
+    JEST_MOCK_TYPE_NAMES.has(typeName.right.name)
+  );
+};
+
+/**
+ * Walks the scope chain upward from `scope` (inclusive) and reports whether
+ * `targetName` is bound anywhere between `scope` and `stopScope` (inclusive).
+ * Mirrors how the engine resolves an identifier at a use site: the first scope
+ * on the chain that declares the name wins. Used to detect whether a rewritten
+ * reference would be captured by a binding sitting between it and the
+ * declaration it currently resolves to.
+ */
+const isNameBoundInChain = (
+  scope: TSESLint.Scope.Scope | null,
+  stopScope: TSESLint.Scope.Scope | null,
+  targetName: string,
+): boolean => {
+  let current: TSESLint.Scope.Scope | null = scope;
+  while (current) {
+    if (current.set.has(targetName)) {
+      return true;
+    }
+    if (current === stopScope) {
+      break;
+    }
+    current = current.upper;
+  }
+  return false;
+};
+
+/**
+ * Returns true when renaming `variable` to `newName` would collide with an
+ * existing binding in any scope the rename touches, making the autofix
+ * semantics-changing (and thus unsafe). The rename fixer rewrites the
+ * declaration plus every in-file reference to `newName`; if `newName` already
+ * resolves to a different binding the rewrite would either redeclare a name
+ * already bound in the declaration scope or capture a reference onto an
+ * intervening binding. In every such case the fix is suppressed (report-only).
+ */
+const renameWouldCollide = (
+  variable: TSESLint.Scope.Variable,
+  newName: string,
+): boolean => {
+  const declarationScope = variable.scope;
+
+  // (1) Declaration site: `newName` already bound in the scope that holds the
+  //     declaration would make the rename a redeclaration/shadow. The declared
+  //     variable itself carries the old name, so any entry for `newName` is a
+  //     distinct, colliding binding.
+  if (declarationScope.set.has(newName)) {
+    return true;
+  }
+
+  // (2) Reference sites: a binding of `newName` sitting between a reference and
+  //     the declaration scope would swallow the rewritten identifier — the
+  //     reference would resolve to that binding instead of the constant.
+  for (const ref of variable.references) {
+    const referenceScope = ref.from ?? declarationScope;
+    if (isNameBoundInChain(referenceScope, declarationScope, newName)) {
+      return true;
+    }
+  }
+
+  return false;
+};
 
 // Next.js recognizes these export names by their literal identifier, so
 // renaming them to UPPER_SNAKE_CASE silently breaks the framework contract
@@ -267,12 +363,17 @@ export default createRule<[], MessageIds>({
             return;
           }
 
-          // Check for UPPER_SNAKE_CASE
-          if (!isUpperSnakeCase(name)) {
+          // Check for UPPER_SNAKE_CASE. Jest mock handles (`x as jest.Mock<…>`)
+          // are exempt: they are mutable test doubles, not immutable config, so
+          // the `mockedX` idiom is intentional. The exemption gates only this
+          // rename check — the `as const` logic above is untouched.
+          if (!isUpperSnakeCase(name) && !isJestMockCast(init)) {
             const newName = name
               .replace(/([A-Z])/g, '_$1')
               .toUpperCase()
               .replace(/^_/, '');
+
+            const idNode = declaration.id;
 
             context.report({
               node: declaration,
@@ -282,14 +383,61 @@ export default createRule<[], MessageIds>({
                 suggestedName: newName,
               },
               fix(fixer) {
-                if (typeAnnotation) {
-                  return fixer.replaceText(
-                    declaration,
-                    `${newName}${typeText} = ${initText}`,
-                  );
-                } else {
-                  return fixer.replaceText(declaration.id, newName);
+                // Resolve the declared variable so the rename can rewrite the
+                // declaration AND every reference together. Renaming only the
+                // declaration id (the previous behavior) left every use site
+                // bound to a now-undefined name — `--fix` exited 0 while
+                // silently corrupting working code (Issue #1313, same defect
+                // class as #1256).
+                const declaredVariable =
+                  context
+                    .getDeclaredVariables(declaration)
+                    .find((variable) => variable.name === name) ?? null;
+
+                // Cannot resolve the variable — never emit a partial rename.
+                if (!declaredVariable) {
+                  return null;
                 }
+
+                // Exported symbols with in-file use sites are cross-file
+                // contracts whose importers a single-file fixer cannot reach;
+                // rewriting the local sites alone would still leave the export
+                // renamed and importers broken. Report-only. (A bare exported
+                // declaration with no extra references keeps the historical
+                // rename behavior — nothing to orphan in-file.)
+                const hasExtraReferences = declaredVariable.references.some(
+                  (ref) => ref.identifier !== idNode,
+                );
+                if (isExported && hasExtraReferences) {
+                  return null;
+                }
+
+                // Suppress the fix when `newName` already binds something in a
+                // scope the rename would touch — a rename fixer must never
+                // change program semantics or shadow an existing binding.
+                if (renameWouldCollide(declaredVariable, newName)) {
+                  return null;
+                }
+
+                // Rewrite the declaration id (preserving any type annotation,
+                // whose range is part of the id node) plus every reference.
+                const fixes = [
+                  fixer.replaceText(
+                    idNode,
+                    typeAnnotation ? `${newName}${typeText}` : newName,
+                  ),
+                ];
+                for (const ref of declaredVariable.references) {
+                  // The declaration write reference is the id node itself and
+                  // is already handled above. Skipping it also avoids emitting
+                  // overlapping fix ranges, which ESLint rejects.
+                  if (ref.identifier === idNode) {
+                    continue;
+                  }
+                  fixes.push(fixer.replaceText(ref.identifier, newName));
+                }
+
+                return fixes;
               },
             });
           }

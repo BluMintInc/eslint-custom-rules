@@ -197,6 +197,38 @@ ruleTesterTs.run('global-const-style', rule, {
       code: 'export const result = new Service()?.method;',
       filename: 'test.ts',
     },
+    // Issue #1313: Jest mock handles created via `as jest.Mock*` casts are
+    // mutable test doubles, not immutable config. camelCase `mockedX` is the
+    // established idiom, so they are exempt from the UPPER_SNAKE_CASE rename.
+    {
+      code: 'const mockedFetch = fetchData as jest.MockedFunction<typeof fetchData>;',
+      filename: 'test.ts',
+    },
+    {
+      code: 'const mockedThing = something as jest.Mock;',
+      filename: 'test.ts',
+    },
+    {
+      code: 'const mockedThing = something as jest.Mock<Promise<void>, []>;',
+      filename: 'test.ts',
+    },
+    {
+      code: 'const mockedService = service as jest.Mocked<SomeService>;',
+      filename: 'test.ts',
+    },
+    {
+      code: 'const mockedClass = SomeClass as jest.MockedClass<typeof SomeClass>;',
+      filename: 'test.ts',
+    },
+    // Jest mock handle followed by downstream mutation via `.mockImplementation`
+    // — the canonical usage the exemption exists to allow.
+    {
+      code: [
+        'const mockedFetch = fetchData as jest.MockedFunction<typeof fetchData>;',
+        'mockedFetch.mockImplementation(() => Promise.resolve());',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
   ],
   invalid: [
     // Issue #1257: the reserved-export exemption only suppresses the unsafe
@@ -439,6 +471,126 @@ ruleTesterTs.run('global-const-style', rule, {
         },
       ],
       output: 'const COLORS = { primary: "#000", secondary: "#fff" };',
+    },
+    // Issue #1313: the rename must rewrite the declaration AND every reference.
+    // The previous fixer renamed only the declaration id, orphaning this use
+    // site (a runtime ReferenceError / TS "Cannot find name").
+    {
+      code: [
+        'const fooBar = 42;',
+        'export const setup = () => {',
+        '  return fooBar + 1;',
+        '};',
+      ].join('\n'),
+      filename: 'test.js',
+      errors: [{ messageId: 'upperSnakeCase' }],
+      output: [
+        'const FOO_BAR = 42;',
+        'export const setup = () => {',
+        '  return FOO_BAR + 1;',
+        '};',
+      ].join('\n'),
+    },
+    // Issue #1313: multiple (2+) references are all rewritten in a single pass.
+    {
+      code: [
+        'const fooBar = 42;',
+        'export const useFoo = () => fooBar + 1;',
+        'export const useBar = () => fooBar * 2;',
+      ].join('\n'),
+      filename: 'test.js',
+      errors: [{ messageId: 'upperSnakeCase' }],
+      output: [
+        'const FOO_BAR = 42;',
+        'export const useFoo = () => FOO_BAR + 1;',
+        'export const useBar = () => FOO_BAR * 2;',
+      ].join('\n'),
+    },
+    // Issue #1313: a member-access reference renames only the object identifier,
+    // leaving the property untouched.
+    {
+      code: [
+        'const configObj = { timeout: 1000 } as const;',
+        'export const getTimeout = () => configObj.timeout;',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'upperSnakeCase' }],
+      output: [
+        'const CONFIG_OBJ = { timeout: 1000 } as const;',
+        'export const getTimeout = () => CONFIG_OBJ.timeout;',
+      ].join('\n'),
+    },
+    // Issue #1313: references nested inside inner functions are rewritten too.
+    {
+      code: [
+        'const fooBar = 42;',
+        'export const outer = () => {',
+        '  const inner = () => fooBar + 1;',
+        '  return inner();',
+        '};',
+      ].join('\n'),
+      filename: 'test.js',
+      errors: [{ messageId: 'upperSnakeCase' }],
+      output: [
+        'const FOO_BAR = 42;',
+        'export const outer = () => {',
+        '  const inner = () => FOO_BAR + 1;',
+        '  return inner();',
+        '};',
+      ].join('\n'),
+    },
+    // Issue #1313: a comment mentioning the old name is left verbatim — only
+    // real identifier references are rewritten, never comment text.
+    {
+      code: [
+        'const fooBar = 42;',
+        '// references fooBar below',
+        'export const setup = () => fooBar + 1;',
+      ].join('\n'),
+      filename: 'test.js',
+      errors: [{ messageId: 'upperSnakeCase' }],
+      output: [
+        'const FOO_BAR = 42;',
+        '// references fooBar below',
+        'export const setup = () => FOO_BAR + 1;',
+      ].join('\n'),
+    },
+    // Issue #1313 safety guard: renaming would be captured by a nested binding
+    // of the target name, changing which binding the reference resolves to. The
+    // violation is still reported, but the fix is suppressed (output: null).
+    {
+      code: [
+        'const fooBar = 42;',
+        'export const setup = () => {',
+        '  const FOO_BAR = 99;',
+        '  return fooBar;',
+        '};',
+      ].join('\n'),
+      filename: 'test.js',
+      errors: [{ messageId: 'upperSnakeCase' }],
+      output: null,
+    },
+    // Issue #1313 safety guard: the target name already binds a sibling in the
+    // declaration scope, so the rename would be a redeclaration. Report-only.
+    {
+      code: ['const FOO_BAR = 1 as const;', 'const fooBar = 2 as const;'].join(
+        '\n',
+      ),
+      filename: 'test.ts',
+      errors: [{ messageId: 'upperSnakeCase' }],
+      output: null,
+    },
+    // Issue #1313 safety guard: an exported symbol with in-file use sites is a
+    // cross-file contract whose importers a single-file fixer cannot reach.
+    // Report-only rather than emit a partial, contract-breaking rename.
+    {
+      code: [
+        'export const fooBar = 42;',
+        'export const setup = () => fooBar + 1;',
+      ].join('\n'),
+      filename: 'test.js',
+      errors: [{ messageId: 'upperSnakeCase' }],
+      output: null,
     },
   ],
 });
