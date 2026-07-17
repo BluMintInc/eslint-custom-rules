@@ -1,3 +1,10 @@
+## [1.19.10](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.9...v1.19.10) (2026-07-17)
+
+
+### Bug Fixes
+
+* **global-const-style:** scope-aware upperSnakeCase autofix + exempt jest mock handles (closes [#1313](https://github.com/BluMintInc/eslint-custom-rules/issues/1313)) ([6953a64](https://github.com/BluMintInc/eslint-custom-rules/commit/6953a6439f88101fb944539003394c59f90e4e58)), closes [#1256](https://github.com/BluMintInc/eslint-custom-rules/issues/1256)
+
 ## [1.19.9](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.8...v1.19.9) (2026-07-17)
 
 

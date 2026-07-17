@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.19.10",
+    "date": "2026-07-17T10:33:03.696Z",
+    "rules": [
+      {
+        "name": "global-const-style",
+        "changeType": "fix",
+        "issues": [
+          1313
+        ],
+        "summary": "scope-aware upperSnakeCase autofix + exempt jest mock handles (closes #1313)"
+      }
+    ]
+  },
+  {
     "version": "1.19.9",
     "date": "2026-07-17T01:27:12.035Z",
     "rules": [
