@@ -21,6 +21,7 @@ Some modules are cohesive by design, so the rule exempts them:
 - **Test/spec files, `__mocks__/` directories, and `types/**` files** are exempt entirely.
 - **CLI entry-point modules** are exempt entirely. A file is treated as a CLI entry point when it references `require.main` or top-level self-invokes one of its own functions (e.g. `void autoRunIfMain();`). Its `parse*`/`print*`/guard/compute helpers ARE the file's purpose — they are not foreign utilities.
 - **Functions that close over module scope** are skipped while `ignoreClosures` is `true` (the default). This covers any top-level binding — including a `const` such as a registry array a finder reads (`DEVELOPER_REGISTRY.find(...)`) and sibling names referenced through destructuring defaults (`const { runner = runCli } = props`) — because such a function cannot move to its own file without also moving what it depends on.
+- **Next.js reserved page exports** (`getServerSideProps`, `getStaticProps`, `getStaticPaths`, `middleware`, `config`) are exempt when they are top-level named exports of a file under a `pages/` directory (covers both `src/pages/**` and bare `pages/**`). Next.js only recognizes these when they are exported from the page file itself, so they categorically cannot be moved to a `util/` file and re-imported — the suggested remediation is impossible to follow. The exemption applies regardless of the export's size or closure geometry. It is scoped to those exact names *and* the `pages/` path segment, so a same-named function elsewhere (e.g. `src/util/helpers.ts`) is still flagged.
 
 ### Motivation
 
@@ -96,6 +97,15 @@ function modifyRoleMembers(data) {
   // ... 15+ statements
 }
 export default onCall(authenticatedOnly(modifyRoleMembers));
+```
+
+```tsx
+// src/pages/stream-settings/index.tsx — Next.js reserved page exports are
+// exempt: they must live in the page file, so they can never move to util/.
+export function getServerSideProps(context) {
+  // ... 12+ statements, pure — still exempt
+}
+export default StreamSettingsPage;
 ```
 
 ## Options

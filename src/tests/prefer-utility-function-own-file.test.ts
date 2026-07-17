@@ -481,6 +481,125 @@ const documentedHelper = (x: number) => {
 export default onCall(handler);
 `,
       },
+
+      // 27. Next.js reserved export in a page file, no same-file const reference.
+      // Currently FLAGGED (the false positive); must be VALID after the fix.
+      {
+        filename: 'src/pages/[utc]/[groupId]/stream-settings/index.tsx',
+        code: `
+import { GetServerSidePropsContext } from 'next';
+import { memo } from '../../../../util/memo';
+import { injectSnapshots } from '../../../../components/snapshots/server/injectSnapshots';
+import { buildStreamSettingsSeeds } from '../../../../components/stream-settings/server/buildStreamSettingsSeeds';
+import { HttpsError } from 'functions/src/util/errors/HttpsError';
+
+const StreamSettingsPage = memo(function StreamSettingsPageUnmemoized() {
+  return null;
+});
+
+export function getServerSideProps(context: GetServerSidePropsContext) {
+  const { params } = context;
+  const uid = params?.groupId as string;
+  if (!uid) {
+    throw new HttpsError({
+      code: 'not-found',
+      message: 'Param uid is not defined',
+      details: { params },
+    });
+  }
+  return injectSnapshots([])(async () => {
+    return {
+      props: { id: uid, ...(await buildStreamSettingsSeeds(uid)) },
+    } as const;
+  });
+}
+
+export default StreamSettingsPage;
+`,
+      },
+
+      // 28. Larger sibling GSSP that references a top-level const — passes today
+      // only by accident of the closure exemption. Must remain VALID after the
+      // fix.
+      {
+        filename: 'src/pages/[utc]/[groupId]/notification-settings/index.tsx',
+        code: `
+import { GetServerSidePropsContext } from 'next';
+
+const SETTINGS_SSR_KEY = 'notificationSettings' as const;
+
+const NotificationSettingsPage = () => null;
+
+export function getServerSideProps(context: GetServerSidePropsContext) {
+  const { params } = context;
+  const uid = params?.groupId as string;
+  if (!uid) {
+    throw new Error('Param uid is not defined');
+  }
+  const strategy = { ssrKey: SETTINGS_SSR_KEY, id: uid };
+  const anotherStatement = strategy.id;
+  const yetAnother = anotherStatement.length;
+  const more = yetAnother + 1;
+  const evenMore = more + 1;
+  return { props: { id: uid, count: evenMore } };
+}
+
+export default NotificationSettingsPage;
+`,
+      },
+
+      // 29. getStaticProps — reserved page export under src/pages/**, sizable and
+      // pure (would otherwise trigger) — exempt.
+      {
+        filename: 'src/pages/blog/index.tsx',
+        code: `
+export ${sizableFunctionDecl('getStaticProps', 9)}
+const BlogPage = () => null;
+export default BlogPage;
+`,
+      },
+
+      // 30. getStaticPaths — reserved page export under src/pages/** — exempt.
+      {
+        filename: 'src/pages/blog/[slug].tsx',
+        code: `
+export ${sizableFunctionDecl('getStaticPaths', 9)}
+const BlogPostPage = () => null;
+export default BlogPostPage;
+`,
+      },
+
+      // 31. middleware — reserved page export under src/pages/** — exempt.
+      {
+        filename: 'src/pages/gated/index.tsx',
+        code: `
+export ${sizableFunctionDecl('middleware', 9)}
+const GatedPage = () => null;
+export default GatedPage;
+`,
+      },
+
+      // 32. config — reserved page export (arrow-const named export) under
+      // src/pages/** — exempt.
+      {
+        filename: 'src/pages/gated/[id].tsx',
+        code: `
+export ${sizableArrowConst('config', 9)}
+const ConfiguredPage = () => null;
+export default ConfiguredPage;
+`,
+      },
+
+      // 33. Reserved export in a BARE pages/** path (no src/ prefix) — both Pages
+      // Router layouts are covered by keying off the `pages/` path segment.
+      {
+        filename: 'pages/products/[id].tsx',
+        code: `
+export ${sizableFunctionDecl('getServerSideProps', 9)}
+const ProductPage = () => null;
+export default ProductPage;
+`,
+      },
     ],
 
     invalid: [
@@ -683,6 +802,31 @@ externalBootstrap();
 export default onCall(handler);
 `,
         filename: 'mainHandler.f.ts',
+        errors: [{ messageId: 'extractUtility' }],
+      },
+
+      // 14. A function NAMED getServerSideProps but in a NON-pages file is still
+      // flagged — the reserved-export exemption is scoped to the `pages/` path
+      // segment, not merely the name.
+      {
+        code: `
+export ${sizableFunctionDecl('getServerSideProps', 9)}
+export default onCall(handler);
+`,
+        filename: 'src/util/helpers.ts',
+        errors: [{ messageId: 'extractUtility' }],
+      },
+
+      // 15. A genuinely extractable sizable utility that is NOT a reserved name,
+      // living in a src/pages/** file, is still flagged — the exemption is scoped
+      // to the reserved names, not all functions in page files.
+      {
+        code: `
+export ${sizableFunctionDecl('computeStats', 9)}
+const DashboardPage = () => null;
+export default DashboardPage;
+`,
+        filename: 'src/pages/dashboard/index.tsx',
         errors: [{ messageId: 'extractUtility' }],
       },
     ],

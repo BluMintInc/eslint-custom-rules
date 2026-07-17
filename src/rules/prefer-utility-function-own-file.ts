@@ -18,6 +18,21 @@ const DEFAULT_MIN_LINES = 12;
 const DEFAULT_IGNORE_CLOSURES = true;
 
 /**
+ * Next.js framework-reserved page exports. Next.js only recognizes these when
+ * they are exported from the page file itself, so they categorically cannot be
+ * moved to a `util/` file and re-imported — the rule's suggested remediation is
+ * impossible to follow for them. Mirrors the exemption precedent set in
+ * `semantic-function-prefixes` (issue #333).
+ */
+const NEXTJS_RESERVED_PAGE_EXPORTS = new Set([
+  'getServerSideProps',
+  'getStaticProps',
+  'getStaticPaths',
+  'middleware',
+  'config',
+]);
+
+/**
  * Collects all identifiers referenced in a node body (for closure detection).
  * Returns the set of identifier names referenced anywhere inside the node,
  * not counting parameter names or locally-declared names.
@@ -334,6 +349,22 @@ function isExemptFile(filename: string): boolean {
   // Type files (functions/src/types/**)
   if (/\/types\//.test(normalized)) return true;
   return false;
+}
+
+/**
+ * Returns true if the candidate is a Next.js framework-reserved page export
+ * (`getServerSideProps`, `getStaticProps`, `getStaticPaths`, `middleware`,
+ * `config`) living in a file under a `pages/` directory. Keying off the
+ * `pages/` path segment covers both the `src/pages/**` and bare `pages/**`
+ * Pages Router layouts. These exports must stay in the page file — Next.js only
+ * recognizes them there — so they can never be extracted to their own util
+ * file, regardless of size or closure geometry.
+ */
+function isNextReservedPageExport(name: string, filename: string): boolean {
+  if (!NEXTJS_RESERVED_PAGE_EXPORTS.has(name)) return false;
+  if (!filename) return false;
+  const normalized = filename.replace(/\\/g, '/');
+  return /(^|\/)pages\//.test(normalized);
 }
 
 /**
@@ -654,7 +685,16 @@ export const preferUtilityFunctionOwnFile = createRule<Options, MessageIds>({
 
         // For each candidate, determine whether to flag
         for (const info of topLevelFunctions) {
-          const { node, name, fn, isDefaultExport } = info;
+          const { node, name, fn, isDefaultExport, isNamedExport } = info;
+
+          // --- Exclusion: Next.js reserved page export ---
+          // `getServerSideProps`/`getStaticProps`/`getStaticPaths`/`middleware`/
+          // `config` are framework-reserved: Next.js only recognizes them when
+          // exported from the page file itself, so they can never move to a
+          // util/ file. Scoped to named exports under a `pages/` directory so it
+          // does not over-broaden to same-named functions elsewhere.
+          if (isNamedExport && isNextReservedPageExport(name, filename))
+            continue;
 
           // --- Exclusion: is a hook ---
           if (isHookName(name)) continue;
