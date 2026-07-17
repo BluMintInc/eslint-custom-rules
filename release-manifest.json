@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.19.8",
+    "date": "2026-07-17T00:25:07.461Z",
+    "rules": [
+      {
+        "name": "prefer-utility-function-own-file",
+        "changeType": "fix",
+        "issues": [
+          1311
+        ],
+        "summary": "exempt Next.js reserved page exports (closes #1311)"
+      },
+      {
+        "name": "vertically-group-related-functions",
+        "changeType": "fix",
+        "issues": [
+          1310
+        ],
+        "summary": "keep interleaved statements' own comments in place when reordering (refs #1310); carry leading JSDoc with reordered functions across interleaved statements (closes #1310)"
+      }
+    ]
+  },
+  {
     "version": "1.19.7",
     "date": "2026-07-16T01:36:53.555Z",
     "rules": [

@@ -1,3 +1,12 @@
+## [1.19.8](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.7...v1.19.8) (2026-07-17)
+
+
+### Bug Fixes
+
+* **prefer-utility-function-own-file:** exempt Next.js reserved page exports (closes [#1311](https://github.com/BluMintInc/eslint-custom-rules/issues/1311)) ([1ca842e](https://github.com/BluMintInc/eslint-custom-rules/commit/1ca842eb6780c65502dc94e9fd1a321f96393271)), closes [#333](https://github.com/BluMintInc/eslint-custom-rules/issues/333)
+* **vertically-group-related-functions:** carry leading JSDoc with reordered functions across interleaved statements (closes [#1310](https://github.com/BluMintInc/eslint-custom-rules/issues/1310)) ([0998a47](https://github.com/BluMintInc/eslint-custom-rules/commit/0998a4760e8ae87e9681d00efd91025393739f21))
+* **vertically-group-related-functions:** keep interleaved statements' own comments in place when reordering (refs [#1310](https://github.com/BluMintInc/eslint-custom-rules/issues/1310)) ([fa2a624](https://github.com/BluMintInc/eslint-custom-rules/commit/fa2a624b3a9b0ffbcc49dd8081e40ffb57b6d18f))
+
 ## [1.19.7](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.6...v1.19.7) (2026-07-16)
 
 
