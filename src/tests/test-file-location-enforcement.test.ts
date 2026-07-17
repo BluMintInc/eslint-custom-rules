@@ -127,6 +127,46 @@ ruleTesterTs.run(
         code: 'test("relative path fixtures", () => {});',
         filename: relativeTestFilename,
       },
+      {
+        code: 'describe("jq sibling with option", () => {});',
+        filename: createTestFileWithSources(
+          'scripts/pr-check-comments.test.ts',
+          ['.jq'],
+        ),
+        options: [{ additionalSubjectExtensions: ['.jq'] }],
+      },
+      {
+        code: 'describe("jq sibling without leading dot", () => {});',
+        filename: createTestFileWithSources(
+          'scripts/normalize-comments.test.ts',
+          ['.jq'],
+        ),
+        options: [{ additionalSubjectExtensions: ['jq'] }],
+      },
+      {
+        code: 'describe("shell sibling with option", () => {});',
+        filename: createTestFileWithSources('scripts/deploy.test.ts', ['.sh']),
+        options: [{ additionalSubjectExtensions: ['.sh'] }],
+      },
+      {
+        code: 'describe("yaml fixture sibling with option", () => {});',
+        filename: createTestFileWithSources('config/pipeline.test.ts', [
+          '.yaml',
+        ]),
+        options: [{ additionalSubjectExtensions: ['.yaml', '.yml'] }],
+      },
+      {
+        code: 'describe("yml fixture sibling with option", () => {});',
+        filename: createTestFileWithSources('config/build.test.ts', ['.yml']),
+        options: [{ additionalSubjectExtensions: ['.yaml', '.yml'] }],
+      },
+      {
+        code: 'describe("defaults still work alongside additions", () => {});',
+        filename: createTestFileWithSources('functions/src/service.test.ts', [
+          '.ts',
+        ]),
+        options: [{ additionalSubjectExtensions: ['.jq'] }],
+      },
     ],
     invalid: [
       {
@@ -208,6 +248,21 @@ ruleTesterTs.run(
           createFile('pkg/a/b/subject.ts');
           return createFile('pkg/a/tests/subject.test.ts');
         })(),
+        errors: [{ messageId: 'misplacedTestFile' }],
+      },
+      {
+        code: 'describe("jq sibling without option is opt-out", () => {});',
+        filename: createTestFileWithSources('scripts/unregistered.test.ts', [
+          '.jq',
+        ]),
+        errors: [{ messageId: 'misplacedTestFile' }],
+      },
+      {
+        code: 'describe("option registers jq but sibling is sh", () => {});',
+        filename: createTestFileWithSources('scripts/mismatch.test.ts', [
+          '.sh',
+        ]),
+        options: [{ additionalSubjectExtensions: ['.jq'] }],
         errors: [{ messageId: 'misplacedTestFile' }],
       },
     ],

@@ -15,6 +15,28 @@ Scattering tests into separate `tests/` directories hides which code they protec
 - Skips any file under `node_modules`
 - Reports a violation when no colocated sibling implementation is found (no auto-fix provided)
 
+## Options
+
+This rule accepts an options object with the following property:
+
+### `additionalSubjectExtensions`
+
+- Type: `string[]`
+- Default: `[]`
+
+Registers extra file extensions that count as a valid subject when they sit next to the test with the same basename. Use this when a jest test covers a sibling artifact written in another language — a jq filter, a shell script, a YAML fixture — instead of a JavaScript/TypeScript module. Each entry is normalized to include a leading dot, so both `jq` and `.jq` are accepted. The built-in `.ts`, `.tsx`, `.js`, and `.jsx` extensions are always honored regardless of this option.
+
+```js
+{
+  '@blumintinc/blumint/test-file-location-enforcement': [
+    'error',
+    { additionalSubjectExtensions: ['.jq', '.sh'] },
+  ],
+}
+```
+
+With the configuration above, `scripts/pr-check-comments.test.ts` is valid when it sits beside `scripts/pr-check-comments.jq`, and `scripts/deploy.test.ts` is valid beside `scripts/deploy.sh`.
+
 ## Examples
 
 ### ❌ Incorrect
