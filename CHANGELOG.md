@@ -1,3 +1,10 @@
+## [1.19.12](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.11...v1.19.12) (2026-07-17)
+
+
+### Bug Fixes
+
+* **test-file-location-enforcement:** add opt-in additionalSubjectExtensions for non-JS/TS subjects (closes [#1314](https://github.com/BluMintInc/eslint-custom-rules/issues/1314)) ([4cc29ef](https://github.com/BluMintInc/eslint-custom-rules/commit/4cc29efae6224ae373b8095d025aa195a7ee78a8))
+
 ## [1.19.11](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.10...v1.19.11) (2026-07-17)
 
 

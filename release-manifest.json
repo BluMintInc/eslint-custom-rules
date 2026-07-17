@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.19.12",
+    "date": "2026-07-17T19:23:55.157Z",
+    "rules": [
+      {
+        "name": "test-file-location-enforcement",
+        "changeType": "fix",
+        "issues": [
+          1314
+        ],
+        "summary": "add opt-in additionalSubjectExtensions for non-JS/TS subjects (closes #1314)"
+      }
+    ]
+  },
+  {
     "version": "1.19.11",
     "date": "2026-07-17T10:46:20.593Z",
     "rules": [
