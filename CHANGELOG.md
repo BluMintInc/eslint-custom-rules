@@ -1,3 +1,10 @@
+## [1.19.9](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.8...v1.19.9) (2026-07-17)
+
+
+### Bug Fixes
+
+* **no-harness-coupled-disables:** only merge preceding comment when directive defers to it (closes [#1312](https://github.com/BluMintInc/eslint-custom-rules/issues/1312)) ([b799c18](https://github.com/BluMintInc/eslint-custom-rules/commit/b799c18f0718da347a01ea26880ffccb8af5ff89))
+
 ## [1.19.8](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.7...v1.19.8) (2026-07-17)
 
 

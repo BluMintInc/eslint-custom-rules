@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.19.9",
+    "date": "2026-07-17T01:27:12.035Z",
+    "rules": [
+      {
+        "name": "no-harness-coupled-disables",
+        "changeType": "fix",
+        "issues": [
+          1312
+        ],
+        "summary": "only merge preceding comment when directive defers to it (closes #1312)"
+      }
+    ]
+  },
+  {
     "version": "1.19.8",
     "date": "2026-07-17T00:25:07.461Z",
     "rules": [
