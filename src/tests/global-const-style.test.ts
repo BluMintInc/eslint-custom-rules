@@ -592,5 +592,45 @@ ruleTesterTs.run('global-const-style', rule, {
       errors: [{ messageId: 'upperSnakeCase' }],
       output: null,
     },
+    // Issue #1313: a shorthand property `{ fooBar }` desugars to
+    // `{ fooBar: fooBar }`. A bare rewrite of the value would also rename the
+    // KEY (`{ FOO_BAR }`), silently changing the object's shape. The fix must
+    // expand the shorthand to `oldKey: NEW_NAME`, renaming only the value.
+    {
+      code: [
+        'const fooBar = 42 as const;',
+        'export const OBJ = { fooBar } as const;',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'upperSnakeCase' }],
+      output: [
+        'const FOO_BAR = 42 as const;',
+        'export const OBJ = { fooBar: FOO_BAR } as const;',
+      ].join('\n'),
+    },
+    // Issue #1313: an explicit (non-shorthand) property value is a plain
+    // reference — only the value is rewritten, the key stays put.
+    {
+      code: [
+        'const fooBar = 42 as const;',
+        'export const OBJ = { timeout: fooBar } as const;',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'upperSnakeCase' }],
+      output: [
+        'const FOO_BAR = 42 as const;',
+        'export const OBJ = { timeout: FOO_BAR } as const;',
+      ].join('\n'),
+    },
+    // Issue #1313 safety guard: a re-export specifier `export { fooBar }` binds
+    // the public export name to this identifier. Renaming it would change the
+    // exported name (a cross-file contract) even though the declaration itself
+    // is not an inline `export const`. Report-only.
+    {
+      code: ['const fooBar = 42 as const;', 'export { fooBar };'].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'upperSnakeCase' }],
+      output: null,
+    },
   ],
 });

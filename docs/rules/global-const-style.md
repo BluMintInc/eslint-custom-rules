@@ -69,6 +69,42 @@ enforced because it never changes the export name. A local (unexported)
 constant sharing one of these names is still renamed, since renaming a value
 that Next.js never reads is safe.
 
+### Jest mock handles
+
+Jest mock handles created with a `jest.Mock*` cast are exempt from the
+`UPPER_SNAKE_CASE` requirement:
+
+```ts
+// Not flagged — a mutable test double, not immutable config.
+const mockedFetch = fetchData as jest.MockedFunction<typeof fetchData>;
+mockedFetch.mockResolvedValue('ok');
+```
+
+The exemption covers `jest.Mock`, `jest.MockedFunction`, `jest.Mocked`, and
+`jest.MockedClass` casts. These handles are reassigned through
+`.mockImplementation()`, `.mockReturnValue()`, etc. — they are not immutable
+module configuration, and the `mockedX` camelCase spelling is the established
+idiom, so renaming them to `UPPER_SNAKE_CASE` would fight the convention.
+
+### Reference-safe autofix
+
+The rename fix rewrites the declaration **and every in-file reference** in a
+single pass, so `--fix` never orphans a use site on a now-undefined name.
+Shorthand object properties are expanded so only the value is renamed:
+
+```ts
+// Before                             // After --fix
+const fooBar = 42 as const;           const FOO_BAR = 42 as const;
+const OBJ = { fooBar } as const;      const OBJ = { fooBar: FOO_BAR } as const;
+```
+
+When a safe rename cannot be guaranteed, the violation is still reported but the
+fix is withheld (report-only) rather than risk changing behavior. That happens
+when the new name would collide with or shadow an existing binding, or when the
+symbol crosses a file boundary — an inline `export const` with in-file uses, or
+a re-export such as `export { fooBar }` — where a single-file fixer cannot reach
+the importers.
+
 ## When Not To Use It
 
 You might want to disable this rule if:
