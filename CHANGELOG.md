@@ -1,3 +1,10 @@
+## [1.19.15](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.14...v1.19.15) (2026-07-17)
+
+
+### Bug Fixes
+
+* **no-hungarian:** exempt PascalCase domain-qualifier names using built-in type words (closes [#1317](https://github.com/BluMintInc/eslint-custom-rules/issues/1317)) ([087e9f5](https://github.com/BluMintInc/eslint-custom-rules/commit/087e9f5da933f4c6bacd644f4a36f4cde1a6b30b))
+
 ## [1.19.14](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.13...v1.19.14) (2026-07-17)
 
 

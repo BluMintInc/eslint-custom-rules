@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.19.15",
+    "date": "2026-07-17T23:29:51.136Z",
+    "rules": [
+      {
+        "name": "no-hungarian",
+        "changeType": "fix",
+        "issues": [
+          1317
+        ],
+        "summary": "exempt PascalCase domain-qualifier names using built-in type words (closes #1317)"
+      }
+    ]
+  },
+  {
     "version": "1.19.14",
     "date": "2026-07-17T21:35:22.880Z",
     "rules": [
