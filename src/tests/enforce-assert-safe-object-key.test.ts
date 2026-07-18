@@ -1,3 +1,4 @@
+import path from 'path';
 import type { TSESLint } from '@typescript-eslint/utils';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceAssertSafeObjectKey } from '../rules/enforce-assert-safe-object-key';
@@ -519,6 +520,108 @@ function inner() {
   const safeKey = rawKey;
   return obj[assertSafe(safeKey)];
 }
+      `,
+    },
+    {
+      // Repro from issue #1321: the injected import specifier must be computed
+      // relative to the fixed file (deeply nested under functions/src/util),
+      // not the bare repo-root path which is unresolvable inside functions/.
+      filename: path.join(
+        process.cwd(),
+        'functions/src/util/notifications/util/builders/SomeBuilder.ts',
+      ),
+      code: `
+const NOTIFICATION_TITLES: Record<string, string> = {};
+export function lookup(key: string): string { return NOTIFICATION_TITLES[key]; }
+      `,
+      errors: [lintError('key')],
+      output: `
+import { assertSafe } from '../../../assertSafe';
+const NOTIFICATION_TITLES: Record<string, string> = {};
+export function lookup(key: string): string { return NOTIFICATION_TITLES[assertSafe(key)]; }
+      `,
+    },
+    {
+      // Two levels below functions/src/util resolves to '../../assertSafe'.
+      filename: path.join(process.cwd(), 'functions/src/util/a/b/fixture.ts'),
+      code: `
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+console.log(obj[id]);
+      `,
+      errors: [lintError('id')],
+      output: `
+import { assertSafe } from '../../assertSafe';
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+console.log(obj[assertSafe(id)]);
+      `,
+    },
+    {
+      // A sibling of assertSafe inside functions/src/util must get the './'
+      // prefix, never a bare 'assertSafe' specifier.
+      filename: path.join(process.cwd(), 'functions/src/util/foo.ts'),
+      code: `
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+console.log(obj[id]);
+      `,
+      errors: [lintError('id')],
+      output: `
+import { assertSafe } from './assertSafe';
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+console.log(obj[assertSafe(id)]);
+      `,
+    },
+    {
+      // A file in a sibling directory resolves upward into util.
+      filename: path.join(process.cwd(), 'functions/src/other/bar.ts'),
+      code: `
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+console.log(obj[id]);
+      `,
+      errors: [lintError('id')],
+      output: `
+import { assertSafe } from '../util/assertSafe';
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+console.log(obj[assertSafe(id)]);
+      `,
+    },
+    {
+      // The assertSafeImportPath option is also anchored at the repo root, so
+      // the relative computation honors a custom target location.
+      filename: path.join(process.cwd(), 'functions/src/util/thing.ts'),
+      options: [{ assertSafeImportPath: 'functions/src/shared/assertSafe' }],
+      code: `
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+console.log(obj[id]);
+      `,
+      errors: [lintError('id')],
+      output: `
+import { assertSafe } from '../shared/assertSafe';
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+console.log(obj[assertSafe(id)]);
+      `,
+    },
+    {
+      // Backward compat: with no filename set (RuleTester default 'file.ts' is
+      // non-absolute), the configured repo-root path is emitted verbatim.
+      code: `
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+console.log(obj[id]);
+      `,
+      errors: [lintError('id')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+console.log(obj[assertSafe(id)]);
       `,
     },
   ],
