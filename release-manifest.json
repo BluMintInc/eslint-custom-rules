@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.19.17",
+    "date": "2026-07-18T07:27:36.853Z",
+    "rules": [
+      {
+        "name": "react-memoize-literals",
+        "changeType": "fix",
+        "issues": [
+          1319
+        ],
+        "summary": "exempt literals inside iteration-method callbacks (closes #1319)"
+      }
+    ]
+  },
+  {
     "version": "1.19.16",
     "date": "2026-07-18T06:29:03.568Z",
     "rules": [

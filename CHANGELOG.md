@@ -1,3 +1,10 @@
+## [1.19.17](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.16...v1.19.17) (2026-07-18)
+
+
+### Bug Fixes
+
+* **react-memoize-literals:** exempt literals inside iteration-method callbacks (closes [#1319](https://github.com/BluMintInc/eslint-custom-rules/issues/1319)) ([da30dc4](https://github.com/BluMintInc/eslint-custom-rules/commit/da30dc46578f0a4fc8caac8ec7c158d1d2025c25)), closes [#1290](https://github.com/BluMintInc/eslint-custom-rules/issues/1290)
+
 ## [1.19.16](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.15...v1.19.16) (2026-07-18)
 
 
