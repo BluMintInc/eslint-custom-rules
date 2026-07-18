@@ -12,7 +12,7 @@ This rule enforces the use of `assertSafe(id)` when accessing object properties 
 
 Dynamic keys that come from variables, string conversions, or template literals can point to unintended properties (including `__proto__` and other prototype fields) and make lookups brittle or unsafe. `assertSafe()` validates the key before it is used so property access stays within the allowed surface area.
 
-Use `assertSafe()` whenever you index objects with a non-literal key. The rule auto-fixes by wrapping the key and inserting the import if needed.
+Use `assertSafe()` whenever you index objects with a non-literal key. The rule auto-fixes by wrapping the key and inserting the import if needed. The inserted import specifier is computed relative to the file being fixed (for example `../util/assertSafe`), so it resolves regardless of how deeply the file is nested — a bare specifier such as `functions/src/util/assertSafe` would not resolve inside a project whose `baseUrl` is `functions/`.
 
 ### Examples
 
@@ -30,7 +30,7 @@ console.log(obj[id]);
 #### ✅ Correct
 
 ```js
-import { assertSafe } from 'functions/src/util/assertSafe';
+import { assertSafe } from '../util/assertSafe';
 
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
@@ -45,7 +45,7 @@ identifiers that are initialised directly from `assertSafe(...)` and does not
 require a second wrapping:
 
 ```js
-import { assertSafe } from 'functions/src/util/assertSafe';
+import { assertSafe } from '../util/assertSafe';
 
 // safeKey holds an already-validated key; obj[safeKey] is fine.
 const safeKey = assertSafe(rawKey);
@@ -56,7 +56,7 @@ const c = objC[safeKey];
 
 ## Options
 
-- `assertSafeImportPath` (string, default: `functions/src/util/assertSafe`): override the import path used by the fixer when inserting `assertSafe`. Set this to your local helper path when consuming the plugin outside BluMint.
+- `assertSafeImportPath` (string, default: `functions/src/util/assertSafe`): the location of the `assertSafe` helper, given as a path anchored at the repo root (relative to the working directory eslint runs from). The fixer derives a specifier relative to the file being fixed from this value rather than emitting it verbatim, so the inserted import resolves from any nesting depth. Set this to your helper's repo-root-relative path when consuming the plugin outside BluMint.
 
 ## When Not To Use It
 
