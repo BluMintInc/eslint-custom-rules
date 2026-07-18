@@ -1008,3 +1008,57 @@ function render() {
     ],
   },
 );
+
+ruleTesterJsx.run(
+  'prefer-map-over-conditional-dispatch (jsx type annotation)',
+  preferMapOverConditionalDispatch,
+  {
+    valid: [],
+    invalid: [
+      {
+        code: `
+export {};
+declare global {
+  namespace JSX {
+    interface Element { readonly _brand: unique symbol; }
+    interface IntrinsicElements { [name: string]: unknown; }
+  }
+}
+declare function Checkbox(): JSX.Element;
+declare function Switch(): JSX.Element;
+type Variant = 'switch' | 'icon-toggle';
+declare const variant: Variant;
+function render() {
+  switch (variant) {
+    case 'icon-toggle':
+      return <Checkbox />;
+    case 'switch':
+      return <Switch />;
+  }
+}
+`,
+        output: `
+export {};
+declare global {
+  namespace JSX {
+    interface Element { readonly _brand: unique symbol; }
+    interface IntrinsicElements { [name: string]: unknown; }
+  }
+}
+declare function Checkbox(): JSX.Element;
+declare function Switch(): JSX.Element;
+type Variant = 'switch' | 'icon-toggle';
+declare const variant: Variant;
+function render() {
+  const RESULT_BY_VARIANT: Record<Variant, JSX.Element> = {
+    'icon-toggle': <Checkbox />,
+    switch: <Switch />,
+  };
+  return RESULT_BY_VARIANT[variant];
+}
+`,
+        errors: [{ messageId: 'preferMap' }],
+      },
+    ],
+  },
+);

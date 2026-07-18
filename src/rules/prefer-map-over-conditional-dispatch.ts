@@ -184,7 +184,11 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
         }
         let text: string;
         try {
-          text = checker.typeToString(widened);
+          // Pass the expression's TS node as the enclosing declaration so the
+          // printer qualifies namespaced symbols to their scoped name (e.g.
+          // `JSX.Element`, not the DOM global `Element`) at the fix site.
+          const enclosing = esTreeNodeToTSNodeMap.get(expr);
+          text = checker.typeToString(widened, enclosing);
         } catch {
           return null;
         }
@@ -199,9 +203,16 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       return parts.length > 0 ? parts.join(' | ') : null;
     }
 
-    function discriminantTypeText(type: ts.Type): string | null {
+    function discriminantTypeText(
+      type: ts.Type,
+      discriminant: TSESTree.Node,
+    ): string | null {
       try {
-        const text = checker.typeToString(type);
+        // Pass the discriminant's TS node as the enclosing declaration so the
+        // printer qualifies namespaced symbols to their scoped name at the fix
+        // site rather than printing an ambiguous short name.
+        const enclosing = esTreeNodeToTSNodeMap.get(discriminant);
+        const text = checker.typeToString(type, enclosing);
         return text && text !== 'error' ? text : null;
       } catch {
         return null;
@@ -664,7 +675,7 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       if (literalKeys.length === 0 || hasOther) {
         return null;
       }
-      const dText = discriminantTypeText(type);
+      const dText = discriminantTypeText(type, discriminant);
       if (!dText) {
         return null;
       }
