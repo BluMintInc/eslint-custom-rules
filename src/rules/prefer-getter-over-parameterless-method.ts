@@ -925,6 +925,17 @@ export const preferGetterOverParameterlessMethod = createRule<
 
           const isAsync = node.value.async;
 
+          // Only `private` methods are safe to autofix. A public / protected /
+          // unspecified-accessibility method is API surface whose call sites of
+          // the form `instance.method()` may live in other files this
+          // single-file rule never sees. Converting such a method to a getter
+          // silently breaks every external caller (the call would invoke the
+          // getter's return value), so the fix must be withheld for anything
+          // not demonstrably private. The report (nudge) is still emitted.
+          const isPrivate =
+            node.accessibility === 'private' ||
+            node.key.type === AST_NODE_TYPES.PrivateIdentifier;
+
           context.report({
             node: node.key,
             messageId: sideEffectReason
@@ -936,6 +947,7 @@ export const preferGetterOverParameterlessMethod = createRule<
               reason: sideEffectReason ?? 'it returns a value',
             },
             fix:
+              !isPrivate ||
               sideEffectReason ||
               isAsync ||
               !leftParen ||

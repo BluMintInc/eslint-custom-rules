@@ -17,7 +17,9 @@ This rule reports parameterless, non-abstract, synchronous methods that return a
 - Stripping configurable verb prefixes (for example, `getUser()` becomes the getter `get user()` and is accessed as `instance.user`)
 - Keeping boolean prefixes intact (`isValid()` → `get isValid()`)
 
-The fixer is withheld when mutations are detected (assignments, `delete`, `++/--`, mutating array calls such as `fill`/`copyWithin`, or mutating collection calls like `set`/`add`/`delete`/`clear`), when the method name is used as a callable or stored as a function reference in the same file (including via optional chaining and when passed as a callback argument), when the method body already reads `this.<suggestedName>` which would create a self-referential getter, or when the suggested getter name would collide with an existing class member. In these cases the rule still reports but leaves the change to the developer to avoid breaking call sites or creating duplicate identifiers. The rule only inspects uses within the current file; it does not attempt project-wide call-site discovery.
+The fixer is withheld unless the method is declared `private`. A `public`, `protected`, or unspecified-accessibility method is API surface whose `instance.method()` call sites may live in other files, and this rule only inspects the current file — it does not attempt project-wide call-site discovery. Auto-converting such a method to a getter would silently break every external caller (the call would invoke the getter's return value), so the rule reports but leaves the change to the developer. Only `private` methods (whose call sites cannot escape the class) are eligible for the automatic fix.
+
+The fixer is also withheld when mutations are detected (assignments, `delete`, `++/--`, mutating array calls such as `fill`/`copyWithin`, or mutating collection calls like `set`/`add`/`delete`/`clear`), when the method name is used as a callable or stored as a function reference in the same file (including via optional chaining and when passed as a callback argument), when the method body already reads `this.<suggestedName>` which would create a self-referential getter, or when the suggested getter name would collide with an existing class member. In these cases the rule still reports but leaves the change to the developer to avoid breaking call sites or creating duplicate identifiers.
 
 Implementations that accompany overload signatures are skipped entirely because getters cannot have overload declarations; leaving those signatures in place would produce invalid TypeScript.
 
@@ -137,3 +139,13 @@ class Counter {
 ```
 
 This looks like a getter but mutates state. Remove the side effect or keep it as a method intentionally.
+
+```ts
+export class OverlayAlertComposer {
+  public compose(): string | undefined {
+    return this.template;
+  }
+}
+```
+
+`compose` is `public`, so `instance.compose()` callers may exist in other files. The rule reports it but withholds the fix; convert it (and update the call sites) by hand. Only `private` methods are auto-converted.
