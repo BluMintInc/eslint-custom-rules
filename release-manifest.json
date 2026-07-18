@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.19.20",
+    "date": "2026-07-18T20:26:20.204Z",
+    "rules": [
+      {
+        "name": "prefer-map-over-conditional-dispatch",
+        "changeType": "fix",
+        "issues": [
+          1322
+        ],
+        "summary": "qualify JSX value/discriminant type via enclosingDeclaration (closes #1322)"
+      }
+    ]
+  },
+  {
     "version": "1.19.19",
     "date": "2026-07-18T17:27:38.611Z",
     "rules": [

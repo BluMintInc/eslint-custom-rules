@@ -1,3 +1,10 @@
+## [1.19.20](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.19...v1.19.20) (2026-07-18)
+
+
+### Bug Fixes
+
+* **prefer-map-over-conditional-dispatch:** qualify JSX value/discriminant type via enclosingDeclaration (closes [#1322](https://github.com/BluMintInc/eslint-custom-rules/issues/1322)) ([b238075](https://github.com/BluMintInc/eslint-custom-rules/commit/b238075122f121d3670f2fa1573908da9427e51e))
+
 ## [1.19.19](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.18...v1.19.19) (2026-07-18)
 
 
