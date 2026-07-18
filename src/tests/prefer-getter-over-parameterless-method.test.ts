@@ -230,13 +230,9 @@ ruleTesterTs.run(
           }
         }
         `,
-        output: `
-        class User {
-          public get fullName() {
-            return this.first + this.last;
-          }
-        }
-        `,
+        // `public` method: external `instance.fullName()` callers may live in
+        // other files, so the autofix is withheld. Report is kept.
+        output: null,
         errors: [
           {
             messageId: 'preferGetter',
@@ -268,13 +264,8 @@ ruleTesterTs.run(
           }
         }
         `,
-        output: `
-        class Previewer {
-          public get preview() {
-            return { value: 1 } as const;
-          }
-        }
-        `,
+        // `public` method: autofix withheld (external callers unverifiable).
+        output: null,
         errors: [
           {
             messageId: 'preferGetter',
@@ -290,13 +281,8 @@ ruleTesterTs.run(
           }
         }
         `,
-        output: `
-        class Validator {
-          get isValid() {
-            return true;
-          }
-        }
-        `,
+        // Unspecified accessibility (public by default): autofix withheld.
+        output: null,
         errors: [
           {
             messageId: 'preferGetter',
@@ -312,13 +298,8 @@ ruleTesterTs.run(
           }
         }
         `,
-        output: `
-        class MathUtils {
-          public static get pi() {
-            return 3.14;
-          }
-        }
-        `,
+        // `public static` method: autofix withheld (external callers unverifiable).
+        output: null,
         errors: [
           {
             messageId: 'preferGetter',
@@ -334,13 +315,8 @@ ruleTesterTs.run(
           }
         }
         `,
-        output: `
-        class Parser {
-          get result(): ParseResult {
-            return this.doParse();
-          }
-        }
-        `,
+        // Unspecified accessibility: autofix withheld.
+        output: null,
         errors: [
           {
             messageId: 'preferGetter',
@@ -462,16 +438,8 @@ ruleTesterTs.run(
           }
         }
         `,
-        output: `
-        class Snapshotter {
-          /**
-           * @returns immutable snapshot without side effects
-           */
-          get snapshot() {
-            return this.state.clone();
-          }
-        }
-        `,
+        // Unspecified accessibility: autofix withheld.
+        output: null,
         errors: [
           {
             messageId: 'preferGetter',
@@ -489,14 +457,8 @@ ruleTesterTs.run(
         }
         `,
         options: [{ minBodyLines: 1 }],
-        output: `
-        class Reporter {
-          get summary() {
-            const title = this.title;
-            return title;
-          }
-        }
-        `,
+        // Unspecified accessibility: autofix withheld.
+        output: null,
         errors: [
           {
             messageId: 'preferGetter',
@@ -529,13 +491,8 @@ ruleTesterTs.run(
           }
         }
         `,
-        output: `
-        class TitleCase {
-          get URL() {
-            return this.url;
-          }
-        }
-        `,
+        // Unspecified accessibility: autofix withheld.
+        output: null,
         errors: [
           {
             messageId: 'preferGetter',
@@ -565,17 +522,9 @@ ruleTesterTs.run(
             data: { name: 'describe', suggestedName: 'describe' },
           },
         ],
-        output: `
-        class Reporter {
-          name() {
-            return this.display;
-          }
-
-          get describe() {
-            return this.name();
-          }
-        }
-        `,
+        // Both methods have unspecified accessibility: `name` is also call-used
+        // in-file, and `describe` is public-by-default, so neither is autofixed.
+        output: null,
       },
       {
         code: `
@@ -599,17 +548,9 @@ ruleTesterTs.run(
             data: { name: 'bindResult', suggestedName: 'bindResult' },
           },
         ],
-        output: `
-        class Worker {
-          getResult() {
-            return this.value;
-          }
-
-          get bindResult() {
-            return this.getResult.bind(this);
-          }
-        }
-        `,
+        // Unspecified accessibility on both: `getResult` is call-used via
+        // `.bind`, and `bindResult` is public-by-default, so no autofix.
+        output: null,
       },
       {
         code: `
@@ -646,16 +587,8 @@ ruleTesterTs.run(
             data: { name: 'getValue', suggestedName: 'value' },
           },
         ],
-        output: `
-        class MixedAccess {
-          static value = 1;
-          private _value = 2;
-
-          get value() {
-            return this._value + MixedAccess.value;
-          }
-        }
-        `,
+        // `getValue` has unspecified accessibility (public by default): withheld.
+        output: null,
       },
       {
         code: `
@@ -679,17 +612,8 @@ ruleTesterTs.run(
             data: { name: 'lengthHint', suggestedName: 'lengthHint' },
           },
         ],
-        output: `
-        class Example {
-          get data() {
-            return [1, 2, 3];
-          }
-
-          get lengthHint() {
-            return this.data.length;
-          }
-        }
-        `,
+        // Both methods have unspecified accessibility (public by default): withheld.
+        output: null,
       },
       {
         code: `
@@ -730,19 +654,8 @@ ruleTesterTs.run(
             data: { name: 'getName', suggestedName: 'name' },
           },
         ],
-        output: `
-        class WithSetter {
-          private _name = 'x';
-
-          set name(value: string) {
-            this._name = value;
-          }
-
-          get name() {
-            return this._name;
-          }
-        }
-        `,
+        // `getName` has unspecified accessibility (public by default): withheld.
+        output: null,
       },
       {
         code: `
@@ -760,15 +673,8 @@ ruleTesterTs.run(
             data: { name: 'getCount', suggestedName: 'count' },
           },
         ],
-        output: `
-        class StaticVsInstance {
-          count = 3;
-
-          static get count() {
-            return 10;
-          }
-        }
-        `,
+        // `getCount` has unspecified accessibility (public by default): withheld.
+        output: null,
       },
       {
         code: `
@@ -792,17 +698,9 @@ ruleTesterTs.run(
             data: { name: 'invoke', suggestedName: 'invoke' },
           },
         ],
-        output: `
-        class Caller {
-          value() {
-            return this.result;
-          }
-
-          get invoke() {
-            return this.value.apply(this);
-          }
-        }
-        `,
+        // Unspecified accessibility on both: `value` is call-used via `.apply`,
+        // and `invoke` is public-by-default, so neither is autofixed.
+        output: null,
       },
       {
         code: `
@@ -827,18 +725,9 @@ ruleTesterTs.run(
             data: { name: 'keep', suggestedName: 'keep' },
           },
         ],
-        output: `
-        class Storer {
-          getValue() {
-            return this.value;
-          }
-
-          get keep() {
-            const fn = this.getValue;
-            return fn();
-          }
-        }
-        `,
+        // Unspecified accessibility on both: `getValue` is referenced in-file,
+        // and `keep` is public-by-default, so neither is autofixed.
+        output: null,
       },
       {
         code: `
@@ -863,18 +752,9 @@ ruleTesterTs.run(
             data: { name: 'callValue', suggestedName: 'callValue' },
           },
         ],
-        output: `
-        class Container {
-          getValue() {
-            return this.value;
-          }
-
-          get callValue() {
-            const { getValue } = this;
-            return getValue();
-          }
-        }
-        `,
+        // Unspecified accessibility on both: `getValue` is destructured in-file,
+        // and `callValue` is public-by-default, so neither is autofixed.
+        output: null,
       },
       {
         code: `
@@ -898,17 +778,9 @@ ruleTesterTs.run(
             data: { name: 'use', suggestedName: 'use' },
           },
         ],
-        output: `
-        class CallableName {
-          call() {
-            return this.value;
-          }
-
-          get use() {
-            return this.call();
-          }
-        }
-        `,
+        // Unspecified accessibility on both: `call` is call-used in-file, and
+        // `use` is public-by-default, so neither is autofixed.
+        output: null,
       },
       {
         code: `
@@ -1061,7 +933,9 @@ ruleTesterTs.run(
         output: null,
       },
 
-      // A pure parameterless method — fix must NOT over-exempt this.
+      // A pure parameterless method with unspecified accessibility (public by
+      // default): the report fires, but the autofix is withheld because
+      // external `instance.getFullName()` callers may live in other files.
       {
         code: `
         class NameHolder {
@@ -1072,15 +946,7 @@ ruleTesterTs.run(
           }
         }
         `,
-        output: `
-        class NameHolder {
-          private first = 'Jane';
-          private last = 'Doe';
-          get fullName() {
-            return this.first + ' ' + this.last;
-          }
-        }
-        `,
+        output: null,
         errors: [
           {
             messageId: 'preferGetter',
@@ -1090,7 +956,9 @@ ruleTesterTs.run(
       },
 
       // A throw that lives only inside a nested arrow callback does NOT count
-      // as a top-level throw, so the method is still a getter candidate.
+      // as a top-level throw, so the method is still a getter candidate and the
+      // report fires. But `processItems` has unspecified accessibility (public
+      // by default), so the autofix is withheld.
       {
         code: `
         class Processor {
@@ -1105,23 +973,76 @@ ruleTesterTs.run(
           }
         }
         `,
-        output: `
-        class Processor {
-          private items = [1, 2, 3];
-          get processItems() {
-            return this.items.map((item) => {
-              if (item < 0) {
-                throw new Error('negative');
-              }
-              return item * 2;
-            });
-          }
-        }
-        `,
+        output: null,
         errors: [
           {
             messageId: 'preferGetter',
             data: { name: 'processItems', suggestedName: 'processItems' },
+          },
+        ],
+      },
+
+      {
+        /**
+         * Public method of an exported class. Its call sites may live in other
+         * files the single-file rule cannot see, so the fixer MUST NOT convert
+         * it to a getter — that silently breaks every `instance.compose()`
+         * caller. Report is allowed; autofix must be withheld.
+         */
+        code: [
+          'export class OverlayAlertComposer {',
+          '  public compose(): string | undefined {',
+          "    return 'x';",
+          '  }',
+          '}',
+        ].join('\n'),
+        output: null, // fix must be WITHHELD (no `get compose()` rewrite)
+        errors: [{ messageId: 'preferGetter' }],
+      },
+
+      // Protected method: still API surface reachable from subclasses in other
+      // files, so the fixer must be withheld. Report is kept.
+      {
+        code: [
+          'export class ProtectedHolder {',
+          "  protected foo(): string { return 'x'; }",
+          '}',
+        ].join('\n'),
+        output: null,
+        errors: [{ messageId: 'preferGetter' }],
+      },
+
+      // Unspecified accessibility (public by default) on an exported class with
+      // no in-file caller. The rule cannot prove there are no external callers,
+      // so the fixer is withheld. Report is kept.
+      {
+        code: [
+          'export class UnspecifiedHolder {',
+          "  bar(): string { return 'x'; }",
+          '}',
+        ].join('\n'),
+        output: null,
+        errors: [{ messageId: 'preferGetter' }],
+      },
+
+      // A genuinely `private` parameterless method with no in-file caller is
+      // safe to convert: its call sites cannot live outside the class, so the
+      // fixer STILL fires. This guards against over-withholding.
+      {
+        code: [
+          'class Foo {',
+          "  private compute(): string { return 'x'; }",
+          '}',
+        ].join('\n'),
+        output: [
+          'class Foo {',
+          "  private get compute(): string { return 'x'; }",
+          '}',
+        ].join('\n'),
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'compute', suggestedName: 'compute' },
           },
         ],
       },
