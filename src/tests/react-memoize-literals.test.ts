@@ -738,6 +738,133 @@ export function useAlert() {
         );
       `,
     },
+    // Issue #1319: an object/array literal RETURNED FROM (or created directly
+    // inside) an Array iteration-method callback must not be flagged. The
+    // memoizable unit is the enclosing `.map()` CallExpression, not the inner
+    // literal — `const tabs = useMemo(() => arr.map(...), [arr])`. useMemo can't
+    // run per-iteration inside a .map loop, and a per-iteration object closing
+    // over the callback param can't be hoisted to module scope, so the rule's
+    // remediation is unfollowable at the literal node.
+    //
+    // Block-body map callback returning an object literal.
+    {
+      code: `
+        const StreamSettingsLayout = () => {
+          const tabs = TAB_PANES.map(({ value, customization }) => {
+            return { value, customization };
+          });
+          return <TabsRouted tabs={tabs} />;
+        };
+      `,
+    },
+    // Concise-body map callback returning an object literal.
+    {
+      code: `
+        const ComponentA = () => {
+          const tabs = TAB_PANES.map(({ value }) => ({ value }));
+          return <TabsRouted tabs={tabs} />;
+        };
+      `,
+    },
+    // Block-body map callback returning an array literal.
+    {
+      code: `
+        const ComponentB = () => {
+          const rows = ITEMS.map((value) => {
+            return [value, value];
+          });
+          return <TabsRouted tabs={rows} />;
+        };
+      `,
+    },
+    // Map callback inline inside JSX, returning an object literal (as const).
+    {
+      code: `
+        const List = () => {
+          return (
+            <Tabs tabs={PANES.map(({ value, customization }) => {
+              return { value, customization } as const;
+            })} />
+          );
+        };
+      `,
+    },
+    // #1319: concise-body map callback returning an array literal.
+    {
+      code: `
+        const Rows = () => {
+          const rows = ITEMS.map((v) => [v, v * 2]);
+          return <List rows={rows} />;
+        };
+      `,
+    },
+    // #1319: nested .map inside .map — the inner object literal's nearest
+    // enclosing function is the inner iteration callback, so it is exempt.
+    {
+      code: `
+        const Grid = ({ rows }) => {
+          const cells = rows.map((row) => row.map((cell) => ({ value: cell })));
+          return <Table cells={cells} />;
+        };
+      `,
+    },
+    // #1319: .flatMap callback returning an array literal is exempt.
+    {
+      code: `
+        const Flat = ({ groups }) => {
+          const all = groups.flatMap((group) => [group.id, group.name]);
+          return <List items={all} />;
+        };
+      `,
+    },
+    // #1319: an object literal built inside a .filter predicate body is exempt.
+    {
+      code: `
+        const Active = ({ items }) => {
+          const filtered = items.filter((item) => {
+            const meta = { active: item.active };
+            return meta.active;
+          });
+          return <List items={filtered} />;
+        };
+      `,
+    },
+    // #1319: an object literal constructed inside a .forEach side effect is exempt.
+    {
+      code: `
+        const Tracker = ({ items }) => {
+          items.forEach((item) => {
+            logEvent({ id: item.id, type: 'view' });
+          });
+          return null;
+        };
+      `,
+    },
+    // #1319: a .reduce callback returning an object literal accumulator is exempt
+    // (the seed is a module-level identifier, so only the returned literal is at
+    // issue, and its nearest enclosing function is the reduce callback).
+    {
+      code: `
+        const Grouped = ({ items }) => {
+          const grouped = items.reduce((acc, item) => {
+            return { ...acc, [item.id]: item };
+          }, INITIAL_GROUPS);
+          return <View data={grouped} />;
+        };
+      `,
+    },
+    // #1319: deeply nested object literals inside the mapped object are all
+    // exempt — every one's nearest enclosing function is the map callback.
+    {
+      code: `
+        const Deep = ({ items }) => {
+          const rows = items.map((item) => ({
+            meta: { id: item.id, nested: { deep: true } },
+          }));
+          return <Table rows={rows} />;
+        };
+      `,
+    },
   ],
   invalid: [
     // REGRESSION GUARD — the SCREAMING_SNAKE_CASE fix must NOT over-correct: a
@@ -1623,6 +1750,77 @@ const List = ({ items, onSelect }) => (
             memoHook: 'useCallback',
           },
         },
+      ],
+    },
+    // Scope control (#1319 regression guard): the iteration exemption must key
+    // on the NEAREST enclosing function, not any ancestor. Here two nodes stay
+    // flagged, and the .map callback itself remains exempt (#1290):
+    //   1. the onClick inline function `() => handle(...)` — its NEAREST
+    //      enclosing function is itself (not the .map callback), and its
+    //      identity is observed by the child, so it stays flagged (mirrors the
+    //      #1290 "nested JSX-attribute callback still flagged" guard); and
+    //   2. the object literal `{ id: item.id }` — its NEAREST enclosing function
+    //      is the onClick arrow (a nested, non-iteration callback), NOT the .map
+    //      callback, so the iteration exemption must NOT reach it.
+    // If the guard keyed on ANY ancestor instead of the nearest function, both
+    // would be wrongly exempted — this case pins that regression.
+    {
+      code: `
+    const Menu = () => {
+      return (
+        <ul>
+          {ITEMS.map((item) => (
+            <li key={item.id} onClick={() => handle({ id: item.id })}>
+              {item.label}
+            </li>
+          ))}
+        </ul>
+      );
+    };
+      `,
+      errors: [
+        { messageId: 'componentLiteral' },
+        { messageId: 'componentLiteral' },
+      ],
+    },
+    // Scope control (#1319 regression guard): an object literal inside a nested
+    // regular ARROW function declared within the map callback must STAY flagged —
+    // its nearest enclosing function is `build`, not the iteration callback. The
+    // nested `build` arrow itself is also flagged (its own nearest function is
+    // itself, which is not an iteration callback). The map callback is exempt.
+    {
+      code: `
+        const Builder = ({ items }) => {
+          const rows = items.map((item) => {
+            const build = () => ({ id: item.id });
+            return build();
+          });
+          return <List rows={rows} />;
+        };
+      `,
+      errors: [
+        { messageId: 'componentLiteral' },
+        { messageId: 'componentLiteral' },
+      ],
+    },
+    // Scope control (#1319 regression guard): an object literal inside a nested
+    // FUNCTION DECLARATION within the map callback must STAY flagged — the
+    // nearest enclosing function is `make`, not the iteration callback.
+    {
+      code: `
+        const Factory = ({ items }) => {
+          const rows = items.map((item) => {
+            function make() {
+              return { id: item.id };
+            }
+            return make();
+          });
+          return <List rows={rows} />;
+        };
+      `,
+      errors: [
+        { messageId: 'componentLiteral' },
+        { messageId: 'componentLiteral' },
       ],
     },
   ],

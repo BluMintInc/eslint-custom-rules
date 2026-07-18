@@ -168,6 +168,38 @@ function isIterationMethodCallback(node: TSESTree.Node): boolean {
 }
 
 /**
+ * True when the NEAREST enclosing function of `node` is itself an Array
+ * iteration-method callback (`arr.map((x) => ({ … }))`, `.filter`, `.reduce`,
+ * `.forEach`, `.sort`, ...). This extends the `isIterationMethodCallback`
+ * exemption (issue #1290) from the callback function itself down to the
+ * object/array literals created directly inside its body (issue #1319): such a
+ * literal is a per-iteration value discarded along with the mapped result, so
+ * its identity is never observed. The rule's own remediation is unfollowable at
+ * the literal — `useMemo` cannot run per-iteration inside a `.map` loop, and a
+ * literal closing over the callback parameter cannot be hoisted to module
+ * scope. The memoizable unit is the whole `.map()` call:
+ * `const tabs = useMemo(() => arr.map((x) => ({ … })), [arr])`.
+ *
+ * The walk starts at `node` and stops at the FIRST function encountered
+ * (including `node` itself when `node` is a function). Keying on the nearest
+ * function — not any ancestor — is what preserves the #1290 scope guard: a
+ * nested, non-iteration callback inside the map body (e.g. an `onClick` handler
+ * that persists as a JSX prop) is the nearest function for any literal in its
+ * body, so those literals stay flagged, and the handler itself (its own nearest
+ * function is itself) stays flagged too.
+ */
+function isInsideIterationMethodCallback(node: TSESTree.Node): boolean {
+  let current: TSESTree.Node | null = node;
+  while (current) {
+    if (isFunctionNode(current)) {
+      return isIterationMethodCallback(current);
+    }
+    current = current.parent as TSESTree.Node | null;
+  }
+  return false;
+}
+
+/**
  * Type guard for parenthesized expressions to unwrap safely.
  * @param node Node to evaluate.
  * @returns True when the node is a parenthesized expression wrapper.
@@ -1069,7 +1101,17 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
       // to module level, and useCallback can't run inside a .map loop. Inline
       // functions passed as JSX-attribute props *inside* the callback body are
       // separate nodes and remain flagged.
-      if (isIterationMethodCallback(node)) {
+      //
+      // The same rationale exempts object/array literals created directly
+      // inside such a callback (issue #1319): they are per-iteration values
+      // discarded with the mapped result, `useMemo` cannot run inside the loop,
+      // and the memoizable unit is the enclosing `.map()` call. The guard keys
+      // on the NEAREST enclosing function, so a literal inside a nested,
+      // non-iteration callback (e.g. an `onClick` handler) is NOT exempted.
+      if (
+        isIterationMethodCallback(node) ||
+        isInsideIterationMethodCallback(node)
+      ) {
         return;
       }
 
