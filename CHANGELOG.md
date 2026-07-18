@@ -1,3 +1,10 @@
+## [1.19.19](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.18...v1.19.19) (2026-07-18)
+
+
+### Bug Fixes
+
+* **enforce-assert-safe-object-key:** compute assertSafe import specifier relative to the fixed file (closes [#1321](https://github.com/BluMintInc/eslint-custom-rules/issues/1321)) ([543137d](https://github.com/BluMintInc/eslint-custom-rules/commit/543137d4299616521912856e530b4882500b8832))
+
 ## [1.19.18](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.17...v1.19.18) (2026-07-18)
 
 
