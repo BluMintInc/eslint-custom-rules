@@ -1,3 +1,10 @@
+## [1.19.16](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.15...v1.19.16) (2026-07-18)
+
+
+### Bug Fixes
+
+* **prefer-getter-over-parameterless-method:** withhold autofix for non-private methods (closes [#1318](https://github.com/BluMintInc/eslint-custom-rules/issues/1318)) ([721e945](https://github.com/BluMintInc/eslint-custom-rules/commit/721e945365601d31daec02d2fdbef5eb96458350))
+
 ## [1.19.15](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.14...v1.19.15) (2026-07-17)
 
 

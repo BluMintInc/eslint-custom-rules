@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.19.16",
+    "date": "2026-07-18T06:29:03.568Z",
+    "rules": [
+      {
+        "name": "prefer-getter-over-parameterless-method",
+        "changeType": "fix",
+        "issues": [
+          1318
+        ],
+        "summary": "withhold autofix for non-private methods (closes #1318)"
+      }
+    ]
+  },
+  {
     "version": "1.19.15",
     "date": "2026-07-17T23:29:51.136Z",
     "rules": [
