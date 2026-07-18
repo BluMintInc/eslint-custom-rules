@@ -832,6 +832,52 @@ export const Panel = PanelUnmemoized;
         output: null,
       },
       {
+        // Exported interleaved `type` alias, and an EXPORTED annotated const that
+        // references it (`export const beta: FC<Marker>`). `beta` reorders to sit
+        // directly BELOW `export type Marker`, so its annotation dependency stays
+        // declared-before-use and the guard must NOT bail — the reorder applies.
+        // Exercises the exported-type-alias branches: the alias is tracked as an
+        // interleaved constraint AND marked declared as the walk passes it, and
+        // the annotation is read through the ExportNamedDeclaration wrapper.
+        code: `
+import { FC } from 'react';
+
+const alpha: FC = () => {
+  return beta();
+};
+
+export type Marker = { id: string };
+
+const gamma = () => {
+  return 1;
+};
+
+export const beta: FC<Marker> = () => {
+  gamma();
+  return null;
+};
+`,
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: `
+import { FC } from 'react';
+
+const alpha: FC = () => {
+  return beta();
+};
+
+export type Marker = { id: string };
+
+export const beta: FC<Marker> = () => {
+  gamma();
+  return null;
+};
+
+const gamma = () => {
+  return 1;
+};
+`,
+      },
+      {
         // The referencing function stays BELOW the interleaved const it uses in
         // both the old and new order, so there is no hoist-above-dependency and
         // the reorder applies. `beta` references `SHARED` and remains beneath it
