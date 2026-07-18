@@ -1,5 +1,5 @@
 // rule-request
-import { ruleTesterTs } from '../utils/ruleTester';
+import { ruleTesterTs, ruleTesterJsx } from '../utils/ruleTester';
 import { verticallyGroupRelatedFunctions } from '../rules/vertically-group-related-functions';
 
 const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
@@ -676,6 +676,196 @@ function main() {
 function helper() {
   return OFFSET * 2;
 }
+`,
+      },
+    ],
+  },
+);
+
+ruleTesterJsx.run(
+  'vertically-group-related-functions (hoist-above-dependency guard)',
+  verticallyGroupRelatedFunctions,
+  {
+    valid: [],
+    invalid: [
+      {
+        // The component references an interleaved `type` and `const` that sit
+        // between it and its helper. Callers-first ordering wants the component
+        // above the helper, but the only reachable reorder (the interleaved-
+        // statement slot swap) would hoist the component ABOVE the `const
+        // DEFAULT_LABEL` it uses as a default-parameter value — a fresh
+        // declare-before-use. The misorder is still reported, but the harmful
+        // autofix must be declined (output === input).
+        code: `
+import { FC } from 'react';
+
+const findSlideAncestor = (element: HTMLElement | null) => {
+  let parent = element?.parentElement ?? null;
+  while (parent) {
+    if (parent.className.includes('slide')) {
+      return parent;
+    }
+    parent = parent.parentElement;
+  }
+  return null;
+};
+
+type WidgetProps = { label: string };
+
+const DEFAULT_LABEL = 'hello' as const;
+
+const WidgetUnmemoized: FC<WidgetProps> = ({ label = DEFAULT_LABEL }) => {
+  findSlideAncestor(null);
+  return <span>{label}</span>;
+};
+
+export const Widget = WidgetUnmemoized;
+`,
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: null,
+      },
+      {
+        // Guard must not over-trigger: the interleaved `const UNRELATED` is not
+        // referenced by the hoisted component, so the normal callers-first
+        // reorder still applies (component above helper, interleaved const
+        // pinned).
+        code: `
+const findSlideAncestor = (element: HTMLElement | null) => {
+  return element;
+};
+
+const UNRELATED = 1;
+
+const WidgetUnmemoized = () => {
+  findSlideAncestor(null);
+  return null;
+};
+`,
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: `
+const WidgetUnmemoized = () => {
+  findSlideAncestor(null);
+  return null;
+};
+
+const UNRELATED = 1;
+
+const findSlideAncestor = (element: HTMLElement | null) => {
+  return element;
+};
+`,
+      },
+      {
+        // Value-only dependency: the component references an interleaved const
+        // purely as a default-parameter value (no type reference). Hoisting it
+        // above `CONFIG_DEFAULT` is a declare-before-use, so the fix is declined.
+        code: `
+const helper = () => {
+  return 1;
+};
+
+const CONFIG_DEFAULT = 5;
+
+const useThing = ({ value = CONFIG_DEFAULT } = {}) => {
+  helper();
+  return value;
+};
+`,
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: null,
+      },
+      {
+        // Type-only dependency: the component references an interleaved `type`
+        // alias and nothing else across the boundary. TypeScript hoists type
+        // aliases, so placing the component above `PanelProps` is legal and the
+        // normal reorder still applies.
+        code: `
+const findAncestor = (element: HTMLElement | null) => {
+  return element;
+};
+
+type PanelProps = { open: boolean };
+
+const PanelUnmemoized = (props: PanelProps) => {
+  findAncestor(null);
+  return null;
+};
+`,
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: `
+const PanelUnmemoized = (props: PanelProps) => {
+  findAncestor(null);
+  return null;
+};
+
+type PanelProps = { open: boolean };
+
+const findAncestor = (element: HTMLElement | null) => {
+  return element;
+};
+`,
+      },
+      {
+        // Type dependency via the const's OWN binding annotation
+        // (`const C: FC<PanelProps> = ...`) — unlike the param-annotation case
+        // above, this is exactly what prefer-type-alias-over-typeof-constant's
+        // defineTypeBeforeConstant fires on. Hoisting the component above
+        // `type PanelProps` would trade the misorder for that cross-rule
+        // violation, so the autofix is declined.
+        code: `
+import { FC } from 'react';
+
+const findAncestor = (element: HTMLElement | null) => {
+  return element;
+};
+
+type PanelProps = { open: boolean };
+
+const PanelUnmemoized: FC<PanelProps> = ({ open }) => {
+  findAncestor(null);
+  return open ? null : null;
+};
+
+export const Panel = PanelUnmemoized;
+`,
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: null,
+      },
+      {
+        // The referencing function stays BELOW the interleaved const it uses in
+        // both the old and new order, so there is no hoist-above-dependency and
+        // the reorder applies. `beta` references `SHARED` and remains beneath it
+        // after `beta`/`gamma` swap slots.
+        code: `
+const alpha = () => {
+  return beta();
+};
+
+const SHARED = 3;
+
+const gamma = () => {
+  return 1;
+};
+
+const beta = () => {
+  return SHARED + gamma();
+};
+`,
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: `
+const alpha = () => {
+  return beta();
+};
+
+const SHARED = 3;
+
+const beta = () => {
+  return SHARED + gamma();
+};
+
+const gamma = () => {
+  return 1;
+};
 `,
       },
     ],

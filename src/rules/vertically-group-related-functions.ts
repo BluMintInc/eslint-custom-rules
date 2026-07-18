@@ -513,6 +513,221 @@ function getStatementRangeWithComments(
   return [start, end];
 }
 
+// Collect every identifier a statement references anywhere in its subtree,
+// including type-annotation positions (e.g. `WidgetProps` inside
+// `FC<WidgetProps>`) and default-parameter values (e.g. `DEFAULT_LABEL` in
+// `{ label = DEFAULT_LABEL }`). Identifiers that are member-access properties or
+// object/type member keys are skipped: `obj.OFFSET` is not a reference to a
+// top-level `OFFSET` binding, so counting it would spuriously constrain the
+// reorder.
+function collectReferencedNames(node: TSESTree.Node): Set<string> {
+  const names = new Set<string>();
+
+  const visit = (
+    current: TSESTree.Node | null | undefined,
+    parent: TSESTree.Node | null,
+  ) => {
+    if (!current || !ASTHelpers.isNode(current)) {
+      return;
+    }
+
+    if (current.type === 'Identifier') {
+      const isMemberProperty =
+        parent?.type === 'MemberExpression' &&
+        parent.property === current &&
+        !parent.computed;
+      const isObjectKey =
+        parent?.type === 'Property' &&
+        parent.key === current &&
+        !parent.computed;
+      const isMemberKey =
+        (parent?.type === 'TSPropertySignature' ||
+          parent?.type === 'TSMethodSignature') &&
+        parent.key === current &&
+        !parent.computed;
+      if (!isMemberProperty && !isObjectKey && !isMemberKey) {
+        names.add(current.name);
+      }
+    }
+
+    Object.values(current).forEach((value) => {
+      if (!value || value === current || (current as any).parent === value) {
+        return;
+      }
+      if (Array.isArray(value)) {
+        value.forEach((child) => {
+          if (ASTHelpers.isNode(child)) {
+            visit(child, current);
+          }
+        });
+      } else if (ASTHelpers.isNode(value)) {
+        visit(value, current);
+      }
+    });
+  };
+
+  visit(node, null);
+
+  return names;
+}
+
+// Names bound by an interleaved VALUE declaration (const/let/var) — but not by a
+// reorderable function. Hoisting a function above a value binding it references
+// is a genuine runtime declare-before-use. Type aliases are tracked separately
+// (interleavedTypeAliasNamesOf), because their hoist hazard is not runtime — it
+// is the companion prefer-type-alias-over-typeof-constant rule, which fires only
+// for a const declarator whose own type annotation names a later alias.
+function interleavedValueNamesOf(
+  regionStatements: TSESTree.Statement[],
+  functionStatements: Set<FunctionStatementNode>,
+): Set<string> {
+  const names = new Set<string>();
+  regionStatements.forEach((statement) => {
+    if (functionStatements.has(statement as FunctionStatementNode)) {
+      return;
+    }
+    if (statement.type === 'VariableDeclaration') {
+      statement.declarations.forEach((declarator) => {
+        if (declarator.id.type === 'Identifier') {
+          names.add(declarator.id.name);
+        }
+      });
+    }
+  });
+  return names;
+}
+
+// Names bound by an interleaved `type` alias in the reordered region.
+function interleavedTypeAliasNamesOf(
+  regionStatements: TSESTree.Statement[],
+  functionStatements: Set<FunctionStatementNode>,
+): Set<string> {
+  const names = new Set<string>();
+  regionStatements.forEach((statement) => {
+    if (functionStatements.has(statement as FunctionStatementNode)) {
+      return;
+    }
+    if (statement.type === 'TSTypeAliasDeclaration') {
+      names.add(statement.id.name);
+    } else if (
+      statement.type === 'ExportNamedDeclaration' &&
+      statement.declaration?.type === 'TSTypeAliasDeclaration'
+    ) {
+      names.add(statement.declaration.id.name);
+    }
+  });
+  return names;
+}
+
+// Type names referenced in the annotation of a function-holding const's own
+// binding identifier (e.g. `WidgetProps` in `const W: FC<WidgetProps> = ...`).
+// This mirrors exactly what prefer-type-alias-over-typeof-constant's
+// defineTypeBeforeConstant keys on: only a const declarator's `id` annotation.
+// A function *declaration*'s return type (`function f(): Marker`) and an arrow
+// parameter's annotation (`const f = (p: Props) => ...`) are deliberately NOT
+// counted — neither trips the companion rule, so constraining them would decline
+// safe reorders.
+function constAnnotationTypeNamesOf(
+  statementNode: FunctionStatementNode,
+): Set<string> {
+  const names = new Set<string>();
+  const declaration =
+    statementNode.type === 'ExportNamedDeclaration'
+      ? statementNode.declaration
+      : statementNode;
+  if (declaration?.type === 'VariableDeclaration') {
+    declaration.declarations.forEach((declarator) => {
+      if (declarator.id.type === 'Identifier' && declarator.id.typeAnnotation) {
+        collectReferencedNames(declarator.id.typeAnnotation).forEach((name) =>
+          names.add(name),
+        );
+      }
+    });
+  }
+  return names;
+}
+
+// Decline (return true) any reorder that would place a function ABOVE an
+// interleaved declaration it depends on. The fixer pins interleaved statements in
+// place and only swaps functions between their own slots, so such a reorder
+// produces a fresh declare-before-use — trading one violation for another instead
+// of converging. Two hazards are guarded:
+//   * value binding (const/let/var): a runtime declare-before-use if a function
+//     references it and is hoisted above it.
+//   * `type` alias: hoisting a function-holding const whose OWN binding
+//     annotation names the alias above that alias trips the companion
+//     prefer-type-alias-over-typeof-constant rule (defineTypeBeforeConstant).
+// Walks the post-reorder sequence front-to-back: each function slot is filled
+// with the next expected function; interleaved statements keep their slot. A
+// function that references a not-yet-declared interleaved dependency is being
+// hoisted above it.
+function reorderHoistsFunctionAboveDependency(
+  regionStatements: TSESTree.Statement[],
+  functionStatements: Set<FunctionStatementNode>,
+  expectedOrderInfos: FunctionInfo[],
+): boolean {
+  const interleavedValueNames = interleavedValueNamesOf(
+    regionStatements,
+    functionStatements,
+  );
+  const interleavedTypeNames = interleavedTypeAliasNamesOf(
+    regionStatements,
+    functionStatements,
+  );
+  if (interleavedValueNames.size === 0 && interleavedTypeNames.size === 0) {
+    return false;
+  }
+
+  const declaredValueNames = new Set<string>();
+  const declaredTypeNames = new Set<string>();
+  let slotCursor = 0;
+  for (const statement of regionStatements) {
+    if (functionStatements.has(statement as FunctionStatementNode)) {
+      const occupant = expectedOrderInfos[slotCursor];
+      slotCursor += 1;
+      if (!occupant) {
+        continue;
+      }
+      if (interleavedValueNames.size > 0) {
+        const referenced = collectReferencedNames(occupant.statementNode);
+        for (const name of referenced) {
+          if (
+            interleavedValueNames.has(name) &&
+            !declaredValueNames.has(name)
+          ) {
+            return true;
+          }
+        }
+      }
+      if (interleavedTypeNames.size > 0) {
+        const annotationTypes = constAnnotationTypeNamesOf(
+          occupant.statementNode,
+        );
+        for (const name of annotationTypes) {
+          if (interleavedTypeNames.has(name) && !declaredTypeNames.has(name)) {
+            return true;
+          }
+        }
+      }
+    } else if (statement.type === 'VariableDeclaration') {
+      statement.declarations.forEach((declarator) => {
+        if (declarator.id.type === 'Identifier') {
+          declaredValueNames.add(declarator.id.name);
+        }
+      });
+    } else if (statement.type === 'TSTypeAliasDeclaration') {
+      declaredTypeNames.add(statement.id.name);
+    } else if (
+      statement.type === 'ExportNamedDeclaration' &&
+      statement.declaration?.type === 'TSTypeAliasDeclaration'
+    ) {
+      declaredTypeNames.add(statement.declaration.id.name);
+    }
+  }
+
+  return false;
+}
+
 export const verticallyGroupRelatedFunctions: TSESLint.RuleModule<
   MessageIds,
   Options
@@ -749,6 +964,23 @@ export const verticallyGroupRelatedFunctions: TSESLint.RuleModule<
             const blockContainsOnlyFunctions = slice.every((statement) =>
               functionStatements.has(statement as FunctionStatementNode),
             );
+
+            // Decline a reorder that would hoist a function above an interleaved
+            // declaration it depends on (a value binding it references, or the
+            // `type` alias named in its own const annotation). Applies to both
+            // paths, though it can only trigger in the interleaved-statement
+            // branch below (Path A reorders a block with no interleaved
+            // declarations). The misorderedFunction report still fires; only the
+            // harmful, non-converging autofix is suppressed.
+            if (
+              reorderHoistsFunctionAboveDependency(
+                slice as TSESTree.Statement[],
+                functionStatements,
+                expectedOrderInfos,
+              )
+            ) {
+              return null;
+            }
 
             if (!blockContainsOnlyFunctions) {
               // Real modules interleave type aliases, consts, and top-level
