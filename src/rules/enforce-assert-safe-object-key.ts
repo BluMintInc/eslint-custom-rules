@@ -1,3 +1,4 @@
+import path from 'path';
 import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
@@ -41,6 +42,41 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
     let hasAssertSafeImport = false;
 
     /**
+     * Computes the module specifier for the injected assertSafe import.
+     *
+     * `importPath` is anchored at the repo root (relative to process.cwd(),
+     * which is the repo root in real eslint runs), matching how
+     * avoid-utils-directory and test-file-location-enforcement treat paths.
+     * A bare repo-root specifier such as 'functions/src/util/assertSafe' is
+     * unresolvable inside the functions/ TS project, whose baseUrl is
+     * functions/: it would resolve to functions/functions/src/util/assertSafe,
+     * which does not exist. The specifier is therefore derived relative to the
+     * file being fixed so the emitted import resolves from that file's location.
+     */
+    const computeImportSpecifier = (): string => {
+      const rawFilename = context.getFilename().replace(/\\/g, '/');
+      // Virtual/stdin files (RuleTester default 'file.ts', '<input>', '<text>')
+      // are not absolute; we cannot anchor a relative path, so emit the
+      // configured path verbatim (preserves the option's literal value for
+      // non-file lints).
+      if (!path.isAbsolute(rawFilename)) {
+        return importPath;
+      }
+      const target = importPath
+        .replace(/\\/g, '/')
+        .replace(/\.(tsx?|jsx?|mts|cts)$/i, '');
+      const fileRelToCwd = path
+        .relative(process.cwd(), rawFilename)
+        .replace(/\\/g, '/');
+      const fileDir = path.posix.dirname(fileRelToCwd);
+      let specifier = path.posix.relative(fileDir, target);
+      if (!specifier.startsWith('.')) {
+        specifier = `./${specifier}`;
+      }
+      return specifier;
+    };
+
+    /**
      * Helper function to add assertSafe import if needed
      */
     const addAssertSafeImport = (
@@ -50,7 +86,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       const firstImport = program.body.find(
         (node) => node.type === AST_NODE_TYPES.ImportDeclaration,
       );
-      const importStatement = `import { assertSafe } from '${importPath}';\n`;
+      const importStatement = `import { assertSafe } from '${computeImportSpecifier()}';\n`;
 
       if (firstImport) {
         return fixer.insertTextBefore(firstImport, importStatement);
