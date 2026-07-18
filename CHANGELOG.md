@@ -1,3 +1,10 @@
+## [1.19.18](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.17...v1.19.18) (2026-07-18)
+
+
+### Bug Fixes
+
+* **vertically-group-related-functions:** decline reorder that hoists a function above its interleaved type/const dependency (closes [#1320](https://github.com/BluMintInc/eslint-custom-rules/issues/1320)) ([79c1fa9](https://github.com/BluMintInc/eslint-custom-rules/commit/79c1fa9a54530e205c7f574cd3bf82a2a6849698))
+
 ## [1.19.17](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.16...v1.19.17) (2026-07-18)
 
 

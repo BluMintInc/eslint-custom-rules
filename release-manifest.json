@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.19.18",
+    "date": "2026-07-18T13:43:27.635Z",
+    "rules": [
+      {
+        "name": "vertically-group-related-functions",
+        "changeType": "fix",
+        "issues": [
+          1320
+        ],
+        "summary": "decline reorder that hoists a function above its interleaved type/const dependency (closes #1320)"
+      }
+    ]
+  },
+  {
     "version": "1.19.17",
     "date": "2026-07-18T07:27:36.853Z",
     "rules": [
