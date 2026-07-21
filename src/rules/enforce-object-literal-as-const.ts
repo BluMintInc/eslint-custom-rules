@@ -46,17 +46,20 @@ export const enforceObjectLiteralAsConst = createRule({
     }
 
     /**
-     * Checks if an array contains object literals that might be used as component props
+     * Checks if the (unwrapped) return argument is an array literal.
+     *
+     * Arrays returned from React hook callbacks represent memoized data/prop
+     * lists (component props, hit lists, tab labels, etc.). Freezing them into
+     * readonly tuples via `as const` fights the mutable/`readonly`-array types
+     * they flow into downstream, so any array returned from a hook is exempt —
+     * regardless of whether its elements are inline object literals (`[{...}]`),
+     * identifier/member references to objects (`[ANY_GAME_HIT]`,
+     * `[constants.HIT]`), or primitives. The rule has no type information, so it
+     * cannot narrow this further without reintroducing the false positives
+     * issues #511 and #1324 document.
      */
-    function isArrayWithObjectLiterals(node: TSESTree.Node): boolean {
-      if (node.type !== 'ArrayExpression') {
-        return false;
-      }
-
-      // Check if any element in the array is an object literal
-      return node.elements.some(
-        (elem) => elem !== null && elem.type === 'ObjectExpression',
-      );
+    function isArrayLiteral(node: TSESTree.Node): boolean {
+      return node.type === 'ArrayExpression';
     }
 
     return {
@@ -128,10 +131,11 @@ export const enforceObjectLiteralAsConst = createRule({
           return;
         }
 
-        // Skip arrays with object literals inside React hooks (likely component props)
+        // Skip arrays returned from React hooks (memoized data/prop lists that
+        // must not be frozen into readonly tuples — see #511 and #1324)
         if (
           isInsideReactHook(ancestors) &&
-          isArrayWithObjectLiterals(
+          isArrayLiteral(
             argument.type === 'TSAsExpression'
               ? (argument as TSESTree.TSAsExpression).expression
               : argument,
