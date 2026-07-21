@@ -139,6 +139,53 @@ ruleTester.run('enforce-object-literal-as-const', enforceObjectLiteralAsConst, {
         }, [deps]);
       `,
     },
+    // Valid case: array holding an identifier referencing a const object,
+    // returned from a hook — same category as the inline-object-literal
+    // exemption; must not be forced into a readonly tuple (#1324)
+    {
+      code: `
+        const ANY_GAME_HIT = { id: 'any', name: 'Any Game' } as const;
+        const useHits = (hits: readonly { id: string }[], hasQuery: boolean) => {
+          return useDeepCompareMemo(() => {
+            if (hasQuery && hits.length === 0) {
+              return [ANY_GAME_HIT];
+            }
+            return hits;
+          }, [hits, hasQuery]);
+        };
+      `,
+    },
+    // Valid case: array holding a member-expression element, returned from a
+    // hook — same category as above (#1324)
+    {
+      code: `
+        const useHits = (hits: readonly { id: string }[], hasQuery: boolean) => {
+          return useMemo(() => {
+            if (hasQuery && hits.length === 0) {
+              return [constants.ANY_GAME_HIT];
+            }
+            return hits;
+          }, [hits, hasQuery]);
+        };
+      `,
+    },
+    // Valid case: array of identifier elements returned from a hook (#1324)
+    {
+      code: `
+        const items = useMemo(() => {
+          return [firstItem, secondItem];
+        }, [firstItem, secondItem]);
+      `,
+    },
+    // Valid case: array of primitives returned from a hook — a memoized list
+    // that must not be frozen into a readonly tuple downstream (#1324)
+    {
+      code: `
+        const tabs = useMemo(() => {
+          return ['overview', 'details'];
+        }, []);
+      `,
+    },
     // Valid case: returning a conditional expression
     {
       code: `
@@ -316,6 +363,21 @@ ruleTester.run('enforce-object-literal-as-const', enforceObjectLiteralAsConst, {
       output: `
         function getItems() {
           return [a, b, c] as const;
+        }
+      `,
+    },
+    // Invalid case: identifier-element array outside a hook is still flagged —
+    // the exemption is scoped to hook callbacks (#1324)
+    {
+      code: `
+        function getHits() {
+          return [ANY_GAME_HIT];
+        }
+      `,
+      errors: [{ messageId: 'enforceAsConst' }],
+      output: `
+        function getHits() {
+          return [ANY_GAME_HIT] as const;
         }
       `,
     },
