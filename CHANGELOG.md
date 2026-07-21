@@ -1,3 +1,10 @@
+## [1.19.21](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.20...v1.19.21) (2026-07-21)
+
+
+### Bug Fixes
+
+* **enforce-object-literal-as-const:** exempt identifier/member array elements returned from hooks (closes [#1324](https://github.com/BluMintInc/eslint-custom-rules/issues/1324)) ([edd6c79](https://github.com/BluMintInc/eslint-custom-rules/commit/edd6c7936d7a6dda11c7164c12662396c9e8965c)), closes [#511](https://github.com/BluMintInc/eslint-custom-rules/issues/511) [#511](https://github.com/BluMintInc/eslint-custom-rules/issues/511)
+
 ## [1.19.20](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.19...v1.19.20) (2026-07-18)
 
 

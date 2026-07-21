@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.19.21",
+    "date": "2026-07-21T21:24:23.464Z",
+    "rules": [
+      {
+        "name": "enforce-object-literal-as-const",
+        "changeType": "fix",
+        "issues": [
+          1324
+        ],
+        "summary": "exempt identifier/member array elements returned from hooks (closes #1324)"
+      }
+    ]
+  },
+  {
     "version": "1.19.20",
     "date": "2026-07-18T20:26:20.204Z",
     "rules": [
