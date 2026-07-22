@@ -852,10 +852,19 @@ export const verticallyGroupRelatedFunctions: TSESLint.RuleModule<
           return;
         }
 
-        const misplacedInfo = functions[misplacedIndex];
-        const targetIndex = expectedNames.indexOf(misplacedInfo.name);
+        // Report the function that BELONGS in the first mismatched slot
+        // (expected[i]), not the wrong occupant currently sitting there
+        // (actual[i]). Telling the reader to move expected[i] up to right after
+        // expected[i-1] fills the hole and extends the already-correct prefix
+        // by one, so obeying each emitted instruction verbatim strictly
+        // converges on the fixed point. Naming the displaced occupant instead
+        // sends it off to its own final home without filling this slot — the
+        // prefix stays mismatched and the next pass emits a different
+        // instruction anchored on a different sibling, the non-converging
+        // "anchor chase" on diamond/shared-leaf graphs (#1330).
+        const misplacedInfo = expectedOrderInfos[misplacedIndex];
         const anchorName =
-          targetIndex > 0 ? expectedNames[targetIndex - 1] : null;
+          misplacedIndex > 0 ? expectedNames[misplacedIndex - 1] : null;
 
         const dependencyReason =
           misplacedInfo.dependencies.length > 0
