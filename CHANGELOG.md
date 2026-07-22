@@ -1,3 +1,11 @@
+## [1.19.24](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.23...v1.19.24) (2026-07-22)
+
+
+### Bug Fixes
+
+* **enforce-positive-naming:** exempt ingest word family from in- prefix heuristic (closes [#1331](https://github.com/BluMintInc/eslint-custom-rules/issues/1331)) ([c384551](https://github.com/BluMintInc/eslint-custom-rules/commit/c384551f88c5f784835b788dc45cbb65d0afeaac)), closes [#859](https://github.com/BluMintInc/eslint-custom-rules/issues/859) [#772](https://github.com/BluMintInc/eslint-custom-rules/issues/772) [#1261](https://github.com/BluMintInc/eslint-custom-rules/issues/1261)
+* **vertically-group-related-functions:** fill the mismatched slot instead of evicting its occupant (closes [#1330](https://github.com/BluMintInc/eslint-custom-rules/issues/1330)) ([613c4b0](https://github.com/BluMintInc/eslint-custom-rules/commit/613c4b0e6f85710ceaf5e9b2eeb7ca3cc644291a))
+
 ## [1.19.23](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.22...v1.19.23) (2026-07-22)
 
 
