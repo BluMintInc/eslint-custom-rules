@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.19.24",
+    "date": "2026-07-22T21:30:58.024Z",
+    "rules": [
+      {
+        "name": "enforce-positive-naming",
+        "changeType": "fix",
+        "issues": [
+          1331
+        ],
+        "summary": "exempt ingest word family from in- prefix heuristic (closes #1331)"
+      },
+      {
+        "name": "vertically-group-related-functions",
+        "changeType": "fix",
+        "issues": [
+          1330
+        ],
+        "summary": "fill the mismatched slot instead of evicting its occupant (closes #1330)"
+      }
+    ]
+  },
+  {
     "version": "1.19.23",
     "date": "2026-07-22T15:32:41.825Z",
     "rules": [
