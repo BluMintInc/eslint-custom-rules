@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.19.25",
+    "date": "2026-07-22T21:39:17.787Z",
+    "rules": [
+      {
+        "name": "enforce-safe-stringify",
+        "changeType": "fix",
+        "issues": [
+          1332
+        ],
+        "summary": "offer JSON.stringify rewrite as a suggestion, not an unconditional auto-fix (closes #1332)"
+      }
+    ]
+  },
+  {
     "version": "1.19.24",
     "date": "2026-07-22T21:30:58.024Z",
     "rules": [

@@ -1,3 +1,10 @@
+## [1.19.25](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.24...v1.19.25) (2026-07-22)
+
+
+### Bug Fixes
+
+* **enforce-safe-stringify:** offer JSON.stringify rewrite as a suggestion, not an unconditional auto-fix (closes [#1332](https://github.com/BluMintInc/eslint-custom-rules/issues/1332)) ([62da767](https://github.com/BluMintInc/eslint-custom-rules/commit/62da767d9efdf38ecd9999c15901bb505df11176))
+
 ## [1.19.24](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.23...v1.19.24) (2026-07-22)
 
 
