@@ -102,6 +102,22 @@ const ITERATION_METHODS = new Set([
   'sort',
 ]);
 
+/**
+ * Comparison operators whose result is a boolean primitive. A value produced by
+ * one of these can never carry a referential identity, so a call whose result
+ * feeds such a comparison never lets its argument's identity escape.
+ */
+const COMPARISON_OPERATORS = new Set([
+  '===',
+  '!==',
+  '==',
+  '!=',
+  '<',
+  '>',
+  '<=',
+  '>=',
+]);
+
 const MEMOIZATION_DEPS_TODO_PLACEHOLDER = '__TODO_MEMOIZATION_DEPENDENCIES__';
 const TODO_DEPS_COMMENT = `/* ${MEMOIZATION_DEPS_TODO_PLACEHOLDER} */`;
 const PARENTHESIZED_EXPRESSION_TYPE =
@@ -1077,6 +1093,130 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
       return usages.every((ref) => isStyleJSXAttributeValue(ref.identifier));
     }
 
+    /**
+     * True when `expr` — a plain function call's result, or a reference to the
+     * variable holding that result — is consumed only for its primitive value,
+     * never by reference.
+     *
+     * Referential stability of a call's ARGUMENT matters only if the call's
+     * RESULT reaches a memoization boundary (a hook dependency, a memoized
+     * child's prop, an effect capture) where identities are reference-compared.
+     * A result that lands in a boolean-test position — a ternary/if/while/for
+     * test, a `!`, a comparison, or a logical chain that itself ends in such a
+     * position — is coerced to (or already is) a primitive, so the argument's
+     * identity provably never crosses such a boundary regardless of what the
+     * callee returns. Reasoning from how the CALLER consumes the result (not the
+     * callee's body) keeps the analysis purely syntactic and type-free.
+     *
+     * The whitelist is deliberately tight: any position not proven primitive
+     * (JSX attribute value, hook dependency element, argument to another call,
+     * spread, return, object/array member) yields false, so the exemption never
+     * silences a literal whose identity could still escape.
+     */
+    function isPrimitivelyConsumed(expr: TSESTree.Node): boolean {
+      const parent = expr.parent as TSESTree.Node | null;
+      if (!parent) {
+        return false;
+      }
+
+      // TS-assertion/parenthesized wrappers are transparent to consumption:
+      // analyze how the wrapped value is ultimately used.
+      if (isExpressionWrapper(parent)) {
+        const wrapper = parent as TSESTree.Node & {
+          expression?: TSESTree.Node;
+        };
+        return wrapper.expression === expr && isPrimitivelyConsumed(parent);
+      }
+
+      switch (parent.type) {
+        case AST_NODE_TYPES.ConditionalExpression:
+          return parent.test === expr;
+        case AST_NODE_TYPES.IfStatement:
+        case AST_NODE_TYPES.WhileStatement:
+        case AST_NODE_TYPES.DoWhileStatement:
+        case AST_NODE_TYPES.ForStatement:
+          return parent.test === expr;
+        case AST_NODE_TYPES.UnaryExpression:
+          return parent.operator === '!';
+        case AST_NODE_TYPES.BinaryExpression:
+          return COMPARISON_OPERATORS.has(parent.operator);
+        case AST_NODE_TYPES.LogicalExpression:
+          // A logical operand inherits the consumption of the whole expression:
+          // safe only if that ultimately lands in a primitive position too.
+          return isPrimitivelyConsumed(parent);
+        case AST_NODE_TYPES.VariableDeclarator: {
+          if (
+            parent.init !== expr ||
+            parent.id.type !== AST_NODE_TYPES.Identifier
+          ) {
+            return false;
+          }
+          const variables = ASTHelpers.getDeclaredVariables(
+            context as unknown as TSESLint.RuleContext<
+              string,
+              readonly unknown[]
+            >,
+            parent,
+          );
+          if (variables.length === 0) {
+            return false;
+          }
+          const usages = variables[0].references.filter((ref) => !ref.init);
+          // No usages (dead code): can't prove the result stays primitive, so
+          // keep the literal reported (mirrors isStyleVariableInitializer).
+          if (usages.length === 0) {
+            return false;
+          }
+          return usages.every((ref) => isPrimitivelyConsumed(ref.identifier));
+        }
+        default:
+          return false;
+      }
+    }
+
+    /**
+     * True when the literal is a direct argument of a plain function call whose
+     * result is only ever consumed primitively (see isPrimitivelyConsumed). In
+     * that case the literal's identity provably never reaches a memoization
+     * boundary — it is neither a JSX prop, nor a hook dependency, nor captured
+     * by an effect — so re-creating it each render costs nothing and memoizing
+     * it buys nothing. The callee must be a plain Identifier: member calls
+     * (`obj.method({...})`) are excluded because the receiver could retain the
+     * reference, and this keeps the guard to plain, non-hook synchronous calls.
+     */
+    function isPrimitiveConsumedCallArgument(node: TSESTree.Node): boolean {
+      // Walk up through transparent wrappers to the position the literal
+      // effectively occupies as a call argument.
+      let effective: TSESTree.Node = node;
+      let parent = effective.parent as TSESTree.Node | null;
+      while (
+        parent &&
+        isExpressionWrapper(parent) &&
+        (parent as TSESTree.Node & { expression?: TSESTree.Node })
+          .expression === effective
+      ) {
+        effective = parent;
+        parent = effective.parent as TSESTree.Node | null;
+      }
+
+      if (!parent || parent.type !== AST_NODE_TYPES.CallExpression) {
+        return false;
+      }
+
+      const isDirectArgument = parent.arguments.some(
+        (arg) => (arg as TSESTree.Node) === effective,
+      );
+      if (!isDirectArgument) {
+        return false;
+      }
+
+      if (parent.callee.type !== AST_NODE_TYPES.Identifier) {
+        return false;
+      }
+
+      return isPrimitivelyConsumed(parent);
+    }
+
     function reportLiteral(node: TSESTree.Node) {
       const descriptor = getLiteralDescriptor(node);
       if (!descriptor) return;
@@ -1184,6 +1324,15 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
             hookName,
           },
         });
+        return;
+      }
+
+      // A literal passed only as an argument to a plain synchronous call whose
+      // result is consumed primitively never carries its identity to a
+      // memoization boundary, so memoizing it is pointless (issue #1329). Placed
+      // last so hook-argument and hook-return handling run first and are
+      // unaffected.
+      if (isPrimitiveConsumedCallArgument(node)) {
         return;
       }
 
