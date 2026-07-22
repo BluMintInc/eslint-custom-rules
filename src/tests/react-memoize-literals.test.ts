@@ -865,8 +865,181 @@ export function useAlert() {
         };
       `,
     },
+    // Issue #1329: an object literal passed ONLY as an argument to a plain
+    // synchronous call whose primitive result is consumed immediately (here a
+    // boolean feeding a ternary test) never crosses a memoization boundary, so
+    // it must NOT be flagged.
+    {
+      code: `
+    function isMutable({
+      isOpen,
+      isContinuous,
+    }: {
+      isOpen: boolean;
+      isContinuous: boolean;
+    }) {
+      return isOpen || isContinuous;
+    }
+    const Component = ({
+      isOpen,
+      isContinuous,
+    }: {
+      isOpen: boolean;
+      isContinuous: boolean;
+    }) => {
+      const isQueueMutable = isMutable({ isOpen, isContinuous });
+      return isQueueMutable ? <button /> : null;
+    };
+  `,
+    },
+    // #1329: inline call result used directly as a ternary test, no variable.
+    {
+      code: `
+        const Component = ({ isOpen }) => {
+          return isMutable({ isOpen }) ? <button /> : null;
+        };
+      `,
+    },
+    // #1329: call result negated in an if-test.
+    {
+      code: `
+        const Component = ({ isOpen }) => {
+          if (!isMutable({ isOpen })) return null;
+          return <button />;
+        };
+      `,
+    },
+    // #1329: call result compared (=== 0) through an intermediate variable.
+    {
+      code: `
+        const Component = ({ isOpen }) => {
+          const n = count({ isOpen });
+          return n === 0 ? <a /> : <b />;
+        };
+      `,
+    },
+    // #1329: array literal argument whose call result is consumed as a boolean.
+    {
+      code: `
+        const Component = ({ isOpen }) => {
+          const empty = isEmpty([1, 2]);
+          return empty ? <a /> : <b />;
+        };
+      `,
+    },
+    // #1329: inline call result used directly as a while-test.
+    {
+      code: `
+        const Component = ({ isOpen }) => {
+          while (check({ isOpen })) {
+            doWork();
+          }
+          return null;
+        };
+      `,
+    },
+    // #1329: call result feeding a logical chain that lands in a ternary test.
+    {
+      code: `
+        const Component = ({ isOpen, other }) => {
+          return (isMutable({ isOpen }) || other) ? <a /> : <b />;
+        };
+      `,
+    },
+    // #1329: call result compared inline (no variable).
+    {
+      code: `
+        const Component = ({ isOpen }) => {
+          return count({ isOpen }) > 0 ? <a /> : null;
+        };
+      `,
+    },
+    // #1329: argument wrapped in an as-const assertion, result in a ternary test.
+    {
+      code: `
+        const Component = ({ isOpen }) => {
+          const flag = check({ isOpen } as const);
+          return flag ? <a /> : null;
+        };
+      `,
+    },
   ],
   invalid: [
+    // #1329 provided case: the useEffect dep-array literal and the JSX-prop
+    // literal both cross a memoization boundary and must STILL fire (2 errors).
+    {
+      code: `
+    const Component = ({ isOpen }) => {
+      useEffect(() => {}, [{ isOpen }]);
+      return <Child config={{ isOpen }} />;
+    };
+  `,
+      errors: 2,
+    },
+    // #1329 over-correction guard: call result flows to a JSX prop → still flagged.
+    {
+      code: `
+        const Component = ({ isOpen }) => {
+          const cfg = build({ isOpen });
+          return <Child config={cfg} />;
+        };
+      `,
+      errors: [{ messageId: 'componentLiteral' }],
+    },
+    // #1329 over-correction guard: inline arg whose call result feeds a JSX
+    // attribute directly → still flagged (the callee observes the reference).
+    {
+      code: `
+        const Component = () => {
+          return <Box sx={combine({ color: 'red' })} />;
+        };
+      `,
+      errors: [{ messageId: 'componentLiteral' }],
+    },
+    // #1329 over-correction guard: call result used in a hook dependency array
+    // → still flagged (identity crosses a memoization boundary).
+    {
+      code: `
+        const Component = ({ isOpen }) => {
+          const x = build({ isOpen });
+          useEffect(() => {}, [x]);
+          return null;
+        };
+      `,
+      errors: [{ messageId: 'componentLiteral' }],
+    },
+    // #1329 over-correction guard: member call (callee is a MemberExpression)
+    // → still flagged even though the result is consumed primitively.
+    {
+      code: `
+        const Component = ({ isOpen }) => {
+          const x = utils.check({ isOpen });
+          return x ? <a /> : null;
+        };
+      `,
+      errors: [{ messageId: 'componentLiteral' }],
+    },
+    // #1329 over-correction guard: call result returned directly (escapes) →
+    // still flagged.
+    {
+      code: `
+        const Component = ({ isOpen }) => {
+          return build({ isOpen });
+        };
+      `,
+      errors: [{ messageId: 'componentLiteral' }],
+    },
+    // #1329 over-correction guard: bare call statement (result unused) → still
+    // flagged, since dead results can't be proven primitive.
+    {
+      code: `
+        const Component = ({ isOpen }) => {
+          build({ isOpen });
+          return null;
+        };
+      `,
+      errors: [{ messageId: 'componentLiteral' }],
+    },
     // REGRESSION GUARD — the SCREAMING_SNAKE_CASE fix must NOT over-correct: a
     // real PascalCase component that builds an object literal in its body must
     // STILL report componentLiteral.
