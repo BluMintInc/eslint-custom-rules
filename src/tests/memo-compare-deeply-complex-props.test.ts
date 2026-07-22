@@ -351,6 +351,48 @@ declare const Comp: (props: Props) => JSX.Element;
 export const Wrapped = memo(Comp);
 `,
       },
+      // Bug #1327: DOM-element props (MUI Popper/Popover `anchorEl`, containers,
+      // etc.) are stable references, not recreated literals, and deep-comparing
+      // them walks React's circular fiber back-references. They must NOT be
+      // flagged as complex props — mirroring the ReactElement carve-out.
+      {
+        filename: 'src/components/DomAnchorElProp.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+type Props = { anchorEl: HTMLElement | null; open: boolean };
+const Comp = ({ anchorEl, open }: Props) => (
+  <div>{open && anchorEl ? 'open' : 'closed'}</div>
+);
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/DomElementNonNull.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { container: HTMLElement; label: string };
+const Comp = ({ container, label }: Props) => <div>{label}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/DomSubclassProp.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { target: HTMLDivElement | null; count: number };
+const Comp = ({ target, count }: Props) => <div>{count}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/DomElementBaseProp.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { root: Element | null; node: Node | null; id: string };
+const Comp = ({ root, node, id }: Props) => <div>{id}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
     ],
     invalid: [
       // Bug #1179 regression: mixed React render types + data objects — only data props flagged.
@@ -1135,6 +1177,26 @@ function makeInner() {
   return Comp;
 }
 
+export const Wrapped = memo(Comp, compareDeeply('settings'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      // Bug #1327 regression guard: the DOM carve-out must NOT over-suppress a
+      // genuine object prop sitting alongside a DOM-element prop. Only `settings`
+      // is flagged — `anchorEl` (HTMLElement | null) is excluded.
+      {
+        filename: 'src/components/DomElementMixedInvalid.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { anchorEl: HTMLElement | null; settings: { theme: string } };
+const Comp = ({ anchorEl, settings }: Props) => <div>{settings.theme}</div>;
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type Props = { anchorEl: HTMLElement | null; settings: { theme: string } };
+const Comp = ({ anchorEl, settings }: Props) => <div>{settings.theme}</div>;
 export const Wrapped = memo(Comp, compareDeeply('settings'));
 `,
         errors: [{ messageId: 'useCompareDeeply' }],

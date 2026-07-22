@@ -609,6 +609,166 @@ function isReactRenderType(type: Type): boolean {
   return false;
 }
 
+/**
+ * Root DOM interfaces that a concrete element type extends. Any interface whose
+ * heritage chain reaches one of these represents a live DOM node.  DOM nodes are
+ * stable references (never recreated literals), so deep-comparing them yields no
+ * benefit — and worse, walking their circular `__reactFiber$*` / `__reactProps$*`
+ * back-references risks a stack overflow.  They are excluded from the complex-prop
+ * check for the same reason `ReactElement` is.
+ */
+const DOM_ELEMENT_BASE_NAMES = new Set([
+  'HTMLElement',
+  'SVGElement',
+  'Element',
+  'Node',
+  'EventTarget',
+]);
+
+/**
+ * Returns true when `sym` is declared inside a DOM lib `.d.ts` file (e.g.
+ * `lib.dom.d.ts`).  Gating on this origin ensures a user-defined type that
+ * happens to be named `Element` / `Node` is still treated as a genuine data
+ * prop rather than silently carved out.  Mirrors
+ * `isSymbolFromReactDeclarationFile`, but keys on the DOM lib filename.
+ */
+function isSymbolFromDomDeclarationFile(
+  sym: import('typescript').Symbol,
+): boolean {
+  const declarations = sym.declarations;
+  if (!declarations || declarations.length === 0) return false;
+  return declarations.some((decl) => {
+    const fileName = decl.getSourceFile?.()?.fileName ?? '';
+    return fileName.endsWith('.d.ts') && /lib\.dom/i.test(fileName);
+  });
+}
+
+/**
+ * Walks a type's base-class/heritage chain (via `getBaseTypes`) looking for a
+ * root DOM interface name. Handles concrete subclasses like `HTMLDivElement` or
+ * `HTMLButtonElement`, whose own name is not a root but whose ancestry reaches
+ * `HTMLElement` → `Element` → `Node` → `EventTarget`.
+ */
+function domHeritageIncludesElementBase(
+  type: Type,
+  checker: TypeChecker,
+  visited: Set<Type>,
+): boolean {
+  if (visited.has(type)) return false;
+  visited.add(type);
+
+  const sym = type.symbol;
+  if (sym && DOM_ELEMENT_BASE_NAMES.has(sym.escapedName as string)) {
+    return true;
+  }
+
+  if (
+    typeof type.isClassOrInterface === 'function' &&
+    type.isClassOrInterface()
+  ) {
+    let baseTypes: readonly Type[] = [];
+    try {
+      baseTypes = checker.getBaseTypes(type);
+    } catch {
+      baseTypes = [];
+    }
+    return baseTypes.some((base) =>
+      domHeritageIncludesElementBase(base, checker, visited),
+    );
+  }
+
+  return false;
+}
+
+/**
+ * Returns true when `type` resolves to a DOM element type that must be excluded
+ * from the complex-prop check. Requires BOTH that the type originates from a DOM
+ * lib `.d.ts` file AND that its heritage chain reaches a root DOM interface, so
+ * only real DOM nodes — not identically named user types — are carved out.
+ *
+ * For union types (e.g. the ubiquitous `HTMLElement | null` MUI anchor prop) the
+ * whole union counts as a DOM element only when every non-nullish member is one,
+ * so a mixed union like `HTMLElement | { theme: string }` still surfaces its
+ * genuine object member as complex.
+ */
+function isDomElementType(
+  ts: typeof import('typescript'),
+  type: Type,
+  checker: TypeChecker,
+  visited: Set<Type>,
+): boolean {
+  if (visited.has(type)) return false;
+  visited.add(type);
+
+  const flags = type.flags ?? 0;
+  if ((flags & ts.TypeFlags.Union) !== 0) {
+    const nonNullishMembers = (type as UnionType).types.filter(
+      (member) =>
+        (member.flags &
+          (ts.TypeFlags.Null | ts.TypeFlags.Undefined | ts.TypeFlags.Void)) ===
+        0,
+    );
+    return (
+      nonNullishMembers.length > 0 &&
+      nonNullishMembers.every((member) =>
+        isDomElementType(ts, member, checker, visited),
+      )
+    );
+  }
+
+  const sym = type.symbol;
+  if (!sym) return false;
+  if (!isSymbolFromDomDeclarationFile(sym)) return false;
+
+  return domHeritageIncludesElementBase(type, checker, new Set<Type>());
+}
+
+/**
+ * Root DOM interface names that have no shared `*Element` suffix and so must be
+ * matched exactly (unlike `HTMLDivElement`, which is caught by the family
+ * pattern below).
+ */
+const DOM_ELEMENT_TYPE_NAME_EXACT = new Set([
+  'Element',
+  'Node',
+  'EventTarget',
+  'HTMLElement',
+  'SVGElement',
+  'MathMLElement',
+]);
+
+/**
+ * Matches concrete DOM element interface names (`HTMLDivElement`,
+ * `HTMLButtonElement`, `SVGRectElement`, `MathMLMathElement`, …) as a family so
+ * subclasses are covered without enumerating every tag. Used only on the
+ * annotation fallback path, where the type resolves to `any` (DOM lib absent
+ * from the tsconfig `lib`) and no heritage chain is available to walk.
+ */
+const DOM_ELEMENT_SUBCLASS_PATTERN = /^(?:HTML|SVG|MathML)[A-Za-z0-9]*Element$/;
+
+function isDomElementTypeName(name: string): boolean {
+  return (
+    DOM_ELEMENT_TYPE_NAME_EXACT.has(name) ||
+    DOM_ELEMENT_SUBCLASS_PATTERN.test(name)
+  );
+}
+
+/**
+ * Origin gate for the annotation fallback path. A symbol declared in a DOM lib
+ * `.d.ts`, or with no declarations at all (the DOM lib is absent so the global
+ * resolved to `any`), is treated as DOM-sourced. A user-defined type declared in
+ * project source is not — so a coincidentally named `Element`/`Node` still
+ * flags.
+ */
+function isDomSourcedSymbol(sym: import('typescript').Symbol): boolean {
+  const declarations = sym.declarations;
+  if (!declarations || declarations.length === 0) return true;
+  return declarations.some((decl) => {
+    const fileName = decl.getSourceFile?.()?.fileName ?? '';
+    return fileName.endsWith('.d.ts') && /lib\.dom/i.test(fileName);
+  });
+}
+
 function isComplexType(
   ts: typeof import('typescript'),
   type: Type,
@@ -631,6 +791,14 @@ function isComplexTypeInternal(
   // (a union containing ReactElement) are both short-circuited here rather
   // than being caught by the isObjectType / checkUnionType branches below.
   if (isReactRenderType(type)) {
+    return false;
+  }
+
+  // Exclude DOM element types (e.g. the MUI `anchorEl: HTMLElement | null`)
+  // for the same reason ReactElement is excluded: DOM nodes are stable
+  // references and deep-comparing them walks React's circular fiber
+  // back-references, risking a stack overflow.
+  if (isDomElementType(ts, type, checker, new Set<Type>())) {
     return false;
   }
 
@@ -852,6 +1020,75 @@ function isAnnotationReactRenderType(
   }
 }
 
+/**
+ * Annotation-path DOM carve-out, parallel to `isAnnotationReactRenderType`.
+ *
+ * When the DOM lib is absent from the tsconfig `lib`, a prop typed as
+ * `HTMLElement` / `HTMLDivElement` / `Element` / `Node` resolves to `any`, so
+ * the structural `isDomElementType` check cannot see it. The annotation node,
+ * however, still carries the written name via the resolved type's alias/own
+ * symbol. Match that name against the DOM element family (gated on DOM origin so
+ * a user-defined lookalike still flags). Union annotations (e.g. the ubiquitous
+ * `HTMLElement | null` MUI anchor prop) qualify only when every non-nullish
+ * member is a DOM element type.
+ */
+function isAnnotationDomElementType(
+  annotationType: import('typescript').TypeNode,
+  checker: TypeChecker,
+  ts: typeof import('typescript'),
+): boolean {
+  try {
+    const tsModule = ts;
+
+    if (tsModule.isUnionTypeNode?.(annotationType)) {
+      const nonNullishMembers = annotationType.types.filter((member) => {
+        if (
+          member.kind === tsModule.SyntaxKind.NullKeyword ||
+          member.kind === tsModule.SyntaxKind.UndefinedKeyword ||
+          member.kind === tsModule.SyntaxKind.VoidKeyword
+        ) {
+          return false;
+        }
+        if (tsModule.isLiteralTypeNode?.(member)) {
+          const lit = (member as import('typescript').LiteralTypeNode).literal;
+          if (
+            lit.kind === tsModule.SyntaxKind.NullKeyword ||
+            lit.kind === tsModule.SyntaxKind.UndefinedKeyword
+          ) {
+            return false;
+          }
+        }
+        return true;
+      });
+      return (
+        nonNullishMembers.length > 0 &&
+        nonNullishMembers.every((member) =>
+          isAnnotationDomElementType(member, checker, ts),
+        )
+      );
+    }
+
+    const resolvedType = checker.getTypeFromTypeNode?.(annotationType);
+    if (!resolvedType) return false;
+
+    // Prefer the structural heritage check when the DOM lib IS loaded.
+    if (isDomElementType(ts, resolvedType, checker, new Set<Type>())) {
+      return true;
+    }
+
+    // Fallback for the `any` case: the resolved type surfaces the written name
+    // via its alias (e.g. `HTMLElement`) or own symbol.
+    const sym =
+      (resolvedType as { aliasSymbol?: import('typescript').Symbol })
+        .aliasSymbol ?? resolvedType.symbol;
+    if (!sym) return false;
+    const name = sym.escapedName as string;
+    return isDomElementTypeName(name) && isDomSourcedSymbol(sym);
+  } catch {
+    return false;
+  }
+}
+
 function shouldTreatAnyAsComplex(
   prop: import('typescript').Symbol,
   propType: Type,
@@ -873,6 +1110,18 @@ function shouldTreatAnyAsComplex(
     annotationType &&
     checker &&
     isAnnotationReactRenderType(annotationType, checker, ts)
+  ) {
+    return false;
+  }
+
+  // Likewise, when the annotation resolves to a DOM element type (e.g. the MUI
+  // `anchorEl: HTMLElement | null`), the prop is a stable DOM-node reference.
+  // Deep-comparing it walks React's circular fiber back-references and yields
+  // no benefit — exclude it the same way React render types are excluded.
+  if (
+    annotationType &&
+    checker &&
+    isAnnotationDomElementType(annotationType, checker, ts)
   ) {
     return false;
   }
