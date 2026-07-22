@@ -1,3 +1,10 @@
+## [1.19.23](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.22...v1.19.23) (2026-07-22)
+
+
+### Bug Fixes
+
+* **react-memoize-literals:** exempt literal args to primitively-consumed plain calls (closes [#1329](https://github.com/BluMintInc/eslint-custom-rules/issues/1329)) ([6dbacb5](https://github.com/BluMintInc/eslint-custom-rules/commit/6dbacb589a8e20732fff4ae01c3cda4b1b669b3a))
+
 ## [1.19.22](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.21...v1.19.22) (2026-07-22)
 
 

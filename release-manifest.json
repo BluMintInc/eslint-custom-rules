@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.19.23",
+    "date": "2026-07-22T15:32:41.825Z",
+    "rules": [
+      {
+        "name": "react-memoize-literals",
+        "changeType": "fix",
+        "issues": [
+          1329
+        ],
+        "summary": "exempt literal args to primitively-consumed plain calls (closes #1329)"
+      }
+    ]
+  },
+  {
     "version": "1.19.22",
     "date": "2026-07-22T09:39:07.911Z",
     "rules": [
