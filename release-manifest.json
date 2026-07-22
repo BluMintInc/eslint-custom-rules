@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.19.22",
+    "date": "2026-07-22T09:39:07.911Z",
+    "rules": [
+      {
+        "name": "memo-compare-deeply-complex-props",
+        "changeType": "fix",
+        "issues": [
+          1327
+        ],
+        "summary": "exempt DOM-node props (HTMLElement | null) from complex-prop check (closes #1327)"
+      }
+    ]
+  },
+  {
     "version": "1.19.21",
     "date": "2026-07-21T21:24:23.464Z",
     "rules": [

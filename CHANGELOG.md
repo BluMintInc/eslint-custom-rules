@@ -1,3 +1,10 @@
+## [1.19.22](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.21...v1.19.22) (2026-07-22)
+
+
+### Bug Fixes
+
+* **memo-compare-deeply-complex-props:** exempt DOM-node props (HTMLElement | null) from complex-prop check (closes [#1327](https://github.com/BluMintInc/eslint-custom-rules/issues/1327)) ([b32b28b](https://github.com/BluMintInc/eslint-custom-rules/commit/b32b28babff6bddda36673de2f808197745925f5))
+
 ## [1.19.21](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.20...v1.19.21) (2026-07-21)
 
 
