@@ -1,3 +1,10 @@
+## [1.19.29](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.28...v1.19.29) (2026-07-23)
+
+
+### Bug Fixes
+
+* **enforce-id-capitalization:** exempt DOM attribute-name arguments (closes [#1337](https://github.com/BluMintInc/eslint-custom-rules/issues/1337)) ([2c69532](https://github.com/BluMintInc/eslint-custom-rules/commit/2c695327acb4a9dfeb123de37366a6f44183276c))
+
 ## [1.19.28](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.27...v1.19.28) (2026-07-23)
 
 

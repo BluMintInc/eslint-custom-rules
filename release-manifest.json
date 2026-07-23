@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.19.29",
+    "date": "2026-07-23T21:23:38.334Z",
+    "rules": [
+      {
+        "name": "enforce-id-capitalization",
+        "changeType": "fix",
+        "issues": [
+          1337
+        ],
+        "summary": "exempt DOM attribute-name arguments (closes #1337)"
+      }
+    ]
+  },
+  {
     "version": "1.19.28",
     "date": "2026-07-23T17:25:39.744Z",
     "rules": [
