@@ -517,6 +517,49 @@ const returnExpressionIsJsx = (
 };
 
 /**
+ * True when the expression is a `memo(...)` / `forwardRef(...)` call. Returned
+ * from a useMemo/useDeepCompareMemo callback, this is the complete, sanctioned
+ * stabilization pattern: the memo hook stabilizes the component *identity*
+ * across re-renders (a new identity only on a deps change), so the inner
+ * component never remounts on an ordinary re-render—the exact harm this rule
+ * exists to prevent does not occur.
+ */
+const returnExpressionIsMemoOrForwardRefCall = (
+  expression: TSESTree.Expression | null,
+  reactImports: ReactImports,
+): boolean => {
+  if (!expression) {
+    return false;
+  }
+
+  const unwrapped = unwrapExpression(expression);
+  return (
+    unwrapped.type === AST_NODE_TYPES.CallExpression &&
+    (isMemoCall(unwrapped, reactImports) ||
+      isForwardRefCall(unwrapped, reactImports))
+  );
+};
+
+/**
+ * True when a useMemo/useDeepCompareMemo callback directly returns a
+ * memo()/forwardRef()-wrapped component. The memo hook stabilizes the returned
+ * component's identity, so such a binding does not remount on re-render and
+ * must not be flagged.
+ */
+const memoCallbackReturnsMemoizedComponent = (
+  callback: TSESTree.Node,
+  reactImports: ReactImports,
+): boolean => {
+  if (!isFunctionExpression(callback)) {
+    return false;
+  }
+
+  return collectDirectReturnExpressions(callback).some((expression) =>
+    returnExpressionIsMemoOrForwardRefCall(expression, reactImports),
+  );
+};
+
+/**
  * Direct return-statement arguments of a function, traversing control flow
  * (if/switch/try/loops) but NOT descending into nested function definitions—
  * returns inside nested functions belong to those functions, not this one.
@@ -694,6 +737,12 @@ See: https://react.dev/learn/your-first-component#nesting-and-organizing-compone
         ) {
           if (componentMatch.componentIsCallback) {
             // Returns JSX directly, so it's an element, not a component
+            return;
+          }
+          // A memo()/forwardRef()-wrapped return is identity-stabilized by the
+          // memo hook, so it does not remount on re-render and must not be
+          // flagged (see #1336). Bare inner components stay flagged.
+          if (memoCallbackReturnsMemoizedComponent(callback, reactImports)) {
             return;
           }
         }
