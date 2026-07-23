@@ -131,8 +131,45 @@ ruleTesterTs.run('enforce-id-capitalization', enforceIdCapitalization, {
         console.log(id);
       `,
     },
+    // DOM attribute-name arguments are code, not user-facing text (#1337)
+    {
+      code: `element.getAttribute('id');`,
+    },
+    {
+      code: `element.setAttribute('id', value);`,
+    },
+    {
+      code: `element.hasAttribute('id');`,
+    },
+    {
+      code: `element.removeAttribute('id');`,
+    },
+    {
+      code: `element.getAttributeNode('id');`,
+    },
+    {
+      code: `element.getAttributeNS(null, 'id');`,
+    },
+    // jest-dom matcher: first arg is the attribute NAME, not visible text
+    {
+      code: `expect(heading).toHaveAttribute('id', 'unlink-method-heading');`,
+    },
   ],
   invalid: [
+    // A bare 'id' translation key is still user-facing and must stay flagged —
+    // the attribute-name exemption is scoped to *Attribute callees only.
+    {
+      code: `t('id');`,
+      errors: [{ messageId: 'enforceIdCapitalization' }],
+      output: `t("ID");`,
+    },
+    // Only the first (name) argument is exempt; a user-facing string in a later
+    // argument position must still be flagged.
+    {
+      code: `element.setAttribute('data-x', 'enter your id');`,
+      errors: [{ messageId: 'enforceIdCapitalization' }],
+      output: `element.setAttribute('data-x', "enter your ID");`,
+    },
     {
       code: 'const message: string = "Please enter your id";',
       errors: [{ messageId: 'enforceIdCapitalization' }],

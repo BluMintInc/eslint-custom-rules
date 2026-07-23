@@ -31,6 +31,22 @@ export const enforceIdCapitalization = createRule<Options, MessageIds>({
     // This ensures we only match "id" as a word, not as part of another word
     const idRegex = /(^|\s|[.,;:!?'"()\[\]{}])id(\s|$|[.,;:!?'"()\[\]{}])/g;
 
+    // DOM / Testing-Library APIs whose first argument is an attribute NAME
+    // (code), not user-facing text. A literal like 'id' passed here is a DOM
+    // attribute name; flagging or rewriting it to 'ID' breaks the call.
+    const ATTRIBUTE_NAME_METHODS = new Set([
+      'getAttribute',
+      'setAttribute',
+      'hasAttribute',
+      'removeAttribute',
+      'getAttributeNode',
+      'getAttributeNS',
+      'setAttributeNS',
+      'hasAttributeNS',
+      'removeAttributeNS',
+      'toHaveAttribute',
+    ]);
+
     /**
      * Check if a node is in a context that should be excluded from the rule
      * (e.g., parameter names, property names, type definitions)
@@ -101,6 +117,27 @@ export const enforceIdCapitalization = createRule<Options, MessageIds>({
       // Check if the node is in a property access context
       if (node.parent && node.parent.type === AST_NODE_TYPES.MemberExpression) {
         return true;
+      }
+
+      // Check if the node is the attribute-name argument of a DOM / jest-dom
+      // attribute API call, e.g. element.getAttribute('id') or
+      // expect(el).toHaveAttribute('id', ...). The attribute name is code, not
+      // user-facing text. For the *NS variants the name is the second argument
+      // (the first is the namespace URI); otherwise it is the first argument.
+      if (
+        node.parent &&
+        node.parent.type === AST_NODE_TYPES.CallExpression &&
+        node.parent.callee &&
+        node.parent.callee.type === AST_NODE_TYPES.MemberExpression &&
+        node.parent.callee.property.type === AST_NODE_TYPES.Identifier &&
+        ATTRIBUTE_NAME_METHODS.has(node.parent.callee.property.name)
+      ) {
+        const nameArgIndex = node.parent.callee.property.name.endsWith('NS')
+          ? 1
+          : 0;
+        if (node.parent.arguments[nameArgIndex] === node) {
+          return true;
+        }
       }
 
       // Check if the node is a string literal used for property access
