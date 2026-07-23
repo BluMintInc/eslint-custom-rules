@@ -477,6 +477,74 @@ const Parent = (props: ParentProps) => (
 );
 `,
     },
+    // 32. Issue #1343: discriminated-union Props whose BOTH arms compose via a
+    // Pick<>-based shared base (RowBaseProps). Composition is present on every
+    // arm, so the rule must not fire — the walker must resolve the named arm
+    // aliases through the union to reach their shared Pick<MenuItemProps>.
+    {
+      filename: 'src/components/UnionRow.tsx',
+      code: `
+import MenuItem, { MenuItemProps } from '@mui/material/MenuItem';
+
+type RowBaseProps = Pick<MenuItemProps, 'tabIndex'> & { label: string };
+type RowActionableProps = RowBaseProps & { disabled?: false; onClick?: () => void };
+type RowInertProps = RowBaseProps & { disabled: true };
+
+export type UnionRowProps = Readonly<RowActionableProps | RowInertProps>;
+
+export const UnionRow = (props: UnionRowProps) => {
+  return (
+    <MenuItem tabIndex={props.tabIndex} disabled={props.disabled}>
+      {props.label}
+    </MenuItem>
+  );
+};
+`,
+    },
+    // 33. Issue #1343: inline union (no named arms) composing directly via
+    // Pick<> on each arm. Guards the arm-recursion fix against the
+    // no-shared-base shape too.
+    {
+      filename: 'src/components/InlineUnionRow.tsx',
+      code: `
+import MenuItem, { MenuItemProps } from '@mui/material/MenuItem';
+
+export type InlineUnionRowProps = Readonly<
+  | (Pick<MenuItemProps, 'tabIndex'> & { disabled: true; label: string })
+  | (Pick<MenuItemProps, 'tabIndex'> & { disabled?: false; onClick?: () => void; label: string })
+>;
+
+export const InlineUnionRow = (props: InlineUnionRowProps) => {
+  return <MenuItem tabIndex={props.tabIndex}>{props.label}</MenuItem>;
+};
+`,
+    },
+    // 34. Issue #1343: heterogeneous discriminated union whose arms render
+    // DIFFERENT children — each arm composes with the child rendered in its own
+    // branch (Switch arm composes SwitchProps, Checkbox arm composes
+    // CheckboxProps). Union composition is `.some` (any arm composes), not
+    // `.every`; requiring every arm to compose with every child would falsely
+    // flag this legitimate pattern. Must stay valid.
+    {
+      filename: 'src/components/EditableBoolean.tsx',
+      code: `
+import Switch, { SwitchProps } from '@mui/material/Switch';
+import Checkbox, { CheckboxProps } from '@mui/material/Checkbox';
+
+type SwitchArmProps = Omit<SwitchProps, 'checked'> & { variant: 'switch'; value: boolean };
+type CheckboxArmProps = Omit<CheckboxProps, 'checked'> & { variant: 'checkbox'; value: boolean };
+
+export type EditableBooleanProps = Readonly<SwitchArmProps | CheckboxArmProps>;
+
+export const EditableBoolean = (props: EditableBooleanProps) => {
+  return props.variant === 'switch' ? (
+    <Switch checked={props.value} />
+  ) : (
+    <Checkbox checked={props.value} />
+  );
+};
+`,
+    },
   ],
 
   invalid: [

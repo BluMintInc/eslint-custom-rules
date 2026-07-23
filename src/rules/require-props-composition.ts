@@ -135,12 +135,22 @@ function getTypeReferenceName(node: TSESTree.TSTypeReference): string {
 
 /**
  * Recursively check if a TS type node composes with the given propsTypeName
- * via Pick/Omit (at any level of intersection / Readonly wrapping, or nested
- * in a TSTypeLiteral property's type annotation).
+ * via Pick/Omit (at any level of intersection / Readonly wrapping, union arm,
+ * named-alias indirection, or nested in a TSTypeLiteral property's type
+ * annotation).
+ *
+ * `program` (when supplied) enables resolving a locally-declared named type
+ * alias to its definition, so composition can be seen through named union arms
+ * and shared bases. `seenAliases` guards against recursive-alias cycles; each
+ * descent *through* an alias extends a copy of the set so that sibling paths
+ * (e.g. two union arms sharing a base) each resolve the shared alias
+ * independently.
  */
 function typeNodeComposesWithProps(
   typeNode: TSESTree.TypeNode,
   propsTypeName: string,
+  program?: TSESTree.Program,
+  seenAliases: Set<string> = new Set<string>(),
 ): boolean {
   switch (typeNode.type) {
     case AST_NODE_TYPES.TSTypeReference: {
@@ -157,23 +167,62 @@ function typeNodeComposesWithProps(
       // Also recurse into type params (e.g. Readonly<Pick<XProps, ...>>)
       if (typeNode.typeParameters) {
         for (const param of typeNode.typeParameters.params) {
-          if (typeNodeComposesWithProps(param, propsTypeName)) {
+          if (
+            typeNodeComposesWithProps(
+              param,
+              propsTypeName,
+              program,
+              seenAliases,
+            )
+          ) {
             return true;
+          }
+        }
+      }
+      // Resolve a locally-declared named type alias to its definition and
+      // recurse. This lets composition be seen through named union arms and
+      // shared bases (issue #1343): `RowActionableProps` → `RowBaseProps & {…}`
+      // → `Pick<MenuItemProps, …>`. Only in-file aliases resolve; imported
+      // names (e.g. MenuItemProps) return null and are left as-is.
+      if (program) {
+        const aliasName = getTypeReferenceName(typeNode);
+        if (aliasName && !seenAliases.has(aliasName)) {
+          const alias = findPropsTypeAliasByName(program, aliasName);
+          if (alias) {
+            const nextSeen = new Set(seenAliases);
+            nextSeen.add(aliasName);
+            if (
+              typeNodeComposesWithProps(
+                alias.typeAnnotation,
+                propsTypeName,
+                program,
+                nextSeen,
+              )
+            ) {
+              return true;
+            }
           }
         }
       }
       return false;
     }
     case AST_NODE_TYPES.TSIntersectionType: {
-      // Check each member of an intersection (A & B & C)
+      // Check each member of an intersection (A & B & C) — the whole
+      // intersection composes if any member does.
       return typeNode.types.some((t) =>
-        typeNodeComposesWithProps(t, propsTypeName),
+        typeNodeComposesWithProps(t, propsTypeName, program, seenAliases),
       );
     }
     case AST_NODE_TYPES.TSUnionType: {
-      // Check each member of a union — for union types, at least one member composes
+      // A union (A | B) composes if ANY arm composes. `.some` (not `.every`) is
+      // deliberate: a discriminated union commonly renders a *different* child
+      // per arm (issue #1343's EditableBoolean: `Omit<SwitchProps>` on one arm,
+      // `Omit<CheckboxProps>` on the other). Requiring every arm to compose with
+      // every rendered child would flag that legitimate pattern — a false
+      // positive the repo prefers to avoid. `.some` still passes the target
+      // case, where every arm composes with the single shared child.
       return typeNode.types.some((t) =>
-        typeNodeComposesWithProps(t, propsTypeName),
+        typeNodeComposesWithProps(t, propsTypeName, program, seenAliases),
       );
     }
     case AST_NODE_TYPES.TSTypeLiteral: {
@@ -187,6 +236,8 @@ function typeNodeComposesWithProps(
           return typeNodeComposesWithProps(
             member.typeAnnotation.typeAnnotation,
             propsTypeName,
+            program,
+            seenAliases,
           );
         }
         return false;
@@ -636,6 +687,7 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
         let composes = typeNodeComposesWithProps(
           propsTypeNode,
           expectedPropsType,
+          prog,
         );
         // Inverse composition: the child derives its props FROM this parent's
         // props type (e.g. `Omit<ParentProps, 'children'>`, often with no named
@@ -647,7 +699,7 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
           const depPropsSource = getDependencyPropsSourceType(prog, dep);
           if (
             depPropsSource &&
-            typeNodeComposesWithProps(depPropsSource, propsTypeName)
+            typeNodeComposesWithProps(depPropsSource, propsTypeName, prog)
           ) {
             composes = true;
           }
