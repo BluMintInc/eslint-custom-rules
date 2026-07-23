@@ -15,6 +15,9 @@ When a component function reference changes, React treats it as a **different co
   - Flags components created inside `useCallback`, `useMemo`, `useDeepCompareCallback`, or `useDeepCompareMemo`.
   - Flags components (Uppercase identifiers) defined inside render bodies.
   - Flags inline function components passed to component-type props (`*Wrapper`, `*Component`, `*Template`, `*Header`, `*Footer`).
+- **Exemptions**:
+  - A `useMemo` / `useDeepCompareMemo` callback that returns a `memo(...)` or `forwardRef(...)`-wrapped component. The memo hook stabilizes the component's identity across re-renders (a new identity is produced only when dependencies change), so the component does not remount on an ordinary re-render. A bare inner component (e.g. `useMemo(() => (props) => <div />, deps)`) stays flagged—wrap it in `memo()` for the fully-stabilized pattern.
+  - A `memo(...)` element returned directly (`useMemo(() => <JSX />, deps)`), which memoizes an element rather than defining a component.
 - **Fix behavior**: This rule does not provide an auto-fix because the correct solution usually involves moving the component definition to the module scope and using React Context or props to provide dynamic data.
 
 ### Options

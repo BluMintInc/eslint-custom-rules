@@ -261,6 +261,84 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
         };
       `,
     },
+    {
+      // #1336: useDeepCompareMemo returning memo(namedFn), memo re-exported from
+      // a project module. The memo hook stabilizes the component identity across
+      // re-renders, so it never remounts—the harm this rule prevents.
+      name: 'component defined inside useDeepCompareMemo callback (memo-wrapped) is identity-stabilized',
+      code: `
+        import { memo } from 'src/util/memo';
+        import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+        const Outer = ({ value }) => {
+          const WrappedViewComponent = useDeepCompareMemo(() => {
+            return memo(function WrappedViewComponentUnmemoized(props) {
+              return <div>{props.value}</div>;
+            });
+          }, [value]);
+          return <WrappedViewComponent value={value} />;
+        };
+      `,
+    },
+    {
+      // #1336: useMemo returning React's memo(inlineFn) via an arrow expression
+      // body. Identity is stabilized by useMemo regardless of the enclosing
+      // scope re-rendering.
+      name: 'component defined inside useMemo callback (memo-wrapped) is identity-stabilized',
+      code: `
+        import { memo, useMemo } from 'react';
+        const Outer = ({ value }) => {
+          const Wrapped = useMemo(() => memo((props) => <div {...props} />), [value]);
+          return <Wrapped value={value} />;
+        };
+      `,
+    },
+    {
+      // #1336: React.memo member-call form returned from a useMemo callback.
+      name: 'useMemo returning React.memo(inline) member call is identity-stabilized',
+      code: `
+        import * as React from 'react';
+        const Outer = () => {
+          const Wrapped = React.useMemo(() => React.memo((props) => <div {...props} />), []);
+          return <Wrapped />;
+        };
+      `,
+    },
+    {
+      // #1336: forwardRef-wrapped return is also identity-stabilized.
+      name: 'useMemo returning forwardRef(inline) is identity-stabilized',
+      code: `
+        import { forwardRef, useMemo } from 'react';
+        const Outer = () => {
+          const RefView = useMemo(() => forwardRef((props, ref) => <div ref={ref} />), []);
+          return <RefView />;
+        };
+      `,
+    },
+    {
+      // #1336: memo(forwardRef(inline)) return is identity-stabilized.
+      name: 'useMemo returning memo(forwardRef(inline)) is identity-stabilized',
+      code: `
+        import { memo, forwardRef, useMemo } from 'react';
+        const Outer = () => {
+          const RefView = useMemo(() => memo(forwardRef((props, ref) => <div ref={ref} />)), []);
+          return <RefView />;
+        };
+      `,
+    },
+    {
+      // #1336: block-body callback whose every return is memo-wrapped.
+      name: 'useDeepCompareMemo block body returning memo(inline) is identity-stabilized',
+      code: `
+        import { memo } from 'src/util/memo';
+        import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+        const Outer = ({ value }) => {
+          const View = useDeepCompareMemo(() => {
+            return memo((props) => <span>{props.value}</span>);
+          }, [value]);
+          return <View value={value} />;
+        };
+      `,
+    },
   ],
   invalid: [
     {
@@ -360,21 +438,6 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
           data: {
             componentName: 'CatalogWrapper',
             locationDescription: 'the "CatalogWrapper" prop',
-          },
-        },
-      ],
-    },
-    {
-      code: `
-        import { useMemo, memo } from 'react';
-        const Wrapped = useMemo(() => memo((props) => <div {...props} />), []);
-      `,
-      errors: [
-        {
-          messageId: 'memoizeNestedComponent',
-          data: {
-            componentName: 'Wrapped',
-            locationDescription: 'useMemo()',
           },
         },
       ],
