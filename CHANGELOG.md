@@ -1,3 +1,10 @@
+## [1.19.26](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.25...v1.19.26) (2026-07-23)
+
+
+### Bug Fixes
+
+* **no-console-error:** allow structured Error argument via allowErrorInstanceArgument (closes [#1333](https://github.com/BluMintInc/eslint-custom-rules/issues/1333)) ([737611d](https://github.com/BluMintInc/eslint-custom-rules/commit/737611dca6422fae868888f79c54a59d1dbb20fd))
+
 ## [1.19.25](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.24...v1.19.25) (2026-07-22)
 
 

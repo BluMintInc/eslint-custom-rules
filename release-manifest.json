@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.19.26",
+    "date": "2026-07-23T00:25:08.850Z",
+    "rules": [
+      {
+        "name": "no-console-error",
+        "changeType": "fix",
+        "issues": [
+          1333
+        ],
+        "summary": "allow structured Error argument via allowErrorInstanceArgument (closes #1333)"
+      }
+    ]
+  },
+  {
     "version": "1.19.25",
     "date": "2026-07-22T21:39:17.787Z",
     "rules": [
