@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.19.30",
+    "date": "2026-07-23T22:28:34.611Z",
+    "rules": [
+      {
+        "name": "require-props-composition",
+        "changeType": "fix",
+        "issues": [
+          1343
+        ],
+        "summary": "resolve named aliases through union arms (closes #1343)"
+      }
+    ]
+  },
+  {
     "version": "1.19.29",
     "date": "2026-07-23T21:23:38.334Z",
     "rules": [

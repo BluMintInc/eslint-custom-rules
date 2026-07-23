@@ -1,3 +1,10 @@
+## [1.19.30](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.29...v1.19.30) (2026-07-23)
+
+
+### Bug Fixes
+
+* **require-props-composition:** resolve named aliases through union arms (closes [#1343](https://github.com/BluMintInc/eslint-custom-rules/issues/1343)) ([b3a4e02](https://github.com/BluMintInc/eslint-custom-rules/commit/b3a4e0250f3c95e174207638d575fd470969796f))
+
 ## [1.19.29](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.28...v1.19.29) (2026-07-23)
 
 
