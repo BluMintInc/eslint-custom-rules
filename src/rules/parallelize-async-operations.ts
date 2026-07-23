@@ -237,6 +237,20 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
       /^(assert|ensure|require|validate|verify|guard|check)/i;
 
     /**
+     * Matches state re-read callees by their leading verb. A refetch/refresh
+     * that follows a preceding await exists to re-observe state a prior await
+     * may have mutated (e.g. `await unlinkProvider(...)` then `await
+     * refreshUser()`, where refreshUser re-reads the post-unlink server state).
+     * Running such a pair through Promise.all races the refetch ahead of / in
+     * parallel with the mutation, so a refresh that resolves first repopulates
+     * the just-mutated state -- a genuine correctness bug. Anchored at the
+     * start so it fires on the callee's own verb (refreshUser, reloadData,
+     * refetchProfile) rather than on an arbitrary substring elsewhere in the
+     * name (getRefreshToken must NOT match).
+     */
+    const REFETCH_PATTERN = /^(refresh|reload|refetch|revalidate|resync|sync)/i;
+
+    /**
      * Extracts the callee's method name (the identifier bearing the leading
      * verb) from an await expression argument. Handles both direct
      * CallExpressions and optional-call ChainExpressions, and both bare
@@ -408,6 +422,34 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
         }
         const methodName = getCalleeMethodName(awaitExpr);
         if (methodName && GUARD_PATTERN.test(methodName)) {
+          return true;
+        }
+      }
+
+      // 5. Refetch/refresh ordering barrier. A discarded-result await whose
+      // callee reads as a state re-read (refresh*, reload*, refetch*,
+      // revalidate*, resync*, sync*) exists to observe state that a PRECEDING
+      // await may have mutated. Promise.all invokes every operand eagerly and
+      // concurrently, so it would race the refetch ahead of the mutation -- a
+      // refresh that resolves first repopulates the just-mutated state, a
+      // genuine correctness bug. Treat a refetch that FOLLOWS another await as
+      // a sequencing dependency that blocks parallelizing the run. Only
+      // non-first positions qualify: the preceding await is what the refetch
+      // depends on. getCalleeMethodName handles both bare-identifier and
+      // member-expression callees. Only discarded-result awaits
+      // (ExpressionStatements) qualify here; a captured result carries a value
+      // and is handled by the data-dependency path above.
+      for (let i = 1; i < awaitNodes.length; i++) {
+        const node = awaitNodes[i];
+        if (node.type !== AST_NODE_TYPES.ExpressionStatement) {
+          continue;
+        }
+        const awaitExpr = getAwaitExpression(node);
+        if (!awaitExpr) {
+          continue;
+        }
+        const methodName = getCalleeMethodName(awaitExpr);
+        if (methodName && REFETCH_PATTERN.test(methodName)) {
           return true;
         }
       }

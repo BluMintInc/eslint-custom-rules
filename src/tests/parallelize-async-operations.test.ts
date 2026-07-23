@@ -635,6 +635,88 @@ async function guardBeforeTwo(orderId) {
         return 'completed';
       }
       `,
+    // Refetch/refresh ordering barrier (#1334): a mutation followed by a
+    // state-refetch must stay sequential. Promise.all would race the refetch
+    // ahead of the mutation, so a refresh that resolves first repopulates the
+    // just-unlinked provider.
+    {
+      code: `
+    async function unlink(providerId: string, providerUid: string) {
+      await unlinkProvider({ providerId, providerUid });
+      await refreshUser();
+    }
+  `,
+    },
+    // Refetch verb: reload* -- mutation then reload re-reads mutated state.
+    `
+async function saveThenReload(record) {
+  await saveRecord(record);
+  await reloadData();
+}
+`,
+    // Refetch verb: refetch* -- mutation then refetch of the mutated resource.
+    `
+async function updateThenRefetch(profile) {
+  await updateProfile(profile);
+  await refetchProfile();
+}
+`,
+    // Refetch verb: revalidate* -- write then revalidate (e.g. Next.js cache).
+    `
+async function writeThenRevalidate(path) {
+  await writePost(path);
+  await revalidatePath(path);
+}
+`,
+    // Refetch verb: resync* -- mutation then resync of local state.
+    `
+async function mutateThenResync(id) {
+  await deleteItem(id);
+  await resyncState();
+}
+`,
+    // Refetch verb: sync* -- mutation then cache sync re-reads server state.
+    `
+async function persistThenSync(entry) {
+  await persistEntry(entry);
+  await syncCache();
+}
+`,
+    // Member-expression refetch on a DISTINCT receiver: the shared-receiver
+    // barrier does NOT apply here (api vs cache), so ONLY the refetch barrier
+    // keeps this sequential. A cache.refresh() after api.save() re-reads state
+    // the save produced. (#1334)
+    `
+async function saveThenRefreshCache(entity) {
+  await api.save(entity);
+  await cache.refresh();
+}
+`,
+    // Member-expression refetch on the SAME receiver: both the shared-receiver
+    // barrier (#1287) and the refetch barrier (#1334) cover this; it must stay
+    // sequential. (#1334)
+    `
+async function mutateThenRefreshStore(value) {
+  await store.mutate(value);
+  await store.refresh();
+}
+`,
+    // Three awaits where only the LAST is a refresh: the trailing refetch
+    // observes state produced by the two preceding mutations. (#1334)
+    `
+async function twoMutationsThenRefresh(a, b) {
+  await createRecord(a);
+  await updateRecord(b);
+  await refreshList();
+}
+`,
+    // Optional-call (ChainExpression) refetch following a mutation. (#1334)
+    `
+async function mutateThenOptionalRefresh(x) {
+  await mutateThing(x);
+  await refresh?.();
+}
+`,
   ],
   invalid: [
     // Control: different receivers, genuinely independent -> still flagged.
@@ -1475,6 +1557,77 @@ async function guardBeforeTwo(orderId) {
   fetchOther()
 ]);
         return { ok, other };
+      }
+      `,
+    },
+
+    // Refetch-barrier fix must NOT suppress genuinely independent reads. Two
+    // bare-identifier reads whose callees do NOT match a refetch verb
+    // (fetch* is not refresh/reload/refetch/revalidate/resync/sync) remain
+    // parallelizable. (#1334)
+    {
+      code: `
+      async function independentFetches() {
+        await fetchUser();
+        await fetchSettings();
+        return true;
+      }
+      `,
+      errors: [error(2)],
+      output: `
+      async function independentFetches() {
+        await Promise.all([
+  fetchUser(),
+  fetchSettings()
+]);
+        return true;
+      }
+      `,
+    },
+
+    // The refetch verb must appear as a LEADING verb: `getRefreshToken` merely
+    // CONTAINS "refresh", it does not START with it, so the anchored `^` must
+    // not match and the pair stays parallelizable. (#1334)
+    {
+      code: `
+      async function refreshTokenNotLeadingVerb() {
+        await getRefreshToken();
+        await getSettings();
+        return true;
+      }
+      `,
+      errors: [error(2)],
+      output: `
+      async function refreshTokenNotLeadingVerb() {
+        await Promise.all([
+  getRefreshToken(),
+  getSettings()
+]);
+        return true;
+      }
+      `,
+    },
+
+    // Edge (#1334): a refetch verb in the FIRST position followed by a
+    // non-matching independent read. The barrier keys on non-first positions
+    // (a refetch depends on what PRECEDES it); with nothing before it, the
+    // refresh has no ordering dependency, so the pair remains parallelizable.
+    {
+      code: `
+      async function refreshFirstThenIndependentRead() {
+        await refreshUser();
+        await fetchSettings();
+        return true;
+      }
+      `,
+      errors: [error(2)],
+      output: `
+      async function refreshFirstThenIndependentRead() {
+        await Promise.all([
+  refreshUser(),
+  fetchSettings()
+]);
+        return true;
       }
       `,
     },

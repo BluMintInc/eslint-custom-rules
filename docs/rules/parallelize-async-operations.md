@@ -17,6 +17,7 @@ The rule reports when all of these are true:
 - Later awaits do not reference identifiers created by earlier awaits (direct identifier reference-based dependency check).
 - Later awaits do not share "coordinator" identifiers (like `batchManager`, `transaction`, or `collector`) with earlier awaits.
 - The awaited calls do not invoke methods on the **same receiver identifier** (e.g. `ref.set(...)` then `ref.get()`), which can carry a read-after-write / write-after-write ordering dependency on that shared object.
+- No later discarded-result await reads as a **state refetch/refresh** (`refresh*`, `reload*`, `refetch*`, `revalidate*`, `resync*`, `sync*`), which re-observes state a preceding await may have mutated.
 - The awaits are not inside try blocks or loops, which signal intentional ordering or per-call error handling.
 - The calls do not match a small list of side-effect-heavy patterns (e.g., `updatecounter`, `commit`, `flush`, `saveall`) that should stay ordered.
 
@@ -76,6 +77,19 @@ async function bumpVersion(versionRef: VersionRef) {
 ```
 
 The receiver must be a bare identifier. A distinct nested member (`api.users.get()` vs `api.posts.get()`), a fresh chain per call (`db.collection(a).get()` vs `db.collection(b).get()`), or a numeric/dynamic index (`operations[0]()` vs `operations[1]()`) selects a different target each time and is still flagged. Two pure reads on one receiver are conservatively kept sequential as well, since a shared receiver can hold hidden state (for example a paginated cursor)—the worst case is a missed parallelization, which is safer than reordering a real dependency.
+
+### ✅ Correct (refetch/refresh ordering)
+
+A discarded-result await whose callee reads as a **state refetch/refresh** must stay sequential when it follows another await. Such a call exists to re-observe state that a preceding await may have mutated—for example a `refreshUser()` that re-reads the server state left behind by `unlinkProvider(...)`. `Promise.all([...])` invokes every operand eagerly and concurrently, so it would race the refetch ahead of the mutation; a refresh that resolves first repopulates the just-mutated state, a genuine correctness bug.
+
+```typescript
+async function unlink(providerId: string, providerUid: string) {
+  await unlinkProvider({ providerId, providerUid }); // mutates server-side state
+  await refreshUser(); // must observe the post-mutation state
+}
+```
+
+The refetch verb is matched case-insensitively at the **start** of the callee's own method name (bare identifier or member), using the pattern `refresh|reload|refetch|revalidate|resync|sync`. A name that merely contains one of these words (`getRefreshToken()`) does not match, and only awaits in a **non-first** position qualify—a refetch with nothing before it has no preceding await to depend on and is still flagged.
 
 ### ✅ Correct (with assignments)
 
