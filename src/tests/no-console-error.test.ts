@@ -116,6 +116,55 @@ ruleTesterTs.run('no-console-error', noConsoleError, {
       const console = { error: () => {} };
       console.error('shadowed console is allowed');
     `,
+    /* Structured error instance handed to the monitored console.error pipeline */
+    {
+      code: `
+        import { HttpsError } from '../errors/HttpsError';
+
+        export async function revokeChatbotGrantBestEffort(integrationId: string, flow: string) {
+          try {
+            await revokeGrant(integrationId);
+          } catch (error) {
+            console.error(
+              new HttpsError({
+                code: 'unavailable',
+                message: 'Grant revocation failed',
+                details: { integrationId, flow },
+                cause: error,
+              }),
+            );
+          }
+        }
+      `,
+      filename: 'functions/src/util/chatbot/revokeChatbotGrantBestEffort.ts',
+      options: [{ allowErrorInstanceArgument: true }],
+    },
+    /* Built-in Error subclasses are structured too */
+    {
+      code: `console.error(new Error('boom'));`,
+      filename: 'functions/src/util/foo.ts',
+      options: [{ allowErrorInstanceArgument: true }],
+    },
+    {
+      code: `console.error(new AggregateError([a, b], 'both failed'));`,
+      filename: 'functions/src/util/foo.ts',
+      options: [{ allowErrorInstanceArgument: true }],
+    },
+    /* Structured error need not be the first argument (spy scans all args) */
+    {
+      code: `console.error('context', new HttpsError({ code: 'internal', message: 'x' }));`,
+      filename: 'functions/src/util/foo.ts',
+      options: [{ allowErrorInstanceArgument: true }],
+    },
+    /* The carve-out reaches aliased console.error too, not just the direct shape */
+    {
+      code: `
+        const err = console.error;
+        err(new HttpsError({ code: 'internal', message: 'x' }));
+      `,
+      filename: 'functions/src/util/foo.ts',
+      options: [{ allowErrorInstanceArgument: true }],
+    },
   ],
   invalid: [
     {
@@ -300,6 +349,31 @@ ruleTesterTs.run('no-console-error', noConsoleError, {
         }
       `,
       options: [{ allowWithUseAlertDialog: true }],
+      errors: [{ messageId: 'noConsoleError' }],
+    },
+    /* Guard: the option must NOT blanket-allow console.error */
+    {
+      code: `console.error('boom');`,
+      filename: 'functions/src/util/foo.ts',
+      options: [{ allowErrorInstanceArgument: true }],
+      errors: [{ messageId: 'noConsoleError' }],
+    },
+    {
+      code: `console.error(error);`,
+      filename: 'functions/src/util/foo.ts',
+      options: [{ allowErrorInstanceArgument: true }],
+      errors: [{ messageId: 'noConsoleError' }],
+    },
+    {
+      code: `console.error(new NotAnErrorClass());`,
+      filename: 'functions/src/util/foo.ts',
+      options: [{ allowErrorInstanceArgument: true }],
+      errors: [{ messageId: 'noConsoleError' }],
+    },
+    /* Guard: default (option off) preserves today's behavior — no silent breaking change */
+    {
+      code: `console.error(new HttpsError({ code: 'internal', message: 'x' }));`,
+      filename: 'functions/src/util/foo.ts',
       errors: [{ messageId: 'noConsoleError' }],
     },
   ],

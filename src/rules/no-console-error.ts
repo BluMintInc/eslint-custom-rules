@@ -7,6 +7,7 @@ type Options = [
   {
     ignorePatterns?: string[];
     allowWithUseAlertDialog?: boolean;
+    allowErrorInstanceArgument?: boolean;
   },
 ];
 
@@ -182,6 +183,22 @@ const findDeclaredVariableByName = (
   name: string,
   variables: readonly TSESLint.Scope.Variable[],
 ) => variables.find((variable) => variable.name === name);
+
+/**
+ * A `new <Something>Error(...)` argument is the structured-error handoff the
+ * rule exists to encourage: on the backend, `console.error(new HttpsError(...))`
+ * is the monitored pipeline (spyOnConsoleErrors reports the Error among the
+ * args), not a bypass of it. Detection stays purely syntactic — the rule is not
+ * type-aware and runs on files outside any `parserOptions.project` — so a bare
+ * identifier (`console.error(error)`) is deliberately excluded because syntax
+ * alone cannot prove it holds an Error.
+ */
+const isStructuredErrorArgument = (
+  arg: TSESTree.CallExpressionArgument,
+): boolean =>
+  arg.type === AST_NODE_TYPES.NewExpression &&
+  arg.callee.type === AST_NODE_TYPES.Identifier &&
+  /Error$/.test(arg.callee.name);
 
 /**
  * Tracks aliases of `console` and `console.error` to detect indirect calls.
@@ -613,6 +630,7 @@ export const noConsoleError = createRule<Options, MessageIds>({
             items: { type: 'string' },
           },
           allowWithUseAlertDialog: { type: 'boolean' },
+          allowErrorInstanceArgument: { type: 'boolean' },
         },
         additionalProperties: false,
       },
@@ -631,6 +649,8 @@ export const noConsoleError = createRule<Options, MessageIds>({
     if (shouldIgnoreFile(filename)) return {};
 
     const allowWithUseAlertDialog = options.allowWithUseAlertDialog === true;
+    const allowErrorInstanceArgument =
+      options.allowErrorInstanceArgument === true;
     const aliasTracker = new AliasTracker(context);
     const dialogTracker = new UseAlertDialogTracker(context);
     const pendingTracker = new PendingCallTracker();
@@ -690,6 +710,17 @@ export const noConsoleError = createRule<Options, MessageIds>({
 
         const scope = getScopeForNode(context, node);
         if (!aliasTracker.isConsoleErrorCall(node, scope)) return;
+
+        // A structured-error argument is the sanctioned, monitored path, so the
+        // carve-out applies to every matched call shape (direct, aliased,
+        // destructured, computed) — unlike the useAlertDialog queueing below,
+        // which is restricted to the direct-global shape.
+        if (
+          allowErrorInstanceArgument &&
+          node.arguments.some(isStructuredErrorArgument)
+        ) {
+          return;
+        }
 
         // Queueing is limited to direct global `console.error(...)` calls because deferral relies on
         // linear control flow. Aliased or destructured references can escape the current scope
