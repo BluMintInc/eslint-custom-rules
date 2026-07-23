@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.19.28",
+    "date": "2026-07-23T17:25:39.744Z",
+    "rules": [
+      {
+        "name": "memo-nested-react-components",
+        "changeType": "fix",
+        "issues": [
+          1336
+        ],
+        "summary": "exempt memo/forwardRef components returned from useMemo/useDeepCompareMemo callbacks (closes #1336)"
+      }
+    ]
+  },
+  {
     "version": "1.19.27",
     "date": "2026-07-23T04:26:05.419Z",
     "rules": [

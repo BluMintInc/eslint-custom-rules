@@ -1,3 +1,10 @@
+## [1.19.28](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.27...v1.19.28) (2026-07-23)
+
+
+### Bug Fixes
+
+* **memo-nested-react-components:** exempt memo/forwardRef components returned from useMemo/useDeepCompareMemo callbacks (closes [#1336](https://github.com/BluMintInc/eslint-custom-rules/issues/1336)) ([1d04656](https://github.com/BluMintInc/eslint-custom-rules/commit/1d04656840e128403fe251a261eef7be400fd045))
+
 ## [1.19.27](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.26...v1.19.27) (2026-07-23)
 
 
