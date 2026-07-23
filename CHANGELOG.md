@@ -1,3 +1,10 @@
+## [1.19.27](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.26...v1.19.27) (2026-07-23)
+
+
+### Bug Fixes
+
+* **parallelize-async-operations:** treat mutation→refetch bare-identifier awaits as ordered (closes [#1334](https://github.com/BluMintInc/eslint-custom-rules/issues/1334)) ([2f91dab](https://github.com/BluMintInc/eslint-custom-rules/commit/2f91dab48d267f3dd00a3007c0edf786716132d0))
+
 ## [1.19.26](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.25...v1.19.26) (2026-07-23)
 
 

@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.19.27",
+    "date": "2026-07-23T04:26:05.419Z",
+    "rules": [
+      {
+        "name": "parallelize-async-operations",
+        "changeType": "fix",
+        "issues": [
+          1334
+        ],
+        "summary": "treat mutation→refetch bare-identifier awaits as ordered (closes #1334)"
+      }
+    ]
+  },
+  {
     "version": "1.19.26",
     "date": "2026-07-23T00:25:08.850Z",
     "rules": [
