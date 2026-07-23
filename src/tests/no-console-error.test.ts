@@ -165,6 +165,21 @@ ruleTesterTs.run('no-console-error', noConsoleError, {
       filename: 'functions/src/util/foo.ts',
       options: [{ allowErrorInstanceArgument: true }],
     },
+    /* ...as well as the destructured shape */
+    {
+      code: `
+        const { error } = console;
+        error(new HttpsError({ code: 'internal', message: 'x' }));
+      `,
+      filename: 'functions/src/util/foo.ts',
+      options: [{ allowErrorInstanceArgument: true }],
+    },
+    /* ...and the computed-member shape */
+    {
+      code: `console['error'](new HttpsError({ code: 'internal', message: 'x' }));`,
+      filename: 'functions/src/util/foo.ts',
+      options: [{ allowErrorInstanceArgument: true }],
+    },
   ],
   invalid: [
     {
