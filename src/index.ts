@@ -267,7 +267,7 @@ module.exports = {
         '@blumintinc/blumint/no-async-foreach': 'error',
         '@blumintinc/blumint/no-console-error': [
           'error',
-          { allowWithUseAlertDialog: true },
+          { allowWithUseAlertDialog: true, allowErrorInstanceArgument: true },
         ],
         '@blumintinc/blumint/no-conditional-literals-in-jsx': 'error',
         '@blumintinc/blumint/no-filter-without-return': 'error',
