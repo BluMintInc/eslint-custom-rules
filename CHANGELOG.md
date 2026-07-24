@@ -1,3 +1,10 @@
+## [1.19.32](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.31...v1.19.32) (2026-07-24)
+
+
+### Bug Fixes
+
+* **enforce-positive-naming:** recognize wrapped and annotated non-boolean validator returns ([04235c2](https://github.com/BluMintInc/eslint-custom-rules/commit/04235c22517a9441fac4c283c166ad4b73cc4e5a))
+
 ## [1.19.31](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.30...v1.19.31) (2026-07-24)
 
 

@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.19.32",
+    "date": "2026-07-24T00:36:05.744Z",
+    "rules": [
+      {
+        "name": "enforce-positive-naming",
+        "changeType": "fix",
+        "issues": [
+          1344
+        ],
+        "summary": "recognize wrapped and annotated non-boolean validator returns"
+      }
+    ]
+  },
+  {
     "version": "1.19.31",
     "date": "2026-07-24T00:26:32.378Z",
     "rules": [
