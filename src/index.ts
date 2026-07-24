@@ -191,6 +191,7 @@ import { noSingleDismissDialogButton } from './rules/no-single-dismiss-dialog-bu
 import { noPortalInsideTooltip } from './rules/no-portal-inside-tooltip';
 import { noSatisfiesInFrontendBundle } from './rules/no-satisfies-in-frontend-bundle';
 import { preferUtilityFunctionOwnFile } from './rules/prefer-utility-function-own-file';
+import { noRenderFunctionComponents } from './rules/no-render-function-components';
 
 const NO_FRONTEND_IMPORTS_FROM_FUNCTIONS_MESSAGE =
   'Backend Cloud Functions (.f.ts under functions/) must not import frontend modules from the repo root src/**. Frontend code can depend on browser-only APIs and bundling it into Cloud Functions breaks server execution; move shared logic into functions/src or a shared package.';
@@ -430,6 +431,7 @@ module.exports = {
         '@blumintinc/blumint/no-portal-inside-tooltip': 'error',
         '@blumintinc/blumint/no-satisfies-in-frontend-bundle': 'error',
         '@blumintinc/blumint/prefer-utility-function-own-file': 'error',
+        '@blumintinc/blumint/no-render-function-components': 'error',
       },
       /**
        * Depth-specific overrides block only import strings that traverse to the
@@ -726,5 +728,6 @@ module.exports = {
     'no-portal-inside-tooltip': noPortalInsideTooltip,
     'no-satisfies-in-frontend-bundle': noSatisfiesInFrontendBundle,
     'prefer-utility-function-own-file': preferUtilityFunctionOwnFile,
+    'no-render-function-components': noRenderFunctionComponents,
   },
 };
