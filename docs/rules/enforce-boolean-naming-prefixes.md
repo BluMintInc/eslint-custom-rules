@@ -174,6 +174,31 @@ const isNumber = (val: any): val is number => typeof val === "number";
 - If inheritance contracts prevent renaming, set `ignoreOverriddenGetters: true` to skip abstract or `override` getters.
 - Accessing underscore-prefixed members (e.g., `this._name`) does not imply a boolean return on its own; those are treated as neutral private fields unless their names match a boolean prefix or suffix.
 
+#### Calls to boolean-prefixed functions
+
+When you initialize a variable from a call, the rule infers booleanness from the callee's name (`isX()`, `hasX()`, `canX()`, `shouldX()`). That inference is only a heuristic, so the callee's declaration overrides it whenever the declaration is reachable through the scope chain: if the callee demonstrably returns something other than a boolean, the variable is left alone. Predicate-sounding functions that hand back a verdict object are idiomatic, and demanding `isDropDecision` for a `{ isValid, reason }` value would be actively wrong.
+
+```ts
+// Not flagged — canDropOnMatchCell resolves to a function returning a verdict object.
+const canDropOnMatchCell = (id: string) => ({ isValid: id.length > 0, reason: 'occupied' });
+const dropDecision = canDropOnMatchCell(id);
+
+// Not flagged — the declared return type is a named type, not boolean.
+type Verdict = { isValid: boolean };
+function canProceed(id: string): Verdict { return { isValid: !!id }; }
+const verdict = canProceed(id);
+
+// Still flagged — the callee genuinely returns a boolean.
+const canReallyDrop = (id: string) => id.length > 0;
+const reallyDrop = canReallyDrop(id); // → rename to isReallyDrop / canReallyDrop
+```
+
+The declaration is consulted only to *suppress* a report, never to create one, and only when it resolves locally:
+
+- Callees you import from another module, receive as parameters, or never declare in the file stay under the name heuristic, so cross-module predicates such as `const completed = isTaskFinished();` remain flagged.
+- Return shapes that are not conclusively boolean also suppress the report, because the rule prefers false negatives over false positives. This covers unions such as `boolean | Verdict`, bodies whose branches mix booleans and objects, named return types (a `type Flag = boolean` alias reads as non-boolean), and `async`/generator callees, whose calls yield a promise or an iterator rather than the boolean produced inside the body.
+- Boolean contracts still count as boolean: an explicit `: boolean` return type, a type predicate (`value is string`), comparisons, negations, and ternaries between boolean literals.
+
 #### Private/Internal Properties with Underscore Prefix
 
 Properties that start with an underscore (`_`) are treated as internal state and are exempt from this rule:
