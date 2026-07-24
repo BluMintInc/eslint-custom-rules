@@ -1110,6 +1110,195 @@ export function useAlert() {
         });
       `,
     },
+    // #1329 follow-up: the fix's own real-world motivating shape. A boolean-returning
+    // plain call's result feeds an object member AND a hook dependency array — neither
+    // is a primitive-test position, so isPrimitivelyConsumed returns false and the
+    // ARGUMENT literal is still reported. The boolean result cannot carry the literal's
+    // reference, so its identity never reaches a memoization boundary.
+    {
+      code: `
+        function isMutable({ isOpen, isContinuous }) {
+          return isOpen || isContinuous;
+        }
+        const useSeeding = ({ isOpen, isContinuous, matchId }) => {
+          const isSeedingMutable = isMutable({ isOpen, isContinuous });
+          return useDeepCompareMemo(() => {
+            return { matchId, isSeedingMutable };
+          }, [matchId, isSeedingMutable]);
+        };
+      `,
+    },
+    // #1329 follow-up: same call, result simply returned. Returning a boolean cannot
+    // expose the argument literal's identity to any caller.
+    {
+      code: `
+        function isMutable({ isOpen }) {
+          return !!isOpen;
+        }
+        const useReturned = ({ isOpen }) => {
+          return isMutable({ isOpen });
+        };
+      `,
+    },
+    // #1349: an explicit primitive return annotation proves the result cannot
+    // carry the argument, even though the parameter is a whole binding.
+    {
+      code: `
+        function check(o): boolean {
+          return !!o;
+        }
+        const useThing = ({ isOpen }) => {
+          const flag = check({ isOpen });
+          return useMemo(() => ({ flag }), [flag]);
+        };
+      `,
+    },
+    // #1349: an arrow callee with an expression body is classified from that
+    // expression.
+    {
+      code: `
+        const isMutable = ({ isOpen }) => !!isOpen;
+        const useThing = ({ isOpen }) => {
+          const flag = isMutable({ isOpen });
+          return useMemo(() => ({ flag }), [flag]);
+        };
+      `,
+    },
+    // #1349: a union of primitives is still primitive.
+    {
+      code: `
+        function label({ isOpen }): string | number {
+          return isOpen ? 'on' : 0;
+        }
+        const useThing = ({ isOpen }) => {
+          const l = label({ isOpen });
+          return useMemo(() => ({ l }), [l]);
+        };
+      `,
+    },
+    // #1349: a self-recursive callee terminates — a returned call classifies as
+    // indeterminate rather than being followed.
+    {
+      code: `
+        function walk({ depth }) {
+          if (depth <= 0) return 0;
+          return walk({ depth: depth - 1 });
+        }
+        const useThing = ({ depth }) => {
+          const d = walk({ depth });
+          return useMemo(() => ({ d }), [d]);
+        };
+      `,
+    },
+    // #1349: mutually recursive callees terminate for the same reason.
+    {
+      code: `
+        function even({ n }) {
+          if (n === 0) return true;
+          return odd({ n: n - 1 });
+        }
+        function odd({ n }) {
+          if (n === 0) return false;
+          return even({ n: n - 1 });
+        }
+        const useThing = ({ n }) => {
+          const e = even({ n });
+          return useMemo(() => ({ e }), [e]);
+        };
+      `,
+    },
+    // #1349: a hoisted function declaration resolves even when it appears after
+    // the consumer.
+    {
+      code: `
+        const useThing = ({ isOpen }) => {
+          const flag = isMutable({ isOpen });
+          return useMemo(() => ({ flag }), [flag]);
+        };
+        function isMutable({ isOpen }) {
+          return !!isOpen;
+        }
+      `,
+    },
+    // #1349: leaking a destructured PROPERTY out of the callee is harmless — the
+    // argument literal's own identity stays inside the call.
+    {
+      code: `
+        function record({ isOpen }) {
+          globalThis.lastIsOpen = isOpen;
+          return !!isOpen;
+        }
+        const useThing = ({ isOpen }) => {
+          const flag = record({ isOpen });
+          return useMemo(() => ({ flag }), [flag]);
+        };
+      `,
+    },
+    // #1349: an unclassifiable return is safe when no return expression can
+    // syntactically reach a whole-parameter binding.
+    {
+      code: `
+        function stamp({ isOpen }) {
+          return computeGlobal(isOpen);
+        }
+        const useThing = ({ isOpen }) => {
+          const s = stamp({ isOpen });
+          return useMemo(() => ({ s }), [s]);
+        };
+      `,
+    },
+    // #1349: the nearest binding wins — a block-scoped primitive callee shadows
+    // an outer object-returning one of the same name.
+    {
+      code: `
+        function check(o) {
+          return { o };
+        }
+        {
+          function check({ isOpen }) {
+            return !!isOpen;
+          }
+          const useThing = ({ isOpen }) => {
+            const flag = check({ isOpen });
+            return useMemo(() => ({ flag }), [flag]);
+          };
+        }
+      `,
+    },
+    // #1349: a callee with an empty body falls off the end, yielding undefined.
+    {
+      code: `
+        function noop({ isOpen }) {}
+        const useThing = ({ isOpen }) => {
+          const r = noop({ isOpen });
+          return useMemo(() => ({ r }), [r]);
+        };
+      `,
+    },
+    // #1349: a type-predicate annotation is a boolean at runtime.
+    {
+      code: `
+        function isThing(o): o is Thing {
+          return true;
+        }
+        const useThing = ({ isOpen }) => {
+          const flag = isThing({ isOpen });
+          return useMemo(() => ({ flag }), [flag]);
+        };
+      `,
+    },
+    // #1349: array literal arguments qualify for the same exemption.
+    {
+      code: `
+        function total({ length }) {
+          return length;
+        }
+        const useThing = ({ isOpen }) => {
+          const n = total([isOpen]);
+          return useMemo(() => ({ n }), [n]);
+        };
+      `,
+    },
   ],
   invalid: [
     // #1329 provided case: the useEffect dep-array literal and the JSX-prop
@@ -1184,6 +1373,201 @@ export function useAlert() {
           build({ isOpen });
           return null;
         };
+      `,
+      errors: [{ messageId: 'componentLiteral' }],
+    },
+    // #1349 over-correction guard: an imported callee hides its implementation,
+    // so nothing proves the result cannot carry the reference.
+    {
+      code: `
+        import { isMutable } from './isMutable';
+        const useThing = ({ isOpen }) => {
+          const flag = isMutable({ isOpen });
+          return useMemo(() => ({ flag }), [flag]);
+        };
+      `,
+      errors: [{ messageId: 'componentLiteral' }],
+    },
+    // #1349 over-correction guard: an unresolvable global callee is equally
+    // opaque.
+    {
+      code: `
+        const useThing = ({ isOpen }) => {
+          const flag = globalIsMutable({ isOpen });
+          return useMemo(() => ({ flag }), [flag]);
+        };
+      `,
+      errors: [{ messageId: 'componentLiteral' }],
+    },
+    // #1349 over-correction guard: an identity callee hands the argument's own
+    // reference straight back onto a JSX prop.
+    {
+      code: `
+        function identity(o) {
+          return o;
+        }
+        const Component = ({ isOpen }) => {
+          const cfg = identity({ isOpen });
+          return <Child config={cfg} />;
+        };
+      `,
+      errors: [{ messageId: 'componentLiteral' }],
+    },
+    // #1349 over-correction guard: wrapping the parameter in a fresh object
+    // still carries the reference out.
+    {
+      code: `
+        function wrap(o) {
+          return { inner: o };
+        }
+        const Component = ({ isOpen }) => {
+          const cfg = wrap({ isOpen });
+          return <Child config={cfg} />;
+        };
+      `,
+      errors: [{ messageId: 'componentLiteral' }],
+    },
+    // #1349 over-correction guard: a union containing an object type is not
+    // primitive.
+    {
+      code: `
+        function pick({ isOpen }): boolean | Config {
+          return isOpen;
+        }
+        const useThing = ({ isOpen }) => {
+          const p = pick({ isOpen });
+          return useMemo(() => ({ p }), [p]);
+        };
+      `,
+      errors: [{ messageId: 'componentLiteral' }],
+    },
+    // #1349 over-correction guard: an async callee hands back a promise object.
+    {
+      code: `
+        async function loadIt({ isOpen }) {
+          return !!isOpen;
+        }
+        const useThing = ({ isOpen }) => {
+          const p = loadIt({ isOpen });
+          return useMemo(() => ({ p }), [p]);
+        };
+      `,
+      errors: [{ messageId: 'componentLiteral' }],
+    },
+    // #1349 over-correction guard: a generator callee hands back an iterator
+    // object.
+    {
+      code: `
+        function* streamIt({ isOpen }) {
+          yield !!isOpen;
+        }
+        const useThing = ({ isOpen }) => {
+          const g = streamIt({ isOpen });
+          return useMemo(() => ({ g }), [g]);
+        };
+      `,
+      errors: [{ messageId: 'componentLiteral' }],
+    },
+    // #1349 over-correction guard: a callee binding reassigned after
+    // initialization may hold a different function when the call runs.
+    {
+      code: `
+        let pick = ({ isOpen }) => !!isOpen;
+        pick = (o) => o;
+        const Component = ({ isOpen }) => {
+          const cfg = pick({ isOpen });
+          return <Child config={cfg} />;
+        };
+      `,
+      errors: [{ messageId: 'componentLiteral' }],
+    },
+    // #1349 over-correction guard: `arguments` exposes the raw argument list
+    // even when every parameter is destructured.
+    {
+      code: `
+        function sneaky({ isOpen }) {
+          return arguments[0];
+        }
+        const Component = ({ isOpen }) => {
+          const cfg = sneaky({ isOpen });
+          return <Child config={cfg} />;
+        };
+      `,
+      errors: [{ messageId: 'componentLiteral' }],
+    },
+    // #1349 over-correction guard: a rest parameter is a whole-parameter
+    // binding, so returning an element of it escapes.
+    {
+      code: `
+        function grab(...rest) {
+          return rest[0];
+        }
+        const Component = ({ isOpen }) => {
+          const cfg = grab({ isOpen });
+          return <Child config={cfg} />;
+        };
+      `,
+      errors: [{ messageId: 'componentLiteral' }],
+    },
+    // #1349 deliberate conservatism: a callee returning a FRESH object makes the
+    // result genuinely unstable, and the argument report is the only signal the
+    // rule emits for it, so the exemption stays off.
+    {
+      code: `
+        function build({ isOpen }) {
+          return { isOpen };
+        }
+        const useThing = ({ isOpen }) => {
+          const cfg = build({ isOpen });
+          return useMemo(() => ({ cfg }), [cfg]);
+        };
+      `,
+      errors: [{ messageId: 'componentLiteral' }],
+    },
+    // #1349: the exemption covers only the argument itself — a literal NESTED
+    // inside an exempt argument is still reported (one error, not two).
+    {
+      code: `
+        function isMutable({ isOpen }) {
+          return !!isOpen;
+        }
+        const useThing = ({ isOpen }) => {
+          const flag = isMutable({ isOpen, nested: { deep: true } });
+          return useMemo(() => ({ flag }), [flag]);
+        };
+      `,
+      errors: [{ messageId: 'componentLiteral' }],
+    },
+    // #1349 over-correction guard: a parameter shadowing an outer primitive
+    // callee hides the implementation actually invoked.
+    {
+      code: `
+        function check({ isOpen }) {
+          return !!isOpen;
+        }
+        const Component = ({ isOpen, check }) => {
+          const cfg = check({ isOpen });
+          return <Child config={cfg} />;
+        };
+      `,
+      errors: [{ messageId: 'componentLiteral' }],
+    },
+    // #1349 over-correction guard: shadowing in the other direction — a
+    // block-scoped object-returning callee wins over an outer primitive one.
+    {
+      code: `
+        function check({ isOpen }) {
+          return !!isOpen;
+        }
+        {
+          function check(o) {
+            return { o };
+          }
+          const Component = ({ isOpen }) => {
+            const cfg = check({ isOpen });
+            return <Child config={cfg} />;
+          };
+        }
       `,
       errors: [{ messageId: 'componentLiteral' }],
     },

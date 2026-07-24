@@ -17,6 +17,7 @@ React re-runs your component and hook bodies on every render. Inline object, arr
 - Skips a function literal passed directly as the callback to an Array iteration method (`map`, `filter`, `forEach`, `reduce`, `reduceRight`, `some`, `every`, `find`, `findIndex`, `findLast`, `findLastIndex`, `flatMap`, `sort`), e.g. `items.map((item) => <li key={item}>{item}</li>)`. The callback is invoked synchronously during render and then discarded, so its identity is never observed by a hook, prop, effect, or memoized child — and the rule's advice is unfollowable there anyway (the callback closes over loop scope, so it can't be hoisted, and `useCallback` can't run inside a `.map` loop). An inline function passed as a JSX-attribute prop *inside* the callback body (e.g. `onClick={() => ...}` on a child) is a separate node whose identity is observed, so it remains reported.
 - Skips literals already inside callbacks passed to stable hooks (`useMemo`, `useCallback`, `useEffect`, `useLayoutEffect`, `useInsertionEffect`, `useImperativeHandle`, `useState`, `useReducer`, `useRef`, `useSyncExternalStore`, `useDeferredValue`, `useTransition`, `useId`, `useLatestCallback`, `useDeepCompareMemo`, `useDeepCompareCallback`, `useDeepCompareEffect`, `useProgressionCallback`) and module-level constants.
 - Skips literals that resolve to a JSX attribute named `sx` or `style` (e.g. `<Stack sx={{ ... }} />`, `<div style={{ ... }} />`). The exemption follows the value through conditional branches (`sx={active ? { ... } : { ... }}`), logical fallbacks (`sx={active && { ... }}`), array entries (`sx={[{ ... }, { ... }]}`, supported by MUI), nested object property values (`sx={{ display: { xs: 'none', md: 'inline' } }}`, MUI's responsive breakpoint syntax), and `as const`/parenthesized wrappers. These style descriptors are consumed by the library without referential equality checks, so inlining them does not break memoization or trigger extra renders. Literals that are instead passed through a function call (`sx={makeSx({ ... })}`) or attached to a non-style prop remain reported, since those references can be observed or stored.
+- Skips an object/array literal passed as a direct argument to a plain (non-member, non-hook) function call when the literal's identity provably cannot reach a memoization boundary. Two independent conditions qualify. First, the **call's result is consumed primitively** — a ternary/`if`/`while`/`for` test, a `!`, a comparison, a logical chain ending in one of those, or a variable whose every reference lands in such a position. Second, the **callee is locally declared and its return cannot carry the argument back**: its return type annotation or its return expressions are demonstrably primitive, or no return expression syntactically references a whole-parameter binding (a destructured parameter holds a *property* of the argument, so returning it never exposes the argument's own identity). Callees that are imported, unresolvable, reassigned after initialization, `async`, generators, or that return the parameter itself remain reported, as do member calls (`obj.method({ ... })`), whose receiver could retain the reference. A callee that returns a *fresh object* also stays reported: its result is genuinely unstable, and the argument report is the only signal the rule emits for that shape.
 - Accounts for `async` function boundaries, skipping literals inside `async` function expressions or declarations. While the synchronous portion before the first `await` runs immediately, async functions are typically used as event handlers or effect callbacks where internal literal references do not affect render stability.
 - Offers suggestions to wrap component-level literals in `useMemo`/`useCallback` for a stable reference and injects a `__TODO_MEMOIZATION_DEPENDENCIES__` placeholder so callers must supply real dependencies instead of accidentally shipping an empty array.
 
@@ -132,6 +133,35 @@ The second carve-out is deliberately narrow: it requires the enclosing function
 to be an anonymous callback argument. A named hook factory such as
 `export function createApi(client) { return { useUser: () => ({ … }) }; }`
 returns a hook React really does render, so its unstable literal stays reported.
+
+```tsx
+// `isTeamMembershipMutable` is declared locally and returns a boolean, so the
+// argument literal's identity can never reach the dependency array — only the
+// boolean it produces does, and booleans are compared by value.
+function isTeamMembershipMutable({ roundsStatus, isContinuousRegistration }) {
+  return isTournamentPreMatch(roundsStatus) || !!isContinuousRegistration;
+}
+
+function useDepArray({ roundsStatus, isContinuousRegistration, matchId }) {
+  const isSeedingMutable = isTeamMembershipMutable({
+    roundsStatus,
+    isContinuousRegistration,
+  });
+  return useDeepCompareMemo(
+    () => ({ matchId, isSeedingMutable }),
+    [matchId, isSeedingMutable],
+  );
+}
+```
+
+```tsx
+// The same exemption reached from the call site instead: the result lands in a
+// boolean-test position, so it cannot carry the argument's reference anywhere
+// even though `checkAnything` is opaque.
+function Component({ isOpen }) {
+  return checkAnything({ isOpen }) ? <Open /> : <Closed />;
+}
+```
 
 #### How the suggestion placeholder looks
 
