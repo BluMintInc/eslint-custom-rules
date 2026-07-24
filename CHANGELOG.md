@@ -1,3 +1,13 @@
+## [1.20.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.0...v1.20.1) (2026-07-24)
+
+
+### Bug Fixes
+
+* **enforce-boolean-naming-prefixes:** skip boolean-prefixed callees whose return is demonstrably non-boolean (closes [#1346](https://github.com/BluMintInc/eslint-custom-rules/issues/1346)) ([be94356](https://github.com/BluMintInc/eslint-custom-rules/commit/be94356379064c69567f8d7318786dfdd50092f5)), closes [#1249](https://github.com/BluMintInc/eslint-custom-rules/issues/1249) [#822](https://github.com/BluMintInc/eslint-custom-rules/issues/822)
+* **enforce-firestore-facade:** classify batches by import origin, not variable name (closes [#1348](https://github.com/BluMintInc/eslint-custom-rules/issues/1348)) ([f5c99b2](https://github.com/BluMintInc/eslint-custom-rules/commit/f5c99b26c2032e81ec7b16de8924a449bb0b8940))
+* **react-memoize-literals:** exempt argument literals whose callee cannot return their reference (closes [#1349](https://github.com/BluMintInc/eslint-custom-rules/issues/1349)) ([e39d7f7](https://github.com/BluMintInc/eslint-custom-rules/commit/e39d7f7b8abcc7ccf16c51a2db0c54d2c575d32e)), closes [#1329](https://github.com/BluMintInc/eslint-custom-rules/issues/1329) [#1329](https://github.com/BluMintInc/eslint-custom-rules/issues/1329)
+* **react-memoize-literals:** skip hook names resolved inside jest.mock and factory callbacks (closes [#1347](https://github.com/BluMintInc/eslint-custom-rules/issues/1347)) ([10de351](https://github.com/BluMintInc/eslint-custom-rules/commit/10de3511ad6136bba06c2a5dfadeb58907b0524d))
+
 # [1.20.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.32...v1.20.0) (2026-07-24)
 
 
