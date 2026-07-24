@@ -1,3 +1,10 @@
+## [1.19.31](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.30...v1.19.31) (2026-07-24)
+
+
+### Bug Fixes
+
+* **enforce-positive-naming:** don't flag non-boolean validator predicates (closes [#1344](https://github.com/BluMintInc/eslint-custom-rules/issues/1344)) ([dafe190](https://github.com/BluMintInc/eslint-custom-rules/commit/dafe19072204127bd5a9fa11f79434b3e77ca800))
+
 ## [1.19.30](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.29...v1.19.30) (2026-07-23)
 
 
