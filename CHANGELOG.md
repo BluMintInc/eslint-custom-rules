@@ -1,3 +1,10 @@
+# [1.20.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.32...v1.20.0) (2026-07-24)
+
+
+### Features
+
+* **no-render-function-components:** flag render* functions returning JSX consumed as plain calls (closes [#1345](https://github.com/BluMintInc/eslint-custom-rules/issues/1345)) ([471aa49](https://github.com/BluMintInc/eslint-custom-rules/commit/471aa4970985b7bb5b100bad38f665bc4d64369b)), closes [#1243](https://github.com/BluMintInc/eslint-custom-rules/issues/1243)
+
 ## [1.19.32](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.19.31...v1.19.32) (2026-07-24)
 
 
