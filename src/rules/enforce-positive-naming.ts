@@ -984,6 +984,14 @@ function isDefinitelyNonBooleanExpression(node: TSESTree.Node): boolean {
         isDefinitelyNonBooleanExpression(node.consequent) ||
         isDefinitelyNonBooleanExpression(node.alternate)
       );
+    // Unwrap type-only expression wrappers (`'msg' as const`, `x satisfies T`,
+    // `x!`) so an asserted string/number literal is still recognized. Unwrapping
+    // can only expose a non-boolean literal, never mask a real boolean, so it
+    // cannot over-exempt a genuinely negatively-named boolean.
+    case AST_NODE_TYPES.TSAsExpression:
+    case AST_NODE_TYPES.TSSatisfiesExpression:
+    case AST_NODE_TYPES.TSNonNullExpression:
+      return isDefinitelyNonBooleanExpression(node.expression);
     default:
       return false;
   }
