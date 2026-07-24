@@ -1246,6 +1246,408 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
       return usages.every((ref) => isStyleJSXAttributeValue(ref.identifier));
     }
 
+    type ReturnEvaluation = 'primitive' | 'nonPrimitive' | 'indeterminate';
+
+    const PRIMITIVE_TYPE_KEYWORDS = new Set<string>([
+      AST_NODE_TYPES.TSBooleanKeyword,
+      AST_NODE_TYPES.TSStringKeyword,
+      AST_NODE_TYPES.TSNumberKeyword,
+      AST_NODE_TYPES.TSBigIntKeyword,
+      AST_NODE_TYPES.TSSymbolKeyword,
+      AST_NODE_TYPES.TSVoidKeyword,
+      AST_NODE_TYPES.TSNullKeyword,
+      AST_NODE_TYPES.TSUndefinedKeyword,
+      AST_NODE_TYPES.TSNeverKeyword,
+      AST_NODE_TYPES.TSTypePredicate,
+      AST_NODE_TYPES.TSTemplateLiteralType,
+    ]);
+
+    const NON_PRIMITIVE_EXPRESSION_TYPES = new Set<string>([
+      AST_NODE_TYPES.ObjectExpression,
+      AST_NODE_TYPES.ArrayExpression,
+      AST_NODE_TYPES.ArrowFunctionExpression,
+      AST_NODE_TYPES.FunctionExpression,
+      AST_NODE_TYPES.ClassExpression,
+      AST_NODE_TYPES.NewExpression,
+      AST_NODE_TYPES.JSXElement,
+      AST_NODE_TYPES.JSXFragment,
+    ]);
+
+    const COMPARISONISH_BINARY_OPERATORS = new Set<string>([
+      '===',
+      '!==',
+      '==',
+      '!=',
+      '<',
+      '>',
+      '<=',
+      '>=',
+      'in',
+      'instanceof',
+    ]);
+
+    /**
+     * Innermost scope containing `node`. Resolved from the source code rather
+     * than `context.getScope()` because the latter is deprecated in ESLint 9
+     * and reports the traversal position instead of the node's own scope.
+     */
+    function scopeOf(node: TSESTree.Node): TSESLint.Scope.Scope | null {
+      const sourceCode = context.getSourceCode() as unknown as {
+        getScope?: (node: TSESTree.Node) => TSESLint.Scope.Scope;
+      };
+      return sourceCode.getScope ? sourceCode.getScope(node) : null;
+    }
+
+    function findVariableInScopes(
+      name: string,
+      startScope: TSESLint.Scope.Scope | null,
+    ): TSESLint.Scope.Variable | undefined {
+      let currentScope = startScope;
+      while (currentScope) {
+        const variable = currentScope.variables.find((v) => v.name === name);
+        if (variable) return variable;
+        currentScope = currentScope.upper;
+      }
+      return undefined;
+    }
+
+    function isConstAssertion(typeNode: TSESTree.Node): boolean {
+      return (
+        typeNode.type === AST_NODE_TYPES.TSTypeReference &&
+        typeNode.typeName.type === AST_NODE_TYPES.Identifier &&
+        typeNode.typeName.name === 'const'
+      );
+    }
+
+    function classifyTypeAnnotation(typeNode: TSESTree.Node): ReturnEvaluation {
+      if (PRIMITIVE_TYPE_KEYWORDS.has(typeNode.type)) {
+        return 'primitive';
+      }
+      if (typeNode.type === AST_NODE_TYPES.TSLiteralType) {
+        return 'primitive';
+      }
+      if (typeNode.type === AST_NODE_TYPES.TSUnionType) {
+        const members = typeNode.types.map(classifyTypeAnnotation);
+        if (members.every((m) => m === 'primitive')) return 'primitive';
+        return members.some((m) => m === 'nonPrimitive')
+          ? 'nonPrimitive'
+          : 'indeterminate';
+      }
+      if (
+        typeNode.type === AST_NODE_TYPES.TSTypeLiteral ||
+        typeNode.type === AST_NODE_TYPES.TSArrayType ||
+        typeNode.type === AST_NODE_TYPES.TSTupleType ||
+        typeNode.type === AST_NODE_TYPES.TSFunctionType ||
+        typeNode.type === AST_NODE_TYPES.TSConstructorType ||
+        typeNode.type === AST_NODE_TYPES.TSObjectKeyword ||
+        typeNode.type === AST_NODE_TYPES.TSIntersectionType ||
+        typeNode.type === AST_NODE_TYPES.TSMappedType ||
+        typeNode.type === AST_NODE_TYPES.TSTypeReference
+      ) {
+        return 'nonPrimitive';
+      }
+      return 'indeterminate';
+    }
+
+    function combineReturnEvaluations(
+      entries: ReturnEvaluation[],
+    ): ReturnEvaluation {
+      if (entries.length === 0) return 'indeterminate';
+      if (entries.every((e) => e === 'primitive')) return 'primitive';
+      return entries.some((e) => e === 'nonPrimitive')
+        ? 'nonPrimitive'
+        : 'indeterminate';
+    }
+
+    function classifyReturnExpression(
+      expression: TSESTree.Expression | null | undefined,
+    ): ReturnEvaluation {
+      if (!expression) return 'primitive';
+
+      if (
+        expression.type === AST_NODE_TYPES.TSAsExpression ||
+        expression.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+        expression.type === AST_NODE_TYPES.TSTypeAssertion
+      ) {
+        const annotation = expression.typeAnnotation;
+        if (annotation && !isConstAssertion(annotation)) {
+          const classified = classifyTypeAnnotation(annotation);
+          if (classified !== 'indeterminate') return classified;
+        }
+        return classifyReturnExpression(
+          expression.expression as TSESTree.Expression,
+        );
+      }
+
+      if (
+        expression.type === AST_NODE_TYPES.ChainExpression ||
+        expression.type === AST_NODE_TYPES.TSNonNullExpression
+      ) {
+        return classifyReturnExpression(
+          expression.expression as TSESTree.Expression,
+        );
+      }
+
+      if (
+        (expression as { type: string }).type === PARENTHESIZED_EXPRESSION_TYPE
+      ) {
+        return classifyReturnExpression(
+          (expression as unknown as { expression: TSESTree.Expression })
+            .expression,
+        );
+      }
+
+      if (expression.type === AST_NODE_TYPES.SequenceExpression) {
+        return classifyReturnExpression(
+          expression.expressions[expression.expressions.length - 1],
+        );
+      }
+
+      if (NON_PRIMITIVE_EXPRESSION_TYPES.has(expression.type)) {
+        return 'nonPrimitive';
+      }
+
+      // Literals, template literals and update expressions are primitives by
+      // construction.
+      if (
+        expression.type === AST_NODE_TYPES.Literal ||
+        expression.type === AST_NODE_TYPES.TemplateLiteral ||
+        expression.type === AST_NODE_TYPES.UpdateExpression
+      ) {
+        return 'primitive';
+      }
+
+      if (
+        expression.type === AST_NODE_TYPES.Identifier &&
+        expression.name === 'undefined'
+      ) {
+        return 'primitive';
+      }
+
+      if (expression.type === AST_NODE_TYPES.UnaryExpression) {
+        // `!`, `typeof`, `void`, `-`, `+`, `~`, `delete` all yield primitives.
+        return 'primitive';
+      }
+
+      if (expression.type === AST_NODE_TYPES.BinaryExpression) {
+        return COMPARISONISH_BINARY_OPERATORS.has(expression.operator)
+          ? 'primitive'
+          : 'indeterminate';
+      }
+
+      if (expression.type === AST_NODE_TYPES.ConditionalExpression) {
+        return combineReturnEvaluations([
+          classifyReturnExpression(expression.consequent),
+          classifyReturnExpression(expression.alternate),
+        ]);
+      }
+
+      if (expression.type === AST_NODE_TYPES.LogicalExpression) {
+        return combineReturnEvaluations([
+          classifyReturnExpression(expression.left),
+          classifyReturnExpression(expression.right),
+        ]);
+      }
+
+      return 'indeterminate';
+    }
+
+    function collectReturnArgumentsOf(
+      body: TSESTree.BlockStatement,
+    ): (TSESTree.Expression | null)[] {
+      const found: (TSESTree.Expression | null)[] = [];
+      const walk = (node: TSESTree.Node) => {
+        if (
+          node.type === AST_NODE_TYPES.FunctionDeclaration ||
+          node.type === AST_NODE_TYPES.FunctionExpression ||
+          node.type === AST_NODE_TYPES.ArrowFunctionExpression
+        ) {
+          return;
+        }
+        if (node.type === AST_NODE_TYPES.ReturnStatement) {
+          found.push(node.argument ?? null);
+          return;
+        }
+        for (const key of Object.keys(node)) {
+          if (key === 'parent') continue;
+          const value = (node as unknown as Record<string, unknown>)[key];
+          if (Array.isArray(value)) {
+            for (const entry of value) {
+              if (ASTHelpers.isNode(entry)) walk(entry);
+            }
+          } else if (ASTHelpers.isNode(value)) {
+            walk(value);
+          }
+        }
+      };
+      for (const statement of body.body) {
+        walk(statement);
+      }
+      return found;
+    }
+
+    function classifyFunctionReturn(
+      functionLike: TSESTree.FunctionLike,
+    ): ReturnEvaluation {
+      const annotation = functionLike.returnType?.typeAnnotation;
+      if (annotation) {
+        const classified = classifyTypeAnnotation(annotation);
+        if (classified !== 'indeterminate') return classified;
+      }
+
+      // Async/generator calls hand back a promise or an iterator object.
+      if (functionLike.async || functionLike.generator) {
+        return 'nonPrimitive';
+      }
+
+      if (
+        functionLike.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+        functionLike.expression
+      ) {
+        return classifyReturnExpression(
+          functionLike.body as TSESTree.Expression,
+        );
+      }
+
+      if (functionLike.body?.type !== AST_NODE_TYPES.BlockStatement) {
+        return 'indeterminate';
+      }
+
+      const returnArguments = collectReturnArgumentsOf(functionLike.body);
+      if (returnArguments.length === 0) {
+        // Falls off the end: yields undefined.
+        return 'primitive';
+      }
+      const combined = combineReturnEvaluations(
+        returnArguments.map((arg) => classifyReturnExpression(arg)),
+      );
+      // An unclassifiable return is still safe when no return expression can
+      // syntactically reach a whole-parameter binding: the argument's reference
+      // then has no path out through the result.
+      if (
+        combined === 'indeterminate' &&
+        !returnArguments.some((arg) =>
+          expressionReachesParameters(arg, functionLike),
+        )
+      ) {
+        return 'primitive';
+      }
+      return combined;
+    }
+
+    function parameterNamesOf(
+      functionLike: TSESTree.FunctionLike,
+    ): Set<string> {
+      // Only a whole-parameter binding can carry the argument object's identity
+      // out. A destructured binding holds a PROPERTY of the argument, so
+      // returning it never exposes the literal's own identity.
+      const names = new Set<string>();
+      const unwrap = (node: TSESTree.Node): TSESTree.Node => {
+        if (node.type === AST_NODE_TYPES.AssignmentPattern) {
+          return unwrap(node.left as TSESTree.Node);
+        }
+        if (node.type === AST_NODE_TYPES.RestElement) {
+          return unwrap(node.argument as TSESTree.Node);
+        }
+        if (node.type === AST_NODE_TYPES.TSParameterProperty) {
+          return unwrap(node.parameter as TSESTree.Node);
+        }
+        return node;
+      };
+      for (const param of functionLike.params) {
+        const bare = unwrap(param as TSESTree.Node);
+        if (bare.type === AST_NODE_TYPES.Identifier) {
+          names.add(bare.name);
+        }
+      }
+      return names;
+    }
+
+    function expressionReachesParameters(
+      expression: TSESTree.Node | null,
+      functionLike: TSESTree.FunctionLike,
+    ): boolean {
+      if (!expression) return false;
+      const names = parameterNamesOf(functionLike);
+      let reaches = false;
+      const walk = (node: TSESTree.Node) => {
+        if (reaches) return;
+        if (
+          node.type === AST_NODE_TYPES.Identifier &&
+          // `arguments` exposes the raw argument list, so it can carry the
+          // literal's identity out even when every parameter is destructured.
+          (names.has(node.name) || node.name === 'arguments')
+        ) {
+          reaches = true;
+          return;
+        }
+        for (const key of Object.keys(node)) {
+          if (key === 'parent') continue;
+          const value = (node as unknown as Record<string, unknown>)[key];
+          if (Array.isArray(value)) {
+            for (const entry of value) {
+              if (ASTHelpers.isNode(entry)) walk(entry);
+            }
+          } else if (ASTHelpers.isNode(value)) {
+            walk(value);
+          }
+        }
+      };
+      walk(expression);
+      return reaches;
+    }
+
+    function functionOfDefinition(
+      definition: TSESLint.Scope.Definition,
+    ): TSESTree.FunctionLike | undefined {
+      if (definition.type === 'FunctionName') {
+        return definition.node as unknown as TSESTree.FunctionLike;
+      }
+      if (definition.type === 'Variable') {
+        const init = (definition.node as unknown as TSESTree.VariableDeclarator)
+          .init;
+        if (
+          init?.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+          init?.type === AST_NODE_TYPES.FunctionExpression
+        ) {
+          return init;
+        }
+      }
+      return undefined;
+    }
+
+    /**
+     * True when every declaration bound to `calleeName` provably returns a
+     * primitive, so invoking it cannot hand an argument's reference back.
+     *
+     * The analysis never follows a call inside the callee's body — a returned
+     * CallExpression classifies as indeterminate — so it terminates on
+     * self-recursive and mutually recursive callees without a re-entrancy guard.
+     */
+    function calleeReturnIsPrimitive(
+      calleeName: string,
+      startScope: TSESLint.Scope.Scope | null,
+    ): boolean {
+      const variable = findVariableInScopes(calleeName, startScope);
+      if (!variable || variable.defs.length === 0) return false;
+
+      // A binding written again after initialization may hold a different
+      // function by the time the call runs, so the declaration on record no
+      // longer proves anything about the value actually invoked.
+      if (variable.references.some((ref) => ref.isWrite() && !ref.init)) {
+        return false;
+      }
+
+      const classifications: ReturnEvaluation[] = [];
+      for (const definition of variable.defs) {
+        const functionLike = functionOfDefinition(definition);
+        // Imports, parameters and aliases hide the implementation.
+        if (!functionLike) return false;
+        classifications.push(classifyFunctionReturn(functionLike));
+      }
+      return combineReturnEvaluations(classifications) === 'primitive';
+    }
+
     /**
      * True when `expr` — a plain function call's result, or a reference to the
      * variable holding that result — is consumed only for its primitive value,
@@ -1328,14 +1730,22 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
     }
 
     /**
-     * True when the literal is a direct argument of a plain function call whose
-     * result is only ever consumed primitively (see isPrimitivelyConsumed). In
-     * that case the literal's identity provably never reaches a memoization
-     * boundary — it is neither a JSX prop, nor a hook dependency, nor captured
-     * by an effect — so re-creating it each render costs nothing and memoizing
-     * it buys nothing. The callee must be a plain Identifier: member calls
-     * (`obj.method({...})`) are excluded because the receiver could retain the
-     * reference, and this keeps the guard to plain, non-hook synchronous calls.
+     * True when the literal is a direct argument of a plain function call and
+     * its identity provably cannot reach a memoization boundary — it is then
+     * neither a JSX prop, nor a hook dependency, nor captured by an effect, so
+     * re-creating it each render costs nothing and memoizing it buys nothing.
+     *
+     * Two independent conditions each suffice. The result is only ever consumed
+     * primitively (see isPrimitivelyConsumed), which reasons from the CALL SITE.
+     * Or the callee is locally declared and cannot hand the reference back (see
+     * calleeReturnIsPrimitive), which reasons from the CALLEE. The call-site
+     * condition covers callees that are imported or otherwise opaque; the callee
+     * condition covers results consumed in positions no whitelist can prove
+     * primitive, such as an object member or a hook dependency array.
+     *
+     * The callee must be a plain Identifier: member calls (`obj.method({...})`)
+     * are excluded because the receiver could retain the reference, and this
+     * keeps the guard to plain, non-hook synchronous calls.
      */
     function isPrimitiveConsumedCallArgument(node: TSESTree.Node): boolean {
       // Walk up through transparent wrappers to the position the literal
@@ -1367,7 +1777,12 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
         return false;
       }
 
-      return isPrimitivelyConsumed(parent);
+      // Either sufficient condition exempts: a provably primitive consumption
+      // site, or a callee that cannot hand the reference back.
+      if (isPrimitivelyConsumed(parent)) {
+        return true;
+      }
+      return calleeReturnIsPrimitive(parent.callee.name, scopeOf(node));
     }
 
     function reportLiteral(node: TSESTree.Node) {
