@@ -53,6 +53,21 @@ ruleTesterTs.run(
       // Concise-arrow conditional returning an error string on rejection.
       `export const isNotBlank = (value?: string) => !value ? 'Must not be blank' : true;`,
 
+      // Error message returned through a type-only wrapper (`as const`,
+      // `satisfies`) is still recognized as a non-boolean return.
+      `export const isNotBlank = (value?: string) => {
+        if (!value?.trim()) {
+          return 'Must not be blank' as const;
+        }
+        return true;
+      };`,
+      `export const isNotEmpty = (value?: string) => {
+        if (!value) {
+          return 'Must not be empty' satisfies string;
+        }
+        return true;
+      };`,
+
       // Numeric-returning predicate is likewise not a boolean.
       `export const isNotZeroCode = (value: number) => {
         if (value === 0) {

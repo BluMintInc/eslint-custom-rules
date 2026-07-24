@@ -17,6 +17,7 @@ The rule ignores:
 
 - Non-TypeScript files, dotfiles, and config/rc files.
 - Words that incidentally contain these prefixes but are not negations (e.g., `index`, `display`, `input`), using curated exception lists to avoid false positives.
+- `is`/`has`-prefixed functions whose return shape is not boolean—e.g. validator predicates that return `string | true` (an error message on rejection, `true` on acceptance). The value is not a boolean and its negated name (`isNotBlank`, `isNonNegative`) is the domain-correct term, so renaming it would invert the predicate's meaning. Detected via an explicit non-boolean return-type annotation or a `return` yielding a string/number/object/array literal.
 
 ### Examples of **incorrect** code for this rule:
 
@@ -36,6 +37,10 @@ let hasAccess: boolean;
 function shouldContinue(): boolean { return errorCount === 0; }
 type State = { isReachable: boolean; doesExist: boolean };
 class Session { get isAllowed() { return this.isEnabled; } }
+
+// Validator predicate: returns an error message or `true`, not a boolean.
+const isNotBlank = (value?: string) =>
+  value?.trim() ? true : 'Must not be blank';
 ```
 
 ## When Not To Use It
