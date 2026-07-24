@@ -328,9 +328,101 @@ function getFunctionName(
 }
 
 /**
+ * Locates the ancestor that supplies a function's name, mirroring the walk
+ * `getFunctionName` performs through `findNameInAncestors` but yielding the
+ * NODE instead of the string, so callers can tell an object-property key apart
+ * from a variable or assignment binding.
+ */
+function findNamingNode(fn: TSESTree.Node): TSESTree.Node | null {
+  let current: TSESTree.Node | null = fn.parent as TSESTree.Node | null;
+  while (current) {
+    if (getNameFromNode(current)) {
+      return current;
+    }
+    if (!isTransparentNode(current)) {
+      return null;
+    }
+    current = current.parent as TSESTree.Node | null;
+  }
+  return null;
+}
+
+/**
+ * True when a function expression is passed directly as an argument to a call
+ * (after unwrapping assertion/parenthesis wrappers). Function declarations are
+ * excluded because a declaration is a statement, never an argument.
+ */
+function isCallbackArgument(fn: TSESTree.Node): boolean {
+  if (fn.type === AST_NODE_TYPES.FunctionDeclaration) {
+    return false;
+  }
+
+  let parent: TSESTree.Node | null = fn.parent as TSESTree.Node | null;
+  while (parent && isExpressionWrapper(parent)) {
+    parent = parent.parent as TSESTree.Node | null;
+  }
+
+  return (
+    parent?.type === AST_NODE_TYPES.CallExpression &&
+    parent.arguments.some(
+      (arg) => unwrapNestedExpressions(arg as TSESTree.Node) === fn,
+    )
+  );
+}
+
+/**
+ * True when a function's only claim to component/hook status is an object
+ * property key, and that object is assembled inside an anonymous callback which
+ * is itself neither a component nor a hook — the shape of a module factory
+ * (`jest.mock('m', () => ({ useThing: … }))`,
+ * `registerModule('m', () => ({ useThing: … }))`). Such a factory builds a
+ * value; React never renders it, so a `use*`/PascalCase key inside it names a
+ * member of that value rather than a render body. This is the same reasoning
+ * that makes `isComponentName` reject SCREAMING_SNAKE_CASE and that makes
+ * `isIterationMethodCallback` exempt discarded callbacks: a name match in a
+ * non-render context is not a render body.
+ *
+ * Requiring the enclosing function to be an anonymous CALL ARGUMENT is the
+ * deliberate narrowing that preserves genuine hook factories
+ * (`export function createApi(client) { return { useUser: … }; }`), whose
+ * returned hook really is consumed by React and really does need referential
+ * stability.
+ */
+function isFactoryObjectMember(fn: TSESTree.Node): boolean {
+  const namingNode = findNamingNode(fn);
+  if (!namingNode || namingNode.type !== AST_NODE_TYPES.Property) {
+    return false;
+  }
+
+  const objectLiteral = namingNode.parent as TSESTree.Node | null;
+  if (
+    !objectLiteral ||
+    objectLiteral.type !== AST_NODE_TYPES.ObjectExpression
+  ) {
+    return false;
+  }
+
+  let current: TSESTree.Node | null =
+    objectLiteral.parent as TSESTree.Node | null;
+  while (current) {
+    if (isFunctionNode(current)) {
+      return isCallbackArgument(current) && !isComponentOrHookFunction(current);
+    }
+    current = current.parent as TSESTree.Node | null;
+  }
+  return false;
+}
+
+/**
  * Checks whether a function should be treated as a React component or hook
  * based on naming conventions. Enables the rule to limit reports to user-facing
  * components and hooks rather than arbitrary functions.
+ *
+ * The name match is disqualified for members of a factory-built object (see
+ * `isFactoryObjectMember`). Disqualifying at the classifier — rather than
+ * skipping the report — keeps `findEnclosingComponentOrHook` walking outward,
+ * so a literal inside a factory nested in a real component is still attributed
+ * to that component.
  */
 function isComponentOrHookFunction(
   fn:
@@ -339,7 +431,10 @@ function isComponentOrHookFunction(
     | TSESTree.ArrowFunctionExpression,
 ): boolean {
   const name = getFunctionName(fn);
-  return isComponentName(name) || isHookName(name);
+  if (!isComponentName(name) && !isHookName(name)) {
+    return false;
+  }
+  return !isFactoryObjectMember(fn);
 }
 
 /**
@@ -422,6 +517,64 @@ function getLiteralDescriptor(node: TSESTree.Node): LiteralDescriptor | null {
   const descriptor =
     LITERAL_DESCRIPTOR_BY_TYPE[node.type as AST_NODE_TYPES] ?? null;
   return descriptor;
+}
+
+/**
+ * Jest APIs whose second argument is a module factory: a function executed to
+ * BUILD a replacement module, hoisted above imports by `babel-plugin-jest-hoist`.
+ */
+const JEST_MOCK_FACTORY_METHODS = new Set(['mock', 'doMock', 'setMock']);
+
+/**
+ * True when `node` sits anywhere inside a jest module factory
+ * (`jest.mock('m', () => ({ … }))`). A factory is executed to build a
+ * replacement module, never rendered by React, so the rule's "on each render"
+ * premise does not hold for the test doubles it defines.
+ *
+ * Beyond the premise, neither remediation the rule advises is legal here:
+ * `babel-plugin-jest-hoist` rejects every out-of-scope reference inside a
+ * factory except `mock`-prefixed names, so `useMemo` cannot be imported or
+ * called, and hoisting to a module constant changes behaviour because the
+ * double must rebuild per call for tests to vary its result. This mirrors
+ * `isInsideIterationMethodCallback`, which exempts literals whose remediation
+ * is unfollowable at the literal.
+ *
+ * The walk is lexical, so a hook declared outside the factory in the same file
+ * stays analyzed.
+ */
+function isInsideJestMockFactory(node: TSESTree.Node): boolean {
+  let current: TSESTree.Node | null = node;
+  while (current) {
+    if (
+      isFunctionNode(current) &&
+      current.type !== AST_NODE_TYPES.FunctionDeclaration
+    ) {
+      let parent: TSESTree.Node | null = current.parent as TSESTree.Node | null;
+      while (parent && isExpressionWrapper(parent)) {
+        parent = parent.parent as TSESTree.Node | null;
+      }
+      if (
+        parent?.type === AST_NODE_TYPES.CallExpression &&
+        parent.arguments.some(
+          (arg) => unwrapNestedExpressions(arg as TSESTree.Node) === current,
+        )
+      ) {
+        const { callee } = parent;
+        if (
+          callee.type === AST_NODE_TYPES.MemberExpression &&
+          !callee.computed &&
+          callee.object.type === AST_NODE_TYPES.Identifier &&
+          callee.object.name === 'jest' &&
+          callee.property.type === AST_NODE_TYPES.Identifier &&
+          JEST_MOCK_FACTORY_METHODS.has(callee.property.name)
+        ) {
+          return true;
+        }
+      }
+    }
+    current = current.parent as TSESTree.Node | null;
+  }
+  return false;
 }
 
 /**
@@ -1229,6 +1382,13 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
       }
 
       if (isTerminalUsage(node)) {
+        return;
+      }
+
+      // A jest module factory builds a replacement module; React never renders
+      // it, and jest's out-of-scope-variable restriction makes the rule's own
+      // remediations illegal inside it.
+      if (isInsideJestMockFactory(node)) {
         return;
       }
 
