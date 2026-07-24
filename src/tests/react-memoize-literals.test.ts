@@ -963,6 +963,153 @@ export function useAlert() {
         };
       `,
     },
+    // #1347: a jest.mock() factory is not a render body. The test double is
+    // never rendered by React, and jest's out-of-scope-variable restriction
+    // makes both suggested remediations (module constant / imported useMemo)
+    // unavailable, so the rule has no satisfiable form here.
+    {
+      code: `
+        const mockRankedTeamIds = jest.fn();
+        jest.mock('../../contexts/BracketSeedsContext', () => {
+          return {
+            useBracketSeeds: () => {
+              return { rankedTeamIds: mockRankedTeamIds() };
+            },
+          };
+        });
+      `,
+    },
+    // #1347: same shape, generalized — a use*-keyed property nested inside an
+    // arbitrary non-component callback is not a hook.
+    {
+      code: `
+        registerModule('some/module', () => {
+          return {
+            useThing: () => {
+              return { value: compute() };
+            },
+          };
+        });
+      `,
+    },
+    // #1347: hoisting the literal to a local inside a mock factory must not
+    // trip the "New object literal inside hook" messageId either.
+    {
+      code: `
+        const mockRankedTeamIds = jest.fn();
+        jest.mock('../../contexts/BracketSeedsContext', () => {
+          return {
+            useBracketSeeds: () => {
+              const value = { rankedTeamIds: mockRankedTeamIds() };
+              return value;
+            },
+          };
+        });
+      `,
+    },
+    // #1347: the mock's hook is a local binding rather than an inline property
+    // value, so only the jest-factory carve-out can clear it.
+    {
+      code: `
+        jest.mock('./ctx', () => {
+          const useThing = () => ({ a: 1 });
+          return { useThing };
+        });
+      `,
+    },
+    // #1347: jest.doMock factories are module factories too.
+    {
+      code: `
+        jest.doMock('./ctx', () => ({
+          useThing: () => {
+            return { a: 1 };
+          },
+        }));
+      `,
+    },
+    // #1347: jest.setMock factories are module factories too.
+    {
+      code: `
+        jest.setMock('./ctx', () => ({
+          useThing: () => {
+            return { a: 1 };
+          },
+        }));
+      `,
+    },
+    // #1347: a factory written as a function expression with a block body.
+    {
+      code: `
+        jest.mock('./ctx', function () {
+          return {
+            useThing: () => {
+              return { a: 1 };
+            },
+          };
+        });
+      `,
+    },
+    // #1347: an ES-module-shaped mock nests the hook under `default`.
+    {
+      code: `
+        jest.mock('./x', () => ({
+          __esModule: true,
+          default: {
+            useThing: () => {
+              return { a: 1 };
+            },
+          },
+        }));
+      `,
+    },
+    // #1347: a mocked component inside a factory follows the componentLiteral
+    // path and is exempt for the same reason.
+    {
+      code: `
+        jest.mock('./Foo', () => ({
+          Foo: () => {
+            const s = { a: 1 };
+            return s;
+          },
+        }));
+      `,
+    },
+    // #1347: object-method shorthand keyed with a hook name inside a factory
+    // callback is not a hook either.
+    {
+      code: `
+        registerModule('m', () => ({
+          useThing() {
+            return { a: 1 };
+          },
+        }));
+      `,
+    },
+    // #1347: a component-named property key inside a factory callback is not a
+    // component.
+    {
+      code: `
+        registerModule('m', () => ({
+          Widget: () => {
+            return { a: 1 };
+          },
+        }));
+      `,
+    },
+    // #1347: the factory callback may be nested several callbacks deep.
+    {
+      code: `
+        describe('x', () => {
+          beforeEach(() => {
+            const m = {
+              useThing: () => {
+                return { a: 1 };
+              },
+            };
+          });
+        });
+      `,
+    },
   ],
   invalid: [
     // #1329 provided case: the useEffect dep-array literal and the JSX-prop
@@ -1992,6 +2139,126 @@ const List = ({ items, onSelect }) => (
         };
       `,
       errors: [
+        { messageId: 'componentLiteral' },
+        { messageId: 'componentLiteral' },
+      ],
+    },
+    // #1347 regression guard: a genuine module-scope hook must STILL be flagged.
+    {
+      code: `
+        export const useRealHook = () => {
+          return { a: 1 };
+        };
+      `,
+      errors: [{ messageId: 'hookReturnLiteral' }],
+    },
+    // #1347 regression guard: the factory carve-out requires an ENCLOSING
+    // function — a module-scope object of hooks is a real hooks namespace.
+    {
+      code: `
+        export const hooks = {
+          useThing: () => {
+            return { a: 1 };
+          },
+        };
+      `,
+      errors: [{ messageId: 'hookReturnLiteral' }],
+    },
+    // #1347 regression guard: a NAMED hook factory (zustand/tRPC shape) is not
+    // a callback argument, so its returned hook keeps its hook status and the
+    // unstable literal it returns stays reported.
+    {
+      code: `
+        export function createApi(client) {
+          return {
+            useUser: () => {
+              return { name: client.name };
+            },
+          };
+        }
+      `,
+      errors: [{ messageId: 'hookReturnLiteral' }],
+    },
+    // #1347 regression guard: inside a real render body the literals stay
+    // reported, and the hook-keyed property still owns its own return value.
+    {
+      code: `
+        function MyComponent() {
+          const api = {
+            useThing: () => {
+              return { a: 1 };
+            },
+          };
+          return api;
+        }
+      `,
+      errors: [
+        { messageId: 'componentLiteral' },
+        { messageId: 'componentLiteral' },
+        { messageId: 'hookReturnLiteral' },
+      ],
+    },
+    // #1347 regression guard: same shape through a memo() wrapper — the
+    // transparent-callee walk still resolves the enclosing component.
+    {
+      code: `
+        const MyComponent = memo(() => {
+          const api = {
+            useThing: () => {
+              return { a: 1 };
+            },
+          };
+          return api;
+        });
+      `,
+      errors: [
+        { messageId: 'componentLiteral' },
+        { messageId: 'componentLiteral' },
+        { messageId: 'hookReturnLiteral' },
+      ],
+    },
+    // #1347 regression guard: the jest carve-out is jest-specific, not "any
+    // enclosing function".
+    {
+      code: `
+        function setup() {
+          const useThing = () => {
+            return { a: 1 };
+          };
+          return useThing;
+        }
+      `,
+      errors: [{ messageId: 'hookReturnLiteral' }],
+    },
+    // #1347 regression guard: the jest carve-out is lexical, not file-wide — a
+    // hook declared outside the factory is still analyzed.
+    {
+      code: `
+        jest.mock('./x');
+        export const useThing = () => {
+          return { a: 1 };
+        };
+      `,
+      errors: [{ messageId: 'hookReturnLiteral' }],
+    },
+    // #1347: a hook-keyed property built inside a factory callback that sits in
+    // a render body is attributed to the COMPONENT rather than to a hook that
+    // does not exist — the literal is still inside a render body, so the report
+    // count is unchanged.
+    {
+      code: `
+        function MyComponent() {
+          registerModule('m', () => ({
+            useThing: () => ({ a: 1 }),
+          }));
+          const s = { a: 1 };
+          return s;
+        }
+      `,
+      errors: [
+        { messageId: 'componentLiteral' },
+        { messageId: 'componentLiteral' },
+        { messageId: 'componentLiteral' },
         { messageId: 'componentLiteral' },
         { messageId: 'componentLiteral' },
       ],

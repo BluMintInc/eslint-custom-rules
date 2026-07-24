@@ -101,6 +101,38 @@ function List({ items }) {
 }
 ```
 
+```tsx
+// A jest module factory builds a replacement module; React never renders it,
+// and jest's out-of-scope-variable restriction forbids importing `useMemo`
+// inside the factory. Literals defined anywhere inside a `jest.mock`,
+// `jest.doMock`, or `jest.setMock` factory are exempt.
+jest.mock('../../contexts/BracketSeedsContext', () => {
+  return {
+    useBracketSeeds: () => {
+      return { rankedTeamIds: mockRankedTeamIds() };
+    },
+  };
+});
+```
+
+```ts
+// A `use*`/PascalCase key on an object assembled inside an anonymous factory
+// callback names a member of the built value, not a render body, so it is not
+// treated as a hook or component.
+registerModule('some/module', () => {
+  return {
+    useThing: () => {
+      return { value: compute() };
+    },
+  };
+});
+```
+
+The second carve-out is deliberately narrow: it requires the enclosing function
+to be an anonymous callback argument. A named hook factory such as
+`export function createApi(client) { return { useUser: () => ({ … }) }; }`
+returns a hook React really does render, so its unstable literal stays reported.
+
 #### How the suggestion placeholder looks
 
 When the rule suggests a fix, it injects a dependency placeholder you must replace:
@@ -118,3 +150,18 @@ This placeholder must be replaced before committing.
 
 - Components that intentionally regenerate literals on every render (e.g., to force recalculation) and where the cost is acceptable.
 - Codepaths outside React components or hooks where referential stability is irrelevant.
+
+### Suppressing a single report
+
+The report is anchored on the offending literal, not on the enclosing function,
+so an `eslint-disable-next-line` comment belongs directly above the literal:
+
+```tsx
+function useSettings() {
+  // eslint-disable-next-line @blumintinc/blumint/react-memoize-literals
+  return { theme: 'dark' };
+}
+```
+
+Placing the directive above the function signature leaves the error in place and
+reports the directive itself as unused.
