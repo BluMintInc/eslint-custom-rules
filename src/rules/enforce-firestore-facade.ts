@@ -11,6 +11,24 @@ const FIRESTORE_METHODS = new Set(['get', 'set', 'update', 'delete']);
 const COLLECTION_CONSTRUCTORS = new Set(['Set', 'Map', 'WeakSet', 'WeakMap']);
 const KNOWN_FIRESTORE_ROOTS = new Set(['db', 'firestore']);
 
+// The modular client SDK. DocSetter/DocSetterTransaction wrap
+// firebase-admin/firestore and cannot be imported from frontend code, so a
+// client-SDK batch or transaction has no facade to route through and must not
+// be reported.
+const CLIENT_SDK_MODULES = new Set([
+  'firebase/firestore',
+  '@firebase/firestore',
+  'firebase/firestore/lite',
+]);
+// firebase-admin/firestore exposes no `writeBatch` export at all (the admin
+// API is `db.batch()`), so this spelling identifies the client SDK with
+// certainty even when the binding's origin cannot be traced.
+const CLIENT_BATCH_FACTORY = 'writeBatch';
+// Shared spelling: the client SDK exports a free `runTransaction(db, cb)`
+// while the admin SDK only exposes the `db.runTransaction(cb)` method, so the
+// callee shape, not the name, decides which SDK a transaction belongs to.
+const TRANSACTION_RUNNER = 'runTransaction';
+
 const isMemberExpression = (
   node: TSESTree.Node,
 ): node is TSESTree.MemberExpression =>
@@ -136,6 +154,16 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
     const firestoreTransactionVariables = new Set<string>();
     const docSetterVariables = new Set<string>();
     const batchManagerVariables = new Set<string>();
+    // local name -> imported name, for bindings that come from the modular
+    // client SDK (covers `import { writeBatch as wb }` aliases).
+    const clientSdkImportedLocals = new Map<string, string>();
+    // Namespace bindings for the client SDK (`import * as fs`).
+    const clientSdkNamespaceLocals = new Set<string>();
+    // Bindings that demonstrably come from some other module, so a local
+    // helper named `writeBatch` is not mistaken for the SDK export.
+    const nonClientImportedLocals = new Set<string>();
+    // Batches/transactions proven to originate from the client SDK.
+    const clientFirestoreVariables = new Set<string>();
     const sourceCode = context.sourceCode;
 
     const clearFirestoreTrackingFor = (name: string): void => {
@@ -145,7 +173,55 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
       firestoreTransactionVariables.delete(name);
       docSetterVariables.delete(name);
       batchManagerVariables.delete(name);
+      clientFirestoreVariables.delete(name);
     };
+
+    const isClientSdkExportReference = (
+      node: TSESTree.Node,
+      exportName: string,
+      allowUntracedSpelling: boolean,
+    ): boolean => {
+      const callee = unwrapTSAsExpression(node);
+
+      if (isIdentifier(callee)) {
+        if (clientSdkImportedLocals.get(callee.name) === exportName) {
+          return true;
+        }
+        return (
+          allowUntracedSpelling &&
+          callee.name === exportName &&
+          !nonClientImportedLocals.has(callee.name)
+        );
+      }
+
+      if (
+        isMemberExpression(callee) &&
+        isIdentifier(callee.property) &&
+        callee.property.name === exportName
+      ) {
+        const base = getLeftmostIdentifier(callee.object);
+        return !!base && clientSdkNamespaceLocals.has(base.name);
+      }
+
+      return false;
+    };
+
+    // `writeBatch(firestore)` / `fs.writeBatch(firestore)` — client SDK only.
+    const isClientBatchFactoryCall = (node: TSESTree.Node): boolean => {
+      const candidate = unwrapTSAsExpression(node);
+      return (
+        isCallExpression(candidate) &&
+        isClientSdkExportReference(candidate.callee, CLIENT_BATCH_FACTORY, true)
+      );
+    };
+
+    // `runTransaction(firestore, cb)` — the free-function form only exists in
+    // the client SDK. The name alone is not enough, because a project helper
+    // could share it, so the binding must be traced back to the SDK.
+    const isClientTransactionRunnerCall = (
+      node: TSESTree.CallExpression,
+    ): boolean =>
+      isClientSdkExportReference(node.callee, TRANSACTION_RUNNER, false);
 
     const recordFirestoreVariable = (
       varName: string,
@@ -196,6 +272,11 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
         return true;
       }
 
+      if (isClientBatchFactoryCall(target)) {
+        clientFirestoreVariables.add(varName);
+        return true;
+      }
+
       if (isFirestoreDocumentReference(target)) {
         firestoreDocRefVariables.add(varName);
         return true;
@@ -211,8 +292,11 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
         isMemberExpression(target.callee) &&
         isIdentifier(target.callee.property) &&
         target.callee.property.name === 'batch' &&
-        isIdentifier(target.callee.object) &&
-        target.callee.object.name === 'db'
+        isFirestoreRoot(
+          target.callee.object,
+          firestoreCollectionVariables,
+          firestoreDocRefVariables,
+        )
       ) {
         firestoreBatchVariables.add(varName);
         return true;
@@ -300,6 +384,151 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
 
       clearFirestoreTrackingFor(varName);
       recordFirestoreVariable(varName, right);
+    };
+
+    const recordImportBinding = (
+      localName: string,
+      importedName: string | null,
+      isClientSource: boolean,
+    ): void => {
+      if (!isClientSource) {
+        nonClientImportedLocals.add(localName);
+        return;
+      }
+      if (importedName === null) {
+        clientSdkNamespaceLocals.add(localName);
+        return;
+      }
+      clientSdkImportedLocals.set(localName, importedName);
+    };
+
+    const recordImportPattern = (
+      pattern: TSESTree.Node,
+      source: string,
+    ): void => {
+      const isClientSource = CLIENT_SDK_MODULES.has(source);
+
+      if (pattern.type === AST_NODE_TYPES.ObjectPattern) {
+        for (const property of pattern.properties) {
+          if (property.type !== AST_NODE_TYPES.Property) continue;
+          if (!isIdentifier(property.key) || !isIdentifier(property.value)) {
+            continue;
+          }
+          recordImportBinding(
+            property.value.name,
+            property.key.name,
+            isClientSource,
+          );
+        }
+        return;
+      }
+
+      if (isIdentifier(pattern)) {
+        recordImportBinding(pattern.name, null, isClientSource);
+      }
+    };
+
+    const getImportExpressionSource = (node: TSESTree.Node): string | null => {
+      const expression = unwrapTSAsExpression(node);
+      if (expression.type !== AST_NODE_TYPES.ImportExpression) return null;
+      const source = expression.source;
+      return source.type === AST_NODE_TYPES.Literal &&
+        typeof source.value === 'string'
+        ? source.value
+        : null;
+    };
+
+    const isPromiseAllCall = (
+      node: TSESTree.Node,
+    ): node is TSESTree.CallExpression =>
+      isCallExpression(node) &&
+      isMemberExpression(node.callee) &&
+      isIdentifier(node.callee.object) &&
+      node.callee.object.name === 'Promise' &&
+      isIdentifier(node.callee.property) &&
+      node.callee.property.name === 'all';
+
+    // Frontend Firebase access is required to be dynamically imported, so
+    // `await import(...)` — including the correlated `Promise.all` array form —
+    // is the ordinary client-SDK call site rather than an edge case.
+    const recordDynamicImportBindings = (
+      node: TSESTree.VariableDeclarator,
+    ): void => {
+      const init = node.init;
+      if (!init || init.type !== AST_NODE_TYPES.AwaitExpression) return;
+      const awaited = unwrapTSAsExpression(init.argument);
+
+      const directSource = getImportExpressionSource(awaited);
+      if (directSource !== null) {
+        recordImportPattern(node.id, directSource);
+        return;
+      }
+
+      if (
+        !isPromiseAllCall(awaited) ||
+        node.id.type !== AST_NODE_TYPES.ArrayPattern
+      ) {
+        return;
+      }
+
+      const promises = awaited.arguments[0];
+      if (!promises || promises.type !== AST_NODE_TYPES.ArrayExpression) return;
+
+      node.id.elements.forEach((element, index) => {
+        const promise = promises.elements[index];
+        if (!element || !promise) return;
+        const source = getImportExpressionSource(promise);
+        if (source === null) return;
+        recordImportPattern(element, source);
+      });
+    };
+
+    const getCallbackFirstParam = (
+      node: TSESTree.CallExpression,
+    ): TSESTree.Identifier | null => {
+      const callback = node.arguments.find(
+        (argument) =>
+          argument.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+          argument.type === AST_NODE_TYPES.FunctionExpression,
+      ) as
+        | TSESTree.ArrowFunctionExpression
+        | TSESTree.FunctionExpression
+        | undefined;
+      const param = callback?.params[0];
+      return param && isIdentifier(param) ? param : null;
+    };
+
+    // Binds the transaction callback parameter to the SDK that produced it, so
+    // classification rests on origin rather than on the parameter being
+    // spelled `transaction`.
+    const recordTransactionCallback = (node: TSESTree.CallExpression): void => {
+      if (isClientTransactionRunnerCall(node)) {
+        const param = getCallbackFirstParam(node);
+        if (param) {
+          clearFirestoreTrackingFor(param.name);
+          clientFirestoreVariables.add(param.name);
+        }
+        return;
+      }
+
+      const callee = node.callee;
+      if (
+        !isMemberExpression(callee) ||
+        !isIdentifier(callee.property) ||
+        callee.property.name !== TRANSACTION_RUNNER ||
+        !isFirestoreRoot(
+          callee.object,
+          firestoreCollectionVariables,
+          firestoreDocRefVariables,
+        )
+      ) {
+        return;
+      }
+
+      const param = getCallbackFirstParam(node);
+      if (param && !clientFirestoreVariables.has(param.name)) {
+        firestoreTransactionVariables.add(param.name);
+      }
     };
 
     const isRealtimeDbRefAssignment = (node: TSESTree.Node): boolean => {
@@ -392,6 +621,7 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
         const name = object.name;
 
         if (
+          clientFirestoreVariables.has(name) ||
           docSetterVariables.has(name) ||
           batchManagerVariables.has(name) ||
           realtimeDbRefVariables.has(name) ||
@@ -422,7 +652,7 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
         return false;
       }
 
-      if (isRealtimeDbReference(object)) {
+      if (isRealtimeDbReference(object) || isClientBatchFactoryCall(object)) {
         return false;
       }
 
@@ -521,7 +751,24 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
     };
 
     return {
+      ImportDeclaration(node) {
+        const source = node.source.value;
+        const isClientSource =
+          typeof source === 'string' && CLIENT_SDK_MODULES.has(source);
+        for (const specifier of node.specifiers) {
+          if (specifier.type === AST_NODE_TYPES.ImportSpecifier) {
+            recordImportBinding(
+              specifier.local.name,
+              specifier.imported.name,
+              isClientSource,
+            );
+            continue;
+          }
+          recordImportBinding(specifier.local.name, null, isClientSource);
+        }
+      },
       VariableDeclarator(node) {
+        recordDynamicImportBindings(node);
         isRealtimeDbRefAssignment(node);
         isCollectionObjectAssignment(node);
         isFirestoreAssignment(node);
@@ -530,6 +777,8 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
         handleAssignmentExpression(node);
       },
       CallExpression(node) {
+        recordTransactionCallback(node);
+
         if (!isFirestoreMethodCall(node)) return;
 
         const callee = node.callee;
