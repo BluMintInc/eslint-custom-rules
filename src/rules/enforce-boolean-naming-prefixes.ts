@@ -387,7 +387,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
               return identifierReturnsBoolean(calleeName);
             }
 
-            return isPrefixedByBooleanKeyword(
+            return calleeNameImpliesBoolean(
               calleeName,
               approvedPrefixesWithoutAsserts,
             );
@@ -419,9 +419,9 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           }
 
           // Check if the function name suggests it returns a boolean
-          return isPrefixedByBooleanKeyword(
+          return calleeNameImpliesBoolean(
             calleeName,
-            approvedPrefixes.filter((p) => p !== 'asserts'),
+            approvedPrefixesWithoutAsserts,
           );
         }
       }
@@ -566,7 +566,12 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         );
 
         if (matchesPrefix) {
-          return 'boolean';
+          // The callee's declaration outranks its name: a resolvable predicate
+          // that demonstrably returns a verdict object, a string or a Promise
+          // yields a non-boolean value no matter how it is named.
+          return calleeReturnEvaluation(calleeName) === 'nonBoolean'
+            ? 'nonBoolean'
+            : 'boolean';
         }
 
         if (
@@ -780,6 +785,317 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       }
 
       return false;
+    }
+
+    /**
+     * A callee name carrying a boolean prefix is only a hint about the value it
+     * produces. When the declaration is reachable, the declaration wins:
+     * 'nonBoolean' means the call demonstrably yields something other than a
+     * boolean, 'indeterminate' means the rule cannot tell (unresolved import,
+     * parameter, opaque body) and the name heuristic stays in force.
+     */
+    type CalleeReturnEvaluation = 'boolean' | 'nonBoolean' | 'indeterminate';
+
+    // Predicates that call themselves (or each other) would otherwise recurse
+    // forever while their returns are classified.
+    const calleesUnderEvaluation = new Set<string>();
+
+    const NON_BOOLEAN_TYPE_KEYWORDS = new Set<string>([
+      AST_NODE_TYPES.TSStringKeyword,
+      AST_NODE_TYPES.TSNumberKeyword,
+      AST_NODE_TYPES.TSBigIntKeyword,
+      AST_NODE_TYPES.TSSymbolKeyword,
+      AST_NODE_TYPES.TSObjectKeyword,
+      AST_NODE_TYPES.TSVoidKeyword,
+      AST_NODE_TYPES.TSNullKeyword,
+      AST_NODE_TYPES.TSUndefinedKeyword,
+      AST_NODE_TYPES.TSTypeLiteral,
+      AST_NODE_TYPES.TSArrayType,
+      AST_NODE_TYPES.TSTupleType,
+      AST_NODE_TYPES.TSFunctionType,
+      AST_NODE_TYPES.TSConstructorType,
+      AST_NODE_TYPES.TSIntersectionType,
+      AST_NODE_TYPES.TSTemplateLiteralType,
+      AST_NODE_TYPES.TSMappedType,
+    ]);
+
+    const NON_BOOLEAN_EXPRESSION_TYPES = new Set<string>([
+      AST_NODE_TYPES.ObjectExpression,
+      AST_NODE_TYPES.ArrayExpression,
+      AST_NODE_TYPES.TemplateLiteral,
+      AST_NODE_TYPES.TaggedTemplateExpression,
+      AST_NODE_TYPES.ArrowFunctionExpression,
+      AST_NODE_TYPES.FunctionExpression,
+      AST_NODE_TYPES.ClassExpression,
+      AST_NODE_TYPES.NewExpression,
+      AST_NODE_TYPES.UpdateExpression,
+      AST_NODE_TYPES.JSXElement,
+      AST_NODE_TYPES.JSXFragment,
+    ]);
+
+    // `as const` preserves the operand's shape, so the assertion says nothing
+    // about booleanness and the operand must be classified instead.
+    function isConstAssertion(typeNode: TSESTree.Node): boolean {
+      return (
+        typeNode.type === AST_NODE_TYPES.TSTypeReference &&
+        typeNode.typeName.type === AST_NODE_TYPES.Identifier &&
+        typeNode.typeName.name === 'const'
+      );
+    }
+
+    function classifyTypeAnnotation(
+      typeNode: TSESTree.Node,
+    ): CalleeReturnEvaluation {
+      if (
+        typeNode.type === AST_NODE_TYPES.TSBooleanKeyword ||
+        typeNode.type === AST_NODE_TYPES.TSTypePredicate
+      ) {
+        return 'boolean';
+      }
+
+      if (typeNode.type === AST_NODE_TYPES.TSLiteralType) {
+        const literal = typeNode.literal;
+        return literal.type === AST_NODE_TYPES.Literal &&
+          typeof literal.value === 'boolean'
+          ? 'boolean'
+          : 'nonBoolean';
+      }
+
+      if (typeNode.type === AST_NODE_TYPES.TSUnionType) {
+        const members = typeNode.types.map(classifyTypeAnnotation);
+        if (members.every((member) => member === 'boolean')) {
+          return 'boolean';
+        }
+        // A union that mixes boolean with anything else cannot be trusted to
+        // hold a boolean; the repository prefers false negatives here.
+        return members.some((member) => member === 'nonBoolean')
+          ? 'nonBoolean'
+          : 'indeterminate';
+      }
+
+      if (typeNode.type === AST_NODE_TYPES.TSTypeReference) {
+        if (
+          typeNode.typeName.type === AST_NODE_TYPES.Identifier &&
+          typeNode.typeName.name === 'Boolean'
+        ) {
+          return 'boolean';
+        }
+        // Named types (including `Promise<boolean>`, whose call site yields a
+        // promise rather than a boolean) are treated as non-boolean values.
+        return 'nonBoolean';
+      }
+
+      if (NON_BOOLEAN_TYPE_KEYWORDS.has(typeNode.type)) {
+        return 'nonBoolean';
+      }
+
+      // `any`, `unknown`, generics, conditional and indexed-access types carry
+      // no reliable syntactic verdict.
+      return 'indeterminate';
+    }
+
+    function classifyReturnExpression(
+      expression: TSESTree.Expression | null | undefined,
+    ): CalleeReturnEvaluation {
+      // A bare `return;` (or a fall-through) produces undefined.
+      if (!expression) return 'nonBoolean';
+
+      if (
+        expression.type === AST_NODE_TYPES.TSAsExpression ||
+        expression.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+        expression.type === AST_NODE_TYPES.TSTypeAssertion
+      ) {
+        const annotation = expression.typeAnnotation;
+        if (annotation && !isConstAssertion(annotation)) {
+          const classified = classifyTypeAnnotation(annotation);
+          if (classified !== 'indeterminate') {
+            return classified;
+          }
+        }
+        return classifyReturnExpression(
+          expression.expression as TSESTree.Expression,
+        );
+      }
+
+      if (
+        expression.type === AST_NODE_TYPES.ChainExpression ||
+        expression.type === AST_NODE_TYPES.TSNonNullExpression
+      ) {
+        return classifyReturnExpression(
+          expression.expression as TSESTree.Expression,
+        );
+      }
+
+      if (expression.type === AST_NODE_TYPES.SequenceExpression) {
+        return classifyReturnExpression(
+          expression.expressions[expression.expressions.length - 1],
+        );
+      }
+
+      if (NON_BOOLEAN_EXPRESSION_TYPES.has(expression.type)) {
+        return 'nonBoolean';
+      }
+
+      if (expression.type === AST_NODE_TYPES.Literal) {
+        return typeof expression.value === 'boolean' ? 'boolean' : 'nonBoolean';
+      }
+
+      if (
+        expression.type === AST_NODE_TYPES.Identifier &&
+        expression.name === 'undefined'
+      ) {
+        return 'nonBoolean';
+      }
+
+      if (expression.type === AST_NODE_TYPES.UnaryExpression) {
+        if (expression.operator === '!' || expression.operator === 'delete') {
+          return 'boolean';
+        }
+        return 'nonBoolean';
+      }
+
+      if (
+        expression.type === AST_NODE_TYPES.BinaryExpression &&
+        !BOOLEANISH_BINARY_OPERATORS.has(expression.operator)
+      ) {
+        return 'nonBoolean';
+      }
+
+      // Branching expressions are classified from their branches so a mix of a
+      // boolean and an object (or two objects) is recognized as non-boolean.
+      if (expression.type === AST_NODE_TYPES.ConditionalExpression) {
+        return combineClassifications([
+          classifyReturnExpression(expression.consequent),
+          classifyReturnExpression(expression.alternate),
+        ]);
+      }
+
+      if (expression.type === AST_NODE_TYPES.LogicalExpression) {
+        return combineClassifications([
+          classifyReturnExpression(expression.left),
+          classifyReturnExpression(expression.right),
+        ]);
+      }
+
+      const evaluation = evaluateBooleanishExpression(expression);
+      if (evaluation === 'boolean') return 'boolean';
+      if (evaluation === 'nonBoolean') return 'nonBoolean';
+      return 'indeterminate';
+    }
+
+    function combineClassifications(
+      classifications: CalleeReturnEvaluation[],
+    ): CalleeReturnEvaluation {
+      if (classifications.length === 0) return 'indeterminate';
+      if (classifications.every((entry) => entry === 'boolean')) {
+        return 'boolean';
+      }
+      return classifications.some((entry) => entry === 'nonBoolean')
+        ? 'nonBoolean'
+        : 'indeterminate';
+    }
+
+    function classifyFunctionReturn(
+      functionLike: TSESTree.FunctionLike,
+    ): CalleeReturnEvaluation {
+      const annotation = functionLike.returnType?.typeAnnotation;
+      if (annotation) {
+        const classified = classifyTypeAnnotation(annotation);
+        if (classified !== 'indeterminate') {
+          return classified;
+        }
+      }
+
+      // Calling an async or generator function hands back a promise or an
+      // iterator, never the boolean produced inside the body.
+      if (functionLike.async || functionLike.generator) {
+        return 'nonBoolean';
+      }
+
+      if (
+        functionLike.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+        functionLike.expression
+      ) {
+        return classifyReturnExpression(
+          functionLike.body as TSESTree.Expression,
+        );
+      }
+
+      // Overload signatures and ambient declarations expose no body to inspect.
+      if (functionLike.body?.type !== AST_NODE_TYPES.BlockStatement) {
+        return 'indeterminate';
+      }
+
+      const returnArguments = collectReturnArguments(functionLike.body);
+      if (returnArguments.length === 0) {
+        return 'nonBoolean';
+      }
+
+      return combineClassifications(
+        returnArguments.map(classifyReturnExpression),
+      );
+    }
+
+    function functionOfDefinition(
+      definition: TSESLint.Scope.Definition,
+    ): TSESTree.FunctionLike | undefined {
+      if (definition.type === 'FunctionName') {
+        return definition.node as unknown as TSESTree.FunctionLike;
+      }
+
+      if (definition.type === 'Variable') {
+        const init = (definition.node as unknown as TSESTree.VariableDeclarator)
+          .init;
+        if (
+          init?.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+          init?.type === AST_NODE_TYPES.FunctionExpression
+        ) {
+          return init;
+        }
+      }
+
+      return undefined;
+    }
+
+    /**
+     * Resolve a callee identifier through the scope chain and classify the value
+     * its calls produce, without a type checker.
+     */
+    function calleeReturnEvaluation(name: string): CalleeReturnEvaluation {
+      if (calleesUnderEvaluation.has(name)) return 'indeterminate';
+
+      const variable = findVariableInScopes(name);
+      if (!variable || variable.defs.length === 0) return 'indeterminate';
+
+      calleesUnderEvaluation.add(name);
+      try {
+        const classifications: CalleeReturnEvaluation[] = [];
+        for (const definition of variable.defs) {
+          const functionLike = functionOfDefinition(definition);
+          // Imports, parameters and aliases hide the implementation, so the
+          // name heuristic must keep its reach across module boundaries.
+          if (!functionLike) return 'indeterminate';
+          classifications.push(classifyFunctionReturn(functionLike));
+        }
+        return combineClassifications(classifications);
+      } finally {
+        calleesUnderEvaluation.delete(name);
+      }
+    }
+
+    /**
+     * Decide whether a call to `calleeName` yields a boolean, giving the callee's
+     * resolvable declaration the final say over its name.
+     */
+    function calleeNameImpliesBoolean(
+      calleeName: string,
+      prefixes: string[],
+    ): boolean {
+      if (!isPrefixedByBooleanKeyword(calleeName, prefixes)) {
+        return false;
+      }
+
+      return calleeReturnEvaluation(calleeName) !== 'nonBoolean';
     }
 
     /**
