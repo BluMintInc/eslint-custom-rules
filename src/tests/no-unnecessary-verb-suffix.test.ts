@@ -466,6 +466,14 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
     };
   }
 `,
+    // A declarator with a definite-assignment assertion but no function
+    // initializer names no function, so nothing is reported — documented here
+    // because the `!` token sits inside the identifier's range and the rename
+    // fixer must never see this shape (#1351).
+    `
+  type Validator = (rules: string) => boolean;
+  let validateBy!: Validator;
+`,
   ],
   invalid: [
     // Controls (#1227): a NOUN object before the particle is a genuine
@@ -1612,6 +1620,212 @@ function lineAt(lines: string[], index: number) {
     };
   `,
       errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // === #1351: an Identifier's range spans its type annotation, definite
+    // assignment assertion and optional marker, so the rename must rewrite the
+    // NAME only. A whole-node replace deletes the annotation, which strips the
+    // contextual type off the initializer's parameters (implicit `any`) while
+    // leaving the rule with nothing left to report — a silent corruption. ===
+    {
+      code: `
+type Validator = (rules: string) => boolean;
+const validateBy: Validator = (rules) => true;
+console.log(validateBy('x'));
+  `,
+      output: `
+type Validator = (rules: string) => boolean;
+const validate: Validator = (rules) => true;
+console.log(validate('x'));
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // The annotated declarator holds a function expression rather than an arrow.
+    {
+      code: `
+type Compute = () => void;
+const computeFrom: Compute = function () {};
+computeFrom();
+  `,
+      output: `
+type Compute = () => void;
+const compute: Compute = function () {};
+compute();
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // A generic annotation: the type arguments sit inside the identifier's range
+    // and must survive intact.
+    {
+      code: `
+type Mapper<I, O> = (input: I) => O;
+const mapFrom: Mapper<string, number> = (input) => input.length;
+const size = mapFrom('abc');
+  `,
+      output: `
+type Mapper<I, O> = (input: I) => O;
+const map: Mapper<string, number> = (input) => input.length;
+const size = map('abc');
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // An inline curried function type: the nested `=>` arrows are part of the
+    // annotation, not of the initializer.
+    {
+      code: `
+const pickBy: (a: string) => (b: number) => void = (a) => (b) => {};
+pickBy('a')(1);
+  `,
+      output: `
+const pick: (a: string) => (b: number) => void = (a) => (b) => {};
+pick('a')(1);
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // A generic annotation whose type argument itself nests `<>` and `=>`.
+    {
+      code: `
+type Factory<T> = () => T;
+const buildFrom: Factory<Map<string, () => void>> = () => new Map();
+buildFrom();
+  `,
+      output: `
+type Factory<T> = () => T;
+const build: Factory<Map<string, () => void>> = () => new Map();
+build();
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // A definite-assignment assertion also lives inside the identifier's range.
+    // TypeScript rejects `!` alongside an initializer semantically, but the
+    // parser accepts it, and it is the only shape that pins the `!` token for a
+    // declarator this rule reports (a bare `let validateBy!: Validator;` has no
+    // function initializer, so it is not reported at all — see the valid cases).
+    {
+      code: `
+type Validator = (rules: string) => boolean;
+let checkBy!: Validator = (rules) => true;
+checkBy('x');
+  `,
+      output: `
+type Validator = (rules: string) => boolean;
+let check!: Validator = (rules) => true;
+check('x');
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // A comment between the name and its annotation proves the replaced range
+    // stops at the name token rather than spanning trailing trivia.
+    {
+      code: `
+type Validator = (rules: string) => boolean;
+const inspectBy /* keep me */: Validator = (rules) => true;
+inspectBy('x');
+  `,
+      output: `
+type Validator = (rules: string) => boolean;
+const inspect /* keep me */: Validator = (rules) => true;
+inspect('x');
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // A named function expression assigned to an annotated const: the reported
+    // name is the inner one, and the outer annotation is untouched.
+    {
+      code: `
+type Compute = () => void;
+const holder: Compute = function tallyFrom() {};
+holder();
+  `,
+      output: `
+type Compute = () => void;
+const holder: Compute = function tally() {};
+holder();
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // Several references across nested scopes exercise the reference-rename loop
+    // alongside the annotated declaration.
+    {
+      code: `
+type Validator = (rules: string) => boolean;
+const screenBy: Validator = (rules) => rules.length > 0;
+function outer() {
+  return () => screenBy('nested');
+}
+const direct = screenBy('direct');
+const again = screenBy('again');
+  `,
+      output: `
+type Validator = (rules: string) => boolean;
+const screen: Validator = (rules) => rules.length > 0;
+function outer() {
+  return () => screen('nested');
+}
+const direct = screen('direct');
+const again = screen('again');
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // Control: an UNANNOTATED declarator keeps fixing exactly as before.
+    {
+      code: `
+const auditBy = (rules) => true;
+auditBy('x');
+  `,
+      output: `
+const audit = (rules) => true;
+audit('x');
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // Control: a FunctionDeclaration carries no annotation on its id, so its
+    // output is unchanged by the narrowed replacement.
+    {
+      code: `
+function reviewBy(rules: string) {
+  return rules.length > 0;
+}
+reviewBy('x');
+  `,
+      output: `
+function review(rules: string) {
+  return rules.length > 0;
+}
+review('x');
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // Suppression paths are unchanged: an exported annotated symbol offers no
+    // fix, so the annotation cannot be damaged there either.
+    {
+      code: `
+type Validator = (rules: string) => boolean;
+export const surveyBy: Validator = (rules) => true;
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: null,
+    },
+    // Suppression path: object-literal property (member-accessed call sites).
+    {
+      code: `
+const registry = {
+  rankUsersBy: (role: string) => role,
+};
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: null,
+    },
+    // Suppression path: class method (member-accessed call sites).
+    {
+      code: `
+class Roster {
+  groupUsersBy(role: string) {
+    return role;
+  }
+}
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: null,
     },
   ],
 });

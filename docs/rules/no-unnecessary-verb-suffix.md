@@ -224,6 +224,26 @@ In these cases, rename the symbol and its usages manually (for example with an
 editor's rename-symbol / refactor command, which uses type information the lint
 fixer does not have).
 
+When the rename is applied, it rewrites the **name only**. Everything attached to
+the declared identifier is preserved:
+
+```ts
+// Before
+type Validator = (rules: string) => boolean;
+const validateBy: Validator = (rules) => true;
+console.log(validateBy('x'));
+
+// After --fix: the `: Validator` annotation survives, so `rules` keeps its
+// contextual type
+type Validator = (rules: string) => boolean;
+const validate: Validator = (rules) => true;
+console.log(validate('x'));
+```
+
+The same holds for a definite-assignment assertion (`let validateBy!: Validator`)
+and an optional marker (`cbBy?: Fn`), both of which are part of the identifier
+rather than of the surrounding declaration.
+
 ## When Not To Use It
 
 You can disable this rule when the suffix carries domain meaning that parameters alone cannot convey (e.g., security mode, data partition, migration origin). Prefer targeted disables near the affected declarations so the exception stays visible to readers.
