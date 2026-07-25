@@ -229,6 +229,272 @@ function isNameBoundInSubtree(
   return false;
 }
 
+/**
+ * Annotations that impose no excess-property check. A value annotated `any` or
+ * `unknown` may carry members its annotation never declares, so the annotation
+ * proves nothing about where a member name came from (#1350).
+ */
+const UNCHECKED_ANNOTATION_TYPES = new Set<AST_NODE_TYPES>([
+  AST_NODE_TYPES.TSAnyKeyword,
+  AST_NODE_TYPES.TSUnknownKeyword,
+]);
+
+/**
+ * The declared type of an annotation-bearing node (`const x: T`, `field: T`),
+ * or null when the node carries no annotation.
+ */
+function declaredTypeNode(node: TSESTree.Node): TSESTree.Node | null {
+  const { typeAnnotation } = node as {
+    typeAnnotation?: TSESTree.TSTypeAnnotation;
+  };
+  return typeAnnotation?.typeAnnotation ?? null;
+}
+
+function checksExcessProperties(typeNode: TSESTree.Node | null): boolean {
+  return typeNode !== null && !UNCHECKED_ANNOTATION_TYPES.has(typeNode.type);
+}
+
+/**
+ * Reports whether `node` sits inside a value whose shape TypeScript checks
+ * against a declared type — a type-annotated variable or class field, or a
+ * `satisfies` clause. Excess-property checking makes such a literal unable to
+ * carry a member the target type does not declare, so a member name there is
+ * dictated by that type rather than chosen by the author, and renaming it would
+ * break conformance (#1350). No member resolution is needed: the signal alone
+ * is proof, because code carrying an undeclared member does not compile.
+ *
+ * The walk climbs object/array containers so an outer signal covers nested
+ * members, and stops at anything else — notably `as` assertions, which do not
+ * reject undeclared members the same way.
+ */
+function hasConformanceSignal(node: TSESTree.Node): boolean {
+  let current: TSESTree.Node = node;
+  for (;;) {
+    const parent: TSESTree.Node | undefined = current.parent;
+    if (!parent) {
+      return false;
+    }
+    switch (parent.type) {
+      case AST_NODE_TYPES.TSSatisfiesExpression:
+        return (
+          parent.expression === current &&
+          checksExcessProperties(parent.typeAnnotation)
+        );
+      case AST_NODE_TYPES.VariableDeclarator:
+        return (
+          parent.init === current &&
+          checksExcessProperties(declaredTypeNode(parent.id))
+        );
+      case AST_NODE_TYPES.PropertyDefinition:
+        return (
+          parent.value === current &&
+          checksExcessProperties(declaredTypeNode(parent))
+        );
+      case AST_NODE_TYPES.Property:
+      case AST_NODE_TYPES.ObjectExpression:
+      case AST_NODE_TYPES.ArrayExpression:
+        current = parent;
+        break;
+      default:
+        return false;
+    }
+  }
+}
+
+/**
+ * Named type and class declarations of a single file, keyed by name, so a class
+ * heritage clause can be resolved without type information. Interfaces map to a
+ * list because declaration merging spreads one interface across several
+ * declarations.
+ */
+type DeclarationIndex = {
+  interfaces: Map<string, TSESTree.TSInterfaceDeclaration[]>;
+  typeAliases: Map<string, TSESTree.TSTypeAliasDeclaration>;
+  classes: Map<string, TSESTree.ClassDeclaration | TSESTree.ClassExpression>;
+};
+
+function buildDeclarationIndex(
+  sourceCode: Readonly<TSESLint.SourceCode>,
+): DeclarationIndex {
+  const index: DeclarationIndex = {
+    interfaces: new Map(),
+    typeAliases: new Map(),
+    classes: new Map(),
+  };
+
+  // Declarations are collected from the whole file rather than from
+  // `Program.body` alone so contracts declared inside modules, blocks or
+  // functions resolve as well as top-level ones.
+  const stack: TSESTree.Node[] = [sourceCode.ast];
+  while (stack.length > 0) {
+    const current = stack.pop() as TSESTree.Node;
+    switch (current.type) {
+      case AST_NODE_TYPES.TSInterfaceDeclaration: {
+        const merged = index.interfaces.get(current.id.name) ?? [];
+        merged.push(current);
+        index.interfaces.set(current.id.name, merged);
+        break;
+      }
+      case AST_NODE_TYPES.TSTypeAliasDeclaration:
+        index.typeAliases.set(current.id.name, current);
+        break;
+      case AST_NODE_TYPES.ClassDeclaration:
+      case AST_NODE_TYPES.ClassExpression:
+        if (current.id) {
+          index.classes.set(current.id.name, current);
+        }
+        break;
+      default:
+        break;
+    }
+
+    for (const key of sourceCode.visitorKeys[current.type] ?? []) {
+      const value = (current as unknown as Record<string, unknown>)[key];
+      const children = Array.isArray(value) ? value : [value];
+      for (const child of children) {
+        if (child && typeof child === 'object' && 'type' in child) {
+          stack.push(child as TSESTree.Node);
+        }
+      }
+    }
+  }
+
+  return index;
+}
+
+function heritageTypeName(expression: TSESTree.Node): string | null {
+  return expression.type === AST_NODE_TYPES.Identifier ? expression.name : null;
+}
+
+function membersDeclareName(
+  members: readonly TSESTree.Node[],
+  memberName: string,
+): boolean {
+  return members.some(
+    (member) =>
+      (member.type === AST_NODE_TYPES.TSMethodSignature ||
+        member.type === AST_NODE_TYPES.TSPropertySignature) &&
+      member.key.type === AST_NODE_TYPES.Identifier &&
+      member.key.name === memberName,
+  );
+}
+
+function classBodyDeclaresName(
+  members: readonly TSESTree.Node[],
+  memberName: string,
+): boolean {
+  return members.some(
+    (member) =>
+      (member.type === AST_NODE_TYPES.MethodDefinition ||
+        member.type === AST_NODE_TYPES.PropertyDefinition) &&
+      member.key.type === AST_NODE_TYPES.Identifier &&
+      member.key.name === memberName,
+  );
+}
+
+/**
+ * Reports whether the contract named `typeName` accounts for `memberName`,
+ * either by declaring it or by being unreadable from this file. A class may add
+ * members its contract never declares, so presence of a heritage clause alone
+ * cannot exempt a name — but an imported or otherwise unresolvable contract
+ * hides its members from a purely syntactic rule, and this plugin prefers a
+ * false negative over a false positive (#1350).
+ */
+function contractCoversName(
+  typeName: string,
+  memberName: string,
+  index: DeclarationIndex,
+  visited: Set<string>,
+): boolean {
+  // A name already inspected on this path adds nothing and would loop on a
+  // circular heritage chain.
+  if (visited.has(typeName)) {
+    return false;
+  }
+  visited.add(typeName);
+
+  const interfaces = index.interfaces.get(typeName);
+  if (interfaces) {
+    return interfaces.some(
+      (declaration) =>
+        membersDeclareName(declaration.body.body, memberName) ||
+        heritageCoversName(
+          declaration.extends ?? [],
+          memberName,
+          index,
+          visited,
+        ),
+    );
+  }
+
+  const alias = index.typeAliases.get(typeName);
+  if (alias) {
+    // An alias to anything but a type literal (an intersection, a mapped type,
+    // a reference to an imported type) hides its member list from a syntactic
+    // reader, so it is treated as unreadable.
+    return (
+      alias.typeAnnotation.type !== AST_NODE_TYPES.TSTypeLiteral ||
+      membersDeclareName(alias.typeAnnotation.members, memberName)
+    );
+  }
+
+  const classDeclaration = index.classes.get(typeName);
+  if (classDeclaration) {
+    return (
+      classBodyDeclaresName(classDeclaration.body.body, memberName) ||
+      classContractCoversName(classDeclaration, memberName, index, visited)
+    );
+  }
+
+  // Nothing under this name in the file: the contract lives in another module
+  // and its members are unreadable here.
+  return true;
+}
+
+function heritageCoversName(
+  heritage: readonly (
+    | TSESTree.TSClassImplements
+    | TSESTree.TSInterfaceHeritage
+  )[],
+  memberName: string,
+  index: DeclarationIndex,
+  visited: Set<string>,
+): boolean {
+  return heritage.some((clause) => {
+    const typeName = heritageTypeName(clause.expression);
+    // A namespaced or computed heritage expression cannot be followed
+    // syntactically, so it counts as an unreadable contract.
+    return (
+      typeName === null ||
+      contractCoversName(typeName, memberName, index, visited)
+    );
+  });
+}
+
+function classContractCoversName(
+  classNode: TSESTree.ClassDeclaration | TSESTree.ClassExpression,
+  memberName: string,
+  index: DeclarationIndex,
+  visited: Set<string>,
+): boolean {
+  if (
+    heritageCoversName(classNode.implements ?? [], memberName, index, visited)
+  ) {
+    return true;
+  }
+
+  const { superClass } = classNode;
+  if (!superClass) {
+    return false;
+  }
+  const superName = heritageTypeName(superClass);
+  // A computed superclass (a mixin call) is unreadable, like an imported one.
+  return (
+    superName === null ||
+    contractCoversName(superName, memberName, index, visited)
+  );
+}
+
 type MessageIds = 'unnecessaryVerbSuffix';
 
 export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
@@ -249,6 +515,51 @@ export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
+    // Built on first heritage question only, since most files never ask one.
+    let declarationIndex: DeclarationIndex | null = null;
+    function getDeclarationIndex(): DeclarationIndex {
+      if (declarationIndex === null) {
+        declarationIndex = buildDeclarationIndex(context.sourceCode);
+      }
+      return declarationIndex;
+    }
+
+    /**
+     * Reports whether a class member's name comes from a contract the class
+     * declares conformance to, rather than from its author (#1350).
+     */
+    function isDictatedByHeritage(
+      node: TSESTree.MethodDefinition,
+      memberName: string,
+    ): boolean {
+      const classBody = node.parent;
+      if (!classBody || classBody.type !== AST_NODE_TYPES.ClassBody) {
+        return false;
+      }
+      const classNode = classBody.parent;
+      if (
+        !classNode ||
+        (classNode.type !== AST_NODE_TYPES.ClassDeclaration &&
+          classNode.type !== AST_NODE_TYPES.ClassExpression)
+      ) {
+        return false;
+      }
+      // Indexing the file's declarations is only worth its cost once a class
+      // declares conformance to something.
+      if (
+        (classNode.implements ?? []).length === 0 &&
+        classNode.superClass === null
+      ) {
+        return false;
+      }
+      return classContractCoversName(
+        classNode,
+        memberName,
+        getDeclarationIndex(),
+        new Set(),
+      );
+    }
+
     /**
      * Returns true when renaming the symbol to `suggestion` would collide with
      * an existing binding in any scope the rename touches, making the autofix
@@ -452,6 +763,12 @@ export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
       },
       MethodDefinition(node): void {
         if (node.key.type === AST_NODE_TYPES.Identifier) {
+          // A member implementing a contract the class declares conformance to
+          // is named by that contract, so renaming it would break conformance.
+          if (isDictatedByHeritage(node, node.key.name)) {
+            return;
+          }
+
           // Class methods are called via member expressions (`this.method()`,
           // `instance.method()`) that the scope manager does not track as
           // references. A syntactic single-file fixer therefore cannot find and
@@ -487,6 +804,13 @@ export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
           (node.value.type === AST_NODE_TYPES.ArrowFunctionExpression ||
             node.value.type === AST_NODE_TYPES.FunctionExpression)
         ) {
+          // A literal checked against a declared type can only hold members
+          // that type declares, so its member names are not the author's to
+          // rename.
+          if (hasConformanceSignal(node)) {
+            return;
+          }
+
           // Object-literal method properties are accessed via member expressions
           // (`obj.method()`) the scope manager does not track. As with class
           // methods, the fix is suppressed to avoid orphaning call sites.

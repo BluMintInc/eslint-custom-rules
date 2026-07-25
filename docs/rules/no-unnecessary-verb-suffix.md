@@ -105,6 +105,98 @@ function handleLogOut() {}
 function handleCheckIn() {}
 ```
 
+### Names dictated by a declared contract are exempt
+
+A member name is only the author's to change when the author chose it. When the
+surrounding value declares conformance to a type, the member name belongs to
+that type — renaming it would break conformance — so the rule stays silent
+without needing a disable comment. Three declarations count as such a signal:
+
+1. **A type annotation** on the variable or class field holding the object
+   literal.
+2. **A `satisfies` clause** on the object literal.
+3. **A class heritage clause** (`implements` or `extends`) that accounts for the
+   member.
+
+```ts
+interface QueryLike {
+  orderBy: (field: string, direction: string) => QueryLike;
+}
+
+// 1. Annotated variable — the annotation admits only members QueryLike declares
+const chain: QueryLike = {
+  orderBy: (field, direction) => chain,
+};
+
+// Nested and array-wrapped members are covered by the outer annotation
+const configs: QueryLike[] = [{ orderBy: (field, direction) => configs[0] }];
+
+// Annotated class fields work the same way
+class FakeQueryFactory {
+  private readonly chain: QueryLike = {
+    orderBy: (field, direction) => this.chain,
+  };
+}
+
+// 2. satisfies clause
+const satisfied = {
+  orderBy: (field: string, direction: string) => satisfied,
+} satisfies QueryLike;
+
+// 3. Class heritage that declares the member
+class FakeQuery implements QueryLike {
+  public orderBy(field: string, direction: string) {
+    return this as never;
+  }
+}
+```
+
+For annotations and `satisfies`, the signal alone is enough: TypeScript's
+excess-property check rejects a literal carrying a member its target type does
+not declare, so code that compiles cannot have invented the name. For class
+heritage the check is stricter, because a class may declare members beyond its
+contract: the member name is resolved against the interface, type alias, or base
+class when that declaration lives in the same file. A class member absent from a
+resolvable contract keeps firing, while a contract imported from another module
+is unreadable to this rule and exempts the member — a deliberate false negative
+in preference to a false positive.
+
+The following still fire, because none of them pins the name to a type:
+
+```ts
+// No declared target type at all — these names are the author's
+const chain = {
+  orderBy: (field: string, direction: string) => chain,
+};
+
+// `any`/`unknown` disable excess-property checking, so they prove nothing
+const helpers: any = { fetchTournamentsBy: (key: string) => key };
+
+// `as` assertions permit members the target type never declares
+const asserted = { orderBy: (field: string) => {} } as QueryLike;
+
+// A variable's own name is never dictated by its annotation
+const validateBy: Validator = (rules) => {};
+
+// The class member is absent from the contract it implements
+interface Limitable {
+  limit: (count: number) => void;
+}
+class FakeQuery implements Limitable {
+  limit(count: number) {}
+  filterUsersBy(role: string) {} // Not part of Limitable
+}
+```
+
+To silence the rule on a hand-built test double or adapter, annotate it against
+the contract it imitates (`const chain: QueryLike = { … }`) rather than
+disabling the rule — the annotation documents the constraint and lets the
+compiler enforce it.
+
+Note that the exemption covers an *implementation* conforming to a contract, not
+the contract's own declaration: `interface Repository { fetchRecordFrom(source: string): unknown }`
+still reports, because that name is chosen where it is declared.
+
 ### Auto-fix is reference-safe
 
 The `--fix` autofix renames the declaration **and every in-file reference**
