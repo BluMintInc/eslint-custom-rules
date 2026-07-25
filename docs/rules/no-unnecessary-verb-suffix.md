@@ -219,6 +219,10 @@ where a rename could not be completed safely:
   (`const line = lineAt(...)` rewritten to `const line = line(...)`, which
   fails to compile) or silently shadow the function's new name from within its
   own body.
+- **Symbols re-exported through a separate specifier** (`const fooBy = …;`
+  followed by `export { fooBy }`). The specifier binds the public export name,
+  so renaming it would break every importer — the same cross-file problem as an
+  inline `export`, which a declaration-level check alone does not catch.
 
 In these cases, rename the symbol and its usages manually (for example with an
 editor's rename-symbol / refactor command, which uses type information the lint
@@ -243,6 +247,20 @@ console.log(validate('x'));
 The same holds for a definite-assignment assertion (`let validateBy!: Validator`)
 and an optional marker (`cbBy?: Fn`), both of which are part of the identifier
 rather than of the surrounding declaration.
+
+A reference written as object-literal shorthand is expanded rather than
+rewritten in place, because the single token there is both the property key and
+its value — renaming it outright would change the object's shape:
+
+```ts
+// Before
+const validateBy = (rules: string) => true;
+const registry = { validateBy };
+
+// After --fix: the key keeps its name, so `registry.validateBy` still resolves
+const validate = (rules: string) => true;
+const registry = { validateBy: validate };
+```
 
 ## When Not To Use It
 
