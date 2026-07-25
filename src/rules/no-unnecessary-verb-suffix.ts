@@ -181,6 +181,34 @@ function isExported(node: TSESTree.Node): boolean {
 }
 
 /**
+ * Renames `identifier` to `newName` while leaving every other token inside the
+ * identifier's range intact.
+ *
+ * A TSESTree `Identifier` node's range spans the tokens that trail its name:
+ * a type annotation (`validateBy: Validator`), a definite-assignment assertion
+ * (`validateBy!: Validator`) and an optional marker (`cbBy?: Fn`). Replacing the
+ * whole node therefore deletes them, and dropping a contextual type turns
+ * inferred parameters into implicit `any` so the file no longer compiles — a
+ * silent corruption, since the rule reports nothing afterwards (#1351). The name
+ * is always the identifier's first token, so replacing that token's range alone
+ * renames the symbol and nothing else.
+ */
+function renameIdentifier(
+  fixer: TSESLint.RuleFixer,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  identifier: TSESTree.Identifier | TSESTree.JSXIdentifier,
+  newName: string,
+): TSESLint.RuleFix {
+  const nameToken = sourceCode.getFirstToken(identifier);
+  // The token store yields the name for every real identifier; the arithmetic
+  // end keeps the range narrowed even if a token is somehow unavailable.
+  const nameEnd = nameToken
+    ? nameToken.range[1]
+    : identifier.range[0] + identifier.name.length;
+  return fixer.replaceTextRange([identifier.range[0], nameEnd], newName);
+}
+
+/**
  * Walks a scope chain upward from `scope` (inclusive) and reports whether
  * `targetName` is bound anywhere between `scope` and `stopScope` (inclusive).
  * Mirrors how the engine resolves an identifier at a use site: the first scope
@@ -625,7 +653,7 @@ export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
        * it is the key node. Passing it explicitly avoids re-deriving it inside
        * the fixer and allows the reference-rename loop to skip it cleanly.
        */
-      declarationIdNode: TSESTree.Node | null,
+      declarationIdNode: TSESTree.Identifier | null,
       /**
        * The AST node whose declared variables the scope manager tracks.
        * For FunctionDeclaration this is `node` itself; for a VariableDeclarator
@@ -714,15 +742,30 @@ export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
                 // Scope-tracked symbols (FunctionDeclaration, VariableDeclarator
                 // arrows/functions, named FunctionExpression): rename the
                 // declaration identifier and every in-file reference together so
-                // no call site is left pointing at the old name.
+                // no call site is left pointing at the old name. Every rewrite
+                // goes through renameIdentifier, because an identifier's range
+                // can carry trailing tokens that must survive a rename (#1351).
+                const { sourceCode } = context;
                 const fixes = [
-                  fixer.replaceText(declarationIdNode, suggestion),
+                  renameIdentifier(
+                    fixer,
+                    sourceCode,
+                    declarationIdNode,
+                    suggestion,
+                  ),
                 ];
                 if (targetVariable) {
                   for (const ref of targetVariable.references) {
                     // Skip the declaration identifier itself — already handled.
                     if (ref.identifier === declarationIdNode) continue;
-                    fixes.push(fixer.replaceText(ref.identifier, suggestion));
+                    fixes.push(
+                      renameIdentifier(
+                        fixer,
+                        sourceCode,
+                        ref.identifier,
+                        suggestion,
+                      ),
+                    );
                   }
                 }
 
