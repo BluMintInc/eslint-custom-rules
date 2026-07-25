@@ -1,3 +1,10 @@
+## [1.20.4](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.3...v1.20.4) (2026-07-25)
+
+
+### Bug Fixes
+
+* **no-unnecessary-verb-suffix:** stop the rename autofix from renaming shorthand keys and re-exported names (closes [#1352](https://github.com/BluMintInc/eslint-custom-rules/issues/1352)) ([e13b7bb](https://github.com/BluMintInc/eslint-custom-rules/commit/e13b7bb6327e6dda65f3c864249dfc7259bda664)), closes [#1313](https://github.com/BluMintInc/eslint-custom-rules/issues/1313)
+
 ## [1.20.3](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.2...v1.20.3) (2026-07-25)
 
 
