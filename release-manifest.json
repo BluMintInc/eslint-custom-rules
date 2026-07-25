@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.2",
+    "date": "2026-07-25T02:42:18.863Z",
+    "rules": [
+      {
+        "name": "no-unnecessary-verb-suffix",
+        "changeType": "fix",
+        "issues": [
+          1350
+        ],
+        "summary": "exempt member names dictated by a declared contract (closes #1350)"
+      }
+    ]
+  },
+  {
     "version": "1.20.1",
     "date": "2026-07-24T22:02:37.444Z",
     "rules": [

@@ -1,3 +1,10 @@
+## [1.20.2](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.1...v1.20.2) (2026-07-25)
+
+
+### Bug Fixes
+
+* **no-unnecessary-verb-suffix:** exempt member names dictated by a declared contract (closes [#1350](https://github.com/BluMintInc/eslint-custom-rules/issues/1350)) ([36060c9](https://github.com/BluMintInc/eslint-custom-rules/commit/36060c9de546b174da3f0996f48263fa3aaed896))
+
 ## [1.20.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.0...v1.20.1) (2026-07-24)
 
 
