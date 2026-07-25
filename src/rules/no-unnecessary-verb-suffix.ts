@@ -758,6 +758,38 @@ export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
                   for (const ref of targetVariable.references) {
                     // Skip the declaration identifier itself — already handled.
                     if (ref.identifier === declarationIdNode) continue;
+
+                    const refParent = ref.identifier.parent;
+
+                    // An object-literal shorthand `{ fooBar }` desugars to
+                    // `{ fooBar: fooBar }`: the one token is both the property
+                    // key and its value. Renaming it would rename the KEY too,
+                    // silently changing the object's shape so every
+                    // `obj.fooBar` consumer reads undefined. Expand to
+                    // `oldKey: newName` so only the value moves (#1352).
+                    if (
+                      refParent?.type === AST_NODE_TYPES.Property &&
+                      refParent.shorthand &&
+                      refParent.parent?.type === AST_NODE_TYPES.ObjectExpression
+                    ) {
+                      fixes.push(
+                        fixer.replaceText(
+                          ref.identifier,
+                          `${name}: ${suggestion}`,
+                        ),
+                      );
+                      continue;
+                    }
+
+                    // A re-export specifier `export { fooBar }` binds the public
+                    // export name to this identifier, a cross-file contract a
+                    // single-file fixer cannot rewrite. The declaration-level
+                    // export guard misses this form because the declaration
+                    // itself carries no `export` keyword (#1352).
+                    if (refParent?.type === AST_NODE_TYPES.ExportSpecifier) {
+                      return null;
+                    }
+
                     fixes.push(
                       renameIdentifier(
                         fixer,

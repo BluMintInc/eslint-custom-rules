@@ -1827,5 +1827,118 @@ class Roster {
       errors: [{ messageId: 'unnecessaryVerbSuffix' }],
       output: null,
     },
+    // A shorthand reference is both the property key and its value, so a
+    // one-token rename would change the object's shape. It expands instead.
+    {
+      code: `
+const validateBy = (rules: string) => true;
+const registry = { validateBy };
+console.log(registry);
+  `,
+      output: `
+const validate = (rules: string) => true;
+const registry = { validateBy: validate };
+console.log(registry);
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // The shorthand expansion applies wherever the literal lives, including
+    // inside an exported object whose shape other modules read.
+    {
+      code: `
+const computeFrom = (data: string) => data;
+export const registry = { computeFrom };
+  `,
+      output: `
+const compute = (data: string) => data;
+export const registry = { computeFrom: compute };
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // A nested shorthand is expanded the same way; the outer literal is
+    // untouched.
+    {
+      code: `
+const rankUsersBy = (role: string) => role;
+const config = { handlers: { rankUsersBy } };
+console.log(config);
+  `,
+      output: `
+const rankUsers = (role: string) => role;
+const config = { handlers: { rankUsersBy: rankUsers } };
+console.log(config);
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // A non-shorthand property value is a plain read, so it renames directly
+    // and the key stays as the author wrote it.
+    {
+      code: `
+const validateBy = (rules: string) => true;
+const registry = { validator: validateBy };
+console.log(registry);
+  `,
+      output: `
+const validate = (rules: string) => true;
+const registry = { validator: validate };
+console.log(registry);
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // A separate re-export specifier binds the public export name, which a
+    // single-file fixer cannot rewrite across importers. The declaration-level
+    // export guard misses this form because the declaration carries no
+    // `export` keyword.
+    {
+      code: `
+const validateBy = (rules: string) => true;
+export { validateBy };
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: null,
+    },
+    // A renamed re-export declines too: the fix is withheld rather than
+    // reasoning about which half of `local as exported` is safe to touch.
+    {
+      code: `
+const validateBy = (rules: string) => true;
+export { validateBy as validateByPublic };
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: null,
+    },
+    // A re-export anywhere in the file blocks the whole rename, not just the
+    // specifier, so the declaration and its call sites never drift apart.
+    {
+      code: `
+const validateBy = (rules: string) => true;
+console.log(validateBy('x'));
+export { validateBy };
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: null,
+    },
+    // The suggested name already binds inside the function body, so renaming
+    // would shadow it and change what the body resolves.
+    {
+      code: `
+function validateBy(rules: string) {
+  const validate = rules.length > 0;
+  return validate;
+}
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: null,
+    },
+    // Same collision through a parameter rather than a body binding.
+    {
+      code: `
+function computeFrom(compute: string) {
+  return compute;
+}
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: null,
+    },
   ],
 });
