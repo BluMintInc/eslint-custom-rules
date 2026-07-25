@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.3",
+    "date": "2026-07-25T02:54:46.197Z",
+    "rules": [
+      {
+        "name": "no-unnecessary-verb-suffix",
+        "changeType": "fix",
+        "issues": [
+          1351
+        ],
+        "summary": "preserve type annotations when the rename autofix renames an identifier (closes #1351)"
+      }
+    ]
+  },
+  {
     "version": "1.20.2",
     "date": "2026-07-25T02:42:18.863Z",
     "rules": [

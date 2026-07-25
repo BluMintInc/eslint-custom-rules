@@ -1,3 +1,10 @@
+## [1.20.3](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.2...v1.20.3) (2026-07-25)
+
+
+### Bug Fixes
+
+* **no-unnecessary-verb-suffix:** preserve type annotations when the rename autofix renames an identifier (closes [#1351](https://github.com/BluMintInc/eslint-custom-rules/issues/1351)) ([715c2a5](https://github.com/BluMintInc/eslint-custom-rules/commit/715c2a5d3f181c10efff2956d4e4139e54a1b797))
+
 ## [1.20.2](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.1...v1.20.2) (2026-07-25)
 
 
