@@ -190,6 +190,282 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       fetchUserProfileAsync(id) {}
       updateCacheSync(key, value) {}
     }`,
+
+    // Declared conformance signals (#1350): a member name fixed by someone
+    // else's contract is not the author's to rename. An annotated object
+    // literal, a `satisfies` clause, and a class heritage clause each pin the
+    // member name to the target type.
+
+    // A: type-annotated variable holding the literal.
+    `
+  interface QueryLike {
+    orderBy: (field: string, direction: string) => QueryLike;
+  }
+  const buildFake = (): QueryLike => {
+    const chain: QueryLike = {
+      orderBy: (field, direction) => {
+        return chain;
+      },
+    };
+    return chain;
+  };
+`,
+    // B: `satisfies` clause on the literal.
+    `
+  interface QueryLike {
+    orderBy: (field: string, direction: string) => QueryLike;
+  }
+  const satisfied = {
+    orderBy: (field: string, direction: string) => {
+      return satisfied;
+    },
+  } satisfies QueryLike;
+`,
+    // C: class heritage whose in-file interface declares the member.
+    `
+  interface QueryLike {
+    orderBy: (field: string, direction: string) => QueryLike;
+  }
+  class FakeQuery implements QueryLike {
+    public orderBy(field: string, direction: string) {
+      return this as never;
+    }
+  }
+`,
+    // A on a class field: the field annotation checks the literal just as a
+    // variable annotation does.
+    `
+  interface QueryLike {
+    orderBy: (field: string, direction: string) => void;
+  }
+  class FakeQuery {
+    private handlers: QueryLike = {
+      orderBy: (field, direction) => {
+        return;
+      },
+    };
+  }
+`,
+    // A reaching a nested literal: the outer annotation checks the whole shape.
+    `
+  interface Cfg {
+    handlers: { orderBy: (field: string) => void };
+  }
+  const cfg: Cfg = {
+    handlers: {
+      orderBy: (field: string) => {
+        return;
+      },
+    },
+  };
+`,
+    // A reaching through an array element.
+    `
+  interface Handler {
+    filterUsersBy: (role: string) => void;
+  }
+  const handlers: Handler[] = [
+    {
+      filterUsersBy: (role: string) => {
+        return;
+      },
+    },
+  ];
+`,
+    // B reaching through an array element.
+    `
+  type Handlers = { orderBy: (field: string) => void }[];
+  const handlers = [
+    {
+      orderBy: (field: string) => {
+        return;
+      },
+    },
+  ] satisfies Handlers;
+`,
+    // A with a generic type reference: any non-any/unknown annotation carries
+    // the excess-property check.
+    `
+  interface QueryLike<T> {
+    orderBy: (field: keyof T) => void;
+  }
+  const chain: QueryLike<{ score: number }> = {
+    orderBy: (field) => {
+      return;
+    },
+  };
+`,
+    // C via a type alias to a type literal declared in file.
+    `
+  type QueryLike = {
+    orderBy: (field: string) => void;
+  };
+  class FakeQuery implements QueryLike {
+    orderBy(field: string) {}
+  }
+`,
+    // C via an interface `extends` chain that resolves in file.
+    `
+  interface Sortable {
+    orderBy: (field: string) => void;
+  }
+  interface QueryLike extends Sortable {
+    limit: (count: number) => void;
+  }
+  class FakeQuery implements QueryLike {
+    orderBy(field: string) {}
+    limit(count: number) {}
+  }
+`,
+    // C via `extends`: the base class declares the member.
+    `
+  interface Sortable {
+    orderBy: (field: string) => void;
+  }
+  class BaseQuery implements Sortable {
+    orderBy(field: string) {}
+  }
+  class FakeQuery extends BaseQuery {
+    orderBy(field: string) {}
+  }
+`,
+    // C via an inherited member two levels up the `extends` chain.
+    `
+  interface Sortable {
+    orderBy: (field: string) => void;
+  }
+  class RootQuery implements Sortable {
+    orderBy(field: string) {}
+  }
+  class BaseQuery extends RootQuery {}
+  class FakeQuery extends BaseQuery {
+    orderBy(field: string) {}
+  }
+`,
+    // C with an unresolvable (imported) heritage type: the contract lives in
+    // another module, so a false negative is preferred over a false positive.
+    `
+  import type { QueryLike } from './QueryLike';
+  class FakeQuery implements QueryLike {
+    public orderBy(field: string, direction: string) {
+      return this as never;
+    }
+  }
+`,
+    // C with an unresolvable superclass expression (mixin call).
+    `
+  class FakeQuery extends mixin(Base) {
+    orderBy(field: string) {}
+  }
+`,
+    // C with the contract declared after its implementer: resolution is
+    // file-wide, not order-dependent.
+    `
+  class FakeQuery implements QueryLike {
+    orderBy(field: string) {}
+  }
+  interface QueryLike {
+    orderBy: (field: string) => void;
+  }
+`,
+    // C across merged interface declarations.
+    `
+  interface QueryLike {
+    limit: (count: number) => void;
+  }
+  interface QueryLike {
+    orderBy: (field: string) => void;
+  }
+  class FakeQuery implements QueryLike {
+    orderBy(field: string) {}
+  }
+`,
+    // C with an exported contract: the export wrapper must not hide it.
+    `
+  export interface QueryLike {
+    orderBy: (field: string) => void;
+  }
+  class FakeQuery implements QueryLike {
+    orderBy(field: string) {}
+  }
+`,
+    // C where the in-file contract inherits from an unresolvable one.
+    `
+  import type { Sortable } from './Sortable';
+  interface QueryLike extends Sortable {
+    limit: (count: number) => void;
+  }
+  class FakeQuery implements QueryLike {
+    orderBy(field: string) {}
+  }
+`,
+    // C where one of several contracts declares the member.
+    `
+  interface Limitable {
+    limit: (count: number) => void;
+  }
+  interface Sortable {
+    orderBy: (field: string) => void;
+  }
+  class FakeQuery implements Limitable, Sortable {
+    orderBy(field: string) {}
+  }
+`,
+    // C on a class expression.
+    `
+  interface QueryLike {
+    orderBy: (field: string) => void;
+  }
+  const FakeQuery = class implements QueryLike {
+    orderBy(field: string) {}
+  };
+`,
+    // C where the contract is an alias to something other than a type literal,
+    // whose member list cannot be read syntactically.
+    `
+  interface Sortable {
+    orderBy: (field: string) => void;
+  }
+  type QueryLike = Sortable & { limit: (count: number) => void };
+  class FakeQuery implements QueryLike {
+    orderBy(field: string) {}
+  }
+`,
+    // C with a namespaced heritage expression, which cannot be followed.
+    `
+  class FakeQuery implements firestore.QueryLike {
+    orderBy(field: string) {}
+  }
+`,
+    // C where the base class declares the member as a field.
+    `
+  interface Sortable {
+    orderBy: (field: string) => void;
+  }
+  class BaseQuery implements Sortable {
+    orderBy = (field: string) => {
+      return;
+    };
+  }
+  class FakeQuery extends BaseQuery {
+    orderBy(field: string) {}
+  }
+`,
+    // A on a class field whose literal nests another literal.
+    `
+  interface Cfg {
+    handlers: { orderBy: (field: string) => void };
+  }
+  class Service {
+    private config: Cfg = {
+      handlers: {
+        orderBy: (field: string) => {
+          return;
+        },
+      },
+    };
+  }
+`,
   ],
   invalid: [
     // Controls (#1227): a NOUN object before the particle is a genuine
@@ -1077,6 +1353,265 @@ function lineAt(lines: string[], index: number) {
         '}',
         'const first = line([1, 2, 3], 0);',
       ].join('\n'),
+    },
+
+    // Conformance-signal fence (#1350): an object literal with NO declared
+    // target type carries author-chosen names, so the exemption must not reach
+    // it.
+    {
+      code: `
+    const helpers = {
+      fetchTournamentsBy: (key: string) => {
+        return key;
+      },
+    };
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    {
+      code: `
+    const helpers = {
+      computeValueFrom: (data: string) => {
+        return data;
+      },
+    };
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // An unannotated hand-built double stays reported: the principled escape is
+    // to annotate the double against the contract it imitates, not to suppress.
+    {
+      code: `
+    const chain = {
+      orderBy: (field: string, direction: string) => {
+        return chain;
+      },
+    };
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // `any` disables excess-property checking, so the annotation proves nothing
+    // about the member name.
+    {
+      code: `
+    const helpers: any = {
+      fetchTournamentsBy: (key: string) => {
+        return key;
+      },
+    };
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    {
+      code: `
+    const helpers: unknown = {
+      fetchTournamentsBy: (key: string) => {
+        return key;
+      },
+    };
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // An `as` assertion permits members the target type never declares.
+    {
+      code: `
+    interface QueryLike {
+      orderBy: (field: string) => void;
+    }
+    const chain = {
+      orderBy: (field: string) => {
+        return;
+      },
+    } as QueryLike;
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // A variable's own name is never dictated by its annotation, so an
+    // annotated arrow const stays reported. Exported here so the rename fix is
+    // suppressed and the assertion isolates the report.
+    {
+      code: `
+    type Validator = (rules: string) => void;
+    export const validateBy: Validator = (rules: string) => {
+      return;
+    };
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: null,
+    },
+    // The signal covers the annotated literal only — a sibling declaration
+    // keeps its own author-chosen name.
+    {
+      code: `
+    interface QueryLike {
+      orderBy: (field: string) => void;
+    }
+    const chain: QueryLike = {
+      orderBy: (field: string) => {
+        return;
+      },
+    };
+    function fetchDataFrom(source: string) {
+      return source;
+    }
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: `
+    interface QueryLike {
+      orderBy: (field: string) => void;
+    }
+    const chain: QueryLike = {
+      orderBy: (field: string) => {
+        return;
+      },
+    };
+    function fetchData(source: string) {
+      return source;
+    }
+  `,
+    },
+    // Heritage resolves in file and does NOT declare the member: classes may
+    // add members beyond their contract, and those names are the author's.
+    {
+      code: `
+    interface QueryLike {
+      limit: (count: number) => void;
+    }
+    class FakeQuery implements QueryLike {
+      limit(count: number) {}
+      filterUsersBy(role: string) {}
+    }
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // Same for a resolvable superclass that does not declare the member.
+    {
+      code: `
+    class BaseQuery {
+      limit(count: number) {}
+    }
+    class FakeQuery extends BaseQuery {
+      filterUsersBy(role: string) {}
+    }
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // A class with no heritage at all has no conformance signal.
+    {
+      code: `
+    class FakeQuery {
+      orderBy(field: string) {}
+    }
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // `satisfies any` checks nothing, so it is no signal.
+    {
+      code: `
+    const helpers = {
+      fetchTournamentsBy: (key: string) => {
+        return key;
+      },
+    } satisfies any;
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // A literal passed straight to a call has no declared target type in the
+    // syntax, so the walk must not exempt it.
+    {
+      code: `
+    register({
+      fetchTournamentsBy: (key: string) => {
+        return key;
+      },
+    });
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // A class field annotated `any` gives its literal no excess-property check.
+    {
+      code: `
+    class Service {
+      private handlers: any = {
+        fetchTournamentsBy: (key: string) => {
+          return key;
+        },
+      };
+    }
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // Several resolvable contracts, none declaring the member.
+    {
+      code: `
+    interface Limitable {
+      limit: (count: number) => void;
+    }
+    interface Pageable {
+      page: (index: number) => void;
+    }
+    class FakeQuery implements Limitable, Pageable {
+      limit(count: number) {}
+      page(index: number) {}
+      filterUsersBy(role: string) {}
+    }
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // Contracts sharing a base: revisiting the base adds nothing, and none of
+    // the three declares the member.
+    {
+      code: `
+    interface Base {
+      limit: (count: number) => void;
+    }
+    interface Sortable extends Base {
+      sort: (field: string) => void;
+    }
+    interface Pageable extends Base {
+      page: (index: number) => void;
+    }
+    class FakeQuery implements Sortable, Pageable {
+      filterUsersBy(role: string) {}
+    }
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // The contract's own declaration is still the author's naming choice: only
+    // the implementation conforming to it is exempt, so the method signature in
+    // the interface stays reported while the class member does not.
+    {
+      code: `
+    interface QueryLike {
+      orderBy(field: string): void;
+    }
+    class FakeQuery implements QueryLike {
+      orderBy(field: string) {}
+    }
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // A resolvable in-file interface declares the member only in the nested
+    // literal's position; the outer object's own extra member stays reported.
+    {
+      code: `
+    interface Cfg {
+      handlers: { orderBy: (field: string) => void };
+    }
+    const cfg: Cfg = {
+      handlers: {
+        orderBy: (field: string) => {
+          return;
+        },
+      },
+    };
+    const extras = {
+      sortUsersBy: (role: string) => {
+        return role;
+      },
+    };
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
     },
   ],
 });
