@@ -73,6 +73,21 @@ ruleTesterJsx.run('enforce-m3-sentence-case', enforceM3SentenceCase, {
 
     // camelCase / URL-like strings are skipped
     `<TextField label="camelCaseValue" />`,
+
+    // The suggested output of an ALL-CAPS violation is itself valid — the fix
+    // must be stable (issue #1370).
+    `<Typography>The user's file</Typography>`,
+    `<Typography>Click here to continue</Typography>`,
+    `<Typography>Enter your API key now</Typography>`,
+    `<Typography>Sign in with Google account</Typography>`,
+    `<Typography>Warning: Data lost forever</Typography>`,
+    `<button aria-label={'The user\\'s file'} />`,
+
+    // checkJsxText: false skips inline text entirely
+    {
+      code: `<Button>SUBMIT FORM</Button>`,
+      options: [{ checkJsxText: false }],
+    },
   ],
 
   invalid: [
@@ -176,6 +191,402 @@ ruleTesterJsx.run('enforce-m3-sentence-case', enforceM3SentenceCase, {
     {
       code: `<Button>Best Deals Today</Button>`,
       errors: [{ messageId: 'titleCase' }],
+    },
+
+    // ── Suggestion escaping + ALL-CAPS casing regressions (issue #1370) ──────
+
+    // An apostrophe inside a single-quoted ALL-CAPS string must stay escaped in
+    // the suggestion, and the whole string must be sentence-cased.
+    {
+      code: `export const x = <button aria-label={'THE USER\\'S FILE'} />;`,
+      errors: [
+        {
+          messageId: 'allCaps',
+          suggestions: [
+            {
+              messageId: 'allCaps',
+              output: `export const x = <button aria-label={'The user\\'s file'} />;`,
+            },
+          ],
+        },
+      ],
+    },
+
+    // Embedded double quotes inside a double-quoted JS string stay escaped
+    {
+      code: `const x = <button aria-label={"SAY \\"HI\\" NOW"} />;`,
+      errors: [
+        {
+          messageId: 'allCaps',
+          suggestions: [
+            {
+              messageId: 'allCaps',
+              output: `const x = <button aria-label={"Say \\"hi\\" now"} />;`,
+            },
+          ],
+        },
+      ],
+    },
+
+    // Backslashes in a JS string must be re-escaped, not emitted verbatim
+    {
+      code: `const x = <button aria-label={'SAVE TO C:\\\\TEMP FOLDER'} />;`,
+      errors: [
+        {
+          messageId: 'allCaps',
+          suggestions: [
+            {
+              messageId: 'allCaps',
+              output: `const x = <button aria-label={'Save to c:\\\\temp folder'} />;`,
+            },
+          ],
+        },
+      ],
+    },
+
+    // Control characters must be re-escaped rather than written out raw
+    {
+      code: `const x = <button aria-label={'THE \\u0000 USER FILE'} />;`,
+      errors: [
+        {
+          messageId: 'allCaps',
+          suggestions: [
+            {
+              messageId: 'allCaps',
+              output: `const x = <button aria-label={'The \\u0000 user file'} />;`,
+            },
+          ],
+        },
+      ],
+    },
+
+    // JSX attribute strings do not honour backslash escapes, so an entity-encoded
+    // delimiter must be written back as an entity
+    {
+      code: `<TextField label='THE USER&#39;S FILE' />`,
+      errors: [
+        {
+          messageId: 'allCaps',
+          suggestions: [
+            {
+              messageId: 'allCaps',
+              output: `<TextField label='The user&#39;s file' />`,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      code: `<TextField label="THE USER&quot;S FILE" />`,
+      errors: [
+        {
+          messageId: 'allCaps',
+          suggestions: [
+            {
+              messageId: 'allCaps',
+              output: `<TextField label="The user&quot;s file" />`,
+            },
+          ],
+        },
+      ],
+    },
+    // An ampersand read back off the AST is decoded, so it must be re-encoded
+    {
+      code: `<TextField label="Tom &amp; Jerry Show" />`,
+      errors: [
+        {
+          messageId: 'titleCase',
+          suggestions: [
+            {
+              messageId: 'titleCase',
+              output: `<TextField label="Tom &amp; jerry show" />`,
+            },
+          ],
+        },
+      ],
+    },
+
+    // JSX text: entity-encoded characters must survive the rewrite
+    {
+      code: `<Typography>A &lt; B COMPARISON TEXT</Typography>`,
+      errors: [
+        {
+          messageId: 'allCaps',
+          suggestions: [
+            {
+              messageId: 'allCaps',
+              output: `<Typography>A &lt; b comparison text</Typography>`,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      code: `<Typography>USE &#123;BRACES&#125; HERE NOW</Typography>`,
+      errors: [
+        {
+          messageId: 'allCaps',
+          suggestions: [
+            {
+              messageId: 'allCaps',
+              output: `<Typography>Use &#123;braces&#125; here now</Typography>`,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      code: `<Typography>TOM & JERRY SHOW</Typography>`,
+      errors: [
+        {
+          messageId: 'allCaps',
+          suggestions: [
+            {
+              messageId: 'allCaps',
+              output: `<Typography>Tom &amp; jerry show</Typography>`,
+            },
+          ],
+        },
+      ],
+    },
+
+    // JSX text with an apostrophe — `USER'S` is one word, not `USER` + `'S`
+    {
+      code: `<Typography>THE USER'S FILE</Typography>`,
+      errors: [
+        {
+          messageId: 'allCaps',
+          suggestions: [
+            {
+              messageId: 'allCaps',
+              output: `<Typography>The user's file</Typography>`,
+            },
+          ],
+        },
+      ],
+    },
+
+    // ALL-CAPS multi-word text is sentence-cased in full, not one character
+    {
+      code: `<Button>SUBMIT FORM</Button>`,
+      errors: [
+        {
+          messageId: 'allCaps',
+          suggestions: [
+            { messageId: 'allCaps', output: `<Button>Submit form</Button>` },
+          ],
+        },
+      ],
+    },
+    {
+      code: `<Typography>CLICK HERE TO CONTINUE</Typography>`,
+      errors: [
+        {
+          messageId: 'allCaps',
+          suggestions: [
+            {
+              messageId: 'allCaps',
+              output: `<Typography>Click here to continue</Typography>`,
+            },
+          ],
+        },
+      ],
+    },
+
+    // Surrounding whitespace of the JSX text node is preserved
+    {
+      code: `<Typography>\n  SUBMIT FORM\n</Typography>`,
+      errors: [
+        {
+          messageId: 'allCaps',
+          suggestions: [
+            {
+              messageId: 'allCaps',
+              output: `<Typography>\n  Submit form\n</Typography>`,
+            },
+          ],
+        },
+      ],
+    },
+
+    // Allowlisted acronyms keep their casing inside an ALL-CAPS fix
+    {
+      code: `<Typography>ENTER YOUR API KEY NOW</Typography>`,
+      errors: [
+        {
+          messageId: 'allCaps',
+          suggestions: [
+            {
+              messageId: 'allCaps',
+              output: `<Typography>Enter your API key now</Typography>`,
+            },
+          ],
+        },
+      ],
+    },
+    // Proper nouns are restored to their canonical spelling, not flattened
+    {
+      code: `<Typography>SIGN IN WITH GOOGLE ACCOUNT</Typography>`,
+      errors: [
+        {
+          messageId: 'allCaps',
+          suggestions: [
+            {
+              messageId: 'allCaps',
+              output: `<Typography>Sign in with Google account</Typography>`,
+            },
+          ],
+        },
+      ],
+    },
+    // ...including words supplied through the `ignoredWords` option
+    {
+      code: `<Typography>WELCOME TO ACME STORE</Typography>`,
+      options: [{ ignoredWords: ['Acme'] }],
+      errors: [
+        {
+          messageId: 'allCaps',
+          suggestions: [
+            {
+              messageId: 'allCaps',
+              output: `<Typography>Welcome to Acme store</Typography>`,
+            },
+          ],
+        },
+      ],
+    },
+
+    // Each sentence segment gets its own leading capital
+    {
+      code: `<Typography>WARNING: DATA LOST FOREVER</Typography>`,
+      errors: [
+        {
+          messageId: 'allCaps',
+          suggestions: [
+            {
+              messageId: 'allCaps',
+              output: `<Typography>Warning: Data lost forever</Typography>`,
+            },
+          ],
+        },
+      ],
+    },
+
+    // ── Title Case suggestions (existing behaviour pinned) ───────────────────
+
+    {
+      code: `<TextField label="Full Name" />`,
+      errors: [
+        {
+          messageId: 'titleCase',
+          suggestions: [
+            {
+              messageId: 'titleCase',
+              output: `<TextField label="Full name" />`,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      code: `<Button>Back To App</Button>`,
+      errors: [
+        {
+          messageId: 'titleCase',
+          suggestions: [
+            { messageId: 'titleCase', output: `<Button>Back to app</Button>` },
+          ],
+        },
+      ],
+    },
+    {
+      code: `<TextField label={"Full Name"} />`,
+      errors: [
+        {
+          messageId: 'titleCase',
+          suggestions: [
+            {
+              messageId: 'titleCase',
+              output: `<TextField label={"Full name"} />`,
+            },
+          ],
+        },
+      ],
+    },
+    // Acronyms and proper nouns survive a Title Case fix
+    {
+      code: `<Typography>Connect Via API</Typography>`,
+      errors: [
+        {
+          messageId: 'titleCase',
+          suggestions: [
+            {
+              messageId: 'titleCase',
+              output: `<Typography>Connect via API</Typography>`,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      code: `<Typography>Sign In With Google</Typography>`,
+      errors: [
+        {
+          messageId: 'titleCase',
+          suggestions: [
+            {
+              messageId: 'titleCase',
+              output: `<Typography>Sign in with Google</Typography>`,
+            },
+          ],
+        },
+      ],
+    },
+    // A shouting word inside otherwise Title Case text is lower-cased in full
+    {
+      code: `<Typography>Read The TERMS Carefully</Typography>`,
+      errors: [
+        {
+          messageId: 'titleCase',
+          suggestions: [
+            {
+              messageId: 'titleCase',
+              output: `<Typography>Read the terms carefully</Typography>`,
+            },
+          ],
+        },
+      ],
+    },
+    // Namespaced attribute names are matched as `namespace:name`
+    {
+      code: `<svg xlink:title="Full Name" />`,
+      options: [{ propsToCheck: ['xlink:title'] }],
+      errors: [
+        {
+          messageId: 'titleCase',
+          suggestions: [
+            {
+              messageId: 'titleCase',
+              output: `<svg xlink:title="Full name" />`,
+            },
+          ],
+        },
+      ],
+    },
+    // Intra-word casing of the first word is preserved
+    {
+      code: `<TextField label="MacBook Pro Sale" />`,
+      errors: [
+        {
+          messageId: 'titleCase',
+          suggestions: [
+            {
+              messageId: 'titleCase',
+              output: `<TextField label="MacBook pro sale" />`,
+            },
+          ],
+        },
+      ],
     },
   ],
 });

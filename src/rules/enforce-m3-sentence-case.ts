@@ -215,12 +215,101 @@ function isAllCapsViolation(
 }
 
 /**
- * Builds the corrected version of the text for the suggestion / fix.
- * — ALL-CAPS: Capitalises only the first letter of the first word, lowercases
- *   the rest (respecting acronyms and ignored words).
- * — Title Case: Lowercases non-first words that are not acronyms / proper nouns.
+ * Splits a whitespace-delimited token into its leading punctuation, the bare
+ * word, and its trailing punctuation, so casing can be applied to the word
+ * without disturbing quotes/brackets/periods around it.  Only *surrounding*
+ * punctuation is peeled off, so a possessive stays whole: `USER'S` yields the
+ * single core `USER'S` rather than a `USER` word and a stray `'S`.
  */
-function buildSuggestionText(
+function splitWordAffixes(raw: string): {
+  lead: string;
+  core: string;
+  trail: string;
+} {
+  const lead = /^[^\w]*/.exec(raw)?.[0] ?? '';
+  const rest = raw.slice(lead.length);
+  const trail = /[^\w]*$/.exec(rest)?.[0] ?? '';
+  return { lead, core: rest.slice(0, rest.length - trail.length), trail };
+}
+
+/**
+ * Upper-cases the first alphabetic character, leaving any leading punctuation
+ * untouched so `(text` becomes `(Text` rather than staying lower-case.
+ */
+function capitalizeFirstLetter(text: string): string {
+  const index = text.search(/[a-zA-Z]/);
+  if (index === -1) return text;
+  return (
+    text.slice(0, index) +
+    text.charAt(index).toUpperCase() +
+    text.slice(index + 1)
+  );
+}
+
+/**
+ * True when every letter in the token is upper-case (`USER'S`, `FORM`), which
+ * means lower-casing just the leading character would leave a shouting tail.
+ */
+function isAllUpperCase(text: string): boolean {
+  const letters = text.replace(/[^a-zA-Z]/g, '');
+  return letters.length > 0 && letters === letters.toUpperCase();
+}
+
+/**
+ * Maps the lower-cased form of every ignored word to its canonical spelling so
+ * an ALL-CAPS occurrence (`GOOGLE`) can be restored to `Google` rather than
+ * flattened to `google`.
+ */
+function buildCanonicalIgnoredWords(
+  ignoredWordsSet: Set<string>,
+): Map<string, string> {
+  const canonical = new Map<string, string>();
+  ignoredWordsSet.forEach((word) => {
+    const key = word.toLowerCase();
+    if (!canonical.has(key)) canonical.set(key, word);
+  });
+  return canonical;
+}
+
+/**
+ * Builds the corrected text for an ALL-CAPS violation: the entire string is
+ * lower-cased and each sentence's first letter is capitalised.  Only words in
+ * the explicit acronym allowlist and ignored/proper nouns keep their casing —
+ * the length-based acronym heuristic cannot be used here because *every* token
+ * of an ALL-CAPS string looks like an acronym.
+ */
+function buildAllCapsSuggestionText(
+  text: string,
+  ignoredWordsSet: Set<string>,
+): string {
+  const canonicalIgnoredWords = buildCanonicalIgnoredWords(ignoredWordsSet);
+  return splitIntoSentences(text)
+    .map((sentence) =>
+      sentence
+        .split(/\s+/)
+        .map((raw, index) => {
+          const { lead, core, trail } = splitWordAffixes(raw);
+          if (!core) return raw;
+          const canonical = canonicalIgnoredWords.get(core.toLowerCase());
+          if (canonical) return `${lead}${canonical}${trail}`;
+          if (ACRONYM_ALLOWLIST.has(core)) return raw;
+          const lowered = core.toLowerCase();
+          const cased = index === 0 ? capitalizeFirstLetter(lowered) : lowered;
+          return `${lead}${cased}${trail}`;
+        })
+        .join(' '),
+    )
+    .join(' ');
+}
+
+/**
+ * Builds the corrected text for a Title Case violation: non-first words that
+ * are neither acronyms nor proper nouns are lower-cased.  Mixed-case tokens
+ * only lose their leading capital (`Name` → `name`) so intra-word casing such
+ * as `McDonald` survives, while shouting tokens (`CHANGES`) are lower-cased in
+ * full.
+ */
+function buildTitleCaseSuggestionText(
   text: string,
   ignoredWordsSet: Set<string>,
 ): string {
@@ -230,24 +319,113 @@ function buildSuggestionText(
       const words = sentence.split(/\s+/);
       return words
         .map((raw, index) => {
-          const word = raw.replace(/^[^\w]+|[^\w]+$/g, '');
-          if (!word) return raw;
-          if (index === 0) {
-            // Preserve ignored words in their original capitalisation; for all-caps
-            // first words, lower-case everything except the initial letter.
-            if (ignoredWordsSet.has(word)) return raw;
-            if (isAcronymToken(word)) return raw;
-            // Sentence-start: ensure first letter is capital
-            return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
-          }
-          if (ignoredWordsSet.has(word)) return raw;
-          if (isAcronymToken(word)) return raw;
-          // Non-first word: lower-case
-          return raw.charAt(0).toLowerCase() + raw.slice(1);
+          const { lead, core, trail } = splitWordAffixes(raw);
+          if (!core) return raw;
+          // Proper nouns and acronyms keep their original capitalisation.
+          if (ignoredWordsSet.has(core)) return raw;
+          if (isAcronymToken(core)) return raw;
+          const lowered = isAllUpperCase(core)
+            ? core.toLowerCase()
+            : core.charAt(0).toLowerCase() + core.slice(1);
+          // Sentence-start: ensure the first letter is a capital.
+          const cased = index === 0 ? capitalizeFirstLetter(lowered) : lowered;
+          return `${lead}${cased}${trail}`;
         })
         .join(' ');
     })
     .join(' ');
+}
+
+/**
+ * Escape sequences for characters that cannot appear literally inside a
+ * JavaScript string literal.
+ */
+const JS_STRING_ESCAPES = new Map<string, string>([
+  ['\\', '\\\\'],
+  ['\n', '\\n'],
+  ['\r', '\\r'],
+  ['\t', '\\t'],
+  ['\b', '\\b'],
+  ['\f', '\\f'],
+  ['\v', '\\v'],
+  ['\u2028', '\\u2028'],
+  ['\u2029', '\\u2029'],
+]);
+
+/**
+ * Escapes text for re-emission inside a JavaScript string literal delimited by
+ * `quote`.  Without this the rebuilt literal is unparseable as soon as the text
+ * contains the delimiter (`'THE USER\'S FILE'`), a backslash, or a line
+ * terminator.
+ */
+function escapeJsString(text: string, quote: string): string {
+  let escaped = '';
+  for (let index = 0; index < text.length; index++) {
+    const char = text.charAt(index);
+    if (char === quote) {
+      escaped += `\\${char}`;
+      continue;
+    }
+    const mapped = JS_STRING_ESCAPES.get(char);
+    if (mapped) {
+      escaped += mapped;
+      continue;
+    }
+    if (char < ' ' || char === '\u007f') {
+      escaped += `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`;
+      continue;
+    }
+    escaped += char;
+  }
+  return escaped;
+}
+
+/**
+ * Escapes text for re-emission inside a JSX attribute string (`label="…"`).
+ * JSX attribute strings do not process backslash escapes, so the delimiter can
+ * only be represented as a character reference.  `&` is re-encoded because the
+ * value read off the AST has already been entity-decoded.
+ */
+function escapeJsxAttributeString(text: string, quote: string): string {
+  const escaped = text.split('&').join('&amp;');
+  return quote === "'"
+    ? escaped.split("'").join('&#39;')
+    : escaped.split('"').join('&quot;');
+}
+
+/**
+ * Characters that change the meaning of JSX children and must therefore be
+ * written back as character references.  `JSXText.value` is entity-decoded, so
+ * emitting it verbatim can break parsing (`&lt;` → `<`) or silently turn text
+ * into an expression container (`&#123;x&#125;` → `{x}`).
+ */
+const JSX_TEXT_ENTITIES = new Map<string, string>([
+  ['&', '&amp;'],
+  ['<', '&lt;'],
+  ['>', '&gt;'],
+  ['{', '&#123;'],
+  ['}', '&#125;'],
+]);
+
+function escapeJsxText(text: string): string {
+  return text.replace(
+    /[&<>{}]/g,
+    (char) => JSX_TEXT_ENTITIES.get(char) ?? char,
+  );
+}
+
+/**
+ * Replaces the first occurrence of `search` without treating `$` sequences in
+ * the replacement as `String.prototype.replace` patterns.
+ */
+function replaceFirst(
+  text: string,
+  search: string,
+  replacement: string,
+): string {
+  const index = text.indexOf(search);
+  if (index === -1) return replacement;
+  return text.slice(0, index) + replacement + text.slice(index + search.length);
 }
 
 /**
@@ -338,6 +516,39 @@ export const enforceM3SentenceCase = createRule<Options, MessageIds>({
     }
 
     /**
+     * Produces the replacement source text for the reported node, re-escaping
+     * the suggestion for whichever literal form it is being written back into.
+     * Returns null when the node is not a rewritable literal.
+     */
+    function buildFixText(
+      reportNode: TSESTree.Node,
+      checkable: string,
+      suggestion: string,
+    ): string | null {
+      if (reportNode.type === AST_NODE_TYPES.Literal) {
+        if (typeof reportNode.value !== 'string') return null;
+        const raw = context.getSourceCode().getText(reportNode);
+        const quote = raw.charAt(0);
+        // Template literals never reach here (they are skipped as dynamic), so
+        // only the two string-literal delimiters are rewritable.
+        if (quote !== '"' && quote !== "'") return null;
+        // Surrounding whitespace of the original value is preserved; only the
+        // trimmed, checked portion is re-cased.
+        const replaced = replaceFirst(reportNode.value, checkable, suggestion);
+        const inner =
+          reportNode.parent?.type === AST_NODE_TYPES.JSXAttribute
+            ? escapeJsxAttributeString(replaced, quote)
+            : escapeJsString(replaced, quote);
+        return `${quote}${inner}${quote}`;
+      }
+      if (reportNode.type === AST_NODE_TYPES.JSXText) {
+        const replaced = replaceFirst(reportNode.value, checkable, suggestion);
+        return escapeJsxText(replaced);
+      }
+      return null;
+    }
+
+    /**
      * Core checker.  Reports on `reportNode` if `text` violates M3 sentence case.
      */
     function checkText(text: string, reportNode: TSESTree.Node): void {
@@ -347,7 +558,10 @@ export const enforceM3SentenceCase = createRule<Options, MessageIds>({
 
       // ALL-CAPS check first (higher severity and different fix)
       if (isAllCapsViolation(checkable, ignoredWordsSet)) {
-        const suggestion = buildSuggestionText(checkable, ignoredWordsSet);
+        const suggestion = buildAllCapsSuggestionText(
+          checkable,
+          ignoredWordsSet,
+        );
         context.report({
           node: reportNode,
           messageId: 'allCaps',
@@ -357,20 +571,10 @@ export const enforceM3SentenceCase = createRule<Options, MessageIds>({
               messageId: 'allCaps',
               data: { text: checkable, suggestion },
               fix(fixer) {
-                if (reportNode.type === AST_NODE_TYPES.Literal) {
-                  const raw = context.getSourceCode().getText(reportNode);
-                  const quote = raw[0];
-                  return fixer.replaceText(
-                    reportNode,
-                    `${quote}${suggestion}${quote}`,
-                  );
-                }
-                if (reportNode.type === AST_NODE_TYPES.JSXText) {
-                  const original = (reportNode as TSESTree.JSXText).value;
-                  const replaced = original.replace(checkable, suggestion);
-                  return fixer.replaceText(reportNode, replaced);
-                }
-                return null;
+                const fixText = buildFixText(reportNode, checkable, suggestion);
+                return fixText === null
+                  ? null
+                  : fixer.replaceText(reportNode, fixText);
               },
             },
           ],
@@ -388,7 +592,10 @@ export const enforceM3SentenceCase = createRule<Options, MessageIds>({
       });
 
       if (violatingWords.length > 0) {
-        const suggestion = buildSuggestionText(checkable, ignoredWordsSet);
+        const suggestion = buildTitleCaseSuggestionText(
+          checkable,
+          ignoredWordsSet,
+        );
         context.report({
           node: reportNode,
           messageId: 'titleCase',
@@ -398,20 +605,10 @@ export const enforceM3SentenceCase = createRule<Options, MessageIds>({
               messageId: 'titleCase',
               data: { text: checkable, suggestion },
               fix(fixer) {
-                if (reportNode.type === AST_NODE_TYPES.Literal) {
-                  const raw = context.getSourceCode().getText(reportNode);
-                  const quote = raw[0];
-                  return fixer.replaceText(
-                    reportNode,
-                    `${quote}${suggestion}${quote}`,
-                  );
-                }
-                if (reportNode.type === AST_NODE_TYPES.JSXText) {
-                  const original = (reportNode as TSESTree.JSXText).value;
-                  const replaced = original.replace(checkable, suggestion);
-                  return fixer.replaceText(reportNode, replaced);
-                }
-                return null;
+                const fixText = buildFixText(reportNode, checkable, suggestion);
+                return fixText === null
+                  ? null
+                  : fixer.replaceText(reportNode, fixText);
               },
             },
           ],
