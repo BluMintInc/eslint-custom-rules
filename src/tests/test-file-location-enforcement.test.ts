@@ -26,6 +26,27 @@ fs.writeFileSync(
 );
 const relativeTestFilename = path.relative(process.cwd(), relativeTestFilePath);
 
+// Reported messages embed a cwd-relative path, so message assertions need a
+// fixture inside the workspace rather than the OS temp dir.
+const orphanTestDir = path.join(workspaceTempDir, 'orphan');
+fs.mkdirSync(orphanTestDir, { recursive: true });
+
+const createOrphanFixture = (fileName: string) => {
+  const fullPath = path.join(orphanTestDir, fileName);
+  fs.writeFileSync(fullPath, '// orphan test');
+  return path.relative(process.cwd(), fullPath);
+};
+
+const orphanQualifierFilename = createOrphanFixture('Orphan.qualifier.test.tsx');
+const orphanPlainFilename = createOrphanFixture('Plain.test.ts');
+
+const expectedMessageFor = (testFile: string, names: string[]) =>
+  `Test file "${testFile}" is not colocated with its subject. Keep tests in the same directory as ${names
+    .map((name) => `"${name}"`)
+    .join(
+      ' or ',
+    )} so refactors move code and coverage together and engineers can find the implementation without searching separate test folders.`;
+
 const createFile = (relativePath: string, contents = '// fixture') => {
   const fullPath = path.join(tempDir, relativePath);
   fs.mkdirSync(path.dirname(fullPath), { recursive: true });
@@ -395,6 +416,38 @@ ruleTesterTs.run(
           return createFile('web/dotfiles/.hidden.test.ts');
         })(),
         errors: [{ messageId: 'misplacedTestFile' }],
+      },
+      {
+        code: 'describe("report names both the full stem and the leading segment", () => {});',
+        filename: orphanQualifierFilename,
+        errors: [
+          {
+            message: expectedMessageFor(orphanQualifierFilename, [
+              'Orphan.qualifier.ts',
+              'Orphan.qualifier.tsx',
+              'Orphan.qualifier.js',
+              'Orphan.qualifier.jsx',
+              'Orphan.ts',
+              'Orphan.tsx',
+              'Orphan.js',
+              'Orphan.jsx',
+            ]),
+          },
+        ],
+      },
+      {
+        code: 'describe("report for a dotless stem names it once", () => {});',
+        filename: orphanPlainFilename,
+        errors: [
+          {
+            message: expectedMessageFor(orphanPlainFilename, [
+              'Plain.ts',
+              'Plain.tsx',
+              'Plain.js',
+              'Plain.jsx',
+            ]),
+          },
+        ],
       },
       {
         code: 'describe("extensionless stem has no subject to probe", () => {});',
