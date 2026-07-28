@@ -766,6 +766,112 @@ const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
 );
 `,
     },
+    // 46. Issue #1316 (reopened): an ANONYMOUS default-exported function
+    // declaration IS the component — there is no alias or wrapper call to follow
+    // — so its empty parameter list proves the child prop-less.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import AnonDefaultChild from './AnonDefaultChild';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    {title}
+    <AnonDefaultChild />
+  </div>
+);
+`,
+    },
+    // 47. Issue #1316 (reopened): `export default memo(Inner)` — the IDENTIFIER
+    // argument of a props-preserving HOC is followed to its declaration in the
+    // child's own module, where it takes no parameters.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import DefaultMemoAliasChild from './DefaultMemoAliasChild';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    {title}
+    <DefaultMemoAliasChild />
+  </div>
+);
+`,
+    },
+    // 48. Issue #1316 (reopened): `export default memo(() => …)` — the wrapped
+    // function is written INLINE, so the zero-parameter arrow is read straight
+    // out of the default export's argument list.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import DefaultMemoInlineChild from './DefaultMemoInlineChild';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    {title}
+    <DefaultMemoInlineChild />
+  </div>
+);
+`,
+    },
+    // 49. Issue #1316 (reopened), defect 2: a constructor parameter property
+    // declares a class MEMBER, not a binding in the component's scope, so it
+    // does not shadow the import and the prop-less proof still stands.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { PropLessKid } from './PropLessKid';
+
+export type ProbeParentProps = Readonly<{ title: string }>;
+
+export const ProbeParent = ({ title }: ProbeParentProps) => {
+  class KidRegistry {
+    constructor(public PropLessKid: string) {}
+  }
+  const registry = new KidRegistry(title);
+  return (
+    <div>
+      {registry.PropLessKid}
+      <PropLessKid />
+    </div>
+  );
+};
+`,
+    },
+    // 50. A rest parameter carries no props type annotation, so the component
+    // has no resolvable props type at all and the rule skips it rather than
+    // demanding composition against a type it cannot name.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+const MetricsList = (...args: readonly string[]) => {
+  return <LoadingButton>{args.length}</LoadingButton>;
+};
+`,
+    },
+    // 51. The component's props type is IMPORTED, so its definition is not in
+    // this file and no composition can be proven in either direction — the rule
+    // skips rather than guessing.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+import { ExternalPanelProps } from '@acme/design-system';
+
+const Panel = (props: ExternalPanelProps) => {
+  return <LoadingButton {...props} />;
+};
+`,
+    },
   ],
 
   invalid: [
@@ -1352,6 +1458,384 @@ export const ProbeParent = ({ title }: ProbeParentProps) => {
       <PropLessKid value="x" />
     </div>
   );
+};
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 37. Issue #1316 (reopened): the resolved child module does not PARSE
+    // (UnparsableChild.tsx holds an unclosed JSX attribute). A file that cannot
+    // be parsed proves nothing about its exported binding, so the child stays a
+    // composition dependency — the fail-safe direction.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { UnparsableChild } from './UnparsableChild';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    {title}
+    <UnparsableChild />
+  </div>
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 38. Issue #1316 (reopened): a NAMESPACE import binds a module object, not
+    // the exported component, so no single export decides its props surface and
+    // the relaxation must not apply.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import * as BestOfText from './BestOfText';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    {title}
+    <BestOfText />
+  </div>
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 39. Issue #1316 (reopened): an inline TYPE-ONLY specifier
+    // (`import { type X }`) introduces no value binding, so whatever the JSX
+    // renders does not come from this import and nothing is proven.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { type BestOfText } from './BestOfText';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    {title}
+    <BestOfText />
+  </div>
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 40. Issue #1316 (reopened): a DEFAULT import of a module that exports no
+    // default at all (BestOfText.tsx has only a named export). The binding
+    // resolves to nothing, so the child keeps demanding composition.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import BestOfText from './BestOfText';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    {title}
+    <BestOfText />
+  </div>
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 41. Issue #1316 (reopened): a default-exported CLASS component. Only a
+    // zero-parameter function component is provably prop-less, so a class
+    // default export resolves to nothing and still reports.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import DefaultClassChild from './DefaultClassChild';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    <DefaultClassChild value={title} />
+  </div>
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 42. Issue #1316 (reopened): a props-preserving wrapper call with NO
+    // argument (`export default memo()`) has no wrapped function to inspect, so
+    // the parameter list is unknowable and the child still reports.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import DefaultEmptyCallChild from './DefaultEmptyCallChild';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    <DefaultEmptyCallChild value={title} />
+  </div>
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 43. Issue #1316 (reopened): `export default <Identifier>` is followed to
+    // its declaration, which TAKES props — the alias must report the real
+    // parameter list rather than relax the rule.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import DefaultAliasPropsChild from './DefaultAliasPropsChild';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    <DefaultAliasPropsChild value={title} />
+  </div>
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 44. Issue #1316 (reopened), defect 2: an ARRAY-destructured binding
+    // shadows the import, so the JSX name is whatever the tuple holds — the
+    // import describes nothing and the child stays a dependency.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { PropLessKid } from './PropLessKid';
+
+export type ProbeParentProps = Readonly<{ title: string }>;
+
+export const ProbeParent = ({ title }: ProbeParentProps) => {
+  const [PropLessKid] = kidTuple;
+  return (
+    <div>
+      {title}
+      <PropLessKid value="x" />
+    </div>
+  );
+};
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 45. Issue #1316 (reopened), defect 2: a DEFAULT-VALUED destructure
+    // (`{ PropLessKid = Fallback }`) binds the name just as surely as a plain
+    // one, so it too defeats the import-based proof.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { PropLessKid } from './PropLessKid';
+
+export type ProbeParentProps = Readonly<{ title: string }>;
+
+export const ProbeParent = ({ title }: ProbeParentProps) => {
+  const { PropLessKid = FallbackKid } = kidRegistry;
+  return (
+    <div>
+      {title}
+      <PropLessKid value="x" />
+    </div>
+  );
+};
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 46. Issue #1316 (reopened), defect 2: an OBJECT REST element
+    // (`{ ...PropLessKid }`) binds the name to the remaining properties.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { PropLessKid } from './PropLessKid';
+
+export type ProbeParentProps = Readonly<{ title: string }>;
+
+export const ProbeParent = ({ title }: ProbeParentProps) => {
+  const { key, ...PropLessKid } = kidRegistry;
+  return (
+    <div>
+      {title}
+      <PropLessKid value={key} />
+    </div>
+  );
+};
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 47. Issue #1316 (reopened), defect 2: a REST PARAMETER named for the child
+    // binds the name inside the component, so the module-level import is not
+    // what the JSX resolves to.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { PropLessKid } from './PropLessKid';
+
+export type ProbeParentProps = Readonly<{ title: string }>;
+
+export const ProbeParent = ({ title }: ProbeParentProps) => {
+  const countKids = (...PropLessKid: readonly string[]) => PropLessKid.length;
+  return (
+    <div>
+      {countKids(title)}
+      <PropLessKid value="x" />
+    </div>
+  );
+};
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 48. Issue #1316 (reopened), defect 2: a plain function PARAMETER named for
+    // the child shadows the import over the whole callback.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { PropLessKid } from './PropLessKid';
+
+export type ProbeParentProps = Readonly<{ title: string }>;
+
+export const ProbeParent = ({ title }: ProbeParentProps) => {
+  const renderKid = (PropLessKid: React.ComponentType<{ value: string }>) => (
+    <PropLessKid value={title} />
+  );
+  return <div>{renderKid(FallbackKid)}</div>;
+};
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 49. Issue #1316 (reopened), defect 2: a FUNCTION DECLARATION of the same
+    // name inside the component wins over the import.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { PropLessKid } from './PropLessKid';
+
+export type ProbeParentProps = Readonly<{ title: string }>;
+
+export const ProbeParent = ({ title }: ProbeParentProps) => {
+  function PropLessKid({ value }: { value: string }) {
+    return <span>{value}</span>;
+  }
+  return (
+    <div>
+      {title}
+      <PropLessKid value="x" />
+    </div>
+  );
+};
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 50. Issue #1316 (reopened), defect 2: a CLASS DECLARATION of the same name
+    // inside the component likewise replaces the imported binding.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { PropLessKid } from './PropLessKid';
+
+export type ProbeParentProps = Readonly<{ title: string }>;
+
+export const ProbeParent = ({ title }: ProbeParentProps) => {
+  class PropLessKid extends React.Component<{ value: string }> {
+    public render() {
+      return <span>{this.props.value}</span>;
+    }
+  }
+  return (
+    <div>
+      {title}
+      <PropLessKid value="x" />
+    </div>
+  );
+};
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 51. Issue #1316 (reopened), defect 2: a CATCH parameter named for the
+    // child. The shadow check is deliberately scope-blind — over-detecting a
+    // shadow costs only a report, while missing one silently drops a dependency
+    // the import never described.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { PropLessKid } from './PropLessKid';
+
+export type ProbeParentProps = Readonly<{ title: string }>;
+
+export const ProbeParent = ({ title }: ProbeParentProps) => {
+  try {
+    hydrate(title);
+  } catch (PropLessKid) {
+    report(PropLessKid);
+  }
+  return (
+    <div>
+      {title}
+      <PropLessKid value="x" />
+    </div>
+  );
+};
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 52. A props type literal whose members are an index signature and a method
+    // signature carries no property type to recurse into, so no composition is
+    // found and the rendered child is still flagged. The module-level
+    // destructuring declaration is not a component and must be skipped.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+const { defaults } = telemetryConfig;
+
+type TelemetryPanelProps = {
+  [key: string]: unknown;
+  onRefresh(): void;
+};
+
+const TelemetryPanel = (props: TelemetryPanelProps) => {
+  return <LoadingButton {...props}>{defaults.label}</LoadingButton>;
+};
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 53. No `<Component>Props` alias exists, so the props type comes from the
+    // parameter annotation — unwrapped out of Readonly<...> and resolved to the
+    // shared alias it names. That alias composes with nothing, so the child is
+    // still flagged (without the unwrap the type would be unresolvable and the
+    // component silently skipped).
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type SharedActionProps = { label: string; onAct: () => void };
+
+const ToolbarAction = (props: Readonly<SharedActionProps>) => {
+  return <LoadingButton onClick={props.onAct}>{props.label}</LoadingButton>;
+};
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 54. The rendered child takes an UNTYPED parameter, so there is no
+    // dependency props type to test for inverse composition — and, taking a
+    // parameter at all, it is not prop-less either. Still flagged.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+const SummaryRow = (props) => <div>{props.title}</div>;
+
+type SummaryPanelProps = { title: string };
+
+const SummaryPanel = ({ title }: SummaryPanelProps) => {
+  return <SummaryRow title={title} />;
 };
 `,
       errors: [{ messageId: 'missingPropsComposition' }],
