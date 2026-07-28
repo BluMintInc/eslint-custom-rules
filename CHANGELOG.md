@@ -1,3 +1,10 @@
+## [1.20.9](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.8...v1.20.9) (2026-07-28)
+
+
+### Bug Fixes
+
+* **prefer-spread-over-reassembly:** preserve the parameter's type annotation (closes [#1356](https://github.com/BluMintInc/eslint-custom-rules/issues/1356)) ([782cc9c](https://github.com/BluMintInc/eslint-custom-rules/commit/782cc9cad95a23fe30c55b67f16fba9b4efdca1a))
+
 ## [1.20.8](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.7...v1.20.8) (2026-07-28)
 
 
