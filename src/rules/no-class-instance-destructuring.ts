@@ -136,6 +136,13 @@ export const noClassInstanceDestructuring = createRule<[], MessageIds>({
               // Skip if there's no init expression
               if (!node.init) return null;
 
+              // An annotation on the pattern types the object as a whole, not
+              // each property, so it cannot be split across the per-property
+              // declarations this fixer emits. Deriving per-property types needs
+              // the type checker, so report without fixing rather than rewrite
+              // the code to something more weakly typed than the author wrote.
+              if (objectPattern.typeAnnotation) return null;
+
               // For single property, use simple replacement
               if (properties.length === 1) {
                 const prop = properties[0];

@@ -217,6 +217,130 @@ const getAge = example.getAge;
 const age = new Person('John', 30).age;
       `,
       },
+      // Unannotated single-property destructuring keeps its fix
+      {
+        code: `
+        class A { b = 1; }
+        const inst = new A();
+        const { b } = inst;
+      `,
+        errors: [
+          {
+            messageId: 'noClassInstanceDestructuring',
+            data: {
+              instance: '`inst`',
+              members: '`b`',
+              suggestion: '`inst.b`',
+            },
+          },
+        ],
+        output: `
+        class A { b = 1; }
+        const inst = new A();
+        const b = inst.b;
+      `,
+      },
+      // Unannotated multi-property destructuring keeps its fix
+      {
+        code: `
+        class A { b = 1; c = 2; }
+        const inst = new A();
+        const { b, c } = inst;
+      `,
+        errors: [
+          {
+            messageId: 'noClassInstanceDestructuring',
+            data: {
+              instance: '`inst`',
+              members: '`b`, `c`',
+              suggestion: '`inst.b`, `inst.c`',
+            },
+          },
+        ],
+        output: `
+        class A { b = 1; c = 2; }
+        const inst = new A();
+        const b = inst.b;
+const c = inst.c;
+      `,
+      },
+      // An inline object-type annotation types the whole pattern and cannot be
+      // split across per-property declarations, so the fix is withheld.
+      {
+        code: `
+        class A { b = 1; }
+        const inst = new A();
+        const { b }: { b: number } = inst;
+      `,
+        errors: [
+          {
+            messageId: 'noClassInstanceDestructuring',
+            data: {
+              instance: '`inst`',
+              members: '`b`',
+              suggestion: '`inst.b`',
+            },
+          },
+        ],
+        output: null,
+      },
+      {
+        code: `
+        class A { b = 1; c = 2; }
+        const inst = new A();
+        const { b, c }: { b: number; c: number } = inst;
+      `,
+        errors: [
+          {
+            messageId: 'noClassInstanceDestructuring',
+            data: {
+              instance: '`inst`',
+              members: '`b`, `c`',
+              suggestion: '`inst.b`, `inst.c`',
+            },
+          },
+        ],
+        output: null,
+      },
+      // A type reference annotation is equally unsplittable without the type checker
+      {
+        code: `
+        type SomeType = { b: number };
+        class A { b = 1; }
+        const inst = new A();
+        const { b }: SomeType = inst;
+      `,
+        errors: [
+          {
+            messageId: 'noClassInstanceDestructuring',
+            data: {
+              instance: '`inst`',
+              members: '`b`',
+              suggestion: '`inst.b`',
+            },
+          },
+        ],
+        output: null,
+      },
+      // A renamed property under an annotation is withheld too
+      {
+        code: `
+        class A { b = 1; }
+        const inst = new A();
+        const { b: renamed }: { b: number } = inst;
+      `,
+        errors: [
+          {
+            messageId: 'noClassInstanceDestructuring',
+            data: {
+              instance: '`inst`',
+              members: '`b`',
+              suggestion: '`inst.b`',
+            },
+          },
+        ],
+        output: null,
+      },
       {
         code: `
         class DataHolder {

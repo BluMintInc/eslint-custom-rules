@@ -40,3 +40,12 @@ const cohorts = new BracketChunker(data).cohorts;
 ### Auto-fix
 
 The fixer rewrites destructuring into direct property access (for example, `const { value } = holder;` becomes `const value = holder.value;`). Bind methods yourself if you need to invoke them away from the instance.
+
+The fix is withheld when the destructuring pattern carries a type annotation:
+
+```ts
+const { b }: { b: number } = inst;
+const { b, c }: SomeType = inst;
+```
+
+An annotation types the destructured object as a whole, so it cannot be split across the per-property declarations the fixer emits, and deriving a type for each property would require type information the rule does not have. These cases are reported but left for you to rewrite by hand (for example, `const b: number = inst.b;`).
