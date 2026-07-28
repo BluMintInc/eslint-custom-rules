@@ -1,8 +1,119 @@
 import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
+import {
+  buildVariableRenameFixes,
+  renameIdentifierToken,
+} from '../utils/renameFixes';
 
 type MessageIds = 'usePropsName';
 type Options = [];
+
+// Every node shape whose parameters this rule renames. Each is a node
+// `getDeclaredVariables` understands, which is what lets the fixer resolve the
+// symbol behind the reported parameter.
+type ParameterOwner =
+  | TSESTree.FunctionDeclaration
+  | TSESTree.FunctionExpression
+  | TSESTree.ArrowFunctionExpression
+  | TSESTree.TSEmptyBodyFunctionExpression
+  | TSESTree.TSMethodSignature;
+
+/**
+ * A body-less signature — an interface or object-type method member, or a
+ * `declare`/overload constructor — has no statements, so its parameter name is
+ * documentation-only and can never be referenced. A declaration-only rename is
+ * therefore complete rather than partial, and stays correct even though the
+ * scope analyzer models no variable for such a parameter.
+ */
+const isBodylessSignature = (owner: ParameterOwner): boolean =>
+  owner.type === AST_NODE_TYPES.TSMethodSignature ||
+  owner.type === AST_NODE_TYPES.TSEmptyBodyFunctionExpression;
+
+/**
+ * Finds the class (declaration or expression) that owns a method definition.
+ */
+const getEnclosingClass = (
+  node: TSESTree.MethodDefinition,
+): TSESTree.ClassDeclaration | TSESTree.ClassExpression | null => {
+  const classBody = node.parent;
+  if (classBody?.type !== AST_NODE_TYPES.ClassBody) {
+    return null;
+  }
+  const classNode = classBody.parent;
+  if (
+    classNode?.type === AST_NODE_TYPES.ClassDeclaration ||
+    classNode?.type === AST_NODE_TYPES.ClassExpression
+  ) {
+    return classNode;
+  }
+  return null;
+};
+
+/**
+ * Reports whether renaming a constructor parameter property is unsafe to
+ * autofix.
+ *
+ * A parameter property (`private readonly settings: FooProps`) declares BOTH a
+ * constructor-local binding and a `this.settings` class field. The scope
+ * analyzer only models the binding, so a scope-driven rename silently rewrites
+ * the field declaration while leaving every `this.settings` access — and every
+ * plain `settings` use the analyzer attributes elsewhere — pointing at a name
+ * that no longer exists (Issue #1358). Since the field half of the rename
+ * cannot be resolved through scope analysis, the fix is withheld whenever the
+ * name occurs anywhere in the class other than at its declaration.
+ */
+const parameterPropertyRenameIsUnsafe = (
+  classNode: TSESTree.ClassDeclaration | TSESTree.ClassExpression,
+  name: string,
+  declarationId: TSESTree.Identifier,
+): boolean => {
+  let unsafe = false;
+
+  const visit = (node: TSESTree.Node): void => {
+    if (unsafe) {
+      return;
+    }
+
+    if (
+      node.type === AST_NODE_TYPES.MemberExpression &&
+      node.object.type === AST_NODE_TYPES.ThisExpression &&
+      node.property.type === AST_NODE_TYPES.Identifier &&
+      node.property.name === name
+    ) {
+      unsafe = true;
+      return;
+    }
+
+    if (
+      node.type === AST_NODE_TYPES.Identifier &&
+      node.name === name &&
+      node !== declarationId
+    ) {
+      unsafe = true;
+      return;
+    }
+
+    for (const key of Object.keys(node)) {
+      if (key === 'parent') {
+        continue;
+      }
+      const value = (node as unknown as Record<string, unknown>)[key];
+      if (Array.isArray(value)) {
+        for (const child of value) {
+          if (ASTHelpers.isNode(child)) {
+            visit(child);
+          }
+        }
+      } else if (ASTHelpers.isNode(value)) {
+        visit(value);
+      }
+    }
+  };
+
+  visit(classNode);
+  return unsafe;
+};
 
 export const enforcePropsNamingConsistency = createRule<Options, MessageIds>({
   name: 'enforce-props-naming-consistency',
@@ -62,12 +173,54 @@ export const enforcePropsNamingConsistency = createRule<Options, MessageIds>({
       return paramName.endsWith('Props') || paramName === 'props';
     }
 
-    // Fix parameter name to "props"
-    function fixParameterName(
+    // Build the complete rename: the parameter declaration AND every in-file
+    // reference to it, rewriting only name tokens.
+    //
+    // `fixer.replaceText(param, 'props')` used to be the whole fix, which was
+    // wrong twice over: an `Identifier` range spans its optional marker and its
+    // type annotation, so replacing it deleted the very `: FooProps` annotation
+    // that triggered the report, and the body kept referencing the old name
+    // (Issue #1358). Returns null whenever the rename cannot be applied
+    // everywhere, so the report stands on its own instead of corrupting the
+    // source.
+    function buildParameterRenameFixes(
       fixer: TSESLint.RuleFixer,
+      owner: ParameterOwner,
       param: TSESTree.Identifier,
-    ): TSESLint.RuleFix {
-      return fixer.replaceText(param, 'props');
+    ): TSESLint.RuleFix[] | null {
+      const sourceCode = context.getSourceCode();
+
+      // `getDeclaredVariables` on a function returns every parameter plus
+      // `arguments` and, for a declaration, the function's own name — and those
+      // can share a name (`function config(config: XProps)`), so the lookup
+      // matches on declaration identity instead of on the name.
+      const variable =
+        context
+          .getDeclaredVariables(owner)
+          .find((candidate) =>
+            candidate.defs.some((def) => def.name === param),
+          ) ?? null;
+
+      if (!variable) {
+        if (!isBodylessSignature(owner)) {
+          return null;
+        }
+        const declarationFix = renameIdentifierToken(
+          fixer,
+          sourceCode,
+          param,
+          'props',
+        );
+        return declarationFix ? [declarationFix] : null;
+      }
+
+      return buildVariableRenameFixes({
+        fixer,
+        sourceCode,
+        variable,
+        declarationId: param,
+        newName: 'props',
+      });
     }
 
     // Check function parameters
@@ -101,7 +254,7 @@ export const enforcePropsNamingConsistency = createRule<Options, MessageIds>({
             node: param,
             messageId: 'usePropsName',
             data: { paramName: param.name },
-            fix: (fixer) => fixParameterName(fixer, param),
+            fix: (fixer) => buildParameterRenameFixes(fixer, node, param),
           });
         }
       }
@@ -143,6 +296,8 @@ export const enforcePropsNamingConsistency = createRule<Options, MessageIds>({
         return; // Skip constructors with multiple Props parameters
       }
 
+      const enclosingClass = getEnclosingClass(node);
+
       for (const param of constructor.params) {
         if (
           shouldBeNamedProps(param) &&
@@ -153,7 +308,8 @@ export const enforcePropsNamingConsistency = createRule<Options, MessageIds>({
             node: param,
             messageId: 'usePropsName',
             data: { paramName: param.name },
-            fix: (fixer) => fixParameterName(fixer, param),
+            fix: (fixer) =>
+              buildParameterRenameFixes(fixer, constructor, param),
           });
         } else if (
           param.type === AST_NODE_TYPES.TSParameterProperty &&
@@ -161,12 +317,31 @@ export const enforcePropsNamingConsistency = createRule<Options, MessageIds>({
           shouldBeNamedProps(param.parameter) &&
           !isPropsNameWithPrefix(param.parameter.name)
         ) {
+          const declarationId = param.parameter;
           context.report({
-            node: param.parameter,
+            node: declarationId,
             messageId: 'usePropsName',
-            data: { paramName: param.parameter.name },
-            fix: (fixer) =>
-              fixParameterName(fixer, param.parameter as TSESTree.Identifier),
+            data: { paramName: declarationId.name },
+            fix: (fixer) => {
+              // A parameter property also declares a `this.<name>` field the
+              // scope analyzer does not model, so renaming it is only safe
+              // when the name appears nowhere else in the class.
+              if (
+                !enclosingClass ||
+                parameterPropertyRenameIsUnsafe(
+                  enclosingClass,
+                  declarationId.name,
+                  declarationId,
+                )
+              ) {
+                return null;
+              }
+              return buildParameterRenameFixes(
+                fixer,
+                constructor,
+                declarationId,
+              );
+            },
           });
         }
       }
