@@ -1,5 +1,123 @@
 [
   {
+    "version": "1.20.10",
+    "date": "2026-07-28T19:39:55.260Z",
+    "rules": [
+      {
+        "name": "enforce-early-destructuring",
+        "changeType": "fix",
+        "issues": [
+          1362
+        ],
+        "summary": "withhold the hoist when a declarator is annotated (closes #1362)"
+      },
+      {
+        "name": "enforce-m3-sentence-case",
+        "changeType": "fix",
+        "issues": [
+          1370
+        ],
+        "summary": "escape suggestions per target and sentence-case ALL-CAPS fully (closes #1370)"
+      },
+      {
+        "name": "enforce-props-naming-consistency",
+        "changeType": "fix",
+        "issues": [
+          1358
+        ],
+        "summary": "rename references and keep the Props annotation (closes #1358)"
+      },
+      {
+        "name": "enforce-querykey-ts",
+        "changeType": "fix",
+        "issues": [
+          1365
+        ],
+        "summary": "import the QUERY_KEY constant the fix substitutes (closes #1365)"
+      },
+      {
+        "name": "enforce-react-type-naming",
+        "changeType": "fix",
+        "issues": [
+          1357
+        ],
+        "summary": "rename references and keep the type annotation (closes #1357)"
+      },
+      {
+        "name": "enforce-snapshot-state-narrowing",
+        "changeType": "fix",
+        "issues": [
+          1369
+        ],
+        "summary": "keep polarity and import the guard (closes #1369)"
+      },
+      {
+        "name": "no-class-instance-destructuring",
+        "changeType": "fix",
+        "issues": [
+          1359
+        ],
+        "summary": "withhold the fix for annotated patterns (closes #1359)"
+      },
+      {
+        "name": "no-excessive-parent-chain",
+        "changeType": "fix",
+        "issues": [
+          1368
+        ],
+        "summary": "suggest the handler's actual parameter name (closes #1368)"
+      },
+      {
+        "name": "no-unnecessary-destructuring",
+        "changeType": "fix",
+        "issues": [
+          1361
+        ],
+        "summary": "preserve the declarator's type annotation (closes #1361)"
+      },
+      {
+        "name": "prefer-clone-deep",
+        "changeType": "fix",
+        "issues": [
+          1364
+        ],
+        "summary": "stop dropping nested spreads and import cloneDeep (closes #1364)"
+      },
+      {
+        "name": "prefer-destructuring-no-class",
+        "changeType": "fix",
+        "issues": [
+          1360
+        ],
+        "summary": "withhold the fix for annotated declarators (closes #1360)"
+      },
+      {
+        "name": "prefer-usecallback-over-usememo-for-functions",
+        "changeType": "fix",
+        "issues": [
+          1367
+        ],
+        "summary": "rewrite imports with the call (closes #1367)"
+      },
+      {
+        "name": "use-custom-memo",
+        "changeType": "fix",
+        "issues": [
+          1366
+        ],
+        "summary": "re-emit surviving react import specifiers faithfully (closes #1366)"
+      },
+      {
+        "name": "use-latest-callback",
+        "changeType": "fix",
+        "issues": [
+          1363
+        ],
+        "summary": "keep the react import while any useCallback reference survives (closes #1363)"
+      }
+    ]
+  },
+  {
     "version": "1.20.9",
     "date": "2026-07-28T15:52:43.296Z",
     "rules": [

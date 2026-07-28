@@ -1,3 +1,23 @@
+## [1.20.10](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.9...v1.20.10) (2026-07-28)
+
+
+### Bug Fixes
+
+* **enforce-early-destructuring:** withhold the hoist when a declarator is annotated (closes [#1362](https://github.com/BluMintInc/eslint-custom-rules/issues/1362)) ([24b7238](https://github.com/BluMintInc/eslint-custom-rules/commit/24b7238dbec6f6c7559548c06bc0ac7b23680437))
+* **enforce-m3-sentence-case:** escape suggestions per target and sentence-case ALL-CAPS fully (closes [#1370](https://github.com/BluMintInc/eslint-custom-rules/issues/1370)) ([4b986bb](https://github.com/BluMintInc/eslint-custom-rules/commit/4b986bb1426016c5a1b504f58e5ed545625d90d4))
+* **enforce-props-naming-consistency:** rename references and keep the Props annotation (closes [#1358](https://github.com/BluMintInc/eslint-custom-rules/issues/1358)) ([c64ca8e](https://github.com/BluMintInc/eslint-custom-rules/commit/c64ca8eb0f095de3b6b34a2932562a75fcad3400))
+* **enforce-querykey-ts:** import the QUERY_KEY constant the fix substitutes (closes [#1365](https://github.com/BluMintInc/eslint-custom-rules/issues/1365)) ([1ac8eca](https://github.com/BluMintInc/eslint-custom-rules/commit/1ac8eca8a1def8ac727e825f9ffded4be8cc989f))
+* **enforce-react-type-naming:** rename references and keep the type annotation (closes [#1357](https://github.com/BluMintInc/eslint-custom-rules/issues/1357)) ([6798b06](https://github.com/BluMintInc/eslint-custom-rules/commit/6798b067abc5c164eebab7ba7eb099f1ed9c1ef7)), closes [#1351](https://github.com/BluMintInc/eslint-custom-rules/issues/1351)
+* **enforce-snapshot-state-narrowing:** keep polarity and import the guard (closes [#1369](https://github.com/BluMintInc/eslint-custom-rules/issues/1369)) ([d408d1c](https://github.com/BluMintInc/eslint-custom-rules/commit/d408d1c21583cec104c8509725d89b19ef7ff33d))
+* **no-class-instance-destructuring:** withhold the fix for annotated patterns (closes [#1359](https://github.com/BluMintInc/eslint-custom-rules/issues/1359)) ([b43a74d](https://github.com/BluMintInc/eslint-custom-rules/commit/b43a74da58957dd55194ac79cad0ed0faf9ddfe9))
+* **no-excessive-parent-chain:** suggest the handler's actual parameter name (closes [#1368](https://github.com/BluMintInc/eslint-custom-rules/issues/1368)) ([bb64076](https://github.com/BluMintInc/eslint-custom-rules/commit/bb6407622e99fae5941bf637ad8826336b69c0b4))
+* **no-unnecessary-destructuring:** preserve the declarator's type annotation (closes [#1361](https://github.com/BluMintInc/eslint-custom-rules/issues/1361)) ([c9d0d01](https://github.com/BluMintInc/eslint-custom-rules/commit/c9d0d01322f7a1dc5ee9dc91e7f4fc3a94ecefd4))
+* **prefer-clone-deep:** stop dropping nested spreads and import cloneDeep (closes [#1364](https://github.com/BluMintInc/eslint-custom-rules/issues/1364)) ([f1c566e](https://github.com/BluMintInc/eslint-custom-rules/commit/f1c566e91eae9cdf7e82d3e9550a1d9655372983))
+* **prefer-destructuring-no-class:** withhold the fix for annotated declarators (closes [#1360](https://github.com/BluMintInc/eslint-custom-rules/issues/1360)) ([9fcca7f](https://github.com/BluMintInc/eslint-custom-rules/commit/9fcca7fe53ba91286e89b33e6ffd8359e2368e2d))
+* **prefer-usecallback-over-usememo-for-functions:** rewrite imports with the call (closes [#1367](https://github.com/BluMintInc/eslint-custom-rules/issues/1367)) ([addecb5](https://github.com/BluMintInc/eslint-custom-rules/commit/addecb5d938e66c4b1c5e833a859a3fa5576c85a))
+* **use-custom-memo:** re-emit surviving react import specifiers faithfully (closes [#1366](https://github.com/BluMintInc/eslint-custom-rules/issues/1366)) ([9f479f3](https://github.com/BluMintInc/eslint-custom-rules/commit/9f479f31ed9162a15ffd931c0ad4304bd1b42291))
+* **use-latest-callback:** keep the react import while any useCallback reference survives (closes [#1363](https://github.com/BluMintInc/eslint-custom-rules/issues/1363)) ([8927931](https://github.com/BluMintInc/eslint-custom-rules/commit/89279311da4204ec4469841ee9a54a599a03cb35))
+
 ## [1.20.9](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.8...v1.20.9) (2026-07-28)
 
 
