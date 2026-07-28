@@ -40,8 +40,8 @@ describe('plugin loads against a compiler without a root-exported API', () => {
   it('still exposes the recommended config', () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const plugin = require('..') as PluginShape;
-    expect(Object.keys(plugin.configs.recommended.rules).length).toBeGreaterThan(
-      0,
-    );
+    expect(
+      Object.keys(plugin.configs.recommended.rules).length,
+    ).toBeGreaterThan(0);
   });
 });
