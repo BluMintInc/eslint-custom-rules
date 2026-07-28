@@ -54,6 +54,7 @@
   },
   "dependencies": {
     "@types/pluralize": "0.0.33",
+    "@typescript-eslint/typescript-estree": "5.59.6",
     "compromise": "14.14.4",
     "minimatch": "10.0.1",
     "pluralize": "8.0.0",

@@ -40,6 +40,7 @@
   "exclude": [
     "node_modules",
     "lib",
-    "**/*.test.ts"
+    "**/*.test.ts",
+    "src/tests/fixtures/require-props-composition"
   ]
 }

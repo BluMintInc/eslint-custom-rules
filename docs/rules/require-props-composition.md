@@ -82,9 +82,7 @@ Rendering a component that takes **no props** does not by itself require
 composition. A props-less child (e.g. `const Icon = () => <svg />`) has no
 customization surface to compose with — the same category as a decorative icon —
 so it is dropped from the dependency set and never demands a nonexistent
-`{Child}Props` type. This applies only when the child resolves in-file to a
-component function with zero parameters; imported children are still checked
-normally.
+`{Child}Props` type.
 
 ```tsx
 const ChildNoProps = () => <div />;
@@ -99,6 +97,87 @@ const Parent = ({ title }: ParentProps) => (
   </div>
 );
 ```
+
+A child **imported from a relative path** counts too, when the imported module
+proves it takes no props:
+
+```tsx
+// ./BestOfText.tsx — export const BestOfText = () => <div />;
+import { BestOfText } from './BestOfText';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+// BestOfTextProps cannot exist, so composition with it is not required.
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    {title}
+    <BestOfText />
+  </div>
+);
+```
+
+This relaxation is deliberately narrow, so that an unresolvable name can never
+silently disable the rule. It applies **only** when all of the following hold:
+
+- the child is bound by an import whose source is relative (`./x`, `../x`) —
+  package imports (`@mui/material`, `react`) and free identifiers are unaffected;
+- that source resolves to a real file on disk (`<source>.tsx|.ts|.jsx|.js`, then
+  `<source>/index.tsx|.ts|.jsx|.js`);
+- **parsing** that file positively proves the imported binding is a component
+  declared with an empty parameter list — as `export const X = () => …`,
+  `export function X() {}`, a props-preserving HOC wrapper of either (see below),
+  an `export { X }` clause, or a default export of any of these;
+- nothing inside the rendering component re-declares the name, so the import
+  really is what the JSX resolves to.
+
+The child module is parsed into an AST rather than pattern-matched as text, so
+text that merely *looks* like a zero-argument declaration — inside a string,
+template literal or comment, in a nested scope, or in a TypeScript overload
+signature ahead of a props-taking implementation — can never stand in for the
+definition.
+
+Anything ambiguous — a missing, unreadable or unparsable file, a re-export whose
+definition lives in yet another module, a namespace import, a binding that cannot
+be located, a name shadowed by a local declaration, a parameter list that is not
+empty — leaves the child in the dependency set, so the rule still reports.
+
+#### Which wrappers the zero-prop proof sees through
+
+Only wrappers that hand a component's props surface through **unchanged** may be
+unwrapped when proving a child prop-less:
+
+| Wrapper | Bare form | Qualified form |
+| --- | --- | --- |
+| `memo` | `memo(…)` | `React.memo(…)` |
+| `forwardRef` | `forwardRef(…)` | `React.forwardRef(…)` |
+| `observer` | `observer(…)` | — |
+
+```tsx
+// ./MemoChild.tsx — export const MemoChild = memo(() => <div />);
+// Still prop-less: memo forwards the wrapped component's props verbatim.
+import { MemoChild } from './MemoChild';
+```
+
+Every other call expression is treated as **unprovable**, so the child stays a
+composition dependency and the rule keeps reporting. This matters because the
+zero-parameter function inside such a call is usually not the component at all:
+
+```tsx
+// ./LazyChild.tsx — export const LazyChild = lazy(() => import('./ChildWithProps'));
+// The zero-parameter arrow is a LOADER, not the component: LazyChild exposes
+// ChildWithProps' entire props surface, so composition is still required.
+import { LazyChild } from './LazyChild';
+```
+
+The same applies to `dynamic(() => import('./X'), { ssr: false })` (the shape
+[`prefer-next-dynamic`](./prefer-next-dynamic.md) autofixes into), to
+`styled(Box)(() => ({ … }))` whose zero-parameter argument is a style callback,
+and to any props-injecting HOC (`withTooltip(…)`, `connect(mapState)(…)`).
+
+Verdicts are memoized per child module and stamped with the file's modification
+time and size, so adding props to a previously prop-less child takes effect on
+the next lint even under a long-lived host (the VS Code ESLint extension,
+`eslint_d`) — no restart required.
 
 ## Options
 

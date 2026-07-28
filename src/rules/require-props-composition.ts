@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { minimatch } from 'minimatch';
 import { createRule } from '../utils/createRule';
@@ -395,16 +397,61 @@ function getFirstParamTypeNode(
 }
 
 /**
+ * The only wrappers that hand a component's props surface through unchanged, so
+ * the parameter list of the wrapped function still describes the binding's
+ * props. Every other call — `lazy`, `dynamic`, `styled(Box)`, `connect(...)()`,
+ * any `withX` — either forwards a *different* component's props or injects its
+ * own, so its argument proves nothing about the exported binding.
+ */
+const PROPS_PRESERVING_HOCS = new Set(['memo', 'forwardRef', 'observer']);
+
+/**
+ * Matches both the bare (`memo(...)`) and React-qualified (`React.memo(...)`)
+ * callee forms. A computed or deeper member expression, and a callee that is
+ * itself a call (`connect(mapState)(...)`, `styled(Box)(...)`), never match.
+ */
+function isPropsPreservingHocCallee(
+  callee: TSESTree.LeftHandSideExpression,
+): boolean {
+  if (callee.type === AST_NODE_TYPES.Identifier) {
+    return PROPS_PRESERVING_HOCS.has(callee.name);
+  }
+  return (
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    !callee.computed &&
+    callee.object.type === AST_NODE_TYPES.Identifier &&
+    callee.object.name === 'React' &&
+    callee.property.type === AST_NODE_TYPES.Identifier &&
+    PROPS_PRESERVING_HOCS.has(callee.property.name)
+  );
+}
+
+type ComponentFunctionLookup = {
+  /** Guards against alias cycles (`const A = B; const B = A`). */
+  seen?: Set<string>;
+  /**
+   * Restricts call unwrapping to PROPS_PRESERVING_HOCS. Set on the
+   * zero-parameter *proof* path, where unwrapping an arbitrary call would let an
+   * incidental zero-argument callback (a `lazy`/`dynamic` loader, a `styled`
+   * style callback) masquerade as the component and silently drop a child that
+   * really takes props (issue #1316). Left off for props-type resolution, where
+   * a best-effort look inside any wrapper only ever finds *more* composition.
+   */
+  propsPreservingHocsOnly?: boolean;
+};
+
+/**
  * Resolve the function node for a component name in the program, following a
  * single-identifier alias (`const Live = LiveUnmemoized`) and unwrapping a HOC
- * call (`memo((props) => ...)`). Returns null when no function is found. The
- * `seen` set guards against alias cycles.
+ * call (`memo((props) => ...)`). Returns null when no function is found.
  */
 function findComponentFunction(
   program: TSESTree.Program,
   name: string,
-  seen: Set<string> = new Set<string>(),
+  lookup: ComponentFunctionLookup = {},
 ): ComponentFunction | null {
+  const seen = lookup.seen ?? new Set<string>();
+  const nextLookup: ComponentFunctionLookup = { ...lookup, seen };
   if (seen.has(name)) return null;
   seen.add(name);
 
@@ -439,6 +486,14 @@ function findComponentFunction(
           return init;
         }
         if (init.type === AST_NODE_TYPES.CallExpression) {
+          if (
+            lookup.propsPreservingHocsOnly &&
+            !isPropsPreservingHocCallee(init.callee)
+          ) {
+            // The binding IS this call, and the call is not known to preserve
+            // props — so nothing about its props surface is provable.
+            return null;
+          }
           const arg0 = init.arguments[0];
           if (
             arg0 &&
@@ -449,7 +504,7 @@ function findComponentFunction(
           }
         }
         if (init.type === AST_NODE_TYPES.Identifier) {
-          return findComponentFunction(program, init.name, seen);
+          return findComponentFunction(program, init.name, nextLookup);
         }
       }
     }
@@ -464,8 +519,489 @@ function findComponentFunction(
  * used; imported children are left to the normal composition check.
  */
 function isZeroPropComponent(program: TSESTree.Program, name: string): boolean {
-  const fn = findComponentFunction(program, name);
+  const fn = findComponentFunction(program, name, {
+    propsPreservingHocsOnly: true,
+  });
   return fn !== null && fn.params.length === 0;
+}
+
+const RELATIVE_SOURCE = /^\.\.?\//;
+const MODULE_EXTENSIONS = ['.tsx', '.ts', '.jsx', '.js'];
+const DEFAULT_BINDING = 'default';
+
+/**
+ * A whole-repo run re-visits the same parent/child pairs many times, so both the
+ * module resolution (misses included) and the per-binding verdict are memoized to
+ * hold the disk work to one stat/read per module. Keys are JSON-encoded tuples so
+ * no separator character can collide with a directory or module name. Only the
+ * verdicts are retained — a parsed child program is discarded as soon as it has
+ * answered, so a whole-repo run never accumulates foreign ASTs.
+ *
+ * The resolution cache stores the candidate search only (which path a specifier
+ * picks), never the file's contents or state: a resolution *miss* is safe to
+ * keep because a file created later stays unresolved, which reports. The verdict
+ * cache instead carries the resolved file's mtime/size stamp as its VALUE, so a
+ * child edited under a long-lived host (the VS Code ESLint extension, eslint_d)
+ * is re-read on the next lint rather than answering from a stale verdict. The
+ * stamp lives in the value, not the key, so an edited file replaces its entry
+ * instead of accumulating one per revision.
+ */
+const moduleResolutionCache = new Map<string, string | null>();
+const propLessBindingCache = new Map<string, StampedVerdict>();
+
+type FileStamp = { mtimeMs: number; size: number };
+type ResolvedModule = FileStamp & { filePath: string };
+type StampedVerdict = FileStamp & { propLess: boolean };
+
+/**
+ * Stat a candidate path, returning its identity stamp when it is a file. The
+ * single stat both resolves existence and stamps the file, so proving a child
+ * prop-less never pays for two.
+ */
+function statModule(candidate: string): ResolvedModule | null {
+  try {
+    const stats = fs.statSync(candidate);
+    return stats.isFile()
+      ? { filePath: candidate, mtimeMs: stats.mtimeMs, size: stats.size }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve a relative import specifier the way a bundler would: sibling file
+ * first, then the directory's index file. Package specifiers never reach here —
+ * only a file proven to exist on disk can relax the rule.
+ *
+ * The chosen path is memoized, but the returned stamp never is: the stat that
+ * confirms the resolved file still exists is the same stat that dates it, so a
+ * cache hit costs exactly one stat (against up to eight on a miss) and a deleted
+ * file resolves to null again, which reports.
+ */
+function resolveRelativeModule(
+  fromDir: string,
+  source: string,
+): ResolvedModule | null {
+  const cacheKey = JSON.stringify([fromDir, source]);
+  const cached = moduleResolutionCache.get(cacheKey);
+  if (cached !== undefined) {
+    return cached === null ? null : statModule(cached);
+  }
+
+  const base = path.resolve(fromDir, source);
+  let resolved: ResolvedModule | null = null;
+  for (const extension of MODULE_EXTENSIONS) {
+    resolved = statModule(`${base}${extension}`);
+    if (resolved) {
+      break;
+    }
+  }
+  if (!resolved) {
+    for (const extension of MODULE_EXTENSIONS) {
+      resolved = statModule(path.join(base, `index${extension}`));
+      if (resolved) {
+        break;
+      }
+    }
+  }
+
+  moduleResolutionCache.set(cacheKey, resolved?.filePath ?? null);
+  return resolved;
+}
+
+type ForeignParseOptions = {
+  jsx: boolean;
+  loc: boolean;
+  range: boolean;
+  comment: boolean;
+};
+
+type ForeignParse = (
+  source: string,
+  options: ForeignParseOptions,
+) => TSESTree.Program;
+
+/**
+ * `undefined` means the parser has not been looked up yet; `null` means the
+ * lookup failed and must not be retried.
+ */
+let foreignParse: ForeignParse | null | undefined;
+
+/**
+ * The child module is read with the parser that backs `@typescript-eslint/utils`
+ * itself, loaded lazily and memoized (failure included) so the resolution cost is
+ * paid once per process rather than per file. A consumer install that somehow
+ * lacks the parser degrades to "not provable", which leaves the dependency in the
+ * set and keeps the rule reporting.
+ */
+function getForeignParse(): ForeignParse | null {
+  if (foreignParse === undefined) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const estree = require('@typescript-eslint/typescript-estree');
+      foreignParse = (estree?.parse as ForeignParse | undefined) ?? null;
+    } catch {
+      foreignParse = null;
+    }
+  }
+  return foreignParse;
+}
+
+/**
+ * Parse a child module into an AST. Only a real parse can decide whether a file
+ * declares a zero-parameter component: text that merely looks like a declaration
+ * — inside a string, a template literal, a comment, a nested scope, or a
+ * TypeScript overload signature — must never stand in for the definition.
+ * A file that cannot be read or parsed yields null, i.e. proves nothing.
+ */
+function parseModuleProgram(filePath: string): TSESTree.Program | null {
+  const parse = getForeignParse();
+  if (!parse) {
+    return null;
+  }
+  try {
+    return parse(fs.readFileSync(filePath, 'utf8'), {
+      jsx: true,
+      loc: false,
+      range: false,
+      comment: false,
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Map an exported name to the local binding that defines it, covering both
+ * `export const X` / `export function X` and the `const X = …; export { X as Y }`
+ * split. A re-export (`export { X } from './y'`) is deliberately left
+ * unresolved: the definition lives in another module, so nothing is proven.
+ */
+function findExportedLocalName(
+  program: TSESTree.Program,
+  exported: string,
+): string | null {
+  for (const stmt of program.body) {
+    if (
+      stmt.type !== AST_NODE_TYPES.ExportNamedDeclaration ||
+      stmt.exportKind === 'type' ||
+      stmt.source
+    ) {
+      continue;
+    }
+
+    const declaration = stmt.declaration;
+    if (declaration) {
+      if (
+        declaration.type === AST_NODE_TYPES.FunctionDeclaration &&
+        declaration.id?.name === exported
+      ) {
+        return exported;
+      }
+      if (declaration.type === AST_NODE_TYPES.VariableDeclaration) {
+        for (const declarator of declaration.declarations) {
+          if (
+            declarator.id.type === AST_NODE_TYPES.Identifier &&
+            declarator.id.name === exported
+          ) {
+            return exported;
+          }
+        }
+      }
+      continue;
+    }
+
+    for (const specifier of stmt.specifiers) {
+      if (specifier.exported.name === exported) {
+        return specifier.local.name;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Resolve `export default <expr>` to the component function it defines,
+ * unwrapping a HOC call and following an identifier alias the same way
+ * findComponentFunction does for named bindings. `lookup` carries the same
+ * restrictions, so `export default lazy(() => import('./X'))` is as unprovable
+ * as its named counterpart.
+ */
+function findDefaultExportFunction(
+  program: TSESTree.Program,
+  lookup: ComponentFunctionLookup = {},
+): ComponentFunction | null {
+  for (const stmt of program.body) {
+    if (stmt.type !== AST_NODE_TYPES.ExportDefaultDeclaration) {
+      continue;
+    }
+
+    const declaration = stmt.declaration;
+    if (
+      declaration.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+      declaration.type === AST_NODE_TYPES.FunctionExpression ||
+      declaration.type === AST_NODE_TYPES.FunctionDeclaration
+    ) {
+      return declaration;
+    }
+    if (declaration.type === AST_NODE_TYPES.Identifier) {
+      return findComponentFunction(program, declaration.name, lookup);
+    }
+    if (declaration.type === AST_NODE_TYPES.CallExpression) {
+      if (
+        lookup.propsPreservingHocsOnly &&
+        !isPropsPreservingHocCallee(declaration.callee)
+      ) {
+        return null;
+      }
+      const arg0 = declaration.arguments[0];
+      if (!arg0) {
+        return null;
+      }
+      if (
+        arg0.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+        arg0.type === AST_NODE_TYPES.FunctionExpression
+      ) {
+        return arg0;
+      }
+      if (arg0.type === AST_NODE_TYPES.Identifier) {
+        return findComponentFunction(program, arg0.name, lookup);
+      }
+    }
+    return null;
+  }
+  return null;
+}
+
+/**
+ * Whether the module at `filePath` provably exports `binding` as a component
+ * declared with an empty parameter list. The verdict comes from
+ * findComponentFunction — the same resolution the rule applies to in-file
+ * children — run against the child's own parsed program, so `const X = () => …`,
+ * `function X() {}`, props-preserving HOC wrappers and identifier aliases all
+ * behave identically whether the child lives in this file or a sibling one.
+ */
+function isPropLessExport(filePath: string, binding: string): boolean {
+  const program = parseModuleProgram(filePath);
+  if (!program) {
+    return false;
+  }
+
+  const lookup: ComponentFunctionLookup = { propsPreservingHocsOnly: true };
+  let fn: ComponentFunction | null = null;
+  if (binding === DEFAULT_BINDING) {
+    fn = findDefaultExportFunction(program, lookup);
+  } else {
+    const local = findExportedLocalName(program, binding);
+    fn = local === null ? null : findComponentFunction(program, local, lookup);
+  }
+
+  return fn !== null && fn.params.length === 0;
+}
+
+type RelativeImport = { source: string; binding: string };
+
+/**
+ * Locate the relative import that introduces `localName`. Package imports
+ * (`@mui/material`, `react`), namespace imports, type-only imports and free
+ * identifiers all return null, so they keep the rule's normal behavior.
+ */
+function findRelativeImport(
+  program: TSESTree.Program,
+  localName: string,
+): RelativeImport | null {
+  for (const stmt of program.body) {
+    if (
+      stmt.type !== AST_NODE_TYPES.ImportDeclaration ||
+      stmt.importKind === 'type' ||
+      typeof stmt.source.value !== 'string' ||
+      !RELATIVE_SOURCE.test(stmt.source.value)
+    ) {
+      continue;
+    }
+    for (const specifier of stmt.specifiers) {
+      if (specifier.local.name !== localName) {
+        continue;
+      }
+      if (specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
+        return { source: stmt.source.value, binding: DEFAULT_BINDING };
+      }
+      if (
+        specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+        specifier.importKind !== 'type' &&
+        specifier.imported.type === AST_NODE_TYPES.Identifier
+      ) {
+        return { source: stmt.source.value, binding: specifier.imported.name };
+      }
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Whether `name` is bound by a destructuring/assignment pattern. Every binding
+ * form a parameter or declarator can take is walked, so a name introduced by
+ * `const { X } = …` or `([X]) => …` counts as a binding just like `const X = …`.
+ */
+function patternBindsName(
+  pattern: TSESTree.Node | null | undefined,
+  name: string,
+): boolean {
+  if (!pattern) return false;
+  switch (pattern.type) {
+    case AST_NODE_TYPES.Identifier:
+      return pattern.name === name;
+    case AST_NODE_TYPES.ObjectPattern:
+      return pattern.properties.some((property) =>
+        property.type === AST_NODE_TYPES.RestElement
+          ? patternBindsName(property.argument, name)
+          : patternBindsName(property.value, name),
+      );
+    case AST_NODE_TYPES.ArrayPattern:
+      return pattern.elements.some((element) =>
+        patternBindsName(element, name),
+      );
+    case AST_NODE_TYPES.AssignmentPattern:
+      return patternBindsName(pattern.left, name);
+    case AST_NODE_TYPES.RestElement:
+      return patternBindsName(pattern.argument, name);
+    default:
+      return false;
+  }
+}
+
+/**
+ * Whether a declaration of `name` appears anywhere inside `root`.
+ *
+ * A module-level import only describes the JSX name when nothing between the
+ * import and the JSX site re-declares it. Scope boundaries inside the component
+ * are deliberately ignored: over-detecting a shadow costs nothing but a report
+ * (the fail-safe direction), whereas missing one silently drops a dependency the
+ * import never described (issue #1316).
+ */
+function isNameDeclaredWithin(root: TSESTree.Node, name: string): boolean {
+  let found = false;
+
+  function visit(node: TSESTree.Node | null | undefined): void {
+    if (found || !node || typeof node !== 'object') return;
+
+    switch (node.type) {
+      case AST_NODE_TYPES.VariableDeclarator:
+        if (patternBindsName(node.id, name)) found = true;
+        break;
+      case AST_NODE_TYPES.FunctionDeclaration:
+      case AST_NODE_TYPES.ClassDeclaration:
+        if (node.id?.name === name) found = true;
+        break;
+      case AST_NODE_TYPES.CatchClause:
+        if (patternBindsName(node.param, name)) found = true;
+        break;
+      default:
+        break;
+    }
+    if (
+      node.type === AST_NODE_TYPES.FunctionDeclaration ||
+      node.type === AST_NODE_TYPES.FunctionExpression ||
+      node.type === AST_NODE_TYPES.ArrowFunctionExpression
+    ) {
+      if (node.params.some((param) => patternBindsName(param, name))) {
+        found = true;
+      }
+    }
+    if (found) return;
+
+    for (const key of Object.keys(node)) {
+      if (key === 'parent') continue;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const child = (node as any)[key];
+      if (Array.isArray(child)) {
+        for (const item of child) {
+          if (item && typeof item === 'object' && 'type' in item) {
+            visit(item as TSESTree.Node);
+          }
+        }
+      } else if (child && typeof child === 'object' && 'type' in child) {
+        visit(child as TSESTree.Node);
+      }
+    }
+  }
+
+  visit(root);
+  return found;
+}
+
+/**
+ * A child imported from a sibling module can be just as prop-less as an in-file
+ * one (issue #1316: `<BestOfText />`, whose module declares
+ * `export const BestOfText = () => …` and no BestOfTextProps anywhere). Demanding
+ * composition with a props type that cannot exist is unfixable, so such a child
+ * is not a composition dependency.
+ *
+ * The relaxation is deliberately narrow — it applies only when the child is
+ * imported from a *relative* path, that path resolves to a file on disk, that
+ * file's own AST positively proves a zero-parameter component, and nothing
+ * inside the rendering component re-declares the name. Every other dependency
+ * (package imports, unresolvable modules, free identifiers, shadowed names,
+ * anything the parse cannot decide with certainty) still reports, so the rule
+ * cannot be silently disabled by an unresolvable name.
+ */
+function isPropLessImportedComponent(
+  program: TSESTree.Program,
+  localName: string,
+  filename: string,
+  componentRoot: TSESTree.Node,
+): boolean {
+  const relativeImport = findRelativeImport(program, localName);
+  if (!relativeImport) {
+    return false;
+  }
+
+  // A local declaration of the same name inside the component means the JSX
+  // resolves to that binding, not the import, so the import proves nothing.
+  if (isNameDeclaredWithin(componentRoot, localName)) {
+    return false;
+  }
+
+  try {
+    const absolute = path.isAbsolute(filename)
+      ? filename
+      : path.resolve(process.cwd(), filename);
+    const resolved = resolveRelativeModule(
+      path.dirname(absolute),
+      relativeImport.source,
+    );
+    if (!resolved) {
+      return false;
+    }
+
+    const cacheKey = JSON.stringify([
+      resolved.filePath,
+      relativeImport.binding,
+    ]);
+    const cached = propLessBindingCache.get(cacheKey);
+    if (
+      cached !== undefined &&
+      cached.mtimeMs === resolved.mtimeMs &&
+      cached.size === resolved.size
+    ) {
+      return cached.propLess;
+    }
+
+    const propLess = isPropLessExport(
+      resolved.filePath,
+      relativeImport.binding,
+    );
+    propLessBindingCache.set(cacheKey, {
+      mtimeMs: resolved.mtimeMs,
+      size: resolved.size,
+      propLess,
+    });
+    return propLess;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -543,7 +1079,10 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
     // an absolute path — on any platform. Normalize backslashes, then match each
     // pattern against both the full path and the repo-relative slice (from
     // `/src/`) so absolute POSIX and Windows paths both resolve (issue #1268).
-    const filename = context.getFilename().replace(/\\/g, '/');
+    // Glob matching needs forward slashes, while resolving a relative import off
+    // disk needs the platform-native path — keep both.
+    const rawFilename = context.getFilename();
+    const filename = rawFilename.replace(/\\/g, '/');
     const matchesTargetPath = targetPaths.some((pattern) => {
       if (minimatch(filename, pattern, { matchBase: false })) {
         return true;
@@ -723,9 +1262,22 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
         }
       }
 
+      // Drop dependencies proven prop-less on disk (issue #1316 reopened). This
+      // runs only on the about-to-report path so a compliant file never pays for
+      // the file reads, and it drops the dep from the *reported* set rather than
+      // suppressing the whole report — a sibling child that genuinely needs
+      // composition still fires.
+      const reportableDeps = depComponents.filter(
+        (dep) => !isPropLessImportedComponent(prog, dep, rawFilename, funcNode),
+      );
+      if (reportableDeps.length < minDependencyCount) {
+        return;
+      }
+      const reportable = new Set(reportableDeps);
+
       const flaggedDeps = requireAllDependencies
-        ? missingComposition
-        : depComponents;
+        ? missingComposition.filter((dep) => reportable.has(dep))
+        : reportableDeps;
 
       if (flaggedDeps.length === 0) return;
 
@@ -735,7 +1287,7 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
         data: {
           componentName,
           propsTypeName: propsTypeName ?? `${componentName}Props`,
-          dependencyList: depComponents.map((d) => `'${d}'`).join(', '),
+          dependencyList: reportableDeps.map((d) => `'${d}'`).join(', '),
           missingList: flaggedDeps
             .map((d) => `'${toPropsTypeName(d)}'`)
             .join(', '),
