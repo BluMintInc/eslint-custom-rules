@@ -203,17 +203,36 @@ The rule recognizes the following import sources as valid:
 
 ## Auto-fix Capability
 
-The rule provides automatic fixes for simple string literals by converting them to suggested `QUERY_KEY_*` constant names:
+The rule provides automatic fixes for simple string literals by converting them to suggested `QUERY_KEY_*` constant names **together with the import that makes the constant resolve**:
 
 ```typescript
 // Before (auto-fixable)
-const [value] = useRouterState({ key: 'user-profile' });
+function Component() {
+  const [value] = useRouterState({ key: 'user-profile' });
+  return <div>{value}</div>;
+}
 
 // After auto-fix
-const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
+function Component() {
+  const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+  return <div>{value}</div>;
+}
 ```
 
-Note: Auto-fix only works for simple string literals. Complex expressions require manual refactoring.
+The import is resolved as follows:
+
+* **A queryKeys import already exists** — it is extended with the missing specifier, reusing that file's own path (`../util/routing/queryKeys`, `src/util/routing/queryKeys`, …) rather than a second import statement.
+* **The constant is already imported** — only the literal changes. If the export is already imported under an alias, the fix substitutes the alias instead of importing the same export twice.
+* **No queryKeys import exists** — `@/util/routing/queryKeys` is added. That path is not a guess: the rule takes no options and this is the canonical source it already requires keys to come from.
+* **Several keys in one file** — every substituted constant lands in a single import.
+
+The fix is declined (the violation is still reported, but nothing is rewritten) when the constant name is already taken by something else — another module's export, a local declaration, or an alias of a non-`QUERY_KEY_*` export — because substituting would silently point the key at an unrelated value.
+
+Note: Auto-fix only works for simple string literals. Complex expressions (concatenation, ternaries, template literals with static content) require manual refactoring.
+
+The suggested constant name is derived from the literal, so `queryKeys.ts` may still need the export added; the generated import makes that a compile error instead of an undefined identifier at runtime.
 
 ## When Not to Use
 
