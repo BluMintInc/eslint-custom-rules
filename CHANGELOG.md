@@ -1,3 +1,10 @@
+## [1.20.6](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.5...v1.20.6) (2026-07-28)
+
+
+### Bug Fixes
+
+* **deps:** declare @typescript-eslint/utils as a runtime dependency (closes [#1353](https://github.com/BluMintInc/eslint-custom-rules/issues/1353)) ([ad0c0d6](https://github.com/BluMintInc/eslint-custom-rules/commit/ad0c0d653e2c31810b9ac83a5a9f248139852aa1))
+
 ## [1.20.5](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.4...v1.20.5) (2026-07-28)
 
 
