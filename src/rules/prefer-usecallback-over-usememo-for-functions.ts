@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type Options = [
@@ -8,6 +8,26 @@ type Options = [
   },
 ];
 type MessageIds = 'preferUseCallback';
+
+type Candidate = {
+  node: TSESTree.CallExpression;
+  scope: TSESLint.Scope.Scope;
+};
+
+type ImportBinding = {
+  variable: TSESLint.Scope.Variable;
+  specifier: TSESTree.ImportSpecifier;
+  declaration: TSESTree.ImportDeclaration;
+};
+
+type ConversionPlan = {
+  /** Identifier to emit at the converted call site (honors an existing alias). */
+  calleeName: string;
+  fixable: Set<TSESTree.CallExpression>;
+  /** The single conversion that also carries the import rewrite. */
+  importOwner: TSESTree.CallExpression | null;
+  importFixes: (fixer: TSESLint.RuleFixer) => TSESLint.RuleFix[];
+};
 
 export const preferUseCallbackOverUseMemoForFunctions = createRule<
   Options,
@@ -152,6 +172,11 @@ export const preferUseCallbackOverUseMemoForFunctions = createRule<
       return false;
     }
 
+    // Reporting is deferred to Program:exit because the import rewrite depends on
+    // knowing every conversion in the file: useMemo may only be dropped from the
+    // import when no reference to it survives the fixes.
+    const candidates: Candidate[] = [];
+
     return {
       CallExpression(node) {
         // Check if the call is to useMemo
@@ -180,14 +205,255 @@ export const preferUseCallbackOverUseMemoForFunctions = createRule<
 
             // Check if it returns a function
             if (returnsFunction(callback)) {
-              reportAndFix(node, context);
+              candidates.push({ node, scope: context.getScope() });
             }
           }
+        }
+      },
+      'Program:exit'() {
+        if (candidates.length === 0) {
+          return;
+        }
+        const plan = planConversion(context, candidates);
+        for (const candidate of candidates) {
+          reportAndFix(candidate.node, context, plan);
         }
       },
     };
   },
 });
+
+function resolveVariable(
+  scope: TSESLint.Scope.Scope | null,
+  name: string,
+): TSESLint.Scope.Variable | null {
+  let current = scope;
+  while (current) {
+    const found = current.variables.find((variable) => variable.name === name);
+    if (found) {
+      return found;
+    }
+    current = current.upper;
+  }
+  return null;
+}
+
+/**
+ * Narrows a binding to a value import written with braces, which is the only
+ * shape whose specifier list can be rewritten safely.
+ */
+function toImportBinding(
+  variable: TSESLint.Scope.Variable | null,
+): ImportBinding | null {
+  if (!variable) {
+    return null;
+  }
+  for (const def of variable.defs) {
+    if (def.type !== 'ImportBinding') {
+      continue;
+    }
+    const specifier = def.node;
+    if (specifier.type !== AST_NODE_TYPES.ImportSpecifier) {
+      continue;
+    }
+    const declaration = def.parent;
+    if (
+      !declaration ||
+      declaration.type !== AST_NODE_TYPES.ImportDeclaration ||
+      declaration.importKind === 'type' ||
+      specifier.importKind === 'type'
+    ) {
+      continue;
+    }
+    return { variable, specifier, declaration };
+  }
+  return null;
+}
+
+function findImportedSpecifier(
+  program: TSESTree.Program,
+  importedName: string,
+): TSESTree.ImportSpecifier | null {
+  for (const statement of program.body) {
+    if (
+      statement.type !== AST_NODE_TYPES.ImportDeclaration ||
+      statement.importKind === 'type'
+    ) {
+      continue;
+    }
+    for (const specifier of statement.specifiers) {
+      if (
+        specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+        specifier.importKind !== 'type' &&
+        specifier.imported.type === AST_NODE_TYPES.Identifier &&
+        specifier.imported.name === importedName
+      ) {
+        return specifier;
+      }
+    }
+  }
+  return null;
+}
+
+function removeImportSpecifierFixes(
+  sourceCode: TSESLint.SourceCode,
+  fixer: TSESLint.RuleFixer,
+  binding: ImportBinding,
+): TSESLint.RuleFix[] {
+  const { specifier, declaration } = binding;
+
+  if (declaration.specifiers.length === 1) {
+    // Dropping the sole specifier leaves a side-effect import, so the whole
+    // statement goes, along with the line break it occupied.
+    const text = sourceCode.getText();
+    let end = declaration.range[1];
+    while (end < text.length && (text[end] === ' ' || text[end] === '\t')) {
+      end += 1;
+    }
+    if (text[end] === '\r') {
+      end += 1;
+    }
+    if (text[end] === '\n') {
+      end += 1;
+    }
+    return [fixer.removeRange([declaration.range[0], end])];
+  }
+
+  const namedCount = declaration.specifiers.filter(
+    (candidate) => candidate.type === AST_NODE_TYPES.ImportSpecifier,
+  ).length;
+  const openBrace = sourceCode.getTokenBefore(specifier);
+  if (namedCount === 1 && openBrace && openBrace.value === '{') {
+    // Dropping the only named specifier would leave `import React, {} from ...`,
+    // so the brace group goes with it.
+    const closeBrace = sourceCode.getTokenAfter(specifier, {
+      filter: (token) => token.value === '}',
+    });
+    const beforeBrace = sourceCode.getTokenBefore(openBrace);
+    if (closeBrace && beforeBrace && beforeBrace.value === ',') {
+      return [fixer.removeRange([beforeBrace.range[0], closeBrace.range[1]])];
+    }
+  }
+
+  const tokenAfter = sourceCode.getTokenAfter(specifier);
+  if (tokenAfter && tokenAfter.value === ',') {
+    const tokenAfterComma = sourceCode.getTokenAfter(tokenAfter);
+    const end =
+      tokenAfterComma && tokenAfterComma.value !== '}'
+        ? tokenAfterComma.range[0]
+        : tokenAfter.range[1];
+    return [fixer.removeRange([specifier.range[0], end])];
+  }
+
+  const tokenBefore = sourceCode.getTokenBefore(specifier);
+  if (tokenBefore && tokenBefore.value === ',') {
+    return [fixer.removeRange([tokenBefore.range[0], specifier.range[1]])];
+  }
+
+  return [fixer.remove(specifier)];
+}
+
+/**
+ * Works out which conversions can be autofixed and how the import list must
+ * change so the emitted useCallback resolves and useMemo is not left dangling.
+ */
+function planConversion(
+  context: TSESLint.RuleContext<MessageIds, Options>,
+  candidates: Candidate[],
+): ConversionPlan {
+  const sourceCode = context.getSourceCode();
+  const program = sourceCode.ast;
+
+  const existingUseCallback = findImportedSpecifier(program, 'useCallback');
+  const calleeName = existingUseCallback
+    ? existingUseCallback.local.name
+    : 'useCallback';
+
+  // A local binding of the target name would capture the emitted call, so those
+  // conversions are reported without a fix rather than silently miscompiled.
+  const fixableCandidates = candidates.filter((candidate) => {
+    const bound = resolveVariable(candidate.scope, calleeName);
+    if (!existingUseCallback) {
+      return bound === null;
+    }
+    return (
+      bound !== null &&
+      bound.defs.some((def) => def.node === existingUseCallback)
+    );
+  });
+
+  const fixable = new Set(fixableCandidates.map((candidate) => candidate.node));
+  const emptyPlan: ConversionPlan = {
+    calleeName,
+    fixable,
+    importOwner: null,
+    importFixes: () => [],
+  };
+
+  if (fixableCandidates.length === 0) {
+    return emptyPlan;
+  }
+
+  const useMemoBinding = fixableCandidates.reduce<ImportBinding | null>(
+    (found, candidate) =>
+      found ??
+      toImportBinding(
+        resolveVariable(
+          candidate.scope,
+          (candidate.node.callee as TSESTree.Identifier).name,
+        ),
+      ),
+    null,
+  );
+
+  // Without an imported useMemo there is no import to migrate: the file either
+  // relies on a global or on a local binding this rule must not touch.
+  if (!useMemoBinding) {
+    return emptyPlan;
+  }
+
+  const convertedReferences = new Set<TSESTree.Node>(
+    fixableCandidates
+      .filter(
+        (candidate) =>
+          toImportBinding(
+            resolveVariable(
+              candidate.scope,
+              (candidate.node.callee as TSESTree.Identifier).name,
+            ),
+          )?.variable === useMemoBinding.variable,
+      )
+      .map((candidate) => candidate.node.callee),
+  );
+
+  const useMemoSurvives = useMemoBinding.variable.references.some(
+    (reference) => !convertedReferences.has(reference.identifier),
+  );
+
+  const shouldAdd = existingUseCallback === null;
+  const shouldRemove = !useMemoSurvives;
+
+  if (!shouldAdd && !shouldRemove) {
+    return emptyPlan;
+  }
+
+  return {
+    calleeName,
+    fixable,
+    importOwner: fixableCandidates[0].node,
+    importFixes: (fixer) => {
+      if (shouldAdd && shouldRemove) {
+        return [fixer.replaceText(useMemoBinding.specifier, calleeName)];
+      }
+      if (shouldAdd) {
+        return [
+          fixer.insertTextAfter(useMemoBinding.specifier, `, ${calleeName}`),
+        ];
+      }
+      return removeImportSpecifierFixes(sourceCode, fixer, useMemoBinding);
+    },
+  };
+}
 
 function getMemoizedFunctionDescription(node) {
   const parent = node.parent;
@@ -224,7 +490,7 @@ function getMemoizedFunctionDescription(node) {
   return 'this callback value';
 }
 
-function reportAndFix(node, context) {
+function reportAndFix(node, context, plan: ConversionPlan) {
   const sourceCode = context.sourceCode;
   const useMemoCallback = node.arguments[0];
   const dependencyArray = node.arguments[1]
@@ -257,12 +523,22 @@ function reportAndFix(node, context) {
     node,
     messageId: 'preferUseCallback',
     data: { callbackDescription },
-    fix: (fixer) => {
-      return fixer.replaceText(
-        node,
-        `useCallback${typeParametersText}(${returnedFunctionText}, ${dependencyArray})`,
-      );
-    },
+    fix: plan.fixable.has(node)
+      ? (fixer: TSESLint.RuleFixer) => {
+          const fixes: TSESLint.RuleFix[] = [
+            fixer.replaceText(
+              node,
+              `${plan.calleeName}${typeParametersText}(${returnedFunctionText}, ${dependencyArray})`,
+            ),
+          ];
+          // Only one conversion carries the import rewrite so the fixes of
+          // sibling conversions never overlap.
+          if (plan.importOwner === node) {
+            fixes.push(...plan.importFixes(fixer));
+          }
+          return fixes;
+        }
+      : undefined,
   });
 }
 
