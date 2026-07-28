@@ -28,6 +28,23 @@ The rule inspects `JSXText` nodes and string literals in JSX attributes whose na
 3. Words in `ignoredWords` (proper nouns / brand names) and recognised acronyms are exempted.
 4. Strings in `allowList` and strings matching `ignorePatterns` are skipped entirely.
 
+## Suggestions
+
+Every report carries an editor suggestion that rewrites the text in sentence case. The rewrite differs by violation type:
+
+- **ALL CAPS** — the whole string is lower-cased and the first letter of each sentence is capitalised (`THE USER'S FILE` → `The user's file`). Proper nouns are restored to their canonical spelling (`SIGN IN WITH GOOGLE` → `Sign in with Google`) and allowlisted acronyms keep their casing (`ENTER YOUR API KEY` → `Enter your API key`). Possessives stay intact — `USER'S` is a single word, not `USER` plus `'S`.
+- **Title Case** — non-first words that are neither acronyms nor proper nouns are lower-cased (`Back To App` → `Back to app`). Intra-word casing of the first word is preserved (`MacBook Pro Sale` → `MacBook pro sale`).
+
+The replacement is re-escaped for the literal form it is written back into, so applying a suggestion never breaks parsing:
+
+| Target | Escaping |
+|--------|----------|
+| JS string literal (`aria-label={'…'}`) | Backslash escapes for the delimiter, backslashes, line terminators, and control characters |
+| JSX attribute string (`label="…"`) | Character references (`&quot;`, `&#39;`, `&amp;`) — JSX attribute strings do not process backslash escapes |
+| JSX text (`<Button>…</Button>`) | Character references for `&`, `<`, `>`, `{`, `}` |
+
+Template literals are treated as dynamic and are never checked or rewritten.
+
 Examples of **incorrect** code for this rule:
 
 ```jsx
@@ -44,6 +61,7 @@ Examples of **incorrect** code for this rule:
 // ALL CAPS
 <Button>SUBMIT FORM</Button>
 <Typography>CLICK HERE TO CONTINUE</Typography>
+<button aria-label={'THE USER\'S FILE'} />
 ```
 
 Examples of **correct** code for this rule:
@@ -72,6 +90,9 @@ Examples of **correct** code for this rule:
 // Single-word strings are never flagged
 <Button>Cancel</Button>
 <Button>OK</Button>
+
+// Sentence-cased possessives
+<button aria-label={'The user\'s file'} />
 ```
 
 ## Options
