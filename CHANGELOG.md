@@ -1,3 +1,10 @@
+## [1.20.8](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.7...v1.20.8) (2026-07-28)
+
+
+### Bug Fixes
+
+* **enforce-props-argument-name:** rename parameter references, not just the declaration (closes [#1355](https://github.com/BluMintInc/eslint-custom-rules/issues/1355)) ([bbe671d](https://github.com/BluMintInc/eslint-custom-rules/commit/bbe671d4967819d93459f6ed4561f9c29835f4f1)), closes [#1313](https://github.com/BluMintInc/eslint-custom-rules/issues/1313)
+
 ## [1.20.7](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.6...v1.20.7) (2026-07-28)
 
 
