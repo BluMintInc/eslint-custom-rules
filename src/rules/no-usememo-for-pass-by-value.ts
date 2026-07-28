@@ -29,13 +29,25 @@ const DEFAULT_EXPENSIVE_PATTERNS = [
   'hash',
 ];
 
-const PASS_BY_VALUE_FLAGS =
-  ts.TypeFlags.StringLike |
-  ts.TypeFlags.NumberLike |
-  ts.TypeFlags.BigIntLike |
-  ts.TypeFlags.BooleanLike |
-  ts.TypeFlags.Undefined |
-  ts.TypeFlags.Null;
+/**
+ * Resolved on first use rather than at module load: the plugin barrel imports
+ * every rule eagerly, and the compiler package root does not expose this enum on
+ * all installed TypeScript releases (TypeScript 7 exports only a version stub),
+ * so dereferencing it at module scope makes the whole plugin fail to load rather
+ * than merely disabling this type-aware rule. The sole call site sits behind a
+ * `parserServices.program` guard, so the enum is present whenever this runs.
+ */
+let passByValueFlagsCache: number | undefined;
+function passByValueFlags(): number {
+  passByValueFlagsCache ??=
+    ts.TypeFlags.StringLike |
+    ts.TypeFlags.NumberLike |
+    ts.TypeFlags.BigIntLike |
+    ts.TypeFlags.BooleanLike |
+    ts.TypeFlags.Undefined |
+    ts.TypeFlags.Null;
+  return passByValueFlagsCache;
+}
 
 type FunctionContext = {
   isHook: boolean;
@@ -212,7 +224,7 @@ function isPassByValueType(
     return { passByValue: false, indeterminate: true, description };
   }
 
-  if (type.flags & PASS_BY_VALUE_FLAGS) {
+  if (type.flags & passByValueFlags()) {
     return { passByValue: true, indeterminate: false, description };
   }
 
