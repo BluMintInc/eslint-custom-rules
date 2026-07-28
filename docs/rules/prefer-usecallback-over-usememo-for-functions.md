@@ -77,6 +77,29 @@ const handlers = useMemo(() => {
 }, []);
 ```
 
+## Autofix and imports
+
+When `useMemo` comes from an import, the fixer rewrites the import list alongside the call so the result compiles:
+
+```jsx
+// before
+import { useMemo } from 'react';
+const cb = useMemo(() => () => {}, []);
+
+// after
+import { useCallback } from 'react';
+const cb = useCallback(() => {}, []);
+```
+
+Specifics:
+
+- `useCallback` is added to the same declaration `useMemo` was imported from, so `preact/hooks` and similar packages are handled too.
+- The `useMemo` specifier is only dropped when no reference to it survives the fixes; a remaining `useMemo` call or value usage keeps it (`import { useMemo, useCallback } from 'react';`).
+- An already-imported `useCallback` is reused instead of duplicated, including an aliased one (`import { useCallback as uc }` produces `uc(...)` at the call site).
+- Files with no `useMemo` import (globals, test snippets) get the call rewritten without any import being inserted.
+- If a local binding named `useCallback` would capture the emitted call, the violation is reported without a fix.
+- The member-expression form (`React.useMemo(...)`) is not reported by this rule.
+
 ## Options
 
 This rule accepts an options object with the following properties:
