@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.8",
+    "date": "2026-07-28T15:39:20.357Z",
+    "rules": [
+      {
+        "name": "enforce-props-argument-name",
+        "changeType": "fix",
+        "issues": [
+          1355
+        ],
+        "summary": "rename parameter references, not just the declaration (closes #1355)"
+      }
+    ]
+  },
+  {
     "version": "1.20.7",
     "date": "2026-07-28T05:35:51.746Z",
     "rules": [
