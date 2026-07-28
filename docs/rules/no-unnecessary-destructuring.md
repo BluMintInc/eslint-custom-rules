@@ -31,6 +31,20 @@ let obj;
 obj = source;
 ```
 
+## Autofix
+
+The fix replaces the pattern with the rest binding's name and keeps the declarator's type annotation verbatim. Because a lone rest element binds every property, the annotation describes the new binding exactly, so it stays correct after the collapse:
+
+```ts
+// Before
+const { ...rest }: Readonly<Foo & Bar> = obj;
+
+// After
+const rest: Readonly<Foo & Bar> = obj;
+```
+
+Generics, intersections, function types, and multi-line object types all survive unchanged. Declarators without an annotation still fix to a bare name (`const rest = obj;`), and a declarator with no initializer (such as `for (const { ...entry } of entries)`) is reported without a fix.
+
 ## Why this matters
 
 - `{ ...source }` in a destructuring pattern hints that properties are being picked, but it keeps everything, which misleads readers and reviewers.

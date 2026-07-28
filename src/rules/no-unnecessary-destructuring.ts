@@ -50,8 +50,19 @@ export const noUnnecessaryDestructuring = createRule({
 
               const initText = sourceCode.getText(node.init);
 
+              // The declarator's range covers `node.id.typeAnnotation`, so
+              // replacing the whole declarator would silently drop it. A lone
+              // rest element binds the entire object, meaning the annotation
+              // describes the new binding exactly and can be re-emitted as-is.
+              const annotationText = node.id.typeAnnotation
+                ? sourceCode.getText(node.id.typeAnnotation)
+                : '';
+
               // Replace the destructuring with direct assignment
-              return fixer.replaceText(node, `${restName} = ${initText}`);
+              return fixer.replaceText(
+                node,
+                `${restName}${annotationText} = ${initText}`,
+              );
             },
           });
         }

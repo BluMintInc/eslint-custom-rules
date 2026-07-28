@@ -197,5 +197,86 @@ ruleTester.run('no-unnecessary-destructuring', noUnnecessaryDestructuring, {
       errors: [expectError('React.useContext(ThemeContext)', 'props')],
       output: `const props = React.useContext(ThemeContext);`,
     },
+    // Declarator type annotation must survive the fix (issue #1361)
+    {
+      code: `const { ...rest }: Foo = obj;`,
+      errors: [expectError('obj', 'rest')],
+      output: `const rest: Foo = obj;`,
+    },
+    // Generic/intersection annotation is re-emitted verbatim
+    {
+      code: `const { ...rest }: Readonly<Foo & Bar> = obj;`,
+      errors: [expectError('obj', 'rest')],
+      output: `const rest: Readonly<Foo & Bar> = obj;`,
+    },
+    // Multi-line object type annotation keeps its formatting
+    {
+      code: `const { ...rest }: {
+  id: string;
+  nested: { deep: number };
+} = obj;`,
+      errors: [expectError('obj', 'rest')],
+      output: `const rest: {
+  id: string;
+  nested: { deep: number };
+} = obj;`,
+    },
+    // Annotation containing a function type (commas/arrows must not confuse the fix)
+    {
+      code: `const { ...handlers }: Record<string, (a: number, b: number) => void> = registry;`,
+      errors: [expectError('registry', 'handlers')],
+      output: `const handlers: Record<string, (a: number, b: number) => void> = registry;`,
+    },
+    // Annotation on a `let` declarator
+    {
+      code: `let { ...state }: AppState = initialState;`,
+      errors: [expectError('initialState', 'state')],
+      output: `let state: AppState = initialState;`,
+    },
+    // Annotation plus an `as` cast on the initializer
+    {
+      code: `const { ...typed }: SomeType = obj as SomeType;`,
+      errors: [expectError('obj as SomeType', 'typed')],
+      output: `const typed: SomeType = obj as SomeType;`,
+    },
+    // Only the offending declarator changes; sibling annotations are untouched
+    {
+      code: `const { prop }: Shape = obj1, { ...all }: Other = obj2;`,
+      errors: [expectError('obj2', 'all')],
+      output: `const { prop }: Shape = obj1, all: Other = obj2;`,
+    },
+    // Annotation inside a for-loop initializer
+    {
+      code: `for (let { ...item }: Item = getNext(); item; { ...item } = getNext()) { console.log(item); }`,
+      errors: [
+        expectError('getNext()', 'item'),
+        expectError('getNext()', 'item'),
+      ],
+      output: `for (let item: Item = getNext(); item; item = getNext()) { console.log(item); }`,
+    },
+    // Unannotated declarators keep the pre-existing output byte-for-byte
+    {
+      code: `const { ...rest } = obj;`,
+      errors: [expectError('obj', 'rest')],
+      output: `const rest = obj;`,
+    },
+    // Assignment expressions cannot carry an annotation and still fix cleanly
+    {
+      code: `let rest; ({ ...rest } = obj);`,
+      errors: [expectError('obj', 'rest')],
+      output: `let rest; (rest = obj);`,
+    },
+    // Assignment expression with a member-expression target
+    {
+      code: `({ ...target.value } = source.data);`,
+      errors: [expectError('source.data', 'target.value')],
+      output: `(target.value = source.data);`,
+    },
+    // No initializer means no autofix, so nothing can be dropped
+    {
+      code: `for (const { ...entry } of entries) { use(entry); }`,
+      errors: [expectError('the source object', 'entry')],
+      output: null,
+    },
   ],
 });
