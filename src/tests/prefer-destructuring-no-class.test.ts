@@ -321,6 +321,91 @@ ruleTesterTs.run('prefer-destructuring-no-class', preferDestructuringNoClass, {
         const { ['foo']: foo } = obj;
       `,
     },
+    // Annotated declarators are reported but not fixed: rewriting them would drop
+    // the deliberate annotation (see https://github.com/BluMintInc/eslint-custom-rules/issues/1360)
+    {
+      code: `const alpha: string = obj.alpha;`,
+      errors: [
+        {
+          messageId: 'preferDestructuring',
+          data: {
+            object: 'obj',
+            property: 'alpha',
+            targetNote: '',
+            renamingHint: '',
+            example: 'const { alpha } = obj;',
+          },
+        },
+      ],
+      output: null,
+    },
+    // A non-trivial annotation (deliberate widening) must survive the fixer's refusal
+    {
+      code: `
+        type Wide = string | number;
+        const obj = { alpha: 'a' };
+        const alpha: Wide = obj.alpha;
+      `,
+      errors: [{ messageId: 'preferDestructuring' }],
+      output: null,
+    },
+    // let/var annotated declarators are equally unfixable
+    {
+      code: `
+        const obj = { foo: 123 };
+        let foo: number = obj.foo;
+      `,
+      errors: [{ messageId: 'preferDestructuring' }],
+      output: null,
+    },
+    {
+      code: `
+        const obj = { foo: 123 };
+        var foo: number = obj.foo;
+      `,
+      errors: [{ messageId: 'preferDestructuring' }],
+      output: null,
+    },
+    // Annotated computed access is also left unfixed
+    {
+      code: `
+        const obj = { foo: 123 };
+        const foo: number = obj['foo'];
+      `,
+      errors: [{ messageId: 'preferDestructuring' }],
+      output: null,
+    },
+    // Annotated declarators with renaming enforced are reported without a fix
+    {
+      code: `
+        const obj = { foo: 123 };
+        const bar: number = obj.foo;
+      `,
+      options: [{ object: true, enforceForRenamedProperties: true }],
+      errors: [{ messageId: 'preferDestructuring' }],
+      output: null,
+    },
+    // The unannotated counterpart of the issue repro still gets fixed
+    {
+      code: `const alpha = obj.alpha;`,
+      errors: [{ messageId: 'preferDestructuring' }],
+      output: `const { alpha } = obj;`,
+    },
+    // The AssignmentExpression path is unaffected: the annotation lives on a
+    // separate declaration that the fixer never touches
+    {
+      code: `
+        const obj = { alpha: 'a' };
+        let alpha: string;
+        alpha = obj.alpha;
+      `,
+      errors: [{ messageId: 'preferDestructuring' }],
+      output: `
+        const obj = { alpha: 'a' };
+        let alpha: string;
+        ({ alpha } = obj);
+      `,
+    },
     // Computed property access with renamed binding should remain computed in fixer
     {
       code: `

@@ -77,3 +77,23 @@ class User {
 const user = new User('John');
 const name = user.name; // Allowed for class instances
 ```
+
+## Auto-fix
+
+The fixer rewrites the declaration as a destructuring pattern (for example, `const name = user.name;` becomes `const { name } = user;`) and rewrites assignments as `({ name } = user);`.
+
+The fix is withheld when the declared variable carries a type annotation:
+
+```ts
+const alpha: string = obj.alpha;
+let alpha: Wide = obj.alpha;
+```
+
+The emitted `const { alpha } = obj;` has nowhere to carry the annotation. Moving it to the pattern (`const { alpha }: { alpha: string } = obj;`) asserts something different — a structural constraint on the source object rather than the variable's declared type — and can shift inference, so these cases are reported and left for you to rewrite by hand.
+
+An annotation on a separate declaration is untouched, so assignments still auto-fix:
+
+```ts
+let alpha: string;
+({ alpha } = obj); // fixed from `alpha = obj.alpha;`
+```
