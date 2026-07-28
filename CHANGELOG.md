@@ -1,3 +1,10 @@
+## [1.20.5](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.4...v1.20.5) (2026-07-28)
+
+
+### Bug Fixes
+
+* **require-props-composition:** prove imported zero-prop children off disk (closes [#1316](https://github.com/BluMintInc/eslint-custom-rules/issues/1316)) ([82e307c](https://github.com/BluMintInc/eslint-custom-rules/commit/82e307c7db97669df9e5fd01ab48375883915fa8))
+
 ## [1.20.4](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.3...v1.20.4) (2026-07-25)
 
 
