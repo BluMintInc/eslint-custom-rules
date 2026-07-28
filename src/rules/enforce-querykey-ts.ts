@@ -1,7 +1,42 @@
-import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  ASTUtils,
+  TSESLint,
+  TSESTree,
+} from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'enforceQueryKeyImport' | 'enforceQueryKeyConstant';
+
+/**
+ * The canonical queryKeys module. The rule takes no options and already hard-codes
+ * this path as what makes a key valid, so the fixer writes the very same path
+ * instead of guessing one when a file has no queryKeys import to copy from.
+ */
+const DEFAULT_QUERY_KEYS_SOURCE = '@/util/routing/queryKeys';
+
+/**
+ * What the substituted `QUERY_KEY_*` name would resolve to once the fix lands.
+ */
+type BindingState =
+  /** Already imported from queryKeys.ts; only the literal has to change. */
+  | 'bound'
+  /** Nothing owns the name, so the fix must bring the import with it. */
+  | 'missing'
+  /** Something unrelated owns the name; substituting would silently repoint the key. */
+  | 'conflict';
+
+type PendingReport = {
+  node: TSESTree.Node;
+  messageId: MessageIds;
+  data?: { variableName: string };
+  /** Present only for the string-literal case, which is the fixable one. */
+  substitution?: {
+    keyNode: TSESTree.Literal;
+    constant: string;
+    scope: TSESLint.Scope.Scope;
+  };
+};
 
 /**
  * Rule to enforce the use of centralized router state key constants imported from
@@ -35,21 +70,32 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
     >();
     const localUseRouterStateNames = new Set<string>(['useRouterState']);
     const validQueryKeySources = new Set([
-      '@/util/routing/queryKeys',
+      DEFAULT_QUERY_KEYS_SOURCE,
       'src/util/routing/queryKeys',
     ]);
 
     const allowedQueryKeyFactories = new Set(['makeQueryKey', 'getQueryKey']);
 
+    const sourceCode = context.getSourceCode();
+
     /**
-     * Ensure a suggested constant is imported from queryKeys.ts and return combined fixes
+     * Reports are buffered until the whole file has been walked so the fixer can
+     * put every substituted constant into a single import instead of racing
+     * per-violation insertions that overlap and get dropped.
      */
-    function buildImportFixes(
-      fixer: TSESLint.RuleFixer,
-      keyNode: TSESTree.Literal,
-      suggestedConstant: string,
-    ) {
-      return [fixer.replaceText(keyNode, suggestedConstant)];
+    const pendingReports: PendingReport[] = [];
+
+    /**
+     * `SourceCode#getScope` supersedes the deprecated `context.getScope`; the
+     * fallback keeps the rule working on ESLint versions that predate it.
+     */
+    function scopeOf(node: TSESTree.Node): TSESLint.Scope.Scope {
+      const scoped = sourceCode as TSESLint.SourceCode & {
+        getScope?: (node: TSESTree.Node) => TSESLint.Scope.Scope;
+      };
+      return typeof scoped.getScope === 'function'
+        ? scoped.getScope(node)
+        : context.getScope();
     }
 
     /**
@@ -60,6 +106,188 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
         validQueryKeySources.has(source) ||
         source.endsWith('/util/routing/queryKeys')
       );
+    }
+
+    function importDeclarationsOf(): TSESTree.ImportDeclaration[] {
+      return sourceCode.ast.body.filter(
+        (statement): statement is TSESTree.ImportDeclaration =>
+          statement.type === AST_NODE_TYPES.ImportDeclaration &&
+          typeof statement.source.value === 'string',
+      );
+    }
+
+    function isValueImportSpecifier(
+      specifier: TSESTree.ImportClause,
+    ): specifier is TSESTree.ImportSpecifier {
+      return (
+        specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+        specifier.importKind !== 'type'
+      );
+    }
+
+    /**
+     * A file that already imports the export under another name reaches it
+     * through that name; re-importing it would leave two bindings for one
+     * constant.
+     */
+    function localNameOf(constant: string): string {
+      for (const declaration of importDeclarationsOf()) {
+        if (
+          declaration.importKind === 'type' ||
+          !isQueryKeysSource(String(declaration.source.value))
+        ) {
+          continue;
+        }
+        for (const specifier of declaration.specifiers) {
+          if (
+            isValueImportSpecifier(specifier) &&
+            specifier.imported.name === constant
+          ) {
+            return specifier.local.name;
+          }
+        }
+      }
+      return constant;
+    }
+
+    /**
+     * Decide whether the suggested constant can be substituted, and whether the
+     * substitution has to carry an import with it.
+     */
+    function resolveBinding(
+      scope: TSESLint.Scope.Scope,
+      constant: string,
+    ): BindingState {
+      const variable = ASTUtils.findVariable(scope, constant);
+      if (!variable) {
+        return 'missing';
+      }
+      const [definition] = variable.defs;
+      if (!definition) {
+        return 'conflict';
+      }
+      const definitionNode = definition.node;
+      if (
+        definitionNode.type !== AST_NODE_TYPES.ImportSpecifier ||
+        definitionNode.importKind === 'type' ||
+        !isValidQueryKeyConstant(definitionNode.imported.name)
+      ) {
+        return 'conflict';
+      }
+      const declaration = definitionNode.parent;
+      if (
+        !declaration ||
+        declaration.type !== AST_NODE_TYPES.ImportDeclaration ||
+        declaration.importKind === 'type' ||
+        typeof declaration.source.value !== 'string' ||
+        !isQueryKeysSource(declaration.source.value)
+      ) {
+        return 'conflict';
+      }
+      return 'bound';
+    }
+
+    /**
+     * Make the substituted constants resolve: extend the file's queryKeys import
+     * when there is one to extend, otherwise add a fresh import statement.
+     */
+    function buildImportFix(
+      fixer: TSESLint.RuleFixer,
+      constants: string[],
+    ): TSESLint.RuleFix {
+      const importDeclarations = importDeclarationsOf();
+      const queryKeysDeclarations = importDeclarations.filter((declaration) =>
+        isQueryKeysSource(String(declaration.source.value)),
+      );
+
+      const reusable = queryKeysDeclarations.find(
+        (declaration) =>
+          declaration.importKind !== 'type' &&
+          declaration.specifiers.some(isValueImportSpecifier),
+      );
+      if (reusable) {
+        const namedSpecifiers = reusable.specifiers.filter(
+          isValueImportSpecifier,
+        );
+        const lastSpecifier = namedSpecifiers[namedSpecifiers.length - 1];
+        return fixer.insertTextAfter(
+          lastSpecifier,
+          constants.map((constant) => `, ${constant}`).join(''),
+        );
+      }
+
+      // A namespace or type-only queryKeys import cannot take named value
+      // specifiers, but its path is proof of how this file reaches the module.
+      const source = queryKeysDeclarations.length
+        ? String(queryKeysDeclarations[0].source.value)
+        : DEFAULT_QUERY_KEYS_SOURCE;
+      const importText = `import { ${constants.join(
+        ', ',
+      )} } from '${source}';\n`;
+
+      const [firstImport] = importDeclarations;
+      if (firstImport) {
+        return fixer.insertTextBefore(firstImport, importText);
+      }
+      // Keep the import visually separated from the code it precedes unless the
+      // file already opens with a blank line.
+      const separator = /^\r?\n/.test(sourceCode.text) ? '' : '\n';
+      return fixer.insertTextBeforeRange([0, 0], `${importText}${separator}`);
+    }
+
+    function flushReports(): void {
+      const resolutions = new Map<
+        PendingReport,
+        { name: string; state: BindingState }
+      >();
+      const missingConstants: string[] = [];
+
+      for (const report of pendingReports) {
+        if (!report.substitution) {
+          continue;
+        }
+        const { constant, scope } = report.substitution;
+        const name = localNameOf(constant);
+        const state = resolveBinding(scope, name);
+        resolutions.set(report, { name, state });
+        if (state === 'missing' && !missingConstants.includes(name)) {
+          missingConstants.push(name);
+        }
+      }
+
+      // The first applied substitution carries the import for every other one:
+      // its fix range then starts at the top of the file and ends before the
+      // remaining literals, so no two fixes of this rule overlap in a pass.
+      const importCarrier = pendingReports.find((report) => {
+        const resolution = resolutions.get(report);
+        return resolution !== undefined && resolution.state !== 'conflict';
+      });
+
+      for (const report of pendingReports) {
+        context.report({
+          node: report.node,
+          messageId: report.messageId,
+          data: report.data,
+          fix(fixer) {
+            const { substitution } = report;
+            const resolution = resolutions.get(report);
+            if (
+              !substitution ||
+              !resolution ||
+              resolution.state === 'conflict'
+            ) {
+              return null;
+            }
+            const fixes = [
+              fixer.replaceText(substitution.keyNode, resolution.name),
+            ];
+            if (report === importCarrier && missingConstants.length > 0) {
+              fixes.unshift(buildImportFix(fixer, missingConstants));
+            }
+            return fixes;
+          },
+        });
+      }
     }
 
     /**
@@ -310,32 +538,28 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
                 if (!isValidQueryKeyUsage(keyValue)) {
                   // Check if it contains invalid string literals
                   if (containsInvalidStringLiteral(keyValue)) {
-                    context.report({
+                    // Only simple string literals can be auto-fixed
+                    const suggestedConstant =
+                      keyValue.type === AST_NODE_TYPES.Literal &&
+                      typeof keyValue.value === 'string'
+                        ? generateAutoFix(keyValue.value)
+                        : null;
+                    pendingReports.push({
                       node: keyValue,
                       messageId: 'enforceQueryKeyImport',
-                      fix(fixer) {
-                        // Only provide auto-fix for simple string literals
-                        if (
-                          keyValue.type === AST_NODE_TYPES.Literal &&
-                          typeof keyValue.value === 'string'
-                        ) {
-                          const suggestedConstant = generateAutoFix(
-                            keyValue.value,
-                          );
-                          if (suggestedConstant) {
-                            return buildImportFixes(
-                              fixer,
-                              keyValue,
-                              suggestedConstant,
-                            );
-                          }
-                        }
-                        return null;
-                      },
+                      substitution:
+                        suggestedConstant &&
+                        keyValue.type === AST_NODE_TYPES.Literal
+                          ? {
+                              keyNode: keyValue,
+                              constant: suggestedConstant,
+                              scope: scopeOf(keyValue),
+                            }
+                          : undefined,
                     });
                   } else if (keyValue.type === AST_NODE_TYPES.Identifier) {
                     // Report variables that aren't from the correct source
-                    context.report({
+                    pendingReports.push({
                       node: keyValue,
                       messageId: 'enforceQueryKeyConstant',
                       data: {
@@ -348,6 +572,10 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
             }
           }
         }
+      },
+
+      'Program:exit'() {
+        flushReports();
       },
     };
   },

@@ -1,3 +1,4 @@
+import { Linter, Rule } from 'eslint';
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { enforceQueryKeyTs } from '../rules/enforce-querykey-ts';
 
@@ -318,7 +319,8 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         }
       `,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
-      output: `
+      output: `import { QUERY_KEY_PLAYBACK_ID } from '@/util/routing/queryKeys';
+
         function Component() {
           const [playbackId] = useRouterState({ key: QUERY_KEY_PLAYBACK_ID });
           return <div>{playbackId}</div>;
@@ -338,7 +340,8 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         }
       `,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
-      output: `
+      output: `import { QUERY_KEY_TOURNAMENT_DETAILS } from '@/util/routing/queryKeys';
+
         function Component() {
           const [value] = useRouterState({
             key: QUERY_KEY_TOURNAMENT_DETAILS,
@@ -366,7 +369,9 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         { messageId: 'enforceQueryKeyImport' },
         { messageId: 'enforceQueryKeyImport' },
       ],
-      output: `
+      // One import collects both substituted constants in a single pass.
+      output: `import { QUERY_KEY_MATCH_VIEW, QUERY_KEY_TOURNAMENT_VIEW } from '@/util/routing/queryKeys';
+
         function MatchComponent() {
           const [value] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
           return <div>{value}</div>;
@@ -392,7 +397,8 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         { messageId: 'enforceQueryKeyImport' },
         { messageId: 'enforceQueryKeyImport' },
       ],
-      output: `
+      output: `import { QUERY_KEY_MATCH_DETAILS, QUERY_KEY_TOURNAMENT_DETAILS } from '@/util/routing/queryKeys';
+
         function useCustomRouterState(id) {
           const [matchValue] = useRouterState({ key: QUERY_KEY_MATCH_DETAILS });
           const [tournamentValue] = useRouterState({ key: QUERY_KEY_TOURNAMENT_DETAILS });
@@ -502,8 +508,9 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         }
       `,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
+      // The existing queryKeys import is extended rather than duplicated.
       output: `
-        import { QUERY_KEY_VALID } from '@/util/routing/queryKeys';
+        import { QUERY_KEY_VALID, QUERY_KEY_INVALID_LITERAL } from '@/util/routing/queryKeys';
 
         function Component() {
           const [valid] = useRouterState({ key: QUERY_KEY_VALID });
@@ -528,7 +535,8 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         { messageId: 'enforceQueryKeyImport' },
         { messageId: 'enforceQueryKeyImport' },
       ],
-      output: `
+      output: `import { QUERY_KEY_SECTION_SUBSECTION, QUERY_KEY_USER_PROFILE_SETTINGS, QUERY_KEY_APP_MODULE_COMPONENT } from '@/util/routing/queryKeys';
+
         function Component() {
           const [value1] = useRouterState({ key: QUERY_KEY_SECTION_SUBSECTION });
           const [value2] = useRouterState({ key: QUERY_KEY_USER_PROFILE_SETTINGS });
@@ -551,7 +559,8 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         }
       `,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
-      output: `
+      output: `import { QUERY_KEY_CHILD_COMPONENT } from '@/util/routing/queryKeys';
+
         function ParentComponent() {
           return <ChildComponent />;
         }
@@ -649,7 +658,8 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         { messageId: 'enforceQueryKeyImport' },
         { messageId: 'enforceQueryKeyImport' },
       ],
-      output: `
+      output: `import { QUERY_KEY_USER_PROFILE, QUERY_KEY_SECTION_DETAILS, QUERY_KEY_APP_MODULE } from '@/util/routing/queryKeys';
+
         function Component() {
           const [value1] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
           const [value2] = useRouterState({ key: QUERY_KEY_SECTION_DETAILS });
@@ -668,12 +678,379 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         }
       `,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
-      output: `
+      output: `import { QUERY_KEY_ } from '@/util/routing/queryKeys';
+
         function Component() {
           const [value] = useRouterState({ key: QUERY_KEY_ });
           return <div>{value}</div>;
         }
       `,
     },
+
+    // 21. Regression #1365: the substituted constant must come with its import,
+    // otherwise --fix leaves the file referencing an undefined identifier.
+    {
+      code: `function Component() {
+  const [playbackId] = useRouterState({ key: 'playback-id' });
+  return playbackId;
+}`,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: `import { QUERY_KEY_PLAYBACK_ID } from '@/util/routing/queryKeys';
+
+function Component() {
+  const [playbackId] = useRouterState({ key: QUERY_KEY_PLAYBACK_ID });
+  return playbackId;
+}`,
+    },
+
+    // 22. Regression #1365: the new import joins the existing import block
+    // instead of landing below the code it is needed by.
+    {
+      code: `import { useState } from 'react';
+
+function Component() {
+  const [playbackId] = useRouterState({ key: 'playback-id' });
+  return [playbackId, useState];
+}`,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: `import { QUERY_KEY_PLAYBACK_ID } from '@/util/routing/queryKeys';
+import { useState } from 'react';
+
+function Component() {
+  const [playbackId] = useRouterState({ key: QUERY_KEY_PLAYBACK_ID });
+  return [playbackId, useState];
+}`,
+    },
+
+    // 23. Regression #1365: an existing queryKeys import is extended, and its
+    // own path is reused rather than the canonical alias.
+    {
+      code: `import { QUERY_KEY_VALID } from '../util/routing/queryKeys';
+
+function Component() {
+  const [valid] = useRouterState({ key: QUERY_KEY_VALID });
+  const [other] = useRouterState({ key: 'other-key' });
+  return [valid, other];
+}`,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: `import { QUERY_KEY_VALID, QUERY_KEY_OTHER_KEY } from '../util/routing/queryKeys';
+
+function Component() {
+  const [valid] = useRouterState({ key: QUERY_KEY_VALID });
+  const [other] = useRouterState({ key: QUERY_KEY_OTHER_KEY });
+  return [valid, other];
+}`,
+    },
+
+    // 24. Regression #1365: the constant is already imported, so only the
+    // literal changes — the import must not gain a duplicate specifier.
+    {
+      code: `import { QUERY_KEY_PLAYBACK_ID } from '@/util/routing/queryKeys';
+
+function Component() {
+  const [playbackId] = useRouterState({ key: 'playback-id' });
+  return playbackId;
+}`,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: `import { QUERY_KEY_PLAYBACK_ID } from '@/util/routing/queryKeys';
+
+function Component() {
+  const [playbackId] = useRouterState({ key: QUERY_KEY_PLAYBACK_ID });
+  return playbackId;
+}`,
+    },
+
+    // 25. Regression #1365: the export is already imported under an alias, so
+    // the substitution reuses that binding instead of importing it twice.
+    {
+      code: `import { QUERY_KEY_PLAYBACK_ID as PLAYBACK_KEY } from '@/util/routing/queryKeys';
+
+function Component() {
+  const [playbackId] = useRouterState({ key: 'playback-id' });
+  return playbackId;
+}`,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: `import { QUERY_KEY_PLAYBACK_ID as PLAYBACK_KEY } from '@/util/routing/queryKeys';
+
+function Component() {
+  const [playbackId] = useRouterState({ key: PLAYBACK_KEY });
+  return playbackId;
+}`,
+    },
+
+    // 26. Regression #1365: another module already owns that name, so the fix
+    // is declined rather than silently repointing the key.
+    {
+      code: `import { QUERY_KEY_PLAYBACK_ID } from './legacy/keys';
+
+function Component() {
+  const [playbackId] = useRouterState({ key: 'playback-id' });
+  return playbackId;
+}`,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: null,
+    },
+
+    // 27. Regression #1365: a local binding of that name would shadow the
+    // import, so the fix is declined.
+    {
+      code: `const QUERY_KEY_PLAYBACK_ID = 'playback-id';
+
+function Component() {
+  const [playbackId] = useRouterState({ key: 'playback-id' });
+  return playbackId;
+}`,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: null,
+    },
+
+    // 28. Regression #1365: the name is bound to a non-QUERY_KEY export of
+    // queryKeys.ts, which the rule would reject after substituting.
+    {
+      code: `import { legacyKey as QUERY_KEY_PLAYBACK_ID } from '@/util/routing/queryKeys';
+
+function Component() {
+  const [playbackId] = useRouterState({ key: 'playback-id' });
+  return playbackId;
+}`,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: null,
+    },
+
+    // 29. Regression #1365: two violations converge on ONE import carrying both
+    // specifiers. RuleTester applies a single pass, so this also proves the two
+    // fixes do not overlap and get dropped.
+    {
+      code: `function A() {
+  const [a] = useRouterState({ key: 'match-view' });
+  return a;
+}
+
+function B() {
+  const [b] = useRouterState({ key: 'tournament-view' });
+  return b;
+}`,
+      errors: [
+        { messageId: 'enforceQueryKeyImport' },
+        { messageId: 'enforceQueryKeyImport' },
+      ],
+      output: `import { QUERY_KEY_MATCH_VIEW, QUERY_KEY_TOURNAMENT_VIEW } from '@/util/routing/queryKeys';
+
+function A() {
+  const [a] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
+  return a;
+}
+
+function B() {
+  const [b] = useRouterState({ key: QUERY_KEY_TOURNAMENT_VIEW });
+  return b;
+}`,
+    },
+
+    // 30. Regression #1365: the same literal twice needs the constant imported
+    // once, not once per violation.
+    {
+      code: `function A() {
+  const [a] = useRouterState({ key: 'match-view' });
+  return a;
+}
+
+function B() {
+  const [b] = useRouterState({ key: 'match-view' });
+  return b;
+}`,
+      errors: [
+        { messageId: 'enforceQueryKeyImport' },
+        { messageId: 'enforceQueryKeyImport' },
+      ],
+      output: `import { QUERY_KEY_MATCH_VIEW } from '@/util/routing/queryKeys';
+
+function A() {
+  const [a] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
+  return a;
+}
+
+function B() {
+  const [b] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
+  return b;
+}`,
+    },
+
+    // 31. Regression #1365: a declined violation must not swallow the import
+    // needed by the ones that are still fixed.
+    {
+      code: `const QUERY_KEY_MATCH_VIEW = 'match-view';
+
+function A() {
+  const [a] = useRouterState({ key: 'match-view' });
+  return a;
+}
+
+function B() {
+  const [b] = useRouterState({ key: 'tournament-view' });
+  return b;
+}`,
+      errors: [
+        { messageId: 'enforceQueryKeyImport' },
+        { messageId: 'enforceQueryKeyImport' },
+      ],
+      output: `import { QUERY_KEY_TOURNAMENT_VIEW } from '@/util/routing/queryKeys';
+
+const QUERY_KEY_MATCH_VIEW = 'match-view';
+
+function A() {
+  const [a] = useRouterState({ key: 'match-view' });
+  return a;
+}
+
+function B() {
+  const [b] = useRouterState({ key: QUERY_KEY_TOURNAMENT_VIEW });
+  return b;
+}`,
+    },
+
+    // 32. Regression #1365: a namespace import cannot take named specifiers, so
+    // a value import is added alongside it using that same path.
+    {
+      code: `import * as QueryKeys from '@/util/routing/queryKeys';
+
+function Component() {
+  const [playbackId] = useRouterState({ key: 'playback-id' });
+  return [playbackId, QueryKeys];
+}`,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: `import { QUERY_KEY_PLAYBACK_ID } from '@/util/routing/queryKeys';
+import * as QueryKeys from '@/util/routing/queryKeys';
+
+function Component() {
+  const [playbackId] = useRouterState({ key: QUERY_KEY_PLAYBACK_ID });
+  return [playbackId, QueryKeys];
+}`,
+    },
+
+    // 33. Regression #1365: a type-only import cannot carry a value binding, so
+    // a separate value import is added — reusing the path it proves works.
+    {
+      code: `import type { QueryKey } from 'src/util/routing/queryKeys';
+
+function Component() {
+  const [playbackId] = useRouterState({ key: 'playback-id' });
+  return playbackId;
+}`,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: `import { QUERY_KEY_PLAYBACK_ID } from 'src/util/routing/queryKeys';
+import type { QueryKey } from 'src/util/routing/queryKeys';
+
+function Component() {
+  const [playbackId] = useRouterState({ key: QUERY_KEY_PLAYBACK_ID });
+  return playbackId;
+}`,
+    },
+
+    // 34. Regression #1365: an unfixable violation (no literal to substitute)
+    // reported before a fixable one must not become the import carrier.
+    {
+      code: `function Component({ id }) {
+  const [a] = useRouterState({ key: 'prefix-' + id });
+  const [b] = useRouterState({ key: 'playback-id' });
+  return [a, b];
+}`,
+      errors: [
+        { messageId: 'enforceQueryKeyImport' },
+        { messageId: 'enforceQueryKeyImport' },
+      ],
+      output: `import { QUERY_KEY_PLAYBACK_ID } from '@/util/routing/queryKeys';
+
+function Component({ id }) {
+  const [a] = useRouterState({ key: 'prefix-' + id });
+  const [b] = useRouterState({ key: QUERY_KEY_PLAYBACK_ID });
+  return [a, b];
+}`,
+    },
   ],
+});
+
+// Issue #1365: RuleTester asserts a single fix pass, but `eslint --fix` loops.
+// The defect was that the substituted constant was left undefined, so the rule
+// re-reported its own output; these cases assert the multi-pass result is both
+// clean and stable.
+describe('enforce-querykey-ts: --fix convergence (issue #1365)', () => {
+  const lint = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      'test/enforce-querykey-ts',
+      enforceQueryKeyTs as unknown as Rule.RuleModule,
+    );
+    const config = {
+      parser: '@typescript-eslint/parser',
+      parserOptions: {
+        ecmaVersion: 2020 as const,
+        sourceType: 'module' as const,
+        ecmaFeatures: { jsx: true },
+      },
+      rules: { 'test/enforce-querykey-ts': 'error' as const },
+    };
+    const { output } = linter.verifyAndFix(code, config, 'Component.tsx');
+    return {
+      output,
+      remaining: linter.verify(output, config, 'Component.tsx'),
+    };
+  };
+
+  it('leaves no undefined identifier behind', () => {
+    const { output, remaining } = lint(`function Component() {
+  const [playbackId] = useRouterState({ key: 'playback-id' });
+  return playbackId;
+}`);
+
+    expect(output)
+      .toBe(`import { QUERY_KEY_PLAYBACK_ID } from '@/util/routing/queryKeys';
+
+function Component() {
+  const [playbackId] = useRouterState({ key: QUERY_KEY_PLAYBACK_ID });
+  return playbackId;
+}`);
+    expect(remaining).toHaveLength(0);
+  });
+
+  it('converges several violations onto a single import', () => {
+    const { output, remaining } =
+      lint(`import { QUERY_KEY_VALID } from '@/util/routing/queryKeys';
+
+function Component() {
+  const [valid] = useRouterState({ key: QUERY_KEY_VALID });
+  const [match] = useRouterState({ key: 'match-view' });
+  const [tournament] = useRouterState({ key: 'tournament-view' });
+  return [valid, match, tournament];
+}`);
+
+    expect(output)
+      .toBe(`import { QUERY_KEY_VALID, QUERY_KEY_MATCH_VIEW, QUERY_KEY_TOURNAMENT_VIEW } from '@/util/routing/queryKeys';
+
+function Component() {
+  const [valid] = useRouterState({ key: QUERY_KEY_VALID });
+  const [match] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
+  const [tournament] = useRouterState({ key: QUERY_KEY_TOURNAMENT_VIEW });
+  return [valid, match, tournament];
+}`);
+    expect(remaining).toHaveLength(0);
+  });
+
+  it('declines to touch a key whose constant name is already taken', () => {
+    const code = `import { QUERY_KEY_PLAYBACK_ID } from './legacy/keys';
+
+function Component() {
+  const [playbackId] = useRouterState({ key: 'playback-id' });
+  return playbackId;
+}`;
+    const { output, remaining } = lint(code);
+
+    expect(output).toBe(code);
+    expect(remaining).toHaveLength(1);
+  });
 });
