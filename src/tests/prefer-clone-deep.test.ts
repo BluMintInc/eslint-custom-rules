@@ -81,6 +81,43 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
         };
       `,
     },
+    // Regression #1364: a getter beside a nested spread still suppresses the
+    // report, so the rebuild never has to demote an accessor to a data property.
+    {
+      code: `
+        const obj = {
+          ...baseObj,
+          nested: {
+            ...baseObj.nested,
+            get value() { return this._value; }
+          }
+        };
+      `,
+    },
+    // Regression #1364: same for a setter nested beside a spread.
+    {
+      code: `
+        const obj = {
+          ...baseObj,
+          nested: {
+            ...baseObj.nested,
+            set value(v) { this._value = v; }
+          }
+        };
+      `,
+    },
+    // Regression #1364: same for a shorthand method nested beside a spread.
+    {
+      code: `
+        const obj = {
+          ...baseObj,
+          nested: {
+            ...baseObj.nested,
+            run() { return 1; }
+          }
+        };
+      `,
+    },
     // Object with prototype methods should not trigger
     {
       code: `
@@ -162,7 +199,8 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
         };
       `,
       errors: [expectPreferCloneDeepError],
-      output: `
+      output: `import { cloneDeep } from 'functions/src/util/cloneDeep';
+
         const result = cloneDeep(baseObj, {
           data: {
             nested: {
@@ -172,7 +210,8 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
         } as const);
       `,
     },
-    // Complex membership object
+    // Complex membership object: the outer literal has no spread of its own, so
+    // only the child that shallow-copies a base is rewritten.
     {
       code: `
         const membership = {
@@ -198,26 +237,28 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
         };
       `,
       errors: [expectPreferCloneDeepError],
-      output: `
+      output: `import { cloneDeep } from 'functions/src/util/cloneDeep';
+
         const membership = {
           sender: 'unchanged',
           receiver: 'unchanged',
           membership: cloneDeep(membershipIncomplete, {
             sender: {
               request: {
-                status: 'accepted',
-              },
+                status: 'accepted'
+              }
             },
             receiver: {
               request: {
-                status: 'accepted',
-              },
-            },
+                status: 'accepted'
+              }
+            }
           } as const),
         };
       `,
     },
-    // Nested spread with arrays
+    // Nested spread with arrays: array values are copied verbatim, so the
+    // `...newItem` element keeps every property it contributed (#1364).
     {
       code: `
         const config = {
@@ -238,13 +279,16 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
         };
       `,
       errors: [expectPreferCloneDeepError],
-      output: `
+      output: `import { cloneDeep } from 'functions/src/util/cloneDeep';
+
         const config = cloneDeep(baseConfig, {
           features: {
             items: [
               ...baseConfig.features.items,
               {
+                ...newItem,
                 settings: {
+                  ...newItem.settings,
                   enabled: true
                 }
               }
@@ -272,7 +316,8 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
         };
       `,
       errors: [expectPreferCloneDeepError],
-      output: `
+      output: `import { cloneDeep } from 'functions/src/util/cloneDeep';
+
         const key = 'config';
         const result = cloneDeep(baseObj, {
           [key]: {
@@ -309,7 +354,8 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
         };
       `,
       errors: [expectPreferCloneDeepError],
-      output: `
+      output: `import { cloneDeep } from 'functions/src/util/cloneDeep';
+
         const state = cloneDeep(prevState, {
           ui: {
             modal: {
@@ -325,7 +371,8 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
         } as const);
       `,
     },
-    // Nested spread with conditional properties
+    // Nested spread with conditional properties: a conditional spread carries
+    // data the overrides object cannot express, so the fix is declined (#1364).
     {
       code: `
         const result = {
@@ -346,20 +393,7 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
         };
       `,
       errors: [expectPreferCloneDeepError],
-      output: `
-        const result = cloneDeep(baseObj, {
-          settings: {
-            ...(condition ? {
-              advanced: {
-                enabled: true
-              }
-            } : {}),
-            basic: {
-              value: 42
-            }
-          }
-        } as const);
-      `,
+      output: null,
     },
     // Nested spread with template literals in property names
     {
@@ -377,7 +411,8 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
         };
       `,
       errors: [expectPreferCloneDeepError],
-      output: `
+      output: `import { cloneDeep } from 'functions/src/util/cloneDeep';
+
         const prefix = 'test';
         const obj = cloneDeep(baseObj, {
           [\`\${prefix}Config\`]: {
@@ -388,7 +423,8 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
         } as const);
       `,
     },
-    // Nested spread with null coalescing
+    // Nested spread with null coalescing: `...(base?.x ?? {})` is a defensive
+    // spelling of `...base.x`, which cloneDeep already copies.
     {
       code: `
         const config = {
@@ -403,7 +439,8 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
         };
       `,
       errors: [expectPreferCloneDeepError],
-      output: `
+      output: `import { cloneDeep } from 'functions/src/util/cloneDeep';
+
         const config = cloneDeep(baseConfig, {
           features: {
             advanced: {
@@ -415,14 +452,264 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
     },
     // Regression #1299: a spread genuinely nested two levels deep inside child
     // objects is the rule's real target (per #365) and must keep firing.
+    // Regression #1364: `...b`/`...c` copy objects other than the clone source,
+    // so no overrides object can reproduce them — report without fixing.
     {
       code: `const x = { ...a, nested: { ...b, deeper: { ...c } } };`,
       errors: [expectPreferCloneDeepError],
-      output: `const x = cloneDeep(a, {
-          nested: {
-            deeper: {}
-          }
-        } as const);`,
+      output: null,
+    },
+    // Regression #1364: the issue repro — the nested spread of an unrelated
+    // object used to be deleted, turning `nested` into `{}`.
+    {
+      code: `const merged: Foo = { ...a, nested: { ...b } };`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
+    },
+    // Regression #1364: the same data loss two levels down.
+    {
+      code: `const merged = { ...a, x: { y: { ...b } } };`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
+    },
+    // Regression #1364: emitting the fix must also import cloneDeep, otherwise
+    // the fixed file references an undefined identifier.
+    {
+      code: `const merged = { ...a, nested: { ...a.nested, value: 42 } };`,
+      errors: [expectPreferCloneDeepError],
+      output: `import { cloneDeep } from 'functions/src/util/cloneDeep';
+const merged = cloneDeep(a, {
+  nested: {
+    value: 42
+  }
+} as const);`,
+    },
+    // Regression #1364: an already-imported cloneDeep is not imported twice.
+    {
+      code: `import { cloneDeep } from 'functions/src/util/cloneDeep';
+const merged = { ...a, nested: { ...a.nested, value: 42 } };`,
+      errors: [expectPreferCloneDeepError],
+      output: `import { cloneDeep } from 'functions/src/util/cloneDeep';
+const merged = cloneDeep(a, {
+  nested: {
+    value: 42
+  }
+} as const);`,
+    },
+    // Regression #1364: a relative import of the same helper also counts as
+    // already imported.
+    {
+      code: `import { cloneDeep } from '../util/cloneDeep';
+const merged = { ...a, nested: { ...a.nested, value: 42 } };`,
+      errors: [expectPreferCloneDeepError],
+      output: `import { cloneDeep } from '../util/cloneDeep';
+const merged = cloneDeep(a, {
+  nested: {
+    value: 42
+  }
+} as const);`,
+    },
+    // Regression #1364: an existing import of the helper module is extended
+    // instead of duplicated.
+    {
+      code: `import { deepEqual } from 'functions/src/util/cloneDeep';
+const merged = { ...a, nested: { ...a.nested, value: 42 } };`,
+      errors: [expectPreferCloneDeepError],
+      output: `import { deepEqual, cloneDeep } from 'functions/src/util/cloneDeep';
+const merged = cloneDeep(a, {
+  nested: {
+    value: 42
+  }
+} as const);`,
+    },
+    // Regression #1364: the import goes above the existing imports.
+    {
+      code: `import { useState } from 'react';
+const merged = { ...a, nested: { ...a.nested, value: 42 } };`,
+      errors: [expectPreferCloneDeepError],
+      output: `import { cloneDeep } from 'functions/src/util/cloneDeep';
+import { useState } from 'react';
+const merged = cloneDeep(a, {
+  nested: {
+    value: 42
+  }
+} as const);`,
+    },
+    // Regression #1364: lodash's cloneDeep takes no overrides argument, so the
+    // fix must not silently reuse that binding.
+    {
+      code: `import { cloneDeep } from 'lodash';
+const merged = { ...a, nested: { ...a.nested, value: 42 } };`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
+    },
+    // Regression #1364: a local binding of the same name would shadow the
+    // helper, so the fix is declined.
+    {
+      code: `const cloneDeep = (base, overrides) => overrides;
+const merged = { ...a, nested: { ...a.nested, value: 42 } };`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
+    },
+    // Regression #1364: a second top-level spread cannot be represented in the
+    // overrides object; it used to be dropped.
+    {
+      code: `const merged = { ...a, ...b, nested: { ...a.nested, value: 42 } };`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
+    },
+    // Regression #1364: a spread that is not the first property overrides the
+    // keys declared before it, so dropping it changes precedence.
+    {
+      code: `const merged = { ...a, nested: { value: 42, ...a.nested } };`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
+    },
+    // Computed keys and shorthand properties survive the rebuild.
+    {
+      code: `const merged = { ...a, nested: { ...a.nested, [key]: 42, value } };`,
+      errors: [expectPreferCloneDeepError],
+      output: `import { cloneDeep } from 'functions/src/util/cloneDeep';
+const merged = cloneDeep(a, {
+  nested: {
+    [key]: 42,
+    value: value
+  }
+} as const);`,
+    },
+    // A nested object whose only content is the redundant base spread collapses
+    // to an empty override, which cloneDeep leaves untouched.
+    {
+      code: `const merged = { ...a, nested: { ...a.nested } };`,
+      errors: [expectPreferCloneDeepError],
+      output: `import { cloneDeep } from 'functions/src/util/cloneDeep';
+const merged = cloneDeep(a, {
+  nested: {}
+} as const);`,
+    },
+    // Regression #1300: an outer literal without its own spread is no longer
+    // wrapped in `cloneDeep(..., {} as const)` until ESLint's pass cap; only the
+    // child that shallow-copies a base is rewritten.
+    {
+      code: `const wrapper = {
+  keep: 1,
+  child: {
+    ...a,
+    nested: { ...a.nested, value: 42 },
+  },
+};`,
+      errors: [expectPreferCloneDeepError],
+      output: `import { cloneDeep } from 'functions/src/util/cloneDeep';
+const wrapper = {
+  keep: 1,
+  child: cloneDeep(a, {
+    nested: {
+      value: 42
+    }
+  } as const),
+};`,
+    },
+    // Regression #1300/#1364: nothing here shallow-copies a base object, so no
+    // faithful cloneDeep call exists and the fix is declined.
+    {
+      code: `const o = { x: { y: { ...b } } };`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
+    },
+    // A non-null assertion is a spelling of the same base path.
+    {
+      code: `const merged = { ...a, nested: { ...a.nested!, value: 42 } };`,
+      errors: [expectPreferCloneDeepError],
+      output: `import { cloneDeep } from 'functions/src/util/cloneDeep';
+const merged = cloneDeep(a, {
+  nested: {
+    value: 42
+  }
+} as const);`,
+    },
+    // String-literal keys map onto bracket access on the base path.
+    {
+      code: `const merged = { ...a, 'my-key': { ...a['my-key'], value: 42 } };`,
+      errors: [expectPreferCloneDeepError],
+      output: `import { cloneDeep } from 'functions/src/util/cloneDeep';
+const merged = cloneDeep(a, {
+  'my-key': {
+    value: 42
+  }
+} as const);`,
+    },
+    // Member-expression bases are supported (the #365 shape).
+    {
+      code: `const merged = { ...this.props.base, nested: { ...this.props.base.nested, value: 42 } };`,
+      errors: [expectPreferCloneDeepError],
+      output: `import { cloneDeep } from 'functions/src/util/cloneDeep';
+const merged = cloneDeep(this.props.base, {
+  nested: {
+    value: 42
+  }
+} as const);`,
+    },
+    // Regression #1364: a default import of the helper already provides the
+    // binding, so no import is added.
+    {
+      code: `import cloneDeep from 'functions/src/util/cloneDeep';
+const merged = { ...a, nested: { ...a.nested, value: 42 } };`,
+      errors: [expectPreferCloneDeepError],
+      output: `import cloneDeep from 'functions/src/util/cloneDeep';
+const merged = cloneDeep(a, {
+  nested: {
+    value: 42
+  }
+} as const);`,
+    },
+    // Regression #1364: a type-only import provides no runtime value, and its
+    // binding cannot be re-declared, so the fix is declined.
+    {
+      code: `import type { cloneDeep } from 'functions/src/util/cloneDeep';
+const merged = { ...a, nested: { ...a.nested, value: 42 } };`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
+    },
+    // Regression #1364: same for an inline type specifier.
+    {
+      code: `import { type cloneDeep } from 'functions/src/util/cloneDeep';
+const merged = { ...a, nested: { ...a.nested, value: 42 } };`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
+    },
+    // Regression #1364: a namespace import binds a module object, not the
+    // helper function.
+    {
+      code: `import * as cloneDeep from 'functions/src/util/cloneDeep';
+const merged = { ...a, nested: { ...a.nested, value: 42 } };`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
+    },
+    // Sibling children that each shallow-copy their own base are both rewritten
+    // under the single report on the enclosing literal.
+    {
+      code: `const both = { one: { ...x, n: { ...x.n, v: 1 } }, two: { ...y, m: { ...y.m, v: 2 } } };`,
+      errors: [expectPreferCloneDeepError],
+      output: `import { cloneDeep } from 'functions/src/util/cloneDeep';
+const both = { one: cloneDeep(x, {
+  n: {
+    v: 1
+  }
+} as const), two: cloneDeep(y, {
+  m: {
+    v: 2
+  }
+} as const) };`,
+    },
+    // Regression #1364: a shadowing binding in an enclosing scope also blocks
+    // the fix.
+    {
+      code: `function outer() {
+  const cloneDeep = 1;
+  return { ...a, nested: { ...a.nested, value: 42 } };
+}`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
     },
   ],
 });

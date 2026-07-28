@@ -24,6 +24,35 @@ Chained spreads only clone one level of an object. Every deeper property still p
 1. Call `cloneDeep(baseObject, { /* overrides */ } as const)` instead of chaining nested spreads.
 1. Move only the overridden leaves into the overrides object; the rest is cloned by `cloneDeep`.
 
+### Autofix behavior
+
+The fix rewrites the literal into `cloneDeep(base, { ...overrides } as const)` and
+imports `cloneDeep` from `functions/src/util/cloneDeep` when the name is not
+already bound in the file (an existing import of the same helper — including a
+relative path — is reused, and an existing import statement from that module is
+extended rather than duplicated).
+
+An autofix must never change runtime behavior, so the rule reports **without**
+fixing whenever the overrides object cannot reproduce the literal faithfully:
+
+- A nested spread of anything other than the path `cloneDeep` already copies, for
+  example `{ ...a, nested: { ...b } }`. Dropping `...b` would delete data.
+- A spread that is not the first property of its object, for example
+  `{ ...a, nested: { value: 42, ...a.nested } }`, where the spread overrides the
+  keys declared before it.
+- A second top-level spread, for example `{ ...a, ...b, nested: { ...a.nested } }`.
+- A conditional spread such as `...(condition ? { … } : {})` inside the overrides.
+- A binding named `cloneDeep` that resolves to something else (a local variable,
+  a namespace import, a type-only import, or `lodash`'s `cloneDeep`, which takes
+  no overrides argument).
+- A flagged literal that shallow-copies no base object at all, for example
+  `{ x: { y: { ...b } } }`.
+
+Defensive spellings of the base path are recognized and dropped safely:
+`...(base?.x ?? {})`, `...base.x!` and `...base['x']` all mirror `base.x`. Array,
+call and conditional property *values* are copied verbatim, so their contents
+survive the fix untouched.
+
 ### ❌ Incorrect
 
 ```ts
@@ -64,6 +93,8 @@ const membership = {
 ### ✅ Correct
 
 ```ts
+import { cloneDeep } from 'functions/src/util/cloneDeep';
+
 const result = cloneDeep(baseObj, {
   data: {
     nested: {

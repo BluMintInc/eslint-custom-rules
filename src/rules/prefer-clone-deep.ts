@@ -1,7 +1,38 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  ASTUtils,
+  TSESLint,
+  TSESTree,
+} from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'preferCloneDeep';
+
+const CLONE_DEEP_NAME = 'cloneDeep';
+const CLONE_DEEP_MODULE = 'functions/src/util/cloneDeep';
+const INDENT_STEP = '  ';
+
+/**
+ * Only BluMint's own `cloneDeep` accepts an overrides argument, so an existing
+ * binding coming from anywhere else (notably `lodash`) must not be reused by the
+ * fix. Relative/aliased paths are accepted because the helper is imported by
+ * path, never as a package.
+ */
+function isCloneDeepModule(source: string): boolean {
+  if (source === CLONE_DEEP_MODULE) {
+    return true;
+  }
+  if (!/(^|\/)cloneDeep$/.test(source)) {
+    return false;
+  }
+  return (
+    source.startsWith('.') ||
+    source.startsWith('/') ||
+    source.startsWith('~') ||
+    source.startsWith('@/') ||
+    source.endsWith('util/cloneDeep')
+  );
+}
 
 export const preferCloneDeep = createRule<[], MessageIds>({
   name: 'prefer-clone-deep',
@@ -85,250 +116,307 @@ export const preferCloneDeep = createRule<[], MessageIds>({
       );
     }
 
-    function generateCloneDeepFix(node: TSESTree.ObjectExpression): string {
-      const sourceCode = context.sourceCode;
+    const sourceCode = context.sourceCode;
 
-      // Find the base object (first spread element)
-      let baseObj: string | null = null;
-
-      // Extract the base object from the first spread element
-      for (const prop of node.properties) {
-        if (prop.type === AST_NODE_TYPES.SpreadElement) {
-          baseObj = sourceCode.getText(prop.argument);
-          break;
-        }
-      }
-
-      // Special case for membership pattern
-      if (baseObj === null) {
-        // Check if this is a membership pattern (object with membership property)
-        const membershipProp = node.properties.find(
-          (prop) =>
-            prop.type === AST_NODE_TYPES.Property &&
-            !prop.computed &&
-            prop.key.type === AST_NODE_TYPES.Identifier &&
-            prop.key.name === 'membership',
-        ) as TSESTree.Property | undefined;
-
-        if (
-          membershipProp &&
-          membershipProp.value.type === AST_NODE_TYPES.ObjectExpression
-        ) {
-          // Find the first spread in the membership object
-          const membershipSpread = membershipProp.value.properties.find(
-            (prop) => prop.type === AST_NODE_TYPES.SpreadElement,
-          );
-
-          if (membershipSpread) {
-            // This is a special case for the membership pattern
-            // Just return a hardcoded string that matches the expected output
-            return `{
-          sender: 'unchanged',
-          receiver: 'unchanged',
-          membership: cloneDeep(membershipIncomplete, {
-            sender: {
-              request: {
-                status: 'accepted',
-              },
-            },
-            receiver: {
-              request: {
-                status: 'accepted',
-              },
-            },
-          } as const),
-        }`;
-          }
-        }
-      }
-
-      // Process the object normally
-      if (baseObj) {
-        // For simplicity, let's just use the expected output format for each test case
-        // based on the base object name
-        if (baseObj === 'baseObj') {
-          // Check for template literal key
-          const hasTemplateLiteral = node.properties.some(
-            (p) =>
-              p.type === AST_NODE_TYPES.Property &&
-              p.computed &&
-              p.key.type === AST_NODE_TYPES.TemplateLiteral,
-          );
-
-          if (hasTemplateLiteral) {
-            return `cloneDeep(baseObj, {
-          [\`\${prefix}Config\`]: {
-            nested: {
-              value: 42
-            }
-          }
-        } as const)`;
-          } else if (
-            node.properties.some(
-              (p) =>
-                p.type === AST_NODE_TYPES.Property &&
-                p.key.type === AST_NODE_TYPES.Identifier &&
-                p.key.name === 'settings',
-            )
-          ) {
-            return `cloneDeep(baseObj, {
-          settings: {
-            ...(condition ? {
-              advanced: {
-                enabled: true
-              }
-            } : {}),
-            basic: {
-              value: 42
-            }
-          }
-        } as const)`;
-          } else if (
-            node.properties.some(
-              (p) =>
-                p.type === AST_NODE_TYPES.Property &&
-                p.computed &&
-                p.key.type === AST_NODE_TYPES.Identifier &&
-                p.key.name === 'key',
-            )
-          ) {
-            return `cloneDeep(baseObj, {
-          [key]: {
-            nested: {
-              ['dynamic' + key]: {
-                value: 42
-              }
-            }
-          }
-        } as const)`;
-          } else {
-            return `cloneDeep(baseObj, {
-          data: {
-            nested: {
-              value: 42
-            }
-          }
-        } as const)`;
-          }
-        } else if (baseObj === 'baseConfig') {
-          if (
-            node.properties.some(
-              (p) =>
-                p.type === AST_NODE_TYPES.Property &&
-                p.key.type === AST_NODE_TYPES.Identifier &&
-                p.key.name === 'features' &&
-                p.value.type === AST_NODE_TYPES.ObjectExpression &&
-                p.value.properties.some(
-                  (sp) =>
-                    sp.type === AST_NODE_TYPES.Property &&
-                    sp.key.type === AST_NODE_TYPES.Identifier &&
-                    sp.key.name === 'items',
-                ),
-            )
-          ) {
-            return `cloneDeep(baseConfig, {
-          features: {
-            items: [
-              ...baseConfig.features.items,
-              {
-                settings: {
-                  enabled: true
-                }
-              }
-            ]
-          }
-        } as const)`;
-          } else {
-            return `cloneDeep(baseConfig, {
-          features: {
-            advanced: {
-              enabled: true
-            }
-          }
-        } as const)`;
-          }
-        } else if (baseObj === 'prevState') {
-          return `cloneDeep(prevState, {
-          ui: {
-            modal: {
-              content: {
-                form: {
-                  values: {
-                    submitted: true
-                  }
-                }
-              }
-            }
-          }
-        } as const)`;
-        }
-
-        // Default case - extract overrides
-        const overrides = extractNestedOverrides(node);
-        return `cloneDeep(${baseObj}, {
-          ${overrides}
-        } as const)`;
-      } else {
-        // Fallback to the original implementation if no base object is found
-        const parts: string[] = [];
-        for (const prop of node.properties) {
-          if (prop.type === AST_NODE_TYPES.SpreadElement) {
-            const spreadArg = sourceCode.getText(prop.argument);
-            parts.push(`...${spreadArg}`);
-          } else if (prop.type === AST_NODE_TYPES.Property) {
-            const key = prop.computed
-              ? `[${sourceCode.getText(prop.key)}]`
-              : sourceCode.getText(prop.key);
-            const value = sourceCode.getText(prop.value);
-            parts.push(`${key}: ${value}`);
-          }
-        }
-        return `cloneDeep({ ${parts.join(', ')} }, {} as const)`;
-      }
+    function normalizedTextOf(node: TSESTree.Node): string {
+      return sourceCode.getText(node).replace(/\s+/g, '');
     }
 
-    // Helper function to extract nested overrides without spread elements
-    function extractNestedOverrides(node: TSESTree.ObjectExpression): string {
-      const sourceCode = context.sourceCode;
-      const overrides: string[] = [];
+    /**
+     * `...(base.a ?? {})`, `...(base?.a)` and `...base.a!` are defensive
+     * spellings of `...base.a`; unwrapping them lets the mirror check below
+     * recognize the underlying member path.
+     */
+    function unwrapSpreadArgument(node: TSESTree.Node): TSESTree.Node {
+      if (node.type === AST_NODE_TYPES.ChainExpression) {
+        return unwrapSpreadArgument(node.expression);
+      }
+      if (node.type === AST_NODE_TYPES.TSNonNullExpression) {
+        return unwrapSpreadArgument(node.expression);
+      }
+      if (
+        node.type === AST_NODE_TYPES.LogicalExpression &&
+        (node.operator === '??' || node.operator === '||') &&
+        node.right.type === AST_NODE_TYPES.ObjectExpression &&
+        node.right.properties.length === 0
+      ) {
+        return unwrapSpreadArgument(node.left);
+      }
+      return node;
+    }
 
-      for (const prop of node.properties) {
-        if (prop.type === AST_NODE_TYPES.Property) {
-          const key = prop.computed
-            ? `[${sourceCode.getText(prop.key)}]`
-            : sourceCode.getText(prop.key);
-
-          let value: string;
-
-          if (prop.value.type === AST_NODE_TYPES.ObjectExpression) {
-            // For nested objects, recursively extract overrides
-            const nestedOverrides = extractNestedOverrides(prop.value);
-            if (nestedOverrides.trim()) {
-              value = `{\n            ${nestedOverrides}\n          }`;
-            } else {
-              // If there are no nested overrides, use an empty object
-              value = '{}';
-            }
-          } else if (prop.value.type === AST_NODE_TYPES.ArrayExpression) {
-            // For arrays, keep the original array
-            value = sourceCode.getText(prop.value);
-          } else {
-            // For primitive values, use the original value
-            value = sourceCode.getText(prop.value);
-          }
-
-          overrides.push(`${key}: ${value}`);
-        } else if (
-          prop.type === AST_NODE_TYPES.SpreadElement &&
-          prop.argument.type === AST_NODE_TYPES.ConditionalExpression
-        ) {
-          // Handle conditional spread elements (like ...(condition ? {...} : {}))
-          const text = sourceCode.getText(prop);
-          overrides.push(text);
+    /**
+     * Canonical, whitespace-insensitive spelling of a member path so that a
+     * nested spread can be compared against the path cloneDeep already copies.
+     */
+    function accessPathOf(node: TSESTree.Node): string {
+      const unwrapped = unwrapSpreadArgument(node);
+      if (unwrapped.type === AST_NODE_TYPES.MemberExpression) {
+        const objectPath = accessPathOf(unwrapped.object);
+        if (unwrapped.computed) {
+          return `${objectPath}[${normalizedTextOf(unwrapped.property)}]`;
         }
+        if (unwrapped.property.type === AST_NODE_TYPES.Identifier) {
+          return `${objectPath}.${unwrapped.property.name}`;
+        }
+        return `${objectPath}.${normalizedTextOf(unwrapped.property)}`;
+      }
+      return normalizedTextOf(unwrapped);
+    }
+
+    function accessorForKey(prop: TSESTree.Property): string | null {
+      if (prop.computed) {
+        return `[${normalizedTextOf(prop.key)}]`;
+      }
+      if (prop.key.type === AST_NODE_TYPES.Identifier) {
+        return `.${prop.key.name}`;
+      }
+      if (prop.key.type === AST_NODE_TYPES.Literal) {
+        return `[${normalizedTextOf(prop.key)}]`;
+      }
+      return null;
+    }
+
+    function keyTextOf(prop: TSESTree.Property): string {
+      return prop.computed
+        ? `[${sourceCode.getText(prop.key)}]`
+        : sourceCode.getText(prop.key);
+    }
+
+    function indentOf(node: TSESTree.Node): string {
+      const text = sourceCode.getText();
+      const lineStart = text.lastIndexOf('\n', node.range[0] - 1) + 1;
+      const prefix = text.slice(lineStart, node.range[0]);
+      return /^[ \t]*/.exec(prefix)?.[0] ?? '';
+    }
+
+    function startsWithSpread(node: TSESTree.ObjectExpression): boolean {
+      return node.properties[0]?.type === AST_NODE_TYPES.SpreadElement;
+    }
+
+    /**
+     * `SourceCode#getScope` supersedes the deprecated `context.getScope`; the
+     * fallback keeps the rule working on ESLint versions that predate it.
+     */
+    function scopeOf(node: TSESTree.Node): TSESLint.Scope.Scope {
+      const scoped = sourceCode as TSESLint.SourceCode & {
+        getScope?: (node: TSESTree.Node) => TSESLint.Scope.Scope;
+      };
+      return typeof scoped.getScope === 'function'
+        ? scoped.getScope(node)
+        : context.getScope();
+    }
+
+    /**
+     * Rebuilds the properties of one object as cloneDeep overrides. Returns null
+     * whenever a property cannot be reproduced without changing runtime
+     * behavior, which makes the caller decline the fix instead of emitting code
+     * that silently drops data (#1364).
+     */
+    function buildOverrideEntries(
+      properties: TSESTree.ObjectLiteralElement[],
+      basePath: string,
+      indent: string,
+    ): string | null {
+      const entries: string[] = [];
+
+      for (const prop of properties) {
+        // Any spread other than a leading copy of the path cloneDeep already
+        // clones would have to be dropped, deleting whatever it contributed.
+        if (prop.type !== AST_NODE_TYPES.Property) {
+          return null;
+        }
+        // Getters, setters and shorthand methods degrade into plain data
+        // properties when reprinted as overrides.
+        if (prop.kind !== 'init' || prop.method) {
+          return null;
+        }
+
+        let valueText: string;
+        if (prop.value.type === AST_NODE_TYPES.ObjectExpression) {
+          const accessor = accessorForKey(prop);
+          if (accessor === null) {
+            return null;
+          }
+          const nested = buildOverrideObject(
+            prop.value,
+            `${basePath}${accessor}`,
+            `${indent}${INDENT_STEP}`,
+          );
+          if (nested === null) {
+            return null;
+          }
+          valueText = nested;
+        } else {
+          // Arrays, calls, conditionals and primitives are copied verbatim, so
+          // whatever they contain survives the fix untouched.
+          valueText = sourceCode.getText(prop.value);
+        }
+
+        entries.push(`${indent}${keyTextOf(prop)}: ${valueText}`);
       }
 
-      return overrides.join(',\n            ');
+      return entries.join(',\n');
+    }
+
+    /**
+     * `indent` is the indentation of the rebuilt object's entries; its closing
+     * brace lines up one step to the left.
+     */
+    function buildOverrideObject(
+      node: TSESTree.ObjectExpression,
+      basePath: string,
+      indent: string,
+    ): string | null {
+      let properties: TSESTree.ObjectLiteralElement[] = [...node.properties];
+      const [first] = properties;
+
+      if (first && first.type === AST_NODE_TYPES.SpreadElement) {
+        // A leading spread of this exact path is redundant: cloneDeep already
+        // copies it from the base. Any other spread carries data that the
+        // overrides object cannot express.
+        if (accessPathOf(first.argument) !== basePath) {
+          return null;
+        }
+        properties = properties.slice(1);
+      }
+
+      const body = buildOverrideEntries(properties, basePath, indent);
+      if (body === null) {
+        return null;
+      }
+      if (body === '') {
+        return '{}';
+      }
+      const closingIndent = indent.slice(0, indent.length - INDENT_STEP.length);
+      return `{\n${body}\n${closingIndent}}`;
+    }
+
+    function buildCloneDeepCall(
+      node: TSESTree.ObjectExpression,
+    ): string | null {
+      const [first, ...rest] = node.properties;
+      if (!first || first.type !== AST_NODE_TYPES.SpreadElement) {
+        return null;
+      }
+
+      const baseText = sourceCode.getText(first.argument);
+      const basePath = accessPathOf(first.argument);
+      const baseIndent = indentOf(node);
+      const body = buildOverrideEntries(
+        rest,
+        basePath,
+        `${baseIndent}${INDENT_STEP}`,
+      );
+      if (body === null) {
+        return null;
+      }
+
+      const overrides = body === '' ? '{}' : `{\n${body}\n${baseIndent}}`;
+      return `cloneDeep(${baseText}, ${overrides} as const)`;
+    }
+
+    /**
+     * When the reported object has no spread of its own (the #365 membership
+     * shape), the object that actually shallow-copies a base lives one or more
+     * levels down; rewriting only those children leaves the rest of the literal
+     * untouched.
+     */
+    function collectCloneTargets(
+      node: TSESTree.ObjectExpression,
+    ): TSESTree.ObjectExpression[] {
+      const targets: TSESTree.ObjectExpression[] = [];
+
+      const visit = (current: TSESTree.ObjectExpression): void => {
+        if (
+          current !== node &&
+          startsWithSpread(current) &&
+          hasNestedSpread(current)
+        ) {
+          targets.push(current);
+          return;
+        }
+        for (const prop of current.properties) {
+          if (
+            prop.type === AST_NODE_TYPES.Property &&
+            prop.value.type === AST_NODE_TYPES.ObjectExpression
+          ) {
+            visit(prop.value);
+          }
+        }
+      };
+
+      visit(node);
+      return targets;
+    }
+
+    /**
+     * Returns the fixes required for `cloneDeep` to resolve, an empty list when
+     * it already does, or null when a conflicting binding of that name exists —
+     * shadowing it would silently call something else.
+     */
+    function buildImportFixes(
+      fixer: TSESLint.RuleFixer,
+      scope: TSESLint.Scope.Scope,
+    ): TSESLint.RuleFix[] | null {
+      const existing = ASTUtils.findVariable(scope, CLONE_DEEP_NAME);
+      if (existing) {
+        const [definition] = existing.defs;
+        if (!definition) {
+          return null;
+        }
+        const definitionNode = definition.node;
+        if (
+          definitionNode.type !== AST_NODE_TYPES.ImportSpecifier &&
+          definitionNode.type !== AST_NODE_TYPES.ImportDefaultSpecifier
+        ) {
+          return null;
+        }
+        if (
+          definitionNode.type === AST_NODE_TYPES.ImportSpecifier &&
+          definitionNode.importKind === 'type'
+        ) {
+          return null;
+        }
+        const declaration = definitionNode.parent;
+        if (
+          !declaration ||
+          declaration.type !== AST_NODE_TYPES.ImportDeclaration ||
+          declaration.importKind === 'type' ||
+          !isCloneDeepModule(String(declaration.source.value))
+        ) {
+          return null;
+        }
+        return [];
+      }
+
+      const importDeclarations = sourceCode.ast.body.filter(
+        (statement): statement is TSESTree.ImportDeclaration =>
+          statement.type === AST_NODE_TYPES.ImportDeclaration,
+      );
+
+      const reusable = importDeclarations.find(
+        (declaration) =>
+          declaration.importKind !== 'type' &&
+          isCloneDeepModule(String(declaration.source.value)) &&
+          declaration.specifiers.some(
+            (specifier) => specifier.type === AST_NODE_TYPES.ImportSpecifier,
+          ),
+      );
+      if (reusable) {
+        const namedSpecifiers = reusable.specifiers.filter(
+          (specifier) => specifier.type === AST_NODE_TYPES.ImportSpecifier,
+        );
+        const lastSpecifier = namedSpecifiers[namedSpecifiers.length - 1];
+        return [fixer.insertTextAfter(lastSpecifier, `, ${CLONE_DEEP_NAME}`)];
+      }
+
+      const importText = `import { ${CLONE_DEEP_NAME} } from '${CLONE_DEEP_MODULE}';\n`;
+      const [firstImport] = importDeclarations;
+      if (firstImport) {
+        return [fixer.insertTextBefore(firstImport, importText)];
+      }
+      return [fixer.insertTextBeforeRange([0, 0], importText)];
     }
 
     // Find the outermost object expression that needs cloneDeep
@@ -388,11 +476,35 @@ export const preferCloneDeep = createRule<[], MessageIds>({
 
           // Only report on the outermost node
           if (outermostNode === node) {
+            const scope = scopeOf(node);
+
             context.report({
               node,
               messageId: 'preferCloneDeep',
               fix(fixer) {
-                return fixer.replaceText(node, generateCloneDeepFix(node));
+                const rewrites: TSESLint.RuleFix[] = [];
+                const targets = startsWithSpread(node)
+                  ? [node]
+                  : collectCloneTargets(node);
+
+                if (targets.length === 0) {
+                  return null;
+                }
+
+                for (const target of targets) {
+                  const call = buildCloneDeepCall(target);
+                  if (call === null) {
+                    return null;
+                  }
+                  rewrites.push(fixer.replaceText(target, call));
+                }
+
+                const importFixes = buildImportFixes(fixer, scope);
+                if (importFixes === null) {
+                  return null;
+                }
+
+                return [...importFixes, ...rewrites];
               },
             });
           }
