@@ -155,6 +155,244 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
     `,
   ],
   invalid: [
+    // Issue #1357 repro: annotation must survive and references must follow.
+    {
+      code: `const Content: ReactNode = null;\nrender(Content);`,
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: {
+            type: 'ReactNode',
+            suggestion: 'content',
+          },
+        },
+      ],
+      output: `const content: ReactNode = null;\nrender(content);`,
+    },
+
+    // Issue #1357 repro, the opposite direction: a component type renamed
+    // upward must keep its annotation and carry its references along.
+    {
+      code: `const button: FC = () => null;\nuse(button);`,
+      errors: [
+        {
+          messageId: 'componentTypeShouldBeUppercase',
+          data: {
+            type: 'FC',
+            suggestion: 'Button',
+          },
+        },
+      ],
+      output: `const Button: FC = () => null;\nuse(Button);`,
+    },
+
+    // Issue #1357: the parameter form of the same defect.
+    {
+      code: 'function f(Child: ReactNode) { return Child; }',
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: {
+            type: 'ReactNode',
+            suggestion: 'child',
+          },
+        },
+      ],
+      output: 'function f(child: ReactNode) { return child; }',
+    },
+
+    // The parameter shadows the function's own name, so the two share a name
+    // while being distinct symbols. Resolving by declaration identity (not by
+    // name) is what keeps the fixer on the parameter.
+    {
+      code: 'function Child(Child: ReactNode) { return Child; }',
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: {
+            type: 'ReactNode',
+            suggestion: 'child',
+          },
+        },
+      ],
+      output: 'function Child(child: ReactNode) { return child; }',
+    },
+
+    // An optional marker sits inside the identifier's range alongside the
+    // annotation; both must survive the rename.
+    {
+      code: 'function f(Child?: ReactNode) { return Child; }',
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: {
+            type: 'ReactNode',
+            suggestion: 'child',
+          },
+        },
+      ],
+      output: 'function f(child?: ReactNode) { return child; }',
+    },
+
+    // A definite-assignment marker is likewise part of the identifier's range.
+    {
+      code: `let Content!: ReactNode;\nrender(Content);`,
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: {
+            type: 'ReactNode',
+            suggestion: 'content',
+          },
+        },
+      ],
+      output: `let content!: ReactNode;\nrender(content);`,
+    },
+
+    // A shorthand property is both key and value; expanding it keeps the
+    // object's shape while renaming only the value.
+    {
+      code: `const Content: ReactNode = null;\nconst wrapper = { Content };`,
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: {
+            type: 'ReactNode',
+            suggestion: 'content',
+          },
+        },
+      ],
+      output: `const content: ReactNode = null;\nconst wrapper = { Content: content };`,
+    },
+
+    // The target name is already bound in the declaration scope: renaming would
+    // redeclare it, so the report stands without a fix.
+    {
+      code: `const Content: ReactNode = null;\nconst content = 1;\nrender(Content, content);`,
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: {
+            type: 'ReactNode',
+            suggestion: 'content',
+          },
+        },
+      ],
+      output: null,
+    },
+
+    // A reference from a nested scope renames along with the declaration when
+    // nothing on the scope chain binds the target name.
+    {
+      code: `const Content: ReactNode = null;\nfunction read() { return Content; }`,
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: {
+            type: 'ReactNode',
+            suggestion: 'content',
+          },
+        },
+      ],
+      output: `const content: ReactNode = null;\nfunction read() { return content; }`,
+    },
+
+    // A binding of the target name sits between a reference and the
+    // declaration, so the rewritten reference would resolve to it instead.
+    {
+      code: `const Content: ReactNode = null;\nfunction read() { const content = 1; return [Content, content]; }`,
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: {
+            type: 'ReactNode',
+            suggestion: 'content',
+          },
+        },
+      ],
+      output: null,
+    },
+
+    // A nested scope already uses the target name for something else, so the
+    // rename would capture it.
+    {
+      code: `const Content: ReactNode = null;\nfunction read() { const content = 1; return content; }\nrender(Content);`,
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: {
+            type: 'ReactNode',
+            suggestion: 'content',
+          },
+        },
+      ],
+      output: null,
+    },
+
+    // An exported declaration with in-file references is a cross-file contract
+    // a single-file fixer cannot complete.
+    {
+      code: `export const Content: ReactNode = null;\nrender(Content);`,
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: {
+            type: 'ReactNode',
+            suggestion: 'content',
+          },
+        },
+      ],
+      output: null,
+    },
+
+    // A bare exported declaration has no in-file use site to orphan, so the
+    // rename still applies (annotation intact).
+    {
+      code: 'export const Content: ReactNode = null;',
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: {
+            type: 'ReactNode',
+            suggestion: 'content',
+          },
+        },
+      ],
+      output: 'export const content: ReactNode = null;',
+    },
+
+    // A re-export specifier binds the public export name to this identifier;
+    // rewriting it would rename the export itself.
+    {
+      code: `const Content: ReactNode = null;\nexport { Content };`,
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: {
+            type: 'ReactNode',
+            suggestion: 'content',
+          },
+        },
+      ],
+      output: null,
+    },
+
+    // A parameter of an exported function is function-local, so the export
+    // guard must not suppress its rename.
+    {
+      code: 'export function render(Child: ReactNode) { return Child; }',
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: {
+            type: 'ReactNode',
+            suggestion: 'child',
+          },
+        },
+      ],
+      output: 'export function render(child: ReactNode) { return child; }',
+    },
+
     // Invalid uppercase names for ReactNode
     {
       code: 'const MyComponent: ReactNode = <div>Hello</div>;',
@@ -167,7 +405,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
           },
         },
       ],
-      output: 'const myComponent = <div>Hello</div>;',
+      output: 'const myComponent: ReactNode = <div>Hello</div>;',
     },
     {
       code: 'const Element: JSX.Element = <div>Hello</div>;',
@@ -180,7 +418,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
           },
         },
       ],
-      output: 'const element = <div>Hello</div>;',
+      output: 'const element: JSX.Element = <div>Hello</div>;',
     },
 
     // Invalid lowercase names for ComponentType and FC
@@ -195,7 +433,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
           },
         },
       ],
-      output: 'const Button = () => <button>Click me</button>;',
+      output: 'const Button: FC = () => <button>Click me</button>;',
     },
     {
       code: 'const cardComponent: ComponentType<Props> = (props) => <div>{props.children}</div>;',
@@ -208,7 +446,8 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
           },
         },
       ],
-      output: 'const CardComponent = (props) => <div>{props.children}</div>;',
+      output:
+        'const CardComponent: ComponentType<Props> = (props) => <div>{props.children}</div>;',
     },
     {
       code: 'const headerElement: FunctionComponent = () => <header>Header</header>;',
@@ -221,7 +460,8 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
           },
         },
       ],
-      output: 'const HeaderElement = () => <header>Header</header>;',
+      output:
+        'const HeaderElement: FunctionComponent = () => <header>Header</header>;',
     },
 
     // Invalid function parameters
@@ -236,7 +476,8 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
           },
         },
       ],
-      output: 'function renderContent(element) { return Element; }',
+      output:
+        'function renderContent(element: JSX.Element) { return element; }',
     },
     {
       code: 'function useCustomHook(Component: ReactNode) { return <Component />; }',
@@ -249,7 +490,10 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
           },
         },
       ],
-      output: 'function useCustomHook(component) { return <Component />; }',
+      // The JSX element name resolves to the parameter binding, so it is renamed
+      // with it: a consistent rename beats leaving `<Component />` dangling.
+      output:
+        'function useCustomHook(component: ReactNode) { return <component />; }',
     },
     {
       code: 'const createComponent = (component: FC) => { return <component />; };',
@@ -262,8 +506,11 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
           },
         },
       ],
+      // `<component />` is a lowercase JSX name, which the scope analyzer models
+      // as an intrinsic host element rather than a reference to the parameter,
+      // so there is nothing to rewrite besides the declaration.
       output:
-        'const createComponent = (Component) => { return <component />; };',
+        'const createComponent = (Component: FC) => { return <component />; };',
     },
     {
       code: 'const withHOC = (wrapper: ComponentType) => (props) => <wrapper {...props} />;',
@@ -276,7 +523,8 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
           },
         },
       ],
-      output: 'const withHOC = (Wrapper) => (props) => <wrapper {...props} />;',
+      output:
+        'const withHOC = (Wrapper: ComponentType) => (props) => <wrapper {...props} />;',
     },
 
     // Multiple errors in one file
@@ -318,11 +566,15 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
           },
         },
       ],
+      // ESLint merges each report's fix list into one range-spanning fix, so the
+      // `Element` rename (declaration through its JSX use) and the `component`
+      // rename (nested between them) overlap; a single pass keeps the first and
+      // defers the other to the next pass.
       output: `
-        const button = <button>Click</button>;
-        const Card = () => <div>Card</div>;
-        function render(element, Component) {
-          return <component>{Element}</component>;
+        const button: ReactNode = <button>Click</button>;
+        const Card: ComponentType = () => <div>Card</div>;
+        function render(element: JSX.Element, component: FC) {
+          return <component>{element}</component>;
         }
       `,
     },
@@ -351,8 +603,8 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
       output: `
         class MyComponent extends React.Component {
           private renderElement(): JSX.Element {
-            const element = <div>Element</div>;
-            return Element;
+            const element: ReactNode = <div>Element</div>;
+            return element;
           }
         }
       `,
@@ -383,11 +635,14 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
           },
         },
       ],
+      // The shorthand `{ Element }` expands to `{ Element: element }` so the
+      // object's key (its public shape) survives the rename. The `component`
+      // rename's merged range overlaps this one and lands on the next pass.
       output: `
         function useCustomHook() {
-          const element = <div>Element</div>;
-          const Component = () => <div>Component</div>;
-          return { Element, component };
+          const element: JSX.Element = <div>Element</div>;
+          const component: FC = () => <div>Component</div>;
+          return { Element: element, component };
         }
       `,
     },
@@ -409,8 +664,8 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
         },
       ],
       output: `
-        const renderElement = function(element) {
-          return Element;
+        const renderElement = function(element: ReactNode) {
+          return element;
         };
       `,
     },
@@ -441,8 +696,8 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
       ],
       output: `
         const utils = {
-          renderContent: (element) => Element,
-          createComponent: (Component) => <component />
+          renderContent: (element: JSX.Element) => element,
+          createComponent: (Component: ComponentType) => <component />
         };
       `,
     },
@@ -464,7 +719,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
         },
       ],
       output: `
-        const MyGenericComponent = <T,>(props) => {
+        const MyGenericComponent: ComponentType<{ data: T }> = <T,>(props) => {
           return <div>{props.data}</div>;
         };
       `,
@@ -487,7 +742,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
         },
       ],
       output: `
-        const MemoizedComponent = React.memo(function(props) {
+        const MemoizedComponent: FC = React.memo(function(props) {
           return <div>{props.children}</div>;
         });
       `,
@@ -515,8 +770,8 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
       output: `
         const forwardedComponent = React.forwardRef<HTMLDivElement, Props>(
           function(props, ref): JSX.Element {
-            const element = <div ref={ref}>{props.children}</div>;
-            return Element;
+            const element: ReactNode = <div ref={ref}>{props.children}</div>;
+            return element;
           }
         );
       `,
@@ -548,11 +803,13 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
           },
         },
       ],
+      // The JSX attribute name `data` is not a reference, so only the `{Data}`
+      // value moves; the attribute keeps its name.
       output: `
-        function withData(Component) {
+        function withData(Component: ComponentType<Props>) {
           return function WithData(props: Props) {
-            const data = <div>Data</div>;
-            return <component {...props} data={Data} />;
+            const data: ReactNode = <div>Data</div>;
+            return <component {...props} data={data} />;
           };
         }
       `,
@@ -596,17 +853,17 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
       ],
       output: `
         function ConditionalRender(props: Props) {
-          const element = props.condition
+          const element: JSX.Element = props.condition
             ? <div>True</div>
             : <span>False</span>;
 
-          const Component = () => props.condition
+          const component: FC = () => props.condition
             ? <button>Click</button>
             : <a>Link</a>;
 
           return (
             <>
-              {Element}
+              {element}
               <component />
             </>
           );
@@ -635,7 +892,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
         },
       ],
       output: `
-        const ListComponent = <T,>(props) => {
+        const ListComponent: ComponentType<ListProps<T>> = <T,>(props) => {
           return (
             <ul>
               {props.items.map(item => <li key={item.id}>{item.name}</li>)}
@@ -676,8 +933,8 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
           items: string[];
           render: (item: string) => ReactNode;
         }) {
-          const element = <div>Test</div>;
-          return <div>{Element}</div>;
+          const element: JSX.Element = <div>Test</div>;
+          return <div>{element}</div>;
         }
       `,
     },
