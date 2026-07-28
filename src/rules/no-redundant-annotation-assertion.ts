@@ -12,12 +12,23 @@ type MessageIds = 'redundantAnnotationAndAssertion';
  * - WriteArrayAsGenericType normalizes arrays to `Array<T>` for consistent output.
  * - UseFullyQualifiedType reduces ambiguity from locally-imported type names.
  * - UseStructuralFallback keeps output meaningful when a nominal name is unavailable.
+ *
+ * Resolved on first use rather than at module load: the plugin barrel imports
+ * every rule eagerly, and the compiler package root does not expose this enum on
+ * all installed TypeScript releases (TypeScript 7 exports only a version stub),
+ * so dereferencing it at module scope makes the whole plugin fail to load rather
+ * than merely disabling this type-aware rule. Every call site sits behind a
+ * `parserServices.program` guard, so the enum is present whenever this runs.
  */
-const TYPE_FORMAT_FLAGS =
-  ts.TypeFormatFlags.NoTruncation |
-  ts.TypeFormatFlags.WriteArrayAsGenericType |
-  ts.TypeFormatFlags.UseFullyQualifiedType |
-  ts.TypeFormatFlags.UseStructuralFallback;
+let typeFormatFlagsCache: number | undefined;
+function typeFormatFlags(): number {
+  typeFormatFlagsCache ??=
+    ts.TypeFormatFlags.NoTruncation |
+    ts.TypeFormatFlags.WriteArrayAsGenericType |
+    ts.TypeFormatFlags.UseFullyQualifiedType |
+    ts.TypeFormatFlags.UseStructuralFallback;
+  return typeFormatFlagsCache;
+}
 
 function extractAssertionTypeNode(
   expression: TSESTree.Node | null | undefined,
@@ -154,7 +165,7 @@ function removeTypeAnnotation(
 }
 
 function typeText(type: ts.Type, checker: ts.TypeChecker): string {
-  return checker.typeToString(type, undefined, TYPE_FORMAT_FLAGS);
+  return checker.typeToString(type, undefined, typeFormatFlags());
 }
 
 function unwrapAlias(type: ts.Type, checker: ts.TypeChecker): ts.Type {
@@ -218,7 +229,7 @@ function getFormattedCallSignatures(
 ): string[] {
   return checker
     .getSignaturesOfType(type, ts.SignatureKind.Call)
-    .map((sig) => checker.signatureToString(sig, undefined, TYPE_FORMAT_FLAGS))
+    .map((sig) => checker.signatureToString(sig, undefined, typeFormatFlags()))
     .sort();
 }
 
@@ -276,12 +287,12 @@ function getTypeRepresentations(
     annotationCanonical: checker.typeToString(
       annotationType,
       undefined,
-      TYPE_FORMAT_FLAGS | ts.TypeFormatFlags.NoTypeReduction,
+      typeFormatFlags() | ts.TypeFormatFlags.NoTypeReduction,
     ),
     assertionCanonical: checker.typeToString(
       assertionType,
       undefined,
-      TYPE_FORMAT_FLAGS | ts.TypeFormatFlags.NoTypeReduction,
+      typeFormatFlags() | ts.TypeFormatFlags.NoTypeReduction,
     ),
     annotationStructural: structuralKey(annotationType, checker),
     assertionStructural: structuralKey(assertionType, checker),
