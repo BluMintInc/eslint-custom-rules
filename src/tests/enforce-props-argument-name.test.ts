@@ -365,9 +365,91 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
         }
       `,
     },
+
+    // A correctly named parameter referenced from nested closures stays valid.
+    {
+      code: `
+        type ThemeProps = { color: string };
+        const useTheme = (props: ThemeProps) => {
+          const read = () => props.color;
+          return () => read() + props.color;
+        };
+      `,
+    },
+
+    // A correctly named parameter used as object-literal shorthand stays valid.
+    {
+      code: `
+        type CardProps = { id: string };
+        function card(props: CardProps) {
+          return { props };
+        }
+      `,
+    },
+
+    // A correctly named parameter with a default value stays valid.
+    {
+      code: `
+        type OptionsProps = { retries: number };
+        function run(props: OptionsProps = DEFAULT_OPTIONS) {
+          return props.retries;
+        }
+      `,
+    },
+
+    // A body-less class method whose parameter is already named props.
+    {
+      code: `
+        type OptProps = { verbose: boolean };
+        declare class Runner {
+          configure(props: OptProps): void;
+        }
+      `,
+    },
+
+    // A rest parameter hangs its type annotation off the RestElement rather
+    // than the inner identifier, so the rule never inspects it — rest params
+    // are outside this rule's reporting surface even when the tuple alias ends
+    // in Props.
+    {
+      code: `
+        type ArgsProps = [string, number];
+        function collect(...argList: ArgsProps) {
+          return argList[0];
+        }
+      `,
+    },
   ],
 
   invalid: [
+    // Issue #1355 repro: a nested arrow returned from a factory. The autofix
+    // must rewrite every reference, not just the declaration, or the fixed
+    // output no longer compiles.
+    {
+      code: `
+        type RunnerProps = Readonly<{ isDryRun: boolean }>;
+        export const build = () => {
+          return (runnerProps: RunnerProps) => {
+            return runnerProps.isDryRun;
+          };
+        };
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'RunnerProps' },
+        },
+      ],
+      output: `
+        type RunnerProps = Readonly<{ isDryRun: boolean }>;
+        export const build = () => {
+          return (props: RunnerProps) => {
+            return props.isDryRun;
+          };
+        };
+      `,
+    },
+
     // Basic invalid cases - wrong parameter names for Props types
     {
       code: `
@@ -391,7 +473,7 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
           age: number;
         };
         function User(props: UserProps) {
-          return config.name;
+          return props.name;
         }
       `,
     },
@@ -417,7 +499,7 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
           onClick: () => void;
         };
         const Button = (props: ButtonProps) => {
-          return settings.label;
+          return props.label;
         };
       `,
     },
@@ -469,7 +551,7 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
       output: `
         type GameProps = { id: string };
         const createGame = (props: GameProps) => {
-          return gameConfig.id;
+          return props.id;
         };
       `,
     },
@@ -491,12 +573,15 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
       output: `
         type HandlerProps = { event: Event };
         const handler = function(props: HandlerProps) {
-          return eventData.event;
+          return props.event;
         };
       `,
     },
 
-    // Multiple parameters with Props types
+    // Multiple parameters with Props types. Each report's rename now spans from
+    // its declaration to its last reference, and those two spans interleave, so
+    // ESLint applies one per pass; `output` captures the single pass RuleTester
+    // performs (a real `--fix` run converges on the second pass).
     {
       code: `
         type UIProps = { theme: string };
@@ -518,8 +603,8 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
       output: `
         type UIProps = { theme: string };
         type DataProps = { source: string };
-        function mergeConfigs(uIProps: UIProps, dataProps: DataProps) {
-          return { ...uiSettings, ...dataSettings };
+        function mergeConfigs(uIProps: UIProps, dataSettings: DataProps) {
+          return { ...uIProps, ...dataSettings };
         }
       `,
     },
@@ -567,7 +652,7 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
       ],
       output: `
         function process<TProps extends ComponentProps>(props: TProps) {
-          return data;
+          return props;
         }
       `,
     },
@@ -609,7 +694,7 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
       output: `
         type userProps = { name: string };
         function createUser(props: userProps) {
-          return userData.name;
+          return props.name;
         }
       `,
     },
@@ -631,7 +716,7 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
       output: `
         type Props = { value: string };
         function render(props: Props) {
-          return data.value;
+          return props.value;
         }
       `,
     },
@@ -653,7 +738,7 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
       output: `
         type VeryLongComponentNameProps = { id: string };
         function process(props: VeryLongComponentNameProps) {
-          return componentData.id;
+          return props.id;
         }
       `,
     },
@@ -697,7 +782,7 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
       output: `
         type OptionalProps = { value?: string };
         function process(props?: OptionalProps) {
-          return data?.value;
+          return props?.value;
         }
       `,
     },
@@ -719,7 +804,7 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
       output: `
         type UserProps = { name: string };
         function createUser(id: string, props: UserProps, callback: Function) {
-          return callback({ id, ...userData });
+          return callback({ id, ...props });
         }
       `,
     },
@@ -813,6 +898,238 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
           constructor(props: ThingProps) {
             super();
           }
+        }
+      `,
+    },
+
+    // A reference used as object-literal shorthand must expand to
+    // `oldName: props` — rewriting the single token in place would rename the
+    // property KEY too and silently change the object's shape.
+    {
+      code: `
+        type ConfigProps = { id: string };
+        function build(configData: ConfigProps) {
+          return { configData, extra: 1 };
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'ConfigProps' },
+        },
+      ],
+      output: `
+        type ConfigProps = { id: string };
+        function build(props: ConfigProps) {
+          return { configData: props, extra: 1 };
+        }
+      `,
+    },
+
+    // The type annotation (and the optional marker) must survive the rename:
+    // an Identifier's range spans them, so replacing the whole node would
+    // delete the annotation (Issue #1351).
+    {
+      code: `
+        type WidgetProps = { id: string };
+        const render = (widgetConfig?: WidgetProps): string => {
+          return widgetConfig?.id ?? '';
+        };
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'WidgetProps' },
+        },
+      ],
+      output: `
+        type WidgetProps = { id: string };
+        const render = (props?: WidgetProps): string => {
+          return props?.id ?? '';
+        };
+      `,
+    },
+
+    // Default-value parameter: the AssignmentPattern's write reference IS the
+    // declaration identifier, so it must be skipped to avoid overlapping fixes.
+    {
+      code: `
+        type OptionsProps = { retries: number };
+        function run(optionsConfig: OptionsProps = DEFAULT_OPTIONS) {
+          return optionsConfig.retries;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'OptionsProps' },
+        },
+      ],
+      output: `
+        type OptionsProps = { retries: number };
+        function run(props: OptionsProps = DEFAULT_OPTIONS) {
+          return props.retries;
+        }
+      `,
+    },
+
+    // References spread across nested closures must all be renamed.
+    {
+      code: `
+        type QueryProps = { id: string };
+        const makeHandler = (queryData: QueryProps) => {
+          const read = () => queryData.id;
+          return () => read() + queryData.id;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'QueryProps' },
+        },
+      ],
+      output: `
+        type QueryProps = { id: string };
+        const makeHandler = (props: QueryProps) => {
+          const read = () => props.id;
+          return () => read() + props.id;
+        };
+      `,
+    },
+
+    // The declared-variable lookup must match on declaration identity, not on
+    // the name: the function and its parameter share the name `config`, and
+    // renaming the function's binding instead would leave `config.id` dangling.
+    {
+      code: `
+        type ConfigProps = { id: string };
+        function config(config: ConfigProps) {
+          return config.id;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'ConfigProps' },
+        },
+      ],
+      output: `
+        type ConfigProps = { id: string };
+        function config(props: ConfigProps) {
+          return props.id;
+        }
+      `,
+    },
+
+    // Collision: `props` is already bound in the parameter's own scope, so the
+    // rename would be a redeclaration. Report without fixing.
+    {
+      code: `
+        type FormProps = { id: string };
+        function render(formConfig: FormProps) {
+          const props = normalize(formConfig);
+          return props;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'FormProps' },
+        },
+      ],
+      output: null,
+    },
+
+    // Collision: the body already uses `props` for an outer binding, which the
+    // rename would capture. Report without fixing.
+    {
+      code: `
+        type ModalProps = { open: boolean };
+        const props = getGlobalProps();
+        function render(modalConfig: ModalProps) {
+          return props.theme + modalConfig.open;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'ModalProps' },
+        },
+      ],
+      output: null,
+    },
+
+    // Collision: an intervening scope between a reference and the declaration
+    // binds `props`, so the rewritten reference would resolve to that binding.
+    // Report without fixing.
+    {
+      code: `
+        type ListProps = { items: string[] };
+        function render(listConfig: ListProps) {
+          return ITEMS.map((props) => {
+            return props + listConfig.items;
+          });
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'ListProps' },
+        },
+      ],
+      output: null,
+    },
+
+    // A body-less class method (declare/overload) carries no in-file
+    // references, so the declaration-only rename is complete rather than
+    // partial and is still applied.
+    {
+      code: `
+        type OptProps = { verbose: boolean };
+        declare class Runner {
+          configure(options: OptProps): void;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'OptProps' },
+        },
+      ],
+      output: `
+        type OptProps = { verbose: boolean };
+        declare class Runner {
+          configure(props: OptProps): void;
+        }
+      `,
+    },
+
+    // Multiple Props parameters take prefixed names and each rename carries its
+    // own references. The two rename spans interleave, so ESLint applies one
+    // per pass; RuleTester captures that single pass.
+    {
+      code: `
+        type UserProps = { name: string };
+        type OrderProps = { total: number };
+        function summarize(userInfo: UserProps, orderInfo: OrderProps) {
+          return userInfo.name + orderInfo.total;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterNameWithPrefix',
+          data: { typeName: 'UserProps', suggestedName: 'userProps' },
+        },
+        {
+          messageId: 'usePropsParameterNameWithPrefix',
+          data: { typeName: 'OrderProps', suggestedName: 'orderProps' },
+        },
+      ],
+      output: `
+        type UserProps = { name: string };
+        type OrderProps = { total: number };
+        function summarize(userProps: UserProps, orderInfo: OrderProps) {
+          return userProps.name + orderInfo.total;
         }
       `,
     },
@@ -920,7 +1237,7 @@ ruleTesterJsx.run('enforce-props-argument-name', enforcePropsArgumentName, {
           onClick: () => void;
         };
         const Button = (props: ButtonProps) => {
-          return <button onClick={buttonConfig.onClick}>{buttonConfig.label}</button>;
+          return <button onClick={props.onClick}>{props.label}</button>;
         };
       `,
     },
@@ -948,7 +1265,7 @@ ruleTesterJsx.run('enforce-props-argument-name', enforcePropsArgumentName, {
           avatar: string;
         };
         function UserCard(props: UserCardProps) {
-          return <div>{userInfo.name}</div>;
+          return <div>{props.name}</div>;
         }
       `,
     },
@@ -975,8 +1292,8 @@ ruleTesterJsx.run('enforce-props-argument-name', enforcePropsArgumentName, {
       output: `
         type UIProps = { theme: string };
         type DataProps = { items: Item[] };
-        const Component = (uIProps: UIProps, dataProps: DataProps) => {
-          return <div className={uiConfig.theme}>{dataConfig.items.length}</div>;
+        const Component = (uIProps: UIProps, dataConfig: DataProps) => {
+          return <div className={uIProps.theme}>{dataConfig.items.length}</div>;
         };
       `,
     },
@@ -996,7 +1313,7 @@ ruleTesterJsx.run('enforce-props-argument-name', enforcePropsArgumentName, {
       ],
       output: `
         function GenericComponent<TProps extends ComponentProps>(props: TProps) {
-          return <div>{JSON.stringify(data)}</div>;
+          return <div>{JSON.stringify(props)}</div>;
         }
       `,
     },
