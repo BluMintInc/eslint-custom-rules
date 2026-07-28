@@ -1,5 +1,6 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { buildVariableRenameFixes } from '../utils/renameFixes';
 
 type MessageIds =
   | 'reactNodeShouldBeLowercase'
@@ -10,6 +11,15 @@ const LOWERCASE_TYPES = ['ReactNode', 'JSX.Element'];
 
 // Types that should have uppercase variable names
 const UPPERCASE_TYPES = ['ComponentType', 'FC', 'FunctionComponent'];
+
+// Every node shape whose declared identifiers this rule renames. Each one is a
+// node `getDeclaredVariables` understands, which is what lets the fixer resolve
+// the symbol behind the reported identifier.
+type RenameOwner =
+  | TSESTree.VariableDeclarator
+  | TSESTree.FunctionDeclaration
+  | TSESTree.FunctionExpression
+  | TSESTree.ArrowFunctionExpression;
 
 export const enforceReactTypeNaming = createRule<[], MessageIds>({
   name: 'enforce-react-type-naming',
@@ -105,18 +115,57 @@ export const enforceReactTypeNaming = createRule<[], MessageIds>({
     }
 
     /**
+     * Builds the rename for a reported identifier: the declaration plus every
+     * in-file reference, rewriting only name tokens so the type annotation that
+     * triggered the report survives (Issue #1357).
+     *
+     * The variable is resolved by declaration identity rather than by name,
+     * because a shape like `function Content(Content: ReactNode)` declares two
+     * distinct symbols under one name and a name-based lookup picks the wrong
+     * one. When the symbol cannot be resolved the fix is withheld entirely — a
+     * partial rename is worse than no rename.
+     */
+    function buildRenameFixes(
+      fixer: TSESLint.RuleFixer,
+      owner: RenameOwner,
+      declarationId: TSESTree.Identifier,
+      newName: string,
+    ): TSESLint.RuleFix[] | null {
+      const variable =
+        context
+          .getDeclaredVariables(owner)
+          .find((candidate) =>
+            candidate.defs.some((def) => def.name === declarationId),
+          ) ?? null;
+
+      if (!variable) {
+        return null;
+      }
+
+      return buildVariableRenameFixes({
+        fixer,
+        sourceCode: context.getSourceCode(),
+        variable,
+        declarationId,
+        newName,
+      });
+    }
+
+    /**
      * Check variable declarations for React type naming conventions
      */
     function checkVariableDeclaration(node: TSESTree.VariableDeclarator) {
       if (node.id.type !== AST_NODE_TYPES.Identifier) return;
 
-      // Skip destructured variables
-      if (isDestructured(node.id)) return;
+      const id = node.id;
 
-      const variableName = node.id.name;
+      // Skip destructured variables
+      if (isDestructured(id)) return;
+
+      const variableName = id.name;
 
       // Get the type annotation
-      const typeAnnotation = node.id.typeAnnotation?.typeAnnotation;
+      const typeAnnotation = id.typeAnnotation?.typeAnnotation;
       const typeName = getTypeName(typeAnnotation);
 
       if (!typeName) return;
@@ -125,13 +174,13 @@ export const enforceReactTypeNaming = createRule<[], MessageIds>({
       if (LOWERCASE_TYPES.includes(typeName) && isUppercase(variableName)) {
         const suggestion = toLowercase(variableName);
         context.report({
-          node: node.id,
+          node: id,
           messageId: 'reactNodeShouldBeLowercase',
           data: {
             type: typeName,
             suggestion,
           },
-          fix: (fixer) => fixer.replaceText(node.id, suggestion),
+          fix: (fixer) => buildRenameFixes(fixer, node, id, suggestion),
         });
       }
 
@@ -139,13 +188,13 @@ export const enforceReactTypeNaming = createRule<[], MessageIds>({
       if (UPPERCASE_TYPES.includes(typeName) && !isUppercase(variableName)) {
         const suggestion = toUppercase(variableName);
         context.report({
-          node: node.id,
+          node: id,
           messageId: 'componentTypeShouldBeUppercase',
           data: {
             type: typeName,
             suggestion,
           },
-          fix: (fixer) => fixer.replaceText(node.id, suggestion),
+          fix: (fixer) => buildRenameFixes(fixer, node, id, suggestion),
         });
       }
     }
@@ -153,19 +202,27 @@ export const enforceReactTypeNaming = createRule<[], MessageIds>({
     /**
      * Check function parameters for React type naming conventions
      */
-    function checkParameter(node: TSESTree.Parameter) {
+    function checkParameter(
+      node: TSESTree.Parameter,
+      owner:
+        | TSESTree.FunctionDeclaration
+        | TSESTree.FunctionExpression
+        | TSESTree.ArrowFunctionExpression,
+    ) {
       if (node.type !== AST_NODE_TYPES.Identifier) return;
 
+      const id = node;
+
       // Skip destructured parameters
-      if (isDestructured(node)) return;
+      if (isDestructured(id)) return;
 
       // Skip default imports
-      if (isDefaultImport(node)) return;
+      if (isDefaultImport(id)) return;
 
-      const paramName = node.name;
+      const paramName = id.name;
 
       // Get the type annotation
-      const typeAnnotation = node.typeAnnotation?.typeAnnotation;
+      const typeAnnotation = id.typeAnnotation?.typeAnnotation;
       const typeName = getTypeName(typeAnnotation);
 
       if (!typeName) return;
@@ -174,13 +231,13 @@ export const enforceReactTypeNaming = createRule<[], MessageIds>({
       if (LOWERCASE_TYPES.includes(typeName) && isUppercase(paramName)) {
         const suggestion = toLowercase(paramName);
         context.report({
-          node,
+          node: id,
           messageId: 'reactNodeShouldBeLowercase',
           data: {
             type: typeName,
             suggestion,
           },
-          fix: (fixer) => fixer.replaceText(node, suggestion),
+          fix: (fixer) => buildRenameFixes(fixer, owner, id, suggestion),
         });
       }
 
@@ -188,13 +245,13 @@ export const enforceReactTypeNaming = createRule<[], MessageIds>({
       if (UPPERCASE_TYPES.includes(typeName) && !isUppercase(paramName)) {
         const suggestion = toUppercase(paramName);
         context.report({
-          node,
+          node: id,
           messageId: 'componentTypeShouldBeUppercase',
           data: {
             type: typeName,
             suggestion,
           },
-          fix: (fixer) => fixer.replaceText(node, suggestion),
+          fix: (fixer) => buildRenameFixes(fixer, owner, id, suggestion),
         });
       }
     }
@@ -210,7 +267,7 @@ export const enforceReactTypeNaming = createRule<[], MessageIds>({
             node.parent.type === AST_NODE_TYPES.ArrowFunctionExpression) &&
           node.parent.params.includes(node)
         ) {
-          checkParameter(node);
+          checkParameter(node, node.parent);
         }
       },
     };

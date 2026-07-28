@@ -37,6 +37,53 @@ function useCustomHook(component: ReactNode) { // ✅ Lowercase for ReactNode
 }
 ```
 
+## Autofix
+
+The autofix is a scope-aware rename. It rewrites **only the name token**, so the
+type annotation that triggered the report — along with any `?` or `!` marker —
+survives, and it rewrites **every in-file reference** to the renamed binding, so
+the fixed code still resolves.
+
+```tsx
+// before
+const Content: ReactNode = null;
+render(Content);
+
+// after --fix
+const content: ReactNode = null;
+render(content);
+```
+
+Object-literal shorthand is expanded rather than rewritten wholesale, so the
+property key (part of the object's public shape) is left alone:
+
+```tsx
+// before
+const Content: ReactNode = null;
+const wrapper = { Content };
+
+// after --fix
+const content: ReactNode = null;
+const wrapper = { Content: content };
+```
+
+The fix is **withheld** (the violation is still reported) whenever a complete,
+semantics-preserving rename is impossible:
+
+- **Collision** — the target name is already bound in the declaration scope, or a
+  binding of that name sits between a reference and the declaration, or the
+  declaration's scope subtree already uses the target name for something else.
+- **Export with in-file references** — `export const Content: ReactNode = …` used
+  elsewhere in the file. Renaming would change a cross-file contract whose
+  importers a single-file fixer cannot reach. (A bare exported declaration with
+  no other in-file reference does still rename.)
+- **Re-export specifier** — `export { Content }` binds the public export name to
+  that identifier, so rewriting it would rename the export itself.
+
+Lowercase JSX element names (`<component />`) are intrinsic host elements rather
+than references to the binding, so they are left untouched; uppercase JSX element
+names are real references and are renamed with the declaration.
+
 ## When Not To Use It
 
 You might want to disable this rule if your project follows different naming conventions for React components and elements.
