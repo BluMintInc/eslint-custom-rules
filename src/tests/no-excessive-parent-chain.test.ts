@@ -12,6 +12,24 @@ const error = (count: number) => ({
   data: { count },
 });
 
+// Suggestions must rewrite the chain in terms of the handler's actual parameter
+// name, so assertions pin the applied output rather than the message alone.
+const errorWithSuggestion = (count: number, output: string) => ({
+  ...error(count),
+  suggestions: [
+    {
+      messageId: 'excessiveParentChain' as const,
+      data: { count },
+      output,
+    },
+  ],
+});
+
+const errorWithoutSuggestion = (count: number) => ({
+  ...error(count),
+  suggestions: [],
+});
+
 describe('no-excessive-parent-chain messages', () => {
   it('matches the documented template', () => {
     expect(noExcessiveParentChain.meta.messages.excessiveParentChain).toBe(
@@ -1022,9 +1040,24 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const uid = changeData.after.ref.parent.parent.parent.id;
       };
       `,
-      errors: [error(3)],
+      errors: [
+        errorWithSuggestion(
+          3,
+          `
+      export const differentParamExcessiveHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (evt) => {
+        const { data: changeData } = evt;
+        const uid = evt.params.id;
+      };
+      `,
+        ),
+      ],
     },
     // Invalid case: Excessive parent chain with destructured parameters
+    // The event object has no identifier here, so the report declines to suggest
+    // rather than inventing one.
     {
       code: `
       export const destructuredParamExcessiveHandler: DocumentChangeHandler<
@@ -1034,7 +1067,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const uid = change.after.ref.parent.parent.parent.id;
       };
       `,
-      errors: [error(3)],
+      errors: [errorWithoutSuggestion(3)],
     },
     // Invalid case: Excessive parent chain in object literal
     {
@@ -1543,6 +1576,239 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
       };
       `,
       errors: [error(3)],
+    },
+    // Regression (#1368): the suggestion must use the handler's actual parameter
+    // name, and must replace the entire parent chain instead of an inner slice.
+    {
+      code: `
+      export const shortParamNameHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (e) => {
+        const { data: change } = e;
+        const uid = change.after.ref.parent.parent.parent.parent.id;
+      };
+      `,
+      errors: [
+        errorWithSuggestion(
+          4,
+          `
+      export const shortParamNameHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (e) => {
+        const { data: change } = e;
+        const uid = e.params.id;
+      };
+      `,
+        ),
+        errorWithSuggestion(
+          3,
+          `
+      export const shortParamNameHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (e) => {
+        const { data: change } = e;
+        const uid = e.params.id;
+      };
+      `,
+        ),
+      ],
+    },
+    // Regression (#1368): a parameter literally named `event` keeps working.
+    {
+      code: `
+      export const eventParamNamePinHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (event) => {
+        const { data: change } = event;
+        const uid = change.after.ref.parent.parent.parent.id;
+      };
+      `,
+      errors: [
+        errorWithSuggestion(
+          3,
+          `
+      export const eventParamNamePinHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (event) => {
+        const { data: change } = event;
+        const uid = event.params.id;
+      };
+      `,
+        ),
+      ],
+    },
+    // Regression (#1368): every hop of a long chain replaces the full chain, so
+    // no suggestion leaves a dangling `.parent` behind.
+    {
+      code: `
+      export const fiveHopSuggestionHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (e) => {
+        const { data: change } = e;
+        const uid = change.after.ref.parent.parent.parent.parent.parent.id;
+      };
+      `,
+      errors: [5, 4, 3].map((count) =>
+        errorWithSuggestion(
+          count,
+          `
+      export const fiveHopSuggestionHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (e) => {
+        const { data: change } = e;
+        const uid = e.params.id;
+      };
+      `,
+        ),
+      ),
+    },
+    // Regression (#1368): the chain rooted at the handler parameter itself.
+    {
+      code: `
+      export const eventRootedChainHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (evt) => {
+        const uid = evt.data.after.ref.parent.parent.parent.id;
+      };
+      `,
+      errors: [
+        errorWithSuggestion(
+          3,
+          `
+      export const eventRootedChainHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (evt) => {
+        const uid = evt.params.id;
+      };
+      `,
+        ),
+      ],
+    },
+    // Regression (#1368): the event name survives hops through intermediate
+    // variables.
+    {
+      code: `
+      export const chainedAssignmentSuggestionHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (e) => {
+        const change = e.data;
+        const afterRef = change.after;
+        const uid = afterRef.ref.parent.parent.parent.id;
+      };
+      `,
+      errors: [
+        errorWithSuggestion(
+          3,
+          `
+      export const chainedAssignmentSuggestionHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (e) => {
+        const change = e.data;
+        const afterRef = change.after;
+        const uid = e.params.id;
+      };
+      `,
+        ),
+      ],
+    },
+    // Regression (#1368): each handler in a file gets its own parameter name.
+    {
+      code: `
+      export const firstNamedHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (first) => {
+        const { data: change } = first;
+        const uid = change.after.ref.parent.parent.parent.id;
+      };
+
+      export const secondNamedHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (second) => {
+        const { data: change } = second;
+        const uid = change.after.ref.parent.parent.parent.id;
+      };
+      `,
+      errors: [
+        errorWithSuggestion(
+          3,
+          `
+      export const firstNamedHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (first) => {
+        const { data: change } = first;
+        const uid = first.params.id;
+      };
+
+      export const secondNamedHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (second) => {
+        const { data: change } = second;
+        const uid = change.after.ref.parent.parent.parent.id;
+      };
+      `,
+        ),
+        errorWithSuggestion(
+          3,
+          `
+      export const firstNamedHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (first) => {
+        const { data: change } = first;
+        const uid = change.after.ref.parent.parent.parent.id;
+      };
+
+      export const secondNamedHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (second) => {
+        const { data: change } = second;
+        const uid = second.params.id;
+      };
+      `,
+        ),
+      ],
+    },
+    // Regression (#1368): an optional-chaining tail keeps its own range.
+    {
+      code: `
+      export const optionalChainSuggestionHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (e) => {
+        const { data: change } = e;
+        const uid = change.after.ref.parent.parent.parent?.id;
+      };
+      `,
+      errors: [
+        errorWithSuggestion(
+          3,
+          `
+      export const optionalChainSuggestionHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (e) => {
+        const { data: change } = e;
+        const uid = e.params?.id;
+      };
+      `,
+        ),
+      ],
     },
   ],
 });
