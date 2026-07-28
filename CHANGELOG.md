@@ -1,3 +1,10 @@
+## [1.20.11](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.10...v1.20.11) (2026-07-28)
+
+
+### Bug Fixes
+
+* **prefer-clone-deep:** flag only partial deep copies of the same base (closes [#1371](https://github.com/BluMintInc/eslint-custom-rules/issues/1371)) ([0581b08](https://github.com/BluMintInc/eslint-custom-rules/commit/0581b082d2f18e7e5528bc40e8454bab6a518816)), closes [#1364](https://github.com/BluMintInc/eslint-custom-rules/issues/1364)
+
 ## [1.20.10](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.9...v1.20.10) (2026-07-28)
 
 
