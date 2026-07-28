@@ -733,5 +733,260 @@ function useCustomHook() {
 }`,
       errors: errors(),
     },
+    // Mixed JSX + non-JSX: the react import must survive because the
+    // JSX-returning call is deliberately left alone and still references it.
+    {
+      code: `import { useCallback } from 'react';
+const A = () => {
+  const render = useCallback(() => <div />, []);
+  const onClick = useCallback(() => { doThing(); }, []);
+  return render;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { useCallback } from 'react';
+const A = () => {
+  const render = useCallback(() => <div />, []);
+  const onClick = useLatestCallback(() => { doThing(); });
+  return render;
+};`,
+      errors: errors(),
+    },
+    // Aliased mixed file: the react alias stays bound for the JSX call, so the
+    // converted call must target the new import's own name instead of `uc`.
+    {
+      code: `import { useCallback as uc, useMemo } from 'react';
+const A = () => {
+  const r = uc(() => <div />, []);
+  const o = uc(() => { go(); }, []);
+  const m = useMemo(() => 1, []);
+  return <div onClick={o}>{r}{m}</div>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { useCallback as uc, useMemo } from 'react';
+const A = () => {
+  const r = uc(() => <div />, []);
+  const o = useLatestCallback(() => { go(); });
+  const m = useMemo(() => 1, []);
+  return <div onClick={o}>{r}{m}</div>;
+};`,
+      errors: errors('uc', 'useLatestCallback'),
+    },
+    // Aliased mixed file with no other specifiers: the whole react import is
+    // still preserved because the alias backs the surviving JSX call.
+    {
+      code: `import { useCallback as uc } from 'react';
+const A = () => {
+  const r = uc(() => <div />, []);
+  const o = uc(() => { go(); }, []);
+  return <div onClick={o}>{r}</div>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { useCallback as uc } from 'react';
+const A = () => {
+  const r = uc(() => <div />, []);
+  const o = useLatestCallback(() => { go(); });
+  return <div onClick={o}>{r}</div>;
+};`,
+      errors: errors('uc', 'useLatestCallback'),
+    },
+    // The preferred import name is already taken, so the new import gets a
+    // suffixed name and the converted call follows it.
+    {
+      code: `import { useCallback as uc } from 'react';
+const useLatestCallback = 'taken';
+const A = () => {
+  const r = uc(() => <div />, []);
+  const o = uc(() => { go(); }, []);
+  return <div onClick={o}>{r}{useLatestCallback}</div>;
+};`,
+      output: `import useLatestCallback2 from 'use-latest-callback';
+import { useCallback as uc } from 'react';
+const useLatestCallback = 'taken';
+const A = () => {
+  const r = uc(() => <div />, []);
+  const o = useLatestCallback2(() => { go(); });
+  return <div onClick={o}>{r}{useLatestCallback}</div>;
+};`,
+      errors: errors('uc', 'useLatestCallback2'),
+    },
+    // Mixed file that already imports useLatestCallback: no duplicate import is
+    // added and the react import is left alone for the JSX call.
+    {
+      code: `import useLatestCallback from 'use-latest-callback';
+import { useCallback } from 'react';
+const A = () => {
+  const render = useCallback(() => <div />, []);
+  const onClick = useCallback(() => { go(); }, []);
+  return render;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { useCallback } from 'react';
+const A = () => {
+  const render = useCallback(() => <div />, []);
+  const onClick = useLatestCallback(() => { go(); });
+  return render;
+};`,
+      errors: errors('useCallback', 'useLatestCallback', 1),
+    },
+    // Mixed file that imports useLatestCallback under an alias: converted calls
+    // reuse that alias rather than introducing a second import.
+    {
+      code: `import { useLatestCallback as stable } from 'use-latest-callback';
+import { useCallback } from 'react';
+const A = () => {
+  const r = useCallback(() => <div />, []);
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o}>{r}</div>;
+};`,
+      output: `import { useLatestCallback as stable } from 'use-latest-callback';
+import { useCallback } from 'react';
+const A = () => {
+  const r = useCallback(() => <div />, []);
+  const o = stable(() => { go(); });
+  return <div onClick={o}>{r}</div>;
+};`,
+      errors: errors('useCallback', 'stable', 1),
+    },
+    // A non-call reference to the binding counts as surviving usage, so the
+    // react import is preserved even though every call is converted.
+    {
+      code: `import { useCallback } from 'react';
+const h = useCallback;
+const A = () => {
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o}>{String(h)}</div>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { useCallback } from 'react';
+const h = useCallback;
+const A = () => {
+  const o = useLatestCallback(() => { go(); });
+  return <div onClick={o}>{String(h)}</div>;
+};`,
+      errors: errors(),
+    },
+    // An argument-less call is never converted, so it also keeps the import.
+    {
+      code: `import { useCallback } from 'react';
+const A = () => {
+  const bare = useCallback();
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o}>{bare}</div>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { useCallback } from 'react';
+const A = () => {
+  const bare = useCallback();
+  const o = useLatestCallback(() => { go(); });
+  return <div onClick={o}>{bare}</div>;
+};`,
+      errors: errors(),
+    },
+    // A type-position reference keeps the react import too.
+    {
+      code: `import { useCallback } from 'react';
+type CB = typeof useCallback;
+const A = (cb: CB) => {
+  const o = useCallback(() => { go(cb); }, []);
+  return <div onClick={o} />;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { useCallback } from 'react';
+type CB = typeof useCallback;
+const A = (cb: CB) => {
+  const o = useLatestCallback(() => { go(cb); });
+  return <div onClick={o} />;
+};`,
+      errors: errors(),
+    },
+    // Default React import beside the named specifier: the whole react import
+    // is preserved when the named binding still has a JSX-returning call.
+    {
+      code: `import React, { useCallback } from 'react';
+const A = () => {
+  const r = useCallback(() => <div />, []);
+  const o = useCallback(() => { go(); }, []);
+  return React.createElement('div', null, r, o);
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import React, { useCallback } from 'react';
+const A = () => {
+  const r = useCallback(() => <div />, []);
+  const o = useLatestCallback(() => { go(); });
+  return React.createElement('div', null, r, o);
+};`,
+      errors: errors(),
+    },
+    // Mixed React.useCallback member calls never touched the react import and
+    // still do not.
+    {
+      code: `import React from 'react';
+const A = () => {
+  const r = React.useCallback(() => <div />, []);
+  const o = React.useCallback(() => { go(); }, []);
+  return <div onClick={o}>{r}</div>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import React from 'react';
+const A = () => {
+  const r = React.useCallback(() => <div />, []);
+  const o = useLatestCallback(() => { go(); });
+  return <div onClick={o}>{r}</div>;
+};`,
+      errors: errors(),
+    },
+    // Type parameters survive the rewrite in a mixed file.
+    {
+      code: `import { useCallback } from 'react';
+const A = () => {
+  const r = useCallback(() => <div />, []);
+  const o = useCallback<() => void>(() => { go(); }, []);
+  return <div onClick={o}>{r}</div>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { useCallback } from 'react';
+const A = () => {
+  const r = useCallback(() => <div />, []);
+  const o = useLatestCallback<() => void>(() => { go(); });
+  return <div onClick={o}>{r}</div>;
+};`,
+      errors: errors(),
+    },
+    // The declaration that binds useCallback owns the rewrite even when another
+    // react import precedes it.
+    {
+      code: `import { useState } from 'react';
+import { useCallback } from 'react';
+const A = () => {
+  const [s] = useState(0);
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o}>{s}</div>;
+};`,
+      output: `import { useState } from 'react';
+import useLatestCallback from 'use-latest-callback';
+const A = () => {
+  const [s] = useState(0);
+  const o = useLatestCallback(() => { go(); });
+  return <div onClick={o}>{s}</div>;
+};`,
+      errors: errors(),
+    },
+    // Every reference converted: the react import is still fully rewritten.
+    {
+      code: `import { useCallback, useMemo } from 'react';
+const A = () => {
+  const o = useCallback(() => { go(); }, []);
+  const m = useMemo(() => 1, []);
+  return <div onClick={o}>{m}</div>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { useMemo } from 'react';
+const A = () => {
+  const o = useLatestCallback(() => { go(); });
+  const m = useMemo(() => 1, []);
+  return <div onClick={o}>{m}</div>;
+};`,
+      errors: errors(),
+    },
   ],
 });

@@ -16,7 +16,35 @@ This rule:
 - Flags `useCallback` imports from `react` when the wrapped function does **not** return JSX.
 - Auto-fixes by importing from `use-latest-callback`, replacing the call site, and removing the dependency array.
 - Leaves JSX-returning callbacks and render-prop patterns alone because `useCallback` is the right tool for memoizing rendered output.
+- Removes the `useCallback` specifier from the `react` import only when every reference to it is converted. If a JSX-returning call — or any other use of the binding, such as `const cb = useCallback` — survives, the `react` import is kept untouched and the `use-latest-callback` import is added alongside it.
 - Skips files in `node_modules` for performance so third-party code is untouched.
+
+### Mixed files
+
+When only some calls are converted, the `react` import stays because the remaining calls still need it. The new import gets its own name, so an aliased `react` import is never repurposed to point at a different hook.
+
+```jsx
+// Before
+import { useCallback as uc, useMemo } from 'react';
+
+function MyComponent({ items }) {
+  const renderItem = uc((item) => <li>{item.name}</li>, []);
+  const handleClick = uc(() => submit(items), [items]);
+  const count = useMemo(() => items.length, [items]);
+  return <ul onClick={handleClick}>{items.map(renderItem)}{count}</ul>;
+}
+
+// After --fix
+import useLatestCallback from 'use-latest-callback';
+import { useCallback as uc, useMemo } from 'react';
+
+function MyComponent({ items }) {
+  const renderItem = uc((item) => <li>{item.name}</li>, []);
+  const handleClick = useLatestCallback(() => submit(items));
+  const count = useMemo(() => items.length, [items]);
+  return <ul onClick={handleClick}>{items.map(renderItem)}{count}</ul>;
+}
+```
 
 ### ❌ Incorrect
 
