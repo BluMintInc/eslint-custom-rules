@@ -1,6 +1,14 @@
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { enforceSnapshotStateNarrowing } from '../rules/enforce-snapshot-state-narrowing';
 
+/**
+ * Suggestions bring the guard into scope, so every expected output for a file
+ * that does not already import `isSnapshotReady` is prefixed with the canonical
+ * import.
+ */
+const withGuardImport = (code: string) =>
+  `import { isSnapshotReady } from 'src/types/FirestoreSnapshotState';\n${code}`;
+
 ruleTesterJsx.run(
   'enforce-snapshot-state-narrowing',
   enforceSnapshotStateNarrowing,
@@ -147,13 +155,28 @@ ruleTesterJsx.run(
     invalid: [
       // ---- INVALID: Falsy/truthy checks on snapshot-state variables ----
 
-      // 1. !state from useDocSnapshot (early return pattern)
+      // 1. !state from useDocSnapshot (early return pattern).
+      // The guard must stay negated: the original returns when the snapshot is
+      // NOT usable.
       {
         code: `
 const state = useDocSnapshot({ docPath });
 if (!state) return null;
         `,
-        errors: [{ messageId: 'noFalsyCheck' }],
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withGuardImport(`
+const state = useDocSnapshot({ docPath });
+if (!isSnapshotReady(state)) return null;
+        `),
+              },
+            ],
+          },
+        ],
       },
 
       // 2. if (state) truthy check from useDocSnapshot
@@ -162,7 +185,20 @@ if (!state) return null;
 const state = useDocSnapshot({ docPath });
 if (state) { return state.name; }
         `,
-        errors: [{ messageId: 'noFalsyCheck' }],
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withGuardImport(`
+const state = useDocSnapshot({ docPath });
+if (isSnapshotReady(state)) { return state.name; }
+        `),
+              },
+            ],
+          },
+        ],
       },
 
       // 3. Ternary treating state as boolean from useDocSnapshot
@@ -171,7 +207,20 @@ if (state) { return state.name; }
 const state = useDocSnapshot({ docPath });
 return state ? <MatchView match={state} /> : null;
         `,
-        errors: [{ messageId: 'noFalsyCheck' }],
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withGuardImport(`
+const state = useDocSnapshot({ docPath });
+return isSnapshotReady(state) ? <MatchView match={state} /> : null;
+        `),
+              },
+            ],
+          },
+        ],
       },
 
       // 4. Logical AND short-circuit from useDocSnapshot
@@ -180,16 +229,43 @@ return state ? <MatchView match={state} /> : null;
 const state = useDocSnapshot({ docPath });
 return state && state.name;
         `,
-        errors: [{ messageId: 'noFalsyCheck' }],
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withGuardImport(`
+const state = useDocSnapshot({ docPath });
+return isSnapshotReady(state) && state.name;
+        `),
+              },
+            ],
+          },
+        ],
       },
 
-      // 5. Double negation !!state from useDocSnapshot
+      // 5. Double negation !!state from useDocSnapshot (truthiness coercion —
+      // the guard is positive here)
       {
         code: `
 const state = useDocSnapshot({ docPath });
 const ready = !!state;
         `,
-        errors: [{ messageId: 'noFalsyCheck' }],
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withGuardImport(`
+const state = useDocSnapshot({ docPath });
+const ready = isSnapshotReady(state);
+        `),
+              },
+            ],
+          },
+        ],
       },
 
       // 6. Boolean() coercion from useDocSnapshot
@@ -198,7 +274,20 @@ const ready = !!state;
 const state = useDocSnapshot({ docPath });
 if (Boolean(state)) { return state.name; }
         `,
-        errors: [{ messageId: 'noFalsyCheck' }],
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withGuardImport(`
+const state = useDocSnapshot({ docPath });
+if (isSnapshotReady(state)) { return state.name; }
+        `),
+              },
+            ],
+          },
+        ],
       },
 
       // 7. typeof state === 'object' from useDocSnapshot (bad typeof)
@@ -207,7 +296,20 @@ if (Boolean(state)) { return state.name; }
 const state = useDocSnapshot({ docPath });
 if (typeof state === 'object') { return state.name; }
         `,
-        errors: [{ messageId: 'noRawTypeof' }],
+        errors: [
+          {
+            messageId: 'noRawTypeof',
+            suggestions: [
+              {
+                messageId: 'noRawTypeof',
+                output: withGuardImport(`
+const state = useDocSnapshot({ docPath });
+if (isSnapshotReady(state)) { return state.name; }
+        `),
+              },
+            ],
+          },
+        ],
       },
 
       // 8. typeof state !== 'string' from useDocSnapshot (equivalent to isSnapshotReady)
@@ -216,7 +318,20 @@ if (typeof state === 'object') { return state.name; }
 const state = useDocSnapshot({ docPath });
 if (typeof state !== 'string') { return state.name; }
         `,
-        errors: [{ messageId: 'noRawTypeof' }],
+        errors: [
+          {
+            messageId: 'noRawTypeof',
+            suggestions: [
+              {
+                messageId: 'noRawTypeof',
+                output: withGuardImport(`
+const state = useDocSnapshot({ docPath });
+if (isSnapshotReady(state)) { return state.name; }
+        `),
+              },
+            ],
+          },
+        ],
       },
 
       // 9. typeof state === 'object' from useCollectionSnapshot
@@ -225,7 +340,20 @@ if (typeof state !== 'string') { return state.name; }
 const state = useCollectionSnapshot({ collectionPath });
 if (typeof state === 'object' && state !== null) { return state; }
         `,
-        errors: [{ messageId: 'noRawTypeof' }],
+        errors: [
+          {
+            messageId: 'noRawTypeof',
+            suggestions: [
+              {
+                messageId: 'noRawTypeof',
+                output: withGuardImport(`
+const state = useCollectionSnapshot({ collectionPath });
+if (isSnapshotReady(state) && state !== null) { return state; }
+        `),
+              },
+            ],
+          },
+        ],
       },
 
       // 10. typeof state !== 'string' from useCollectionSnapshot
@@ -234,16 +362,43 @@ if (typeof state === 'object' && state !== null) { return state; }
 const state = useCollectionSnapshot({ collectionPath });
 if (typeof state !== 'string') { return state; }
         `,
-        errors: [{ messageId: 'noRawTypeof' }],
+        errors: [
+          {
+            messageId: 'noRawTypeof',
+            suggestions: [
+              {
+                messageId: 'noRawTypeof',
+                output: withGuardImport(`
+const state = useCollectionSnapshot({ collectionPath });
+if (isSnapshotReady(state)) { return state; }
+        `),
+              },
+            ],
+          },
+        ],
       },
 
-      // 11. Logical OR short-circuit from useCachedDocSnapshot
+      // 11. Logical OR short-circuit from useCachedDocSnapshot. The operand
+      // carries the value, so only the conditional form preserves it.
       {
         code: `
 const state = useCachedDocSnapshot({ docPath });
 const data = state || defaultUser;
         `,
-        errors: [{ messageId: 'noFalsyCheck' }],
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withGuardImport(`
+const state = useCachedDocSnapshot({ docPath });
+const data = isSnapshotReady(state) ? state : defaultUser;
+        `),
+              },
+            ],
+          },
+        ],
       },
 
       // 12. !state from useCollectionSnapshot
@@ -252,7 +407,20 @@ const data = state || defaultUser;
 const state = useCollectionSnapshot({ collectionPath });
 if (!state) return null;
         `,
-        errors: [{ messageId: 'noFalsyCheck' }],
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withGuardImport(`
+const state = useCollectionSnapshot({ collectionPath });
+if (!isSnapshotReady(state)) return null;
+        `),
+              },
+            ],
+          },
+        ],
       },
 
       // 13. typeof state === 'object' from useFirestore
@@ -261,7 +429,20 @@ if (!state) return null;
 const state = useFirestore({ path });
 if (typeof state === 'object') { return state; }
         `,
-        errors: [{ messageId: 'noRawTypeof' }],
+        errors: [
+          {
+            messageId: 'noRawTypeof',
+            suggestions: [
+              {
+                messageId: 'noRawTypeof',
+                output: withGuardImport(`
+const state = useFirestore({ path });
+if (isSnapshotReady(state)) { return state; }
+        `),
+              },
+            ],
+          },
+        ],
       },
 
       // 14. if (state) from useFirestore
@@ -270,7 +451,20 @@ if (typeof state === 'object') { return state; }
 const state = useFirestore({ path });
 if (state) { return state; }
         `,
-        errors: [{ messageId: 'noFalsyCheck' }],
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withGuardImport(`
+const state = useFirestore({ path });
+if (isSnapshotReady(state)) { return state; }
+        `),
+              },
+            ],
+          },
+        ],
       },
 
       // 15. if (state) from useCachedDocSnapshot
@@ -279,7 +473,20 @@ if (state) { return state; }
 const state = useCachedDocSnapshot({ docPath });
 if (state) return state.name;
         `,
-        errors: [{ messageId: 'noFalsyCheck' }],
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withGuardImport(`
+const state = useCachedDocSnapshot({ docPath });
+if (isSnapshotReady(state)) return state.name;
+        `),
+              },
+            ],
+          },
+        ],
       },
 
       // 16. state && state.name from useCollectionSnapshot
@@ -288,7 +495,20 @@ if (state) return state.name;
 const state = useCollectionSnapshot({ collectionPath });
 return state && state.length > 0;
         `,
-        errors: [{ messageId: 'noFalsyCheck' }],
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withGuardImport(`
+const state = useCollectionSnapshot({ collectionPath });
+return isSnapshotReady(state) && state.length > 0;
+        `),
+              },
+            ],
+          },
+        ],
       },
 
       // 17. ternary from useCollectionSnapshot
@@ -297,7 +517,20 @@ return state && state.length > 0;
 const state = useCollectionSnapshot({ collectionPath });
 return state ? state.map(x => x.id) : [];
         `,
-        errors: [{ messageId: 'noFalsyCheck' }],
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withGuardImport(`
+const state = useCollectionSnapshot({ collectionPath });
+return isSnapshotReady(state) ? state.map(x => x.id) : [];
+        `),
+              },
+            ],
+          },
+        ],
       },
 
       // 18. !!state from useCollectionSnapshot
@@ -306,7 +539,20 @@ return state ? state.map(x => x.id) : [];
 const state = useCollectionSnapshot({ collectionPath });
 const isReady = !!state;
         `,
-        errors: [{ messageId: 'noFalsyCheck' }],
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withGuardImport(`
+const state = useCollectionSnapshot({ collectionPath });
+const isReady = isSnapshotReady(state);
+        `),
+              },
+            ],
+          },
+        ],
       },
 
       // 19. Boolean(state) from useCachedDocSnapshot
@@ -315,7 +561,20 @@ const isReady = !!state;
 const state = useCachedDocSnapshot({ docPath });
 const flag = Boolean(state);
         `,
-        errors: [{ messageId: 'noFalsyCheck' }],
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withGuardImport(`
+const state = useCachedDocSnapshot({ docPath });
+const flag = isSnapshotReady(state);
+        `),
+              },
+            ],
+          },
+        ],
       },
 
       // 20. typeof state !== 'string' from useFirestore
@@ -324,7 +583,20 @@ const flag = Boolean(state);
 const state = useFirestore({ path });
 if (typeof state !== 'string') return state;
         `,
-        errors: [{ messageId: 'noRawTypeof' }],
+        errors: [
+          {
+            messageId: 'noRawTypeof',
+            suggestions: [
+              {
+                messageId: 'noRawTypeof',
+                output: withGuardImport(`
+const state = useFirestore({ path });
+if (isSnapshotReady(state)) return state;
+        `),
+              },
+            ],
+          },
+        ],
       },
 
       // 21. state || fallback from useDocSnapshot
@@ -333,7 +605,20 @@ if (typeof state !== 'string') return state;
 const state = useDocSnapshot({ docPath });
 const data = state || null;
         `,
-        errors: [{ messageId: 'noFalsyCheck' }],
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withGuardImport(`
+const state = useDocSnapshot({ docPath });
+const data = isSnapshotReady(state) ? state : null;
+        `),
+              },
+            ],
+          },
+        ],
       },
 
       // 22. typeof state === 'object' with custom snapshotHooks option
@@ -343,7 +628,343 @@ const state = useMyCustomSnapshot({ path });
 if (typeof state === 'object') { return state; }
         `,
         options: [{ snapshotHooks: ['useMyCustomSnapshot'] }],
-        errors: [{ messageId: 'noRawTypeof' }],
+        errors: [
+          {
+            messageId: 'noRawTypeof',
+            suggestions: [
+              {
+                messageId: 'noRawTypeof',
+                output: withGuardImport(`
+const state = useMyCustomSnapshot({ path });
+if (isSnapshotReady(state)) { return state; }
+        `),
+              },
+            ],
+          },
+        ],
+      },
+
+      // ---- REGRESSIONS: suggestion polarity (issue #1369) ----
+
+      // 23. Negated ternary test keeps its negation
+      {
+        code: `
+const state = useDocSnapshot({ docPath });
+const view = !state ? <Spinner /> : <MatchView match={state} />;
+        `,
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withGuardImport(`
+const state = useDocSnapshot({ docPath });
+const view = !isSnapshotReady(state) ? <Spinner /> : <MatchView match={state} />;
+        `),
+              },
+            ],
+          },
+        ],
+      },
+
+      // 24. Negated loop condition keeps its negation
+      {
+        code: `
+const state = useDocSnapshot({ docPath });
+while (!state) { await wait(); }
+        `,
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withGuardImport(`
+const state = useDocSnapshot({ docPath });
+while (!isSnapshotReady(state)) { await wait(); }
+        `),
+              },
+            ],
+          },
+        ],
+      },
+
+      // 25. Chained || is parenthesized so the conditional does not swallow the
+      // remaining operands
+      {
+        code: `
+const state = useDocSnapshot({ docPath });
+const data = state || cached || fallback;
+        `,
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withGuardImport(`
+const state = useDocSnapshot({ docPath });
+const data = (isSnapshotReady(state) ? state : cached) || fallback;
+        `),
+              },
+            ],
+          },
+        ],
+      },
+
+      // 26. || inside JSX needs no extra parentheses
+      {
+        code: `
+const state = useDocSnapshot({ docPath });
+return <div>{state || <Spinner />}</div>;
+        `,
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withGuardImport(`
+const state = useDocSnapshot({ docPath });
+return <div>{isSnapshotReady(state) ? state : <Spinner />}</div>;
+        `),
+              },
+            ],
+          },
+        ],
+      },
+
+      // 27. Source parentheses already group the expression
+      {
+        code: `
+const state = useDocSnapshot({ docPath });
+const id = (state || fallback).id;
+        `,
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withGuardImport(`
+const state = useDocSnapshot({ docPath });
+const id = (isSnapshotReady(state) ? state : fallback).id;
+        `),
+              },
+            ],
+          },
+        ],
+      },
+
+      // ---- REGRESSIONS: guard import (issue #1369) ----
+
+      // 28. A file that already imports the guard gets no duplicate import
+      {
+        code: `
+import { isSnapshotReady } from 'src/types/FirestoreSnapshotState';
+const state = useDocSnapshot({ docPath });
+if (!state) return null;
+        `,
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: `
+import { isSnapshotReady } from 'src/types/FirestoreSnapshotState';
+const state = useDocSnapshot({ docPath });
+if (!isSnapshotReady(state)) return null;
+        `,
+              },
+            ],
+          },
+        ],
+      },
+
+      // 29. An existing value import of the guard's module is extended, reusing
+      // that file's own path
+      {
+        code: `
+import { FirestoreSnapshotState } from '../../types/FirestoreSnapshotState';
+const state = useDocSnapshot({ docPath });
+if (state) return state.name;
+        `,
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: `
+import { FirestoreSnapshotState, isSnapshotReady } from '../../types/FirestoreSnapshotState';
+const state = useDocSnapshot({ docPath });
+if (isSnapshotReady(state)) return state.name;
+        `,
+              },
+            ],
+          },
+        ],
+      },
+
+      // 30. A type-only import cannot carry a value specifier, but its path
+      // shows how the file reaches the module
+      {
+        code: `
+import type { FirestoreSnapshotState } from '@/types/FirestoreSnapshotState';
+const state = useDocSnapshot({ docPath });
+if (!state) return null;
+        `,
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: `
+import { isSnapshotReady } from '@/types/FirestoreSnapshotState';
+import type { FirestoreSnapshotState } from '@/types/FirestoreSnapshotState';
+const state = useDocSnapshot({ docPath });
+if (!isSnapshotReady(state)) return null;
+        `,
+              },
+            ],
+          },
+        ],
+      },
+
+      // 31. Unrelated imports keep their place; the guard import goes first
+      {
+        code: `
+import { useDocSnapshot } from 'src/hooks/useDocSnapshot';
+const state = useDocSnapshot({ docPath });
+if (!state) return null;
+        `,
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: `
+import { isSnapshotReady } from 'src/types/FirestoreSnapshotState';
+import { useDocSnapshot } from 'src/hooks/useDocSnapshot';
+const state = useDocSnapshot({ docPath });
+if (!isSnapshotReady(state)) return null;
+        `,
+              },
+            ],
+          },
+        ],
+      },
+
+      // 32. A file that declares the guard itself needs no import
+      {
+        code: `
+function isSnapshotReady(value) { return typeof value !== 'string'; }
+const state = useDocSnapshot({ docPath });
+if (!state) return null;
+        `,
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: `
+function isSnapshotReady(value) { return typeof value !== 'string'; }
+const state = useDocSnapshot({ docPath });
+if (!isSnapshotReady(state)) return null;
+        `,
+              },
+            ],
+          },
+        ],
+      },
+
+      // 33. A conflicting binding of the name declines the suggestion rather
+      // than emitting a call to something that is not the guard
+      {
+        code: `
+const isSnapshotReady = 'not-a-guard';
+const state = useDocSnapshot({ docPath });
+if (!state) return null;
+        `,
+        errors: [{ messageId: 'noFalsyCheck', suggestions: [] }],
+      },
+
+      // 34. A type-only import of the name is erased at runtime, so the
+      // suggestion is declined
+      {
+        code: `
+import type { isSnapshotReady } from 'src/types/FirestoreSnapshotState';
+const state = useDocSnapshot({ docPath });
+if (state) return state.name;
+        `,
+        errors: [{ messageId: 'noFalsyCheck', suggestions: [] }],
+      },
+
+      // 35. The import source is configurable
+      {
+        code: `
+const state = useDocSnapshot({ docPath });
+if (!state) return null;
+        `,
+        options: [{ guardImportSource: '@/types/FirestoreSnapshotState' }],
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: `import { isSnapshotReady } from '@/types/FirestoreSnapshotState';
+
+const state = useDocSnapshot({ docPath });
+if (!isSnapshotReady(state)) return null;
+        `,
+              },
+            ],
+          },
+        ],
+      },
+
+      // 36. Each violation carries its own import, so applying either
+      // suggestion alone leaves the file resolvable
+      {
+        code: `
+const state = useDocSnapshot({ docPath });
+if (!state) return null;
+return state ? state.name : null;
+        `,
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withGuardImport(`
+const state = useDocSnapshot({ docPath });
+if (!isSnapshotReady(state)) return null;
+return state ? state.name : null;
+        `),
+              },
+            ],
+          },
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withGuardImport(`
+const state = useDocSnapshot({ docPath });
+if (!state) return null;
+return isSnapshotReady(state) ? state.name : null;
+        `),
+              },
+            ],
+          },
+        ],
       },
     ],
   },
