@@ -22,6 +22,29 @@ const DEFAULT_OPTIONS: NonNullable<Options[0]> = {
 const normalizeExtension = (extension: string): string =>
   extension.startsWith('.') ? extension : `.${extension}`;
 
+/**
+ * A suite may be split by concern into `Subject.<qualifier>.test.tsx` files that
+ * sit beside `Subject.tsx`. Progressively dropping trailing dot-segments lets
+ * such a test resolve to its subject at any qualifier depth, while never
+ * crossing a directory boundary — a genuinely misplaced test still reports.
+ * Empty prefixes are dropped so a dotfile stem cannot match a bare `.ts`.
+ */
+const subjectBaseNamesFor = (stem: string): string[] => {
+  const segments = stem.split('.');
+  const baseNames: string[] = [];
+
+  for (let depth = segments.length; depth > 0; depth--) {
+    const baseName = segments.slice(0, depth).join('.');
+    if (baseName) {
+      baseNames.push(baseName);
+    }
+  }
+
+  // An extensionless stem (a file named exactly ".test.ts") leaves nothing to
+  // probe; keep it so the report still names what was looked for.
+  return baseNames.length > 0 ? baseNames : [stem];
+};
+
 export const testFileLocationEnforcement = createRule<Options, MessageIds>({
   name: 'test-file-location-enforcement',
   meta: {
@@ -78,13 +101,13 @@ export const testFileLocationEnforcement = createRule<Options, MessageIds>({
 
         const directory = path.dirname(filename);
         const testFileName = path.basename(filename);
-        const baseName = testFileName.replace(TEST_FILE_PATTERN, '');
-        const candidates = subjectExtensions.map((extension) =>
-          path.join(directory, `${baseName}${extension}`),
-        );
+        const stem = testFileName.replace(TEST_FILE_PATTERN, '');
+        const baseNames = subjectBaseNamesFor(stem);
 
-        const hasSibling = candidates.some((candidate) =>
-          fs.existsSync(candidate),
+        const hasSibling = baseNames.some((baseName) =>
+          subjectExtensions.some((extension) =>
+            fs.existsSync(path.join(directory, `${baseName}${extension}`)),
+          ),
         );
 
         if (hasSibling) {
@@ -95,8 +118,17 @@ export const testFileLocationEnforcement = createRule<Options, MessageIds>({
           ? path.relative(process.cwd(), filename) || filename
           : filename;
 
-        const expectedNames = subjectExtensions
-          .map((extension) => `"${baseName}${extension}"`)
+        // Naming the shortest prefix alongside the full stem keeps the guidance
+        // honest: either subject name satisfies the rule.
+        const reportedBaseNames =
+          baseNames.length > 1
+            ? [baseNames[0], baseNames[baseNames.length - 1]]
+            : baseNames;
+
+        const expectedNames = reportedBaseNames
+          .flatMap((baseName) =>
+            subjectExtensions.map((extension) => `"${baseName}${extension}"`),
+          )
           .join(' or ');
 
         context.report({

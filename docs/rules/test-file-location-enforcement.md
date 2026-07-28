@@ -12,8 +12,24 @@ Scattering tests into separate `tests/` directories hides which code they protec
 
 - Looks at files named `*.test.ts` or `*.test.tsx`
 - Verifies a sibling implementation file with the same basename exists in the same directory with one of: `.ts`, `.tsx`, `.js`, `.jsx`
+- Accepts the suite-qualifier convention: when the full basename has no sibling, each shorter dot-prefix is tried, so `Subject.qualifier.test.tsx` resolves to `Subject.tsx` in the same directory (see below)
 - Skips any file under `node_modules`
 - Reports a violation when no colocated sibling implementation is found (no auto-fix provided)
+
+## Suite qualifiers
+
+A large suite is often split by concern into several files that all cover one subject:
+
+```text
+src/hooks/guard/useGuardFlow.ts
+src/hooks/guard/useGuardFlow.test.tsx
+src/hooks/guard/useGuardFlow.onClose.test.tsx
+src/hooks/guard/useGuardFlow.ownerToken.test.tsx
+```
+
+These are colocated, so the rule accepts them. The basename is matched by dropping trailing dot-segments one at a time — `useGuardFlow.onClose` first, then `useGuardFlow` — which handles qualifiers of any depth (`Subject.a.b.test.ts` matches `Subject.a.ts` or `Subject.ts`).
+
+Only qualifiers are stripped, never directory segments, so a test that has drifted away from its subject still reports. `web/tests/Detached.qualifier.test.tsx` is a violation even when `web/src/Detached.tsx` exists.
 
 ## Options
 
@@ -45,6 +61,7 @@ With the configuration above, `scripts/pr-check-comments.test.ts` is valid when 
 /functions/tests/X.test.ts      // Implementation lives in /functions/src/util/X.ts
 /components/tests/Button.test.tsx  // No Button.tsx next to the test
 /shared/utils/value.test.ts     // Only value.d.ts exists in this folder
+/components/Orphan.qualifier.test.tsx  // Neither Orphan.qualifier.tsx nor Orphan.tsx is here
 ```
 
 ### ✅ Correct
@@ -58,4 +75,8 @@ With the configuration above, `scripts/pr-check-comments.test.ts` is valid when 
 
 /shared/helpers/slugify.js
 /shared/helpers/slugify.test.ts
+
+/components/tournaments/HeadsUpMatchDisplay.tsx
+/components/tournaments/HeadsUpMatchDisplay.test.tsx
+/components/tournaments/HeadsUpMatchDisplay.danglingOverride.test.tsx
 ```

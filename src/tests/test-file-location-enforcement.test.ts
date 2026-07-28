@@ -51,6 +51,20 @@ const createTestFileWithSources = (
   return testFilePath;
 };
 
+const createTestFileWithNamedSources = (
+  testRelativePath: string,
+  sourceRelativeNames: string[],
+) => {
+  const testFilePath = createFile(testRelativePath);
+  const directory = path.dirname(testRelativePath);
+
+  for (const sourceName of sourceRelativeNames) {
+    createFile(path.join(directory, sourceName));
+  }
+
+  return testFilePath;
+};
+
 afterAll(() => {
   fs.rmSync(tempDir, { recursive: true, force: true });
   fs.rmSync(workspaceTempDir, { recursive: true, force: true });
@@ -167,6 +181,70 @@ ruleTesterTs.run(
         ]),
         options: [{ additionalSubjectExtensions: ['.jq'] }],
       },
+      {
+        code: 'describe("suite qualifier resolves to leading segment", () => {});',
+        filename: createTestFileWithNamedSources(
+          'web/components/Foo.bar.test.tsx',
+          ['Foo.tsx'],
+        ),
+      },
+      {
+        code: 'describe("qualifier on a hook suite", () => {});',
+        filename: createTestFileWithNamedSources(
+          'web/hooks/useGuardFlow.onClose.test.tsx',
+          ['useGuardFlow.ts'],
+        ),
+      },
+      {
+        code: 'describe("qualifier containing a dash", () => {});',
+        filename: createTestFileWithNamedSources(
+          'web/hooks/useSnapshot.recoverable-errors.test.tsx',
+          ['useSnapshot.ts'],
+        ),
+      },
+      {
+        code: 'describe("multi segment qualifier resolves to leading segment", () => {});',
+        filename: createTestFileWithNamedSources(
+          'web/components/Widget.alpha.beta.test.tsx',
+          ['Widget.tsx'],
+        ),
+      },
+      {
+        code: 'describe("multi segment qualifier resolves to intermediate prefix", () => {});',
+        filename: createTestFileWithNamedSources(
+          'web/components/Panel.alpha.beta.test.tsx',
+          ['Panel.alpha.tsx'],
+        ),
+      },
+      {
+        code: 'describe("full stem still preferred when it exists", () => {});',
+        filename: createTestFileWithNamedSources(
+          'web/components/Chart.legend.test.tsx',
+          ['Chart.legend.tsx'],
+        ),
+      },
+      {
+        code: 'describe("qualifier subject may use a different extension", () => {});',
+        filename: createTestFileWithNamedSources(
+          'web/legacy/Table.sorting.test.tsx',
+          ['Table.js'],
+        ),
+      },
+      {
+        code: 'describe("qualifier on a lowercase module", () => {});',
+        filename: createTestFileWithNamedSources(
+          'web/styles/theme.drawer.test.ts',
+          ['theme.ts'],
+        ),
+      },
+      {
+        code: 'describe("qualifier resolves through an additional extension", () => {});',
+        filename: createTestFileWithNamedSources(
+          'scripts/deploy.smoke.test.ts',
+          ['deploy.sh'],
+        ),
+        options: [{ additionalSubjectExtensions: ['.sh'] }],
+      },
     ],
     invalid: [
       {
@@ -263,6 +341,72 @@ ruleTesterTs.run(
           '.sh',
         ]),
         options: [{ additionalSubjectExtensions: ['.jq'] }],
+        errors: [{ messageId: 'misplacedTestFile' }],
+      },
+      {
+        code: 'describe("qualifier with no subject at any prefix depth", () => {});',
+        filename: createFile('web/components/Orphan.qualifier.test.tsx'),
+        errors: [{ messageId: 'misplacedTestFile' }],
+      },
+      {
+        code: 'describe("qualifier subject lives in another directory", () => {});',
+        filename: (() => {
+          createFile('web/src/Detached.tsx');
+          return createFile('web/tests/Detached.qualifier.test.tsx');
+        })(),
+        errors: [{ messageId: 'misplacedTestFile' }],
+      },
+      {
+        code: 'describe("qualifier subject only in parent directory", () => {});',
+        filename: (() => {
+          createFile('web/nested/Ancestor.tsx');
+          return createFile('web/nested/inner/Ancestor.qualifier.test.tsx');
+        })(),
+        errors: [{ messageId: 'misplacedTestFile' }],
+      },
+      {
+        code: 'describe("qualifier prefix resolves only to a declaration file", () => {});',
+        filename: (() => {
+          createFile('web/types/Declared.d.ts');
+          return createFile('web/types/Declared.qualifier.test.ts');
+        })(),
+        errors: [{ messageId: 'misplacedTestFile' }],
+      },
+      {
+        code: 'describe("qualifier prefix resolves only to a json file", () => {});',
+        filename: (() => {
+          createFile('web/data/Payload.json');
+          return createFile('web/data/Payload.qualifier.test.ts');
+        })(),
+        errors: [{ messageId: 'misplacedTestFile' }],
+      },
+      {
+        code: 'describe("qualifier prefix needs an unregistered extension", () => {});',
+        filename: (() => {
+          createFile('scripts/pipeline.sh');
+          return createFile('scripts/pipeline.smoke.test.ts');
+        })(),
+        errors: [{ messageId: 'misplacedTestFile' }],
+      },
+      {
+        code: 'describe("dotfile stem does not match a bare extension sibling", () => {});',
+        filename: (() => {
+          createFile('web/dotfiles/.ts');
+          return createFile('web/dotfiles/.hidden.test.ts');
+        })(),
+        errors: [{ messageId: 'misplacedTestFile' }],
+      },
+      {
+        code: 'describe("extensionless stem has no subject to probe", () => {});',
+        filename: createFile('web/bare/.test.ts'),
+        errors: [{ messageId: 'misplacedTestFile' }],
+      },
+      {
+        code: 'describe("suffix match is not a prefix match", () => {});',
+        filename: (() => {
+          createFile('web/suffix/bar.tsx');
+          return createFile('web/suffix/Foo.bar.test.tsx');
+        })(),
         errors: [{ messageId: 'misplacedTestFile' }],
       },
     ],
