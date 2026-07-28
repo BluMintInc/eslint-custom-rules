@@ -189,9 +189,46 @@ const Wrapper = ({ hits, isLoading }) => {
   );
 };
 `,
+
+    // A destructured parameter with a default value is an AssignmentPattern,
+    // not an ObjectPattern, so the rule declines to report it (#1356). Spread
+    // over a defaulted parameter would need the default preserved verbatim, so
+    // the conservative choice is to leave the shape alone entirely.
+    `
+type FooProps = { a: string; b: string };
+const Bar = ({ a, b }: FooProps = {} as FooProps) => {
+  return <Foo a={a} b={b} />;
+};
+`,
+
+    // Same defaulted shape without an annotation.
+    `
+const Bar = ({ a, b } = {}) => {
+  return <Foo a={a} b={b} />;
+};
+`,
   ],
 
   invalid: [
+    // Regression (#1356): the parameter's type annotation must survive the fix.
+    {
+      code: `
+type FooProps = { a: string; b: string };
+const Foo = (p: FooProps) => null;
+const Bar = ({ a, b }: FooProps) => {
+  return <Foo a={a} b={b} />;
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type FooProps = { a: string; b: string };
+const Foo = (p: FooProps) => null;
+const Bar = (props: FooProps) => {
+  return <Foo {...props} />;
+};
+`,
+    },
+
     // Issue example 1: SelectGame — all fields forwarded identically.
     {
       code: `
@@ -389,6 +426,180 @@ const makePoint = ({ x, y, z }) => {
 const makePoint = (props) => {
   return { ...props };
 };
+`,
+    },
+
+    // Annotated concise arrow (#1356) — annotation survives on a one-liner.
+    {
+      code: `
+const Wrapper = ({ hits, isLoading }: ChildProps) => <Child hits={hits} isLoading={isLoading} />;
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const Wrapper = (props: ChildProps) => <Child {...props} />;
+`,
+    },
+
+    // Generic annotation (#1356) — `Readonly<...>` survives verbatim.
+    {
+      code: `
+const Wrapper = ({ hits, isLoading }: Readonly<{ hits: Hit[]; isLoading: boolean }>) => {
+  return <Child hits={hits} isLoading={isLoading} />;
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const Wrapper = (props: Readonly<{ hits: Hit[]; isLoading: boolean }>) => {
+  return <Child {...props} />;
+};
+`,
+    },
+
+    // Union annotation (#1356) — every member survives verbatim.
+    {
+      code: `
+const Wrapper = ({ hits, isLoading }: LoadedProps | EmptyProps) => {
+  return <Child hits={hits} isLoading={isLoading} />;
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const Wrapper = (props: LoadedProps | EmptyProps) => {
+  return <Child {...props} />;
+};
+`,
+    },
+
+    // Imported type alias (#1356) — a qualified name survives verbatim.
+    {
+      code: `
+import type { ChildProps } from './Child';
+const Wrapper = ({ hits, isLoading }: ChildProps) => {
+  return <Child hits={hits} isLoading={isLoading} />;
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+import type { ChildProps } from './Child';
+const Wrapper = (props: ChildProps) => {
+  return <Child {...props} />;
+};
+`,
+    },
+
+    // Multi-line annotation (#1356) — inline object type keeps its formatting.
+    {
+      code: `
+const Wrapper = ({ hits, isLoading }: {
+  hits: Hit[];
+  isLoading: boolean;
+}) => {
+  return <Child hits={hits} isLoading={isLoading} />;
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const Wrapper = (props: {
+  hits: Hit[];
+  isLoading: boolean;
+}) => {
+  return <Child {...props} />;
+};
+`,
+    },
+
+    // Whitespace between the pattern and the annotation (#1356) — only the
+    // pattern's own span is replaced, so the spacing is left untouched.
+    {
+      code: `
+const Wrapper = ({ hits, isLoading } : ChildProps) => <Child hits={hits} isLoading={isLoading} />;
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const Wrapper = (props : ChildProps) => <Child {...props} />;
+`,
+    },
+
+    // Object-literal branch with an annotation (#1356) — the non-JSX target.
+    {
+      code: `
+const transform = ({ a, b, c }: TransformInput) => {
+  return { a, b, c };
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const transform = (props: TransformInput) => {
+  return { ...props };
+};
+`,
+    },
+
+    // Object-literal branch, concise arrow with a generic annotation (#1356).
+    {
+      code: `
+const wrap = ({ x, y }: Readonly<Point>) => ({ x, y, label: 'Origin' });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const wrap = (props: Readonly<Point>) => ({ ...props, label: 'Origin' });
+`,
+    },
+
+    // FunctionExpression inside memo with an annotation (#1356).
+    {
+      code: `
+const Wrapper = memo(function({ hits, isLoading, onNearEnd }: ChildProps) {
+  return <Child hits={hits} isLoading={isLoading} onNearEnd={onNearEnd} />;
+});
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const Wrapper = memo(function(props: ChildProps) {
+  return <Child {...props} />;
+});
+`,
+    },
+
+    // Annotated arrow inside memo with a comparator argument (#1356).
+    {
+      code: `
+const GameCatalogWrapperStable = memo(
+  ({ hits, isLoading, onNearEnd, onGameSelect }: GameDropdownSearchProps) => {
+    return (
+      <GameDropdownSearch
+        hits={hits}
+        isLoading={isLoading}
+        onGameSelect={onGameSelect}
+        onNearEnd={onNearEnd}
+      />
+    );
+  },
+  compareDeeply('hits'),
+);
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const GameCatalogWrapperStable = memo(
+  (props: GameDropdownSearchProps) => {
+    return (
+      <GameDropdownSearch {...props} />
+    );
+  },
+  compareDeeply('hits'),
+);
+`,
+    },
+
+    // A destructured field named `props` forces a fresh parameter name; the
+    // annotation still survives (#1356).
+    {
+      code: `
+const Wrapper = ({ props, isLoading }: ChildProps) => <Child props={props} isLoading={isLoading} />;
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const Wrapper = (props0: ChildProps) => <Child {...props0} />;
 `,
     },
   ],

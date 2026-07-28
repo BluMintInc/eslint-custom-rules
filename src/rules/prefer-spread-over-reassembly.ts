@@ -1,4 +1,9 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  AST_TOKEN_TYPES,
+  TSESLint,
+  TSESTree,
+} from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'preferSpread';
@@ -336,6 +341,41 @@ function freshPropsName(existingNames: Set<string>): string {
   return `props${i}`;
 }
 
+/**
+ * Rewrites the destructured parameter to a single identifier without touching
+ * its type annotation. A parameter node's `range` spans the annotation, so
+ * replacing the whole node would delete `: FooProps` and leave an implicit
+ * `any`; the replacement is therefore bounded to the pattern's own closing
+ * brace, leaving the annotation text (generics, unions, multi-line formatting)
+ * exactly as the author wrote it. Returns null when the closing brace cannot be
+ * located, so a malformed fix is never emitted.
+ */
+function replacePatternWithName(
+  fixer: TSESLint.RuleFixer,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  pattern: TSESTree.ObjectPattern,
+  name: string,
+): TSESLint.RuleFix | null {
+  if (!pattern.typeAnnotation) {
+    return fixer.replaceText(pattern, name);
+  }
+
+  // Scanning backwards from the annotation (whose range starts at the `:`)
+  // skips any `?` optional marker sitting between the pattern and the colon.
+  const closingBrace = sourceCode.getTokenBefore(pattern.typeAnnotation, {
+    filter: (token) =>
+      token.type === AST_TOKEN_TYPES.Punctuator && token.value === '}',
+  });
+  if (!closingBrace) {
+    return null;
+  }
+
+  return fixer.replaceTextRange(
+    [pattern.range[0], closingBrace.range[1]],
+    name,
+  );
+}
+
 export const preferSpreadOverReassembly = createRule<Options, MessageIds>({
   name: 'prefer-spread-over-reassembly',
   meta: {
@@ -433,14 +473,24 @@ export const preferSpreadOverReassembly = createRule<Options, MessageIds>({
         node: param,
         messageId: 'preferSpread',
         fix(fixer) {
-          const fixes: ReturnType<typeof fixer.replaceText>[] = [];
+          const fixes: TSESLint.RuleFix[] = [];
 
           // Choose a fresh name for the props parameter that does not collide
           // with any binding currently in scope.
           const propsName = freshPropsName(namesSet);
 
-          // 1. Replace the destructured parameter with `props` (or fresh name).
-          fixes.push(fixer.replaceText(param, propsName));
+          // 1. Replace the destructured parameter with `props` (or fresh name),
+          // keeping any type annotation intact.
+          const paramFix = replacePatternWithName(
+            fixer,
+            sourceCode,
+            param,
+            propsName,
+          );
+          if (!paramFix) {
+            return null;
+          }
+          fixes.push(paramFix);
 
           if (target.kind === 'jsx') {
             // 2a. Build the new JSX opening element text.

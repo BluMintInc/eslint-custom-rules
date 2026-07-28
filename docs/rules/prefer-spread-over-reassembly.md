@@ -25,6 +25,10 @@ The autofix:
 2. Replaces the identically-forwarded fields in the target with a spread (`{...props}`).
 3. Places the spread **first**, then any additional (non-destructured) props after it, so explicit overrides are preserved and remain effective.
 
+The parameter's type annotation is preserved verbatim, so `({ hits, isLoading }: ChildProps)` becomes `(props: ChildProps)` — generics, unions, imported aliases, and multi-line object types all survive the fix unchanged.
+
+A parameter with a default value (`({ a, b }: FooProps = {} as FooProps)`) is never reported: spreading over a defaulted destructuring changes which value the default applies to, so the rule leaves that shape alone.
+
 ### ❌ Incorrect
 
 ```tsx
@@ -60,6 +64,12 @@ const ChannelManagerCatalogWrapperStable = memo(
 );
 ```
 
+```tsx
+const Bar = ({ a, b }: FooProps) => {
+  return <Foo a={a} b={b} />;
+};
+```
+
 ### ✅ Correct
 
 ```tsx
@@ -79,6 +89,13 @@ const ChannelManagerCatalogWrapperStable = memo(
   ),
   compareDeeply('hits'),
 );
+```
+
+```tsx
+// The type annotation survives the autofix.
+const Bar = (props: FooProps) => {
+  return <Foo {...props} />;
+};
 ```
 
 ```tsx
