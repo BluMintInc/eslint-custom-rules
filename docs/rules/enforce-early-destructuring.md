@@ -17,6 +17,23 @@ The fixer:
 - Merges multiple destructures of the same object into a single hoisted pattern.
 - Skips destructuring inside async callbacks or nested async helpers.
 - Skips destructuring that depends on type-narrowing checks, including truthiness guards on the object (e.g., `if (!response) return;`).
+- Reports without fixing when any destructuring statement it would hoist carries a type annotation (see below).
+
+### Type-annotated declarations report without a fix
+
+The hoisted declaration rewrites the initializer to `(obj) ?? {}`, and the `{}` fallback almost never satisfies the original annotation, so carrying `: Payload` over would manufacture a type error while dropping it would lose the annotation. Deriving a widened annotation needs type information the rule does not have, so the rule reports and withholds the autofix instead:
+
+```typescript
+const MyComponent = ({ response }) => {
+  useEffect(() => {
+    // Reported, but not auto-fixed: `: Payload` cannot survive the hoist.
+    const { data }: Payload = response;
+    doSomething(data);
+  }, [response]);
+};
+```
+
+Because a single fix rewrites the dependency array for every destructuring it hoists out of one hook, one annotated declarator withholds the fix for that whole hook — a partial hoist would leave the annotated statement behind while still changing when the hook re-runs. Other hooks in the same component are unaffected and still get fixed. Hoist annotated destructuring by hand, choosing an annotation that accounts for the `?? {}` fallback (or drop the annotation and let inference handle it).
 
 ### ❌ Incorrect
 

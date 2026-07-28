@@ -726,5 +726,137 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       errors: [{ messageId: 'hoistDestructuring' }],
     },
+    // The hoist rewrites the initializer to `(response) ?? {}`, which almost never
+    // satisfies the declarator's annotation, so the fix is withheld rather than
+    // dropping (or wrongly re-emitting) the annotation.
+    {
+      code: `
+          const MyComponent = ({ response }) => {
+            useEffect(() => {
+              const { data }: Payload = response;
+              doSomething(data);
+            }, [response]);
+          };
+        `,
+      output: null,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      code: `
+          const MyComponent = ({ response }) => {
+            useEffect(() => {
+              const { data }: { data: string } = response;
+              doSomething(data);
+            }, [response]);
+          };
+        `,
+      output: null,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      code: `
+          const MyComponent = ({ response }) => {
+            useMemo(() => {
+              const { data }: Payload<string> = response;
+              return data;
+            }, [response]);
+          };
+        `,
+      output: null,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      code: `
+          const MyComponent = ({ user }) => {
+            useEffect(() => {
+              const { profile: { name } }: User = user;
+              renderProfile(name);
+            }, [user]);
+          };
+        `,
+      output: null,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    // An annotated declarator anywhere in the hoisted set withholds the entire
+    // fix: hoisting only the unannotated half would rewrite the deps array while
+    // leaving the annotated read behind, changing when the hook re-runs.
+    {
+      code: `
+          const MyComponent = ({ user }) => {
+            useEffect(() => {
+              const { name }: Named = user;
+              const { age } = user;
+              doSomething(name, age);
+            }, [user]);
+          };
+        `,
+      output: null,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      code: `
+          const MyComponent = ({ user, config }) => {
+            useEffect(() => {
+              const { name }: Named = user;
+              const { timeout } = config;
+              doSomething(name, timeout);
+            }, [user, config]);
+          };
+        `,
+      output: null,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    // Withholding is scoped to the report that owns the annotated declarator;
+    // an unrelated hook in the same component still gets hoisted.
+    {
+      code: `
+          const MyComponent = ({ user }) => {
+            useEffect(() => {
+              const { name }: Named = user;
+              logUser(name);
+            }, [user]);
+            useEffect(() => {
+              const { address } = user;
+              logAddress(address);
+            }, [user]);
+          };
+        `,
+      output: `
+          const MyComponent = ({ user }) => {
+            useEffect(() => {
+              const { name }: Named = user;
+              logUser(name);
+            }, [user]);
+            const { address } = (user) ?? {};
+            useEffect(() => {
+              logAddress(address);
+            }, [address]);
+          };
+        `,
+      errors: [
+        { messageId: 'hoistDestructuring' },
+        { messageId: 'hoistDestructuring' },
+      ],
+    },
+    // Unannotated declarators keep the existing hoist byte-for-byte.
+    {
+      code: `
+          const MyComponent = ({ response }) => {
+            useEffect(() => {
+              const { data } = response;
+              doSomething(data);
+            }, [response]);
+          };
+        `,
+      output: `
+          const MyComponent = ({ response }) => {
+            const { data } = (response) ?? {};
+            useEffect(() => {
+              doSomething(data);
+            }, [data]);
+          };
+        `,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
   ],
 });

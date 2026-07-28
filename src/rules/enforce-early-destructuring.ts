@@ -19,6 +19,7 @@ type DestructuringGroup = {
   declarations: TSESTree.VariableDeclaration[];
   inits: TSESTree.Expression[];
   baseName: string | null;
+  hasTypeAnnotation: boolean;
 };
 
 const HOOK_NAMES = new Set([
@@ -1107,6 +1108,9 @@ function buildDestructuringGroups(
             declarations,
             inits,
             baseName: existingGroup?.baseName ?? baseName ?? null,
+            hasTypeAnnotation:
+              Boolean(existingGroup?.hasTypeAnnotation) ||
+              Boolean(declarator.id.typeAnnotation),
           });
         }
       }
@@ -1150,6 +1154,19 @@ function validateGroupsForHoisting(
 ): ValidationResult | null {
   if (hasCrossGroupNameCollision(groups)) {
     return null;
+  }
+
+  // The hoisted declaration re-emits the pattern from property texts against a
+  // `(obj) ?? {}` initializer. A declarator annotation cannot survive that: the
+  // `{}` fallback almost never satisfies the annotation, and widening it to one
+  // that does requires the type checker. Reporting without a fix is preferable
+  // to silently dropping the annotation or manufacturing a type error, and a
+  // single annotated declarator withholds the whole fix because a partial hoist
+  // would still rewrite the dependency array around the statement left behind.
+  for (const group of groups.values()) {
+    if (group.hasTypeAnnotation) {
+      return null;
+    }
   }
 
   const declarationsToRemove = new Set<TSESTree.Node>();
