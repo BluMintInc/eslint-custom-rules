@@ -1,3 +1,10 @@
+## [1.20.12](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.11...v1.20.12) (2026-07-28)
+
+
+### Bug Fixes
+
+* **test-file-location-enforcement:** accept suite-qualifier test files (closes [#1372](https://github.com/BluMintInc/eslint-custom-rules/issues/1372)) ([b2abb0f](https://github.com/BluMintInc/eslint-custom-rules/commit/b2abb0f39bab3b91a63a1044e78f9738e3cb3eae))
+
 ## [1.20.11](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.10...v1.20.11) (2026-07-28)
 
 
