@@ -66,6 +66,46 @@ export const noExcessiveParentChain = createRule<Options, MessageIds>({
       return current.type === AST_NODE_TYPES.Identifier ? current.name : null;
     };
 
+    // Suggestions rewrite the chain as `<event>.params`, so the event binding has
+    // to be resolved back to a real identifier. Handler parameters destructured
+    // in place (`async ({ data: change }) => ...`) have no such identifier and
+    // resolve to null so the report can decline to suggest rather than guess.
+    const resolveEventParamName = (rootIdentifier: string): string | null => {
+      if (
+        eventIdentifiers.has(rootIdentifier) &&
+        rootIdentifier !== HANDLER_PARAM_SOURCE
+      ) {
+        return rootIdentifier;
+      }
+
+      const source = eventDataVariables.get(rootIdentifier);
+      if (!source || source === HANDLER_PARAM_SOURCE) {
+        return null;
+      }
+
+      return source;
+    };
+
+    // Every hop of a chain is reported separately, so an inner report's fix must
+    // still span the outermost hop. Replacing only the reported slice leaves a
+    // dangling hop behind (for example `event.params.parent.id`).
+    const getOutermostParentHop = (
+      node: TSESTree.MemberExpression,
+    ): TSESTree.MemberExpression => {
+      let outermost = node;
+      let ancestor = outermost.parent;
+      while (
+        ancestor?.type === AST_NODE_TYPES.MemberExpression &&
+        ancestor.object === outermost &&
+        ancestor.property.type === AST_NODE_TYPES.Identifier &&
+        ancestor.property.name === 'parent'
+      ) {
+        outermost = ancestor;
+        ancestor = outermost.parent;
+      }
+      return outermost;
+    };
+
     const hasRefProperty = (node: TSESTree.MemberExpression): boolean => {
       let current: TSESTree.MemberExpression | null = node;
       while (current) {
@@ -336,23 +376,30 @@ export const noExcessiveParentChain = createRule<Options, MessageIds>({
           return;
         }
 
+        const eventParamName = resolveEventParamName(rootIdentifier);
+
         context.report({
           node,
           messageId: 'excessiveParentChain',
           data: {
             count: parentCount,
           },
-          suggest: [
-            {
-              messageId: 'excessiveParentChain',
-              data: {
-                count: parentCount,
-              },
-              fix(fixer) {
-                return fixer.replaceText(node, 'event.params');
-              },
-            },
-          ],
+          suggest: eventParamName
+            ? [
+                {
+                  messageId: 'excessiveParentChain',
+                  data: {
+                    count: parentCount,
+                  },
+                  fix(fixer) {
+                    return fixer.replaceText(
+                      getOutermostParentHop(node),
+                      `${eventParamName}.params`,
+                    );
+                  },
+                },
+              ]
+            : [],
         });
       },
     };

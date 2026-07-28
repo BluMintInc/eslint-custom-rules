@@ -37,7 +37,9 @@ Found {{count}} consecutive ref.parent hops in this handler. Long parent chains 
 - Prefer `event.params` for path data (for example, `const { userId } = event.params;`).
 - Keep `ref.parent` usage to at most two hops when necessary (for example, walking to the immediate parent collection).
 - When you see the lint message, replace the chained `ref.parent` access with the equivalent `params` lookup from the handler arguments.
-- This rule provides editor suggestions to replace long parent chains with `event.params`. Apply the suggestion via your editor's quick-fix menu.
+- This rule provides editor suggestions that replace the entire parent chain with `<handlerParameter>.params`, named after the handler's actual parameter — a handler written as `async (e) => …` gets `e.params`, not `event.params`. Apply the suggestion via your editor's quick-fix menu.
+- The suggestion keeps the property that followed the chain (for example `.id`) as a placeholder, because the rule cannot know which params key corresponds to a given ancestor level. Replace it with the intended key (for example `e.params.userId`) after applying.
+- When the event binding has no identifier to reference — such as a handler destructured in its signature, `async ({ data: change }) => …` — the rule reports the chain but offers no suggestion rather than emitting an undefined name.
 
 ## Examples
 
