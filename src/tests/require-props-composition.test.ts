@@ -1,7 +1,21 @@
+import fs from 'fs';
+import path from 'path';
+import { Linter, Rule } from 'eslint';
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { requirePropsComposition } from '../rules/require-props-composition';
 
 const DEFAULT_FILENAME = 'src/components/MyComponent.tsx';
+// Issue #1316 (reopened): proving an imported child takes no props requires
+// reading the child module off disk, so these cases need a real filename inside
+// the fixture directory plus a targetPaths glob that matches it.
+const FIXTURE_FILENAME = path.join(
+  __dirname,
+  'fixtures/require-props-composition/TeamVersusRecord.tsx',
+);
+const FIXTURE_TARGET_PATHS = ['**/fixtures/**/*.tsx'];
+const FIXTURE_OPTIONS: [{ targetPaths: string[] }] = [
+  { targetPaths: FIXTURE_TARGET_PATHS },
+];
 // Issue #1268: getFilename() is absolute/platform-native in production; the rule
 // must resolve these against the repo-relative target globs.
 const ABSOLUTE_FILENAME = '/Users/dev/agora/src/components/MyComponent.tsx';
@@ -545,6 +559,213 @@ export const EditableBoolean = (props: EditableBooleanProps) => {
 };
 `,
     },
+    // 35. Issue #1316 (reopened): the real agora shape — the zero-prop child is
+    // IMPORTED from a sibling module rather than declared in-file, so in-file
+    // resolution cannot see it. Reading BestOfText.tsx proves it takes no props,
+    // so it is not a composition dependency and no BestOfTextProps is demanded.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { BestOfText } from './BestOfText';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecordUnmemoized = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    {title}
+    <BestOfText />
+  </div>
+);
+`,
+    },
+    // 36. Issue #1316 (reopened): an aliased named import resolves through the
+    // LOCAL name in JSX to the IMPORTED name in the target module.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { BestOfText as Best } from './BestOfText';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    {title}
+    <Best />
+  </div>
+);
+`,
+    },
+    // 37. Issue #1316 (reopened): memo() preserves the wrapped component's props
+    // surface, so a memo-wrapped zero-param child is still prop-less.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { MemoChild } from './MemoChild';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    {title}
+    <MemoChild />
+  </div>
+);
+`,
+    },
+    // 38. Issue #1316 (reopened): default import, where the default export is an
+    // alias of a locally declared zero-param arrow component.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import DefaultChild from './DefaultChild';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    {title}
+    <DefaultChild />
+  </div>
+);
+`,
+    },
+    // 39. Issue #1316 (reopened): directory-form import resolves through
+    // <source>/index.tsx, where the binding is exported via an `export { … }`
+    // clause rather than an inline `export const`.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { IndexChild } from './IndexChild';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    {title}
+    <IndexChild />
+  </div>
+);
+`,
+    },
+    // 40. Issue #1316 (reopened): under requireAllDependencies the prop-less
+    // import is dropped from the dep set, so the remaining composing child is
+    // enough to satisfy the rule.
+    {
+      filename: FIXTURE_FILENAME,
+      options: [
+        { targetPaths: FIXTURE_TARGET_PATHS, requireAllDependencies: true },
+      ],
+      code: `
+import { BestOfText } from './BestOfText';
+
+type LoadingButtonProps = { sx?: object; };
+export type TeamVersusRecordProps = Pick<LoadingButtonProps, 'sx'>;
+
+const TeamVersusRecord = (props: TeamVersusRecordProps) => (
+  <div>
+    <LoadingButton {...props} />
+    <BestOfText />
+  </div>
+);
+`,
+    },
+    // 41. Issue #1316 (reopened), defect D4: ApostropheChild.tsx really is
+    // prop-less, but its body holds an apostrophe in JSX text and a regex
+    // literal containing a quote. Reading the child module as text mistakes
+    // those for an unterminated string and loses the proof; parsing it does not,
+    // so the child is still dropped from the dependency set.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { ApostropheChild } from './ApostropheChild';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    {title}
+    <ApostropheChild />
+  </div>
+);
+`,
+    },
+    // 42. Issue #1316 (reopened): forwardRef is props-preserving, so a
+    // forwardRef-wrapped zero-parameter child is still prop-less. The HOC
+    // allowlist that closes the lazy()/dynamic() hole must keep this working.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { ForwardRefChild } from './MemoChild';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    {title}
+    <ForwardRefChild />
+  </div>
+);
+`,
+    },
+    // 43. Issue #1316 (reopened): the React.-qualified callee form of a
+    // props-preserving HOC resolves the same way as the bare one.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { ReactMemoChild } from './MemoChild';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    {title}
+    <ReactMemoChild />
+  </div>
+);
+`,
+    },
+    // 44. Issue #1316 (reopened): React.forwardRef, the other qualified form.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { ReactForwardRefChild } from './MemoChild';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    {title}
+    <ReactForwardRefChild />
+  </div>
+);
+`,
+    },
+    // 45. Issue #1316 (reopened): mobx's observer() is props-preserving too.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { ObserverChild } from './MemoChild';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    {title}
+    <ObserverChild />
+  </div>
+);
+`,
+    },
   ],
 
   invalid: [
@@ -843,5 +1064,399 @@ const Parent = ({ title }: ParentProps) => {
 `,
       errors: [{ messageId: 'missingPropsComposition' }],
     },
+    // 22. Issue #1316 (reopened): the relaxation requires POSITIVE proof of a
+    // zero-parameter child. ChildWithProps.tsx exists on disk and declares a
+    // props parameter, so it stays a composition dependency — still flagged.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { ChildWithProps } from './ChildWithProps';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    <ChildWithProps value={title} />
+  </div>
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 23. Issue #1316 (reopened): fail-safe direction. The imported module does
+    // not resolve to any file on disk, so nothing is proven and the rule keeps
+    // its normal behavior — an unresolvable import must never silence it.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { MissingChild } from './MissingChild';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    {title}
+    <MissingChild />
+  </div>
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 24. Issue #1316 (reopened): a package import is never resolved from disk,
+    // so a child from node_modules keeps demanding composition.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { LoadingButton } from '@mui/lab';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <LoadingButton>{title}</LoadingButton>
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 25. Issue #1316 (reopened): the prop-less import is dropped from the
+    // dependency set, not used to suppress the report — a sibling child that
+    // genuinely needs composition still fires.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { BestOfText } from './BestOfText';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    <BestOfText />
+    <LoadingButton>{title}</LoadingButton>
+  </div>
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 26. Issue #1316 (reopened), defect D1: OverloadedChild.tsx declares
+    // TypeScript overload signatures ahead of an implementation that TAKES
+    // props. The zero-parameter overload must not stand in for the
+    // implementation, so the child stays a composition dependency.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { OverloadedChild } from './OverloadedChild';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    <OverloadedChild value={title} />
+  </div>
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 27. Issue #1316 (reopened), defect D2: NestedShadowChild.tsx exports a
+    // props-taking component and also declares a same-named zero-argument
+    // function inside another function. Only the exported binding decides, so
+    // the nested namesake must not drop the child.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { NestedShadowChild } from './NestedShadowChild';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    <NestedShadowChild value={title} />
+  </div>
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 28. Issue #1316 (reopened), defect D3: TemplateTrapChild.tsx holds a
+    // nested template literal whose text reads as a zero-argument declaration of
+    // the component, ahead of the real props-taking one. A string can never
+    // prove a declaration, so the child stays a composition dependency.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { TemplateTrapChild } from './TemplateTrapChild';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    <TemplateTrapChild value={title} />
+  </div>
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 29. Issue #1316 (reopened): a re-export (`export { X as Y } from './z'`)
+    // resolves nothing — the definition lives in another module — so the child
+    // keeps demanding composition. Ambiguity always fails toward reporting.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { ReExportedChild } from './ReExportedChild';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    {title}
+    <ReExportedChild />
+  </div>
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 30. Issue #1316 (reopened), defect 1: `lazy(() => import('./X'))` forwards
+    // X's ENTIRE props surface. Unwrapping an arbitrary call expression made the
+    // zero-parameter loader arrow stand in for the component and silently
+    // dropped the dependency.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { LazyChild } from './LazyChild';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    <LazyChild value={title} />
+  </div>
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 31. Issue #1316 (reopened), defect 1: the same hole reached through
+    // `dynamic(() => import('./X'), { ssr: false })` — the exact shape this
+    // plugin's own prefer-next-dynamic autofix writes.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { DynamicChild } from './DynamicChild';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    <DynamicChild value={title} />
+  </div>
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 32. Issue #1316 (reopened), defect 1: `styled(Box)(() => ({...}))` — the
+    // zero-parameter argument is a style callback, not a component, and the
+    // binding inherits Box's whole props surface.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { StyledChild } from './StyledChild';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    <StyledChild sx={{ color: title }} />
+  </div>
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 33. Issue #1316 (reopened), defect 1: an arbitrary props-injecting HOC.
+    // Only an allowlisted props-preserving wrapper may be unwrapped.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { InjectedChild } from './InjectedChild';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    <InjectedChild tooltip={title} />
+  </div>
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 34. Issue #1316 (reopened), defect 1: a curried HOC
+    // (`connect(mapState)(Component)`) whose callee is itself a call expression.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { ConnectedChild } from './ConnectedChild';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    <ConnectedChild value={title} />
+  </div>
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 35. Issue #1316 (reopened), defect 1: the default-export form of the same
+    // hole — `export default lazy(() => import('./X'))`.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import DefaultLazyChild from './DefaultLazyChild';
+
+export type TeamVersusRecordProps = Readonly<{ title: string }>;
+
+const TeamVersusRecord = ({ title }: TeamVersusRecordProps) => (
+  <div>
+    <DefaultLazyChild value={title} />
+  </div>
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 36. Issue #1316 (reopened), defect 2: the rendered name is SHADOWED by a
+    // local declaration inside the component, so the module-level import is not
+    // what the JSX resolves to and proves nothing about it. Matching the import
+    // by name alone silenced this — a regression against pre-relaxation
+    // behavior, since the local child takes props and does not compose.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { PropLessKid } from './PropLessKid';
+
+export type ProbeParentProps = Readonly<{ title: string }>;
+
+export const ProbeParent = ({ title }: ProbeParentProps) => {
+  const PropLessKid = ({ value }: { value: string }) => <span>{value}</span>;
+  return (
+    <div>
+      {title}
+      <PropLessKid value="x" />
+    </div>
+  );
+};
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
   ],
+});
+
+// Issue #1316 (reopened), defect 3: the prop-less verdict is memoized across the
+// whole process, so under a long-lived host (the VS Code ESLint extension,
+// eslint_d) a child that GAINS props after a first lint must not keep its stale
+// "prop-less" verdict — that leaves every parent silently unreported until the
+// process restarts. RuleTester cannot rewrite a file between cases, so the rule
+// is driven through Linter directly here.
+describe('require-props-composition: on-disk child changes (issue #1316)', () => {
+  const FIXTURE_DIR = path.join(
+    __dirname,
+    'fixtures/require-props-composition',
+  );
+  const PROBE_CHILD = path.join(FIXTURE_DIR, 'MutatingProbeChild.tsx');
+  const PROBE_PARENT = path.join(FIXTURE_DIR, 'MutatingProbeParent.tsx');
+  const PROBE_PARENT_CODE = `
+import { MutatingProbeChild } from './MutatingProbeChild';
+
+export type MutatingProbeParentProps = Readonly<{ title: string }>;
+
+export const MutatingProbeParent = ({ title }: MutatingProbeParentProps) => (
+  <div>
+    {title}
+    <MutatingProbeChild value={title} />
+  </div>
+);
+`;
+
+  const PROP_LESS_CHILD = 'export const MutatingProbeChild = () => <div />;\n';
+  const WITH_PROPS_CHILD =
+    'export const MutatingProbeChild = (props: { value: string }) => <div>{props.value}</div>;\n';
+  // Same byte length as WITH_PROPS_CHILD, so only the mtime distinguishes them.
+  // This proves the timestamp — not just the size — participates in the stamp.
+  const PROP_LESS_CHILD_SAME_SIZE = PROP_LESS_CHILD.padEnd(
+    WITH_PROPS_CHILD.length,
+    ' ',
+  );
+
+  const lintProbeParent = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      'test/require-props-composition',
+      requirePropsComposition as unknown as Rule.RuleModule,
+    );
+    return linter.verify(
+      PROBE_PARENT_CODE,
+      {
+        parser: '@typescript-eslint/parser',
+        parserOptions: {
+          ecmaVersion: 2020,
+          sourceType: 'module',
+          ecmaFeatures: { jsx: true },
+        },
+        rules: {
+          'test/require-props-composition': [
+            'error',
+            { targetPaths: FIXTURE_TARGET_PATHS },
+          ],
+        },
+      },
+      PROBE_PARENT,
+    );
+  };
+
+  const writeChild = (source: string) => {
+    fs.writeFileSync(PROBE_CHILD, source);
+    // Coarse filesystem timestamps can collapse two writes onto one mtime;
+    // stepping it forward explicitly keeps the probe deterministic.
+    const stepped = new Date(Date.now() + 60_000);
+    fs.utimesSync(PROBE_CHILD, stepped, stepped);
+  };
+
+  afterAll(() => {
+    fs.rmSync(PROBE_CHILD, { force: true });
+  });
+
+  it('re-reads a child whose props surface changes on disk', () => {
+    writeChild(PROP_LESS_CHILD);
+    expect(lintProbeParent()).toHaveLength(0);
+
+    writeChild(WITH_PROPS_CHILD);
+    expect(lintProbeParent()).toHaveLength(1);
+
+    // Back to prop-less at an identical byte length: the verdict must follow the
+    // file rather than a stale cache entry, so the timestamp has to carry it.
+    expect(PROP_LESS_CHILD_SAME_SIZE).toHaveLength(WITH_PROPS_CHILD.length);
+    writeChild(PROP_LESS_CHILD_SAME_SIZE);
+    expect(lintProbeParent()).toHaveLength(0);
+  });
+
+  it('reports again once a resolved child is deleted', () => {
+    writeChild(PROP_LESS_CHILD);
+    expect(lintProbeParent()).toHaveLength(0);
+
+    fs.rmSync(PROBE_CHILD, { force: true });
+    expect(lintProbeParent()).toHaveLength(1);
+  });
 });
