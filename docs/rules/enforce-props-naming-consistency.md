@@ -127,6 +127,76 @@ function process<T extends ComponentProps>(props: T) {
 }
 ```
 
+## Autofix
+
+The autofix renames the parameter **and every in-file reference to it**, rewriting only the name token so the `?` marker and the `: SomethingProps` annotation survive:
+
+```ts
+// Before
+function C(input: FooProps) {
+  return input.name;
+}
+
+// After --fix
+function C(props: FooProps) {
+  return props.name;
+}
+```
+
+Object-literal shorthand is expanded rather than renamed wholesale, so the property key keeps its name:
+
+```ts
+// Before
+function toEntry(settings: EntryProps) {
+  return { settings };
+}
+
+// After --fix
+function toEntry(props: EntryProps) {
+  return { settings: props };
+}
+```
+
+The fix is withheld (the violation is still reported) whenever the rename cannot be applied everywhere safely:
+
+- **Name collision or capture** — `props` is already bound in a scope the rename touches, so renaming would redeclare or shadow an existing binding:
+
+  ```ts
+  // Reported, not fixed
+  function render(settings: RenderProps) {
+    const props = normalize(settings);
+    return props;
+  }
+  ```
+
+- **Constructor parameter properties whose name is used elsewhere in the class** — `constructor(private readonly settings: WidgetProps)` declares both a constructor-local binding and a `this.settings` field. Scope analysis only models the binding, so a rename would leave `this.settings` (or a plain `settings` use) dangling:
+
+  ```ts
+  // Reported, not fixed
+  class Widget {
+    constructor(private readonly settings: WidgetProps) {}
+    render() {
+      return this.settings.label;
+    }
+  }
+  ```
+
+  A parameter property whose name appears nowhere else in the class is renamed normally.
+
+Parameters on body-less signatures (interface and object-type method members) are documentation-only and can never be referenced, so their declaration-only rename is complete:
+
+```ts
+// Before
+interface Renderer {
+  render(config: RenderProps): void;
+}
+
+// After --fix
+interface Renderer {
+  render(props: RenderProps): void;
+}
+```
+
 ## When Not To Use It
 
 You might want to disable this rule if:

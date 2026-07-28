@@ -113,6 +113,13 @@ ruleTesterTs.run(
       },
     ],
     invalid: [
+      // Issue #1358 repro: the annotation must survive and body references must
+      // be rewritten alongside the declaration.
+      {
+        code: `function C(input: FooProps) {\n  return input.name;\n}`,
+        errors: [{ messageId: 'usePropsName', data: { paramName: 'input' } }],
+        output: `function C(props: FooProps) {\n  return props.name;\n}`,
+      },
       // Function with incorrect parameter name
       {
         code: `
@@ -132,8 +139,8 @@ ruleTesterTs.run(
           name: string;
           age: number;
         };
-        function User(props) {
-          return settings.name;
+        function User(props: UserProps) {
+          return props.name;
         }
       `,
       },
@@ -154,8 +161,8 @@ ruleTesterTs.run(
           label: string;
           onClick: () => void;
         };
-        const Button = (props) => {
-          return options.label;
+        const Button = (props: ButtonProps) => {
+          return props.label;
         };
       `,
       },
@@ -181,7 +188,7 @@ ruleTesterTs.run(
           match: MatchAggregated;
         };
         class TournamentFactory {
-          constructor(private readonly props) {
+          constructor(private readonly props: TournamentFactoryProps) {
             // ...
           }
         }
@@ -204,7 +211,7 @@ ruleTesterTs.run(
           players: Player[];
           settings: GameSettings;
         };
-        function createGame(props) {
+        function createGame(props: GameCreationProps) {
           // ...
         }
       `,
@@ -227,8 +234,231 @@ ruleTesterTs.run(
         class DataManager {
           constructor(
             private readonly dataSource: DataSource,
-            private readonly props,
+            private readonly props: ManagerProps,
           ) {}
+        }
+      `,
+      },
+      // Parameter property whose name is read via `this.<name>`: the field half
+      // of the rename is invisible to scope analysis, so no fix is emitted.
+      {
+        code: `
+        class Widget {
+          constructor(private readonly settings: WidgetProps) {}
+          render() {
+            return this.settings.label;
+          }
+        }
+      `,
+        errors: [
+          { messageId: 'usePropsName', data: { paramName: 'settings' } },
+        ],
+        output: null,
+      },
+      // Parameter property read as a plain identifier inside the constructor.
+      {
+        code: `
+        class Widget {
+          constructor(private readonly settings: WidgetProps) {
+            console.log(settings.label);
+          }
+        }
+      `,
+        errors: [
+          { messageId: 'usePropsName', data: { paramName: 'settings' } },
+        ],
+        output: null,
+      },
+      // Parameter property with no other occurrence in the class: the rename is
+      // complete, and the annotation survives.
+      {
+        code: `
+        class Widget {
+          constructor(private readonly settings: WidgetProps) {
+            console.log('ready');
+          }
+        }
+      `,
+        errors: [
+          { messageId: 'usePropsName', data: { paramName: 'settings' } },
+        ],
+        output: `
+        class Widget {
+          constructor(private readonly props: WidgetProps) {
+            console.log('ready');
+          }
+        }
+      `,
+      },
+      // Object-literal shorthand must expand so the KEY keeps its name.
+      {
+        code: `
+        function toEntry(settings: EntryProps) {
+          return { settings, id: settings.id };
+        }
+      `,
+        errors: [
+          { messageId: 'usePropsName', data: { paramName: 'settings' } },
+        ],
+        output: `
+        function toEntry(props: EntryProps) {
+          return { settings: props, id: props.id };
+        }
+      `,
+      },
+      // An existing `props` binding in the parameter's scope would be
+      // redeclared by the rename, so the fix is withheld.
+      {
+        code: `
+        function render(settings: RenderProps) {
+          const props = normalize(settings);
+          return props;
+        }
+      `,
+        errors: [
+          { messageId: 'usePropsName', data: { paramName: 'settings' } },
+        ],
+        output: null,
+      },
+      // References spread across nested closures are all rewritten.
+      {
+        code: `
+        const build = (settings: BuildProps) => {
+          return () => {
+            const inner = () => settings.depth;
+            return inner() + settings.width;
+          };
+        };
+      `,
+        errors: [
+          { messageId: 'usePropsName', data: { paramName: 'settings' } },
+        ],
+        output: `
+        const build = (props: BuildProps) => {
+          return () => {
+            const inner = () => props.depth;
+            return inner() + props.width;
+          };
+        };
+      `,
+      },
+      // An optional parameter keeps both its `?` marker and its annotation.
+      {
+        code: `
+        function User(input?: UserProps) {
+          return input?.name;
+        }
+      `,
+        errors: [{ messageId: 'usePropsName', data: { paramName: 'input' } }],
+        output: `
+        function User(props?: UserProps) {
+          return props?.name;
+        }
+      `,
+      },
+      // A body-less interface method signature: the parameter name is
+      // documentation-only, so a declaration-only rename is complete.
+      {
+        code: `
+        interface Renderer {
+          render(config: RenderProps): void;
+        }
+      `,
+        errors: [{ messageId: 'usePropsName', data: { paramName: 'config' } }],
+        output: `
+        interface Renderer {
+          render(props: RenderProps): void;
+        }
+      `,
+      },
+      // The same body-less shape as an object-type member.
+      {
+        code: `type Renderer = { render(config: RenderProps): void };`,
+        errors: [{ messageId: 'usePropsName', data: { paramName: 'config' } }],
+        output: `type Renderer = { render(props: RenderProps): void };`,
+      },
+      // A body-less constructor overload signature.
+      {
+        code: `
+        class Widget {
+          constructor(config: WidgetProps);
+          constructor(config: unknown) {}
+        }
+      `,
+        errors: [{ messageId: 'usePropsName', data: { paramName: 'config' } }],
+        output: `
+        class Widget {
+          constructor(props: WidgetProps);
+          constructor(config: unknown) {}
+        }
+      `,
+      },
+      // A non-constructor class method (a FunctionExpression owner).
+      {
+        code: `
+        class ComponentManager {
+          initialize(config: ComponentProps) {
+            return config.id;
+          }
+        }
+      `,
+        errors: [{ messageId: 'usePropsName', data: { paramName: 'config' } }],
+        output: `
+        class ComponentManager {
+          initialize(props: ComponentProps) {
+            return props.id;
+          }
+        }
+      `,
+      },
+      // A method on an object literal.
+      {
+        code: `
+        const manager = {
+          initialize(config: ComponentProps) {
+            return config.id;
+          },
+        };
+      `,
+        errors: [{ messageId: 'usePropsName', data: { paramName: 'config' } }],
+        output: `
+        const manager = {
+          initialize(props: ComponentProps) {
+            return props.id;
+          },
+        };
+      `,
+      },
+      // The reported parameter shares its name with the enclosing function, so
+      // the rename must resolve the variable by declaration identity.
+      {
+        code: `
+        function config(config: ComponentProps) {
+          return config.id;
+        }
+      `,
+        errors: [{ messageId: 'usePropsName', data: { paramName: 'config' } }],
+        output: `
+        function config(props: ComponentProps) {
+          return props.id;
+        }
+      `,
+      },
+      // A reference nested inside JSX-free deep member/call chains.
+      {
+        code: `
+        function User(settings: UserProps) {
+          const { name } = settings;
+          return [settings.age, name, settings];
+        }
+      `,
+        errors: [
+          { messageId: 'usePropsName', data: { paramName: 'settings' } },
+        ],
+        output: `
+        function User(props: UserProps) {
+          const { name } = props;
+          return [props.age, name, props];
         }
       `,
       },
