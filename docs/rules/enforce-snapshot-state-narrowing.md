@@ -55,6 +55,24 @@ if (state === 'idle') return null;
 if (typeof state === 'string') return <Spinner />;
 ```
 
+## Suggestions
+
+Each report carries one suggestion that rewrites the flagged expression in terms of `isSnapshotReady` and brings the guard into scope.
+
+The rewrite preserves the meaning of the original expression:
+
+| Flagged                                                  | Suggested                                   |
+| -------------------------------------------------------- | ------------------------------------------- |
+| `!state`                                                 | `!isSnapshotReady(state)`                   |
+| `state`, `!!state`, `Boolean(state)`                     | `isSnapshotReady(state)`                    |
+| `state && expr`                                          | `isSnapshotReady(state) && expr`            |
+| `state \|\| fallback`                                    | `isSnapshotReady(state) ? state : fallback` |
+| `typeof state === 'object'`, `typeof state !== 'string'` | `isSnapshotReady(state)`                    |
+
+A falsy check keeps its negation — replacing `!state` with the positive guard would reverse the control flow. `||` becomes a conditional because the operand carries a value: swapping it for the guard alone would yield `true` instead of the data.
+
+The suggestion also imports `isSnapshotReady`. It extends an existing import of the guard's module (reusing that file's own path), inserts `guardImportSource` when there is none, and does nothing when the guard is already in scope. When the name is taken by something that is not the guard — an unrelated binding or a type-only import — the suggestion is withheld rather than emitting a call to the wrong thing.
+
 ## Options
 
 ```js
@@ -71,6 +89,11 @@ if (typeof state === 'string') return <Spinner />;
     // Files to exclude (e.g. the isSnapshotReady implementation itself).
     // Default: ['src/types/FirestoreSnapshotState.ts']
     excludeFiles: ['src/types/FirestoreSnapshotState.ts'],
+
+    // Module the suggestion imports isSnapshotReady from when the file has no
+    // import of the guard's module to extend.
+    // Default: 'src/types/FirestoreSnapshotState'
+    guardImportSource: '@/types/FirestoreSnapshotState',
   }]
 }
 ```
