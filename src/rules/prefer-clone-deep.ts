@@ -54,68 +54,6 @@ export const preferCloneDeep = createRule<[], MessageIds>({
     // Track processed nodes to avoid duplicate reports
     const processedNodes = new Set<TSESTree.Node>();
 
-    function hasNestedSpread(node: TSESTree.ObjectExpression): boolean {
-      let hasFunction = false;
-      let hasSymbol = false;
-      let hasSpread = false;
-      let hasNestedSpread = false;
-      let hasNestedObject = false;
-
-      function visit(node: TSESTree.Node, depth = 0): void {
-        if (node.type === AST_NODE_TYPES.SpreadElement) {
-          hasSpread = true;
-          if (depth > 0) {
-            hasNestedSpread = true;
-          }
-        } else if (
-          node.type === AST_NODE_TYPES.FunctionExpression ||
-          node.type === AST_NODE_TYPES.ArrowFunctionExpression
-        ) {
-          hasFunction = true;
-        } else if (
-          // Check for Symbol usage in computed properties
-          (node.type === AST_NODE_TYPES.Property &&
-            node.computed &&
-            node.key.type === AST_NODE_TYPES.Identifier &&
-            node.key.name === 'Symbol') ||
-          // Check for direct Symbol constructor calls
-          (node.type === AST_NODE_TYPES.Property &&
-            node.computed &&
-            node.key.type === AST_NODE_TYPES.CallExpression &&
-            node.key.callee.type === AST_NODE_TYPES.Identifier &&
-            node.key.callee.name === 'Symbol')
-        ) {
-          hasSymbol = true;
-        }
-
-        // Visit child nodes without traversing parent references. Depth tracks
-        // object-nesting level: an object's OWN direct properties stay at the
-        // object's depth, and only descending into a property's value (a
-        // genuinely nested child) increments it. This keeps the top-level
-        // object's own `...spread` at depth 0 so it is never miscounted as a
-        // nested spread.
-        if (node.type === AST_NODE_TYPES.ObjectExpression) {
-          if (depth > 0) {
-            hasNestedObject = true;
-          }
-          node.properties.forEach((prop) => visit(prop, depth));
-        } else if (node.type === AST_NODE_TYPES.Property) {
-          visit(node.value, depth + 1);
-        } else if (node.type === AST_NODE_TYPES.SpreadElement) {
-          visit(node.argument, depth);
-        }
-      }
-
-      visit(node);
-      return (
-        hasSpread &&
-        hasNestedSpread &&
-        hasNestedObject &&
-        !hasFunction &&
-        !hasSymbol
-      );
-    }
-
     const sourceCode = context.sourceCode;
 
     function normalizedTextOf(node: TSESTree.Node): string {
@@ -162,6 +100,118 @@ export const preferCloneDeep = createRule<[], MessageIds>({
         return `${objectPath}.${normalizedTextOf(unwrapped.property)}`;
       }
       return normalizedTextOf(unwrapped);
+    }
+
+    const partialDeepCopyCache = new WeakMap<
+      TSESTree.ObjectExpression,
+      boolean
+    >();
+
+    /**
+     * The hazard this rule describes is a hand-written PARTIAL deep copy: a
+     * literal that spreads a base AND separately spreads one of that same
+     * base's sub-paths, as in `{ ...base, a: { ...base.a, x: 1 } }`. Only the
+     * sub-objects spelled out that way get their own copy; every OTHER
+     * sub-object of `base` keeps aliasing the original, so a later mutation
+     * leaks back.
+     *
+     * Merging unrelated sources copies nothing twice and is safe, which is why
+     * shapes such as `{ ...a, nested: { ...b } }`, MUI `sx` style maps and
+     * static config maps must not be flagged (#1371). A spread of the exact
+     * same path (`{ ...a, x: { ...a } }`) is deliberately excluded as well: it
+     * is a redundant copy rather than a partial one, and this repo prefers
+     * false negatives over false positives.
+     */
+    function isPartialDeepCopy(node: TSESTree.ObjectExpression): boolean {
+      const cached = partialDeepCopyCache.get(node);
+      if (cached !== undefined) {
+        return cached;
+      }
+
+      let hasFunction = false;
+      let hasSymbol = false;
+      const basePaths = new Set<string>();
+      const nestedPaths: string[] = [];
+
+      function visit(current: TSESTree.Node, depth = 0): void {
+        if (current.type === AST_NODE_TYPES.SpreadElement) {
+          const path = accessPathOf(current.argument);
+          if (depth === 0) {
+            basePaths.add(path);
+          } else {
+            nestedPaths.push(path);
+          }
+        } else if (
+          current.type === AST_NODE_TYPES.FunctionExpression ||
+          current.type === AST_NODE_TYPES.ArrowFunctionExpression
+        ) {
+          hasFunction = true;
+        } else if (
+          // Check for Symbol usage in computed properties
+          (current.type === AST_NODE_TYPES.Property &&
+            current.computed &&
+            current.key.type === AST_NODE_TYPES.Identifier &&
+            current.key.name === 'Symbol') ||
+          // Check for direct Symbol constructor calls
+          (current.type === AST_NODE_TYPES.Property &&
+            current.computed &&
+            current.key.type === AST_NODE_TYPES.CallExpression &&
+            current.key.callee.type === AST_NODE_TYPES.Identifier &&
+            current.key.callee.name === 'Symbol')
+        ) {
+          hasSymbol = true;
+        }
+
+        // Visit child nodes without traversing parent references. Depth tracks
+        // object-nesting level: an object's OWN direct properties stay at the
+        // object's depth, and only descending into a property's value (a
+        // genuinely nested child) increments it. This keeps the literal's own
+        // `...spread` at depth 0, where it names a base rather than a
+        // hand-copied sub-path.
+        if (current.type === AST_NODE_TYPES.ObjectExpression) {
+          current.properties.forEach((prop) => visit(prop, depth));
+        } else if (current.type === AST_NODE_TYPES.Property) {
+          visit(current.value, depth + 1);
+        } else if (current.type === AST_NODE_TYPES.SpreadElement) {
+          visit(current.argument, depth);
+        }
+      }
+
+      visit(node);
+
+      // cloneDeep cannot faithfully reproduce functions or symbol keys, so
+      // their presence suppresses the report regardless of the copy shape.
+      const result =
+        !hasFunction &&
+        !hasSymbol &&
+        nestedPaths.some((nested) =>
+          // The separators guard against a sibling whose name merely starts
+          // with a base's name (`abc.x` is not a sub-path of `ab`).
+          [...basePaths].some(
+            (base) =>
+              nested.startsWith(`${base}.`) || nested.startsWith(`${base}[`),
+          ),
+        );
+
+      partialDeepCopyCache.set(node, result);
+      return result;
+    }
+
+    /**
+     * A literal that merely wraps a partial deep copy (the #365 membership
+     * shape) is still the site the report belongs on, so the predicate reaches
+     * through property values into descendant literals.
+     */
+    function containsPartialDeepCopy(node: TSESTree.ObjectExpression): boolean {
+      if (isPartialDeepCopy(node)) {
+        return true;
+      }
+      return node.properties.some(
+        (prop) =>
+          prop.type === AST_NODE_TYPES.Property &&
+          prop.value.type === AST_NODE_TYPES.ObjectExpression &&
+          containsPartialDeepCopy(prop.value),
+      );
     }
 
     function accessorForKey(prop: TSESTree.Property): string | null {
@@ -331,7 +381,7 @@ export const preferCloneDeep = createRule<[], MessageIds>({
         if (
           current !== node &&
           startsWithSpread(current) &&
-          hasNestedSpread(current)
+          isPartialDeepCopy(current)
         ) {
           targets.push(current);
           return;
@@ -420,7 +470,7 @@ export const preferCloneDeep = createRule<[], MessageIds>({
     }
 
     // Find the outermost object expression that needs cloneDeep
-    function findOutermostObjectWithNestedSpread(
+    function findOutermostPartialDeepCopy(
       node: TSESTree.ObjectExpression,
     ): TSESTree.ObjectExpression {
       let current: TSESTree.Node | undefined = node.parent;
@@ -433,8 +483,9 @@ export const preferCloneDeep = createRule<[], MessageIds>({
           current.parent &&
           current.parent.type === AST_NODE_TYPES.ObjectExpression
         ) {
-          // If this is a property of an object expression, check if that object has nested spreads
-          if (hasNestedSpread(current.parent)) {
+          // Reporting on the enclosing literal keeps sibling copies under a
+          // single error, so one fix pass rewrites them all together.
+          if (containsPartialDeepCopy(current.parent)) {
             result = current.parent;
           }
         }
@@ -451,9 +502,9 @@ export const preferCloneDeep = createRule<[], MessageIds>({
           return;
         }
 
-        if (hasNestedSpread(node)) {
+        if (containsPartialDeepCopy(node)) {
           // Find the outermost object that should use cloneDeep
-          const outermostNode = findOutermostObjectWithNestedSpread(node);
+          const outermostNode = findOutermostPartialDeepCopy(node);
 
           // Mark all nested object expressions as processed
           const markProcessed = (n: TSESTree.Node): void => {

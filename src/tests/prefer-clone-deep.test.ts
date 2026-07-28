@@ -182,6 +182,50 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
     {
       code: `function f() { return { ...base, key: {} }; }`,
     },
+    // Regression #1371: `...b`/`...c` copy objects unrelated to the base, so no
+    // sub-object of `a` is hand-copied and nothing aliases twice.
+    {
+      code: `const x = { ...a, nested: { ...b, deeper: { ...c } } };`,
+    },
+    // Regression #1371: an ordinary two-source merge is not a partial deep copy.
+    {
+      code: `const merged: Foo = { ...a, nested: { ...b } };`,
+    },
+    // Regression #1371: the same unrelated merge two levels down.
+    {
+      code: `const merged = { ...a, x: { y: { ...b } } };`,
+    },
+    // Regression #1371: no base is spread at all, so there is nothing to
+    // partially copy.
+    {
+      code: `const o = { x: { y: { ...b } } };`,
+    },
+    // Regression #1371: a MUI `sx` style object composed from a style constant.
+    {
+      code: `const sx = { '& .MuiInputBase-input': { ...variantStyle } } as const;`,
+    },
+    // Regression #1371: a lookup map whose entries each extend a shared style.
+    {
+      code: `const map = { bottomLeft: { ...OVERLAY_LAYER_SX, bottom: 4 }, topRight: { ...OVERLAY_LAYER_SX, top: 4 } };`,
+    },
+    // Regression #1371: merging two unrelated sources into one property.
+    {
+      code: `const newResult = { data: { ...oldHits, ...hits }, state: 1 };`,
+    },
+    // Regression #1371: the same merge beside a shorthand property.
+    {
+      code: `const options = { operation, details: { ...baseDetails, ...banDetails } };`,
+    },
+    // Regression #1371: the nested spread is rooted at a different base than the
+    // top-level spread, so no sub-object of `a` is copied by hand.
+    {
+      code: `const m = { ...a, nested: { ...other.nested, v: 1 } };`,
+    },
+    // Regression #1371: `abc.x` merely shares a string prefix with `ab`; it is
+    // not a sub-path of the spread base.
+    {
+      code: `const m = { ...ab, nested: { ...abc.x, v: 1 } };`,
+    },
   ],
   invalid: [
     // Basic nested spread
@@ -450,28 +494,6 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
         } as const);
       `,
     },
-    // Regression #1299: a spread genuinely nested two levels deep inside child
-    // objects is the rule's real target (per #365) and must keep firing.
-    // Regression #1364: `...b`/`...c` copy objects other than the clone source,
-    // so no overrides object can reproduce them — report without fixing.
-    {
-      code: `const x = { ...a, nested: { ...b, deeper: { ...c } } };`,
-      errors: [expectPreferCloneDeepError],
-      output: null,
-    },
-    // Regression #1364: the issue repro — the nested spread of an unrelated
-    // object used to be deleted, turning `nested` into `{}`.
-    {
-      code: `const merged: Foo = { ...a, nested: { ...b } };`,
-      errors: [expectPreferCloneDeepError],
-      output: null,
-    },
-    // Regression #1364: the same data loss two levels down.
-    {
-      code: `const merged = { ...a, x: { y: { ...b } } };`,
-      errors: [expectPreferCloneDeepError],
-      output: null,
-    },
     // Regression #1364: emitting the fix must also import cloneDeep, otherwise
     // the fixed file references an undefined identifier.
     {
@@ -609,13 +631,6 @@ const wrapper = {
   } as const),
 };`,
     },
-    // Regression #1300/#1364: nothing here shallow-copies a base object, so no
-    // faithful cloneDeep call exists and the fix is declined.
-    {
-      code: `const o = { x: { y: { ...b } } };`,
-      errors: [expectPreferCloneDeepError],
-      output: null,
-    },
     // A non-null assertion is a spelling of the same base path.
     {
       code: `const merged = { ...a, nested: { ...a.nested!, value: 42 } };`,
@@ -700,6 +715,39 @@ const both = { one: cloneDeep(x, {
     v: 2
   }
 } as const) };`,
+    },
+    // Regression #1371: a nested spread of a DIFFERENT sub-path of the same
+    // base is still a partial deep copy — `a`'s other sub-objects keep aliasing
+    // the original. The overrides object cannot express `...a.other`, so the
+    // fix is declined.
+    {
+      code: `const m = { ...a, nested: { ...a.other, value: 42 } };`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
+    },
+    // Regression #1371: the hand-copied sub-path can sit several levels down.
+    {
+      code: `const m = { ...a, x: { y: { ...a.x.y, v: 1 } } };`,
+      errors: [expectPreferCloneDeepError],
+      output: `import { cloneDeep } from 'functions/src/util/cloneDeep';
+const m = cloneDeep(a, {
+  x: {
+    y: {
+      v: 1
+    }
+  }
+} as const);`,
+    },
+    // Regression #1371: a computed sub-path of the base counts as a sub-path.
+    {
+      code: `const m = { ...a, [k]: { ...a[k], v: 1 } };`,
+      errors: [expectPreferCloneDeepError],
+      output: `import { cloneDeep } from 'functions/src/util/cloneDeep';
+const m = cloneDeep(a, {
+  [k]: {
+    v: 1
+  }
+} as const);`,
     },
     // Regression #1364: a shadowing binding in an enclosing scope also blocks
     // the fix.

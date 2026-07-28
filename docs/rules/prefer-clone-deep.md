@@ -12,6 +12,42 @@ Prefer `cloneDeep` from `functions/src/util/cloneDeep.ts` instead of chaining ne
 
 Chained spreads only clone one level of an object. Every deeper property still points at the original structure, so later mutations leak back into the source state/config and invalidate assumptions about immutability. `cloneDeep(base, overrides)` deep-clones the base object first and then applies overrides in one place, keeping referential stability and preserving literal type inference.
 
+### What the rule flags
+
+The rule targets one specific shape: a hand-written **partial deep copy**. A
+literal is reported when it spreads a base **and** separately spreads a
+**sub-path of that same base**:
+
+```ts
+{ ...base, a: { ...base.a, x: 1 } }
+```
+
+Only `base.a` gets a copy of its own. Every other sub-object of `base` still
+points at the original, so mutating the "copy" later leaks back into `base` —
+the exact hazard the message describes.
+
+Merging unrelated sources is safe and is **not** reported, because nothing is
+copied twice:
+
+```ts
+// ✅ not a partial copy — `b` is not a sub-path of `a`
+const merged = { ...a, nested: { ...b } };
+
+// ✅ style objects and lookup maps that never re-copy their own base
+const sx = { '& .MuiInputBase-input': { ...variantStyle } } as const;
+const map = { bottomLeft: { ...OVERLAY_SX, bottom: 4 }, topRight: { ...OVERLAY_SX, top: 4 } };
+
+// ✅ an ordinary two-source merge
+const options = { operation, details: { ...baseDetails, ...banDetails } };
+
+// ❌ a partial copy — `base.a` is copied by hand, `base.b` is not
+const patched = { ...base, a: { ...base.a, x: 1 } };
+```
+
+Re-spreading the *exact* same path (`{ ...a, x: { ...a } }`) is also left alone:
+that is a redundant copy rather than a partial one, and the rule prefers false
+negatives over false positives.
+
 ### Why cloneDeep instead of nested spreads
 
 - Nested spreads leave inner references shared, so mutations to the "copy" also mutate the source.
@@ -36,7 +72,8 @@ An autofix must never change runtime behavior, so the rule reports **without**
 fixing whenever the overrides object cannot reproduce the literal faithfully:
 
 - A nested spread of anything other than the path `cloneDeep` already copies, for
-  example `{ ...a, nested: { ...b } }`. Dropping `...b` would delete data.
+  example `{ ...a, nested: { ...a.other, value: 42 } }`. Dropping `...a.other`
+  would delete data.
 - A spread that is not the first property of its object, for example
   `{ ...a, nested: { value: 42, ...a.nested } }`, where the spread overrides the
   keys declared before it.
@@ -45,8 +82,8 @@ fixing whenever the overrides object cannot reproduce the literal faithfully:
 - A binding named `cloneDeep` that resolves to something else (a local variable,
   a namespace import, a type-only import, or `lodash`'s `cloneDeep`, which takes
   no overrides argument).
-- A flagged literal that shallow-copies no base object at all, for example
-  `{ x: { y: { ...b } } }`.
+- A flagged literal whose partial copy is not reachable as a direct property
+  value, so no faithful `cloneDeep` call can replace it.
 
 Defensive spellings of the base path are recognized and dropped safely:
 `...(base?.x ?? {})`, `...base.x!` and `...base['x']` all mirror `base.x`. Array,
