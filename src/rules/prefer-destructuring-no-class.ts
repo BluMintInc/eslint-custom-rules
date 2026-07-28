@@ -444,6 +444,15 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
         return null;
       }
 
+      // The fix re-emits the declaration as `kind { binding } = object`, which has
+      // nowhere to carry an explicit annotation on the binding. Relocating it as
+      // `const { alpha }: { alpha: string } = obj` would assert something different
+      // (a structural constraint on the source object rather than the variable's
+      // declared type) and can shift inference, so withhold the fix and report only.
+      if (node.id.typeAnnotation) {
+        return null;
+      }
+
       const destructuringBinding = getDestructuringBindingText(
         memberExpr,
         propertyText,
