@@ -1,3 +1,11 @@
+## [1.20.7](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.6...v1.20.7) (2026-07-28)
+
+
+### Bug Fixes
+
+* **no-redundant-annotation-assertion:** resolve type format flags lazily (closes [#1354](https://github.com/BluMintInc/eslint-custom-rules/issues/1354)) ([50167cd](https://github.com/BluMintInc/eslint-custom-rules/commit/50167cd8e54e24a53ac23e4b1fb4af8fb5d8c877))
+* **no-usememo-for-pass-by-value:** resolve compiler type flags lazily (refs [#1354](https://github.com/BluMintInc/eslint-custom-rules/issues/1354)) ([025f8e9](https://github.com/BluMintInc/eslint-custom-rules/commit/025f8e9d8d81db542fe166899f3b222a518ac628))
+
 ## [1.20.6](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.5...v1.20.6) (2026-07-28)
 
 

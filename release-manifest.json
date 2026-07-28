@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.20.7",
+    "date": "2026-07-28T05:35:51.746Z",
+    "rules": [
+      {
+        "name": "no-redundant-annotation-assertion",
+        "changeType": "fix",
+        "issues": [
+          1354
+        ],
+        "summary": "resolve type format flags lazily (closes #1354)"
+      },
+      {
+        "name": "no-usememo-for-pass-by-value",
+        "changeType": "fix",
+        "issues": [
+          1354
+        ],
+        "summary": "resolve compiler type flags lazily (refs #1354)"
+      }
+    ]
+  },
+  {
     "version": "1.20.6",
     "date": "2026-07-28T05:19:38.242Z",
     "rules": []
