@@ -319,7 +319,7 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         }
       `,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
-      output: `import { QUERY_KEY_PLAYBACK_ID } from '@/util/routing/queryKeys';
+      output: `import { QUERY_KEY_PLAYBACK_ID } from 'src/util/routing/queryKeys';
 
         function Component() {
           const [playbackId] = useRouterState({ key: QUERY_KEY_PLAYBACK_ID });
@@ -340,7 +340,7 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         }
       `,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
-      output: `import { QUERY_KEY_TOURNAMENT_DETAILS } from '@/util/routing/queryKeys';
+      output: `import { QUERY_KEY_TOURNAMENT_DETAILS } from 'src/util/routing/queryKeys';
 
         function Component() {
           const [value] = useRouterState({
@@ -370,7 +370,7 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         { messageId: 'enforceQueryKeyImport' },
       ],
       // One import collects both substituted constants in a single pass.
-      output: `import { QUERY_KEY_MATCH_VIEW, QUERY_KEY_TOURNAMENT_VIEW } from '@/util/routing/queryKeys';
+      output: `import { QUERY_KEY_MATCH_VIEW, QUERY_KEY_TOURNAMENT_VIEW } from 'src/util/routing/queryKeys';
 
         function MatchComponent() {
           const [value] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
@@ -397,7 +397,7 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         { messageId: 'enforceQueryKeyImport' },
         { messageId: 'enforceQueryKeyImport' },
       ],
-      output: `import { QUERY_KEY_MATCH_DETAILS, QUERY_KEY_TOURNAMENT_DETAILS } from '@/util/routing/queryKeys';
+      output: `import { QUERY_KEY_MATCH_DETAILS, QUERY_KEY_TOURNAMENT_DETAILS } from 'src/util/routing/queryKeys';
 
         function useCustomRouterState(id) {
           const [matchValue] = useRouterState({ key: QUERY_KEY_MATCH_DETAILS });
@@ -535,7 +535,7 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         { messageId: 'enforceQueryKeyImport' },
         { messageId: 'enforceQueryKeyImport' },
       ],
-      output: `import { QUERY_KEY_SECTION_SUBSECTION, QUERY_KEY_USER_PROFILE_SETTINGS, QUERY_KEY_APP_MODULE_COMPONENT } from '@/util/routing/queryKeys';
+      output: `import { QUERY_KEY_SECTION_SUBSECTION, QUERY_KEY_USER_PROFILE_SETTINGS, QUERY_KEY_APP_MODULE_COMPONENT } from 'src/util/routing/queryKeys';
 
         function Component() {
           const [value1] = useRouterState({ key: QUERY_KEY_SECTION_SUBSECTION });
@@ -559,7 +559,7 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         }
       `,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
-      output: `import { QUERY_KEY_CHILD_COMPONENT } from '@/util/routing/queryKeys';
+      output: `import { QUERY_KEY_CHILD_COMPONENT } from 'src/util/routing/queryKeys';
 
         function ParentComponent() {
           return <ChildComponent />;
@@ -658,7 +658,7 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         { messageId: 'enforceQueryKeyImport' },
         { messageId: 'enforceQueryKeyImport' },
       ],
-      output: `import { QUERY_KEY_USER_PROFILE, QUERY_KEY_SECTION_DETAILS, QUERY_KEY_APP_MODULE } from '@/util/routing/queryKeys';
+      output: `import { QUERY_KEY_USER_PROFILE, QUERY_KEY_SECTION_DETAILS, QUERY_KEY_APP_MODULE } from 'src/util/routing/queryKeys';
 
         function Component() {
           const [value1] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
@@ -678,7 +678,7 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         }
       `,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
-      output: `import { QUERY_KEY_ } from '@/util/routing/queryKeys';
+      output: `import { QUERY_KEY_ } from 'src/util/routing/queryKeys';
 
         function Component() {
           const [value] = useRouterState({ key: QUERY_KEY_ });
@@ -695,7 +695,7 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
   return playbackId;
 }`,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
-      output: `import { QUERY_KEY_PLAYBACK_ID } from '@/util/routing/queryKeys';
+      output: `import { QUERY_KEY_PLAYBACK_ID } from 'src/util/routing/queryKeys';
 
 function Component() {
   const [playbackId] = useRouterState({ key: QUERY_KEY_PLAYBACK_ID });
@@ -713,7 +713,7 @@ function Component() {
   return [playbackId, useState];
 }`,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
-      output: `import { QUERY_KEY_PLAYBACK_ID } from '@/util/routing/queryKeys';
+      output: `import { QUERY_KEY_PLAYBACK_ID } from 'src/util/routing/queryKeys';
 import { useState } from 'react';
 
 function Component() {
@@ -834,7 +834,7 @@ function B() {
         { messageId: 'enforceQueryKeyImport' },
         { messageId: 'enforceQueryKeyImport' },
       ],
-      output: `import { QUERY_KEY_MATCH_VIEW, QUERY_KEY_TOURNAMENT_VIEW } from '@/util/routing/queryKeys';
+      output: `import { QUERY_KEY_MATCH_VIEW, QUERY_KEY_TOURNAMENT_VIEW } from 'src/util/routing/queryKeys';
 
 function A() {
   const [a] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
@@ -863,7 +863,7 @@ function B() {
         { messageId: 'enforceQueryKeyImport' },
         { messageId: 'enforceQueryKeyImport' },
       ],
-      output: `import { QUERY_KEY_MATCH_VIEW } from '@/util/routing/queryKeys';
+      output: `import { QUERY_KEY_MATCH_VIEW } from 'src/util/routing/queryKeys';
 
 function A() {
   const [a] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
@@ -894,7 +894,7 @@ function B() {
         { messageId: 'enforceQueryKeyImport' },
         { messageId: 'enforceQueryKeyImport' },
       ],
-      output: `import { QUERY_KEY_TOURNAMENT_VIEW } from '@/util/routing/queryKeys';
+      output: `import { QUERY_KEY_TOURNAMENT_VIEW } from 'src/util/routing/queryKeys';
 
 const QUERY_KEY_MATCH_VIEW = 'match-view';
 
@@ -959,13 +959,166 @@ function Component() {
         { messageId: 'enforceQueryKeyImport' },
         { messageId: 'enforceQueryKeyImport' },
       ],
-      output: `import { QUERY_KEY_PLAYBACK_ID } from '@/util/routing/queryKeys';
+      output: `import { QUERY_KEY_PLAYBACK_ID } from 'src/util/routing/queryKeys';
 
 function Component({ id }) {
   const [a] = useRouterState({ key: 'prefix-' + id });
   const [b] = useRouterState({ key: QUERY_KEY_PLAYBACK_ID });
   return [a, b];
 }`,
+    },
+
+    // 35. Regression #1391: two directories below src/ reaches queryKeys with
+    // two '../', never the '@/' alias that resolves nowhere.
+    {
+      filename: 'src/components/tournament/TeamCard.tsx',
+      code: `function TeamCard() {
+  const [value] = useRouterState({ key: 'user-profile' });
+  return <div>{value}</div>;
+}`,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: `import { QUERY_KEY_USER_PROFILE } from '../../util/routing/queryKeys';
+
+function TeamCard() {
+  const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+  return <div>{value}</div>;
+}`,
+    },
+
+    // 36. Regression #1391: a deeper file gets more '../', proving the count
+    // follows the file's real depth rather than a fixed guess.
+    {
+      filename: 'src/components/a/b/c/Bar.tsx',
+      code: `function Bar() {
+  const [value] = useRouterState({ key: 'user-profile' });
+  return <div>{value}</div>;
+}`,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: `import { QUERY_KEY_USER_PROFILE } from '../../../../util/routing/queryKeys';
+
+function Bar() {
+  const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+  return <div>{value}</div>;
+}`,
+    },
+
+    // 37. Regression #1391: a file directly in src/ descends into the target
+    // directory instead of climbing out of it.
+    {
+      filename: 'src/index.tsx',
+      code: `function App() {
+  const [value] = useRouterState({ key: 'user-profile' });
+  return <div>{value}</div>;
+}`,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: `import { QUERY_KEY_USER_PROFILE } from './util/routing/queryKeys';
+
+function App() {
+  const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+  return <div>{value}</div>;
+}`,
+    },
+
+    // 38. Regression #1391: a sibling of queryKeys.ts imports it by file name.
+    {
+      filename: 'src/util/routing/useProfileKey.ts',
+      code: `export const useProfileKey = () => {
+  return useRouterState({ key: 'user-profile' });
+};`,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: `import { QUERY_KEY_USER_PROFILE } from './queryKeys';
+
+export const useProfileKey = () => {
+  return useRouterState({ key: QUERY_KEY_USER_PROFILE });
+};`,
+    },
+
+    // 39. Regression #1391: outside src/, the bare specifier that the tsconfig
+    // paths and the Jest mapper resolve is the only correct form.
+    {
+      filename: 'pages/legacy/Widget.tsx',
+      code: `function Widget() {
+  const [value] = useRouterState({ key: 'user-profile' });
+  return <div>{value}</div>;
+}`,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: `import { QUERY_KEY_USER_PROFILE } from 'src/util/routing/queryKeys';
+
+function Widget() {
+  const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+  return <div>{value}</div>;
+}`,
+    },
+
+    // 40. Regression #1391: an absolute filename derives the same specifier as
+    // its cwd-relative form.
+    {
+      filename: '/repo/src/components/tournament/TeamCard.tsx',
+      code: `function TeamCard() {
+  const [value] = useRouterState({ key: 'user-profile' });
+  return <div>{value}</div>;
+}`,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: `import { QUERY_KEY_USER_PROFILE } from '../../util/routing/queryKeys';
+
+function TeamCard() {
+  const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+  return <div>{value}</div>;
+}`,
+    },
+
+    // 41. Regression #1391: derivation applies only where nothing proves how
+    // the file reaches the module — an existing '@/' import still wins, since a
+    // consumer that declares that alias resolves it.
+    {
+      filename: 'src/components/tournament/TeamCard.tsx',
+      code: `import { QUERY_KEY_VALID } from '@/util/routing/queryKeys';
+
+function TeamCard() {
+  const [valid] = useRouterState({ key: QUERY_KEY_VALID });
+  const [other] = useRouterState({ key: 'user-profile' });
+  return [valid, other];
+}`,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: `import { QUERY_KEY_VALID, QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
+function TeamCard() {
+  const [valid] = useRouterState({ key: QUERY_KEY_VALID });
+  const [other] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+  return [valid, other];
+}`,
+    },
+
+    // 42. Regression #1391: a file inside a directory named queryKeys leaves no
+    // specifier to derive, so the fix is declined rather than written broken.
+    {
+      filename: 'src/util/routing/queryKeys/index.ts',
+      code: `export const useProfileKey = () => {
+  return useRouterState({ key: 'user-profile' });
+};`,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: null,
+    },
+
+    // 43. Regression #1391: the emitted relative form is recognized on a later
+    // pass, so a sibling's './queryKeys' import is extended, not duplicated.
+    {
+      filename: 'src/util/routing/useProfileKey.ts',
+      code: `import { QUERY_KEY_USER_PROFILE } from './queryKeys';
+
+export const useProfileKey = () => {
+  const [profile] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+  const [settings] = useRouterState({ key: 'user-settings' });
+  return [profile, settings];
+};`,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: `import { QUERY_KEY_USER_PROFILE, QUERY_KEY_USER_SETTINGS } from './queryKeys';
+
+export const useProfileKey = () => {
+  const [profile] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+  const [settings] = useRouterState({ key: QUERY_KEY_USER_SETTINGS });
+  return [profile, settings];
+};`,
     },
   ],
 });
@@ -975,7 +1128,7 @@ function Component({ id }) {
 // re-reported its own output; these cases assert the multi-pass result is both
 // clean and stable.
 describe('enforce-querykey-ts: --fix convergence (issue #1365)', () => {
-  const lint = (code: string) => {
+  const lint = (code: string, filename = 'Component.tsx') => {
     const linter = new Linter();
     linter.defineParser(
       '@typescript-eslint/parser',
@@ -995,10 +1148,10 @@ describe('enforce-querykey-ts: --fix convergence (issue #1365)', () => {
       },
       rules: { 'test/enforce-querykey-ts': 'error' as const },
     };
-    const { output } = linter.verifyAndFix(code, config, 'Component.tsx');
+    const { output } = linter.verifyAndFix(code, config, filename);
     return {
       output,
-      remaining: linter.verify(output, config, 'Component.tsx'),
+      remaining: linter.verify(output, config, filename),
     };
   };
 
@@ -1009,7 +1162,7 @@ describe('enforce-querykey-ts: --fix convergence (issue #1365)', () => {
 }`);
 
     expect(output)
-      .toBe(`import { QUERY_KEY_PLAYBACK_ID } from '@/util/routing/queryKeys';
+      .toBe(`import { QUERY_KEY_PLAYBACK_ID } from 'src/util/routing/queryKeys';
 
 function Component() {
   const [playbackId] = useRouterState({ key: QUERY_KEY_PLAYBACK_ID });
@@ -1038,6 +1191,29 @@ function Component() {
   const [tournament] = useRouterState({ key: QUERY_KEY_TOURNAMENT_VIEW });
   return [valid, match, tournament];
 }`);
+    expect(remaining).toHaveLength(0);
+  });
+
+  // Issue #1391: the emitted specifier must satisfy the rule's own detection,
+  // or every extra pass would append another import of the same module.
+  it('reuses the relative import it emitted for a file under src/', () => {
+    const { output, remaining } = lint(
+      `export const useProfileKey = () => {
+  const [profile] = useRouterState({ key: 'user-profile' });
+  const [settings] = useRouterState({ key: 'user-settings' });
+  return [profile, settings];
+};`,
+      'src/util/routing/useProfileKey.ts',
+    );
+
+    expect(output)
+      .toBe(`import { QUERY_KEY_USER_PROFILE, QUERY_KEY_USER_SETTINGS } from './queryKeys';
+
+export const useProfileKey = () => {
+  const [profile] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+  const [settings] = useRouterState({ key: QUERY_KEY_USER_SETTINGS });
+  return [profile, settings];
+};`);
     expect(remaining).toHaveLength(0);
   });
 
