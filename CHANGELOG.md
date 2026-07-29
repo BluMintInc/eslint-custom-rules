@@ -1,3 +1,10 @@
+## [1.20.17](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.16...v1.20.17) (2026-07-29)
+
+
+### Bug Fixes
+
+* **no-mock-firebase-admin:** skip interpolated jest.mock specifiers (closes [#1386](https://github.com/BluMintInc/eslint-custom-rules/issues/1386)) ([4169834](https://github.com/BluMintInc/eslint-custom-rules/commit/4169834d14025a6a41966685f5826f8d7371e407))
+
 ## [1.20.16](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.15...v1.20.16) (2026-07-29)
 
 

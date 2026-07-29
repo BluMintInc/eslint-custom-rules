@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.17",
+    "date": "2026-07-29T10:47:56.581Z",
+    "rules": [
+      {
+        "name": "no-mock-firebase-admin",
+        "changeType": "fix",
+        "issues": [
+          1386
+        ],
+        "summary": "skip interpolated jest.mock specifiers (closes #1386)"
+      }
+    ]
+  },
+  {
     "version": "1.20.16",
     "date": "2026-07-29T10:30:50.111Z",
     "rules": [
