@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.14",
+    "date": "2026-07-29T06:45:40.321Z",
+    "rules": [
+      {
+        "name": "global-const-style",
+        "changeType": "fix",
+        "issues": [
+          1375
+        ],
+        "summary": "stop appending as const after a type assertion (closes #1375)"
+      }
+    ]
+  },
+  {
     "version": "1.20.13",
     "date": "2026-07-29T06:26:25.973Z",
     "rules": [

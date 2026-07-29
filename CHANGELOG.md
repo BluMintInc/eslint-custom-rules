@@ -1,3 +1,10 @@
+## [1.20.14](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.13...v1.20.14) (2026-07-29)
+
+
+### Bug Fixes
+
+* **global-const-style:** stop appending as const after a type assertion (closes [#1375](https://github.com/BluMintInc/eslint-custom-rules/issues/1375)) ([a45e51a](https://github.com/BluMintInc/eslint-custom-rules/commit/a45e51ad0aa6badc80d7eb3deb06ac5d422fa0aa))
+
 ## [1.20.13](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.12...v1.20.13) (2026-07-29)
 
 
