@@ -27,7 +27,6 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
         'Enforce using a settings object for functions with multiple parameters',
       recommended: 'error',
     },
-    fixable: 'code',
     schema: [
       {
         type: 'object',
