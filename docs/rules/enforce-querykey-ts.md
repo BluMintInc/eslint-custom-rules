@@ -65,7 +65,7 @@ function Component() {
 }
 
 // Constant not following QUERY_KEY_ pattern
-import { WRONG_PATTERN } from '@/util/routing/queryKeys';
+import { WRONG_PATTERN } from 'src/util/routing/queryKeys';
 function Component() {
   const [value] = useRouterState({ key: WRONG_PATTERN });
   return <div>{value}</div>;
@@ -76,7 +76,7 @@ function Component() {
 
 ```typescript
 // Using imported QUERY_KEY constants
-import { QUERY_KEY_PLAYBACK_ID } from '@/util/routing/queryKeys';
+import { QUERY_KEY_PLAYBACK_ID } from 'src/util/routing/queryKeys';
 
 function Component() {
   const [playbackId] = useRouterState({ key: QUERY_KEY_PLAYBACK_ID });
@@ -93,7 +93,7 @@ function Component() {
 }
 
 // Aliased imports
-import { QUERY_KEY_NOTIFICATION as NOTIFICATION_KEY } from '@/util/routing/queryKeys';
+import { QUERY_KEY_NOTIFICATION as NOTIFICATION_KEY } from 'src/util/routing/queryKeys';
 
 function Component() {
   const [notification] = useRouterState({ key: NOTIFICATION_KEY });
@@ -101,7 +101,7 @@ function Component() {
 }
 
 // Conditional usage with valid constants
-import { QUERY_KEY_NOTIFICATION, QUERY_KEY_CHANNEL } from '@/util/routing/queryKeys';
+import { QUERY_KEY_NOTIFICATION, QUERY_KEY_CHANNEL } from 'src/util/routing/queryKeys';
 
 function Component({ isNotification }) {
   const keyToUse = isNotification ? QUERY_KEY_NOTIFICATION : QUERY_KEY_CHANNEL;
@@ -110,7 +110,7 @@ function Component({ isNotification }) {
 }
 
 // Template literals with query key variables
-import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+import { QUERY_KEY_USER_PROFILE } from 'src/util/routing/queryKeys';
 
 function Component({ userId }) {
   const key = `${QUERY_KEY_USER_PROFILE}-${userId}`;
@@ -119,7 +119,7 @@ function Component({ userId }) {
 }
 
 // Binary expressions with query keys
-import { QUERY_KEY_MATCH } from '@/util/routing/queryKeys';
+import { QUERY_KEY_MATCH } from 'src/util/routing/queryKeys';
 
 function Component({ matchId }) {
   const [match] = useRouterState({ key: QUERY_KEY_MATCH + '-' + matchId });
@@ -127,7 +127,7 @@ function Component({ matchId }) {
 }
 
 // Function calls (permissive approach)
-import { QUERY_KEY_TOURNAMENT } from '@/util/routing/queryKeys';
+import { QUERY_KEY_TOURNAMENT } from 'src/util/routing/queryKeys';
 
 function generateKey(base, suffix) {
   return `${base}-${suffix}`;
@@ -141,7 +141,7 @@ function Component({ tournamentId }) {
 }
 
 // Variables derived from query key constants
-import { QUERY_KEY_USER } from '@/util/routing/queryKeys';
+import { QUERY_KEY_USER } from 'src/util/routing/queryKeys';
 
 function Component() {
   const userKey = QUERY_KEY_USER;
@@ -156,7 +156,7 @@ function Component() {
 Keys might be used conditionally or stored in variables before being passed to router methods.
 
 ```typescript
-import { QUERY_KEY_NOTIFICATION, QUERY_KEY_CHANNEL } from '@/util/routing/queryKeys';
+import { QUERY_KEY_NOTIFICATION, QUERY_KEY_CHANNEL } from 'src/util/routing/queryKeys';
 
 const keyToUse = isNotification ? QUERY_KEY_NOTIFICATION : QUERY_KEY_CHANNEL;
 const [queryValue] = useRouterState({ key: keyToUse });
@@ -170,7 +170,7 @@ Constants might be re-exported from other files or imported with different names
 export { QUERY_KEY_NOTIFICATION as NOTIFICATION_KEY } from './queryKeys';
 
 // Usage with alias
-import { QUERY_KEY_NOTIFICATION as NOTIFICATION_KEY } from '@/util/routing/queryKeys';
+import { QUERY_KEY_NOTIFICATION as NOTIFICATION_KEY } from 'src/util/routing/queryKeys';
 const [notification] = useRouterState({ key: NOTIFICATION_KEY }); // ✅ Allowed
 ```
 
@@ -182,7 +182,7 @@ import {
   QUERY_KEY_NOTIFICATION,
   QUERY_KEY_CHANNEL,
   QUERY_KEY_PLAYBACK_ID
-} from '@/util/routing/queryKeys';
+} from 'src/util/routing/queryKeys';
 
 const [notification] = useRouterState({ key: QUERY_KEY_NOTIFICATION });
 const [channel] = useRouterState({ key: QUERY_KEY_CHANNEL });
@@ -192,30 +192,36 @@ const [channel] = useRouterState({ key: QUERY_KEY_CHANNEL });
 
 The rule recognizes the following import sources as valid:
 
-- `@/util/routing/queryKeys`
 - `src/util/routing/queryKeys`
+- `@/util/routing/queryKeys`, for a consumer that declares that alias
 - `./util/routing/queryKeys`
 - `../util/routing/queryKeys`
 - `../../util/routing/queryKeys`
 - `../../../util/routing/queryKeys`
 - `../../../../util/routing/queryKeys`
 - Any path ending with `/util/routing/queryKeys`
+- A relative specifier that resolves to that module from the linted file, even
+  when its text hides the directory names (`./queryKeys` from a sibling,
+  `../../routing/queryKeys` from two levels below `src/util`)
+
+Recognition is deliberately wider than emission: every form above is accepted on
+an existing import, but the fixer writes only the forms in the table below.
 
 ## Auto-fix Capability
 
 The rule provides automatic fixes for simple string literals by converting them to suggested `QUERY_KEY_*` constant names **together with the import that makes the constant resolve**:
 
 ```typescript
-// Before (auto-fixable)
-function Component() {
+// Before (auto-fixable), in src/components/tournament/TeamCard.tsx
+function TeamCard() {
   const [value] = useRouterState({ key: 'user-profile' });
   return <div>{value}</div>;
 }
 
 // After auto-fix
-import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+import { QUERY_KEY_USER_PROFILE } from '../../util/routing/queryKeys';
 
-function Component() {
+function TeamCard() {
   const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
   return <div>{value}</div>;
 }
@@ -223,12 +229,22 @@ function Component() {
 
 The import is resolved as follows:
 
-* **A queryKeys import already exists** — it is extended with the missing specifier, reusing that file's own path (`../util/routing/queryKeys`, `src/util/routing/queryKeys`, …) rather than a second import statement.
+* **A queryKeys import already exists** — it is extended with the missing specifier, reusing that file's own path (`../util/routing/queryKeys`, `src/util/routing/queryKeys`, `src/util/routing/queryKeys`, …) rather than a second import statement. An existing specifier is proof of a path that resolves for that file, so it outranks anything the rule derives.
 * **The constant is already imported** — only the literal changes. If the export is already imported under an alias, the fix substitutes the alias instead of importing the same export twice.
-* **No queryKeys import exists** — `@/util/routing/queryKeys` is added. That path is not a guess: the rule takes no options and this is the canonical source it already requires keys to come from.
+* **No queryKeys import exists** — a fresh import statement is written, and its specifier is derived from the file under lint:
+
+| File under lint | Emitted specifier | Why |
+| --- | --- | --- |
+| Inside `src/**` | Relative, e.g. `../../util/routing/queryKeys` | Relative paths resolve everywhere and dominate the codebase. |
+| Everywhere else | `src/util/routing/queryKeys` | The root tsconfig `paths` and the Jest `moduleNameMapper` both map `src/*`. |
+
+  The `../` count comes from the linted file's own depth below the root that owns its `src/` segment, so `src/index.tsx` imports `./util/routing/queryKeys` and a sibling in `src/util/routing/` imports `./queryKeys`. An `@/`-aliased specifier is never emitted: that alias is declared in no tsconfig, bundler or Jest config, so it resolves nowhere.
 * **Several keys in one file** — every substituted constant lands in a single import.
 
-The fix is declined (the violation is still reported, but nothing is rewritten) when the constant name is already taken by something else — another module's export, a local declaration, or an alias of a non-`QUERY_KEY_*` export — because substituting would silently point the key at an unrelated value.
+The fix is declined (the violation is still reported, but nothing is rewritten) when:
+
+* the constant name is already taken by something else — another module's export, a local declaration, or an alias of a non-`QUERY_KEY_*` export — because substituting would silently point the key at an unrelated value; or
+* no correct specifier can be derived for a file that has no queryKeys import to reuse, because an import that fails to resolve is worse than the literal it replaced.
 
 Note: Auto-fix only works for simple string literals. Complex expressions (concatenation, ternaries, template literals with static content) require manual refactoring.
 

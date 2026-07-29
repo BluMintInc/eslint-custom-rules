@@ -1,3 +1,4 @@
+import path from 'path';
 import {
   AST_NODE_TYPES,
   ASTUtils,
@@ -8,12 +9,79 @@ import { createRule } from '../utils/createRule';
 
 type MessageIds = 'enforceQueryKeyImport' | 'enforceQueryKeyConstant';
 
+// The module's path below the project root doubles as the bare specifier,
+// which is precisely why the root tsconfig `paths` and the Jest mapper resolve
+// it.
+const QUERY_KEYS_MODULE = 'src/util/routing/queryKeys';
+const QUERY_KEYS_SUFFIX = 'util/routing/queryKeys';
+const SRC_TIER_SEGMENT = '/src/';
+
 /**
- * The canonical queryKeys module. The rule takes no options and already hard-codes
- * this path as what makes a key valid, so the fixer writes the very same path
- * instead of guessing one when a file has no queryKeys import to copy from.
+ * An `@/`-aliased specifier resolves under none of tsc, webpack or Jest, so it
+ * is never emitted; it stays recognized because a consumer that does declare
+ * the alias must still have its existing imports understood.
  */
-const DEFAULT_QUERY_KEYS_SOURCE = '@/util/routing/queryKeys';
+const ALIASED_QUERY_KEYS_MODULE = '@/util/routing/queryKeys';
+
+const toPosixPath = (filePath: string) => filePath.replace(/\\/g, '/');
+
+const ensureRelativeSpecifier = (specifier: string) =>
+  specifier.startsWith('.') ? specifier : `./${specifier}`;
+
+const isWindowsDrivePath = (filePath: string) =>
+  /^[A-Za-z]:[\\/]/.test(filePath);
+
+const isValidRelativePath = (relativePath: string) =>
+  relativePath !== '' &&
+  !path.isAbsolute(relativePath) &&
+  !isWindowsDrivePath(relativePath);
+
+const toAbsoluteFilename = (sourceFilePath: string, cwd: string) =>
+  toPosixPath(
+    path.isAbsolute(sourceFilePath)
+      ? sourceFilePath
+      : path.join(cwd, sourceFilePath),
+  );
+
+/**
+ * `queryKeys.ts` lives at `src/util/routing/queryKeys.ts` and is reachable by
+ * exactly two forms: a relative path, and the bare `src/…` specifier that the
+ * root tsconfig `paths` and the Jest `moduleNameMapper` both resolve. A
+ * hardcoded `@/`-aliased specifier therefore turns every fix into a broken
+ * import (#1391).
+ *
+ * Files under a `src/` segment take the relative form, which dominates the
+ * codebase and stays correct even where `paths` are unavailable; the `../`
+ * count comes from the file's own depth below the root that owns its `src/`
+ * segment. Returns null when no correct specifier exists, which makes the
+ * caller decline the fix rather than write an import that cannot resolve.
+ */
+function buildQueryKeysSpecifier(
+  sourceFilePath: string,
+  cwd: string,
+): string | null {
+  const absoluteFilename = toAbsoluteFilename(sourceFilePath, cwd);
+
+  const tierIndex = absoluteFilename.indexOf(SRC_TIER_SEGMENT);
+  if (tierIndex === -1) {
+    return QUERY_KEYS_MODULE;
+  }
+
+  // The project root is everything up to and including the separator that
+  // precedes the file's own `src/` segment.
+  const projectRoot = absoluteFilename.slice(0, tierIndex + 1);
+  const targetPath = path.join(projectRoot, QUERY_KEYS_MODULE);
+  const relativePath = path.relative(
+    path.dirname(absoluteFilename),
+    targetPath,
+  );
+
+  if (!isValidRelativePath(relativePath)) {
+    return null;
+  }
+
+  return ensureRelativeSpecifier(toPosixPath(relativePath));
+}
 
 /**
  * What the substituted `QUERY_KEY_*` name would resolve to once the fix lands.
@@ -56,13 +124,20 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
     schema: [],
     messages: {
       enforceQueryKeyImport:
-        'Router state key must come from queryKeys.ts (e.g., "@/util/routing/queryKeys", "src/util/routing/queryKeys", or a relative path ending in "/util/routing/queryKeys"). Use a QUERY_KEY_* constant instead of string literals.',
+        'Router state key must come from queryKeys.ts (e.g., "src/util/routing/queryKeys" or a relative path to that module). Use a QUERY_KEY_* constant instead of string literals.',
       enforceQueryKeyConstant:
         'Router state key must use a QUERY_KEY_* constant from queryKeys.ts. Variable "{{variableName}}" is not imported from the correct source.',
     },
   },
   defaultOptions: [],
   create(context) {
+    const cwd =
+      typeof context.getCwd === 'function' ? context.getCwd() : process.cwd();
+    const absoluteFilename = toAbsoluteFilename(context.getFilename(), cwd);
+    const queryKeysSpecifier = buildQueryKeysSpecifier(
+      context.getFilename(),
+      cwd,
+    );
     // Track imports from queryKeys.ts
     const queryKeyImports = new Map<
       string,
@@ -70,8 +145,8 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
     >();
     const localUseRouterStateNames = new Set<string>(['useRouterState']);
     const validQueryKeySources = new Set([
-      DEFAULT_QUERY_KEYS_SOURCE,
-      'src/util/routing/queryKeys',
+      ALIASED_QUERY_KEYS_MODULE,
+      QUERY_KEYS_MODULE,
     ]);
 
     const allowedQueryKeyFactories = new Set(['makeQueryKey', 'getQueryKey']);
@@ -102,10 +177,27 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
      * Check if a source path refers to queryKeys.ts
      */
     function isQueryKeysSource(source: string): boolean {
-      return (
+      if (
         validQueryKeySources.has(source) ||
-        source.endsWith('/util/routing/queryKeys')
+        source.endsWith(`/${QUERY_KEYS_SUFFIX}`)
+      ) {
+        return true;
+      }
+
+      // A relative specifier can name the module without spelling out
+      // `util/routing`: a sibling reaches it as `./queryKeys`, and a file two
+      // directories below `src/util` as `../../routing/queryKeys`. Resolving
+      // against the linted file recognizes those, which also keeps the fix's own
+      // relative output recognized on the next pass so a second violation
+      // extends that import instead of duplicating it.
+      if (!source.startsWith('.')) {
+        return false;
+      }
+
+      const resolved = toPosixPath(
+        path.resolve(path.dirname(absoluteFilename), source),
       );
+      return resolved.endsWith(`/${QUERY_KEYS_SUFFIX}`);
     }
 
     function importDeclarationsOf(): TSESTree.ImportDeclaration[] {
@@ -187,6 +279,25 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
       return 'bound';
     }
 
+    function queryKeysDeclarationsOf(): TSESTree.ImportDeclaration[] {
+      return importDeclarationsOf().filter((declaration) =>
+        isQueryKeysSource(String(declaration.source.value)),
+      );
+    }
+
+    /**
+     * The path by which this file reaches queryKeys.ts. An existing declaration
+     * is proof of a path that resolves here — including an `@/` one, in a
+     * consumer that declares that alias — so it wins over anything derived.
+     * Null means the module is unreachable by any specifier this rule can write.
+     */
+    function importSourceOf(): string | null {
+      const [declaration] = queryKeysDeclarationsOf();
+      return declaration
+        ? String(declaration.source.value)
+        : queryKeysSpecifier;
+    }
+
     /**
      * Make the substituted constants resolve: extend the file's queryKeys import
      * when there is one to extend, otherwise add a fresh import statement.
@@ -194,11 +305,9 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
     function buildImportFix(
       fixer: TSESLint.RuleFixer,
       constants: string[],
-    ): TSESLint.RuleFix {
+    ): TSESLint.RuleFix | null {
       const importDeclarations = importDeclarationsOf();
-      const queryKeysDeclarations = importDeclarations.filter((declaration) =>
-        isQueryKeysSource(String(declaration.source.value)),
-      );
+      const queryKeysDeclarations = queryKeysDeclarationsOf();
 
       const reusable = queryKeysDeclarations.find(
         (declaration) =>
@@ -218,9 +327,10 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
 
       // A namespace or type-only queryKeys import cannot take named value
       // specifiers, but its path is proof of how this file reaches the module.
-      const source = queryKeysDeclarations.length
-        ? String(queryKeysDeclarations[0].source.value)
-        : DEFAULT_QUERY_KEYS_SOURCE;
+      const source = importSourceOf();
+      if (source === null) {
+        return null;
+      }
       const importText = `import { ${constants.join(
         ', ',
       )} } from '${source}';\n`;
@@ -241,6 +351,7 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
         { name: string; state: BindingState }
       >();
       const missingConstants: string[] = [];
+      const canImport = importSourceOf() !== null;
 
       for (const report of pendingReports) {
         if (!report.substitution) {
@@ -249,6 +360,12 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
         const { constant, scope } = report.substitution;
         const name = localNameOf(constant);
         const state = resolveBinding(scope, name);
+        // Substituting a constant whose import cannot be written would leave
+        // the file referencing an undefined identifier, which is worse than the
+        // literal it replaced; leaving the report unresolved declines its fix.
+        if (state === 'missing' && !canImport) {
+          continue;
+        }
         resolutions.set(report, { name, state });
         if (state === 'missing' && !missingConstants.includes(name)) {
           missingConstants.push(name);
@@ -282,7 +399,11 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
               fixer.replaceText(substitution.keyNode, resolution.name),
             ];
             if (report === importCarrier && missingConstants.length > 0) {
-              fixes.unshift(buildImportFix(fixer, missingConstants));
+              const importFix = buildImportFix(fixer, missingConstants);
+              if (!importFix) {
+                return null;
+              }
+              fixes.unshift(importFix);
             }
             return fixes;
           },
