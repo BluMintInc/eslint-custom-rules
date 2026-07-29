@@ -1,3 +1,4 @@
+import path from 'path';
 import {
   AST_NODE_TYPES,
   ASTUtils,
@@ -10,7 +11,66 @@ type MessageIds = 'preferCloneDeep';
 
 const CLONE_DEEP_NAME = 'cloneDeep';
 const CLONE_DEEP_MODULE = 'functions/src/util/cloneDeep';
+const CLONE_DEEP_TARGET = 'src/util/cloneDeep';
+const FUNCTIONS_TIER_SEGMENT = '/functions/src/';
+const FUNCTIONS_ROOT_SEGMENT = '/functions/';
 const INDENT_STEP = '  ';
+
+const toPosixPath = (filePath: string) => filePath.replace(/\\/g, '/');
+
+const ensureRelativeSpecifier = (specifier: string) =>
+  specifier.startsWith('.') ? specifier : `./${specifier}`;
+
+const isWindowsDrivePath = (filePath: string) =>
+  /^[A-Za-z]:[\\/]/.test(filePath);
+
+const isValidRelativePath = (relativePath: string) =>
+  relativePath !== '' &&
+  !path.isAbsolute(relativePath) &&
+  !isWindowsDrivePath(relativePath);
+
+/**
+ * The helper lives in one place but the two TypeScript tiers reach it
+ * differently: the root tsconfig maps `functions/*` through `paths`, so files
+ * outside `functions/` resolve the bare specifier, while `functions/tsconfig.json`
+ * is rooted at `functions/` and declares no `paths`, leaving backend files able
+ * to reach a sibling util only by relative path. A single hardcoded specifier
+ * therefore emits an unresolvable import for every backend fix (#1389).
+ *
+ * Returns null when no correct specifier exists, which makes the caller decline
+ * the fix rather than write an import that cannot resolve.
+ */
+function buildCloneDeepSpecifier(
+  sourceFilePath: string,
+  cwd: string,
+): string | null {
+  const absoluteFilename = toPosixPath(
+    path.isAbsolute(sourceFilePath)
+      ? sourceFilePath
+      : path.join(cwd, sourceFilePath),
+  );
+
+  const tierIndex = absoluteFilename.indexOf(FUNCTIONS_TIER_SEGMENT);
+  if (tierIndex === -1) {
+    return CLONE_DEEP_MODULE;
+  }
+
+  const functionsRoot = absoluteFilename.slice(
+    0,
+    tierIndex + FUNCTIONS_ROOT_SEGMENT.length,
+  );
+  const targetPath = path.join(functionsRoot, CLONE_DEEP_TARGET);
+  const relativePath = path.relative(
+    path.dirname(absoluteFilename),
+    targetPath,
+  );
+
+  if (!isValidRelativePath(relativePath)) {
+    return null;
+  }
+
+  return ensureRelativeSpecifier(toPosixPath(relativePath));
+}
 
 /**
  * Only BluMint's own `cloneDeep` accepts an overrides argument, so an existing
@@ -55,6 +115,13 @@ export const preferCloneDeep = createRule<[], MessageIds>({
     const processedNodes = new Set<TSESTree.Node>();
 
     const sourceCode = context.sourceCode;
+
+    const cwd =
+      typeof context.getCwd === 'function' ? context.getCwd() : process.cwd();
+    const cloneDeepSpecifier = buildCloneDeepSpecifier(
+      context.getFilename(),
+      cwd,
+    );
 
     function normalizedTextOf(node: TSESTree.Node): string {
       return sourceCode.getText(node).replace(/\s+/g, '');
@@ -403,7 +470,8 @@ export const preferCloneDeep = createRule<[], MessageIds>({
     /**
      * Returns the fixes required for `cloneDeep` to resolve, an empty list when
      * it already does, or null when a conflicting binding of that name exists —
-     * shadowing it would silently call something else.
+     * shadowing it would silently call something else — or when no import
+     * specifier that resolves from this file can be derived.
      */
     function buildImportFixes(
       fixer: TSESLint.RuleFixer,
@@ -461,7 +529,13 @@ export const preferCloneDeep = createRule<[], MessageIds>({
         return [fixer.insertTextAfter(lastSpecifier, `, ${CLONE_DEEP_NAME}`)];
       }
 
-      const importText = `import { ${CLONE_DEEP_NAME} } from '${CLONE_DEEP_MODULE}';\n`;
+      // Reusing an existing import needs no specifier of its own, so only a
+      // freshly written import depends on one being derivable.
+      if (cloneDeepSpecifier === null) {
+        return null;
+      }
+
+      const importText = `import { ${CLONE_DEEP_NAME} } from '${cloneDeepSpecifier}';\n`;
       const [firstImport] = importDeclarations;
       if (firstImport) {
         return [fixer.insertTextBefore(firstImport, importText)];

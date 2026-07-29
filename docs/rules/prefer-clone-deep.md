@@ -63,10 +63,23 @@ negatives over false positives.
 ### Autofix behavior
 
 The fix rewrites the literal into `cloneDeep(base, { ...overrides } as const)` and
-imports `cloneDeep` from `functions/src/util/cloneDeep` when the name is not
-already bound in the file (an existing import of the same helper — including a
-relative path — is reused, and an existing import statement from that module is
-extended rather than duplicated).
+imports `cloneDeep` when the name is not already bound in the file (an existing
+import of the same helper — including a relative path — is reused, and an
+existing import statement from that module is extended rather than duplicated).
+
+The emitted import specifier is tier-aware, because the two TypeScript projects
+resolve the helper differently:
+
+| File under lint | Emitted specifier | Why |
+| --- | --- | --- |
+| Inside `functions/src/**` | Relative, e.g. `../../util/cloneDeep` | `functions/tsconfig.json` is rooted at `functions/` and declares no `paths`, so the bare specifier does not resolve there. |
+| Everywhere else | `functions/src/util/cloneDeep` | The root tsconfig maps `functions/*` through `paths`. |
+
+The relative form is derived from the linted file's own depth below the
+`functions/` root, so `functions/src/index.ts` imports `./util/cloneDeep` and a
+sibling in `functions/src/util/` imports `./cloneDeep`. Where no correct
+specifier exists — a file inside the helper's own directory, for instance — the
+rule reports without fixing.
 
 An autofix must never change runtime behavior, so the rule reports **without**
 fixing whenever the overrides object cannot reproduce the literal faithfully:
