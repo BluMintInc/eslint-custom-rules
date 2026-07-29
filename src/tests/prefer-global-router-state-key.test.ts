@@ -310,6 +310,43 @@ ruleTesterJsx.run(
         }
         `,
       },
+
+      // 23. Sibling of queryKeys.ts reaches it as './queryKeys'
+      {
+        filename: 'src/util/routing/useProfileKey.ts',
+        code: `
+        import { QUERY_KEY_USER_PROFILE } from './queryKeys';
+
+        export const useProfileKey = () => {
+          return useRouterState({ key: QUERY_KEY_USER_PROFILE });
+        };
+        `,
+      },
+
+      // 24. Relative specifier whose text omits the 'util' segment
+      {
+        filename: 'src/util/notification/actions/buildProfileUrl.ts',
+        code: `
+        import { QUERY_KEY_USER_PROFILE } from '../../routing/queryKeys';
+
+        export const buildProfileUrl = () => {
+          return useRouterState({ key: QUERY_KEY_USER_PROFILE });
+        };
+        `,
+      },
+
+      // 25. Depth-correct relative specifier from a nested component
+      {
+        filename: 'src/components/tournament/TeamCard.tsx',
+        code: `
+        import { QUERY_KEY_USER_PROFILE } from '../../util/routing/queryKeys';
+
+        function TeamCard() {
+          const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+          return <div>{value}</div>;
+        }
+        `,
+      },
     ],
     invalid: [
       // 1. Basic string literals
@@ -321,7 +358,7 @@ ruleTesterJsx.run(
         }
         `,
         errors: [stringLiteralError("'user-profile'")],
-        output: `import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+        output: `import { QUERY_KEY_USER_PROFILE } from 'src/util/routing/queryKeys';
 
         function Component() {
           const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
@@ -573,7 +610,7 @@ ruleTesterJsx.run(
         }
         `,
         errors: [stringLiteralError("'user-profile'")],
-        output: `import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+        output: `import { QUERY_KEY_USER_PROFILE } from 'src/util/routing/queryKeys';
 
         function useCustomRouter() {
           return useRouterState({ key: QUERY_KEY_USER_PROFILE });
@@ -595,7 +632,7 @@ ruleTesterJsx.run(
         };
         `,
         errors: [stringLiteralError("'user-profile'")],
-        output: `import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+        output: `import { QUERY_KEY_USER_PROFILE } from 'src/util/routing/queryKeys';
 
         const withRouter = (Component) => (props) => {
           const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
@@ -617,7 +654,7 @@ ruleTesterJsx.run(
           stringLiteralError("'user-profile'"),
           stringLiteralError("'user-settings'"),
         ],
-        output: `import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+        output: `import { QUERY_KEY_USER_PROFILE } from 'src/util/routing/queryKeys';
 
         function Component() {
           const [value1] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
@@ -639,7 +676,7 @@ ruleTesterJsx.run(
         }
         `,
         errors: [stringLiteralError("'user-profile'")],
-        output: `import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+        output: `import { QUERY_KEY_USER_PROFILE } from 'src/util/routing/queryKeys';
 
         function Component() {
           const [value] = useRouterState({
@@ -758,7 +795,7 @@ ruleTesterJsx.run(
         }
         `,
         output: `
-        import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+        import { QUERY_KEY_USER_PROFILE } from 'src/util/routing/queryKeys';
 
         function Component() {
           const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
@@ -771,7 +808,167 @@ ruleTesterJsx.run(
       {
         code: "import type { SomeType } from '@/util/routing/queryKeys';\n\nfunction Component() {\n  const [value] = useRouterState({ key: 'user-profile' });\n  return <div>{value}</div>;\n}",
         output:
-          "import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';\nimport type { SomeType } from '@/util/routing/queryKeys';\n\nfunction Component() {\n  const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });\n  return <div>{value}</div>;\n}",
+          "import { QUERY_KEY_USER_PROFILE } from 'src/util/routing/queryKeys';\nimport type { SomeType } from '@/util/routing/queryKeys';\n\nfunction Component() {\n  const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });\n  return <div>{value}</div>;\n}",
+        errors: [stringLiteralError("'user-profile'")],
+      },
+
+      // 23. Two directories below src/ reaches queryKeys with two '../'
+      {
+        filename: 'src/components/tournament/TeamCard.tsx',
+        code: `
+        function TeamCard() {
+          const [value] = useRouterState({ key: 'user-profile' });
+          return <div>{value}</div>;
+        }
+        `,
+        output: `import { QUERY_KEY_USER_PROFILE } from '../../util/routing/queryKeys';
+
+        function TeamCard() {
+          const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [stringLiteralError("'user-profile'")],
+      },
+
+      // 24. A deeper file gets more '../', proving the count follows real depth
+      {
+        filename: 'src/components/a/b/c/Bar.tsx',
+        code: `
+        function Bar() {
+          const [value] = useRouterState({ key: 'user-profile' });
+          return <div>{value}</div>;
+        }
+        `,
+        output: `import { QUERY_KEY_USER_PROFILE } from '../../../../util/routing/queryKeys';
+
+        function Bar() {
+          const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [stringLiteralError("'user-profile'")],
+      },
+
+      // 25. A file directly in src/ descends into the target directory
+      {
+        filename: 'src/index.tsx',
+        code: `
+        function App() {
+          const [value] = useRouterState({ key: 'user-profile' });
+          return <div>{value}</div>;
+        }
+        `,
+        output: `import { QUERY_KEY_USER_PROFILE } from './util/routing/queryKeys';
+
+        function App() {
+          const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [stringLiteralError("'user-profile'")],
+      },
+
+      // 26. A sibling of queryKeys.ts imports it by file name alone
+      {
+        filename: 'src/util/routing/useProfileKey.ts',
+        code: `
+        export const useProfileKey = () => {
+          return useRouterState({ key: 'user-profile' });
+        };
+        `,
+        output: `import { QUERY_KEY_USER_PROFILE } from './queryKeys';
+
+        export const useProfileKey = () => {
+          return useRouterState({ key: QUERY_KEY_USER_PROFILE });
+        };
+        `,
+        errors: [stringLiteralError("'user-profile'")],
+      },
+
+      // 27. An existing relative import is extended, never duplicated
+      {
+        filename: 'src/components/tournament/TeamCard.tsx',
+        code: `
+        import { QUERY_KEY_USER_PROFILE } from '../../util/routing/queryKeys';
+
+        function TeamCard() {
+          const [profile] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+          const [settings] = useRouterState({ key: 'user-settings' });
+          return <div>{profile}{settings}</div>;
+        }
+        `,
+        output: `
+        import { QUERY_KEY_USER_PROFILE, QUERY_KEY_USER_SETTINGS } from '../../util/routing/queryKeys';
+
+        function TeamCard() {
+          const [profile] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+          const [settings] = useRouterState({ key: QUERY_KEY_USER_SETTINGS });
+          return <div>{profile}{settings}</div>;
+        }
+        `,
+        errors: [stringLiteralError("'user-settings'")],
+      },
+
+      // 28. A sibling's './queryKeys' import is extended, never duplicated
+      {
+        filename: 'src/util/routing/useProfileKey.ts',
+        code: `
+        import { QUERY_KEY_USER_PROFILE } from './queryKeys';
+
+        export const useProfileKey = () => {
+          const [profile] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+          const [settings] = useRouterState({ key: 'user-settings' });
+          return [profile, settings];
+        };
+        `,
+        output: `
+        import { QUERY_KEY_USER_PROFILE, QUERY_KEY_USER_SETTINGS } from './queryKeys';
+
+        export const useProfileKey = () => {
+          const [profile] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+          const [settings] = useRouterState({ key: QUERY_KEY_USER_SETTINGS });
+          return [profile, settings];
+        };
+        `,
+        errors: [stringLiteralError("'user-settings'")],
+      },
+
+      // 29. Outside src/, the bare specifier that tsconfig paths resolve is kept
+      {
+        filename: 'pages/legacy/Widget.tsx',
+        code: `
+        function Widget() {
+          const [value] = useRouterState({ key: 'user-profile' });
+          return <div>{value}</div>;
+        }
+        `,
+        output: `import { QUERY_KEY_USER_PROFILE } from 'src/util/routing/queryKeys';
+
+        function Widget() {
+          const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [stringLiteralError("'user-profile'")],
+      },
+
+      // 30. An absolute filename derives the same relative specifier
+      {
+        filename: '/repo/src/components/tournament/TeamCard.tsx',
+        code: `
+        function TeamCard() {
+          const [value] = useRouterState({ key: 'user-profile' });
+          return <div>{value}</div>;
+        }
+        `,
+        output: `import { QUERY_KEY_USER_PROFILE } from '../../util/routing/queryKeys';
+
+        function TeamCard() {
+          const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+          return <div>{value}</div>;
+        }
+        `,
         errors: [stringLiteralError("'user-profile'")],
       },
     ],

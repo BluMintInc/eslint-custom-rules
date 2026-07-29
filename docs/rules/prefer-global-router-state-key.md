@@ -10,7 +10,7 @@ Enforce using global constants or type-safe functions for `useRouterState` key p
 
 ## Rule Details
 
-This rule requires every `useRouterState` `key` to come from the centralized `QUERY_KEY_*` exports in `src/util/routing/queryKeys` (or an approved re-export such as `@/constants`). Ad-hoc string keys fragment the router cache, hide the set of supported keys, and make refactors brittle. The rule reports:
+This rule requires every `useRouterState` `key` to come from the centralized `QUERY_KEY_*` exports in `src/util/routing/queryKeys` (or an approved re-export such as `src/constants`). Ad-hoc string keys fragment the router cache, hide the set of supported keys, and make refactors brittle. The rule reports:
 
 - String literals (including template/binary expressions with static segments) passed as the `key`.
 - Variables that are not imported from `queryKeys.ts` or its approved re-exports.
@@ -36,7 +36,7 @@ This rule requires every `useRouterState` `key` to come from the centralized `QU
 const [value] = useRouterState({ key: 'match-session' });
 
 // Variable not sourced from queryKeys.ts
-import { USER_PROFILE_KEY } from '@/constants/other';
+import { USER_PROFILE_KEY } from 'src/constants/other';
 const [value2] = useRouterState({ key: USER_PROFILE_KEY });
 
 // Inline concatenation hides the intended key
@@ -54,6 +54,32 @@ import { QUERY_KEY_MATCH_SESSION } from 'src/util/routing/queryKeys';
 
 const [value] = useRouterState({ key: QUERY_KEY_MATCH_SESSION });
 ```
+
+### Autofix behavior
+
+The fix replaces the string literal with the matching `QUERY_KEY_*` constant and
+makes sure that constant is imported. An existing import of `queryKeys.ts` is
+reused: a namespace or default import qualifies the constant (`QueryKeys.QUERY_KEY_MATCH`),
+and a named import is extended in place rather than duplicated. Relative
+specifiers count as that module, including ones whose text hides the directory
+names (`./queryKeys` from a sibling, `../../routing/queryKeys` from two levels
+below `src/util`), so a second violation in the same file extends the import the
+fix itself wrote.
+
+Only a freshly written import statement needs a specifier of its own, and that
+specifier is derived from the file under lint:
+
+| File under lint | Emitted specifier | Why |
+| --- | --- | --- |
+| Inside `src/**` | Relative, e.g. `../../util/routing/queryKeys` | Relative paths resolve everywhere and dominate the codebase. |
+| Everywhere else | `src/util/routing/queryKeys` | The root tsconfig `paths` and the Jest `moduleNameMapper` both map `src/*`. |
+
+The `../` count comes from the linted file's own depth below the root that owns
+its `src/` segment, so `src/index.tsx` imports `./util/routing/queryKeys` and a
+sibling in `src/util/routing/` imports `./queryKeys`. An `@/`-aliased specifier
+is never emitted: that alias is declared in no tsconfig, bundler or Jest config,
+so it resolves nowhere. Where no correct specifier can be derived, the rule
+reports without fixing rather than write an import that fails to resolve.
 
 ## When Not To Use It
 

@@ -1,7 +1,75 @@
+import path from 'path';
 import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'preferGlobalRouterStateKey' | 'invalidQueryKeySource';
+
+// The module's path below the project root doubles as the bare specifier,
+// which is precisely why the root tsconfig `paths` and the Jest mapper resolve
+// it.
+const QUERY_KEYS_MODULE = 'src/util/routing/queryKeys';
+const QUERY_KEYS_SUFFIX = 'util/routing/queryKeys';
+const SRC_TIER_SEGMENT = '/src/';
+
+const toPosixPath = (filePath: string) => filePath.replace(/\\/g, '/');
+
+const ensureRelativeSpecifier = (specifier: string) =>
+  specifier.startsWith('.') ? specifier : `./${specifier}`;
+
+const isWindowsDrivePath = (filePath: string) =>
+  /^[A-Za-z]:[\\/]/.test(filePath);
+
+const isValidRelativePath = (relativePath: string) =>
+  relativePath !== '' &&
+  !path.isAbsolute(relativePath) &&
+  !isWindowsDrivePath(relativePath);
+
+const toAbsoluteFilename = (sourceFilePath: string, cwd: string) =>
+  toPosixPath(
+    path.isAbsolute(sourceFilePath)
+      ? sourceFilePath
+      : path.join(cwd, sourceFilePath),
+  );
+
+/**
+ * `queryKeys.ts` lives at `src/util/routing/queryKeys.ts` and is reachable by
+ * exactly two forms: a relative path, and the bare `src/…` specifier that the
+ * root tsconfig `paths` and the Jest `moduleNameMapper` both resolve. An
+ * `@/`-aliased specifier resolves under none of tsc, webpack or Jest, so a
+ * hardcoded one turns every fix into a broken import (#1390).
+ *
+ * Files under a `src/` segment take the relative form, which dominates the
+ * codebase and stays correct even where `paths` are unavailable; the `../`
+ * count comes from the file's own depth below the root that owns its `src/`
+ * segment. Returns null when no correct specifier exists, which makes the
+ * caller decline the fix rather than write an import that cannot resolve.
+ */
+function buildQueryKeysSpecifier(
+  sourceFilePath: string,
+  cwd: string,
+): string | null {
+  const absoluteFilename = toAbsoluteFilename(sourceFilePath, cwd);
+
+  const tierIndex = absoluteFilename.indexOf(SRC_TIER_SEGMENT);
+  if (tierIndex === -1) {
+    return QUERY_KEYS_MODULE;
+  }
+
+  // The project root is everything up to and including the separator that
+  // precedes the file's own `src/` segment.
+  const projectRoot = absoluteFilename.slice(0, tierIndex + 1);
+  const targetPath = path.join(projectRoot, QUERY_KEYS_MODULE);
+  const relativePath = path.relative(
+    path.dirname(absoluteFilename),
+    targetPath,
+  );
+
+  if (!isValidRelativePath(relativePath)) {
+    return null;
+  }
+
+  return ensureRelativeSpecifier(toPosixPath(relativePath));
+}
 
 /**
  * Rule to enforce the use of centralized router state key constants imported from
@@ -21,14 +89,21 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
     schema: [],
     messages: {
       preferGlobalRouterStateKey:
-        'Router state key {{keyValue}} is a string literal. String literals bypass the shared queryKeys.ts QUERY_KEY_* constants, which leads to duplicate router cache entries and makes allowed keys hard to discover. Import the corresponding QUERY_KEY_* constant from "@/util/routing/queryKeys" (or its approved re-export) and pass that to useRouterState instead.',
+        'Router state key {{keyValue}} is a string literal. String literals bypass the shared queryKeys.ts QUERY_KEY_* constants, which leads to duplicate router cache entries and makes allowed keys hard to discover. Import the corresponding QUERY_KEY_* constant from "src/util/routing/queryKeys" (a relative path to that module, or an approved re-export) and pass that to useRouterState instead.',
       invalidQueryKeySource:
-        'Router state key variable "{{variableName}}" is not sourced from queryKeys.ts. useRouterState keys must come from QUERY_KEY_* exports so routing cache keys stay stable and traceable. Import the matching constant from "@/util/routing/queryKeys" (or its approved re-export) and use that value here instead of {{variableName}}.',
+        'Router state key variable "{{variableName}}" is not sourced from queryKeys.ts. useRouterState keys must come from QUERY_KEY_* exports so routing cache keys stay stable and traceable. Import the matching constant from "src/util/routing/queryKeys" (a relative path to that module, or an approved re-export) and use that value here instead of {{variableName}}.',
     },
   },
   defaultOptions: [],
   create(context) {
     const sourceCode = context.sourceCode;
+    const cwd =
+      typeof context.getCwd === 'function' ? context.getCwd() : process.cwd();
+    const absoluteFilename = toAbsoluteFilename(context.getFilename(), cwd);
+    const queryKeysSpecifier = buildQueryKeysSpecifier(
+      context.getFilename(),
+      cwd,
+    );
     // Prevent duplicate import insertions when multiple fixes target the same query key constant.
     const scheduledQueryKeyNamedImports = new Set<string>();
     // Track imports from queryKeys.ts
@@ -65,10 +140,27 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
         .replace(/^@\/|^src\//, '')
         .replace(/^(\.\/|\.\.\/)+/, '');
 
-      return (
+      if (
         validQueryKeySources.has(normalized) ||
-        normalized.endsWith('util/routing/queryKeys')
+        normalized.endsWith(QUERY_KEYS_SUFFIX)
+      ) {
+        return true;
+      }
+
+      // A relative specifier can name the module without spelling out
+      // `util/routing`: a sibling reaches it as `./queryKeys`, and a file two
+      // directories below `src/util` as `../../routing/queryKeys`. Resolving
+      // against the linted file recognizes those, which also keeps the fix's own
+      // relative output recognized on the next pass so a second violation
+      // extends that import instead of duplicating it.
+      if (!source.startsWith('.')) {
+        return false;
+      }
+
+      const resolved = toPosixPath(
+        path.resolve(path.dirname(absoluteFilename), source),
       );
+      return resolved.endsWith(`/${QUERY_KEYS_SUFFIX}`);
     }
 
     /**
@@ -403,7 +495,10 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                               ) {
                                 return fixes;
                               }
-                              const importText = `import { ${suggestedConstant} } from '@/util/routing/queryKeys';\n`;
+                              const importText =
+                                queryKeysSpecifier === null
+                                  ? null
+                                  : `import { ${suggestedConstant} } from '${queryKeysSpecifier}';\n`;
                               const queryKeysNamedImport =
                                 sourceCode.ast.body.find(
                                   (n): n is TSESTree.ImportDeclaration =>
@@ -443,6 +538,12 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                                     `, ${suggestedConstant}`,
                                   ),
                                 );
+                              } else if (importText === null) {
+                                // Extending an existing named import needs no
+                                // specifier of its own, so only a freshly
+                                // written import statement depends on one being
+                                // derivable.
+                                return null;
                               } else if (sideEffectImport) {
                                 fixes.push(
                                   fixer.replaceText(
