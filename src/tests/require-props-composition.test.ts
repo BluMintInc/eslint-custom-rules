@@ -872,6 +872,158 @@ const Panel = (props: ExternalPanelProps) => {
 };
 `,
     },
+    // 52. Issue #1374: a generic `ComponentType` prop slot destructured from the
+    // props parameter is a caller-injected strategy, not a fixed child. There is
+    // no `ViewComponentProps` type anywhere to compose with, and the slot's
+    // contract is already declared on the prop itself.
+    {
+      filename: 'src/components/edit/view-component/RangeView.tsx',
+      code: `
+import { ComponentType } from 'react';
+
+type ViewComponentPropsBase<T> = {
+  value: T | undefined;
+  isEditable?: boolean;
+  placeholder?: string;
+};
+
+export type RangeViewProps = ViewComponentPropsBase<{ min: number; max: number }> & {
+  ViewComponent: ComponentType<ViewComponentPropsBase<string>>;
+  labelHeader?: string;
+};
+
+export const RangeView = ({
+  value,
+  isEditable,
+  labelHeader,
+  ViewComponent,
+  ...rest
+}: RangeViewProps) => {
+  const label = value ? labelHeader + ': ' + value.min + ' - ' + value.max : undefined;
+  return <ViewComponent {...rest} isEditable={isEditable} value={label} />;
+};
+`,
+    },
+    // 53. Issue #1374: the `props.X` spelling of the same slot.
+    {
+      filename: 'src/components/edit/view-component/SlotView.tsx',
+      code: `
+import { ComponentType } from 'react';
+
+export type SlotViewProps = {
+  Slot: ComponentType<{ value: string }>;
+  value: string;
+};
+
+export const SlotView = (props: SlotViewProps) => {
+  return <props.Slot value={props.value} />;
+};
+`,
+    },
+    // 54. Issue #1374: the slot destructured out of `props` in the body rather
+    // than in the signature resolves to the same binding.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+import { ComponentType } from 'react';
+
+export type SlotViewProps = {
+  Slot: ComponentType<{ value: string }>;
+  value: string;
+};
+
+export const SlotView = (props: SlotViewProps) => {
+  const { Slot } = props;
+  return <Slot value={props.value} />;
+};
+`,
+    },
+    // 55. Issue #1374: a renamed slot binds under the local name, which is what
+    // the JSX resolves to.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+import { ComponentType } from 'react';
+
+export type SlotViewProps = {
+  render: ComponentType<{ value: string }>;
+  value: string;
+};
+
+export const SlotView = ({ render: Renderer, value }: SlotViewProps) => {
+  return <Renderer value={value} />;
+};
+`,
+    },
+    // 56. Issue #1374: a slot with a default still resolves to the parameter
+    // binding, so the caller can always override it.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+import { ComponentType } from 'react';
+
+export type SlotViewProps = {
+  Slot?: ComponentType<{ value: string }>;
+  value: string;
+};
+
+export const SlotView = ({ Slot = DefaultSlot, value }: SlotViewProps) => {
+  return <Slot value={value} />;
+};
+`,
+    },
+    // 57. Issue #1374: slots nested inside a props sub-object.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+import { ComponentType } from 'react';
+
+export type PanelViewProps = {
+  slots: { Header: ComponentType<{ title: string }> };
+  title: string;
+};
+
+export const PanelView = ({ slots: { Header }, title }: PanelViewProps) => {
+  return <Header title={title} />;
+};
+`,
+    },
+    // 58. Issue #1374: a slot rendered by a `function` declaration component.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+import { ComponentType } from 'react';
+
+export type SlotViewProps = {
+  Slot: ComponentType<{ value: string }>;
+  value: string;
+};
+
+export function SlotView({ Slot, value }: SlotViewProps) {
+  return <Slot value={value} />;
+}
+`,
+    },
+    // 59. Issue #1374: a slot inside a memo() wrapper, the shape the bug was
+    // reported against.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+import { ComponentType, memo } from 'react';
+
+export type SlotViewProps = {
+  Slot: ComponentType<{ value: string }>;
+  value: string;
+};
+
+export const SlotView = memo(function SlotViewUnmemoized({
+  Slot,
+  value,
+}: SlotViewProps) {
+  return <Slot value={value} />;
+});
+`,
+    },
   ],
 
   invalid: [
@@ -1836,6 +1988,47 @@ type SummaryPanelProps = { title: string };
 
 const SummaryPanel = ({ title }: SummaryPanelProps) => {
   return <SummaryRow title={title} />;
+};
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 55. Issue #1374: dropping the prop slot must not suppress a genuine
+    // sibling dependency. `Slot` is caller-injected, but `LoadingButton` is a
+    // fixed child that still owes composition.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+import { ComponentType } from 'react';
+
+type SlotPanelProps = {
+  Slot: ComponentType<{ value: string }>;
+  value: string;
+};
+
+const SlotPanel = ({ Slot, value }: SlotPanelProps) => {
+  return (
+    <Box>
+      <Slot value={value} />
+      <LoadingButton>{value}</LoadingButton>
+    </Box>
+  );
+};
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 56. Issue #1374: a capitalized binding destructured from an ordinary
+    // object — not the props parameter — is still an in-scope component and
+    // keeps its composition obligation.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+import { registry } from './registry';
+
+type RegistryPanelProps = { value: string };
+
+const RegistryPanel = ({ value }: RegistryPanelProps) => {
+  const { Widget } = registry;
+  return <Widget value={value} />;
 };
 `,
       errors: [{ messageId: 'missingPropsComposition' }],

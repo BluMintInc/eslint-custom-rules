@@ -293,6 +293,101 @@ function collectJsxElementNames(node: TSESTree.Node): Set<string> {
 }
 
 /**
+ * Collect the capitalized binding names introduced by a destructuring pattern,
+ * following renames (`{ Slot: Renderer }`), defaults (`{ Slot = Fallback }`)
+ * and nesting (`{ slots: { Item } }`).
+ */
+function collectPatternBindings(
+  pattern: TSESTree.Node,
+  into: Set<string>,
+): void {
+  switch (pattern.type) {
+    case AST_NODE_TYPES.Identifier:
+      if (/^[A-Z]/.test(pattern.name)) {
+        into.add(pattern.name);
+      }
+      break;
+    case AST_NODE_TYPES.ObjectPattern:
+      for (const property of pattern.properties) {
+        if (property.type === AST_NODE_TYPES.Property) {
+          collectPatternBindings(property.value, into);
+        }
+        // A `...rest` element rebinds the remaining props under a single
+        // lowercase-by-convention name; it introduces no component slot.
+      }
+      break;
+    case AST_NODE_TYPES.AssignmentPattern:
+      collectPatternBindings(pattern.left, into);
+      break;
+    default:
+      break;
+  }
+}
+
+/**
+ * Names of JSX elements that resolve to one of the component's own props — a
+ * rendering strategy injected by the caller (`ViewComponent: ComponentType<T>`)
+ * rather than a fixed child.
+ *
+ * A props-parameter binding shadows every import, so such an element is not a
+ * dependency the parent can compose with: the concrete component is chosen per
+ * call site and the slot's accepted props are already constrained by the prop's
+ * own type annotation. Demanding `<Slot>Props` composition names a type that
+ * exists nowhere.
+ */
+function collectPropSlotNames(
+  funcNode:
+    | TSESTree.ArrowFunctionExpression
+    | TSESTree.FunctionExpression
+    | TSESTree.FunctionDeclaration,
+): Set<string> {
+  const slots = new Set<string>();
+  const propsParam = funcNode.params[0];
+  if (!propsParam) return slots;
+
+  if (propsParam.type === AST_NODE_TYPES.ObjectPattern) {
+    collectPatternBindings(propsParam, slots);
+    return slots;
+  }
+
+  // `(props: Props) => ...` — the slot may be destructured out of `props` in
+  // the body instead of in the signature.
+  if (propsParam.type !== AST_NODE_TYPES.Identifier) return slots;
+  const propsName = propsParam.name;
+
+  function visit(node: TSESTree.Node | null | undefined): void {
+    if (!node || typeof node !== 'object') return;
+
+    if (
+      node.type === AST_NODE_TYPES.VariableDeclarator &&
+      node.id.type === AST_NODE_TYPES.ObjectPattern &&
+      node.init?.type === AST_NODE_TYPES.Identifier &&
+      node.init.name === propsName
+    ) {
+      collectPatternBindings(node.id, slots);
+    }
+
+    for (const key of Object.keys(node)) {
+      if (key === 'parent') continue;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const child = (node as any)[key];
+      if (Array.isArray(child)) {
+        for (const item of child) {
+          if (item && typeof item === 'object' && 'type' in item) {
+            visit(item as TSESTree.Node);
+          }
+        }
+      } else if (child && typeof child === 'object' && 'type' in child) {
+        visit(child as TSESTree.Node);
+      }
+    }
+  }
+
+  visit(funcNode.body);
+  return slots;
+}
+
+/**
  * Find the Props type alias node that corresponds to a component by name.
  * Looks for `type <ComponentName>Props = ...` in the program body.
  */
@@ -1175,6 +1270,7 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
       // Collect all JSX element names used in the component body
       const body = funcNode.body ?? funcNode;
       const allJsxNames = collectJsxElementNames(body);
+      const propSlots = collectPropSlotNames(funcNode);
 
       // Filter to non-excluded custom components
       const depComponents = Array.from(allJsxNames).filter(
@@ -1182,6 +1278,7 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
           !excludeComponents.has(name) &&
           !isDecorativeIcon(name) &&
           name !== componentName &&
+          !propSlots.has(name) &&
           !isZeroPropComponent(prog, name),
       );
 
