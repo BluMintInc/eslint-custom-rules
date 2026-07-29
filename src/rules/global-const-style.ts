@@ -309,6 +309,17 @@ export default createRule<[], MessageIds>({
 
               const target = unwrapAssertions(node);
 
+              // Skip an initializer already wrapped in a non-`const` assertion
+              // (`{...} as T`, `<T>{...}`, `{...} as unknown as T`). A `const`
+              // assertion may only be applied to a literal, so appending one
+              // after an assertion chain is TS1355 — the same failure mode the
+              // regex/null/boolean carve-outs below exist for. Such a cast is
+              // also the author pinning the type deliberately, exactly like the
+              // `id.typeAnnotation` case skipped next.
+              if (target !== node) {
+                return false;
+              }
+
               // Skip if there's an explicit type annotation
               if (declaration.id.typeAnnotation) {
                 return false;

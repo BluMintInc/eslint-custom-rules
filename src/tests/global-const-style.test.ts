@@ -162,6 +162,59 @@ ruleTesterTs.run('global-const-style', rule, {
       code: 'const COLORS = ({ primary: "#000" } as const) as ThemeA;',
       filename: 'test.ts',
     },
+    // Issue #1375: an initializer already carrying a non-`const` assertion is
+    // type-pinned by the author, and a `const` assertion may only be applied to
+    // a literal — appending one after an `as`-expression is TS1355, so the rule
+    // must not report at all rather than emit uncompilable code.
+    {
+      code: 'const CONFIG = { a: 1 } as Foo;',
+      filename: 'test.ts',
+    },
+    {
+      code: 'const CONFIG = { a: 1 } as unknown as Foo;',
+      filename: 'test.ts',
+    },
+    {
+      code: 'const CONFIG = <Foo>{ a: 1 };',
+      filename: 'test.ts',
+    },
+    {
+      code: 'const CONFIG = [1, 2] as unknown as Foo[];',
+      filename: 'test.ts',
+    },
+    {
+      code: 'const COLORS = ({ primary: "#000" } as ThemeA) as ThemeB;',
+      filename: 'test.ts',
+    },
+    // Issue #1375: a string/number literal under a cast is the same shape.
+    {
+      code: 'const API_URL = "https://api.example.com" as Brand;',
+      filename: 'test.ts',
+    },
+    {
+      code: 'const MAX_RETRIES = 5 as unknown as Count;',
+      filename: 'test.ts',
+    },
+    // Issue #1375: the exact agora shape — the two-rule chain strips the
+    // annotation, leaving a bare double cast that must stay unreported.
+    {
+      code: `
+        const PHONE_PROVIDER = {
+          providerId: 'phone',
+        } as unknown as UserProviderInfo;
+      `,
+      filename: 'test.ts',
+    },
+    // Issue #1375: the documented workaround must remain byte-stable — the
+    // `as const` sits on the literal where it is legal, then widens.
+    {
+      code: `
+        const PHONE_PROVIDER = {
+          providerId: 'phone',
+        } as const as unknown as UserProviderInfo;
+      `,
+      filename: 'test.ts',
+    },
     // MemberExpression on dynamic values should be ignored (Issue #1130)
     {
       code: `
@@ -377,22 +430,6 @@ ruleTesterTs.run('global-const-style', rule, {
         },
       ],
       output: 'const COLORS = { primary: "#000", secondary: "#fff" } as const;',
-    },
-    // Nested assertions still report the literal kind
-    {
-      code: 'const COLORS = ({ primary: "#000" } as ThemeA) as ThemeB;',
-      filename: 'test.ts',
-      errors: [
-        {
-          messageId: 'asConst',
-          data: {
-            name: 'COLORS',
-            valueKind: 'an object literal',
-          },
-        },
-      ],
-      output:
-        'const COLORS = ({ primary: "#000" } as ThemeA) as ThemeB as const;',
     },
     // Object with Record type annotation missing UPPER_SNAKE_CASE (no as const error)
     {
@@ -631,6 +668,46 @@ ruleTesterTs.run('global-const-style', rule, {
       filename: 'test.ts',
       errors: [{ messageId: 'upperSnakeCase' }],
       output: null,
+    },
+    // Issue #1375 regression guard: the assertion carve-out must not swallow a
+    // BARE literal initializer — the rule's whole purpose. Parentheses are not
+    // AST nodes, so this is still a plain ObjectExpression.
+    {
+      code: 'const CONFIG = ({ a: 1 });',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'CONFIG', valueKind: 'an object literal' },
+        },
+      ],
+      output: 'const CONFIG = ({ a: 1 } as const);',
+    },
+    // Issue #1375 regression guard: bare string and array literals still fire.
+    {
+      code: 'const API_URL = "https://api.example.com";',
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: 'const API_URL = "https://api.example.com" as const;',
+    },
+    {
+      code: 'const RETRIES = [1, 2, 3];',
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: 'const RETRIES = [1, 2, 3] as const;',
+    },
+    // Issue #1375: a cast initializer is exempt from `asConst`, but the naming
+    // half of the rule is independent and must still fire and autofix.
+    {
+      code: 'const phoneProvider = { a: 1 } as unknown as Foo;',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'phoneProvider', suggestedName: 'PHONE_PROVIDER' },
+        },
+      ],
+      output: 'const PHONE_PROVIDER = { a: 1 } as unknown as Foo;',
     },
   ],
 });

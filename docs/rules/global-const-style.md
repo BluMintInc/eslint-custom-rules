@@ -58,6 +58,37 @@ const memoized = memo(MyComponent);
 export const config = { api: { bodyParser: { sizeLimit: '16kb' } } } as const;
 ```
 
+### Initializers that already carry a type assertion
+
+An initializer wrapped in a non-`const` assertion is exempt from the `as const`
+requirement:
+
+```ts
+// Not flagged — the author has already pinned the type.
+const CONFIG = { a: 1 } as Foo;
+const PHONE_PROVIDER = { providerId: 'phone' } as unknown as UserProviderInfo;
+const THEME = <Theme>{ primary: '#000' };
+```
+
+TypeScript permits a `const` assertion only on a literal, so appending one after
+an `as`-expression is a compile error (TS1355: *A 'const' assertion can only be
+applied to references to enum members, or string, number, boolean, array, or
+object literals*). An `as X` cast is also the author pinning the type
+deliberately — the same intent as the explicit `id` annotation the rule already
+skips.
+
+To get both an exact literal type and a widening cast, put the `const`
+assertion on the literal itself, where it is legal:
+
+```ts
+const PHONE_PROVIDER = {
+  providerId: 'phone',
+} as const as unknown as UserProviderInfo;
+```
+
+The `UPPER_SNAKE_CASE` half of the rule is unaffected and still applies to these
+declarations.
+
 ### Next.js reserved exports
 
 Next.js recognizes certain exports by their literal identifier (`config`,
