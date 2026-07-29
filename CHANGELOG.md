@@ -1,3 +1,11 @@
+## [1.20.21](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.20...v1.20.21) (2026-07-29)
+
+
+### Bug Fixes
+
+* **enforce-querykey-ts:** exempt parameter bindings from the constant requirement (closes [#1393](https://github.com/BluMintInc/eslint-custom-rules/issues/1393)) ([e3ab399](https://github.com/BluMintInc/eslint-custom-rules/commit/e3ab399153f776a9d41d460e7b663f14a81b21d4))
+* **prefer-global-router-state-key:** exempt parameter bindings from the constant requirement (closes [#1394](https://github.com/BluMintInc/eslint-custom-rules/issues/1394)) ([1eee0ed](https://github.com/BluMintInc/eslint-custom-rules/commit/1eee0ed5c6fa5c3b1fca097686f278a9d274294d))
+
 ## [1.20.20](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.19...v1.20.20) (2026-07-29)
 
 
