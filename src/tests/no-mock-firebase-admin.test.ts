@@ -93,6 +93,30 @@ ruleTesterTs.run('no-mock-firebase-admin', noMockFirebaseAdmin, {
       code: `jest.mock('./config/firebaseAdmin', () => ({}));`,
       filename: 'src/test.test.ts',
     },
+    // Interpolated specifiers name a module only known at runtime, so no tier
+    // can be attributed. The trailing interpolation makes these a DIFFERENT
+    // module than firebaseAdmin even on a backend filename.
+    {
+      code: 'jest.mock(`../../config/firebaseAdmin${env}`);',
+      filename: 'functions/src/util/realtimeDb/updateIfExists.test.ts',
+    },
+    {
+      code: 'jest.mock(`../../config/firebaseAdmin${env}`, () => ({ db: {} }));',
+      filename: 'functions/src/util/realtimeDb/updateIfExists.test.ts',
+    },
+    // Interpolation in a leading segment leaves the basename unknowable too.
+    {
+      code: 'jest.mock(`${root}/functions/src/config/firebaseAdmin`);',
+      filename: 'functions/src/util/realtimeDb/updateIfExists.test.ts',
+    },
+    {
+      code: 'jest.mock(`../../config/${name}`);',
+      filename: 'functions/src/util/realtimeDb/updateIfExists.test.ts',
+    },
+    {
+      code: 'jest.mock(`${dir}/firebaseAdmin`);',
+      filename: 'functions/src/util/realtimeDb/updateIfExists.test.ts',
+    },
     // Valid usage of mockFirestore
     {
       code: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';

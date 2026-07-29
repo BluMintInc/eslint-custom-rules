@@ -94,6 +94,13 @@ export const noMockFirebaseAdmin = createRule<[], MessageIds>({
         ) {
           let mockPath = '';
           if (node.arguments[0].type === AST_NODE_TYPES.TemplateLiteral) {
+            // An interpolated specifier names a module only known at runtime:
+            // `../../config/firebaseAdmin${env}` targets firebaseAdminStaging,
+            // not firebaseAdmin. Reading the leading quasi alone would attribute
+            // it to whichever module the static prefix happens to spell.
+            if (node.arguments[0].expressions.length > 0) {
+              return;
+            }
             mockPath = node.arguments[0].quasis[0].value.raw;
           } else if (node.arguments[0].type === AST_NODE_TYPES.Literal) {
             mockPath = String(node.arguments[0].value);
