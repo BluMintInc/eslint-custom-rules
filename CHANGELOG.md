@@ -1,3 +1,11 @@
+## [1.20.20](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.19...v1.20.20) (2026-07-29)
+
+
+### Bug Fixes
+
+* **enforce-querykey-ts:** derive the inserted queryKeys import specifier (closes [#1391](https://github.com/BluMintInc/eslint-custom-rules/issues/1391)) ([52741da](https://github.com/BluMintInc/eslint-custom-rules/commit/52741da566ab686bca516aeae301fe1e960ae1ca))
+* **prefer-global-router-state-key:** derive queryKeys import specifier from file path (closes [#1390](https://github.com/BluMintInc/eslint-custom-rules/issues/1390)) ([7e36c6a](https://github.com/BluMintInc/eslint-custom-rules/commit/7e36c6a782f47a465518c827c8c3ad3d84ffbfec))
+
 ## [1.20.19](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.18...v1.20.19) (2026-07-29)
 
 
