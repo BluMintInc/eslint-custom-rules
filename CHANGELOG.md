@@ -1,3 +1,10 @@
+## [1.20.16](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.15...v1.20.16) (2026-07-29)
+
+
+### Bug Fixes
+
+* **no-mock-firebase-admin:** resolve specifier tier before flagging (closes [#1385](https://github.com/BluMintInc/eslint-custom-rules/issues/1385)) ([05b8e66](https://github.com/BluMintInc/eslint-custom-rules/commit/05b8e66f3dea38de8c1ba853bd0f8b28a0aa52d3))
+
 ## [1.20.15](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.14...v1.20.15) (2026-07-29)
 
 

@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.16",
+    "date": "2026-07-29T10:30:50.111Z",
+    "rules": [
+      {
+        "name": "no-mock-firebase-admin",
+        "changeType": "fix",
+        "issues": [
+          1385
+        ],
+        "summary": "resolve specifier tier before flagging (closes #1385)"
+      }
+    ]
+  },
+  {
     "version": "1.20.15",
     "date": "2026-07-29T08:50:35.880Z",
     "rules": [
