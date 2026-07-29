@@ -347,6 +347,98 @@ ruleTesterJsx.run(
         }
         `,
       },
+
+      // A destructured callback parameter iterating a global constant array cannot be
+      // replaced by a single QUERY_KEY_* constant.
+      `
+import { GROUP_IDS } from '../../util/routing/groupIds';
+export const useGroupIdMap = () => {
+  const routerStates = GROUP_IDS.map(({ key, location }) => {
+    return useRouterState({ key, location });
+  });
+  return routerStates;
+};
+`,
+
+      // 27. A plain function parameter is decided by the caller
+      {
+        code: `
+        function useKey(key) {
+          return useRouterState({ key });
+        }
+        `,
+      },
+
+      // 28. A renamed destructured parameter is still a parameter
+      {
+        code: `
+        export const useKeys = (entries) => {
+          return entries.map(({ key: k }) => useRouterState({ key: k }));
+        };
+        `,
+      },
+
+      // 29. A parameter with a default value
+      {
+        code: `
+        export const useKey = ({ key = 'fallback' }) => {
+          return useRouterState({ key });
+        };
+        `,
+      },
+
+      // 30. A nested callback resolves the outer function's parameter
+      {
+        code: `
+        export const useKey = (key) => {
+          return useMemo(() => {
+            return useRouterState({ key });
+          }, [key]);
+        };
+        `,
+      },
+
+      // 31. A callback parameter shadows an outer literal of the same name
+      {
+        code: `
+        const key = 'user-profile';
+
+        export const useKeys = (entries) => {
+          return entries.map((key) => useRouterState({ key }));
+        };
+        `,
+      },
+
+      // 32. A typed parameter of a class method
+      {
+        code: `
+        class RouterStates {
+          public build(key: string) {
+            return useRouterState({ key });
+          }
+        }
+        `,
+      },
+
+      // 33. A rest parameter element reaching useRouterState
+      {
+        code: `
+        export const useKeys = (...keys) => {
+          return keys.map((key) => useRouterState({ key }));
+        };
+        `,
+      },
+
+      // 34. A destructured parameter of a function expression, not an arrow
+      {
+        code: `
+        export const useKeys = (entries) => {
+          return entries.flatMap(function ({ key }) {
+            return useRouterState({ key });
+          });
+        };
+        `,
+      },
     ],
     invalid: [
       // 1. Basic string literals
@@ -970,6 +1062,65 @@ ruleTesterJsx.run(
         }
         `,
         errors: [stringLiteralError("'user-profile'")],
+      },
+
+      // 31. A module-scope local variable is substitutable, unlike a parameter
+      {
+        code: `
+        const key = 'user-profile';
+
+        function Component() {
+          const [value] = useRouterState({ key });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [invalidSourceError('key')],
+      },
+
+      // 32. An inner local shadowing a parameter of the same name still reports
+      {
+        code: `
+        export const useKey = (key) => {
+          const inner = () => {
+            const key = 'user-profile';
+            return useRouterState({ key });
+          };
+          return inner();
+        };
+        `,
+        errors: [invalidSourceError('key')],
+      },
+
+      // 33. An identifier named 'key' imported from an unrelated module
+      {
+        code: `
+        import { key } from '../../util/routing/groupIds';
+
+        export const useGroupKey = () => {
+          return useRouterState({ key });
+        };
+        `,
+        errors: [invalidSourceError('key')],
+      },
+
+      // 34. A parameter inside a ternary alongside a string literal
+      {
+        code: `
+        export const useKey = (key) => {
+          return useRouterState({ key: key ? key : 'user-profile' });
+        };
+        `,
+        errors: [stringLiteralError("key ? key : 'user-profile'")],
+      },
+
+      // 35. A parameter reached through a member expression is not a bare binding
+      {
+        code: `
+        export const useKey = ({ keys }) => {
+          return useRouterState({ key: keys.user });
+        };
+        `,
+        errors: [invalidSourceError('keys.user')],
       },
     ],
   },

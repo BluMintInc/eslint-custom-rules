@@ -1,5 +1,10 @@
 import path from 'path';
-import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  ASTUtils,
+  TSESTree,
+  TSESLint,
+} from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'preferGlobalRouterStateKey' | 'invalidQueryKeySource';
@@ -168,6 +173,32 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
      */
     function isValidQueryKeyConstant(name: string): boolean {
       return name.startsWith('QUERY_KEY_');
+    }
+
+    /**
+     * `SourceCode#getScope` supersedes the deprecated `context.getScope`; the
+     * fallback keeps the rule working on ESLint versions that predate it.
+     */
+    function scopeOf(node: TSESTree.Node): TSESLint.Scope.Scope {
+      const scoped = sourceCode as TSESLint.SourceCode & {
+        getScope?: (node: TSESTree.Node) => TSESLint.Scope.Scope;
+      };
+      return typeof scoped.getScope === 'function'
+        ? scoped.getScope(node)
+        : context.getScope();
+    }
+
+    /**
+     * A parameter binding holds a different value on every call, so no single
+     * `QUERY_KEY_*` constant can stand in for it: a hook that iterates a
+     * constant array of keys hands each one to a callback parameter by design
+     * (#1394). Reporting such an identifier demands a substitution that does not
+     * exist, and the caller — not this file — decides which key is passed.
+     */
+    function isParameterBinding(identifier: TSESTree.Identifier): boolean {
+      const variable = ASTUtils.findVariable(scopeOf(identifier), identifier);
+      const definition = variable?.defs[0];
+      return definition?.type === TSESLint.Scope.DefinitionType.Parameter;
     }
 
     /**
@@ -605,7 +636,10 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                         return null;
                       },
                     });
-                  } else if (keyValue.type === AST_NODE_TYPES.Identifier) {
+                  } else if (
+                    keyValue.type === AST_NODE_TYPES.Identifier &&
+                    !isParameterBinding(keyValue)
+                  ) {
                     context.report({
                       node: keyValue,
                       messageId: 'invalidQueryKeySource',
