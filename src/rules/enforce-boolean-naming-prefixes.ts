@@ -62,7 +62,6 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         'Enforce consistent naming conventions for boolean values by requiring approved prefixes',
       recommended: 'error',
     },
-    fixable: 'code',
     schema: [
       {
         type: 'object',
