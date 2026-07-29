@@ -2,8 +2,6 @@
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
-
 <!-- end auto-generated rule header -->
 
 Repeated `DocSetter.set()` or `DocSetter.overwrite()` calls inside a loop, array callback, or `Promise.all()` create one Firestore write per document. That pattern slows down writes and can leave partial updates if any later call fails. `DocSetter.setAll()` and `DocSetter.overwriteAll()` batch the same documents into one grouped write with predictable latency and fewer network round trips.
