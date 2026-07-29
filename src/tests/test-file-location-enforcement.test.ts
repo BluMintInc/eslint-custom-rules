@@ -37,7 +37,9 @@ const createOrphanFixture = (fileName: string) => {
   return path.relative(process.cwd(), fullPath);
 };
 
-const orphanQualifierFilename = createOrphanFixture('Orphan.qualifier.test.tsx');
+const orphanQualifierFilename = createOrphanFixture(
+  'Orphan.qualifier.test.tsx',
+);
 const orphanPlainFilename = createOrphanFixture('Plain.test.ts');
 
 const expectedMessageFor = (testFile: string, names: string[]) =>
