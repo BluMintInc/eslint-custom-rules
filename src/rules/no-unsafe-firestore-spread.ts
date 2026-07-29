@@ -13,7 +13,6 @@ export const noUnsafeFirestoreSpread = createRule<[], MessageIds>({
       description: 'Prevent unsafe object/array spreads in Firestore updates',
       recommended: 'error',
     },
-    fixable: 'code',
     schema: [],
     messages: {
       unsafeObjectSpread:
@@ -62,7 +61,6 @@ export const noUnsafeFirestoreSpread = createRule<[], MessageIds>({
             node: property,
             messageId: 'unsafeObjectSpread',
             data: { path: pathLabel(parentPath) },
-            fix: null,
           });
         } else if (property.type === AST_NODE_TYPES.Property) {
           const key =
@@ -112,7 +110,6 @@ export const noUnsafeFirestoreSpread = createRule<[], MessageIds>({
             node: element,
             messageId: 'unsafeArraySpread',
             data: { path: pathLabel(parentPath) },
-            fix: null,
           });
         }
       }
