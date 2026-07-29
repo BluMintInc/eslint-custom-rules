@@ -23,7 +23,6 @@ export const noUnusedProps = createRule({
       unusedProp:
         'Prop "{{propName}}" is declared in the component Props type but never used inside the component body. Unused props make the component API misleading: callers keep passing values that are ignored and reviewers assume behavior that is not implemented. Remove "{{propName}}" from the Props type, consume it in the component, or forward it with a rest spread (e.g., `const MyComponent = ({ usedProp, ...rest }: Props) => <Child {...rest} />`).',
     },
-    fixable: 'code',
   },
   defaultOptions: [],
   create(context) {
