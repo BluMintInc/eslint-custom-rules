@@ -1,3 +1,10 @@
+## [1.20.13](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.12...v1.20.13) (2026-07-29)
+
+
+### Bug Fixes
+
+* **require-props-composition:** exempt caller-injected component prop slots (closes [#1374](https://github.com/BluMintInc/eslint-custom-rules/issues/1374)) ([7615c16](https://github.com/BluMintInc/eslint-custom-rules/commit/7615c160bdd3f478f1dd2932b6cd10064f761f17))
+
 ## [1.20.12](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.11...v1.20.12) (2026-07-28)
 
 

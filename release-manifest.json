@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.13",
+    "date": "2026-07-29T06:26:25.973Z",
+    "rules": [
+      {
+        "name": "require-props-composition",
+        "changeType": "fix",
+        "issues": [
+          1374
+        ],
+        "summary": "exempt caller-injected component prop slots (closes #1374)"
+      }
+    ]
+  },
+  {
     "version": "1.20.12",
     "date": "2026-07-28T22:32:01.811Z",
     "rules": [
