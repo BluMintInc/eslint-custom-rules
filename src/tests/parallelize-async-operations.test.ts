@@ -717,6 +717,92 @@ async function mutateThenOptionalRefresh(x) {
   await refresh?.();
 }
 `,
+
+    // The exact reproduction from #1388: navigate FIRST so the accept flow's
+    // guard dialogs mount on the destination page. Parallelizing opens them on
+    // the source page, where the landing route change destroys them.
+    `
+const execute = async () => {
+  await push(buildTournamentUrl({ tournamentId }));
+  await acceptPending({ teamId, subjectUserId: toId });
+};
+`,
+    // Member-expression navigation via the router object. (#1388)
+    `
+async function routerPushThenFlow(tournamentId) {
+  await router.push(buildTournamentUrl({ tournamentId }));
+  await startRegistration(tournamentId);
+}
+`,
+    // A trailing navigation is equally load-bearing: parallelizing would race
+    // the route change against the save, navigating away before it settles.
+    // (#1388)
+    `
+async function saveThenNavigate(draft, url) {
+  await saveDraft(draft);
+  await push(url);
+}
+`,
+    // router.replace is a route transition too. (#1388)
+    `
+async function replaceThenTrack(url) {
+  await router.replace(url);
+  await trackPageView(url);
+}
+`,
+    // Router methods that are not themselves navigation verbs still count,
+    // because the receiver identifies the whole call as routing. (#1388)
+    `
+async function routerBackThenRenderWidget(id) {
+  await router.back();
+  await renderWidget(id);
+}
+`,
+    // history.go is navigation by receiver, not by verb. (#1388)
+    `
+async function historyGoThenRender() {
+  await history.go(-1);
+  await renderDestination();
+}
+`,
+    // Suffixed navigation verbs (navigateTo, redirectTo) match the anchored
+    // leading-verb pattern. (#1388)
+    `
+async function navigateToThenPrompt(url) {
+  await navigateTo(url);
+  await promptInstall();
+}
+`,
+    `
+async function redirectToLoginThenTrack() {
+  await redirectToLogin();
+  await trackRedirect();
+}
+`,
+    // Optional-call navigation. (#1388)
+    `
+async function optionalPushThenFlow(url) {
+  await push?.(url);
+  await acceptPending();
+}
+`,
+    // A navigation in the MIDDLE of a run bars the whole run, not just the
+    // adjacent pair. (#1388)
+    `
+async function loadNavigateThenFlow(id, url) {
+  await loadProfile(id);
+  await push(url);
+  await acceptPending(id);
+}
+`,
+    // A captured navigation result qualifies as well: the hazard is the route
+    // transition itself, not the value it returns. (#1388)
+    `
+async function capturedNavigationResult(url) {
+  const navigated = await push(url);
+  await acceptPending();
+}
+`,
   ],
   invalid: [
     // Control: different receivers, genuinely independent -> still flagged.
@@ -1628,6 +1714,67 @@ async function mutateThenOptionalRefresh(x) {
   fetchSettings()
 ]);
         return true;
+      }
+      `,
+    },
+
+    // The navigation verb must LEAD: `getPushToken` merely contains "push", so
+    // the anchored pattern must not match and the pair stays parallelizable.
+    // (#1388)
+    {
+      code: `
+      async function pushNotLeadingVerb() {
+        await getPushToken();
+        await getSettings();
+      }
+      `,
+      errors: [error(2)],
+      output: `
+      async function pushNotLeadingVerb() {
+        await Promise.all([
+  getPushToken(),
+  getSettings()
+]);
+      }
+      `,
+    },
+
+    // Same for a trailing "redirect": `fetchRedirectRules` reads configuration,
+    // it does not perform a route transition. (#1388)
+    {
+      code: `
+      async function redirectNotLeadingVerb() {
+        await fetchRedirectRules();
+        await fetchFeatureFlags();
+      }
+      `,
+      errors: [error(2)],
+      output: `
+      async function redirectNotLeadingVerb() {
+        await Promise.all([
+  fetchRedirectRules(),
+  fetchFeatureFlags()
+]);
+      }
+      `,
+    },
+
+    // The router-receiver pattern is exact: `navigator` and `historyLog` are
+    // not routers, so calls on them remain parallelizable. (#1388)
+    {
+      code: `
+      async function routerLikeReceiverNames() {
+        await navigator.getBattery();
+        await historyLog.append(entry);
+      }
+      `,
+      errors: [error(2)],
+      output: `
+      async function routerLikeReceiverNames() {
+        await Promise.all([
+  navigator.getBattery(),
+  historyLog.append(entry)
+]);
       }
       `,
     },
