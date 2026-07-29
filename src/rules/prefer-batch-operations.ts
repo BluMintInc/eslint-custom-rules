@@ -385,7 +385,6 @@ export const preferBatchOperations = createRule<[], MessageIds>({
         'Enforce using setAll() and overwriteAll() instead of multiple set() or overwrite() calls',
       recommended: 'error',
     },
-    fixable: 'code',
     schema: [],
     messages: {
       preferBatch:
@@ -457,7 +456,6 @@ export const preferBatchOperations = createRule<[], MessageIds>({
               node: existing.firstNode,
               messageId,
               data: messageData,
-              fix: () => null, // We can't provide a fix because we don't know the array structure
             });
           }
         } else {
@@ -481,7 +479,6 @@ export const preferBatchOperations = createRule<[], MessageIds>({
                 node,
                 messageId,
                 data: messageData,
-                fix: () => null, // We can't provide a fix because we don't know the array structure
               });
             }
           }
@@ -494,7 +491,6 @@ export const preferBatchOperations = createRule<[], MessageIds>({
                 node,
                 messageId,
                 data: messageData,
-                fix: () => null, // We can't provide a fix because we don't know the array structure
               });
             }
           }
