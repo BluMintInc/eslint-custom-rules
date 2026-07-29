@@ -1,3 +1,18 @@
+## [1.20.15](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.14...v1.20.15) (2026-07-29)
+
+
+### Bug Fixes
+
+* **enforce-boolean-naming-prefixes:** drop false fixable declaration (closes [#1376](https://github.com/BluMintInc/eslint-custom-rules/issues/1376)) ([c74ed56](https://github.com/BluMintInc/eslint-custom-rules/commit/c74ed567800133a240398e4795c469eaa8708f68))
+* **no-restricted-properties-fix:** drop false fixable declaration (closes [#1381](https://github.com/BluMintInc/eslint-custom-rules/issues/1381)) ([9842df6](https://github.com/BluMintInc/eslint-custom-rules/commit/9842df67212811e44c7b3d7cdf84d8e5054b3730))
+* **no-type-assertion-returns:** drop false fixable declaration (closes [#1377](https://github.com/BluMintInc/eslint-custom-rules/issues/1377)) ([a1dbbcd](https://github.com/BluMintInc/eslint-custom-rules/commit/a1dbbcdf022168de00ca9325a28ce31bcb1ebc39))
+* **no-unsafe-firestore-spread:** drop false fixable declaration (closes [#1382](https://github.com/BluMintInc/eslint-custom-rules/issues/1382)) ([cd6d21f](https://github.com/BluMintInc/eslint-custom-rules/commit/cd6d21f0cdc98660278f4b39b486f8d410f86e1c))
+* **no-unused-props:** drop false fixable declaration (closes [#1378](https://github.com/BluMintInc/eslint-custom-rules/issues/1378)) ([21865a9](https://github.com/BluMintInc/eslint-custom-rules/commit/21865a9f3e00d3078da5147c76c5c71d6f9831df))
+* **prefer-batch-operations:** drop false fixable declaration (closes [#1383](https://github.com/BluMintInc/eslint-custom-rules/issues/1383)) ([5ec0300](https://github.com/BluMintInc/eslint-custom-rules/commit/5ec03003b3f80b4e60798e10bc8a2a6f7ae53c02))
+* **prefer-field-paths-in-transforms:** drop false fixable declaration (closes [#1384](https://github.com/BluMintInc/eslint-custom-rules/issues/1384)) ([fa8b543](https://github.com/BluMintInc/eslint-custom-rules/commit/fa8b543ee66bd808cddaba73cde85593c24a58f5))
+* **prefer-settings-object:** drop false fixable declaration (closes [#1379](https://github.com/BluMintInc/eslint-custom-rules/issues/1379)) ([70562bf](https://github.com/BluMintInc/eslint-custom-rules/commit/70562bf9c0878330701a5e87bffe64f5f94a9074))
+* **require-https-error:** stop flagging throws in Jest test files (closes [#1380](https://github.com/BluMintInc/eslint-custom-rules/issues/1380)) ([08dbffc](https://github.com/BluMintInc/eslint-custom-rules/commit/08dbffcff4d76f4df65d4e6140275f10ec7c03dd))
+
 ## [1.20.14](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.13...v1.20.14) (2026-07-29)
 
 

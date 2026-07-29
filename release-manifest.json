@@ -1,5 +1,83 @@
 [
   {
+    "version": "1.20.15",
+    "date": "2026-07-29T08:50:35.880Z",
+    "rules": [
+      {
+        "name": "enforce-boolean-naming-prefixes",
+        "changeType": "fix",
+        "issues": [
+          1376
+        ],
+        "summary": "drop false fixable declaration (closes #1376)"
+      },
+      {
+        "name": "no-restricted-properties-fix",
+        "changeType": "fix",
+        "issues": [
+          1381
+        ],
+        "summary": "drop false fixable declaration (closes #1381)"
+      },
+      {
+        "name": "no-type-assertion-returns",
+        "changeType": "fix",
+        "issues": [
+          1377
+        ],
+        "summary": "drop false fixable declaration (closes #1377)"
+      },
+      {
+        "name": "no-unsafe-firestore-spread",
+        "changeType": "fix",
+        "issues": [
+          1382
+        ],
+        "summary": "drop false fixable declaration (closes #1382)"
+      },
+      {
+        "name": "no-unused-props",
+        "changeType": "fix",
+        "issues": [
+          1378
+        ],
+        "summary": "drop false fixable declaration (closes #1378)"
+      },
+      {
+        "name": "prefer-batch-operations",
+        "changeType": "fix",
+        "issues": [
+          1383
+        ],
+        "summary": "drop false fixable declaration (closes #1383)"
+      },
+      {
+        "name": "prefer-field-paths-in-transforms",
+        "changeType": "fix",
+        "issues": [
+          1384
+        ],
+        "summary": "drop false fixable declaration (closes #1384)"
+      },
+      {
+        "name": "prefer-settings-object",
+        "changeType": "fix",
+        "issues": [
+          1379
+        ],
+        "summary": "drop false fixable declaration (closes #1379)"
+      },
+      {
+        "name": "require-https-error",
+        "changeType": "fix",
+        "issues": [
+          1380
+        ],
+        "summary": "stop flagging throws in Jest test files (closes #1380)"
+      }
+    ]
+  },
+  {
     "version": "1.20.14",
     "date": "2026-07-29T06:45:40.321Z",
     "rules": [
