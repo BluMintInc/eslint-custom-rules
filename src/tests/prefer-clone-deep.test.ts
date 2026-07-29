@@ -9,6 +9,17 @@ const expectPreferCloneDeepError = {
   message,
 } as unknown as TestCaseError<'preferCloneDeep'>;
 
+// Shared fixture for the tier-aware import cases (#1389): the rewritten literal
+// is identical across filenames, so only the emitted specifier varies.
+const backendCode = `const merged = { ...a, nested: { ...a.nested, value: 42 } };`;
+const MERGED_OUTPUT = `const merged = cloneDeep(a, {
+  nested: {
+    value: 42
+  }
+} as const);`;
+const backendOutput = (specifier: string) =>
+  `import { cloneDeep } from '${specifier}';\n${MERGED_OUTPUT}`;
+
 ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
   valid: [
     // Single level spread is allowed
@@ -756,6 +767,132 @@ const m = cloneDeep(a, {
   const cloneDeep = 1;
   return { ...a, nested: { ...a.nested, value: 42 } };
 }`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
+    },
+    // Regression #1389: `functions/tsconfig.json` is rooted at `functions/` and
+    // declares no `paths`, so a backend file reaches the helper relatively.
+    {
+      code: backendCode,
+      filename: '/repo/functions/src/callable/tournament/updateTeam.ts',
+      errors: [expectPreferCloneDeepError],
+      output: backendOutput('../../util/cloneDeep'),
+    },
+    // Regression #1389: the `../` count follows the file's depth rather than a
+    // fixed prefix — one level down needs one hop.
+    {
+      code: backendCode,
+      filename: '/repo/functions/src/callable/updateTeam.ts',
+      errors: [expectPreferCloneDeepError],
+      output: backendOutput('../util/cloneDeep'),
+    },
+    // Regression #1389: …and four levels down needs four hops.
+    {
+      code: backendCode,
+      filename:
+        '/repo/functions/src/triggers/tournament/team/member/onWrite.ts',
+      errors: [expectPreferCloneDeepError],
+      output: backendOutput('../../../../util/cloneDeep'),
+    },
+    // Regression #1389: a file directly in `functions/src` descends into `util`.
+    {
+      code: backendCode,
+      filename: '/repo/functions/src/index.ts',
+      errors: [expectPreferCloneDeepError],
+      output: backendOutput('./util/cloneDeep'),
+    },
+    // Regression #1389: a sibling of the helper imports it by bare file name.
+    {
+      code: backendCode,
+      filename: '/repo/functions/src/util/merge.ts',
+      errors: [expectPreferCloneDeepError],
+      output: backendOutput('./cloneDeep'),
+    },
+    // Regression #1389: the tier root comes from the `functions/src` segment of
+    // the file itself, so a `functions/` package nested deeper still resolves.
+    {
+      code: backendCode,
+      filename: '/repo/packages/functions-shared/functions/src/api/handler.ts',
+      errors: [expectPreferCloneDeepError],
+      output: backendOutput('../util/cloneDeep'),
+    },
+    // Regression #1389: a relative filename is anchored to the linter's cwd,
+    // which cancels out of the emitted relative specifier.
+    {
+      code: backendCode,
+      filename: 'functions/src/callable/updateTeam.ts',
+      errors: [expectPreferCloneDeepError],
+      output: backendOutput('../util/cloneDeep'),
+    },
+    // Regression #1389: a backend file that already imports the helper
+    // relatively gets no second import.
+    {
+      code: `import { cloneDeep } from '../util/cloneDeep';
+${backendCode}`,
+      filename: '/repo/functions/src/callable/updateTeam.ts',
+      errors: [expectPreferCloneDeepError],
+      output: `import { cloneDeep } from '../util/cloneDeep';
+${MERGED_OUTPUT}`,
+    },
+    // Regression #1389: a relative import of the helper module is extended
+    // rather than duplicated in the backend tier too.
+    {
+      code: `import { deepEqual } from '../util/cloneDeep';
+${backendCode}`,
+      filename: '/repo/functions/src/callable/updateTeam.ts',
+      errors: [expectPreferCloneDeepError],
+      output: `import { deepEqual, cloneDeep } from '../util/cloneDeep';
+${MERGED_OUTPUT}`,
+    },
+    // Regression #1389: an existing bare import already binds the name, so the
+    // fix reuses it instead of adding a competing relative import.
+    {
+      code: `import { cloneDeep } from 'functions/src/util/cloneDeep';
+${backendCode}`,
+      filename: '/repo/functions/src/callable/updateTeam.ts',
+      errors: [expectPreferCloneDeepError],
+      output: `import { cloneDeep } from 'functions/src/util/cloneDeep';
+${MERGED_OUTPUT}`,
+    },
+    // Regression #1389: an added relative import is placed above the existing
+    // imports, exactly as the bare form is.
+    {
+      code: `import { onDocumentWritten } from 'firebase-functions/v2/firestore';
+${backendCode}`,
+      filename: '/repo/functions/src/triggers/onWrite.ts',
+      errors: [expectPreferCloneDeepError],
+      output: `import { cloneDeep } from '../util/cloneDeep';
+import { onDocumentWritten } from 'firebase-functions/v2/firestore';
+${MERGED_OUTPUT}`,
+    },
+    // Regression #1389: the root tsconfig maps `functions/*` through `paths`,
+    // so a frontend file keeps the bare specifier.
+    {
+      code: backendCode,
+      filename: '/repo/src/components/tournament/TeamCard.ts',
+      errors: [expectPreferCloneDeepError],
+      output: backendOutput('functions/src/util/cloneDeep'),
+    },
+    // Regression #1389: a frontend directory merely named `functions` is not
+    // the backend tier, so the bare specifier stands.
+    {
+      code: backendCode,
+      filename: '/repo/src/functions/callTournament.ts',
+      errors: [expectPreferCloneDeepError],
+      output: backendOutput('functions/src/util/cloneDeep'),
+    },
+    // Regression #1389: a file outside `functions/src` also keeps the bare form.
+    {
+      code: backendCode,
+      filename: '/repo/functions/scripts/seed.ts',
+      errors: [expectPreferCloneDeepError],
+      output: backendOutput('functions/src/util/cloneDeep'),
+    },
+    // Regression #1389: no specifier points from inside the helper's own
+    // directory back to it, so the fix is declined rather than guessed.
+    {
+      code: backendCode,
+      filename: '/repo/functions/src/util/cloneDeep/index.ts',
       errors: [expectPreferCloneDeepError],
       output: null,
     },
