@@ -307,6 +307,98 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         }
       `,
     },
+
+    // 21. Regression #1393: a destructured callback parameter iterating a global
+    // constant array cannot be replaced by a single QUERY_KEY_* constant.
+    `
+import { GROUP_IDS } from '../../util/routing/groupIds';
+export const useGroupIdMap = () => {
+  const routerStates = GROUP_IDS.map(({ key, location }) => {
+    return useRouterState({ key, location });
+  });
+  return routerStates;
+};
+`,
+
+    // 22. Regression #1393: a plain function parameter is chosen by the caller,
+    // so the key it carries is not this file's to constrain.
+    {
+      code: `
+        function useKey(key) {
+          return useRouterState({ key });
+        }
+      `,
+    },
+
+    // 23. Regression #1393: a destructured parameter renamed on the way in is
+    // still a parameter binding.
+    {
+      code: `
+        const useKey = ({ key: k }) => useRouterState({ key: k });
+      `,
+    },
+
+    // 24. Regression #1393: a default value does not turn a parameter into a
+    // fixed key, since any argument overrides it.
+    {
+      code: `
+        import { QUERY_KEY_GROUP } from '@/util/routing/queryKeys';
+
+        function useKey(key = QUERY_KEY_GROUP) {
+          return useRouterState({ key });
+        }
+      `,
+    },
+    {
+      code: `
+        function useKey({ key = 'group-id' }) {
+          return useRouterState({ key });
+        }
+      `,
+    },
+
+    // 25. Regression #1393: an annotated parameter resolves the same way, since
+    // the binding — not the type — decides.
+    {
+      code: `
+        export const useKey = (key: string) => {
+          const [value] = useRouterState({ key });
+          return value;
+        };
+      `,
+    },
+
+    // 26. Regression #1393: a rest parameter destructured positionally is a
+    // parameter binding too.
+    {
+      code: `
+        function useKey(...[key]) {
+          return useRouterState({ key });
+        }
+      `,
+    },
+
+    // 27. Regression #1393: a nested callback reaches the parameter of an outer
+    // function, so scope resolution has to climb to find it.
+    {
+      code: `
+        export const useKeyGrid = (keys) => {
+          return keys.map((key) => {
+            return [1, 2].map(() => useRouterState({ key }));
+          });
+        };
+      `,
+    },
+
+    // 28. Regression #1393: the nearest binding decides — an outer literal
+    // constant of the same name is shadowed by the callback parameter.
+    {
+      code: `
+        const key = 'group-id';
+
+        export const useKeys = (keys) => keys.map((key) => useRouterState({ key }));
+      `,
+    },
   ],
 
   invalid: [
@@ -1119,6 +1211,125 @@ export const useProfileKey = () => {
   const [settings] = useRouterState({ key: QUERY_KEY_USER_SETTINGS });
   return [profile, settings];
 };`,
+    },
+
+    // 44. Regression #1393: exempting parameters must not exempt ordinary
+    // variables — a module-scope literal binding names one key and a constant
+    // can replace it.
+    {
+      code: `
+        const key = 'group-id';
+
+        export const useGroupId = () => {
+          return useRouterState({ key });
+        };
+      `,
+      errors: [
+        {
+          messageId: 'enforceQueryKeyConstant',
+          data: { variableName: 'key' },
+        },
+      ],
+    },
+
+    // 45. Regression #1393: a local variable declared inside a function that
+    // also takes parameters is still reportable; the binding decides, not the
+    // enclosing signature.
+    {
+      code: `
+        export const useGroupId = (location) => {
+          const key = 'group-id';
+          return useRouterState({ key, location });
+        };
+      `,
+      errors: [
+        {
+          messageId: 'enforceQueryKeyConstant',
+          data: { variableName: 'key' },
+        },
+      ],
+    },
+
+    // 46. Regression #1393: an inner local binding shadows an outer parameter of
+    // the same name, so the nearest binding is what gets resolved.
+    {
+      code: `
+        function useKey(key) {
+          return [1].map(() => {
+            const key = 'group-id';
+            return useRouterState({ key });
+          });
+        }
+      `,
+      errors: [
+        {
+          messageId: 'enforceQueryKeyConstant',
+          data: { variableName: 'key' },
+        },
+      ],
+    },
+
+    // 47. Regression #1393: an identifier imported from a module other than
+    // queryKeys.ts still has to be replaced.
+    {
+      code: `
+        import { key } from '../../util/routing/groupIds';
+
+        export const useGroupId = () => {
+          return useRouterState({ key });
+        };
+      `,
+      errors: [
+        {
+          messageId: 'enforceQueryKeyConstant',
+          data: { variableName: 'key' },
+        },
+      ],
+    },
+
+    // 48. Regression #1393: a parameter inside a ternary alongside string
+    // literals reports through the literal path, which the parameter exemption
+    // must leave intact.
+    {
+      code: `
+        function Component({ type }) {
+          const [value] = useRouterState({
+            key: type === 'admin' ? 'admin-profile' : 'user-profile'
+          });
+          return <div>{value}</div>;
+        }
+      `,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+    },
+    {
+      code: `
+        import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
+        function Component({ isAdmin }) {
+          const [value] = useRouterState({
+            key: isAdmin ? QUERY_KEY_USER_PROFILE : 'admin-dashboard'
+          });
+          return <div>{value}</div>;
+        }
+      `,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+    },
+
+    // 49. Regression #1393: a string literal key stays fixable — the exemption
+    // touches only bare identifiers.
+    {
+      code: `
+        export const useGroupId = () => {
+          return useRouterState({ key: 'group-id' });
+        };
+      `,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: `import { QUERY_KEY_GROUP_ID } from 'src/util/routing/queryKeys';
+
+        export const useGroupId = () => {
+          return useRouterState({ key: QUERY_KEY_GROUP_ID });
+        };
+      `,
     },
   ],
 });

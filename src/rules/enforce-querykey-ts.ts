@@ -279,6 +279,20 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
       return 'bound';
     }
 
+    /**
+     * A parameter binding holds a different value on every call, so no single
+     * `QUERY_KEY_*` constant can stand in for it: a hook that iterates a
+     * constant array of keys hands each one to a callback parameter by design
+     * (#1393). Reporting such an identifier demands a substitution that does not
+     * exist, and the enclosing function is where the caller — not this file —
+     * decides which key is passed.
+     */
+    function isParameterBinding(identifier: TSESTree.Identifier): boolean {
+      const variable = ASTUtils.findVariable(scopeOf(identifier), identifier);
+      const definition = variable?.defs[0];
+      return definition?.type === TSESLint.Scope.DefinitionType.Parameter;
+    }
+
     function queryKeysDeclarationsOf(): TSESTree.ImportDeclaration[] {
       return importDeclarationsOf().filter((declaration) =>
         isQueryKeysSource(String(declaration.source.value)),
@@ -678,7 +692,10 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
                             }
                           : undefined,
                     });
-                  } else if (keyValue.type === AST_NODE_TYPES.Identifier) {
+                  } else if (
+                    keyValue.type === AST_NODE_TYPES.Identifier &&
+                    !isParameterBinding(keyValue)
+                  ) {
                     // Report variables that aren't from the correct source
                     pendingReports.push({
                       node: keyValue,
