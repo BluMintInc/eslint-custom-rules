@@ -1,3 +1,10 @@
+## [1.20.18](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.17...v1.20.18) (2026-07-29)
+
+
+### Bug Fixes
+
+* **parallelize-async-operations:** treat route transitions as an ordering barrier (closes [#1388](https://github.com/BluMintInc/eslint-custom-rules/issues/1388)) ([451e5fc](https://github.com/BluMintInc/eslint-custom-rules/commit/451e5fc14450ff4608b8edbd73a36d2a91e64318))
+
 ## [1.20.17](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.16...v1.20.17) (2026-07-29)
 
 

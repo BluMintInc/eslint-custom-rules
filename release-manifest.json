@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.18",
+    "date": "2026-07-29T17:40:51.418Z",
+    "rules": [
+      {
+        "name": "parallelize-async-operations",
+        "changeType": "fix",
+        "issues": [
+          1388
+        ],
+        "summary": "treat route transitions as an ordering barrier (closes #1388)"
+      }
+    ]
+  },
+  {
     "version": "1.20.17",
     "date": "2026-07-29T10:47:56.581Z",
     "rules": [
