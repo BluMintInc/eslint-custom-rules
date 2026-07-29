@@ -1,7 +1,7 @@
 import { arrayMethodsThisContext } from '../rules/array-methods-this-context';
 import { ruleTesterTs } from '../utils/ruleTester';
 
-ruleTesterTs.run('array-method-this-content', arrayMethodsThisContext, {
+ruleTesterTs.run('array-methods-this-context', arrayMethodsThisContext, {
   valid: [
     // Arrow function used in array method
     "['a', 'b', 'c'].map((item) => this.processItem(item))",
