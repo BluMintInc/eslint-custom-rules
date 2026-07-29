@@ -9,6 +9,7 @@ Using the proprietary `HttpsError` keeps Cloud Functions responses consistent: c
 ## Rule Details
 
 - Applies only to files in `functions/src`.
+- Skips Jest test files, which never run as a Cloud Function invocation and never return an HTTP response to a client: any path ending in `.test.*` or `.spec.*` (including multi-part suffixes such as `EventRegistry.integration.test.ts`) and any file inside a `__tests__/` or `__mocks__/` directory. Production modules whose names merely contain `test` or `spec` (`testUtils.ts`, `latest.ts`, `foo.test.helper.ts`) remain enforced.
 - Reports `throw new Error(...)` so Cloud Functions do not return an unstructured 500 response.
 - Reports any use of `firebase-admin`’s `HttpsError`, including aliased imports and `https.HttpsError`, because it skips the proprietary wrapper and its logging/sanitization behavior.
 - Reports the forbidden `firebase-admin` `HttpsError` both when it is imported (to block unused but disallowed dependencies) and again when it is thrown, so runtime usage is always flagged.
@@ -59,8 +60,21 @@ throw new HttpsError('INVALID_ARGUMENT', 'Provide a user id before saving');
 throw new CustomError('Feature flag not enabled');
 ```
 
+```ts
+// functions/src/util/example.test.ts
+// Test setup guards and fixtures are exempt: a test is never a Cloud Function
+describe('exampleGuard', () => {
+  beforeAll(() => {
+    if (!process.env.REQUIRED_ENV_VAR) {
+      throw new Error('REQUIRED_ENV_VAR not set');
+    }
+  });
+});
+```
+
 ## How to Fix
 
 - Replace `throw new Error(...)` with the proprietary `HttpsError` and supply the canonical status code plus a client-safe message.
 - Replace any `firebase-admin` `HttpsError` import (direct or via `https`) with the proprietary `HttpsError` from `@our-company/errors`.
 - Keep this enforcement scoped to `functions/src` so other packages can define their own error handling.
+- Leave `throw new Error(...)` alone in `*.test.*` / `*.spec.*` files and in `__tests__/` or `__mocks__/` modules: swapping in `HttpsError` there adds no client-facing benefit and obscures the intent of the fixture.

@@ -42,6 +42,87 @@ ruleTesterTs.run('require-https-error', requireHttpsError, {
       code: 'throw new Error("test error");',
       filename: 'C:\\repo\\src\\components\\Foo.tsx',
     },
+    // Issue #1380: Jest test files under functions/src are never invoked as a
+    // Cloud Function and never return an HTTP response, so a plain Error in
+    // test setup/fixtures is correct and must not require HttpsError.
+    {
+      code: `
+describe('exampleGuard', () => {
+  beforeAll(() => {
+    if (!process.env.REQUIRED_ENV_VAR) {
+      throw new Error('REQUIRED_ENV_VAR not set');
+    }
+  });
+});`,
+      filename: 'functions/src/util/example.test.ts',
+    },
+    // Multi-part suffixes (*.integration.test.ts) are test files too.
+    {
+      code: `
+class FailureProcessor extends WebhookEventProcessor {
+  protected async execute(): Promise<void> {
+    throw new Error('Failure processor error');
+  }
+}`,
+      filename: 'functions/src/util/webhook/EventRegistry.integration.test.ts',
+    },
+    {
+      code: 'throw new Error("test error");',
+      filename: 'functions/src/util/foo.integration.spec.ts',
+    },
+    // Every test/spec extension variant is exempt.
+    {
+      code: 'throw new Error("test error");',
+      filename: 'functions/src/util/foo.spec.ts',
+    },
+    {
+      code: 'throw new Error("test error");',
+      filename: 'functions/src/components/Widget.test.tsx',
+    },
+    {
+      code: 'throw new Error("test error");',
+      filename: 'functions/src/components/Widget.spec.tsx',
+    },
+    {
+      code: 'throw new Error("test error");',
+      filename: 'functions/src/legacy/foo.test.js',
+    },
+    {
+      code: 'throw new Error("test error");',
+      filename: 'functions/src/util/foo.test.mts',
+    },
+    // Jest convention directories hold test-only modules.
+    {
+      code: 'throw new Error("test error");',
+      filename: 'functions/src/__tests__/example.ts',
+    },
+    {
+      code: 'throw new Error("test error");',
+      filename: 'functions/src/util/__tests__/helpers/fixtures.ts',
+    },
+    {
+      code: 'throw new Error("test error");',
+      filename: 'functions/src/__mocks__/firebase-admin.ts',
+    },
+    // The exemption also covers the import visitor: a test may exercise
+    // firebase-admin's HttpsError directly without violating the rule.
+    {
+      code: 'import { HttpsError } from "firebase-admin"; throw new HttpsError("failed-precondition", "test error");',
+      filename: 'functions/src/util/foo.test.ts',
+    },
+    {
+      code: 'import { https } from "firebase-admin"; throw new https.HttpsError("failed-precondition", "test error");',
+      filename: 'functions/src/util/foo.integration.test.ts',
+    },
+    // Windows separators must not defeat the test-file exemption.
+    {
+      code: 'throw new Error("test error");',
+      filename: 'C:\\repo\\functions\\src\\util\\example.test.ts',
+    },
+    {
+      code: 'throw new Error("test error");',
+      filename: 'C:\\repo\\functions\\src\\__tests__\\example.ts',
+    },
   ],
   invalid: [
     // Should not allow throw new Error in functions/src
@@ -191,6 +272,57 @@ throw new functionsHttps.HttpsError("failed-precondition", "test error");
       code: 'throw new Error("test error");',
       filename: 'C:\\repo\\functions\\src\\util\\foo.ts',
       errors: [expectMessage(useHttpsErrorMessage)],
+    },
+    // Issue #1380: the test-file exemption must stay narrow. Production
+    // modules keep their enforcement, including realistic Cloud Function
+    // entry points.
+    {
+      code: 'throw new Error("test error");',
+      filename: 'functions/src/util/example.ts',
+      errors: [expectMessage(useHttpsErrorMessage)],
+    },
+    {
+      code: 'throw new Error("test error");',
+      filename: 'functions/src/callable/tournament/respondToPending.f.ts',
+      errors: [expectMessage(useHttpsErrorMessage)],
+    },
+    // Near misses: filenames merely CONTAINING "test"/"spec" are production
+    // code, not Jest test files, so they stay enforced.
+    {
+      code: 'throw new Error("test error");',
+      filename: 'functions/src/util/testUtils.ts',
+      errors: [expectMessage(useHttpsErrorMessage)],
+    },
+    {
+      code: 'throw new Error("test error");',
+      filename: 'functions/src/latest.ts',
+      errors: [expectMessage(useHttpsErrorMessage)],
+    },
+    {
+      code: 'throw new Error("test error");',
+      filename: 'functions/src/util/test-helpers.ts',
+      errors: [expectMessage(useHttpsErrorMessage)],
+    },
+    {
+      code: 'throw new Error("test error");',
+      filename: 'functions/src/util/specification.ts',
+      errors: [expectMessage(useHttpsErrorMessage)],
+    },
+    // A ".test." fragment in the middle of the name is not a test-file
+    // suffix; a naive substring check would wrongly exempt this.
+    {
+      code: 'throw new Error("test error");',
+      filename: 'functions/src/util/foo.test.helper.ts',
+      errors: [expectMessage(useHttpsErrorMessage)],
+    },
+    // The import visitor also stays enforced in near-miss production files.
+    {
+      code: 'import { HttpsError } from "firebase-admin"; throw new HttpsError("failed-precondition", "test error");',
+      filename: 'functions/src/util/testUtils.ts',
+      errors: [
+        expectMessage(proprietaryMessage('HttpsError', 'firebase-admin')),
+        expectMessage(proprietaryMessage('HttpsError', 'firebase-admin')),
+      ],
     },
   ],
 });

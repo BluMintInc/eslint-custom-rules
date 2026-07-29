@@ -1,6 +1,25 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
+// Anchored at the end of the path so multi-part suffixes such as
+// `EventRegistry.integration.test.ts` are recognized while production modules
+// that merely contain the word (`testUtils.ts`, `latest.ts`,
+// `foo.test.helper.ts`) keep their enforcement.
+const TEST_FILE_SUFFIX = /\.(test|spec)\.[cm]?[jt]sx?$/;
+
+// Jest convention directories hold test-only modules regardless of file name.
+const TEST_FILE_DIRECTORY = /(^|\/)(__tests__|__mocks__)\//;
+
+/**
+ * Jest test files live beside production code under `functions/src`, but they
+ * are never invoked as a Cloud Function and never return an HTTP response to a
+ * client. Throwing a plain `Error` in their setup guards, fixtures, and mock
+ * failure modes is idiomatic, so the rule's rationale does not apply to them
+ * (issue #1380).
+ */
+const isTestFile = (filename: string) =>
+  TEST_FILE_SUFFIX.test(filename) || TEST_FILE_DIRECTORY.test(filename);
+
 export = createRule({
   name: 'require-https-error',
   meta: {
@@ -28,6 +47,10 @@ export = createRule({
 
     // Only apply rule to files in functions/src directory
     if (!filename.includes('functions/src')) {
+      return {};
+    }
+
+    if (isTestFile(filename)) {
       return {};
     }
 
