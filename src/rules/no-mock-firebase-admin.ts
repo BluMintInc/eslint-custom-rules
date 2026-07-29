@@ -1,14 +1,57 @@
+import path from 'path';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'noMockFirebaseAdmin';
 
-const FIREBASE_ADMIN_PATHS = [
-  'firebaseAdmin',
-  'config/firebaseAdmin',
-  'src/config/firebaseAdmin',
-  'functions/src/config/firebaseAdmin',
-];
+const FIREBASE_ADMIN_MODULE = 'firebaseAdmin';
+const MODULE_EXTENSION = /\.(?:tsx?|jsx?|mjs|cjs)$/;
+
+/**
+ * Backend tier: `jest.setup.node.js` auto-mocks this module repo-wide, so a
+ * local `jest.mock()` bypasses the shared stub the rule exists to protect.
+ */
+const BACKEND_FIREBASE_ADMIN = 'functions/src/config/firebaseAdmin';
+
+/**
+ * Frontend tier: a distinct module with no shared mock (no `__mocks__` entry,
+ * no `jest.setup.node.js` registration), so nothing is bypassed by mocking it.
+ */
+const FRONTEND_FIREBASE_ADMIN = 'src/config/firebaseAdmin';
+
+const toPosix = (value: string) => value.replace(/\\/g, '/');
+
+const targetsFirebaseAdmin = (mockPath: string) => {
+  const basename = toPosix(mockPath).split('/').pop() ?? '';
+  return basename.replace(MODULE_EXTENSION, '') === FIREBASE_ADMIN_MODULE;
+};
+
+const comparisonPathOf = (mockPath: string, filename: string) => {
+  // Bare and aliased specifiers (`src/config/firebaseAdmin`,
+  // `@project/functions/src/config/firebaseAdmin`) are resolved by the module
+  // resolver against roots/aliases rather than the importing file, so joining
+  // them onto the file's directory would fabricate a path that never exists.
+  if (!mockPath.startsWith('.')) {
+    return toPosix(mockPath);
+  }
+  return toPosix(path.resolve(path.dirname(filename), mockPath));
+};
+
+const bypassesSharedMock = (comparisonPath: string) => {
+  // Backend is tested first because the backend path *contains* the frontend
+  // path as a substring; checking frontend first would exempt every backend
+  // mock and silently disable the rule.
+  if (comparisonPath.includes(BACKEND_FIREBASE_ADMIN)) {
+    return true;
+  }
+  if (comparisonPath.includes(FRONTEND_FIREBASE_ADMIN)) {
+    return false;
+  }
+  // A specifier attributable to neither tier keeps the rule's protection:
+  // prefer reporting over silently allowing an unknown layout to shadow a
+  // shared mock.
+  return true;
+};
 
 export const noMockFirebaseAdmin = createRule<[], MessageIds>({
   name: 'no-mock-firebase-admin',
@@ -55,25 +98,22 @@ export const noMockFirebaseAdmin = createRule<[], MessageIds>({
           } else if (node.arguments[0].type === AST_NODE_TYPES.Literal) {
             mockPath = String(node.arguments[0].value);
           }
-          const isFirebaseAdminMock = FIREBASE_ADMIN_PATHS.some(
-            (path) =>
-              mockPath.endsWith(path) &&
-              !mockPath.endsWith('Helper') &&
-              !mockPath.endsWith('utils') &&
-              !mockPath.endsWith('test') &&
-              !mockPath.endsWith('mock') &&
-              !mockPath.endsWith('jest-mock'),
-          );
 
-          if (isFirebaseAdminMock) {
-            context.report({
-              node,
-              messageId: 'noMockFirebaseAdmin',
-              data: {
-                modulePath: mockPath,
-              },
-            });
+          if (!targetsFirebaseAdmin(mockPath)) {
+            return;
           }
+
+          if (!bypassesSharedMock(comparisonPathOf(mockPath, filename))) {
+            return;
+          }
+
+          context.report({
+            node,
+            messageId: 'noMockFirebaseAdmin',
+            data: {
+              modulePath: mockPath,
+            },
+          });
         }
       },
     };

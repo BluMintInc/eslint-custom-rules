@@ -8,6 +8,91 @@ const errorFor = (modulePath: string) => ({
 
 ruleTesterTs.run('no-mock-firebase-admin', noMockFirebaseAdmin, {
   valid: [
+    // Frontend-tier module (src/config/firebaseAdmin) has NO shared
+    // jest.setup.node.js mock -- only functions/src/config/firebaseAdmin is
+    // auto-mocked there. A local jest.mock for this resolved path is the only
+    // way to satisfy Next.js API-route tests exercising assertPostRequest.
+    {
+      code: `jest.mock('../../../config/firebaseAdmin', () => ({
+        auth: { verifyIdToken: jest.fn() },
+        db: { collection: jest.fn(), doc: jest.fn() },
+      }));`,
+      filename: 'src/pages/api/test/kv.test.ts',
+    },
+    // Frontend tier reached from a test colocated under src/__tests__
+    {
+      code: `jest.mock('../../config/firebaseAdmin', () => ({
+        auth: { verifyIdToken: jest.fn() },
+      }));`,
+      filename: 'src/__tests__/pages/stream-settings.test.tsx',
+    },
+    // Frontend tier addressed with a bare (root-relative) specifier
+    {
+      code: `jest.mock('src/config/firebaseAdmin', () => ({ db: {} }));`,
+      filename:
+        'src/__tests__/pages/[utc]/[groupId]/stream-settings/index.test.tsx',
+    },
+    {
+      code: `jest.mock('src/config/firebaseAdmin');`,
+      filename:
+        'src/components/snapshots/server/buildPreemptionSnapshotStrategy.test.ts',
+    },
+    // Bare frontend specifier from a deeply nested frontend test
+    {
+      code: `jest.mock('src/config/firebaseAdmin', () => ({
+        db: { collection: jest.fn() },
+      }));`,
+      filename:
+        'src/components/tournament/registration/server/buildRegistrationSeeds.test.ts',
+    },
+    // Frontend tier reached from a component-level server helper test
+    {
+      code: `jest.mock('../../../config/firebaseAdmin');`,
+      filename:
+        'src/components/stream-settings/server/buildStreamSettingsSeeds.test.ts',
+    },
+    // Frontend tier reached from Next.js API-route tests
+    {
+      code: `jest.mock('../../../config/firebaseAdmin');`,
+      filename: 'src/pages/api/short-url/index.test.ts',
+    },
+    {
+      code: `jest.mock('../../../config/firebaseAdmin', () => ({
+        auth: { verifyIdToken: jest.fn() },
+      }));`,
+      filename: 'src/pages/api/coinflow/withdraw-quote.test.ts',
+    },
+    {
+      code: `jest.mock('../../../config/firebaseAdmin', () => ({
+        auth: { verifyIdToken: jest.fn() },
+      }));`,
+      filename: 'src/pages/api/coinflow/sign-in-event.test.ts',
+    },
+    // Frontend tier, no factory
+    {
+      code: `jest.mock('../../config/firebaseAdmin');`,
+      filename: 'src/__tests__/pages/foo.test.tsx',
+    },
+    // Frontend tier written as a template literal
+    {
+      code: 'jest.mock(`../../config/firebaseAdmin`);',
+      filename: 'src/__tests__/pages/foo.test.tsx',
+    },
+    // Frontend tier with an explicit module extension
+    {
+      code: `jest.mock('../../config/firebaseAdmin.ts');`,
+      filename: 'src/__tests__/pages/foo.test.tsx',
+    },
+    // Frontend tier from a .spec file
+    {
+      code: `jest.mock('../../../config/firebaseAdmin');`,
+      filename: 'src/pages/api/short-url/index.spec.ts',
+    },
+    // Frontend tier reached with a leading ./ segment
+    {
+      code: `jest.mock('./config/firebaseAdmin', () => ({}));`,
+      filename: 'src/test.test.ts',
+    },
     // Valid usage of mockFirestore
     {
       code: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
@@ -24,14 +109,37 @@ ruleTesterTs.run('no-mock-firebase-admin', noMockFirebaseAdmin, {
       code: `jest.mock('some-other-module');`,
       filename: 'src/test.test.ts',
     },
-    // Similar but different paths
+    // Similar but different paths, even when they sit beside the backend module
     {
       code: `jest.mock('../../config/firebaseAdminHelper');`,
       filename: 'src/test.test.ts',
     },
     {
+      code: `jest.mock('../config/firebaseAdminHelper');`,
+      filename: 'functions/src/util/realtimeDb/updateIfExists.test.ts',
+    },
+    {
       code: `jest.mock('../../config/firebase-admin-utils');`,
       filename: 'src/test.test.ts',
+    },
+    {
+      code: `jest.mock('../config/firebase-admin-utils');`,
+      filename: 'functions/src/util/realtimeDb/updateIfExists.test.ts',
+    },
+    // The firebase-admin SDK itself is a different module
+    {
+      code: `jest.mock('firebase-admin/firestore');`,
+      filename: 'functions/src/util/realtimeDb/updateIfExists.test.ts',
+    },
+    // A colocated manual mock file is not the module under protection
+    {
+      code: `jest.mock('../config/firebaseAdmin.mock');`,
+      filename: 'functions/src/util/realtimeDb/updateIfExists.test.ts',
+    },
+    // Interpolated specifiers cannot be attributed to a module
+    {
+      code: 'jest.mock(`../../config/${name}`);',
+      filename: 'functions/src/util/realtimeDb/updateIfExists.test.ts',
     },
     // Non-test files should be ignored
     {
@@ -41,6 +149,10 @@ ruleTesterTs.run('no-mock-firebase-admin', noMockFirebaseAdmin, {
     {
       code: `jest.mock('../../config/firebaseAdmin');`,
       filename: 'src/utils.ts',
+    },
+    {
+      code: `jest.mock('functions/src/config/firebaseAdmin');`,
+      filename: 'functions/src/util/realtimeDb/updateIfExists.ts',
     },
     // Comments and whitespace variations
     {
@@ -71,7 +183,76 @@ ruleTesterTs.run('no-mock-firebase-admin', noMockFirebaseAdmin, {
     },
   ],
   invalid: [
-    // Basic mock with factory
+    // Backend tier: jest.setup.node.js auto-mocks this module, so a local mock
+    // bypasses the shared stub.
+    {
+      code: `jest.mock('../../config/firebaseAdmin', () => ({
+        db: mockFirestore()
+      }));`,
+      filename: 'functions/src/util/realtimeDb/updateIfExists.test.ts',
+      errors: [errorFor('../../config/firebaseAdmin')],
+    },
+    {
+      code: `jest.mock('../../../config/firebaseAdmin');`,
+      filename:
+        'functions/src/util/tournament/payout/deriveIsChampionPayout.test.ts',
+      errors: [errorFor('../../../config/firebaseAdmin')],
+    },
+    {
+      code: `jest.mock('../../../../config/firebaseAdmin', () => ({
+        db: mockFirestore(),
+      }));`,
+      filename:
+        'functions/src/util/tournament/aggregation/__tests__/recomputeGuestlistMetadataCounts.test.ts',
+      errors: [errorFor('../../../../config/firebaseAdmin')],
+    },
+    // Backend tier with an explicit module extension
+    {
+      code: `jest.mock('../../config/firebaseAdmin.ts');`,
+      filename: 'functions/src/util/realtimeDb/updateIfExists.test.ts',
+      errors: [errorFor('../../config/firebaseAdmin.ts')],
+    },
+    // Backend tier written as a template literal
+    {
+      code: 'jest.mock(`../../config/firebaseAdmin`);',
+      filename: 'functions/src/util/realtimeDb/updateIfExists.test.ts',
+      errors: [errorFor('../../config/firebaseAdmin')],
+    },
+    // Backend tier from a .spec file
+    {
+      code: `jest.mock('../config/firebaseAdmin');`,
+      filename: 'functions/src/util/updateIfExists.spec.ts',
+      errors: [errorFor('../config/firebaseAdmin')],
+    },
+    // Backend tier addressed with a bare specifier
+    {
+      code: `jest.mock('functions/src/config/firebaseAdmin', () => ({
+        db: mockFirestore(),
+        auth: jest.fn(),
+        storage: jest.fn()
+      }));`,
+      filename: 'src/test.test.ts',
+      errors: [errorFor('functions/src/config/firebaseAdmin')],
+    },
+    {
+      code: `jest.mock('@project/functions/src/config/firebaseAdmin');`,
+      filename: 'src/test.test.ts',
+      errors: [errorFor('@project/functions/src/config/firebaseAdmin')],
+    },
+    // Mixed tiers in one file: only the backend mock bypasses a shared mock
+    {
+      code: `
+        jest.mock('../../config/firebaseAdmin');
+        jest.mock('src/config/firebaseAdmin', () => ({}));`,
+      filename: 'functions/src/util/realtimeDb/updateIfExists.test.ts',
+      errors: [errorFor('../../config/firebaseAdmin')],
+    },
+    // Unattributable specifiers stay protected
+    {
+      code: `jest.mock('firebaseAdmin');`,
+      filename: 'src/test.test.ts',
+      errors: [errorFor('firebaseAdmin')],
+    },
     {
       code: `jest.mock('../../config/firebaseAdmin', () => ({
         db: mockFirestore()
@@ -84,16 +265,6 @@ ruleTesterTs.run('no-mock-firebase-admin', noMockFirebaseAdmin, {
       code: `jest.mock('../config/firebaseAdmin');`,
       filename: 'src/test.test.ts',
       errors: [errorFor('../config/firebaseAdmin')],
-    },
-    // Mock with additional properties
-    {
-      code: `jest.mock('functions/src/config/firebaseAdmin', () => ({
-        db: mockFirestore(),
-        auth: jest.fn(),
-        storage: jest.fn()
-      }));`,
-      filename: 'src/test.test.ts',
-      errors: [errorFor('functions/src/config/firebaseAdmin')],
     },
     // Mock with requireActual
     {
@@ -131,34 +302,20 @@ ruleTesterTs.run('no-mock-firebase-admin', noMockFirebaseAdmin, {
       filename: 'src/test.test.ts',
       errors: [errorFor('../../config/firebaseAdmin')],
     },
-    // Different path variations
-    {
-      code: `jest.mock('./config/firebaseAdmin');`,
-      filename: 'src/test.test.ts',
-      errors: [errorFor('./config/firebaseAdmin')],
-    },
-    {
-      code: `jest.mock('@project/functions/src/config/firebaseAdmin');`,
-      filename: 'src/test.test.ts',
-      errors: [errorFor('@project/functions/src/config/firebaseAdmin')],
-    },
     // Template literal path
     {
       code: 'jest.mock(`../../config/firebaseAdmin`);',
       filename: 'src/test.test.ts',
       errors: [errorFor('../../config/firebaseAdmin')],
     },
-    // Multiple mocks in one file
+    // Multiple mocks in one file; the frontend-tier mock is exempt
     {
       code: `
         jest.mock('../../config/firebaseAdmin');
         jest.mock('../other/module');
         jest.mock('./config/firebaseAdmin', () => ({}));`,
       filename: 'src/test.test.ts',
-      errors: [
-        errorFor('../../config/firebaseAdmin'),
-        errorFor('./config/firebaseAdmin'),
-      ],
+      errors: [errorFor('../../config/firebaseAdmin')],
     },
     // Mock with complex factory
     {
