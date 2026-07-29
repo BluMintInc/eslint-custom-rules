@@ -206,6 +206,22 @@ The built-in list includes layout and utility primitives that don't benefit from
 
 Any component whose name ends in `Icon` (e.g. `CheckIcon`, `RefreshIcon` from `@mui/icons-material`) is also treated as a decorative leaf and excluded — icons expose no composable customization surface a parent should re-expose. Interactive components like `IconButton` are unaffected (they end in `Button`, not `Icon`).
 
+### Component slots declared as props
+
+A JSX element whose name resolves to one of the component's **own props** — a rendering strategy the caller injects — is not a dependency and imposes no composition obligation:
+
+```tsx
+export type RangeViewProps = ViewComponentPropsBase<Range<number>> & {
+  ViewComponent: ComponentType<ViewComponentPropsBase<string>>;
+};
+
+export const RangeView = ({ value, ViewComponent, ...rest }: RangeViewProps) => {
+  return <ViewComponent {...rest} value={formatRange(value)} />;
+};
+```
+
+The parent cannot compose with `ViewComponent`: the concrete component is chosen per call site, there is no `ViewComponentProps` type to `Pick` from, and the slot's accepted props are already constrained by the prop's own annotation. This covers the slot destructured in the signature, destructured from `props` in the body, renamed (`{ render: Renderer }`), defaulted (`{ Slot = Fallback }`), nested (`{ slots: { Header } }`), and the `<props.Slot />` spelling. Fixed children rendered alongside a slot are still checked.
+
 ## Examples
 
 ### Incorrect
