@@ -251,6 +251,45 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     const REFETCH_PATTERN = /^(refresh|reload|refetch|revalidate|resync|sync)/i;
 
     /**
+     * Matches navigation callees by their leading verb. A route transition is an
+     * ordering barrier rather than a data dependency: the awaits around it are
+     * sequenced so their side effects land on the intended page. `await
+     * push(url)` followed by `await acceptInvite(...)` is written that way so the
+     * accept flow's dialogs mount on the destination page; Promise.all starts the
+     * accept flow concurrently with the route transition, so its dialogs open on
+     * the source page and are unmounted mid-navigation. The reverse order is
+     * equally load-bearing -- parallelizing `await save()` with a following
+     * `await push(url)` can navigate away before the save settles -- so a
+     * navigation anywhere in the run blocks the whole run. Anchored at the start
+     * so it fires on the callee's own verb (pushRoute, navigateTo,
+     * redirectToLogin) rather than on an arbitrary substring elsewhere in the
+     * name.
+     */
+    const NAVIGATION_PATTERN =
+      /^(push|replace|navigate|redirect|reroute|goto)/i;
+
+    /**
+     * Matches router-like receivers so that every method invoked on one counts
+     * as navigation (`router.back()`, `history.go(-1)`, `navigation.reset()`).
+     * Keyed on the receiver rather than the method because the remaining history
+     * verbs (back, forward, go) are far too generic to match on their own.
+     */
+    const NAVIGATION_RECEIVER_PATTERN = /^(router|history|navigation|nav)$/i;
+
+    /**
+     * Checks whether an awaited call performs a route transition.
+     */
+    function isNavigationCall(awaitExpr: TSESTree.AwaitExpression): boolean {
+      const receiverName = getCalleeReceiverName(awaitExpr);
+      if (receiverName && NAVIGATION_RECEIVER_PATTERN.test(receiverName)) {
+        return true;
+      }
+
+      const methodName = getCalleeMethodName(awaitExpr);
+      return !!methodName && NAVIGATION_PATTERN.test(methodName);
+    }
+
+    /**
      * Extracts the callee's method name (the identifier bearing the leading
      * verb) from an await expression argument. Handles both direct
      * CallExpressions and optional-call ChainExpressions, and both bare
@@ -454,6 +493,23 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
         }
       }
 
+      // 6. Navigation ordering barrier. An awaited route transition sequences
+      // the awaits around it by UI lifetime rather than by data: the operations
+      // before it must settle on the source page, and the operations after it
+      // must mount on the destination page. Promise.all runs every operand
+      // concurrently, which races both of those against the route change --
+      // dialogs opened by a following await appear on the source page and are
+      // destroyed when the transition lands. Unlike the guard and refetch
+      // barriers, position does not matter: a navigation is a barrier whether it
+      // leads or trails the run. Captured results qualify too, since the hazard
+      // is the transition itself, not the value it returns.
+      for (const node of awaitNodes) {
+        const awaitExpr = getAwaitExpression(node);
+        if (awaitExpr && isNavigationCall(awaitExpr)) {
+          return true;
+        }
+      }
+
       // If any node is a variable declaration with destructuring, consider it as having dependencies
       for (const node of awaitNodes) {
         if (node.type === AST_NODE_TYPES.VariableDeclaration) {
@@ -465,7 +521,7 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
         }
       }
 
-      // 6. Shared-receiver ordering barrier. Two awaited calls whose callees are
+      // 7. Shared-receiver ordering barrier. Two awaited calls whose callees are
       // member expressions on the SAME receiver identifier (e.g. `ref.set(x)`
       // then `ref.get()`) can carry a read-after-write / write-after-write
       // dependency: the later call may observe or overwrite state the earlier

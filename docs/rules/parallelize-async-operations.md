@@ -18,6 +18,7 @@ The rule reports when all of these are true:
 - Later awaits do not share "coordinator" identifiers (like `batchManager`, `transaction`, or `collector`) with earlier awaits.
 - The awaited calls do not invoke methods on the **same receiver identifier** (e.g. `ref.set(...)` then `ref.get()`), which can carry a read-after-write / write-after-write ordering dependency on that shared object.
 - No later discarded-result await reads as a **state refetch/refresh** (`refresh*`, `reload*`, `refetch*`, `revalidate*`, `resync*`, `sync*`), which re-observes state a preceding await may have mutated.
+- None of the awaits performs a **route transition** (`push*`, `replace*`, `navigate*`, `redirect*`, `reroute*`, `goto*`, or any method on a `router`/`history`/`navigation`/`nav` receiver), which sequences the surrounding awaits by UI lifetime.
 - The awaits are not inside try blocks or loops, which signal intentional ordering or per-call error handling.
 - The calls do not match a small list of side-effect-heavy patterns (e.g., `updatecounter`, `commit`, `flush`, `saveall`) that should stay ordered.
 
@@ -90,6 +91,25 @@ async function unlink(providerId: string, providerUid: string) {
 ```
 
 The refetch verb is matched case-insensitively at the **start** of the callee's own method name (bare identifier or member), using the pattern `refresh|reload|refetch|revalidate|resync|sync`. A name that merely contains one of these words (`getRefreshToken()`) does not match, and only awaits in a **non-first** position qualify—a refetch with nothing before it has no preceding await to depend on and is still flagged.
+
+### ✅ Correct (navigation ordering)
+
+An awaited **route transition** sequences the awaits around it by UI lifetime rather than by data, so a navigation anywhere in the run keeps the whole run sequential. Navigating first means the following operation's dialogs mount on the destination page; `Promise.all([...])` starts that flow concurrently with the route change, so its dialogs open on the source page and are destroyed the moment the transition lands.
+
+```typescript
+const execute = async () => {
+  // Navigate FIRST: the accept flow's guard dialogs must render on the destination page.
+  await push(buildTournamentUrl({ tournamentId }));
+  await acceptPending({ teamId, subjectUserId: toId });
+};
+```
+
+The reverse order is load-bearing for the same reason—parallelizing `await saveDraft(draft)` with a following `await push(url)` can navigate away before the save settles—so position does not matter, and a captured result (`const navigated = await push(url)`) qualifies as well.
+
+Navigation is detected two ways, both case-insensitive:
+
+- The callee's own method name **starts with** a navigation verb: `push`, `replace`, `navigate`, `redirect`, `reroute`, `goto`. Suffixed forms like `navigateTo()` or `redirectToLogin()` match; a name that merely contains one (`getPushToken()`, `fetchRedirectRules()`) does not.
+- The callee's receiver is exactly `router`, `history`, `navigation`, or `nav`, which makes every method on it navigation (`router.back()`, `history.go(-1)`). Keying on the receiver avoids matching the remaining history verbs bare, since `back`, `forward`, and `go` are too generic. The match is exact, so `navigator.getBattery()` and `historyLog.append(entry)` are still flagged.
 
 ### ✅ Correct (with assignments)
 
