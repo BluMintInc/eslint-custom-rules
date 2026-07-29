@@ -1,3 +1,10 @@
+## [1.20.19](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.18...v1.20.19) (2026-07-29)
+
+
+### Bug Fixes
+
+* **prefer-clone-deep:** derive autofix import specifier from file tier (closes [#1389](https://github.com/BluMintInc/eslint-custom-rules/issues/1389)) ([3772021](https://github.com/BluMintInc/eslint-custom-rules/commit/377202121ad7ac221a13b014e923f82310c245e7))
+
 ## [1.20.18](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.17...v1.20.18) (2026-07-29)
 
 

@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.19",
+    "date": "2026-07-29T18:36:35.802Z",
+    "rules": [
+      {
+        "name": "prefer-clone-deep",
+        "changeType": "fix",
+        "issues": [
+          1389
+        ],
+        "summary": "derive autofix import specifier from file tier (closes #1389)"
+      }
+    ]
+  },
+  {
     "version": "1.20.18",
     "date": "2026-07-29T17:40:51.418Z",
     "rules": [
