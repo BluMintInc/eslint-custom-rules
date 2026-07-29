@@ -119,7 +119,6 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
       recommended: 'error',
       requiresTypeChecking: false,
     },
-    fixable: 'code',
     schema: [
       {
         type: 'object',
