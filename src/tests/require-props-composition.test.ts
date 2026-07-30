@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { Linter, Rule } from 'eslint';
 import { ruleTesterJsx } from '../utils/ruleTester';
@@ -2135,5 +2136,76 @@ export const MutatingProbeParent = ({ title }: MutatingProbeParentProps) => (
 
     fs.rmSync(PROBE_CHILD, { force: true });
     expect(lintProbeParent()).toHaveLength(1);
+  });
+});
+
+// Issue #1476: a non-absolute filename must be anchored at the directory ESLint
+// was configured with, not the node process cwd. Anchoring at the process cwd
+// resolves the sibling import against the wrong directory, the prop-less
+// relaxation silently stops applying, and the parent reports a composition it
+// cannot satisfy. RuleTester cannot express this — its Linter's cwd defaults to
+// the process cwd, making the two reads indistinguishable — so the rule is
+// driven through a Linter with an explicit cwd that is NOT the process cwd.
+describe('require-props-composition: relative filenames anchor at the configured cwd', () => {
+  // The parent is supplied as text and never written to disk; only the child
+  // (`BestOfText.tsx`) has to exist for the prop-less proof to succeed.
+  const RELATIVE_PARENT = 'fixtures/require-props-composition/CwdAnchored.tsx';
+  const PARENT_CODE = `
+import { BestOfText } from './BestOfText';
+
+export type CwdAnchoredProps = Readonly<{ title: string }>;
+
+export const CwdAnchored = ({ title }: CwdAnchoredProps) => (
+  <div>
+    {title}
+    <BestOfText />
+  </div>
+);
+`;
+
+  const lintRelativeParentWithCwd = (cwd: string) => {
+    const linter = new Linter({ cwd });
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      'test/require-props-composition',
+      requirePropsComposition as unknown as Rule.RuleModule,
+    );
+    return linter.verify(
+      PARENT_CODE,
+      {
+        parser: '@typescript-eslint/parser',
+        parserOptions: {
+          ecmaVersion: 2020,
+          sourceType: 'module',
+          ecmaFeatures: { jsx: true },
+        },
+        rules: {
+          'test/require-props-composition': [
+            'error',
+            { targetPaths: FIXTURE_TARGET_PATHS },
+          ],
+        },
+      },
+      RELATIVE_PARENT,
+    );
+  };
+
+  it('resolves the sibling child from the configured cwd', () => {
+    // `__dirname` is the only directory the relative filename resolves against
+    // correctly, and it is never the jest process cwd (the repo root).
+    expect(__dirname).not.toBe(process.cwd());
+
+    expect(lintRelativeParentWithCwd(__dirname)).toHaveLength(0);
+  });
+
+  it('still reports when the configured cwd cannot resolve the child', () => {
+    // Control: the assertion above is not vacuous — the same file under a cwd
+    // where the child does not exist is unresolvable, so the relaxation does
+    // not apply and the composition requirement stands.
+    expect(lintRelativeParentWithCwd(os.tmpdir())).toHaveLength(1);
   });
 });
