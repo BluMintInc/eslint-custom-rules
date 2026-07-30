@@ -125,6 +125,7 @@ function Component() {
 
 ```tsx
 // useLatestCallback ignored when explicitly configured
+// eslint-options: {"ignoreUseLatestCallback": true}
 function Component() {
   const latest = useLatestCallback(() => 'value');
   return <div>{latest()}</div>;

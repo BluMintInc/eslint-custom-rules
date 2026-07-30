@@ -58,15 +58,23 @@ role = user.role;
 // With default options
 const user = { name: 'John', age: 30 };
 const { name, age } = user;
+```
 
+```ts
 // With enforceForRenamedProperties: true
+// eslint-options: {"enforceForRenamedProperties": true}
+const user = { name: 'John' };
 const { name: userName } = user;
+```
 
+```ts
 // Assignment expressions
 let role;
 const user = { role: 'admin' };
 ({ role } = user);
+```
 
+```ts
 // Class instances are always exempt
 class User {
   name: string;

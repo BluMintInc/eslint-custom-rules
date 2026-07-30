@@ -65,6 +65,7 @@ try {
 ```ts
 // With `allowErrorInstanceArgument`: handing a structured Error instance to the
 // monitored console.error pipeline in a deliberately non-fatal path.
+// eslint-options: {"allowErrorInstanceArgument": true}
 import { HttpsError } from '../errors/HttpsError';
 
 try {
