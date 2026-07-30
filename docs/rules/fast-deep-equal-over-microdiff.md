@@ -47,6 +47,22 @@ return isEqual(
 ```
 
 - Declines to fix when the target name is already bound to something other than `fast-deep-equal`, since the inserted import would either collide with that declaration or bind the emitted call to the local value.
+- Drops a `const changes = diff(a, b);` statement that exists only to be measured, once the call is inlined into the comparison. The statement is deleted by its own range, not by line boundaries:
+
+  - A declaration that occupies its line alone takes the whole line, so no blank line is left behind.
+  - A declaration that shares its line keeps everything else on it — the comparison being rewritten, the `;` separating a `for` header's clauses, and any comment. A trailing `// eslint-disable-next-line` governs the *surviving* next line, so swallowing it would silently re-enable the rule it suppresses:
+
+  ```ts
+  // before
+  const changes = diff(a, b); // eslint-disable-next-line no-console
+  return changes.length === 0 && !console.log(a);
+
+  // after
+  // eslint-disable-next-line no-console
+  return isEqual(a, b) && !console.log(a);
+  ```
+
+- Reports without a fix when the comparison sits *inside* the declaration the fix would delete — a diff argument that reads `changes.length`, as in `const changes = diff(a, changes.length === 0);`. The two edits cannot be made disjoint there, and ESLint rejects overlapping edits within one report by throwing, which discards every message for the file. The violation is still reported, and the import is left for a violation that can be fixed.
 
 ### Examples of **incorrect** code for this rule:
 

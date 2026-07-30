@@ -37,6 +37,19 @@ function bindsFastDeepEqual(variable: TSESLint.Scope.Variable): boolean {
   );
 }
 
+/**
+ * Whether two edits touch the same characters. ESLint sorts the fixes of one
+ * report and asserts each starts at or after the end of the previous one, so
+ * abutting ranges are fine while overlapping ranges throw and discard every
+ * message for the file.
+ */
+function rangesOverlap(
+  a: Readonly<TSESTree.Range>,
+  b: Readonly<TSESTree.Range>,
+): boolean {
+  return a[0] < b[1] && b[0] < a[1];
+}
+
 export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
   name: 'fast-deep-equal-over-microdiff',
   meta: {
@@ -395,6 +408,160 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
     }
 
     /**
+     * The `const changes = diff(...)` statement behind a `changes.length`
+     * comparison, when nothing but the comparison reads it — so inlining the
+     * call makes the statement dead. A statement declaring more than one
+     * variable stays: dropping it would take the other declarators with it.
+     */
+    function findRedundantDeclaration(
+      node: TSESTree.Node,
+    ): TSESTree.VariableDeclaration | undefined {
+      const lengthIdentifier = getLengthIdentifierFromNode(node);
+      if (!lengthIdentifier || !isVariableOnlyUsedForLength(lengthIdentifier)) {
+        return undefined;
+      }
+      const variable = findVariableInScopeChain(lengthIdentifier);
+      const defNode = variable?.defs?.[0]?.node;
+      if (!defNode || defNode.type !== AST_NODE_TYPES.VariableDeclarator) {
+        return undefined;
+      }
+      const declaration = defNode.parent;
+      if (
+        declaration?.type !== AST_NODE_TYPES.VariableDeclaration ||
+        declaration.declarations.length !== 1
+      ) {
+        return undefined;
+      }
+      return declaration;
+    }
+
+    /**
+     * The span to delete for a redundant declaration. A declaration that owns
+     * its whole line takes the line with it, leaving no blank line behind.
+     * Otherwise only its own node range goes: a line-wide span would swallow
+     * whatever shares the line — the comparison this same report rewrites (an
+     * overlap ESLint refuses), the `;` separating a `for` header's clauses, or a
+     * trailing directive that governs the surviving next line.
+     */
+    function redundantDeclarationRange(
+      declaration: TSESTree.VariableDeclaration,
+    ): TSESTree.Range {
+      const text = sourceCode.text;
+      const [start, end] = declaration.range;
+      const startOfLine = text.lastIndexOf('\n', start - 1) + 1;
+      const nextNewline = text.indexOf('\n', end);
+      const lineEnd = nextNewline === -1 ? text.length : nextNewline;
+      const isBlank = (slice: string) => /^[ \t]*$/.test(slice);
+
+      // A comment counts as content, so it keeps its line rather than riding
+      // along with the statement being deleted.
+      if (
+        isBlank(text.slice(startOfLine, start)) &&
+        isBlank(text.slice(end, lineEnd))
+      ) {
+        return [startOfLine, nextNewline === -1 ? end : nextNewline + 1];
+      }
+
+      // The blanks between the declaration and what follows it on the line go
+      // too, so the surviving statement keeps its original spacing.
+      let removalEnd = end;
+      while (removalEnd < lineEnd && isBlank(text[removalEnd])) {
+        removalEnd++;
+      }
+      if (removalEnd < lineEnd) {
+        return [start, removalEnd];
+      }
+
+      // Nothing but the line break follows, so the blanks in front of the
+      // declaration would be left behind as trailing whitespace.
+      let removalStart = start;
+      while (removalStart > startOfLine && isBlank(text[removalStart - 1])) {
+        removalStart--;
+      }
+      return [removalStart, removalEnd];
+    }
+
+    /**
+     * The edits that turn the comparison itself into a fast-deep-equal call.
+     */
+    function createComparisonFixes(
+      fixer: TSESLint.RuleFixer,
+      node: TSESTree.Node,
+      diffCall: TSESTree.CallExpression,
+      isEquality: boolean,
+    ): TSESLint.RuleFix[] {
+      // Comparing a call in place — `diff(a, b).length === 0` — is rewritten by
+      // splicing the two ranges that actually change: the callee name and the
+      // `.length` comparison tail (plus the `!`/`0 ===` head). Re-emitting the
+      // argument list instead destroyed everything between the arguments, and a
+      // dropped `eslint-disable` comment silently re-enables the rule it was
+      // suppressing.
+      const isCallInPlace =
+        diffCall.range[0] >= node.range[0] &&
+        diffCall.range[1] <= node.range[1];
+
+      if (!isCallInPlace) {
+        // `changes.length === 0` compares a call declared elsewhere, so that
+        // call moves to the comparison's position and its text has to be
+        // re-emitted — verbatim, so its comments move with it.
+        const call = renameCallee(diffCall);
+        return [fixer.replaceText(node, isEquality ? call : `!${call}`)];
+      }
+
+      const fixes: TSESLint.RuleFix[] = [];
+      const headRange: TSESTree.Range = [node.range[0], diffCall.range[0]];
+      if (!isEquality) {
+        fixes.push(fixer.replaceTextRange(headRange, '!'));
+      } else if (headRange[0] !== headRange[1]) {
+        fixes.push(fixer.removeRange(headRange));
+      }
+      fixes.push(fixer.replaceText(diffCall.callee, fastDeepEqualImportName));
+      fixes.push(fixer.removeRange([diffCall.range[1], node.range[1]]));
+      return fixes;
+    }
+
+    /**
+     * The `import ... from 'fast-deep-equal'` edit, scheduled at most once per
+     * file. Claiming the carrier slot is a side effect, so this runs last —
+     * after every reason to decline the fix has been ruled out — otherwise a
+     * declining violation takes the import down with it and leaves the
+     * surviving violations' `isEqual(...)` calls unbound.
+     */
+    function planFastDeepEqualImport(
+      fixer: TSESLint.RuleFixer,
+    ): TSESLint.RuleFix[] {
+      if (hasFastDeepEqualImport || plannedFastDeepEqualImport) {
+        return [];
+      }
+      plannedFastDeepEqualImport = true;
+
+      const importDeclarations = sourceCode.ast.body.filter(
+        (statement): statement is TSESTree.ImportDeclaration =>
+          statement.type === AST_NODE_TYPES.ImportDeclaration,
+      );
+      const microdiffImport = importDeclarations.find(
+        (declaration) => declaration.source.value === 'microdiff',
+      );
+      const anchor =
+        microdiffImport ?? importDeclarations[importDeclarations.length - 1];
+
+      if (anchor) {
+        return [
+          fixer.insertTextAfter(
+            anchor,
+            `\nimport ${fastDeepEqualImportName} from 'fast-deep-equal';`,
+          ),
+        ];
+      }
+      return [
+        fixer.insertTextBeforeRange(
+          [0, 0],
+          `import ${fastDeepEqualImportName} from 'fast-deep-equal';\n`,
+        ),
+      ];
+    }
+
+    /**
      * Create a fix for replacing microdiff equality check with fast-deep-equal
      */
     function createFix(
@@ -426,108 +593,43 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
         return null;
       }
 
-      const args = diffCall.arguments;
-
-      if (args.length !== 2) {
+      if (diffCall.arguments.length !== 2) {
         return null; // Can't fix if not exactly 2 arguments
       }
 
-      const fixes: TSESLint.RuleFix[] = [];
+      const comparisonFixes = createComparisonFixes(
+        fixer,
+        node,
+        diffCall,
+        isEquality,
+      );
 
-      // Add import if needed (only once across all fixes in this file)
-      if (!hasFastDeepEqualImport && !plannedFastDeepEqualImport) {
-        const importDeclarations = sourceCode.ast.body.filter(
-          (node): node is TSESTree.ImportDeclaration =>
-            node.type === AST_NODE_TYPES.ImportDeclaration,
-        );
-        const microdiffImport = importDeclarations.find(
-          (node) => node.source.value === 'microdiff',
-        );
-
-        if (microdiffImport) {
-          fixes.push(
-            fixer.insertTextAfter(
-              microdiffImport,
-              `\nimport ${fastDeepEqualImportName} from 'fast-deep-equal';`,
-            ),
-          );
-          plannedFastDeepEqualImport = true;
-        } else {
-          const lastImport = importDeclarations[importDeclarations.length - 1];
-          if (lastImport) {
-            fixes.push(
-              fixer.insertTextAfter(
-                lastImport,
-                `\nimport ${fastDeepEqualImportName} from 'fast-deep-equal';`,
-              ),
-            );
-          } else {
-            fixes.push(
-              fixer.insertTextBeforeRange(
-                [0, 0],
-                `import ${fastDeepEqualImportName} from 'fast-deep-equal';\n`,
-              ),
-            );
-          }
-          plannedFastDeepEqualImport = true;
-        }
-      }
-
-      // If the equality was via an identifier like `changes.length`, and that identifier
-      // is declared as `const changes = diff(...);` and used ONLY for `.length` checks,
-      // remove the redundant variable declaration.
-      const maybeIdentifier = getLengthIdentifierFromNode(node);
-      if (maybeIdentifier && isVariableOnlyUsedForLength(maybeIdentifier)) {
-        const variable = findVariableInScopeChain(maybeIdentifier);
-        const defNode = variable?.defs?.[0]?.node;
+      // If the equality was via an identifier like `changes.length`, and that
+      // identifier is declared as `const changes = diff(...);` and used ONLY for
+      // `.length` checks, remove the redundant variable declaration.
+      const declaration = findRedundantDeclaration(node);
+      const declarationFixes: TSESLint.RuleFix[] = [];
+      if (declaration) {
+        const removalRange = redundantDeclarationRange(declaration);
+        // A comparison nested inside the declaration it would delete — a diff
+        // argument that reads `changes.length` — admits no pair of disjoint
+        // edits. Reporting without a fix beats an overlap, which aborts the
+        // file, and beats a half-applied edit that deletes the surviving code.
         if (
-          defNode &&
-          defNode.type === AST_NODE_TYPES.VariableDeclarator &&
-          defNode.parent &&
-          defNode.parent.type === AST_NODE_TYPES.VariableDeclaration
+          comparisonFixes.some(({ range }) =>
+            rangesOverlap(range, removalRange),
+          )
         ) {
-          const declaration = defNode.parent;
-          // Only remove if it's the only declaration in the const/let statement
-          if (declaration.declarations.length === 1) {
-            const text = sourceCode.text;
-            const startOfLine =
-              text.lastIndexOf('\n', declaration.range[0] - 1) + 1;
-            const nextNewline = text.indexOf('\n', declaration.range[1]);
-            const endOfLine =
-              nextNewline === -1 ? declaration.range[1] : nextNewline + 1;
-            fixes.push(fixer.removeRange([startOfLine, endOfLine]));
-          }
+          return null;
         }
+        declarationFixes.push(fixer.removeRange(removalRange));
       }
 
-      // Comparing a call in place — `diff(a, b).length === 0` — is rewritten by
-      // splicing the two ranges that actually change: the callee name and the
-      // `.length` comparison tail (plus the `!`/`0 ===` head). Re-emitting the
-      // argument list instead destroyed everything between the arguments, and a
-      // dropped `eslint-disable` comment silently re-enables the rule it was
-      // suppressing.
-      const isCallInPlace =
-        diffCall.range[0] >= node.range[0] &&
-        diffCall.range[1] <= node.range[1];
-
-      if (isCallInPlace) {
-        const headRange: TSESTree.Range = [node.range[0], diffCall.range[0]];
-        if (!isEquality) {
-          fixes.push(fixer.replaceTextRange(headRange, '!'));
-        } else if (headRange[0] !== headRange[1]) {
-          fixes.push(fixer.removeRange(headRange));
-        }
-        fixes.push(fixer.replaceText(diffCall.callee, fastDeepEqualImportName));
-        fixes.push(fixer.removeRange([diffCall.range[1], node.range[1]]));
-      } else {
-        // `changes.length === 0` compares a call declared elsewhere, so that
-        // call moves to the comparison's position and its text has to be
-        // re-emitted — verbatim, so its comments move with it.
-        const call = renameCallee(diffCall);
-        fixes.push(fixer.replaceText(node, isEquality ? call : `!${call}`));
-      }
-
-      return fixes;
+      return [
+        ...planFastDeepEqualImport(fixer),
+        ...declarationFixes,
+        ...comparisonFixes,
+      ];
     }
 
     function reportEqualityCheck(

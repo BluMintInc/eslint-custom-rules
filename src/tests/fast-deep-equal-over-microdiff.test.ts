@@ -1128,6 +1128,186 @@ function eq(a, b) {
   return changes.length === 0;
 }`,
     },
+    // ------------------------------------------------------------------
+    // Issue #1448: removing the redundant declaration by *line* boundaries
+    // swallowed whatever else sat on that line, including the comparison the
+    // same report rewrites. Overlapping fixes make ESLint assert and abort the
+    // whole file, so the multi-line shape worked while the one-liner crashed.
+    // ------------------------------------------------------------------
+    {
+      name: 'a single-line declaration and comparison fix without overlapping',
+      code: `import diff from 'microdiff';
+function f(a, b) { const changes = diff(a, b); return changes.length !== 0; }`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+function f(a, b) { return !isEqual(a, b); }`,
+    },
+    {
+      name: 'a single-line declaration keeps every other statement on its line',
+      code: `import diff from 'microdiff';
+function f(a, b) { const changes = diff(a, b); const same = changes.length === 0; return same; }`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+function f(a, b) { const same = isEqual(a, b); return same; }`,
+    },
+    {
+      name: 'the multi-line declaration still takes its whole line with it',
+      code: `import diff from 'microdiff';
+
+function areSame(a, b) {
+  const label = 'compare';
+  const changes = diff(a, b);
+
+  return changes.length === 0 ? label : '';
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function areSame(a, b) {
+  const label = 'compare';
+
+  return isEqual(a, b) ? label : '';
+}`,
+    },
+    {
+      name: 'a comment between the declaration and the comparison survives',
+      code: `import diff from 'microdiff';
+function f(a, b) { const changes = diff(a, b); /* keep */ return changes.length === 0; }`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+function f(a, b) { /* keep */ return isEqual(a, b); }`,
+    },
+    {
+      name: 'a comment before the declaration on its line survives',
+      code: `import diff from 'microdiff';
+
+function f(a, b) {
+  /* keep */ const changes = diff(a, b);
+  return changes.length === 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function f(a, b) {
+  /* keep */
+  return isEqual(a, b);
+}`,
+    },
+    {
+      name: 'a semicolon-less declaration sharing its line leaves no trailing blanks',
+      code: `import diff from 'microdiff';
+function f(a, b) { const changes = diff(a, b)
+  return changes.length === 0 }`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+function f(a, b) {
+  return isEqual(a, b) }`,
+    },
+    {
+      // A directive trailing the declaration governs the *next* line, which
+      // survives the fix — swallowing it re-enables the rule it suppresses.
+      name: 'a directive after the declaration keeps governing the surviving line',
+      code: `import diff from 'microdiff';
+
+function f(a, b) {
+  const changes = diff(a, b); // eslint-disable-next-line no-console
+  return changes.length === 0 && !console.log(a);
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function f(a, b) {
+  // eslint-disable-next-line no-console
+  return isEqual(a, b) && !console.log(a);
+}`,
+    },
+    {
+      // The `;` after a for-init declaration belongs to the ForStatement, so a
+      // removal that reaches the end of the line takes the loop apart.
+      name: 'a declaration in a for-init is removed without taking the separator',
+      code: `import diff from 'microdiff';
+
+function f(a, b) {
+  for (let changes = diff(a, b); changes.length !== 0; ) {
+    break;
+  }
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function f(a, b) {
+  for (; !isEqual(a, b); ) {
+    break;
+  }
+}`,
+    },
+    {
+      // A diff argument that reads `changes.length` puts the comparison inside
+      // the declaration the fix wants to delete, so no pair of disjoint edits
+      // exists. Reporting without a fix beats aborting the file.
+      name: 'a comparison nested in the declaration it would delete reports without a fix',
+      code: `import diff from 'microdiff';
+function f(a) { const changes = diff(a, changes.length === 0); }`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+function f(a) { const changes = diff(a, changes.length === 0); }`,
+    },
+    {
+      name: 'a nested comparison declines the fix in the multi-line shape too',
+      code: `import diff from 'microdiff';
+
+function f(a) {
+  const changes = diff(
+    a,
+    changes.length === 0,
+  );
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+
+function f(a) {
+  const changes = diff(
+    a,
+    changes.length === 0,
+  );
+}`,
+    },
+    {
+      // Issue #1415's invariant applies to this decline too: a violation that
+      // emits no fix must not consume the import-carrier slot.
+      name: 'a declining nested comparison still lets another violation carry the import',
+      code: `import diff from 'microdiff';
+
+function nested(a) {
+  const changes = diff(a, changes.length === 0);
+}
+
+function clean(a, b) {
+  return diff(a, b).length !== 0;
+}`,
+      errors: [
+        { messageId: 'useFastDeepEqual', data: messageData() },
+        { messageId: 'useFastDeepEqual', data: messageData() },
+      ],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function nested(a) {
+  const changes = diff(a, changes.length === 0);
+}
+
+function clean(a, b) {
+  return !isEqual(a, b);
+}`,
+    },
     // Issue #1435: the guard is per violation — a shadow in one function must
     // not disarm the rule for the rest of the file, and the declining violation
     // must not consume the import-carrier slot.
@@ -1486,5 +1666,104 @@ function areEqual(a, b) {
 }
 `);
     expect(countNoConsole(output)).toBe(0);
+  });
+});
+
+// Issue #1448: overlapping fixes inside one report make ESLint throw an
+// assertion that discards every message for the file, so the bug is a crash
+// rather than a bad fix. RuleTester surfaces the throw, but only the real
+// linter proves the file still lints — and that a swallowed directive is not
+// silently re-enabling its rule.
+describe('fast-deep-equal-over-microdiff: single-line declarations do not abort the file (issue #1448)', () => {
+  const RULE_ID = '@blumintinc/blumint/fast-deep-equal-over-microdiff';
+
+  const config = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2020 as const,
+      sourceType: 'module' as const,
+    },
+    rules: {
+      [RULE_ID]: 'error' as const,
+      'no-console': 'error' as const,
+    },
+  };
+
+  const createLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      fastDeepEqualOverMicrodiff as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const fix = (code: string) =>
+    createLinter().verifyAndFix(code, config, 'compare.ts');
+
+  const countNoConsole = (code: string) =>
+    createLinter()
+      .verify(code, config, 'compare.ts')
+      .filter((message) => message.ruleId === 'no-console').length;
+
+  it('fixes the one-liner instead of throwing', () => {
+    const { output, messages } = fix(`import diff from 'microdiff';
+function f(a, b) { const changes = diff(a, b); return changes.length !== 0; }
+`);
+
+    expect(messages).toHaveLength(0);
+    expect(output).toBe(`import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+function f(a, b) { return !isEqual(a, b); }
+`);
+  });
+
+  it('keeps a directive trailing the declaration suppressing its line', () => {
+    const code = `import diff from 'microdiff';
+
+function f(a, b) {
+  const changes = diff(a, b); // eslint-disable-next-line no-console
+  return changes.length === 0 && !console.log(a);
+}
+`;
+
+    expect(countNoConsole(code)).toBe(0);
+
+    const { output } = fix(code);
+
+    expect(output).toContain('// eslint-disable-next-line no-console');
+    expect(countNoConsole(output)).toBe(0);
+  });
+
+  it('reports without fixing when the comparison sits inside the declaration', () => {
+    const code = `import diff from 'microdiff';
+function f(a) { const changes = diff(a, changes.length === 0); }
+`;
+
+    const { output, messages } = fix(code);
+
+    expect(output).toBe(code);
+    expect(messages.map((message) => message.ruleId)).toEqual([RULE_ID]);
+  });
+
+  it('lands the import on a violation that can be fixed', () => {
+    const { output } = fix(`import diff from 'microdiff';
+
+function nested(a) {
+  const changes = diff(a, changes.length === 0);
+}
+
+function clean(a, b) {
+  return diff(a, b).length !== 0;
+}
+`);
+
+    expect(output).toContain("import isEqual from 'fast-deep-equal';");
+    expect(output).toContain('return !isEqual(a, b);');
   });
 });
