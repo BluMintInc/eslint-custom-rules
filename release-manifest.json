@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.36",
+    "date": "2026-07-30T17:05:52.383Z",
+    "rules": [
+      {
+        "name": "no-margin-properties",
+        "changeType": "fix",
+        "issues": [
+          1460
+        ],
+        "summary": "remove the inert autofix option (closes #1460)"
+      }
+    ]
+  },
+  {
     "version": "1.20.35",
     "date": "2026-07-30T16:38:05.368Z",
     "rules": [

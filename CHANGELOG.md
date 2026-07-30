@@ -1,3 +1,10 @@
+## [1.20.36](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.35...v1.20.36) (2026-07-30)
+
+
+### Bug Fixes
+
+* **no-margin-properties:** remove the inert autofix option (closes [#1460](https://github.com/BluMintInc/eslint-custom-rules/issues/1460)) ([7724ef6](https://github.com/BluMintInc/eslint-custom-rules/commit/7724ef64d8ec2d052646f6fece50035167acc53c)), closes [#726](https://github.com/BluMintInc/eslint-custom-rules/issues/726)
+
 ## [1.20.35](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.34...v1.20.35) (2026-07-30)
 
 
