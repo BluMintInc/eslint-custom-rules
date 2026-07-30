@@ -166,9 +166,10 @@ await docSetter.set({
 This rule provides automatic fixes that convert nested object syntax into FieldPath syntax. The auto-fix will:
 
 1. Flatten nested objects into dot notation keys
-1. Preserve the `id` property at the top-level
 1. Quote keys that contain dots
-1. Maintain proper formatting and indentation
+1. Rewrite only the properties that need flattening, so every other property keeps its position, its comments, and its indentation byte-for-byte
+1. Carry comments found inside a flattened property onto the rewritten property, which keeps `eslint-disable-next-line` directives covering the code they were written for
+1. Decline to rewrite a nested property that cannot be flattened losslessly — one containing a spread, a computed key, an accessor or method, or nothing at all. The violation is still reported so you can flatten it by hand instead of receiving a fix that drops payload fields.
 
 ## When Not to Use
 
