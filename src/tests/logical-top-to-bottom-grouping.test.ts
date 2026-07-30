@@ -1,3 +1,5 @@
+import { Linter } from 'eslint';
+import * as tsParser from '@typescript-eslint/parser';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { logicalTopToBottomGrouping } from '../rules/logical-top-to-bottom-grouping';
 
@@ -613,5 +615,520 @@ const unrelated = 1;
 }`,
       errors: [{ messageId: 'moveDeclarationCloser' }],
     },
+    // Report-only: sinking `mockDoc` toward its use recreates the very separation
+    // `groupDerived` flags, so the two handlers would trade the same violation back
+    // and forth forever. Reported without a fix.
+    {
+      code: `
+const DEFAULT_DOC = { id: 'a' };
+let mockDoc = DEFAULT_DOC;
+let mockUsers = {};
+run(() => {
+  use(mockDoc);
+  use(mockUsers);
+});
+`,
+      output: null,
+      errors: [{ messageId: 'moveDeclarationCloser' }],
+    },
+    // The opposite phase of the same ping-pong: hoisting `mockDoc` back next to
+    // `DEFAULT_DOC` restores the late-declaration violation.
+    {
+      code: `
+const DEFAULT_DOC = { id: 'a' };
+let mockUsers = {};
+let mockDoc = DEFAULT_DOC;
+run(() => {
+  use(mockDoc);
+  use(mockUsers);
+});
+`,
+      output: null,
+      errors: [{ messageId: 'groupDerived' }],
+    },
+    // Two derivation chains rooted in two separate destructures cannot both be kept
+    // adjacent to their sources, so every candidate move trades one violation for
+    // another. Reported without a fix rather than cycled over.
+    {
+      code: `
+export const computeMatchCenter = (
+  position: BracketCellPosition,
+  geometry: BracketGridGeometry,
+) => {
+  const { cellWidth, gutter, rowTrack } = geometry;
+  const { rowStart, rowSpan, columnStart } = position;
+  const columnIndex = columnStart - 1;
+  const leftX = columnIndex * (cellWidth + gutter);
+  const rightX = leftX + cellWidth;
+  const centerY = (rowStart - 1 + rowSpan / 2) * rowTrack;
+  return { leftX, rightX, centerY } as const;
+};
+`,
+      output: null,
+      errors: [{ messageId: 'groupDerived' }],
+    },
+    // Two independent violations in one body: the emitted reordering satisfies both
+    // adjacency constraints, so a single pass clears the block.
+    {
+      code: `
+const base = getBase();
+const unrelated = 1;
+const detail = base.value;
+const other = getOther();
+const filler = 2;
+const derived = other.value;
+`,
+      output: `
+const base = getBase();
+const detail = base.value;
+const unrelated = 1;
+const other = getOther();
+const derived = other.value;
+const filler = 2;
+`,
+      errors: [{ messageId: 'groupDerived' }, { messageId: 'groupDerived' }],
+    },
+    // Multi-step descent: hoisting the first side effect leaves the count at one
+    // because it exposes the next, so the search has to look past that plateau. Both
+    // moves ship as one fix.
+    {
+      code: `
+const mockFetch = jest.fn();
+let mockRefs: any[] = [];
+jest.mock('./onCall', () => ({ onCall: (fn: unknown) => fn }));
+jest.mock('./firebaseAdmin', () => ({ db: {} }));
+use(mockFetch, mockRefs);
+`,
+      output: `
+const mockFetch = jest.fn();
+jest.mock('./onCall', () => ({ onCall: (fn: unknown) => fn }));
+jest.mock('./firebaseAdmin', () => ({ db: {} }));
+let mockRefs: any[] = [];
+use(mockFetch, mockRefs);
+`,
+      errors: [{ messageId: 'moveSideEffect' }],
+    },
+    // Multi-step descent that crosses handlers: `groupDerived` and `moveGuardUp`
+    // constraints are satisfied together by sinking the unrelated destructure past
+    // the guard.
+    {
+      code: `function sync(after: Doc, previewNew: Preview) {
+  const { id } = after;
+  const { username, imgUrl } = previewNew;
+  const { users } = queryUsers(id);
+  const [user] = users;
+  if (!user) {
+    return;
+  }
+  return update(user, username, imgUrl);
+}`,
+      output: `function sync(after: Doc, previewNew: Preview) {
+  const { id } = after;
+  const { users } = queryUsers(id);
+  const [user] = users;
+  if (!user) {
+    return;
+  }
+  const { username, imgUrl } = previewNew;
+  return update(user, username, imgUrl);
+}`,
+      errors: [{ messageId: 'groupDerived' }],
+    },
+    // Two sibling destructures of one source, each feeding its own derivation. Pulling
+    // `metadataA` up to `fieldsA` pushes `fieldsB` out of the sibling group that
+    // exempts it, which flags `fieldsB` instead — and the mirrored move flags
+    // `fieldsA`. No ordering is clean, so the rule declines rather than relocating one
+    // pair and leaving the other violation behind (#1405).
+    {
+      code: `function merge(props: MergeProps) {
+  const { tokenA, tokenB } = props;
+  const { amount: _, ...fieldsA } = tokenA;
+  const { amount: __, ...fieldsB } = tokenB;
+  const metadataA = fieldsA.metadata;
+  const metadataB = fieldsB.metadata;
+  return { ...fieldsA, ...fieldsB, metadataA, metadataB };
+}`,
+      output: null,
+      errors: [{ messageId: 'groupDerived' }, { messageId: 'groupDerived' }],
+    },
+    // Interleaved before/after fixtures: the reordering that satisfies every adjacency
+    // constraint takes six moves and passes through orders with more violations than it
+    // started with, yet it ships as one fix.
+    {
+      code: `it('routes to the after target', () => {
+  const beforeData: TestSource = { id: 's1', name: 'Before' };
+  const afterData: TestSource = { id: 's1', name: 'After' };
+  const beforeTargetRef = { path: 'targets/t1' } as DocumentReference;
+  const afterTargetRef = { path: 'targets/t2' } as DocumentReference;
+  const beforeSnap = createMockSnapshot(true, 'sources/s1', beforeData);
+  const afterSnap = createMockSnapshot(true, 'sources/s1', afterData);
+  const change = createMockChange(beforeSnap, afterSnap);
+  const docsBefore = [{ target: { targetId: 't1' }, targetRef: beforeTargetRef }];
+  const docsAfter = [{ target: { targetId: 't2' }, targetRef: afterTargetRef }];
+  const context = { props: { change, docsBefore, docsAfter } };
+  const located = { source: afterData, sourceRef: afterSnap.ref };
+  const targets = resolveTargets(context, located);
+  expect(targets).toEqual([afterTargetRef]);
+});`,
+      output: `it('routes to the after target', () => {
+  const beforeData: TestSource = { id: 's1', name: 'Before' };
+  const beforeSnap = createMockSnapshot(true, 'sources/s1', beforeData);
+  const afterData: TestSource = { id: 's1', name: 'After' };
+  const afterSnap = createMockSnapshot(true, 'sources/s1', afterData);
+  const change = createMockChange(beforeSnap, afterSnap);
+  const beforeTargetRef = { path: 'targets/t1' } as DocumentReference;
+  const docsBefore = [{ target: { targetId: 't1' }, targetRef: beforeTargetRef }];
+  const afterTargetRef = { path: 'targets/t2' } as DocumentReference;
+  const docsAfter = [{ target: { targetId: 't2' }, targetRef: afterTargetRef }];
+  const context = { props: { change, docsBefore, docsAfter } };
+  const located = { source: afterData, sourceRef: afterSnap.ref };
+  const targets = resolveTargets(context, located);
+  expect(targets).toEqual([afterTargetRef]);
+});`,
+      errors: [{ messageId: 'groupDerived' }],
+    },
+    // Violations in sibling bodies are independent: each body still contributes one
+    // fix in the same pass.
+    {
+      code: `
+const outerBase = getBase();
+const outerUnrelated = 1;
+const outerDetail = outerBase.value;
+function inner() {
+  const innerBase = getBase();
+  const innerUnrelated = 2;
+  const innerDetail = innerBase.value;
+  return innerDetail + innerUnrelated;
+}
+`,
+      output: `
+const outerBase = getBase();
+const outerDetail = outerBase.value;
+const outerUnrelated = 1;
+function inner() {
+  const innerBase = getBase();
+  const innerDetail = innerBase.value;
+  const innerUnrelated = 2;
+  return innerDetail + innerUnrelated;
+}
+`,
+      errors: [
+        { messageId: 'groupDerived' },
+        { messageId: 'moveDeclarationCloser' },
+        { messageId: 'groupDerived' },
+      ],
+    },
   ],
+});
+
+/**
+ * RuleTester applies a single fix pass, so it cannot observe an autofix that never
+ * settles. Driving the linter to a fixpoint is the only way to assert convergence
+ * (#1405).
+ */
+type FixpointResult = {
+  text: string;
+  passes: number;
+  cycled: boolean;
+  pendingFixes: number;
+};
+
+const fixToFixpoint = (code: string, maxPasses = 12): FixpointResult => {
+  const linter = new Linter();
+  linter.defineParser('ts', tsParser as unknown as Linter.ParserModule);
+  linter.defineRule('ltb', logicalTopToBottomGrouping as never);
+  const config = {
+    parser: 'ts',
+    parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+    rules: { ltb: 'error' },
+  } as unknown as Linter.Config;
+
+  const seen = new Set<string>([code]);
+  let text = code;
+  let passes = 0;
+  let cycled = false;
+
+  for (; passes < maxPasses; passes += 1) {
+    const { output, fixed } = linter.verifyAndFix(text, config, 'file.ts');
+    if (!fixed || output === text) {
+      break;
+    }
+    if (seen.has(output)) {
+      text = output;
+      cycled = true;
+      break;
+    }
+    seen.add(output);
+    text = output;
+  }
+
+  // `verifyAndFix` loops internally, so an even-period oscillation hands back the
+  // input text and masquerades as a fixpoint. A fix still offered on text the fixer
+  // refuses to change is that oscillation.
+  const pendingFixes = linter
+    .verify(text, config, 'file.ts')
+    .filter((message) => message.fix).length;
+
+  return { text, passes, cycled: cycled || passes === maxPasses, pendingFixes };
+};
+
+describe('logical-top-to-bottom-grouping autofix convergence', () => {
+  const PING_PONG = `const DEFAULT_DOC = { id: 'a' };
+let mockDoc = DEFAULT_DOC;
+let mockUsers = {};
+run(() => {
+  use(mockDoc);
+  use(mockUsers);
+});
+`;
+
+  const PING_PONG_MIRROR = `const DEFAULT_DOC = { id: 'a' };
+let mockUsers = {};
+let mockDoc = DEFAULT_DOC;
+run(() => {
+  use(mockDoc);
+  use(mockUsers);
+});
+`;
+
+  const UNSATISFIABLE_CHAINS = `export const computeMatchCenter = (
+  position: BracketCellPosition,
+  geometry: BracketGridGeometry,
+) => {
+  const { cellWidth, gutter, rowTrack } = geometry;
+  const { rowStart, rowSpan, columnStart } = position;
+  const columnIndex = columnStart - 1;
+  const leftX = columnIndex * (cellWidth + gutter);
+  const rightX = leftX + cellWidth;
+  const centerY = (rowStart - 1 + rowSpan / 2) * rowTrack;
+  return { leftX, rightX, centerY } as const;
+};
+`;
+
+  const SIBLING_DESTRUCTURE_PAIRS = `function merge(props: MergeProps) {
+  const { tokenA, tokenB } = props;
+  const { amount: _, ...fieldsA } = tokenA;
+  const { amount: __, ...fieldsB } = tokenB;
+  const metadataA = fieldsA.metadata;
+  const metadataB = fieldsB.metadata;
+  return { ...fieldsA, ...fieldsB, metadataA, metadataB };
+}
+`;
+
+  const INTERLEAVED_FIXTURES = `it('routes to the after target', () => {
+  const beforeData: TestSource = { id: 's1', name: 'Before' };
+  const afterData: TestSource = { id: 's1', name: 'After' };
+  const beforeTargetRef = { path: 'targets/t1' } as DocumentReference;
+  const afterTargetRef = { path: 'targets/t2' } as DocumentReference;
+  const beforeSnap = createMockSnapshot(true, 'sources/s1', beforeData);
+  const afterSnap = createMockSnapshot(true, 'sources/s1', afterData);
+  const change = createMockChange(beforeSnap, afterSnap);
+  const docsBefore = [{ target: { targetId: 't1' }, targetRef: beforeTargetRef }];
+  const docsAfter = [{ target: { targetId: 't2' }, targetRef: afterTargetRef }];
+  const context = { props: { change, docsBefore, docsAfter } };
+  const located = { source: afterData, sourceRef: afterSnap.ref };
+  const targets = resolveTargets(context, located);
+  expect(targets).toEqual([afterTargetRef]);
+});
+`;
+
+  const SINGLE_PAIR = `const base = getBase();
+const unrelated = 1;
+const detail = base.value;
+`;
+
+  const TWO_CHAINS = `const base = getBase();
+const unrelated = 1;
+const detail = base.value;
+const other = getOther();
+const filler = 2;
+const derived = other.value;
+`;
+
+  const MULTI_STEP_SIDE_EFFECTS = `const mockFetch = jest.fn();
+let mockRefs: any[] = [];
+jest.mock('./onCall', () => ({ onCall: (fn: unknown) => fn }));
+jest.mock('./firebaseAdmin', () => ({ db: {} }));
+use(mockFetch, mockRefs);
+`;
+
+  const MULTI_STEP_CROSS_HANDLER = `function sync(after: Doc, previewNew: Preview) {
+  const { id } = after;
+  const { username, imgUrl } = previewNew;
+  const { users } = queryUsers(id);
+  const [user] = users;
+  if (!user) {
+    return;
+  }
+  return update(user, username, imgUrl);
+}
+`;
+
+  const NESTED_BODIES = `const outerBase = getBase();
+const outerUnrelated = 1;
+const outerDetail = outerBase.value;
+function inner() {
+  const innerBase = getBase();
+  const innerUnrelated = 2;
+  const innerDetail = innerBase.value;
+  return innerDetail + innerUnrelated;
+}
+`;
+
+  it.each([
+    ['cross-handler ping-pong', PING_PONG],
+    ['cross-handler ping-pong (opposite phase)', PING_PONG_MIRROR],
+    ['interleaved chains from two destructures', UNSATISFIABLE_CHAINS],
+    ['sibling destructures feeding two derivations', SIBLING_DESTRUCTURE_PAIRS],
+  ])('leaves %s untouched instead of oscillating', (_label, code) => {
+    const result = fixToFixpoint(code);
+
+    expect(result.cycled).toBe(false);
+    expect(result.pendingFixes).toBe(0);
+    expect(result.text).toBe(code);
+  });
+
+  // The reordering that satisfies every constraint here is six moves long and passes
+  // through orders that report more violations than the input. Emitting it whole is
+  // what bounds convergence to a single pass, which is the property `--fix` needs:
+  // relocating one statement per pass exhausts ESLint's pass budget on real files.
+  it('resolves an interleaved fixture block in one fix pass', () => {
+    const result = fixToFixpoint(INTERLEAVED_FIXTURES);
+
+    expect(result.cycled).toBe(false);
+    expect(result.pendingFixes).toBe(0);
+    expect(result.passes).toBe(1);
+    expect(result.text).toBe(`it('routes to the after target', () => {
+  const beforeData: TestSource = { id: 's1', name: 'Before' };
+  const beforeSnap = createMockSnapshot(true, 'sources/s1', beforeData);
+  const afterData: TestSource = { id: 's1', name: 'After' };
+  const afterSnap = createMockSnapshot(true, 'sources/s1', afterData);
+  const change = createMockChange(beforeSnap, afterSnap);
+  const beforeTargetRef = { path: 'targets/t1' } as DocumentReference;
+  const docsBefore = [{ target: { targetId: 't1' }, targetRef: beforeTargetRef }];
+  const afterTargetRef = { path: 'targets/t2' } as DocumentReference;
+  const docsAfter = [{ target: { targetId: 't2' }, targetRef: afterTargetRef }];
+  const context = { props: { change, docsBefore, docsAfter } };
+  const located = { source: afterData, sourceRef: afterSnap.ref };
+  const targets = resolveTargets(context, located);
+  expect(targets).toEqual([afterTargetRef]);
+});
+`);
+  });
+
+  /**
+   * The convergence property the issue asks for, stated directly: whatever `--fix`
+   * settles on must not still offer a fix. A single pass has to suffice, so `passes`
+   * is asserted rather than merely bounded.
+   */
+  it.each([
+    ['single pair', SINGLE_PAIR],
+    ['two chains', TWO_CHAINS],
+    ['multi-step side effects', MULTI_STEP_SIDE_EFFECTS],
+    ['multi-step cross handler', MULTI_STEP_CROSS_HANDLER],
+    ['interleaved fixtures', INTERLEAVED_FIXTURES],
+  ])('settles %s in a single fix pass', (_label, code) => {
+    const result = fixToFixpoint(code);
+
+    expect(result.passes).toBe(1);
+    expect(result.pendingFixes).toBe(0);
+    expect(result.cycled).toBe(false);
+  });
+
+  it('still fixes a straightforward separated derivation in one pass', () => {
+    const result = fixToFixpoint(SINGLE_PAIR);
+
+    expect(result.cycled).toBe(false);
+    expect(result.pendingFixes).toBe(0);
+    expect(result.passes).toBe(1);
+    expect(result.text).toBe(`const base = getBase();
+const detail = base.value;
+const unrelated = 1;
+`);
+  });
+
+  it('fully resolves independent violations in one body', () => {
+    const result = fixToFixpoint(TWO_CHAINS);
+
+    expect(result.cycled).toBe(false);
+    expect(result.pendingFixes).toBe(0);
+    expect(result.text).toBe(`const base = getBase();
+const detail = base.value;
+const unrelated = 1;
+const other = getOther();
+const derived = other.value;
+const filler = 2;
+`);
+  });
+
+  it('fully resolves violations in sibling bodies', () => {
+    const result = fixToFixpoint(NESTED_BODIES);
+
+    expect(result.cycled).toBe(false);
+    expect(result.pendingFixes).toBe(0);
+    expect(result.text).toBe(`const outerBase = getBase();
+const outerDetail = outerBase.value;
+const outerUnrelated = 1;
+function inner() {
+  const innerBase = getBase();
+  const innerDetail = innerBase.value;
+  const innerUnrelated = 2;
+  return innerDetail + innerUnrelated;
+}
+`);
+  });
+
+  // A move that leaves the count unchanged is still worth making when a bounded run
+  // of further moves clears the block. Without this, real code that descends
+  // 1 -> 1 -> 0 would be reported and never fixed.
+  it('resolves a side-effect chain that descends through an equal count', () => {
+    const result = fixToFixpoint(MULTI_STEP_SIDE_EFFECTS);
+
+    expect(result.cycled).toBe(false);
+    expect(result.pendingFixes).toBe(0);
+    expect(result.text).toBe(`const mockFetch = jest.fn();
+jest.mock('./onCall', () => ({ onCall: (fn: unknown) => fn }));
+jest.mock('./firebaseAdmin', () => ({ db: {} }));
+let mockRefs: any[] = [];
+use(mockFetch, mockRefs);
+`);
+  });
+
+  it('resolves a descent that crosses handlers', () => {
+    const result = fixToFixpoint(MULTI_STEP_CROSS_HANDLER);
+
+    expect(result.cycled).toBe(false);
+    expect(result.pendingFixes).toBe(0);
+    expect(result.text).toBe(`function sync(after: Doc, previewNew: Preview) {
+  const { id } = after;
+  const { users } = queryUsers(id);
+  const [user] = users;
+  if (!user) {
+    return;
+  }
+  const { username, imgUrl } = previewNew;
+  return update(user, username, imgUrl);
+}
+`);
+  });
+
+  it.each([
+    ['ping-pong', PING_PONG],
+    ['ping-pong mirror', PING_PONG_MIRROR],
+    ['unsatisfiable chains', UNSATISFIABLE_CHAINS],
+    ['single pair', SINGLE_PAIR],
+    ['two chains', TWO_CHAINS],
+    ['nested bodies', NESTED_BODIES],
+    ['multi-step side effects', MULTI_STEP_SIDE_EFFECTS],
+    ['multi-step cross handler', MULTI_STEP_CROSS_HANDLER],
+    ['sibling destructure pairs', SIBLING_DESTRUCTURE_PAIRS],
+    ['interleaved fixtures', INTERLEAVED_FIXTURES],
+  ])('reaches an idempotent fixpoint for %s', (_label, code) => {
+    const { text } = fixToFixpoint(code);
+    const rerun = fixToFixpoint(text);
+
+    expect(rerun.text).toBe(text);
+    expect(rerun.passes).toBe(0);
+    expect(rerun.pendingFixes).toBe(0);
+  });
 });
