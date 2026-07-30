@@ -1,3 +1,10 @@
+## [1.20.38](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.37...v1.20.38) (2026-07-30)
+
+
+### Bug Fixes
+
+* **enforce-callback-memo:** allow an inline callback inside a useMemo factory (closes [#1465](https://github.com/BluMintInc/eslint-custom-rules/issues/1465)) ([89c39a2](https://github.com/BluMintInc/eslint-custom-rules/commit/89c39a29604fa4df492aa40e63bf1a0ff9a2fe77))
+
 ## [1.20.37](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.36...v1.20.37) (2026-07-30)
 
 
