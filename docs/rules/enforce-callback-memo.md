@@ -22,43 +22,68 @@ The rule skips:
 
 ### Examples of **incorrect** code for this rule:
 
+Inline functions in JSX props:
+
 ```tsx
-// Inline functions in JSX props
 <Button onClick={() => handleClick(id)} />
+```
+
+```tsx
 <Form onSubmit={function (event) { submit(event, mode); }} />
+```
 
-// Objects or arrays containing functions passed directly to props
+Objects or arrays containing functions passed directly to props:
+
+```tsx
 <Wizard config={{ onNext: () => goToStep(step + 1), onBack }} />
+```
+
+```tsx
 <List renderers={[() => renderItem(item), renderFallback]} />
+```
 
-// JSX literals that hide inline callbacks
+JSX literals that hide inline callbacks:
+
+```tsx
 <Dropdown trigger={<Button onClick={() => open(id)} />} />
+```
 
-// Conditional expressions that embed callbacks
+Conditional expressions that embed callbacks:
+
+```tsx
 <Card action={isAdmin ? () => remove(userId) : undefined} />
 ```
 
 ### Examples of **correct** code for this rule:
 
+Memoize callbacks:
+
 ```tsx
-// Memoize callbacks
 const handleClick = useCallback(() => handleClickInner(id), [id]);
 <Button onClick={handleClick} />
+```
 
-// Memoize configuration objects or arrays that include callbacks
+Memoize configuration objects or arrays that include callbacks:
+
+```tsx
 const wizardConfig = useMemo(
   () => ({ onNext: () => goToStep(step + 1), onBack }),
   [step, onBack],
 );
 <Wizard config={wizardConfig} />
+```
 
+```tsx
 const renderers = useMemo(() => [() => renderItem(item), renderFallback], [
   item,
   renderFallback,
 ]);
 <List renderers={renderers} />
+```
 
-// Inline memoization when convenient
+Inline memoization when convenient:
+
+```tsx
 <Dropdown trigger={useMemo(
   () => <Button onClick={() => open(id)} />,
   [id, open],

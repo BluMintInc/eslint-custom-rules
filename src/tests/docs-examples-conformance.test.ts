@@ -32,10 +32,14 @@ const DOCS_DIR = path.join(__dirname, '../../docs/rules');
  * context, so requiring them to fire produces false alarms rather than signal.
  *
  * Out of scope, by design: rules whose examples are not TypeScript (e.g.
- * `avoid-utils-directory` illustrates directory layout in ```text fences), rules
- * documenting no correct examples at all, and rules needing type information
- * (they throw without `parserOptions.project`, which the RuleTester cannot
- * supply). Those are skipped rather than silently passing.
+ * `avoid-utils-directory` illustrates directory layout in ```text fences) and
+ * rules documenting no correct examples at all.
+ *
+ * A block the harness cannot lint — it fails to parse, or the rule throws for
+ * want of the type information `parserOptions.project` would supply — asserts
+ * NOTHING, which made it permanently exempt without any signal (#1466). Such
+ * blocks are now recorded and audited against `UNCHECKABLE_BLOCKS`, so a newly
+ * unlintable example fails this suite by name instead of disappearing.
  */
 
 /** Fence languages that hold lintable TypeScript. */
@@ -158,8 +162,8 @@ export function extractBlocks(md: string): Block[] {
  * Docs declare the context a snippet assumes inside the snippet itself:
  * `// File: functions/src/...` (or a bare path comment) for path-sensitive
  * rules, and `// eslint-options: {...}` for an example that only holds under a
- * non-default option. Honouring both is what keeps this guard free of an
- * allowlist — every correct block is enforced.
+ * non-default option. Honouring both is what lets every correct block be
+ * enforced without exempting the awkward ones.
  */
 export function filenameHint(code: string): string | null {
   const explicit = /^\s*(?:\/\/|\/\*)\s*File:\s*([^\s*]+)/im.exec(code);
@@ -185,9 +189,9 @@ for (const [name, rule] of Object.entries(plugin.rules)) {
 }
 linter.defineParser('ts', tsParser);
 
-type LintResult = { reports: string[]; skipped: boolean };
+type LintResult = { reports: string[]; skipped: boolean; reason?: string };
 
-function lintBlock(
+export function lintBlock(
   ruleName: string,
   filename: string,
   code: string,
@@ -210,14 +214,25 @@ function lintBlock(
   let messages;
   try {
     messages = linter.verify(code, config, { filename });
-  } catch {
+  } catch (error) {
     // A rule needing type information throws without `parserOptions.project`,
     // which the RuleTester cannot supply; such rules are out of scope here.
-    return { reports: [], skipped: true };
+    return {
+      reports: [],
+      skipped: true,
+      reason: `the rule threw: ${(error as Error).message}`,
+    };
   }
-  // A doc snippet is often a fragment; if it does not parse, the rule never ran
-  // and there is nothing to assert.
-  if (messages.some((m) => m.fatal)) return { reports: [], skipped: true };
+  // A block that does not parse never ran the rule. That is not a pass — see
+  // UNCHECKABLE_BLOCKS.
+  const fatal = messages.find((m) => m.fatal);
+  if (fatal) {
+    return {
+      reports: [],
+      skipped: true,
+      reason: `parse failure at block line ${fatal.line}: ${fatal.message}`,
+    };
+  }
 
   return {
     reports: messages
@@ -264,6 +279,69 @@ const ruleNames = Object.keys(plugin.rules)
   .filter((name) => fs.existsSync(path.join(DOCS_DIR, `${name}.md`)))
   .sort();
 
+export type SkippedBlock = { rule: string; line: number; reason: string };
+
+/**
+ * Documented "correct" blocks this guard knowingly cannot lint, keyed
+ * `<rule>:<line in the .md>` and carrying the reason the exemption exists.
+ *
+ * The list is empty on purpose and should stay that way. A block that does not
+ * parse asserts NOTHING, so before #1466 eight documented examples — including
+ * every example of `prefer-sx-prop-over-system-props` — were exempt from this
+ * guard forever without anyone knowing. Almost every such block is a packaging
+ * defect in the doc (an unclosed JSX tag, or several complete snippets crammed
+ * into one fence, where the second `<` parses as a relational operator); fix the
+ * doc rather than adding an entry here.
+ *
+ * A legitimate entry is a block that is malformed BY DESIGN — the way
+ * `no-curly-brackets-around-commented-properties` documents a syntax error as
+ * the defect it prevents (that one lands in an "incorrect" fence, which this
+ * guard never asserts on, so it needs no entry).
+ */
+export const UNCHECKABLE_BLOCKS: Record<string, string> = {};
+
+/**
+ * Compare the blocks that were skipped against the allowlist, in both
+ * directions. An unlisted skip is a documented example verified by nothing; a
+ * listed block that no longer skips is a stale exemption that would silently
+ * absorb the next real skip.
+ */
+export function auditSkips(
+  skips: readonly SkippedBlock[],
+  allowlist: Record<string, string>,
+): string[] {
+  const problems: string[] = [];
+  const seen = new Set<string>();
+
+  for (const skip of skips) {
+    const key = `${skip.rule}:${skip.line}`;
+    seen.add(key);
+    if (key in allowlist) continue;
+    problems.push(
+      [
+        `docs/rules/${skip.rule}.md:${skip.line} is documented as CORRECT but the guard could not lint it`,
+        `  (${skip.reason})`,
+        '  Nothing was asserted about this example. Make the fence parse as one',
+        '  program — close/self-close JSX tags, and split a fence that packs',
+        '  several independent snippets into one fence per snippet — or add',
+        `  '${key}' to UNCHECKABLE_BLOCKS with the reason it cannot be checked.`,
+      ].join('\n'),
+    );
+  }
+
+  for (const [key, reason] of Object.entries(allowlist)) {
+    if (seen.has(key)) continue;
+    problems.push(
+      [
+        `UNCHECKABLE_BLOCKS lists '${key}' (${reason}) but that block is no longer skipped.`,
+        '  Delete the entry: a stale exemption hides the next real skip.',
+      ].join('\n'),
+    );
+  }
+
+  return problems;
+}
+
 /**
  * Coverage floor. If heading matching or fence extraction ever breaks, every
  * block silently disappears and the whole suite passes while asserting nothing —
@@ -271,7 +349,7 @@ const ruleNames = Object.keys(plugin.rules)
  * that failure loud.
  */
 let lintedBlocks = 0;
-let skippedBlocks = 0;
+const skippedBlocks: SkippedBlock[] = [];
 
 describe('documented "correct" examples must not report', () => {
   it('finds rule docs to check', () => {
@@ -279,10 +357,16 @@ describe('documented "correct" examples must not report', () => {
   });
 
   afterAll(() => {
-    expect(lintedBlocks).toBeGreaterThan(200);
-    // Skips are parse-failed fragments and type-aware rules; a sudden jump means
-    // the harness stopped being able to lint, not that the docs improved.
-    expect(skippedBlocks).toBeLessThan(lintedBlocks / 2);
+    expect(lintedBlocks).toBeGreaterThan(250);
+    const problems = auditSkips(skippedBlocks, UNCHECKABLE_BLOCKS);
+    if (problems.length > 0) {
+      throw new Error(
+        [
+          `${problems.length} documented example(s) are exempt from this guard without being listed:`,
+          ...problems,
+        ].join('\n\n'),
+      );
+    }
   });
 
   describe.each(ruleNames)('%s', (ruleName) => {
@@ -311,14 +395,20 @@ describe('documented "correct" examples must not report', () => {
               : calibrated,
           );
 
-        const { reports, skipped } = lintBlock(
+        const { reports, skipped, reason } = lintBlock(
           ruleName,
           filename,
           block.code,
           optionsHint(block.code),
         );
         if (skipped) {
-          skippedBlocks += 1;
+          // Recorded rather than asserted here so the audit can name every
+          // exempt block at once instead of failing on the first.
+          skippedBlocks.push({
+            rule: ruleName,
+            line: block.line,
+            reason: reason ?? 'unknown',
+          });
           return;
         }
         lintedBlocks += 1;
@@ -338,5 +428,69 @@ describe('documented "correct" examples must not report', () => {
         expect(reports).toEqual([]);
       },
     );
+  });
+});
+
+/**
+ * Planted-defect controls. The skip audit only earns trust if it can go red, so
+ * both halves are exercised on synthetic input: the detector must see an
+ * unparseable block as a skip (not a pass), and the audit must fail an unlisted
+ * skip while clearing a listed one.
+ */
+describe('unlintable blocks are surfaced, not silently skipped', () => {
+  const WIDGET = '/repo/src/components/Widget.tsx';
+
+  it('classifies an unparseable block as skipped, not clean (control)', () => {
+    // Two complete JSX snippets in one fence: the defect shape that hid eight
+    // documented examples until #1466.
+    const packed = lintBlock(
+      'no-jsx-whitespace-literal',
+      WIDGET,
+      '<div>a{" "}b</div>\n<div>c{" "}d</div>',
+      null,
+    );
+    expect(packed.skipped).toBe(true);
+    expect(packed.reason).toMatch(/parse failure/);
+    // The dangerous part: with the block unparsed the rule never ran, so a bare
+    // "no reports" check would have called this documentation verified.
+    expect(packed.reports).toEqual([]);
+
+    const single = lintBlock(
+      'no-jsx-whitespace-literal',
+      WIDGET,
+      '<div>a{" "}b</div>',
+      null,
+    );
+    expect(single.skipped).toBe(false);
+    expect(single.reports).toHaveLength(1);
+  });
+
+  it('fails an unlisted skip and clears a listed one (control)', () => {
+    const skip: SkippedBlock = {
+      rule: 'planted-rule',
+      line: 42,
+      reason: 'parse failure at block line 2: unexpected token',
+    };
+
+    const unlisted = auditSkips([skip], {});
+    expect(unlisted).toHaveLength(1);
+    expect(unlisted[0]).toContain('docs/rules/planted-rule.md:42');
+    expect(unlisted[0]).toContain('parse failure');
+
+    expect(
+      auditSkips([skip], { 'planted-rule:42': 'malformed by design' }),
+    ).toEqual([]);
+
+    const stale = auditSkips([], { 'planted-rule:42': 'malformed by design' });
+    expect(stale).toHaveLength(1);
+    expect(stale[0]).toContain('no longer skipped');
+  });
+
+  // Pins the state #1466 reached: every documented "correct" block is linted.
+  // An exemption is meant to be a conscious, reviewable opt-out, so adding one
+  // means updating this expectation on purpose rather than quietly growing the
+  // invisible set.
+  it('ships with an empty allowlist, so every correct block is asserted', () => {
+    expect(Object.keys(UNCHECKABLE_BLOCKS)).toEqual([]);
   });
 });

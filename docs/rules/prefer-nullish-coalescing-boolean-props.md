@@ -20,8 +20,9 @@ This rule keeps logical OR (`||`) available inside boolean contexts (JSX boolean
 
 ### Examples of correct code
 
+Boolean props keep logical OR:
+
 ```tsx
-// Boolean props and conditions keep logical OR
 <LoadingButton
   disabled={
     !isValidated.phoneNumber ||
@@ -32,16 +33,31 @@ This rule keeps logical OR (`||`) available inside boolean contexts (JSX boolean
 >
   Send Code
 </LoadingButton>
+```
 
+```tsx
 <Button disabled={isLoading || !isValid}>Submit</Button>
-<Input required={hasValue || isRequired} />
-<Checkbox checked={isSelected || defaultSelected} />
+```
 
+```tsx
+<Input required={hasValue || isRequired} />
+```
+
+```tsx
+<Checkbox checked={isSelected || defaultSelected} />
+```
+
+Conditions keep logical OR:
+
+```tsx
 if (isLoading || !isValid) {
   return null;
 }
+```
 
-// Nullish coalescing for defaulting values
+Nullish coalescing for defaulting values:
+
+```tsx
 const value = data ?? defaultValue;
 const placeholder = text ?? 'Enter text';
 const { title = data.title ?? 'Untitled' } = props;

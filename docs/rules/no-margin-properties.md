@@ -32,14 +32,21 @@ surfaced for a human to resolve rather than rewritten.
 
 ### ❌ Incorrect
 
+Margin props push spacing outside the component:
+
 ```jsx
-// Margin props push spacing outside the component
 <Box sx={{ margin: 2, marginTop: 3 }} />
+```
 
-// Margin shorthands fight Stack spacing/gaps
+Margin shorthands fight Stack spacing/gaps:
+
+```jsx
 <Stack sx={{ mx: 2, my: 1 }} />
+```
 
-// Direct margin props behave the same
+Direct margin props behave the same:
+
+```jsx
 <Box margin={2} marginTop={3} />
 ```
 
@@ -55,17 +62,27 @@ In such cases, prefer adding an `eslint-disable` comment with a brief explanatio
 
 ### ✅ Correct
 
+Keep spacing inside the component:
+
 ```jsx
-// Keep spacing inside the component
 <Box sx={{ padding: 2, paddingTop: 3 }} />
+```
 
-// Let the parent own separation between children
+Let the parent own separation between children:
+
+```jsx
 <Stack spacing={2} />
+```
 
-// Use gap for flex/grid gutters instead of margins
+Use gap for flex/grid gutters instead of margins:
+
+```jsx
 <Box sx={{ display: 'flex', gap: 2 }} />
+```
 
-// In theme overrides, keep spacing on the padding/gap axis
+In theme overrides, keep spacing on the padding/gap axis:
+
+```jsx
 const theme = createTheme({
   components: {
     MuiButton: {

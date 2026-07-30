@@ -42,22 +42,30 @@ The following are genuine component API props, not system props, and are always 
 
 ### Examples of incorrect code
 
-```tsx
-// System props used directly — should be in sx
-<Stack spacing={2} alignItems="center" pb={6}>
+System props used directly — should be in `sx`:
 
-// Multiple system props with existing sx
-<Box pt={2} display="flex" sx={{ backgroundColor: 'primary.main' }}>
+```tsx
+<Stack spacing={2} alignItems="center" pb={6} />
+```
+
+Multiple system props alongside an existing `sx`:
+
+```tsx
+<Box pt={2} display="flex" sx={{ backgroundColor: 'primary.main' }} />
 ```
 
 ### Examples of correct code
 
-```tsx
-// All styling in sx; Stack's real props (spacing, direction) left in place
-<Stack spacing={2} direction="row" sx={{ alignItems: 'center', pb: 6 }}>
+All styling in `sx`; Stack's real props (`spacing`, `direction`) left in place:
 
-// Merged correctly into existing sx object
-<Box sx={{ pt: 2, display: 'flex', backgroundColor: 'primary.main' }}>
+```tsx
+<Stack spacing={2} direction="row" sx={{ alignItems: 'center', pb: 6 }} />
+```
+
+Merged correctly into an existing `sx` object:
+
+```tsx
+<Box sx={{ pt: 2, display: 'flex', backgroundColor: 'primary.main' }} />
 ```
 
 ## Options

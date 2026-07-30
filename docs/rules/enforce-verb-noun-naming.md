@@ -55,9 +55,13 @@ class Repo {
   get items() { return this.cache; } // getter is allowed
 }
 
-// React components are allowed
-const UserCard = ({ user }: { user: User }) => <Card>{user.name}</Card>;
 function toNumber(value) { return +value; } // converter pattern allowed
+```
+
+React components are allowed:
+
+```tsx
+const UserCard = ({ user }: { user: User }) => <Card>{user.name}</Card>;
 ```
 
 ## When not to use it
