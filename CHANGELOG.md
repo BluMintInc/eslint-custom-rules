@@ -1,3 +1,10 @@
+## [1.20.28](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.27...v1.20.28) (2026-07-30)
+
+
+### Bug Fixes
+
+* **require-image-optimized:** exempt the component's own implementation and decline unbound fixes (closes [#1417](https://github.com/BluMintInc/eslint-custom-rules/issues/1417)) ([89d00f3](https://github.com/BluMintInc/eslint-custom-rules/commit/89d00f3db63e2190f3d5c5032ba9b333306ccee1))
+
 ## [1.20.27](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.26...v1.20.27) (2026-07-30)
 
 
