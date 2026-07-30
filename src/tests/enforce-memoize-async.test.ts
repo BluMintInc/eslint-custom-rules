@@ -805,45 +805,283 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
         }
       `,
     },
+    // ------------------------------------------------------------------
+    // Issue #1423: the fix inserts an import that binds `Memoize`, so an
+    // existing binding of that name makes the edit wrong twice over — a
+    // module-scope declaration collides with the import (TS2440, or TS2300
+    // when the binding is itself an import), and a shadow at the fix site
+    // captures the emitted decorator with no compile error at all. The report
+    // stands; only the edit is withheld.
+    // ------------------------------------------------------------------
+    {
+      name: 'a module-scope const named Memoize withholds the fix',
+      code: `
+        const Memoize = 1;
+        export class Service {
+          public async load(): Promise<number> { return Memoize; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: null,
+    },
+    {
+      name: 'a function declaration named Memoize withholds the fix',
+      code: `
+        function Memoize() { return 1; }
+        export class Service {
+          public async load() { return Memoize(); }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: null,
+    },
+    {
+      name: 'a class declaration named Memoize withholds the fix',
+      code: `
+        class Memoize {}
+        export class Service {
+          public async load() { return new Memoize(); }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: null,
+    },
+    {
+      name: 'the enclosing class binding its own name Memoize withholds the fix',
+      code: `
+        export class Memoize {
+          public async load() { return 1; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: null,
+    },
+    {
+      name: 'a named Memoize import from another module withholds the fix',
+      code: `
+        import { Memoize } from 'some-other-memoize';
+        export class Service {
+          public async load() { return 1; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: null,
+    },
+    {
+      name: 'a namespace import named Memoize withholds the fix',
+      code: `
+        import * as Memoize from 'some-other-memoize';
+        export class Service {
+          public async load() { return 1; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: null,
+    },
+    {
+      name: 'a default import named Memoize withholds the fix',
+      code: `
+        import Memoize from '@blumintinc/typescript-memoize';
+        export class Service {
+          public async load() { return 1; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: null,
+    },
+    {
+      name: 'a type-only Memoize import withholds the fix',
+      code: `
+        import type { Memoize } from '@blumintinc/typescript-memoize';
+        export class Service {
+          public async load() { return 1; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: null,
+    },
+    {
+      name: 'an inline type-only Memoize specifier withholds the fix',
+      code: `
+        import { type Memoize } from '@blumintinc/typescript-memoize';
+        export class Service {
+          public async load() { return 1; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: null,
+    },
+    {
+      name: 'a shadowing parameter named Memoize withholds the fix at that site',
+      code: `
+        export function build(Memoize) {
+          return class {
+            async load() { return Memoize; }
+          };
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: null,
+    },
+    {
+      name: 'a block-scoped Memoize binding withholds the fix at that site',
+      code: `
+        export function build() {
+          const Memoize = 1;
+          class Service {
+            async load() { return Memoize; }
+          }
+          return Service;
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: null,
+    },
+    {
+      name: 'a shadowed site declines while an unshadowed site still carries the import',
+      code: `
+        export class Outer {
+          async first() { return 1; }
+        }
+        export function build(Memoize) {
+          return class {
+            async second() { return Memoize; }
+          };
+        }
+      `,
+      errors: [
+        { messageId: 'requireMemoize' },
+        { messageId: 'requireMemoize' },
+      ],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        export class Outer {
+          @Memoize()
+          async first() { return 1; }
+        }
+        export function build(Memoize) {
+          return class {
+            async second() { return Memoize; }
+          };
+        }
+      `,
+    },
+    {
+      name: 'an existing Memoize import is reused rather than duplicated',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        export class Service {
+          public async load() { return 1; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        export class Service {
+          @Memoize()
+          public async load() { return 1; }
+        }
+      `,
+    },
+    {
+      name: 'a legacy-package Memoize import is reused rather than declined',
+      code: `
+        import { Memoize } from 'typescript-memoize';
+        export class Service {
+          public async load() { return 1; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from 'typescript-memoize';
+        export class Service {
+          @Memoize()
+          public async load() { return 1; }
+        }
+      `,
+    },
+    {
+      name: 'a Memoize binding elsewhere does not block a fix that emits an alias',
+      code: `
+        import { Memoize as Cache } from '@blumintinc/typescript-memoize';
+        const Memoize = 1;
+        export class Service {
+          public async load() { return Memoize; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize as Cache } from '@blumintinc/typescript-memoize';
+        const Memoize = 1;
+        export class Service {
+          @Cache()
+          public async load() { return Memoize; }
+        }
+      `,
+    },
+    {
+      // Import state is read off the AST at fix time: an ImportDeclaration
+      // that trails the class in source order has not been visited when the
+      // fix is computed, so a traversal flag would report it absent and emit
+      // a second one.
+      name: 'an import that trails the class in source order is still reused',
+      code: `
+        export class Service {
+          public async load() { return 1; }
+        }
+        import { Memoize } from '@blumintinc/typescript-memoize';
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        export class Service {
+          @Memoize()
+          public async load() { return 1; }
+        }
+        import { Memoize } from '@blumintinc/typescript-memoize';
+      `,
+    },
   ],
 });
+
+const RULE_ID = '@blumintinc/blumint/enforce-memoize-async';
+
+const createLinter = () => {
+  const linter = new Linter();
+  linter.defineParser(
+    '@typescript-eslint/parser',
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    require('@typescript-eslint/parser'),
+  );
+  linter.defineRule(RULE_ID, enforceMemoizeAsync as unknown as Rule.RuleModule);
+  // A near-miss neighbour proves rule matching is exact rather than a
+  // suffix/substring heuristic.
+  linter.defineRule('@blumintinc/blumint/enforce-memoize-async-generator', {
+    meta: { schema: [] },
+    create: () => ({}),
+  } as unknown as Rule.RuleModule);
+  return linter;
+};
+
+const LINT_CONFIG = {
+  parser: '@typescript-eslint/parser',
+  parserOptions: {
+    ecmaVersion: 2020 as const,
+    sourceType: 'module' as const,
+  },
+  rules: { [RULE_ID]: 'error' as const },
+};
+
+const lint = (code: string) =>
+  createLinter().verifyAndFix(code, LINT_CONFIG, 'Service.ts').output;
+
+const lintMessages = (code: string) =>
+  createLinter().verify(code, LINT_CONFIG, 'Service.ts');
 
 // Issue #1404: RuleTester applies a single fix pass and never shows the file
 // that `eslint --fix` actually writes. These cases run the real multi-pass
 // fixer and assert the invariant the bug violated: an emitted @Memoize()
 // decorator is never left without its import.
 describe('enforce-memoize-async: inline disables and the import carrier (issue #1404)', () => {
-  const RULE_ID = '@blumintinc/blumint/enforce-memoize-async';
-
-  const lint = (code: string) => {
-    const linter = new Linter();
-    linter.defineParser(
-      '@typescript-eslint/parser',
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      require('@typescript-eslint/parser'),
-    );
-    linter.defineRule(
-      RULE_ID,
-      enforceMemoizeAsync as unknown as Rule.RuleModule,
-    );
-    // A near-miss neighbour proves rule matching is exact rather than a
-    // suffix/substring heuristic.
-    linter.defineRule('@blumintinc/blumint/enforce-memoize-async-generator', {
-      meta: { schema: [] },
-      create: () => ({}),
-    } as unknown as Rule.RuleModule);
-    const config = {
-      parser: '@typescript-eslint/parser',
-      parserOptions: {
-        ecmaVersion: 2020 as const,
-        sourceType: 'module' as const,
-      },
-      rules: { [RULE_ID]: 'error' as const },
-    };
-    const { output } = linter.verifyAndFix(code, config, 'Service.ts');
-    return output;
-  };
-
   const expectNoUnboundMemoize = (output: string) => {
     if (/@Memoize\(\)/.test(output)) {
       expect(output).toContain(
@@ -1007,5 +1245,78 @@ export class Recorder {
       ),
     ).toHaveLength(1);
     expectNoUnboundMemoize(output);
+  });
+});
+
+// Issue #1423: RuleTester asserts a single fix pass, while `eslint --fix`
+// re-lints until the output settles. These cases run the real multi-pass fixer
+// against a file that already binds `Memoize` and assert the invariant the bug
+// violated: the file never gains a second declaration of that name, and the
+// violation is still reported so the author resolves the clash deliberately.
+describe('enforce-memoize-async: an existing Memoize binding (issue #1423)', () => {
+  const topScopeMemoizeDeclarations = (source: string) =>
+    (
+      source.match(
+        /^(?:export\s+)?(?:const|let|var|function|class)\s+Memoize\b/gm,
+      ) ?? []
+    ).length + (source.match(/^import\b[^;]*\bMemoize\b[^;]*;/gm) ?? []).length;
+
+  it('leaves a file with a module-scope const Memoize untouched', () => {
+    const code = `const Memoize = 1;
+export class Service {
+  public async load(): Promise<number> {
+    return Memoize;
+  }
+}
+`;
+
+    expect(lint(code)).toBe(code);
+    expect(topScopeMemoizeDeclarations(lint(code))).toBe(1);
+  });
+
+  it('still reports the violation it declines to fix', () => {
+    const messages = lintMessages(`const Memoize = 1;
+export class Service {
+  public async load(): Promise<number> {
+    return Memoize;
+  }
+}
+`);
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].ruleId).toBe(RULE_ID);
+  });
+
+  it('leaves a shadowing binding alone across every pass', () => {
+    const code = `export function build(Memoize) {
+  return class {
+    async load() {
+      return Memoize;
+    }
+  };
+}
+`;
+
+    expect(lint(code)).toBe(code);
+    expect(lint(code)).not.toContain('@Memoize');
+  });
+
+  it('keeps one declaration when an unshadowed sibling carries the import', () => {
+    const output = lint(`export class Outer {
+  public async first() {
+    return 1;
+  }
+}
+export function build(Memoize) {
+  return class {
+    async second() {
+      return Memoize;
+    }
+  };
+}
+`);
+
+    expect(topScopeMemoizeDeclarations(output)).toBe(1);
+    expect(output.match(/@Memoize\(\)/g)).toHaveLength(1);
   });
 });
