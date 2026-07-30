@@ -1,3 +1,11 @@
+## [1.20.25](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.24...v1.20.25) (2026-07-30)
+
+
+### Bug Fixes
+
+* **no-entire-object-hook-deps:** render optional links per segment (closes [#1401](https://github.com/BluMintInc/eslint-custom-rules/issues/1401)) ([5877951](https://github.com/BluMintInc/eslint-custom-rules/commit/58779518e2a71908ab9f22d6900e9b645a0f5fee))
+* **prefer-map-over-conditional-dispatch:** validate the synthesized Record annotation (closes [#1402](https://github.com/BluMintInc/eslint-custom-rules/issues/1402)) ([31bf682](https://github.com/BluMintInc/eslint-custom-rules/commit/31bf682249dcc4ad330d43c50bef8d0dae55287e))
+
 ## [1.20.24](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.23...v1.20.24) (2026-07-30)
 
 
