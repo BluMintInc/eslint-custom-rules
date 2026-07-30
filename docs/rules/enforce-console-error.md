@@ -77,20 +77,24 @@ export const useDialogs = () => {
 
 ```tsx
 const { open } = useAlertDialog('DIALOG');
-open({
-  title: 'Error',
-  description: 'An error occurred',
-  severity: 'error',
-}); // ✖ No console.error, observability has no breadcrumb
+const showError = () => {
+  open({
+    title: 'Error',
+    description: 'An error occurred',
+    severity: 'error',
+  });
+}; // ✖ No console.error in the containing function, observability has no breadcrumb
 ```
 
 ```tsx
 const { open } = useAlertDialog('DIALOG');
-open({
-  title: 'Warning',
-  description: 'Heads up',
-  severity: 'warning',
-}); // ✖ No console.warn, warning is invisible to observability
+const showWarning = () => {
+  open({
+    title: 'Warning',
+    description: 'Heads up',
+    severity: 'warning',
+  });
+}; // ✖ No console.warn in the containing function, warning is invisible to observability
 ```
 
 ```tsx

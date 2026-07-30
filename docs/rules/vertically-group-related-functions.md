@@ -60,7 +60,7 @@ function handleClick() {
 ```
 
 ```typescript
-// exportPlacement: "bottom"
+// eslint-options: {"exportPlacement": "bottom"}
 export function makeRequest() {
   return prepareRequest();
 }
@@ -92,7 +92,6 @@ function validateInput(input: string) {
 ```
 
 ```typescript
-// exportPlacement: "bottom"
 // eslint-options: {"exportPlacement": "bottom"}
 function prepareRequest() {}
 
