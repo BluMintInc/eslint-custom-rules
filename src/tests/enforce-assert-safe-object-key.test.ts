@@ -1,5 +1,5 @@
 import path from 'path';
-import { Linter, Rule } from 'eslint';
+import { ESLint, Linter, Rule } from 'eslint';
 import type { TSESLint } from '@typescript-eslint/utils';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceAssertSafeObjectKey } from '../rules/enforce-assert-safe-object-key';
@@ -1339,5 +1339,101 @@ function shadowed(assertSafe) {
 const outer = obj[assertSafe(id)];
 `);
     expect(countAssertSafeDeclarations(output)).toBe(1);
+  });
+});
+
+// Issue #1473: the injected import's specifier is anchored at the cwd ESLint
+// was configured with, not the node process cwd. The two differ under the
+// VS Code ESLint extension, in monorepos, and for any programmatic
+// `new ESLint({ cwd })`, and anchoring at the process cwd emits a specifier
+// that does not resolve, so the fixed file no longer compiles.
+//
+// RuleTester cannot express this: its Linter's cwd defaults to process.cwd(),
+// which makes the correct and the incorrect read indistinguishable. These cases
+// therefore drive the ESLint class with a cwd deliberately unrelated to the
+// process cwd.
+describe('enforce-assert-safe-object-key: the ESLint cwd anchors the specifier (issue #1473)', () => {
+  const RULE_ID = '@blumintinc/blumint/enforce-assert-safe-object-key';
+  // Absolute and non-existent: lintText never reads the disk, and a root that
+  // shares no prefix with the process cwd makes a process-cwd read visibly wrong
+  // rather than accidentally close.
+  const PROJECT_ROOT = '/eslint-cwd-1473';
+
+  const plugin = {
+    rules: {
+      'enforce-assert-safe-object-key': enforceAssertSafeObjectKey,
+    },
+  };
+
+  const lintAt = async (relativePath: string, code: string) => {
+    const eslint = new ESLint({
+      cwd: PROJECT_ROOT,
+      useEslintrc: false,
+      fix: true,
+      plugins: { '@blumintinc/blumint': plugin as never },
+      overrideConfig: {
+        parser: require.resolve('@typescript-eslint/parser'),
+        parserOptions: {
+          ecmaVersion: 2022 as const,
+          sourceType: 'module' as const,
+        },
+        plugins: ['@blumintinc/blumint'],
+        rules: { [RULE_ID]: 'error' as const },
+      },
+    });
+    const [result] = await eslint.lintText(code, {
+      filePath: path.posix.join(PROJECT_ROOT, relativePath),
+    });
+    // `output` is absent when no fix applied; the unchanged source is then the
+    // effective result.
+    return result.output ?? code;
+  };
+
+  const specifiersOf = (output: string) =>
+    [...output.matchAll(/import \{ assertSafe \} from '([^']+)';/g)].map(
+      (match) => match[1],
+    );
+
+  it('runs with an ESLint cwd that is not the process cwd', () => {
+    expect(PROJECT_ROOT).not.toBe(process.cwd());
+    expect(process.cwd().startsWith(`${PROJECT_ROOT}/`)).toBe(false);
+  });
+
+  it('derives a functions/ file specifier from the ESLint cwd', async () => {
+    const output = await lintAt(
+      'functions/src/handlers/handler.ts',
+      'export const read = (m: Record<string, number>, id: string) => m[`${id}`];\n',
+    );
+
+    expect(specifiersOf(output)).toEqual(['../util/assertSafe']);
+    expect(output).toContain('m[assertSafe(id)]');
+  });
+
+  it('derives a top-level src/ file specifier from the ESLint cwd', async () => {
+    const output = await lintAt(
+      'src/utils/helpers.ts',
+      'export const read = (m: Record<string, number>, id: string) => m[`${id}`];\n',
+    );
+
+    expect(specifiersOf(output)).toEqual([
+      '../../functions/src/util/assertSafe',
+    ]);
+  });
+
+  it('matches an existing relative helper import against the ESLint cwd', async () => {
+    const output = await lintAt(
+      'functions/src/util/a/b/fixture.ts',
+      `import { assertSafe } from '../../assertSafe';
+export const read = (m: Record<string, number>, id: string) => m[\`\${id}\`];
+`,
+    );
+
+    // The file already reaches the helper, so the fix only wraps the key. A cwd
+    // misread fails to match that import two ways: the specifier comparison
+    // misses, and the in-scope binding stops counting as the helper — which
+    // withholds the fix entirely.
+    expect(output).toBe(`import { assertSafe } from '../../assertSafe';
+export const read = (m: Record<string, number>, id: string) => m[assertSafe(id)];
+`);
   });
 });
