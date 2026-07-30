@@ -1,4 +1,9 @@
-import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  AST_TOKEN_TYPES,
+  TSESTree,
+  TSESLint,
+} from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { getMemberExpressionName } from '../utils/getMethodName';
 
@@ -158,44 +163,158 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       return key.includes('.') || !/^(?:[$_A-Za-z][$\w]*)$/u.test(key);
     }
 
-    // Helper function to convert an object to FieldPath syntax
-    function convertToFieldPathSyntax(
-      node: TSESTree.ObjectExpression,
+    // Collect the FieldPath entries a nested property flattens into, or bail out
+    // when flattening would silently drop payload data (spreads, computed keys,
+    // accessors/methods, unsupported key literals) or would produce nothing at
+    // all. Bailing leaves the report in place so the developer flattens by hand
+    // instead of receiving a fix that deletes fields or emits invalid syntax.
+    function collectFieldPathEntries(
+      obj: TSESTree.ObjectExpression,
+      prefix: string,
       sourceCode: TSESLint.SourceCode,
-      preflattened?: { [key: string]: string },
+    ): [string, string][] | null {
+      const entries: [string, string][] = [];
+
+      for (const property of obj.properties) {
+        if (
+          property.type !== AST_NODE_TYPES.Property ||
+          property.computed ||
+          property.method ||
+          property.kind !== 'init'
+        ) {
+          return null;
+        }
+
+        const keyText = getPropertyKeyText(property);
+        if (keyText === undefined) {
+          return null;
+        }
+
+        const fullKey = `${prefix}.${keyText}`;
+
+        if (property.value.type === AST_NODE_TYPES.ObjectExpression) {
+          const nestedEntries = collectFieldPathEntries(
+            property.value,
+            fullKey,
+            sourceCode,
+          );
+          if (!nestedEntries) {
+            return null;
+          }
+          entries.push(...nestedEntries);
+          continue;
+        }
+
+        entries.push([fullKey, sourceCode.getText(property.value)]);
+      }
+
+      return entries.length > 0 ? entries : null;
+    }
+
+    function getLineIndent(line: string): string {
+      return /^[\t ]*/u.exec(line)?.[0] ?? '';
+    }
+
+    // Indentation of the property when it is the first thing on its line, which
+    // is the indentation the replacement text must reuse to keep the surrounding
+    // lines byte-identical. Returns null for properties sharing a line with
+    // other code, where the replacement stays inline.
+    function getOwnLineIndent(
+      property: TSESTree.Property,
+      sourceCode: TSESLint.SourceCode,
+    ): string | null {
+      const line = sourceCode.lines[property.loc.start.line - 1] ?? '';
+      const linePrefix = line.slice(0, property.loc.start.column);
+      return /^[\t ]*$/u.test(linePrefix) ? linePrefix : null;
+    }
+
+    function printComment(comment: TSESTree.Comment): string {
+      return comment.type === AST_TOKEN_TYPES.Line
+        ? `//${comment.value}`
+        : `/*${comment.value}*/`;
+    }
+
+    // Render the dot-path replacement for a single nested property. Comments
+    // living inside the property are re-emitted ahead of the flattened entries
+    // so directives such as eslint-disable-next-line keep covering the rewritten
+    // code rather than being destroyed by the fix.
+    function renderFlattenedProperty(
+      property: TSESTree.Property,
+      entries: [string, string][],
+      sourceCode: TSESLint.SourceCode,
     ): string {
-      const idProperty = node.properties.find(
-        (prop) =>
-          prop.type === AST_NODE_TYPES.Property &&
-          prop.key.type === AST_NODE_TYPES.Identifier &&
-          prop.key.name === 'id',
+      const comments = sourceCode.getCommentsInside(property);
+      const commentTexts = comments.map(printComment);
+      const printedEntries = entries.map(
+        ([key, value]) => `${needsQuoting(key) ? `'${key}'` : key}: ${value}`,
+      );
+      const ownLineIndent = getOwnLineIndent(property, sourceCode);
+      // A carried line comment would swallow the rest of the line, so anything
+      // holding one has to be laid out across multiple lines
+      const carriesLineComment = comments.some(
+        (comment) => comment.type === AST_TOKEN_TYPES.Line,
       );
 
-      const flattenedProperties = {
-        ...(preflattened ?? flattenObject(node, sourceCode)),
-      };
-      if (idProperty && idProperty.type === AST_NODE_TYPES.Property) {
-        delete flattenedProperties['id'];
-      }
-      const entries = Object.entries(flattenedProperties);
-      const propertyComma = ',';
-
-      // Start with the id property if it exists
-      let result = '{\n';
-      if (idProperty && idProperty.type === AST_NODE_TYPES.Property) {
-        result += `  id: ${sourceCode.getText(
-          idProperty.value,
-        )}${propertyComma}\n`;
+      if (ownLineIndent === null && !carriesLineComment) {
+        return [...commentTexts, printedEntries.join(', ')].join(' ');
       }
 
-      // Add the flattened properties (always include trailing commas for multiline objects)
-      entries.forEach(([key, value]) => {
-        const printedKey = needsQuoting(key) ? `'${key}'` : key;
-        result += `  ${printedKey}: ${value}${propertyComma}\n`;
-      });
+      const indent =
+        ownLineIndent ??
+        `${getLineIndent(
+          sourceCode.lines[property.loc.start.line - 1] ?? '',
+        )}  `;
+      const separator = `\n${indent}`;
+      return [...commentTexts, printedEntries.join(`,${separator}`)].join(
+        separator,
+      );
+    }
 
-      result += '}';
-      return result;
+    // Replace only the properties that actually need flattening, leaving every
+    // other property, its comments, and the original indentation untouched
+    function buildFieldPathFixes(
+      node: TSESTree.ObjectExpression,
+      sourceCode: TSESLint.SourceCode,
+      fixer: TSESLint.RuleFixer,
+    ): TSESLint.RuleFix[] {
+      const fixes: TSESLint.RuleFix[] = [];
+
+      for (const property of node.properties) {
+        if (
+          property.type !== AST_NODE_TYPES.Property ||
+          property.computed ||
+          property.method ||
+          property.kind !== 'init' ||
+          property.value.type !== AST_NODE_TYPES.ObjectExpression
+        ) {
+          continue;
+        }
+
+        const keyText = getPropertyKeyText(property);
+        // Root-level numeric keys model array-style buckets rather than
+        // Firestore document fields, so they are never flattened
+        if (keyText === undefined || isNumericKey(property)) {
+          continue;
+        }
+
+        const entries = collectFieldPathEntries(
+          property.value,
+          keyText,
+          sourceCode,
+        );
+        if (!entries) {
+          continue;
+        }
+
+        fixes.push(
+          fixer.replaceTextRange(
+            property.range,
+            renderFlattenedProperty(property, entries, sourceCode),
+          ),
+        );
+      }
+
+      return fixes;
     }
 
     function getPropertyKeyText(
@@ -268,7 +387,6 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
     type ViolationDetails = {
       topLevelKey: string;
       exampleFieldPath: string;
-      flattenedProperties: Record<string, string>;
     };
 
     function extractViolationDetails(
@@ -310,7 +428,6 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       return {
         topLevelKey: propertyKeyText ?? 'nested field',
         exampleFieldPath,
-        flattenedProperties,
       };
     }
 
@@ -364,12 +481,8 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
             exampleFieldPath: violationDetails.exampleFieldPath,
           },
           fix(fixer) {
-            const newText = convertToFieldPathSyntax(
-              firstArg,
-              sourceCode,
-              violationDetails.flattenedProperties,
-            );
-            return fixer.replaceText(firstArg, newText);
+            const fixes = buildFieldPathFixes(firstArg, sourceCode, fixer);
+            return fixes.length > 0 ? fixes : null;
           },
         });
       },

@@ -395,9 +395,9 @@ ruleTesterTs.run(
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
-  id: tournamentId,
-  'roles.contributor': FieldValue.arrayUnion(contributorId),
-});
+          id: tournamentId,
+          'roles.contributor': FieldValue.arrayUnion(contributorId),
+        });
       `,
       },
       // Multiple nested fields
@@ -422,10 +422,10 @@ ruleTesterTs.run(
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
-  id: tournamentId,
-  'metadata.createdAt': new Date(),
-  'metadata.updatedBy': userId,
-});
+          id: tournamentId,
+          'metadata.createdAt': new Date(),
+          'metadata.updatedBy': userId,
+        });
       `,
       },
       // Deeply nested fields
@@ -455,10 +455,10 @@ ruleTesterTs.run(
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
-  id: tournamentId,
-  'settings.display.theme': 'dark',
-  'settings.display.fontSize': 14,
-});
+          id: tournamentId,
+          'settings.display.theme': 'dark',
+          'settings.display.fontSize': 14,
+        });
       `,
       },
       // Using updateIfExists method
@@ -483,9 +483,9 @@ ruleTesterTs.run(
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.updateIfExists({
-  id: tournamentId,
-  'roles.contributor': FieldValue.arrayUnion(contributorId),
-});
+          id: tournamentId,
+          'roles.contributor': FieldValue.arrayUnion(contributorId),
+        });
       `,
       },
       // Mixed nested and non-nested fields
@@ -512,11 +512,11 @@ ruleTesterTs.run(
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
-  id: tournamentId,
-  name: 'Tournament Name',
-  'metadata.createdAt': new Date(),
-  active: true,
-});
+          id: tournamentId,
+          name: 'Tournament Name',
+          'metadata.createdAt': new Date(),
+          active: true,
+        });
       `,
       },
       // Nested object with string literal key
@@ -541,9 +541,9 @@ ruleTesterTs.run(
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
-  id: tournamentId,
-  'roles.contributor': FieldValue.arrayUnion(contributorId),
-});
+          id: tournamentId,
+          'roles.contributor': FieldValue.arrayUnion(contributorId),
+        });
       `,
       },
       // Dot-notation key with nested object should not drive topLevelKey
@@ -569,10 +569,10 @@ ruleTesterTs.run(
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
-  id: tournamentId,
-  'metadata.version.major': '1.0',
-  'metadata.description': 'desc',
-});
+          id: tournamentId,
+          'metadata.version.major': '1.0',
+          'metadata.description': 'desc',
+        });
       `,
       },
       // Multiple levels of nesting with mixed types
@@ -601,11 +601,11 @@ ruleTesterTs.run(
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
-  id: tournamentId,
-  'config.ui.theme': 'dark',
-  'config.api.timeout': 5000,
-  'config.features.enabled': true,
-});
+          id: tournamentId,
+          'config.ui.theme': 'dark',
+          'config.api.timeout': 5000,
+          'config.features.enabled': true,
+        });
       `,
       },
       // Nested object with FieldValue operations
@@ -629,10 +629,10 @@ ruleTesterTs.run(
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
-  id: tournamentId,
-  'stats.views': FieldValue.increment(1),
-  'stats.lastViewed': FieldValue.serverTimestamp(),
-});
+          id: tournamentId,
+          'stats.views': FieldValue.increment(1),
+          'stats.lastViewed': FieldValue.serverTimestamp(),
+        });
       `,
       },
       // Nested object with null/undefined values
@@ -661,11 +661,11 @@ ruleTesterTs.run(
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
-  id: tournamentId,
-  'metadata.description': null,
-  'metadata.tags': undefined,
-  'metadata.version': '1.0',
-});
+          id: tournamentId,
+          'metadata.description': null,
+          'metadata.tags': undefined,
+          'metadata.version': '1.0',
+        });
       `,
       },
       // Nested object with numeric values
@@ -690,11 +690,11 @@ ruleTesterTs.run(
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
-  id: tournamentId,
-  'scores.total': 100,
-  'scores.average': 85.5,
-  'scores.count': 0,
-});
+          id: tournamentId,
+          'scores.total': 100,
+          'scores.average': 85.5,
+          'scores.count': 0,
+        });
       `,
       },
       // Nested object with boolean values
@@ -719,11 +719,11 @@ ruleTesterTs.run(
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
-  id: tournamentId,
-  'flags.active': true,
-  'flags.public': false,
-  'flags.featured': true,
-});
+          id: tournamentId,
+          'flags.active': true,
+          'flags.public': false,
+          'flags.featured': true,
+        });
       `,
       },
       // Nested object with array values
@@ -747,10 +747,10 @@ ruleTesterTs.run(
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
-  id: tournamentId,
-  'data.tags': ['tag1', 'tag2'],
-  'data.categories': [],
-});
+          id: tournamentId,
+          'data.tags': ['tag1', 'tag2'],
+          'data.categories': [],
+        });
       `,
       },
       // Nested object with Date values
@@ -778,10 +778,10 @@ ruleTesterTs.run(
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
-  id: tournamentId,
-  'timestamps.created': new Date(),
-  'timestamps.updated': new Date('2023-01-01'),
-});
+          id: tournamentId,
+          'timestamps.created': new Date(),
+          'timestamps.updated': new Date('2023-01-01'),
+        });
       `,
       },
       // Very deeply nested object (4 levels)
@@ -812,9 +812,9 @@ ruleTesterTs.run(
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
-  id: tournamentId,
-  'deep.level1.level2.level3': 'value',
-});
+          id: tournamentId,
+          'deep.level1.level2.level3': 'value',
+        });
       `,
       },
       // Multiple separate nested objects
@@ -841,11 +841,11 @@ ruleTesterTs.run(
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
-  id: tournamentId,
-  'metadata.version': '1.0',
-  'settings.theme': 'dark',
-  'stats.count': 0,
-});
+          id: tournamentId,
+          'metadata.version': '1.0',
+          'settings.theme': 'dark',
+          'stats.count': 0,
+        });
       `,
       },
       // Nested object without id field
@@ -870,9 +870,9 @@ ruleTesterTs.run(
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
-  name: 'Tournament Name',
-  'metadata.version': '1.0',
-});
+          name: 'Tournament Name',
+          'metadata.version': '1.0',
+        });
       `,
       },
       // Nested object with mixed property key types
@@ -901,11 +901,11 @@ ruleTesterTs.run(
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
-  id: tournamentId,
-  'data.string-key': 'value1',
-  'data.numericKey': 'value2',
-  'data.123': 'value3',
-});
+          id: tournamentId,
+          'data.string-key': 'value1',
+          'data.numericKey': 'value2',
+          'data.123': 'value3',
+        });
       `,
       },
       // Nested object with special characters in values
@@ -930,11 +930,11 @@ ruleTesterTs.run(
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
-  id: tournamentId,
-  'text.title': 'Title with "quotes"',
-  'text.description': \`Template \${literal}\`,
-  'text.regex': '/pattern/g',
-});
+          id: tournamentId,
+          'text.title': 'Title with "quotes"',
+          'text.description': \`Template \${literal}\`,
+          'text.regex': '/pattern/g',
+        });
       `,
       },
       // Different DocSetter variable names
@@ -959,9 +959,9 @@ ruleTesterTs.run(
         output: `
         const setter = new DocSetter<Tournament>(tournamentRef.parent);
         await setter.set({
-  id: tournamentId,
-  'roles.contributor': FieldValue.arrayUnion(contributorId),
-});
+          id: tournamentId,
+          'roles.contributor': FieldValue.arrayUnion(contributorId),
+        });
       `,
       },
       // DocSetter with different generic type
@@ -986,10 +986,10 @@ ruleTesterTs.run(
         output: `
         const userSetter = new DocSetter<User>(userRef.parent);
         await userSetter.set({
-  id: userId,
-  'profile.name': 'John Doe',
-  'profile.age': 30,
-});
+          id: userId,
+          'profile.name': 'John Doe',
+          'profile.age': 30,
+        });
       `,
       },
       // Promise chain with nested object
@@ -1014,9 +1014,9 @@ ruleTesterTs.run(
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         docSetter.set({
-  id: tournamentId,
-  'metadata.version': '1.0',
-}).then(() => console.log('done'));
+          id: tournamentId,
+          'metadata.version': '1.0',
+        }).then(() => console.log('done'));
       `,
       },
       // Nested object with trailing commas
@@ -1044,10 +1044,10 @@ ruleTesterTs.run(
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
-  id: tournamentId,
-  'metadata.version': '1.0',
-  'metadata.author': 'system',
-});
+          id: tournamentId,
+          'metadata.version': '1.0',
+          'metadata.author': 'system',
+        });
       `,
       },
       // Multiple DocSetter instances with nested objects
@@ -1086,13 +1086,13 @@ ruleTesterTs.run(
         const tournamentSetter = new DocSetter<Tournament>(tournamentRef);
         const userSetter = new DocSetter<User>(userRef);
         await tournamentSetter.set({
-  id: tournamentId,
-  'metadata.version': '1.0',
-});
+          id: tournamentId,
+          'metadata.version': '1.0',
+        });
         await userSetter.set({
-  id: userId,
-  'profile.name': 'John',
-});
+          id: userId,
+          'profile.name': 'John',
+        });
       `,
       },
     ],
