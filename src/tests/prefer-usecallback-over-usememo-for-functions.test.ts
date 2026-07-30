@@ -1136,6 +1136,241 @@ const C = () => {
   return [alpha, beta];
 };`,
       },
+      // ------------------------------------------------------------------
+      // Issue #1447: unwrapping the outer callback collapses the text around
+      // the returned function. Every comment in that text has to come back out
+      // on the line it occupied, because a directive whose line survives the
+      // rewrite must keep governing the same line.
+      // ------------------------------------------------------------------
+      // Issue #1447: the reproduction — a directive between the returned
+      // function and the dependency array
+      {
+        code: `import { useMemo } from 'react';
+function Component() {
+  const handleClick = useMemo(() => {
+    return () => {
+      console.log('Button clicked');
+    };
+  // eslint-disable-next-line no-console
+  }, []);
+  return <button onClick={handleClick}>Click me</button>;
+}`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('handleClick') },
+          },
+        ],
+        output: `import { useCallback } from 'react';
+function Component() {
+  const handleClick = useCallback(() => {
+      console.log('Button clicked');
+    }
+  // eslint-disable-next-line no-console
+  , []);
+  return <button onClick={handleClick}>Click me</button>;
+}`,
+      },
+      // Issue #1447: a comment inside the returned function is untouched text,
+      // and must stay that way
+      {
+        code: `import { useMemo } from 'react';
+const C = () => {
+  const cb = useMemo(() => {
+    return () => {
+      // keep this note
+      doWork();
+    };
+  }, []);
+  return cb;
+};`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: `import { useCallback } from 'react';
+const C = () => {
+  const cb = useCallback(() => {
+      // keep this note
+      doWork();
+    }, []);
+  return cb;
+};`,
+      },
+      // Issue #1447: a comment between `return` and the function it returns
+      {
+        code: `import { useMemo } from 'react';
+const C = () => {
+  const cb = useMemo(() => {
+    return /* keep me */ () => {};
+  }, []);
+  return cb;
+};`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: `import { useCallback } from 'react';
+const C = () => {
+  const cb = useCallback(
+    /* keep me */ () => {}, []);
+  return cb;
+};`,
+      },
+      // Issue #1447: a directive on its own line inside the outer callback
+      // survives even though the `return` it governed is what gets collapsed —
+      // an unused directive is visible to --report-unused-disable-directives,
+      // whereas a dropped one silently stops suppressing
+      {
+        code: `import { useMemo } from 'react';
+const C = () => {
+  const cb = useMemo(() => {
+    // eslint-disable-next-line consistent-return
+    return () => {};
+  }, []);
+  return cb;
+};`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: `import { useCallback } from 'react';
+const C = () => {
+  const cb = useCallback(
+    // eslint-disable-next-line consistent-return
+    () => {}, []);
+  return cb;
+};`,
+      },
+      // Issue #1447: blank lines around a directive are kept, so the line it
+      // governs after the rewrite is the line it governed before
+      {
+        code: `import { useMemo } from 'react';
+const C = () => {
+  const cb = useMemo(() => {
+    return () => {};
+
+    // eslint-disable-next-line no-console
+  }, []);
+  return cb;
+};`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: `import { useCallback } from 'react';
+const C = () => {
+  const cb = useCallback(() => {}
+
+    // eslint-disable-next-line no-console
+  , []);
+  return cb;
+};`,
+      },
+      // Issue #1447: comments in both collapsed spans at once
+      {
+        code: `import { useMemo } from 'react';
+const C = () => {
+  const cb = useMemo(() => {
+    // before
+    return () => {};
+    // after
+  }, []);
+  return cb;
+};`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: `import { useCallback } from 'react';
+const C = () => {
+  const cb = useCallback(
+    // before
+    () => {}
+    // after
+  , []);
+  return cb;
+};`,
+      },
+      // Issue #1447: a comment trailing the returned function on its own line
+      {
+        code: `import { useMemo } from 'react';
+const C = () => {
+  const cb = useMemo(() => {
+    return () => {}; // tail
+  }, []);
+  return cb;
+};`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: `import { useCallback } from 'react';
+const C = () => {
+  const cb = useCallback(() => {} // tail
+  , []);
+  return cb;
+};`,
+      },
+      // Issue #1447: the implicit-return shape carries its comment too
+      {
+        code: `import { useMemo } from 'react';
+const C = () => { const cb = useMemo(() => /* inner */ () => {}, []); return cb; };`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: `import { useCallback } from 'react';
+const C = () => { const cb = useCallback(/* inner */ () => {}, []); return cb; };`,
+      },
+      // Issue #1447: text outside the collapsed spans — around the callee, the
+      // dependency array and the closing paren — is never re-emitted, so it
+      // stays byte-identical
+      {
+        code: `import { useMemo } from 'react';
+const C = () => {
+  const cb = useMemo /* memoize */ (() => () => {}, /* stable */ [] /* deps */);
+  return cb;
+};`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: `import { useCallback } from 'react';
+const C = () => {
+  const cb = useCallback /* memoize */ (() => {}, /* stable */ [] /* deps */);
+  return cb;
+};`,
+      },
+      // Issue #1447: a missing dependency array is still supplied by the fix
+      {
+        code: `import { useMemo } from 'react';
+const C = () => { const cb = useMemo(() => () => {}); return cb; };`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: `import { useCallback } from 'react';
+const C = () => { const cb = useCallback(() => {}, []); return cb; };`,
+      },
     ],
   },
 );
@@ -1463,6 +1698,20 @@ const C = () => {
     expect(messages).toHaveLength(1);
   });
 
+  it('keeps a directive that governs a line the rewrite preserves', () => {
+    const { output } = lint(`import { useMemo } from 'react';
+const C = () => {
+  const cb = useMemo(() => {
+    // eslint-disable-next-line no-console
+    return () => console.log('x');
+  }, []);
+  return cb;
+};
+`);
+
+    expect(output).toContain('// eslint-disable-next-line no-console');
+  });
+
   it('keeps the import usable when only the last violation survives a block disable', () => {
     const { output } = lint(`import { useMemo } from 'react';
 const C = () => {
@@ -1478,5 +1727,76 @@ const C = () => {
     expect(output).toContain('const alpha = useMemo(() => () => {}, []);');
     expect(output).toContain('const beta = useCallback(() => {}, []);');
     expectEveryHookCallBound(output);
+  });
+});
+
+// Issue #1447: a directive destroyed by a fix changes which rules report, which
+// only a second rule can demonstrate. These cases lint with `no-console` enabled
+// beside this rule and assert the suppression the file started with still holds
+// after `--fix`.
+describe('prefer-usecallback-over-usememo-for-functions: directives survive the unwrap (issue #1447)', () => {
+  const RULE_ID =
+    '@blumintinc/blumint/prefer-usecallback-over-usememo-for-functions';
+
+  const lintWithNoConsole = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      preferUseCallbackOverUseMemoForFunctions as unknown as Rule.RuleModule,
+    );
+    const config = {
+      parser: '@typescript-eslint/parser',
+      parserOptions: {
+        ecmaVersion: 2018 as const,
+        sourceType: 'module' as const,
+        ecmaFeatures: { jsx: true },
+      },
+      rules: {
+        [RULE_ID]: 'error' as const,
+        'no-console': 'error' as const,
+      },
+    };
+    return linter.verifyAndFix(code, config, 'Component.tsx');
+  };
+
+  it('keeps no-console suppressed when the directive sits above the returned function', () => {
+    const code = `import { useMemo } from 'react';
+const C = () => {
+  const cb = useMemo(() => {
+    // eslint-disable-next-line no-console
+    return () => console.log('x');
+  }, []);
+  return cb;
+};
+`;
+
+    const { output, messages } = lintWithNoConsole(code);
+
+    expect(output).toContain('// eslint-disable-next-line no-console');
+    expect(output).toContain("console.log('x')");
+    expect(messages).toHaveLength(0);
+  });
+
+  it('keeps no-console suppressed when the directive trails the returned function', () => {
+    const { output, messages } =
+      lintWithNoConsole(`import { useMemo } from 'react';
+const C = () => {
+  const cb = useMemo(() => {
+    return () => {
+      // eslint-disable-next-line no-console
+      console.log('x');
+    };
+  }, []);
+  return cb;
+};
+`);
+
+    expect(output).toContain('// eslint-disable-next-line no-console');
+    expect(messages).toHaveLength(0);
   });
 });

@@ -139,6 +139,36 @@ import { useCallback } from '../hooks';
 const cb = useMemo(() => () => {}, []); // reported, not fixed
 ```
 
+### Comments survive the unwrap
+
+Converting the call collapses the wrapper around the returned function — the
+`() => {` and `return` before it, the `;` and `}` after it. The fix splices those
+tokens out instead of re-printing the call, so the returned function, the type
+arguments, the dependency array and every byte between them are left exactly as
+written. Comments caught inside the collapsed wrapper are emitted back with the
+line breaks that framed them, which keeps an `eslint-disable-next-line` in front
+of the same line it governed:
+
+```jsx
+// before
+const cb = useMemo(() => {
+  // eslint-disable-next-line no-console
+  return () => console.log('x');
+}, []);
+
+// after — the directive still suppresses the console call
+const cb = useCallback(
+  // eslint-disable-next-line no-console
+  () => console.log('x'), []);
+```
+
+A comment is never dropped, so the fix is never declined on account of one:
+every comment in the collapsed wrapper has a landing place inside the emitted
+argument list. When a directive governed the `return` line itself, the directive
+is kept even though the `return` is gone; the result is an unused directive,
+which `--report-unused-disable-directives` surfaces, rather than a suppression
+that silently stops applying.
+
 ### Interaction with inline disable comments
 
 The import edit rides on a single violation's fix, so it is attached to the
