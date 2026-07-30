@@ -64,12 +64,16 @@ function SignInButton() {
 
 ## Valid
 
+These declare `assumeAllUseAreMemoized: true` for the same reason the invalid examples below do: under the default options the rule does not recognize `useAuthSubmit`/`useUserContext` as returning memoized callbacks at all, so it would never reach the logic these examples exist to demonstrate. Each wrapper here is allowed *despite* the callback being recognized as memoized.
+
 ```tsx
+// eslint-options: {"assumeAllUseAreMemoized": true}
 const { signIn } = useAuthSubmit();
 return <Button onClick={signIn} />;
 ```
 
 ```tsx
+// eslint-options: {"assumeAllUseAreMemoized": true}
 const { updateUser } = useUserContext();
 const onSubmit = useCallback((e) => {
   e.preventDefault();
@@ -79,6 +83,7 @@ const onSubmit = useCallback((e) => {
 ```
 
 ```tsx
+// eslint-options: {"assumeAllUseAreMemoized": true}
 const { signIn } = useAuthSubmit();
 const onClick = useCallback(() => {
   track('sign_in');
@@ -88,6 +93,7 @@ const onClick = useCallback(() => {
 ```
 
 ```tsx
+// eslint-options: {"assumeAllUseAreMemoized": true}
 // Transforming arguments; multiple dependencies
 const { signIn } = useAuthSubmit();
 const onClick = useCallback(() => signIn(username), [signIn, username]);
@@ -95,19 +101,24 @@ const onClick = useCallback(() => signIn(username), [signIn, username]);
 
 ## Invalid
 
+`useAuthSubmit` and `useSomething` are only treated as returning memoized callbacks once the rule is told so. Each example below therefore declares `assumeAllUseAreMemoized: true`; naming the hooks in `memoizedHookNames` produces the same reports.
+
 ```tsx
+// eslint-options: {"assumeAllUseAreMemoized": true}
 // ✖ Redundant direct wrapper
 const { signIn } = useAuthSubmit();
 const onClick = useCallback(signIn, [signIn]);
 ```
 
 ```tsx
+// eslint-options: {"assumeAllUseAreMemoized": true}
 // ✖ Redundant trivial wrapper
 const { signIn } = useAuthSubmit();
 const onClick = useCallback(() => signIn(), [signIn]);
 ```
 
 ```tsx
+// eslint-options: {"assumeAllUseAreMemoized": true}
 // ✖ Redundant trivial wrapper on object ref
 const svc = useSomething();
 const onClick = useCallback(() => svc.handle(), [svc]);

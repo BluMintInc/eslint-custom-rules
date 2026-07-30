@@ -38,25 +38,32 @@ Examples of this pattern: `assertCrewRolesExclusive` defined inside `modifyRoleM
 ### Incorrect
 
 ```ts
-// modifyRoleMembers.f.ts — Cloud Function entry-point file
+// File: functions/src/callable/modifyRoleMembers.f.ts — Cloud Function entry-point file
+// ✖ Spans more than `minLines` source lines, is pure, and is not the file's primary export
 const assertCrewRolesExclusive = (roles, rolesExisting, context) => {
   const rolesToAdd = new Set(roles);
+  const conflicts = [];
   for (const roleToAdd of roles) {
     const conflicting = MUTUALLY_EXCLUSIVE_CREW_ROLE[roleToAdd];
     if (!conflicting) continue;
     const members = rolesExisting[conflicting];
-    if ((members && context.memberId in members) || rolesToAdd.has(conflicting)) {
-      throw new HttpsError({ code: 'internal', message: '...' });
+    const heldByMember = members && context.memberId in members;
+    if (heldByMember || rolesToAdd.has(conflicting)) {
+      conflicts.push(conflicting);
     }
   }
-  // ~12+ statements, pure, not the file's primary export
+  if (conflicts.length > 0) {
+    throw new HttpsError({ code: 'internal', message: '...' });
+  }
+  return rolesToAdd;
 };
 
 export default onCall(authenticatedOnly(modifyRoleMembers));
 ```
 
 ```ts
-// someEntry.f.ts
+// File: functions/src/callable/someEntry.f.ts
+// ✖ Eight body statements, so it clears `minStatements` on its own
 function validatePayload(data, schema, options) {
   const result = schema.safeParse(data);
   const errors = [];
@@ -64,7 +71,8 @@ function validatePayload(data, schema, options) {
   const normalized = options.strict ? result : data;
   const validated = { ...normalized, timestamp: Date.now() };
   const final = JSON.stringify(validated);
-  return { validated, final, errors };
+  const checksum = createHash(final);
+  return { validated, final, errors, checksum };
 }
 
 export default onCall(handler);
