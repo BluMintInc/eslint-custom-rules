@@ -1,5 +1,75 @@
 [
   {
+    "version": "1.20.32",
+    "date": "2026-07-30T12:36:24.525Z",
+    "rules": [
+      {
+        "name": "enforce-microdiff",
+        "changeType": "fix",
+        "issues": [
+          1429
+        ],
+        "summary": "decline the fix when `diff` is already bound (closes #1429)"
+      },
+      {
+        "name": "enforce-stable-hash-spread-props",
+        "changeType": "fix",
+        "issues": [
+          1430
+        ],
+        "summary": "decline the fix when `stableHash` is already bound (closes #1430)"
+      },
+      {
+        "name": "fast-deep-equal-over-microdiff",
+        "changeType": "fix",
+        "issues": [
+          1435
+        ],
+        "summary": "decline the fix when `isEqual` is already bound (closes #1435)"
+      },
+      {
+        "name": "prefer-global-router-state-key",
+        "changeType": "fix",
+        "issues": [
+          1431
+        ],
+        "summary": "decline the fix when the derived query-key constant is already bound (closes #1431)"
+      },
+      {
+        "name": "prefer-next-dynamic",
+        "changeType": "fix",
+        "issues": [
+          1432
+        ],
+        "summary": "decline the fix when `dynamic` is already bound (closes #1432)"
+      },
+      {
+        "name": "prefer-use-deep-compare-memo",
+        "changeType": "fix",
+        "issues": [
+          1436
+        ],
+        "summary": "decline the fix when `useDeepCompareMemo` is already bound (closes #1436)"
+      },
+      {
+        "name": "require-dynamic-firebase-imports",
+        "changeType": "fix",
+        "issues": [
+          1433
+        ],
+        "summary": "decline the fix when a hoisted type name is already bound (closes #1433)"
+      },
+      {
+        "name": "require-memoize-jsx-returners",
+        "changeType": "fix",
+        "issues": [
+          1434
+        ],
+        "summary": "decline the fix when `Memoize` is already bound (closes #1434)"
+      }
+    ]
+  },
+  {
     "version": "1.20.31",
     "date": "2026-07-30T11:41:49.100Z",
     "rules": [
