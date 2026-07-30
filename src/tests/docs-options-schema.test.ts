@@ -32,16 +32,18 @@ const DOCS_DIR = path.join(__dirname, '../../docs/rules');
  *    `type: 'object'` with `additionalProperties: false`. Only the config-array
  *    layer behind the `ESLint` class validates, so the guard must go through
  *    `ESLint`, and the controls below prove it still catches a bad payload.
- * 2. Config examples appear in three forms. Reading only the
- *    `"rules": { ... }` block form covers well under half of them, and the
- *    inline directive form needs its unquoted rule id (which contains `/` and
- *    `@`) quoted before it parses. A form that silently fails to parse asserts
+ * 2. Config examples appear in four forms, and reading only the ones with a
+ *    `rules:` key finds 14 of the 34 rules that document a payload — most docs
+ *    show the entry bare, as `'<id>': ['error', {...}]`. The inline directive
+ *    form additionally needs its unquoted rule id (which contains `/` and `@`)
+ *    quoted before it parses, and a bare entry needs bracket matching that
+ *    honours strings and comments. A form that silently fails to parse asserts
  *    nothing — the hole #1466 closed for documented code blocks — so unparsed
- *    sites fail this suite by name.
+ *    sites fail this suite by name (#1471).
  */
 
 type ConfigSite = {
-  form: 'rules-block' | 'inline-directive' | 'options-hint';
+  form: 'rules-block' | 'inline-directive' | 'options-hint' | 'bare-entry';
   entry: unknown;
 };
 
@@ -71,6 +73,49 @@ function parseLoose(text: string): { ok: true; value: any } | { ok: false } {
   } catch {
     return { ok: false };
   }
+}
+
+const escapeRegExp = (text: string) =>
+  text.replace(/[.*+?^${}()|[\]\\/@-]/g, '\\$&');
+
+/**
+ * The `[...]` entry starting at `from`, honouring strings and comments so a
+ * bracket inside either does not close the payload early. Returns null when the
+ * brackets never balance.
+ */
+function balancedEntry(body: string, from: number): string | null {
+  let depth = 0;
+  let quote: string | null = null;
+  for (let i = from; i < body.length; i++) {
+    const ch = body[i];
+    const next = body[i + 1];
+    if (quote) {
+      if (ch === '\\') i++;
+      else if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') {
+      quote = ch;
+      continue;
+    }
+    if (ch === '/' && next === '/') {
+      i = body.indexOf('\n', i);
+      if (i === -1) return null;
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      const end = body.indexOf('*/', i + 2);
+      if (end === -1) return null;
+      i = end + 1;
+      continue;
+    }
+    if (ch === '[') depth++;
+    else if (ch === ']') {
+      depth--;
+      if (depth === 0) return body.slice(from, i + 1);
+    }
+  }
+  return null;
 }
 
 /** Every place a doc states this rule's own option payload. */
@@ -137,6 +182,33 @@ export function configSites(
         sites.push({ form: 'options-hint', entry: ['error', parsed.value] });
       } else {
         unparsed.push({ form: 'options-hint', snippet: hint[1].slice(0, 120) });
+      }
+    }
+
+    // Most docs show the rule entry on its own — `'<id>': ['error', {...}]` —
+    // with no enclosing `rules:` key, so gating on that key skips the majority
+    // of documented payloads without failing anything.
+    const entryStart = new RegExp(
+      `["']?${escapeRegExp(selfId)}["']?\\s*:\\s*(?=\\[)`,
+      'g',
+    );
+    let entryMatch: RegExpExecArray | null;
+    while ((entryMatch = entryStart.exec(body))) {
+      const from = entryMatch.index + entryMatch[0].length;
+      const slice = balancedEntry(body, from);
+      const parsed = slice ? parseLoose(slice) : { ok: false as const };
+      if (!parsed.ok) {
+        unparsed.push({
+          form: 'bare-entry',
+          snippet: (slice ?? body.slice(from, from + 120)).slice(0, 120),
+        });
+        continue;
+      }
+      // A wrapped entry is already recorded by the rules-block reader; keep one
+      // site per distinct payload so counts stay honest.
+      const encoded = JSON.stringify(parsed.value);
+      if (!sites.some((s) => JSON.stringify(s.entry) === encoded)) {
+        sites.push({ form: 'bare-entry', entry: parsed.value });
       }
     }
   }
@@ -206,16 +278,56 @@ export async function validationErrorFor(
   }
 }
 
-const ruleNames = Object.keys(plugin.rules)
-  .filter((name) => fs.existsSync(path.join(DOCS_DIR, `${name}.md`)))
-  .sort();
+const registeredRules = Object.keys(plugin.rules).sort();
+
+const hasDoc = (name: string) =>
+  fs.existsSync(path.join(DOCS_DIR, `${name}.md`));
+
+const ruleNames = registeredRules.filter(hasDoc);
 
 const docFor = (name: string) =>
   fs.readFileSync(path.join(DOCS_DIR, `${name}.md`), 'utf8');
 
+/**
+ * Every docs guard enumerates rules by filtering to those that already have a
+ * doc file, so a rule registered without `docs/rules/<rule>.md` drops out of
+ * all of them at once — examples unlinted, options unvalidated, shipped
+ * severity unchecked — and nothing fails (#1471). Assert the filter discards
+ * nothing, so the exemption cannot be taken silently.
+ */
+describe('every rule is reachable by the docs guards', () => {
+  it('gives every registered rule a docs page', () => {
+    expect(registeredRules.filter((name) => !hasDoc(name))).toEqual([]);
+  });
+
+  it('leaves no docs page without a registered rule', () => {
+    const documented = fs
+      .readdirSync(DOCS_DIR)
+      .filter((file) => file.endsWith('.md'))
+      .map((file) => file.replace(/\.md$/, ''));
+    expect(documented.filter((name) => !plugin.rules[name])).toEqual([]);
+  });
+
+  it('checks every registered rule, not a subset', () => {
+    expect(ruleNames).toEqual(registeredRules);
+  });
+});
+
 describe('documented rule options', () => {
   it('finds rule docs to check', () => {
     expect(ruleNames.length).toBeGreaterThan(150);
+  });
+
+  it('can enumerate the option names of every optioned rule', () => {
+    // A schema whose property names cannot be read would skip the
+    // "documents every option it declares" assertion below without failing.
+    const opaque = registeredRules.filter((name) => {
+      const schema = plugin.rules[name].meta?.schema;
+      const takesOptions =
+        !!schema && (Array.isArray(schema) ? schema.length > 0 : true);
+      return takesOptions && schemaOptionNames(schema) === null;
+    });
+    expect(opaque).toEqual([]);
   });
 
   it('reads config examples in every form the docs use', () => {
@@ -223,9 +335,11 @@ describe('documented rule options', () => {
     for (const name of ruleNames) {
       configSites(docFor(name), name).sites.forEach((s) => forms.add(s.form));
     }
-    // Losing a form silently shrinks coverage instead of failing, so pin all
-    // three: the inline-directive form alone carries more than half the sites.
+    // Losing a form silently shrinks coverage instead of failing, so pin every
+    // one: the bare-entry form alone carries most of the documented payloads,
+    // and gating on a `rules:` key once hid 20 of the 34 configured rules.
     expect([...forms].sort()).toEqual([
+      'bare-entry',
       'inline-directive',
       'options-hint',
       'rules-block',
@@ -294,6 +408,18 @@ describe('the guard catches what it claims to (controls)', () => {
     );
   });
 
+  it('reports a schema whose option names cannot be enumerated', () => {
+    // An options schema carrying no `properties` anywhere: the guard must call
+    // this unreadable rather than treat it as a rule with zero options.
+    expect(
+      schemaOptionNames([{ type: 'array', items: { type: 'string' } }]),
+    ).toBeNull();
+    expect(schemaOptionNames([])).toEqual(new Set());
+    expect(
+      schemaOptionNames([{ type: 'object', properties: { allowed: {} } }]),
+    ).toEqual(new Set(['allowed']));
+  });
+
   it('reads an inline directive whose rule id is unquoted', () => {
     const md = [
       '```ts',
@@ -315,6 +441,39 @@ describe('the guard catches what it claims to (controls)', () => {
       `  "rules": { "${PREFIX}some-rule": ["error", { not valid json ] }`,
       '```',
     ].join('\n');
-    expect(configSites(md, 'some-rule').unparsed).toHaveLength(1);
+    const { sites, unparsed } = configSites(md, 'some-rule');
+    expect(sites).toEqual([]);
+    expect(unparsed.length).toBeGreaterThan(0);
+  });
+
+  it('reads a bare rule entry that omits the rules wrapper', () => {
+    const md = [
+      '```js',
+      `'${PREFIX}some-rule': ['error', {`,
+      '  // a comment, a trailing comma, and a nested array',
+      "  names: ['a', 'b'],",
+      '}]',
+      '```',
+    ].join('\n');
+    const { sites, unparsed } = configSites(md, 'some-rule');
+    expect(unparsed).toEqual([]);
+    expect(sites).toEqual([
+      { form: 'bare-entry', entry: ['error', { names: ['a', 'b'] }] },
+    ]);
+  });
+
+  it('records a wrapped entry once, not twice', () => {
+    const md = [
+      '```json',
+      '{',
+      '  "rules": {',
+      `    "${PREFIX}some-rule": ["error", { "names": ["a"] }]`,
+      '  }',
+      '}',
+      '```',
+    ].join('\n');
+    expect(configSites(md, 'some-rule').sites).toEqual([
+      { form: 'rules-block', entry: ['error', { names: ['a'] }] },
+    ]);
   });
 });
