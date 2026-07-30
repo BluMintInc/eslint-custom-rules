@@ -1,5 +1,9 @@
 import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import {
+  createSuppressionChecker,
+  parseDisableDirectives,
+} from '../utils/disableDirectives';
 
 type MessageIds = 'preferFragment' | 'addFragmentImport';
 
@@ -24,6 +28,13 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
   defaultOptions: [],
   create(context) {
     const sourceCode = context.sourceCode;
+    // The `import { Fragment } from 'react'` edit rides on one violation's fix,
+    // making that violation the file's import carrier. ESLint builds fixes
+    // eagerly and drops inline-disabled reports afterwards, so a suppressed
+    // carrier would take the import down with it while the surviving
+    // violations still emit <Fragment>. Resolving suppression before the latch
+    // is read hands the carrier slot to the first violation that survives.
+    const isReportSuppressed = createSuppressionChecker(context);
     let hasFragmentImport = false;
     let reactImportNode: TSESTree.ImportDeclaration | null = null;
     let defaultReactImportNode: TSESTree.ImportDeclaration | null = null;
@@ -121,6 +132,34 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
     }
 
     /**
+     * Where a brand-new import statement can be spliced in without changing
+     * what the file's directives govern. A whole-line insertion directly before
+     * the first statement slides in between an `eslint-disable-next-line`
+     * comment and the line it applies to, silently retargeting that directive
+     * at the import. Anchoring above such comments keeps every directive
+     * pointed at the code its author aimed it at.
+     */
+    function findImportAnchor(): TSESTree.Node | TSESTree.Comment {
+      const firstStatement = sourceCode.ast.body[0];
+      let anchor: TSESTree.Node | TSESTree.Comment = firstStatement;
+
+      const leadingComments = sourceCode.getCommentsBefore(firstStatement);
+      for (let index = leadingComments.length - 1; index >= 0; index--) {
+        const comment = leadingComments[index];
+        const [directive] = parseDisableDirectives([comment]);
+        if (
+          directive?.kind !== 'disable-next-line' ||
+          comment.loc.end.line + 1 !== anchor.loc.start.line
+        ) {
+          break;
+        }
+        anchor = comment;
+      }
+
+      return anchor;
+    }
+
+    /**
      * Adds Fragment import to an appropriate React import or creates a new one
      */
     function addFragmentImport(fixer: TSESLint.RuleFixer) {
@@ -159,7 +198,7 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
       const importText = "import { Fragment } from 'react';\n";
       const indentation = sourceCode.text.match(/^[ \t]*/m)?.[0] || '';
       return fixer.insertTextBefore(
-        sourceCode.ast.body[0],
+        findImportAnchor(),
         indentation + importText,
       );
     }
@@ -203,6 +242,12 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
             messageId: 'preferFragment',
             data: { type: 'shorthand fragment (<>)' },
             fix(fixer) {
+              // A suppressed report is discarded together with its fix, so it
+              // must not claim the import carrier slot.
+              if (isReportSuppressed(node)) {
+                return null;
+              }
+
               const fixes: ReturnType<typeof fixer.replaceText>[] = [];
 
               // Add Fragment import if needed
@@ -295,6 +340,12 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
           messageId: 'preferFragment',
           data: { type: 'shorthand fragment (<>)' },
           fix(fixer) {
+            // A suppressed report is discarded together with its fix, so it
+            // must not claim the import carrier slot.
+            if (isReportSuppressed(node)) {
+              return null;
+            }
+
             const fixes: ReturnType<typeof fixer.replaceText>[] = [];
 
             // Add Fragment import if needed
@@ -355,6 +406,12 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
             messageId: 'preferFragment',
             data: { type: 'React.Fragment' },
             fix(fixer) {
+              // A suppressed report is discarded together with its fix, so it
+              // must not claim the import carrier slot.
+              if (isReportSuppressed(node.name)) {
+                return null;
+              }
+
               const fixes: ReturnType<typeof fixer.replaceText>[] = [];
 
               // Add Fragment import if needed
@@ -402,6 +459,12 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
           messageId: 'preferFragment',
           data: { type: 'React.Fragment' },
           fix(fixer) {
+            // A suppressed report is discarded together with its fix, so it
+            // must not claim the import carrier slot.
+            if (isReportSuppressed(node.name)) {
+              return null;
+            }
+
             const fixes: ReturnType<typeof fixer.replaceText>[] = [];
 
             // Add Fragment import if needed

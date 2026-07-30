@@ -46,6 +46,25 @@ const Component = () => (
 );
 ```
 
+### Interaction with inline disable comments
+
+The `import { Fragment } from 'react';` statement is added once per file,
+attached to the fix of the first violation that is **not** suppressed by an
+inline `eslint-disable` directive. Exempting an individual fragment therefore
+never strands the remaining `<Fragment>` elements without their import:
+
+```jsx
+// eslint-disable-next-line @blumintinc/blumint/prefer-fragment-component
+const Legacy = () => <>Left alone</>;
+
+const Modern = () => <>Fixed, and carries the import</>;
+```
+
+When every violation in a file is suppressed, no import is added at all. A new
+import is also placed *above* any `eslint-disable-next-line` comment that
+precedes the first statement, so the inserted line never becomes the line that
+directive governs.
+
 ## When Not To Use It
 
 Skip this rule if your project intentionally mixes fragment styles for brevity and you accept losing fragment props like `key` on shorthand fragments.
