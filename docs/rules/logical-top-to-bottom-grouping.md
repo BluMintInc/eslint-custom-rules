@@ -94,6 +94,9 @@ Two consequences worth knowing:
   by one constraint while another pulls it back toward its dependency. Those blocks are
   reported with no fix — a report you resolve by hand beats a fix that leaves a
   different violation behind. Restructure the block, or disable the rule for it.
+* **Comments travel with the statement they annotate.** A comment sharing a line with a
+  statement moves with it; a comment on its own line above a statement is treated as
+  that statement's preamble and moves with it too.
 
 ## When Not To Use It
 

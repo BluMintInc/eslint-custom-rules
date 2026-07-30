@@ -818,6 +818,116 @@ function inner() {
         { messageId: 'groupDerived' },
       ],
     },
+    // A comment sharing a line with a statement annotates it, so it travels with that
+    // statement instead of being stranded against whatever lands in its place (#1416).
+    {
+      code: `
+const base = getBase();
+const unrelated = 1; // keep this note
+const detail = base.value;
+`,
+      output: `
+const base = getBase();
+const detail = base.value;
+const unrelated = 1; // keep this note
+`,
+      errors: [{ messageId: 'groupDerived' }],
+    },
+    // A comment on its own line above a statement is that statement's preamble and
+    // stays above it, which is the boundary case the same-line rule must not disturb.
+    {
+      code: `
+const base = getBase();
+// describes unrelated
+const unrelated = 1;
+const detail = base.value;
+`,
+      output: `
+const base = getBase();
+const detail = base.value;
+// describes unrelated
+const unrelated = 1;
+`,
+      errors: [{ messageId: 'groupDerived' }],
+    },
+    {
+      code: `
+const base = getBase();
+const unrelated = 1; /* keep this */
+const detail = base.value;
+`,
+      output: `
+const base = getBase();
+const detail = base.value;
+const unrelated = 1; /* keep this */
+`,
+      errors: [{ messageId: 'groupDerived' }],
+    },
+    // Both comment kinds attach to one statement, so both move with it.
+    {
+      code: `
+const base = getBase();
+// describes unrelated
+const unrelated = 1; // and trails it
+const detail = base.value;
+`,
+      output: `
+const base = getBase();
+const detail = base.value;
+// describes unrelated
+const unrelated = 1; // and trails it
+`,
+      errors: [{ messageId: 'groupDerived' }],
+    },
+    // The relocated statement is the block's last, whose segment carries no trailing
+    // newline — its comment must not be joined onto the following line.
+    {
+      code: `
+const base = getBase();
+const unrelated = 1;
+const detail = base.value; // derived note
+`,
+      output: `
+const base = getBase();
+const detail = base.value; // derived note
+const unrelated = 1;
+`,
+      errors: [{ messageId: 'groupDerived' }],
+    },
+    // A comment on the statement the move lands after stays where it is.
+    {
+      code: `
+const base = getBase(); // source note
+const unrelated = 1;
+const detail = base.value;
+`,
+      output: `
+const base = getBase(); // source note
+const detail = base.value;
+const unrelated = 1;
+`,
+      errors: [{ messageId: 'groupDerived' }],
+    },
+    // Several statements carrying comments reorder in one fix, each keeping its own.
+    {
+      code: `
+const base = getBase();
+const unrelated = 1; // note A
+const detail = base.value;
+const other = getOther();
+const filler = 2; // note B
+const derived = other.value;
+`,
+      output: `
+const base = getBase();
+const detail = base.value;
+const unrelated = 1; // note A
+const other = getOther();
+const derived = other.value;
+const filler = 2; // note B
+`,
+      errors: [{ messageId: 'groupDerived' }, { messageId: 'groupDerived' }],
+    },
   ],
 });
 
@@ -975,6 +1085,21 @@ function inner() {
 }
 `;
 
+  const TRAILING_COMMENTS = `const base = getBase();
+const unrelated = 1; // note A
+const detail = base.value;
+const other = getOther();
+const filler = 2; /* note B */
+const derived = other.value;
+`;
+
+  // A comment on the block's last statement has no trailing newline to carry, so a
+  // reordering that relocates it is where line-joining would surface.
+  const TRAILING_COMMENT_LAST = `const base = getBase();
+const unrelated = 1;
+const detail = base.value; // derived note
+`;
+
   it.each([
     ['cross-handler ping-pong', PING_PONG],
     ['cross-handler ping-pong (opposite phase)', PING_PONG_MIRROR],
@@ -1027,6 +1152,8 @@ function inner() {
     ['multi-step side effects', MULTI_STEP_SIDE_EFFECTS],
     ['multi-step cross handler', MULTI_STEP_CROSS_HANDLER],
     ['interleaved fixtures', INTERLEAVED_FIXTURES],
+    ['trailing comments', TRAILING_COMMENTS],
+    ['a trailing comment on the last statement', TRAILING_COMMENT_LAST],
   ])('settles %s in a single fix pass', (_label, code) => {
     const result = fixToFixpoint(code);
 
@@ -1058,6 +1185,31 @@ const unrelated = 1;
 const other = getOther();
 const derived = other.value;
 const filler = 2;
+`);
+  });
+
+  // Guards the misattribution directly: every comment must end the pass on the line of
+  // the statement it started on, wherever that statement lands (#1416).
+  it('keeps each comment attached to its own statement across a reorder', () => {
+    const result = fixToFixpoint(TRAILING_COMMENTS);
+
+    expect(result.pendingFixes).toBe(0);
+    expect(result.text).toBe(`const base = getBase();
+const detail = base.value;
+const unrelated = 1; // note A
+const other = getOther();
+const derived = other.value;
+const filler = 2; /* note B */
+`);
+  });
+
+  it('relocates the block’s last statement without joining its comment', () => {
+    const result = fixToFixpoint(TRAILING_COMMENT_LAST);
+
+    expect(result.pendingFixes).toBe(0);
+    expect(result.text).toBe(`const base = getBase();
+const detail = base.value; // derived note
+const unrelated = 1;
 `);
   });
 
@@ -1123,6 +1275,8 @@ use(mockFetch, mockRefs);
     ['multi-step cross handler', MULTI_STEP_CROSS_HANDLER],
     ['sibling destructure pairs', SIBLING_DESTRUCTURE_PAIRS],
     ['interleaved fixtures', INTERLEAVED_FIXTURES],
+    ['trailing comments', TRAILING_COMMENTS],
+    ['a trailing comment on the last statement', TRAILING_COMMENT_LAST],
   ])('reaches an idempotent fixpoint for %s', (_label, code) => {
     const { text } = fixToFixpoint(code);
     const rerun = fixToFixpoint(text);

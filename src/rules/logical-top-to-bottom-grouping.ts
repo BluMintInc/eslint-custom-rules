@@ -1028,11 +1028,34 @@ function findEarliestSafeIndex(
   return targetIndex;
 }
 
+/**
+ * A comment sharing a line with the code before it annotates that code, so it belongs
+ * to the preceding statement even though it lexically precedes this one. Counting it as
+ * this statement's leading comment cuts the segment boundary mid-line, which strands
+ * the comment against the wrong statement as soon as either one moves.
+ *
+ * Comments from the first own-line one onward are this statement's: a run of own-line
+ * comments directly above it reads as its preamble.
+ */
+function getLeadingComments(
+  statement: TSESTree.Statement,
+  sourceCode: TSESLint.SourceCode,
+): TSESTree.Comment[] {
+  const comments = sourceCode.getCommentsBefore(statement);
+  const ownLine = comments.findIndex((comment) => {
+    const previous = sourceCode.getTokenBefore(comment, {
+      includeComments: true,
+    });
+    return !previous || previous.loc.end.line < comment.loc.start.line;
+  });
+  return ownLine === -1 ? [] : comments.slice(ownLine);
+}
+
 function getStartWithComments(
   statement: TSESTree.Statement,
   sourceCode: TSESLint.SourceCode,
 ): number {
-  const comments = sourceCode.getCommentsBefore(statement);
+  const comments = getLeadingComments(statement, sourceCode);
   const start =
     comments.length === 0 ? statement.range[0] : comments[0].range[0];
   const text = sourceCode.getText();
