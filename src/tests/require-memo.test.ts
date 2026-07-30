@@ -375,5 +375,174 @@ export const RenderRow = memo(function RenderRowUnmemoized({ row }) { return <tr
       filename: 'src/components/SomeComponent.tsx',
       name: 'RenderRow',
     }),
+
+    // ---------------------------------------------------------------------
+    // Colliding `memo` bindings: the report stands, the edit is withheld.
+    // ---------------------------------------------------------------------
+    withDefaults({
+      code: `const memo = 1;
+function Component({foo}) { return <div>{foo}</div>; }`,
+      output: null,
+      name: 'Component',
+    }),
+    withDefaults({
+      code: `let memo;
+function Component({foo}) { return <div>{foo}</div>; }`,
+      output: null,
+      name: 'Component',
+    }),
+    withDefaults({
+      code: `function memo(fn) { return fn; }
+export function Component({foo}) { return <div>{foo}</div>; }`,
+      output: null,
+      name: 'Component',
+    }),
+    withDefaults({
+      code: `class memo {}
+function Component({foo}) { return <div>{foo}</div>; }`,
+      output: null,
+      name: 'Component',
+    }),
+    withDefaults({
+      code: `import { memo } from 'react';
+function Component({foo}) { return <div>{foo}</div>; }`,
+      output: null,
+      name: 'Component',
+    }),
+    withDefaults({
+      code: `import * as memo from '../util/memo';
+function Component({foo}) { return <div>{foo}</div>; }`,
+      output: null,
+      name: 'Component',
+    }),
+    withDefaults({
+      code: `import memo from '../util/memo';
+function Component({foo}) { return <div>{foo}</div>; }`,
+      output: null,
+      name: 'Component',
+    }),
+    withDefaults({
+      code: `import type { memo } from '../util/memo';
+function Component({foo}) { return <div>{foo}</div>; }`,
+      output: null,
+      name: 'Component',
+    }),
+    withDefaults({
+      code: `import { type memo } from '../util/memo';
+function Component({foo}) { return <div>{foo}</div>; }`,
+      output: null,
+      name: 'Component',
+    }),
+    withDefaults({
+      code: `import { useState as memo } from 'react';
+function Component({foo}) { return <div>{foo}</div>; }`,
+      output: null,
+      name: 'Component',
+    }),
+    withDefaults({
+      code: `import { createMemo as memo } from '../util/memo';
+function Component({foo}) { return <div>{foo}</div>; }`,
+      output: null,
+      name: 'Component',
+    }),
+    // Shadowing parameter: the emitted call would bind to the parameter.
+    withDefaults({
+      code: `export function Component(memo) { return <div>{memo}</div>; }`,
+      output: null,
+      name: 'Component',
+    }),
+    // Shadow declared inside the component body.
+    withDefaults({
+      code: `function Component({foo}) {
+  const memo = foo;
+  return <div>{memo}</div>;
+}`,
+      output: null,
+      name: 'Component',
+    }),
+
+    // ---------------------------------------------------------------------
+    // Non-colliding paths: the edit must still land, byte-identical.
+    // ---------------------------------------------------------------------
+    // memo already imported from util/memo — reused, no duplicate specifier.
+    withDefaults({
+      code: `import { memo } from '../util/memo';
+export function Component({foo}) { return <div>{foo}</div>; }`,
+      output: `import { memo } from '../util/memo';
+export const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
+      name: 'Component',
+    }),
+    // Other named specifier from util/memo — the specifier list is extended.
+    withDefaults({
+      code: `import { memoWithDisplayName } from '../util/memo';
+function Component({foo}) { return <div>{foo}</div>; }`,
+      output: `import { memoWithDisplayName, memo } from '../util/memo';
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
+      name: 'Component',
+    }),
+    // Default import from util/memo cannot host a bare named specifier.
+    withDefaults({
+      code: `import memoDefault from '../util/memo';
+function Component({foo}) { return <div>{foo}</div>; }`,
+      output: `import memoDefault, { memo } from '../util/memo';
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
+      name: 'Component',
+    }),
+    // Namespace import cannot host a named specifier — own declaration.
+    withDefaults({
+      code: `import * as memoUtils from '../util/memo';
+function Component({foo}) { return <div>{foo}</div>; }`,
+      output: `import * as memoUtils from '../util/memo';
+import { memo } from '../util/memo';
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
+      name: 'Component',
+    }),
+    // A type-only import erases at compile time, so it cannot carry the value.
+    withDefaults({
+      code: `import type { MemoOptions } from '../util/memo';
+function Component({foo}) { return <div>{foo}</div>; }`,
+      output: `import type { MemoOptions } from '../util/memo';
+import { memo } from '../util/memo';
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
+      name: 'Component',
+    }),
+    // Side-effect-only import has no specifier to extend.
+    withDefaults({
+      code: `import '../util/memo';
+function Component({foo}) { return <div>{foo}</div>; }`,
+      output: `import '../util/memo';
+import { memo } from '../util/memo';
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
+      name: 'Component',
+    }),
+    // React default import: `React.memo` is a member access, not a `memo`
+    // binding, so it must not be mistaken for a collision.
+    withDefaults({
+      code: `import React from 'react';
+const Widget = React.memo(() => <div />);
+export function Component({foo}) { return <div>{foo}</div>; }`,
+      output: `import React from 'react';
+import { memo } from '../util/memo';
+const Widget = React.memo(() => <div />);
+export const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
+      name: 'Component',
+    }),
+    // A similarly named binding must not trigger the guard.
+    withDefaults({
+      code: `const memoize = (fn) => fn;
+function Component({foo}) { return <div>{foo}</div>; }`,
+      output: `import { memo } from '../util/memo';
+const memoize = (fn) => fn;
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
+      name: 'Component',
+    }),
+    // An aliased util/memo import leaves the `memo` name free.
+    withDefaults({
+      code: `import { memo as memoAliased } from '../util/memo';
+function Component({foo}) { return <div>{foo}</div>; }`,
+      output: `import { memo as memoAliased, memo } from '../util/memo';
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
+      name: 'Component',
+    }),
   ],
 });

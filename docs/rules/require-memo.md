@@ -72,3 +72,41 @@ function renderItem({ label }) {
   return <li>{label}</li>;
 }
 ```
+
+### Existing `memo` bindings
+
+The fix emits a **value named specifier** — `import { memo } from '../util/memo';`,
+or `, memo` appended to an existing value import of the helper (`, { memo }`
+beside a default import, and its own declaration beside a namespace or
+side-effect import, since `import * as memoUtils, memo from '...'` is a syntax
+error). A type-only declaration is never extended, because a specifier added to
+one erases at compile time and leaves the emitted `memo(...)` call unbound at
+runtime.
+
+Because the rewritten component spells `memo` bare, the fix is **withheld**
+whenever another `memo` is visible at the component — the violation is still
+reported, only the automated edit is skipped:
+
+```jsx
+const memo = 1;
+// Reported, not fixed: the inserted import would be a second declaration of
+// `memo` (TS2440, or TS2300 when the existing binding is itself an import).
+export function ProfileCard({ user }) {
+  return <UserAvatar {...user} />;
+}
+```
+
+```jsx
+// Reported, not fixed: the parameter would capture the emitted memo(...) call
+// with no compile error at all.
+export function ProfileCard(memo) {
+  return <UserAvatar memo={memo} />;
+}
+```
+
+A binding is reused instead of duplicated only when every declaration of it is a
+non-type-only `memo` specifier imported from `util/memo` under that exact name.
+An alias in either direction (`import { memo as m }`, `import { createMemo as memo }`)
+binds something else, so the first leaves the name free for the fix to claim and
+the second withholds the fix. `React.memo` is a member access on the default
+import rather than a `memo` binding, so it never trips the guard.
