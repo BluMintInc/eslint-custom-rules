@@ -46,7 +46,25 @@ function isHookCallee(
 type RuleExecutionContext = {
   context: TSESLint.RuleContext<MessageIds, Options>;
   sourceCode: TSESLint.SourceCode;
-  reportedStatements: WeakSet<TSESTree.Statement>;
+};
+
+type Violation = {
+  statement: TSESTree.Statement;
+  messageId: MessageIds;
+  data: Record<string, string>;
+  fromIndex: number;
+  toIndex: number;
+};
+
+/**
+ * Detection accumulator. Violations are collected rather than reported so the same
+ * logic can score a hypothetical reordering, which is what lets the rule prove a
+ * candidate ordering reports nothing before emitting it as a fix (#1405).
+ */
+type DetectionSink = {
+  sourceCode: TSESLint.SourceCode;
+  flagged: Set<TSESTree.Statement>;
+  violations: Violation[];
 };
 
 function isTypeNode(node: TSESTree.Node | undefined): boolean {
@@ -1040,51 +1058,28 @@ function getNextStart(
   return parent.range[1] - closingBraceOffset;
 }
 
-function buildMoveFix(
-  body: TSESTree.Statement[],
-  fromIndex: number,
-  toIndex: number,
-  parent: BlockLike,
-  sourceCode: TSESLint.SourceCode,
-  fixer: TSESLint.RuleFixer,
-): TSESLint.RuleFix {
-  const text = sourceCode.getText();
-
-  if (toIndex < fromIndex) {
-    const segmentStart = getStartWithComments(body[toIndex], sourceCode);
-    const movingStart = getStartWithComments(body[fromIndex], sourceCode);
-    const segmentEnd = getNextStart(body, fromIndex, parent, sourceCode);
-    const before = text.slice(segmentStart, movingStart);
-    const moving = text.slice(movingStart, segmentEnd).replace(/[ \t]+$/u, '');
-    const newText = moving + before;
-    return fixer.replaceTextRange([segmentStart, segmentEnd], newText);
-  }
-
-  const segmentStart = getStartWithComments(body[fromIndex], sourceCode);
-  const movingEnd = getNextStart(body, fromIndex, parent, sourceCode);
-  const segmentEnd = getStartWithComments(body[toIndex], sourceCode);
-  const moving = text.slice(segmentStart, movingEnd).replace(/[ \t]+$/u, '');
-  const between = text.slice(movingEnd, segmentEnd);
-  const newText = between + moving;
-  return fixer.replaceTextRange([segmentStart, segmentEnd], newText);
-}
-
 function truncateWithEllipsis(text: string, max = 60): string {
   return text.length <= max ? text : `${text.slice(0, max)}…`;
 }
 
-function reportOnce(
-  { context, reportedStatements }: RuleExecutionContext,
+/**
+ * At most one violation per statement: a statement can qualify under several
+ * handlers with contradictory targets, so the first handler to claim it wins and
+ * the handler call order in `detectViolations` is the tie-break.
+ */
+function record(
+  sink: DetectionSink,
   statement: TSESTree.Statement,
   messageId: MessageIds,
   data: Record<string, string>,
-  fix: (fixer: TSESLint.RuleFixer) => TSESLint.RuleFix | null,
+  fromIndex: number,
+  toIndex: number,
 ): void {
-  if (reportedStatements.has(statement)) {
+  if (sink.flagged.has(statement)) {
     return;
   }
-  reportedStatements.add(statement);
-  context.report({ node: statement, messageId, data, fix });
+  sink.flagged.add(statement);
+  sink.violations.push({ statement, messageId, data, fromIndex, toIndex });
 }
 
 function isGuardIfStatement(
@@ -1116,11 +1111,10 @@ function isGuardIfStatement(
 }
 
 function handleGuardHoists(
-  ruleContext: RuleExecutionContext,
+  sink: DetectionSink,
   body: TSESTree.Statement[],
-  parent: BlockLike,
 ): void {
-  const { sourceCode } = ruleContext;
+  const { sourceCode } = sink;
   body.forEach((statement, index) => {
     if (!isGuardIfStatement(statement)) {
       return;
@@ -1144,21 +1138,20 @@ function handleGuardHoists(
       return;
     }
 
-    reportOnce(
-      ruleContext,
+    record(
+      sink,
       statement,
       'moveGuardUp',
       { guard: truncateWithEllipsis(sourceCode.getText(statement.test)) },
-      (fixer) =>
-        buildMoveFix(body, index, targetIndex, parent, sourceCode, fixer),
+      index,
+      targetIndex,
     );
   });
 }
 
 function handleDerivedGrouping(
-  ruleContext: RuleExecutionContext,
+  sink: DetectionSink,
   body: TSESTree.Statement[],
-  parent: BlockLike,
 ): void {
   const declaredIndices = new Map<string, number>();
   /**
@@ -1168,19 +1161,16 @@ function handleDerivedGrouping(
    * from `b` even though `a` separates `b` from its declaration.
    */
   const sourceDeclarators = new Map<string, TSESTree.VariableDeclarator>();
-  const { sourceCode } = ruleContext;
 
   body.forEach((statement, index) => {
     if (isVariableDeclaration(statement)) {
       processVariableDeclaration(
-        ruleContext,
+        sink,
         statement,
         index,
         body,
         declaredIndices,
         sourceDeclarators,
-        parent,
-        sourceCode,
       );
     }
 
@@ -1196,14 +1186,12 @@ function isVariableDeclaration(
 }
 
 function processVariableDeclaration(
-  ruleContext: RuleExecutionContext,
+  sink: DetectionSink,
   statement: TSESTree.VariableDeclaration,
   index: number,
   body: TSESTree.Statement[],
   declaredIndices: Map<string, number>,
   sourceDeclarators: Map<string, TSESTree.VariableDeclarator>,
-  parent: BlockLike,
-  sourceCode: TSESLint.SourceCode,
 ): void {
   const dependencies = collectDependencies(statement);
   const priorDependencies = findPriorDependencies(
@@ -1211,10 +1199,7 @@ function processVariableDeclaration(
     declaredIndices,
   );
 
-  if (
-    priorDependencies.length === 0 ||
-    ruleContext.reportedStatements.has(statement)
-  ) {
+  if (priorDependencies.length === 0 || sink.flagged.has(statement)) {
     return;
   }
 
@@ -1255,15 +1240,12 @@ function processVariableDeclaration(
   }
 
   reportDerivedGroupingViolation(
-    ruleContext,
+    sink,
     statement,
     priorDependencies,
     declaredNames,
-    body,
     index,
     lastDependencyIndex,
-    parent,
-    sourceCode,
   );
 }
 
@@ -1324,36 +1306,26 @@ function hasBlockers(
 }
 
 function reportDerivedGroupingViolation(
-  ruleContext: RuleExecutionContext,
+  sink: DetectionSink,
   statement: TSESTree.Statement,
   priorDependencies: string[],
   declaredNames: Set<string>,
-  body: TSESTree.Statement[],
   currentIndex: number,
   lastDependencyIndex: number,
-  parent: BlockLike,
-  sourceCode: TSESLint.SourceCode,
 ): void {
   const dependency = priorDependencies[0];
   const name = declaredNames.values().next().value ?? 'value';
 
-  reportOnce(
-    ruleContext,
+  record(
+    sink,
     statement,
     'groupDerived',
     {
       dependency,
       name,
     },
-    (fixer) =>
-      buildMoveFix(
-        body,
-        currentIndex,
-        lastDependencyIndex + 1,
-        parent,
-        sourceCode,
-        fixer,
-      ),
+    currentIndex,
+    lastDependencyIndex + 1,
   );
 }
 
@@ -1530,12 +1502,9 @@ function isMutatedInLoop(
 }
 
 function handleLateDeclarations(
-  ruleContext: RuleExecutionContext,
+  sink: DetectionSink,
   body: TSESTree.Statement[],
-  parent: BlockLike,
 ): void {
-  const { sourceCode } = ruleContext;
-
   body.forEach((statement, index) => {
     if (!isLateDeclarationCandidate(statement)) {
       return;
@@ -1606,13 +1575,13 @@ function handleLateDeclarations(
       return;
     }
 
-    reportOnce(
-      ruleContext,
+    record(
+      sink,
       statement,
       'moveDeclarationCloser',
       { name },
-      (fixer) =>
-        buildMoveFix(body, index, usageIndex, parent, sourceCode, fixer),
+      index,
+      usageIndex,
     );
   });
 }
@@ -2125,11 +2094,10 @@ function isSideEffectExpression(
 }
 
 function handleSideEffects(
-  ruleContext: RuleExecutionContext,
+  sink: DetectionSink,
   body: TSESTree.Statement[],
-  parent: BlockLike,
 ): void {
-  const { sourceCode } = ruleContext;
+  const { sourceCode } = sink;
 
   body.forEach((statement, index) => {
     if (!isSideEffectExpression(statement)) {
@@ -2171,23 +2139,305 @@ function handleSideEffects(
     const effectText = truncateWithEllipsis(
       sourceCode.getText(statement).trim(),
     );
-    reportOnce(
-      ruleContext,
+    record(
+      sink,
       statement,
       'moveSideEffect',
       { effect: effectText },
-      (fixer) =>
-        buildMoveFix(body, index, targetIndex, parent, sourceCode, fixer),
+      index,
+      targetIndex,
     );
   });
 }
 
+/**
+ * Detection is pure over the statement order, so it scores a hypothetical
+ * reordering exactly as it scores the real one. Handler order is the tie-break for
+ * a statement several handlers claim — do not reorder these calls.
+ */
+function detectViolations(
+  sourceCode: TSESLint.SourceCode,
+  body: TSESTree.Statement[],
+): Violation[] {
+  const sink: DetectionSink = {
+    sourceCode,
+    flagged: new Set<TSESTree.Statement>(),
+    violations: [],
+  };
+  handleGuardHoists(sink, body);
+  handleDerivedGrouping(sink, body);
+  handleLateDeclarations(sink, body);
+  handleSideEffects(sink, body);
+  return sink.violations;
+}
+
+/**
+ * Mirrors the rotation `moveSegment` performs on text, at statement granularity, so a
+ * candidate ordering can be scored without rewriting and reparsing the source. The
+ * two must stay in step: the search verifies the order that the fix emits.
+ */
+function applyMove(
+  body: TSESTree.Statement[],
+  fromIndex: number,
+  toIndex: number,
+): TSESTree.Statement[] {
+  const next = [...body];
+  const [moved] = next.splice(fromIndex, 1);
+  next.splice(toIndex < fromIndex ? toIndex : toIndex - 1, 0, moved);
+  return next;
+}
+
+type Move = {
+  fromIndex: number;
+  toIndex: number;
+};
+
+/**
+ * Upper bound on candidate moves expanded per search node. Each candidate costs one
+ * full detection pass, so a node offering more violations than this has its tail
+ * ignored: the frontier stays bounded and the budget buys depth rather than width.
+ */
+const MAX_FIX_CANDIDATES = 12;
+
+/**
+ * Real code routinely needs a run of moves before every constraint holds: hoisting
+ * one `jest.mock` exposes the next, and interleaved `before`/`after` fixtures pass
+ * through orders with *more* violations than they started with before settling at
+ * zero. Satisfying every adjacency constraint at once therefore requires looking well
+ * past the first move.
+ *
+ * The block's violation count is the search's initial branching factor, so a lone
+ * violation starts a near-chain that can be followed far while a wide block cannot.
+ * Bodies too large for repeated detection are skipped outright, and `SEARCH_BUDGET`
+ * caps total detections whatever the shape — a block whose ordering cannot be settled
+ * inside the budget is reported without a fix.
+ */
+const SEARCH_DEPTH_CHAIN = 16;
+const SEARCH_DEPTH_BRANCHING = 6;
+const SEARCH_MAX_VIOLATIONS = 12;
+const SEARCH_MAX_STATEMENTS = 120;
+const SEARCH_BUDGET = 400;
+
+function searchDepthFor(
+  violationCount: number,
+  statementCount: number,
+): number {
+  if (statementCount > SEARCH_MAX_STATEMENTS) {
+    return 0;
+  }
+  if (violationCount === 1) {
+    return SEARCH_DEPTH_CHAIN;
+  }
+  if (violationCount <= SEARCH_MAX_VIOLATIONS) {
+    return SEARCH_DEPTH_BRANCHING;
+  }
+  return 0;
+}
+
+type SearchNode = {
+  order: TSESTree.Statement[];
+  violations: Violation[];
+  moves: Move[];
+};
+
+/**
+ * Statement identity is stable across reorderings, so the original indices of an
+ * order identify it uniquely and cheaply — which is what lets the search skip orders
+ * reachable by more than one sequence of moves.
+ */
+function orderKey(
+  order: TSESTree.Statement[],
+  indices: Map<TSESTree.Statement, number>,
+): string {
+  return order.map((statement) => indices.get(statement)).join(',');
+}
+
+/**
+ * Shortest sequence of moves reaching an order with **zero** violations, or null when
+ * the search bounds contain no such order.
+ *
+ * Breadth-first for two reasons: the emitted fix is then the smallest reordering that
+ * satisfies every constraint, and a block whose single named move already suffices
+ * yields exactly that move.
+ *
+ * Violation count is not used to prune: an order that trades one violation for two
+ * can still be the only route to a clean order, so the frontier is bounded by move
+ * count and detection budget rather than by any notion of progress. Only the
+ * zero-violation goal test decides whether a fix is emitted at all.
+ */
+function findResolvingMoves(
+  sourceCode: TSESLint.SourceCode,
+  body: TSESTree.Statement[],
+  violations: Violation[],
+  maxMoves: number,
+): Move[] | null {
+  if (maxMoves === 0) {
+    return null;
+  }
+
+  const indices = new Map<TSESTree.Statement, number>(
+    body.map((statement, index) => [statement, index]),
+  );
+  const seen = new Set<string>([orderKey(body, indices)]);
+  const queue: SearchNode[] = [{ order: body, violations, moves: [] }];
+  let budget = SEARCH_BUDGET;
+
+  while (queue.length > 0) {
+    const node = queue.shift() as SearchNode;
+    if (node.moves.length >= maxMoves) {
+      continue;
+    }
+
+    const candidates = Math.min(node.violations.length, MAX_FIX_CANDIDATES);
+    for (let candidate = 0; candidate < candidates; candidate += 1) {
+      if (budget <= 0) {
+        return null;
+      }
+
+      const { fromIndex, toIndex } = node.violations[candidate];
+      const order = applyMove(node.order, fromIndex, toIndex);
+      const key = orderKey(order, indices);
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      budget -= 1;
+
+      const next = detectViolations(sourceCode, order);
+      const moves = [...node.moves, { fromIndex, toIndex }];
+      if (next.length === 0) {
+        return moves;
+      }
+      queue.push({ order, violations: next, moves });
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Statement `i` owns the text from its own leading comments and indentation up to
+ * where statement `i + 1`'s begins, so the segments tile the block's statement region
+ * exactly and any reordering is a permutation of them.
+ */
+function collectSegments(
+  body: TSESTree.Statement[],
+  parent: BlockLike,
+  sourceCode: TSESLint.SourceCode,
+): { bounds: number[]; segments: string[] } {
+  const text = sourceCode.getText();
+  const bounds = body.map((statement) =>
+    getStartWithComments(statement, sourceCode),
+  );
+  bounds.push(getNextStart(body, body.length - 1, parent, sourceCode));
+
+  return {
+    bounds,
+    segments: body.map((_, index) =>
+      text.slice(bounds[index], bounds[index + 1]),
+    ),
+  };
+}
+
+/**
+ * Trailing spaces and tabs are dropped as a segment moves: that whitespace is the
+ * indentation of whatever used to follow the segment, not part of the segment itself.
+ * Keeping it would double the indentation at the segment's destination.
+ */
+function moveSegment(
+  segments: string[],
+  fromIndex: number,
+  toIndex: number,
+): string[] {
+  const next = [...segments];
+  const [moved] = next.splice(fromIndex, 1);
+  next.splice(
+    toIndex < fromIndex ? toIndex : toIndex - 1,
+    0,
+    moved.replace(/[ \t]+$/u, ''),
+  );
+  return next;
+}
+
+/**
+ * Emits an entire reordering as one fix by permuting the block's text segments.
+ *
+ * Only the span that actually changes is replaced. That keeps the fix disjoint from
+ * fixes in nested and sibling blocks — ESLint discards overlapping fixes — and makes
+ * a one-move reordering byte-identical to relocating that one statement.
+ */
+function buildReorderFix(
+  body: TSESTree.Statement[],
+  moves: Move[],
+  parent: BlockLike,
+  sourceCode: TSESLint.SourceCode,
+  fixer: TSESLint.RuleFixer,
+): TSESLint.RuleFix | null {
+  const { bounds, segments } = collectSegments(body, parent, sourceCode);
+  const reordered = moves.reduce(
+    (current, move) => moveSegment(current, move.fromIndex, move.toIndex),
+    segments,
+  );
+
+  let first = 0;
+  while (first < segments.length && reordered[first] === segments[first]) {
+    first += 1;
+  }
+  let last = segments.length - 1;
+  while (last > first && reordered[last] === segments[last]) {
+    last -= 1;
+  }
+  if (first > last) {
+    return null;
+  }
+
+  return fixer.replaceTextRange(
+    [bounds[first], bounds[last + 1]],
+    reordered.slice(first, last + 1).join(''),
+  );
+}
+
+/**
+ * A fix is emitted only for a reordering the detector scores at zero violations, and
+ * the whole reordering ships as a single fix. Relocating one statement per report
+ * satisfies its own adjacency constraint while breaking another's, which under
+ * `--fix` oscillates or exhausts the pass budget (#1405).
+ *
+ * Convergence is structural rather than argued: the emitted order is verified clean
+ * by the same detector that produced the reports, and detection depends only on
+ * statement order, so a single pass settles the block. Blocks with no clean order in
+ * range are reported without a fix — a report the developer resolves beats a fix that
+ * leaves a different violation behind.
+ *
+ * The fix rides on the first report because the reordering resolves every violation
+ * in the block at once; a second fix would be redundant and would overlap this one.
+ */
 function handleBlock(ruleContext: RuleExecutionContext, node: BlockLike): void {
-  const statements = node.body;
-  handleGuardHoists(ruleContext, statements, node);
-  handleDerivedGrouping(ruleContext, statements, node);
-  handleLateDeclarations(ruleContext, statements, node);
-  handleSideEffects(ruleContext, statements, node);
+  const { context, sourceCode } = ruleContext;
+  const body = node.body;
+  const violations = detectViolations(sourceCode, body);
+  if (violations.length === 0) {
+    return;
+  }
+
+  const moves = findResolvingMoves(
+    sourceCode,
+    body,
+    violations,
+    searchDepthFor(violations.length, body.length),
+  );
+
+  violations.forEach((violation, index) => {
+    context.report({
+      node: violation.statement,
+      messageId: violation.messageId,
+      data: violation.data,
+      fix:
+        moves && index === 0
+          ? (fixer) => buildReorderFix(body, moves, node, sourceCode, fixer)
+          : null,
+    });
+  });
 }
 
 export const logicalTopToBottomGrouping: TSESLint.RuleModule<
@@ -2225,7 +2475,6 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<
     const ruleContext: RuleExecutionContext = {
       context,
       sourceCode,
-      reportedStatements: new WeakSet<TSESTree.Statement>(),
     };
 
     const visitBlock = (node: BlockLike) => handleBlock(ruleContext, node);

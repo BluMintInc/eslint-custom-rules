@@ -70,6 +70,31 @@ for (const item of items) {
 }
 ```
 
+## Autofix Behavior
+
+Each report names one statement and one place to move it, but the moves are coupled:
+relocating a statement to satisfy its own adjacency constraint can separate a different
+pair and flag that instead. Relocating statements one report at a time therefore never
+settles — `--fix` either rewrites the source in a loop or runs out of passes with a
+fixable report still standing.
+
+So the fix is not per report. The rule searches for an ordering of the block that
+satisfies **every** constraint at once and emits that whole reordering as a single fix,
+attached to the first report in the block. Because the emitted ordering is verified to
+report nothing, one pass settles the block.
+
+Two consequences worth knowing:
+
+* **A single fix can move several statements.** The reordering is the shortest one the
+  search finds, so the diff stays close to the reports, but expect more than the one
+  statement a report names.
+* **Some reports are not fixable.** Some blocks have constraints that no ordering
+  satisfies at once: two derivation chains rooted in separate destructures cannot both
+  stay adjacent to their sources, and a declaration can be pulled toward its first use
+  by one constraint while another pulls it back toward its dependency. Those blocks are
+  reported with no fix — a report you resolve by hand beats a fix that leaves a
+  different violation behind. Restructure the block, or disable the rule for it.
+
 ## When Not To Use It
 
 Disable this rule if you intentionally rely on non-linear ordering (e.g., staged startup logging for distributed tracing) or need to keep audit/compliance logging after initialization even when it breaks top-to-bottom grouping.

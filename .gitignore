@@ -2,7 +2,9 @@
 typings/
 
 # Dependencies
-node_modules/
+# Slashless: a trailing slash matches directories only, so a `node_modules`
+# symlink stays trackable and `git add -A` commits it.
+node_modules
 
 # IDE
 .vscode
