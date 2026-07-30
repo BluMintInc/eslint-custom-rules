@@ -1,11 +1,85 @@
 import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 import {
   createSuppressionChecker,
   parseDisableDirectives,
 } from '../utils/disableDirectives';
 
 type MessageIds = 'preferFragment' | 'addFragmentImport';
+
+const REACT_MODULE = 'react';
+const FRAGMENT_NAME = 'Fragment';
+
+/**
+ * Value `react` import declarations in source order. A type-only declaration
+ * (`import type { FC } from 'react'`) is excluded because a specifier appended
+ * to one erases at compile time, leaving the rewritten <Fragment> unbound at
+ * runtime.
+ */
+function reactValueImports(
+  program: TSESTree.Program,
+): TSESTree.ImportDeclaration[] {
+  return program.body.filter(
+    (statement): statement is TSESTree.ImportDeclaration =>
+      statement.type === AST_NODE_TYPES.ImportDeclaration &&
+      statement.source.value === REACT_MODULE &&
+      statement.importKind !== 'type',
+  );
+}
+
+/**
+ * A named specifier that binds `Fragment` under its own name — the only shape
+ * that makes a bare <Fragment> element resolve to react's Fragment. An alias
+ * (`import { Fragment as Frag }`) leaves the name free, and a type-only
+ * specifier binds nothing at runtime.
+ */
+function isFragmentSpecifier(
+  specifier: TSESTree.Node,
+): specifier is TSESTree.ImportSpecifier {
+  return (
+    specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+    specifier.importKind !== 'type' &&
+    specifier.imported.name === FRAGMENT_NAME &&
+    specifier.local.name === FRAGMENT_NAME
+  );
+}
+
+/**
+ * Import state is read off `Program.body` at fix time rather than from a
+ * traversal flag: a fragment that precedes the import declaration in source
+ * order is fixed before the `ImportDeclaration` visitor has run, so a flag
+ * would call the import missing and insert a duplicate.
+ */
+function importsFragment(program: TSESTree.Program): boolean {
+  return reactValueImports(program).some((declaration) =>
+    declaration.specifiers.some(isFragmentSpecifier),
+  );
+}
+
+/**
+ * Whether every declaration of a visible `Fragment` binding is react's Fragment
+ * import. A const/let/function/class, a parameter, a namespace or default
+ * import, an alias, or a named import from another module all mean the
+ * rewritten <Fragment> renders something other than react's Fragment.
+ */
+function bindsReactFragment(variable: TSESLint.Scope.Variable): boolean {
+  return (
+    variable.defs.length > 0 &&
+    variable.defs.every((def) => {
+      const specifier = def.node as TSESTree.Node;
+      if (!isFragmentSpecifier(specifier)) {
+        return false;
+      }
+      const declaration = specifier.parent;
+      return (
+        declaration?.type === AST_NODE_TYPES.ImportDeclaration &&
+        declaration.importKind !== 'type' &&
+        declaration.source.value === REACT_MODULE
+      );
+    })
+  );
+}
 
 export const preferFragmentComponent = createRule<[], MessageIds>({
   name: 'prefer-fragment-component',
@@ -35,12 +109,40 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
     // violations still emit <Fragment>. Resolving suppression before the latch
     // is read hands the carrier slot to the first violation that survives.
     const isReportSuppressed = createSuppressionChecker(context);
-    let hasFragmentImport = false;
-    let reactImportNode: TSESTree.ImportDeclaration | null = null;
-    let defaultReactImportNode: TSESTree.ImportDeclaration | null = null;
+    // One pass rewrites several fragments but must insert the import once. The
+    // AST does not change mid-pass, so the latch records only what an earlier
+    // fix in this same pass already scheduled; existing imports are read from
+    // the AST instead.
+    let importScheduled = false;
 
     // Track nodes we've already reported to avoid duplicates
     const reportedNodes = new Set<TSESTree.Node>();
+
+    /**
+     * Whether a bare <Fragment> emitted at `node` would resolve to react's
+     * Fragment. Any other visible binding of the name breaks the edit two ways:
+     * the inserted import collides with the existing declaration (TS2440, or
+     * TS2300 when that declaration is itself an import), and a narrower-scope
+     * shadow captures the emitted element with no compile error at all.
+     * Resolving through the scope chain from the reported element covers both,
+     * and keeps `React.Fragment` — a member access on the default import, not a
+     * `Fragment` binding — off the collision path.
+     */
+    function resolvesToReactFragment(node: TSESTree.Node): boolean {
+      const existing = ASTHelpers.findVariableInScope(
+        ASTHelpers.getScope(context, node),
+        FRAGMENT_NAME,
+      );
+      return !existing || bindsReactFragment(existing);
+    }
+
+    /**
+     * True once the file binds react's Fragment, counting an insertion an
+     * earlier fix in this pass already scheduled.
+     */
+    function fragmentImportPresent(): boolean {
+      return importScheduled || importsFragment(sourceCode.ast);
+    }
 
     /**
      * Checks if a node is a React.Fragment element
@@ -100,38 +202,6 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
     }
 
     /**
-     * Checks for Fragment import from react
-     */
-    function checkFragmentImport(node: TSESTree.ImportDeclaration) {
-      if (node.source.value === 'react') {
-        // Keep track of all React imports
-        if (!reactImportNode) {
-          reactImportNode = node;
-        }
-
-        // Keep track of default import for prioritization
-        const hasDefaultImport = node.specifiers.some(
-          (spec) => spec.type === AST_NODE_TYPES.ImportDefaultSpecifier,
-        );
-
-        if (hasDefaultImport) {
-          defaultReactImportNode = node;
-        }
-
-        // Check if Fragment is already imported
-        for (const specifier of node.specifiers) {
-          if (
-            specifier.type === AST_NODE_TYPES.ImportSpecifier &&
-            specifier.imported.name === 'Fragment'
-          ) {
-            hasFragmentImport = true;
-            break;
-          }
-        }
-      }
-    }
-
-    /**
      * Where a brand-new import statement can be spliced in without changing
      * what the file's directives govern. A whole-line insertion directly before
      * the first statement slides in between an `eslint-disable-next-line`
@@ -160,23 +230,36 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
     }
 
     /**
-     * Adds Fragment import to an appropriate React import or creates a new one
+     * Adds Fragment to an existing react import or creates a new one. The
+     * emitted shape is a value named specifier, since the rewritten element
+     * references `Fragment` at runtime. Declarations come from `Program.body`
+     * at fix time so the choice does not depend on how far traversal has
+     * progressed.
      */
     function addFragmentImport(fixer: TSESLint.RuleFixer) {
-      // Use default import if available, otherwise use first React import
-      const targetImportNode = defaultReactImportNode || reactImportNode;
+      const declarations = reactValueImports(sourceCode.ast);
+      // A declaration carrying the default import keeps `React` and `Fragment`
+      // on one line; otherwise the first declaration that can host a specifier
+      // wins. A bare `import 'react';` hosts none, so it falls through.
+      const targetImportNode =
+        declarations.find((declaration) =>
+          declaration.specifiers.some(
+            (spec) => spec.type === AST_NODE_TYPES.ImportDefaultSpecifier,
+          ),
+        ) ??
+        declarations.find((declaration) => declaration.specifiers.length > 0);
 
       if (targetImportNode) {
-        // Check if it's a namespace import
+        // `import * as React, { Fragment }` is a syntax error, so a namespace
+        // import gets its own declaration beside it.
         const hasNamespaceImport = targetImportNode.specifiers.some(
           (spec) => spec.type === AST_NODE_TYPES.ImportNamespaceSpecifier,
         );
 
         if (hasNamespaceImport) {
-          // Add separate import for Fragment
           return fixer.insertTextAfter(
             targetImportNode,
-            "\nimport { Fragment } from 'react';",
+            `\nimport { ${FRAGMENT_NAME} } from '${REACT_MODULE}';`,
           );
         }
 
@@ -188,14 +271,14 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
         );
 
         if (hasNamedImports) {
-          return fixer.insertTextAfter(lastSpecifier, ', Fragment');
+          return fixer.insertTextAfter(lastSpecifier, `, ${FRAGMENT_NAME}`);
         } else {
-          return fixer.insertTextAfter(lastSpecifier, ', { Fragment }');
+          return fixer.insertTextAfter(lastSpecifier, `, { ${FRAGMENT_NAME} }`);
         }
       }
 
       // No React import found, create a new one
-      const importText = "import { Fragment } from 'react';\n";
+      const importText = `import { ${FRAGMENT_NAME} } from '${REACT_MODULE}';\n`;
       const indentation = sourceCode.text.match(/^[ \t]*/m)?.[0] || '';
       return fixer.insertTextBefore(
         findImportAnchor(),
@@ -204,8 +287,6 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
     }
 
     return {
-      ImportDeclaration: checkFragmentImport,
-
       // Find JSX Fragment shorthand (<></>)
       JSXFragment(node) {
         // Skip if already reported
@@ -248,12 +329,20 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
                 return null;
               }
 
+              // Both tags are rewritten to the same bare name, so resolving at
+              // the inner fragment — the deeper of the two scopes — covers the
+              // outer one too. Every bail precedes the latch so a withheld edit
+              // cannot make a later fix believe the import is handled.
+              if (!resolvesToReactFragment(node)) {
+                return null;
+              }
+
               const fixes: ReturnType<typeof fixer.replaceText>[] = [];
 
               // Add Fragment import if needed
-              if (!hasFragmentImport) {
+              if (!fragmentImportPresent()) {
                 fixes.push(addFragmentImport(fixer));
-                hasFragmentImport = true;
+                importScheduled = true;
               }
 
               // Fix the outer React.Fragment
@@ -346,12 +435,18 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
               return null;
             }
 
+            // Every bail precedes the latch so a withheld edit cannot make a
+            // later fix believe the import is already handled.
+            if (!resolvesToReactFragment(node)) {
+              return null;
+            }
+
             const fixes: ReturnType<typeof fixer.replaceText>[] = [];
 
             // Add Fragment import if needed
-            if (!hasFragmentImport) {
+            if (!fragmentImportPresent()) {
               fixes.push(addFragmentImport(fixer));
-              hasFragmentImport = true;
+              importScheduled = true;
             }
 
             // Replace fragment tags
@@ -412,12 +507,18 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
                 return null;
               }
 
+              // Every bail precedes the latch so a withheld edit cannot make a
+              // later fix believe the import is already handled.
+              if (!resolvesToReactFragment(node)) {
+                return null;
+              }
+
               const fixes: ReturnType<typeof fixer.replaceText>[] = [];
 
               // Add Fragment import if needed
-              if (!hasFragmentImport) {
+              if (!fragmentImportPresent()) {
                 fixes.push(addFragmentImport(fixer));
-                hasFragmentImport = true;
+                importScheduled = true;
               }
 
               // Replace opening tag
@@ -465,12 +566,18 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
               return null;
             }
 
+            // Every bail precedes the latch so a withheld edit cannot make a
+            // later fix believe the import is already handled.
+            if (!resolvesToReactFragment(node)) {
+              return null;
+            }
+
             const fixes: ReturnType<typeof fixer.replaceText>[] = [];
 
             // Add Fragment import if needed
-            if (!hasFragmentImport) {
+            if (!fragmentImportPresent()) {
               fixes.push(addFragmentImport(fixer));
-              hasFragmentImport = true;
+              importScheduled = true;
             }
 
             // Replace opening tag
@@ -496,43 +603,6 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
             return fixes;
           },
         });
-      },
-
-      'Program:exit'() {
-        // Find appropriate React import for adding Fragment
-        if (!hasFragmentImport) {
-          // Get all React imports
-          const reactImports: TSESTree.ImportDeclaration[] = [];
-
-          for (const node of sourceCode.ast.body) {
-            if (
-              node.type === AST_NODE_TYPES.ImportDeclaration &&
-              node.source.value === 'react'
-            ) {
-              reactImports.push(node);
-            }
-          }
-
-          // Prioritize default import for adding Fragment
-          if (reactImports.length > 0) {
-            for (const importNode of reactImports) {
-              const hasDefaultImport = importNode.specifiers.some(
-                (spec) => spec.type === AST_NODE_TYPES.ImportDefaultSpecifier,
-              );
-
-              if (hasDefaultImport) {
-                defaultReactImportNode = importNode;
-                reactImportNode = importNode;
-                break;
-              }
-            }
-
-            // If no default import found, use the first import
-            if (!defaultReactImportNode && reactImports.length > 0) {
-              reactImportNode = reactImports[0];
-            }
-          }
-        }
       },
     };
   },
