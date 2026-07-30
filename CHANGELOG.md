@@ -1,3 +1,10 @@
+## [1.20.37](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.36...v1.20.37) (2026-07-30)
+
+
+### Bug Fixes
+
+* **enforce-unique-cursor-headers:** only autofix a template that satisfies the rule (closes [#1461](https://github.com/BluMintInc/eslint-custom-rules/issues/1461)) ([f8862a2](https://github.com/BluMintInc/eslint-custom-rules/commit/f8862a299819a3d2ad89b96a9a5a76476d9f479c))
+
 ## [1.20.36](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.35...v1.20.36) (2026-07-30)
 
 
