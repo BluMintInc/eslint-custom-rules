@@ -20,6 +20,16 @@ export const avoidUtilsDirectory = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
+    // Anchor the reported path at the directory ESLint was configured with,
+    // not the node process cwd. The two differ under the VS Code ESLint
+    // extension, in monorepos, and for any programmatic `new ESLint({ cwd })`,
+    // where reading the process cwd names the file by a path the reader cannot
+    // locate (issue #1475). The `typeof` guard keeps the rule working under
+    // harnesses that predate `getCwd`, matching the sibling rules that resolve
+    // a cwd.
+    const cwd =
+      typeof context.getCwd === 'function' ? context.getCwd() : process.cwd();
+
     return {
       Program(node) {
         // Normalize Windows backslash separators so the forward-slash `utils/`
@@ -27,8 +37,10 @@ export const avoidUtilsDirectory = createRule<[], MessageIds>({
         // returns `C:\repo\src\utils\foo.ts` on Windows, the regex never
         // matches, and the rule silently reports nothing (issue #1270).
         const filename = context.getFilename().replace(/\\/g, '/');
+        // `|| filename` covers the case where the file IS the cwd (an empty
+        // relative path), keeping a usable path in the message.
         const relativePath = path.isAbsolute(filename)
-          ? path.relative(process.cwd(), filename) || filename
+          ? path.relative(cwd, filename) || filename
           : filename;
 
         // Skip files in node_modules
