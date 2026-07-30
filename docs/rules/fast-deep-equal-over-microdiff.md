@@ -129,6 +129,26 @@ function hasConfigChanged(oldConfig, newConfig) {
 }
 ```
 
+### Interaction with inline disable comments
+
+The `import isEqual from 'fast-deep-equal';` statement is added once per file,
+attached to the fix of the first violation that is **not** suppressed by an
+inline `eslint-disable` directive. Suppressing an individual check therefore
+never strands the remaining `isEqual(...)` calls without their import:
+
+```ts
+import { diff } from 'microdiff';
+
+function areSame(a, b) {
+  // eslint-disable-next-line @blumintinc/blumint/fast-deep-equal-over-microdiff
+  return diff(a, b).length === 0;  // left alone
+}
+
+function areDifferent(a, b) {
+  return diff(a, b).length !== 0;  // fixed to !isEqual(a, b), and carries the import
+}
+```
+
 ## When Not To Use It
 
 You should not use this rule if:
