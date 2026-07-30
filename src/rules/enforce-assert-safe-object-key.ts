@@ -84,32 +84,40 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
     const isReportSuppressed = createSuppressionChecker(context);
 
     /**
-     * Directory of the file being fixed, relative to the repo root, or null for
-     * virtual/stdin files (RuleTester default 'file.ts', '<input>', '<text>')
-     * whose non-absolute name cannot anchor a relative path.
+     * The directory ESLint itself was configured with, which is what
+     * `importPath` is anchored at. The node process cwd is only a fallback for
+     * harnesses that predate `getCwd`: the two differ under the VS Code ESLint
+     * extension, in monorepos, and for any programmatic `new ESLint({ cwd })`,
+     * and anchoring at the process cwd there emits an unresolvable specifier.
+     */
+    const cwd =
+      typeof context.getCwd === 'function' ? context.getCwd() : process.cwd();
+
+    /**
+     * Directory of the file being fixed, relative to the configured cwd, or
+     * null for virtual/stdin files (RuleTester default 'file.ts', '<input>',
+     * '<text>') whose non-absolute name cannot anchor a relative path.
      */
     const fileDirFromRoot = (): string | null => {
       const rawFilename = context.getFilename().replace(/\\/g, '/');
       if (!path.isAbsolute(rawFilename)) {
         return null;
       }
-      const fileRelToCwd = path
-        .relative(process.cwd(), rawFilename)
-        .replace(/\\/g, '/');
+      const fileRelToCwd = path.relative(cwd, rawFilename).replace(/\\/g, '/');
       return path.posix.dirname(fileRelToCwd);
     };
 
     /**
      * Computes the module specifier for the injected assertSafe import.
      *
-     * `importPath` is anchored at the repo root (relative to process.cwd(),
-     * which is the repo root in real eslint runs), matching how
-     * avoid-utils-directory and test-file-location-enforcement treat paths.
-     * A bare repo-root specifier such as 'functions/src/util/assertSafe' is
-     * unresolvable inside the functions/ TS project, whose baseUrl is
-     * functions/: it would resolve to functions/functions/src/util/assertSafe,
-     * which does not exist. The specifier is therefore derived relative to the
-     * file being fixed so the emitted import resolves from that file's location.
+     * `importPath` is anchored at the repo root — the directory ESLint runs
+     * with, not the node process cwd — matching how avoid-utils-directory and
+     * test-file-location-enforcement treat paths. A bare repo-root specifier
+     * such as 'functions/src/util/assertSafe' is unresolvable inside the
+     * functions/ TS project, whose baseUrl is functions/: it would resolve to
+     * functions/functions/src/util/assertSafe, which does not exist. The
+     * specifier is therefore derived relative to the file being fixed so the
+     * emitted import resolves from that file's location.
      */
     const computeImportSpecifier = (): string => {
       const fileDir = fileDirFromRoot();
