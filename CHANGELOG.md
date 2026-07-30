@@ -1,3 +1,17 @@
+## [1.20.32](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.31...v1.20.32) (2026-07-30)
+
+
+### Bug Fixes
+
+* **enforce-microdiff:** decline the fix when `diff` is already bound (closes [#1429](https://github.com/BluMintInc/eslint-custom-rules/issues/1429)) ([6c8a0af](https://github.com/BluMintInc/eslint-custom-rules/commit/6c8a0afd24efc6534b2ec8e4c8d6de4d95616316))
+* **enforce-stable-hash-spread-props:** decline the fix when `stableHash` is already bound (closes [#1430](https://github.com/BluMintInc/eslint-custom-rules/issues/1430)) ([53c886d](https://github.com/BluMintInc/eslint-custom-rules/commit/53c886dd80e34b14a3d2b0887f0d5b30850be03f))
+* **fast-deep-equal-over-microdiff:** decline the fix when `isEqual` is already bound (closes [#1435](https://github.com/BluMintInc/eslint-custom-rules/issues/1435)) ([47236b8](https://github.com/BluMintInc/eslint-custom-rules/commit/47236b88812a017dc9f8727a7f5462e8fd97217c))
+* **prefer-global-router-state-key:** decline the fix when the derived query-key constant is already bound (closes [#1431](https://github.com/BluMintInc/eslint-custom-rules/issues/1431)) ([b960875](https://github.com/BluMintInc/eslint-custom-rules/commit/b960875565dd17dcc4e0a08b1cfcbf1017a25192))
+* **prefer-next-dynamic:** decline the fix when `dynamic` is already bound (closes [#1432](https://github.com/BluMintInc/eslint-custom-rules/issues/1432)) ([e92615b](https://github.com/BluMintInc/eslint-custom-rules/commit/e92615b05bfe88deabc367e35e1dc7ad088516fd))
+* **prefer-use-deep-compare-memo:** decline the fix when `useDeepCompareMemo` is already bound (closes [#1436](https://github.com/BluMintInc/eslint-custom-rules/issues/1436)) ([c6053d0](https://github.com/BluMintInc/eslint-custom-rules/commit/c6053d0feec6777483b785f3f3be920ff0537bbe))
+* **require-dynamic-firebase-imports:** decline the fix when a hoisted type name is already bound (closes [#1433](https://github.com/BluMintInc/eslint-custom-rules/issues/1433)) ([34eb80f](https://github.com/BluMintInc/eslint-custom-rules/commit/34eb80f8cb3f433636e451968eb096597d064a56))
+* **require-memoize-jsx-returners:** decline the fix when `Memoize` is already bound (closes [#1434](https://github.com/BluMintInc/eslint-custom-rules/issues/1434)) ([4970190](https://github.com/BluMintInc/eslint-custom-rules/commit/49701901cc6ecde782d6d0b299b08494678b29a5))
+
 ## [1.20.31](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.30...v1.20.31) (2026-07-30)
 
 
