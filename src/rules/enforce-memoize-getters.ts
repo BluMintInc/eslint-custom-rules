@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { createSuppressionChecker } from '../utils/disableDirectives';
 
 type MessageIds = 'requireMemoizeGetter';
 type Options = [];
@@ -72,6 +73,14 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
     let hasNamedImport = false;
     let scheduledImportFix = false;
 
+    /**
+     * The `import { Memoize }` statement rides on a single violation's fix, so
+     * that violation is the file's import carrier. A suppressed carrier would
+     * take the import down with it while the surviving violations still emit
+     * `@Memoize()`, leaving a decorator with no import.
+     */
+    const isReportSuppressed = createSuppressionChecker(context);
+
     return {
       ImportDeclaration(node: TSESTree.ImportDeclaration) {
         if (MEMOIZE_MODULES.has(String(node.source.value))) {
@@ -114,11 +123,21 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
           ? '[computed]'
           : sourceCode.getText(node.key);
 
+        // The report is emitted even when suppressed: ESLint discards it, and
+        // reporting keeps the user's disable directive "used" so that
+        // `--report-unused-disable-directives` does not flag it.
         context.report({
           node,
           messageId: 'requireMemoizeGetter',
           data: { name: propertyName },
           fix(fixer) {
+            // A suppressed report is dropped together with its fix. Producing
+            // no fix — and leaving the import unscheduled — passes the import
+            // to the first violation that survives.
+            if (isReportSuppressed(node)) {
+              return null;
+            }
+
             const fixes: TSESLint.RuleFix[] = [];
             const getDecoratorIdent = (): string => {
               if (hasNamedImport) {

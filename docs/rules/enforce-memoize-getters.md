@@ -44,3 +44,20 @@ class Example {
 // eslint-disable-next-line @blumintinc/blumint/enforce-memoize-getters -- ephemeral by design
 private get timestamp() { return Date.now(); }
 ```
+
+### Interaction with inline disable comments
+
+The `import { Memoize } from '@blumintinc/typescript-memoize';` statement is
+added once per file, attached to the fix of the first violation that is **not**
+suppressed by an inline `eslint-disable` directive. Suppressing an individual
+getter therefore never strands the remaining `@Memoize()` decorators without
+their import:
+
+```ts
+class Example {
+  // eslint-disable-next-line @blumintinc/blumint/enforce-memoize-getters
+  private get timestamp() { return Date.now(); }  // left alone
+
+  private get fetcher() { return createFetcher(); }  // fixed, and carries the import
+}
+```
