@@ -29,6 +29,36 @@ import Image from 'src/components/image/ImageOptimized';
 <Image src="/path/to/image.jpg" alt="description" />
 ```
 
+## Exemptions
+
+Code that *implements* the wrapper has to reach for an image primitive, so it is
+not a violation:
+
+* The component's own module and its manual mock, matched by filename: any file
+  whose name (extension stripped) equals the last segment of `componentPath`,
+  which covers both `src/components/image/ImageOptimized.tsx` and
+  `src/components/image/__mocks__/ImageOptimized.tsx`.
+* Anything inside a `jest.mock` / `jest.doMock` / `jest.setMock` factory for that
+  module, matched on the specifier's last segment so relative paths
+  (`../image/ImageOptimized`) and `__mocks__` paths both qualify. A factory for
+  any other module is still checked.
+
+## Autofix
+
+The `img` fix rewrites the element to `ImageOptimized`, and applies only when
+that name already resolves to a value binding in the file — either imported
+directly or under an alias, in which case the alias is reused:
+
+```jsx
+import { ImageOptimized as CustomImage } from '../image/ImageOptimized';
+// <img src="/a.jpg" alt="A" />  ->  <CustomImage src="/a.jpg" alt="A" />
+```
+
+When nothing binds the component, the violation is reported without a fix.
+Inserting an import would have to guess the module's canonical path, and a
+rewrite to an unimported name leaves the file referencing an undefined
+identifier.
+
 ## Options
 
 This rule accepts an options object with the following properties:
