@@ -164,37 +164,96 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
       return !!node && ASTHelpers.declarationIncludesIdentifier(node);
     }
 
-    function alreadyHasConst(
-      program: TSESTree.Program,
-      constName: string,
-    ): boolean {
-      for (const stmt of program.body) {
-        if (
-          stmt.type === AST_NODE_TYPES.VariableDeclaration &&
-          stmt.kind === 'const'
-        ) {
-          for (const d of stmt.declarations) {
-            if (
-              d.id.type === AST_NODE_TYPES.Identifier &&
-              d.id.name === constName
-            ) {
-              return true;
-            }
-          }
-        }
+    /**
+     * A generated name is safe to emit only when nothing between the report
+     * site and module scope already owns it. Resolution therefore walks the
+     * scope chain at the report site rather than scanning `Program.body`: a
+     * name-only scan misses inner-scope bindings (which would capture the
+     * emitted reference), non-`const` bindings (which would be redeclared) and
+     * module constants holding a different value (which would silently swap the
+     * default).
+     */
+    type NameResolution =
+      | { kind: 'free' }
+      | { kind: 'reusable'; initText: string }
+      | { kind: 'blocked' };
+
+    function classifyModuleBinding(
+      variable: TSESLint.Scope.Variable,
+    ): NameResolution {
+      if (variable.defs.length !== 1) {
+        return { kind: 'blocked' };
       }
-      return false;
+      const declarator = variable.defs[0].node;
+      if (declarator.type !== AST_NODE_TYPES.VariableDeclarator) {
+        return { kind: 'blocked' };
+      }
+      const declaration = declarator.parent;
+      if (
+        !declaration ||
+        declaration.type !== AST_NODE_TYPES.VariableDeclaration ||
+        declaration.kind !== 'const' ||
+        declarator.id.type !== AST_NODE_TYPES.Identifier ||
+        !declarator.init
+      ) {
+        return { kind: 'blocked' };
+      }
+      return {
+        kind: 'reusable',
+        initText: sourceCode.getText(declarator.init),
+      };
+    }
+
+    /**
+     * `SourceCode#getScope` supersedes the deprecated `context.getScope`; the
+     * fallback keeps the rule working on ESLint versions that predate it.
+     */
+    function scopeOf(node: TSESTree.Node): TSESLint.Scope.Scope {
+      const scoped = sourceCode as TSESLint.SourceCode & {
+        getScope?: (node: TSESTree.Node) => TSESLint.Scope.Scope;
+      };
+      return typeof scoped.getScope === 'function'
+        ? scoped.getScope(node)
+        : context.getScope();
+    }
+
+    function resolveGeneratedName(
+      scope: TSESLint.Scope.Scope | null,
+      constName: string,
+    ): NameResolution {
+      let current = scope;
+      while (current) {
+        const variable = current.variables.find((v) => v.name === constName);
+        if (variable) {
+          return current.block.type === AST_NODE_TYPES.Program
+            ? classifyModuleBinding(variable)
+            : { kind: 'blocked' };
+        }
+        current = current.upper;
+      }
+      // An unresolved reference elsewhere in the file points at an ambient
+      // global; declaring the name at module scope would capture it.
+      const globalScope = sourceCode.scopeManager?.globalScope;
+      if (
+        globalScope?.through.some((ref) => ref.identifier.name === constName)
+      ) {
+        return { kind: 'blocked' };
+      }
+      return { kind: 'free' };
+    }
+
+    function buildInitializerText(initText: string): string {
+      const needsAsConst =
+        /^(?:true|false|-?\d|\[|\{|[`'"])/.test(initText) &&
+        !/\bas const\b/.test(initText);
+      return needsAsConst ? `${initText} as const` : initText;
     }
 
     function buildConstDeclarationLine(
       constName: string,
       initText: string,
     ): string {
-      const needsAsConst =
-        /^(?:true|false|-?\d|\[|\{|[`'"])/.test(initText) &&
-        !/\bas const\b/.test(initText);
-      const initializer = needsAsConst ? `${initText} as const` : initText;
-      return `const ${constName} = ${initializer};`;
+      return `const ${constName} = ${buildInitializerText(initText)};`;
     }
 
     function reportStaticDefaults(
@@ -223,27 +282,59 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
       });
       if (staticDefaults.length === 0) return;
 
+      const reportScope = scopeOf(nodeForReport);
+
       context.report({
         node: nodeForReport,
         messageId: 'extractDefaultToGlobalConstant',
         fix(fixer) {
           const fixes: TSESLint.RuleFix[] = [];
 
-          const programNode = sourceCode.ast;
           const declLines: string[] = [];
+          // Names this fix commits to declaring, mapped to the initializer it
+          // declares them with, so sibling defaults sharing a generated name
+          // share the declaration instead of duplicating the binding.
+          const scheduledInits = new Map<string, string>();
 
           for (const def of staticDefaults) {
             const { assignment, localName } = def;
             const right = assignment.right as TSESTree.Expression;
             const rightText = sourceCode.getText(right);
             const constName = `DEFAULT_${toUpperSnakeCase(localName)}`;
+            const initText = buildInitializerText(rightText);
 
-            if (!alreadyHasConst(programNode, constName)) {
-              declLines.push(buildConstDeclarationLine(constName, rightText));
+            const scheduled = scheduledInits.get(constName);
+            if (scheduled !== undefined) {
+              if (scheduled !== initText) continue;
+              fixes.push(fixer.replaceText(right, constName));
+              continue;
             }
 
+            const resolution = resolveGeneratedName(reportScope, constName);
+            if (resolution.kind === 'blocked') {
+              // Declining leaves the report in place: the developer extracts
+              // the constant by hand instead of the fixer corrupting the file.
+              continue;
+            }
+            if (resolution.kind === 'reusable') {
+              // Reuse is safe only when the existing constant holds the very
+              // same value; `as const` may be present on either side.
+              if (
+                resolution.initText !== initText &&
+                resolution.initText !== rightText
+              ) {
+                continue;
+              }
+              fixes.push(fixer.replaceText(right, constName));
+              continue;
+            }
+
+            declLines.push(buildConstDeclarationLine(constName, rightText));
+            scheduledInits.set(constName, initText);
             fixes.push(fixer.replaceText(right, constName));
           }
+
+          if (fixes.length === 0) return null;
 
           if (declLines.length > 0) {
             const program = sourceCode.ast;

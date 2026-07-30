@@ -417,5 +417,191 @@ const DEFAULT_CONF = { a: 1 } as const;
       `,
       errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
     },
+    // A module-scope const with an identical initializer is reused without redeclaring
+    {
+      code: `
+      const DEFAULT_DEBOUNCE_MS = 10 as const;
+      export const useThing = (props) => {
+        const { debounceMs = 10 } = props;
+        return debounceMs;
+      };
+      `,
+      output: `
+      const DEFAULT_DEBOUNCE_MS = 10 as const;
+      export const useThing = (props) => {
+        const { debounceMs = DEFAULT_DEBOUNCE_MS } = props;
+        return debounceMs;
+      };
+      `,
+      errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
+    },
+    // Reuse also applies when the existing const omits the as const assertion
+    {
+      code: `
+      const DEFAULT_SIZE = 20;
+      const Comp = () => {
+        const { size = 20 } = props;
+        return size;
+      };
+      `,
+      output: `
+      const DEFAULT_SIZE = 20;
+      const Comp = () => {
+        const { size = DEFAULT_SIZE } = props;
+        return size;
+      };
+      `,
+      errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
+    },
+    // Repro 1: a module-scope const with a different value must not be reused
+    {
+      code: `
+      const DEFAULT_DEBOUNCE_MS = 500 as const;
+      export const useThing = (props) => {
+        const { debounceMs = 10 } = props;
+        return debounceMs;
+      };
+      `,
+      output: null,
+      errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
+    },
+    // Repro 2: a same-named let is a collision, not an absent binding
+    {
+      code: `
+      let DEFAULT_DEBOUNCE_MS = 500;
+      export const useThing = (props) => {
+        const { debounceMs = 10 } = props;
+        return debounceMs;
+      };
+      `,
+      output: null,
+      errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
+    },
+    // Repro 3: an inner-scope binding would capture the emitted reference
+    {
+      code: `
+      export const useThing = (props) => {
+        const DEFAULT_DEBOUNCE_MS = 999;
+        const { debounceMs = 10 } = props;
+        return [debounceMs, DEFAULT_DEBOUNCE_MS];
+      };
+      `,
+      output: null,
+      errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
+    },
+    // A shadow in an enclosing block scope also declines the fix
+    {
+      code: `
+      export const useThing = (props) => {
+        if (props.enabled) {
+          const DEFAULT_DEBOUNCE_MS = 999;
+          const { debounceMs = 10 } = props;
+          return [debounceMs, DEFAULT_DEBOUNCE_MS];
+        }
+        return null;
+      };
+      `,
+      output: null,
+      errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
+    },
+    // An imported binding of the generated name declines the fix
+    {
+      code: `
+      import { DEFAULT_SIZE } from './constants';
+
+      const Comp = () => {
+        const { size = 20 } = props;
+        return [size, DEFAULT_SIZE];
+      };
+      `,
+      output: null,
+      errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
+    },
+    // A function declaration owning the generated name declines the fix
+    {
+      code: `
+      function DEFAULT_SIZE() {
+        return 1;
+      }
+      const Comp = () => {
+        const { size = 20 } = props;
+        return size;
+      };
+      `,
+      output: null,
+      errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
+    },
+    // A class declaration owning the generated name declines the fix
+    {
+      code: `
+      class DEFAULT_SIZE {}
+      const Comp = () => {
+        const { size = 20 } = props;
+        return size;
+      };
+      `,
+      output: null,
+      errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
+    },
+    // Two locals normalizing to one generated name: the second value would
+    // redeclare the binding, so only the first is extracted
+    {
+      code: `
+      const Comp = () => {
+        const { aB = 1, a_b = 2 } = props;
+        return [aB, a_b];
+      };
+      `,
+      output: `
+const DEFAULT_A_B = 1 as const;
+
+
+      const Comp = () => {
+        const { aB = DEFAULT_A_B, a_b = 2 } = props;
+        return [aB, a_b];
+      };
+      `,
+      errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
+    },
+    // Same generated name with the same value shares a single declaration
+    {
+      code: `
+      const Comp = () => {
+        const { aB = 1, a_b = 1 } = props;
+        return [aB, a_b];
+      };
+      `,
+      output: `
+const DEFAULT_A_B = 1 as const;
+
+
+      const Comp = () => {
+        const { aB = DEFAULT_A_B, a_b = DEFAULT_A_B } = props;
+        return [aB, a_b];
+      };
+      `,
+      errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
+    },
+    // A declined default must not suppress the fix for its safe siblings
+    {
+      code: `
+      let DEFAULT_DEBOUNCE_MS = 500;
+      export const useThing = (props) => {
+        const { debounceMs = 10, retries = 3 } = props;
+        return [debounceMs, retries];
+      };
+      `,
+      output: `
+const DEFAULT_RETRIES = 3 as const;
+
+
+      let DEFAULT_DEBOUNCE_MS = 500;
+      export const useThing = (props) => {
+        const { debounceMs = 10, retries = DEFAULT_RETRIES } = props;
+        return [debounceMs, retries];
+      };
+      `,
+      errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
+    },
   ],
 });
