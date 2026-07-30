@@ -1,5 +1,14 @@
+import fs from 'fs';
+import path from 'path';
+import { builtinModules } from 'module';
+import { Minimatch } from 'minimatch';
+import { parse, TSESTree } from '@typescript-eslint/typescript-estree';
 import { ruleTesterTs } from '../utils/ruleTester';
-import rule, { RULE_NAME } from '../rules/enforce-dynamic-imports';
+import rule, {
+  RULE_NAME,
+  DEFAULT_IGNORED_LIBRARIES,
+  DEFAULT_INTERNAL_PREFIXES,
+} from '../rules/enforce-dynamic-imports';
 
 const ruleTester = ruleTesterTs;
 const buildError = (source: string) => ({
@@ -27,6 +36,17 @@ ruleTester.run(RULE_NAME, rule, {
     `import { Add } from '@mui/icons-material';`,
     `import { clsx } from 'clsx';`,
     `import { twMerge } from 'tailwind-merge';`,
+
+    // ─── Modules this plugin's own fixers inject ─────────────────────────────
+    // These pass no options on purpose: they must be accepted at the SHIPPED
+    // defaults, because `eslint --fix` writes these imports into consumer code.
+    `import useLatestCallback from 'use-latest-callback';`,
+    `import { Memoize } from '@blumintinc/typescript-memoize';`,
+    `import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';`,
+    `import { diff } from 'microdiff';`,
+    `import stringify from 'safe-stable-stringify';`,
+    `import isEqual from 'fast-deep-equal';`,
+    `import dynamic from 'next/dynamic';`,
 
     // ─── Custom ignoredLibraries ─────────────────────────────────────────────
     {
@@ -113,7 +133,9 @@ ruleTester.run(RULE_NAME, rule, {
     // (RuleTester surfaces schema errors as failures, so this pins facet #1)
     {
       code: `import type { Props } from '@stream-io/video-react-sdk';`,
-      options: [{ libraries: ['@stream-io/video-react-sdk'], allowImportType: true }],
+      options: [
+        { libraries: ['@stream-io/video-react-sdk'], allowImportType: true },
+      ],
     },
 
     // ─── Whitelist mode: type-only imports still skipped ─────────────────────
@@ -236,4 +258,238 @@ ruleTester.run(RULE_NAME, rule, {
       errors: [buildError('other/lib')],
     },
   ],
+});
+
+/**
+ * The recommended config has to be closed under its own autofixes: several
+ * rules that ship enabled write a *static* import as part of their fix, and
+ * this rule — also shipped enabled, and enforce-by-default at its shipped
+ * defaults — reported every one of them non-fixably (#1474). `eslint --fix`
+ * therefore traded an auto-fixable violation for one a human had to resolve by
+ * hand, and the message's suggested remedy is impossible for most of them:
+ * `use-latest-callback` and `@blumintinc/use-deep-compare` export hooks (which
+ * must be called unconditionally) and `@blumintinc/typescript-memoize` exports
+ * a decorator (which must resolve statically).
+ *
+ * The list of injected modules is derived from the rule sources rather than
+ * duplicated here, because a hardcoded copy would go stale exactly when it
+ * matters: a *seventh* rule injecting a module has to fail this suite without
+ * anyone remembering to register it. The derivation reads import statements out
+ * of the string and template literals the fixers emit, resolving `${CONST}`
+ * interpolations against module-scope string constants.
+ *
+ * Known limitation: an import assembled inside a helper that receives the
+ * specifier as a *parameter* (as `use-custom-memo` does) leaves the
+ * interpolation unresolved, so its specifier is dropped rather than guessed.
+ * The controls below pin the derivation against real emitting rules so a scan
+ * that silently degrades to an empty set fails instead of passing vacuously.
+ */
+
+const SOURCE_DIRS = [
+  path.join(__dirname, '../rules'),
+  path.join(__dirname, '../utils'),
+];
+
+// Interpolations that resolve to nothing statically (a parameter, a call, an
+// option) collapse to this sentinel: the surrounding text still matches the
+// import shape, but the specifier is discarded rather than guessed at.
+const UNRESOLVED = '\u0000';
+
+// Matches both `import x from '<spec>'` and side-effect `import '<spec>'`.
+const EMITTED_IMPORT = /\bimport\b(?:[^'"`;]*?\bfrom\s*)?['"]([^'"\n]+)['"]/g;
+
+// Subtrees that hold prose rather than emitted code. A message may quote an
+// import of a module the rule tells you to stop using (`firestore-jest-mock`),
+// which is the opposite of a module the plugin injects.
+const PROSE_KEYS = new Set(['messages', 'docs', 'schema', 'description']);
+
+const NODE_BUILTINS = new Set(builtinModules);
+
+type EmittedImport = { file: string; specifier: string };
+
+const tsFilesIn = (dir: string): string[] =>
+  fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      return tsFilesIn(full);
+    }
+    return entry.isFile() && entry.name.endsWith('.ts') ? [full] : [];
+  });
+
+const moduleScopeStrings = (ast: TSESTree.Program): Map<string, string> => {
+  const constants = new Map<string, string>();
+  for (const statement of ast.body) {
+    const declaration =
+      statement.type === 'VariableDeclaration'
+        ? statement
+        : statement.type === 'ExportNamedDeclaration' &&
+          statement.declaration?.type === 'VariableDeclaration'
+        ? statement.declaration
+        : null;
+    for (const declarator of declaration?.declarations ?? []) {
+      if (declarator.id.type !== 'Identifier' || !declarator.init) {
+        continue;
+      }
+      const { init } = declarator;
+      if (init.type === 'Literal' && typeof init.value === 'string') {
+        constants.set(declarator.id.name, init.value);
+      } else if (
+        init.type === 'TemplateLiteral' &&
+        init.expressions.length === 0
+      ) {
+        constants.set(declarator.id.name, init.quasis[0].value.cooked);
+      }
+    }
+  }
+  return constants;
+};
+
+const literalTextOf = (
+  node: TSESTree.Node,
+  constants: Map<string, string>,
+): string | null => {
+  if (node.type === 'Literal') {
+    return typeof node.value === 'string' ? node.value : null;
+  }
+  if (node.type !== 'TemplateLiteral') {
+    return null;
+  }
+  return node.quasis
+    .map((quasi, index) => {
+      const expression = node.expressions[index];
+      if (!expression) {
+        return quasi.value.cooked;
+      }
+      const resolved =
+        expression.type === 'Identifier'
+          ? constants.get(expression.name)
+          : undefined;
+      return `${quasi.value.cooked}${resolved ?? UNRESOLVED}`;
+    })
+    .join('');
+};
+
+const collectEmitted = (
+  node: TSESTree.Node,
+  constants: Map<string, string>,
+  found: string[],
+): void => {
+  if (node.type === 'Property') {
+    const key =
+      node.key.type === 'Identifier'
+        ? node.key.name
+        : node.key.type === 'Literal'
+        ? String(node.key.value)
+        : null;
+    if (key !== null && PROSE_KEYS.has(key)) {
+      return;
+    }
+  }
+
+  const text = literalTextOf(node, constants);
+  if (text !== null) {
+    EMITTED_IMPORT.lastIndex = 0;
+    let match = EMITTED_IMPORT.exec(text);
+    while (match !== null) {
+      found.push(match[1]);
+      match = EMITTED_IMPORT.exec(text);
+    }
+  }
+
+  for (const [key, value] of Object.entries(
+    node as unknown as Record<string, unknown>,
+  )) {
+    if (key === 'parent') {
+      continue;
+    }
+    const children = Array.isArray(value) ? value : [value];
+    for (const child of children) {
+      if (
+        child !== null &&
+        typeof child === 'object' &&
+        typeof (child as TSESTree.Node).type === 'string'
+      ) {
+        collectEmitted(child as TSESTree.Node, constants, found);
+      }
+    }
+  }
+};
+
+const emittedImports: EmittedImport[] = SOURCE_DIRS.flatMap(tsFilesIn).flatMap(
+  (file) => {
+    const ast = parse(fs.readFileSync(file, 'utf8'), {
+      loc: true,
+      range: true,
+    });
+    const constants = moduleScopeStrings(ast);
+    const found: string[] = [];
+    collectEmitted(ast, constants, found);
+    return found.map((specifier) => ({ file: path.basename(file), specifier }));
+  },
+);
+
+// Mirrors the rule's own notion of "external": anything it would report at the
+// shipped defaults unless ignoredLibraries covers it.
+const isExternal = (specifier: string): boolean =>
+  !specifier.includes(UNRESOLVED) &&
+  /^[a-z0-9@]/i.test(specifier) &&
+  !specifier.startsWith('@/') &&
+  !specifier.startsWith('node:') &&
+  !NODE_BUILTINS.has(specifier) &&
+  !NODE_BUILTINS.has(specifier.split('/')[0]) &&
+  !DEFAULT_INTERNAL_PREFIXES.some((prefix) => specifier.startsWith(prefix));
+
+const isIgnoredByDefault = (specifier: string): boolean =>
+  DEFAULT_IGNORED_LIBRARIES.some(
+    (pattern) =>
+      pattern === specifier || new Minimatch(pattern).match(specifier),
+  );
+
+const externalInjected = [
+  ...new Set(
+    emittedImports
+      .filter(({ specifier }) => isExternal(specifier))
+      .map(({ specifier }) => specifier),
+  ),
+].sort();
+
+const emittersOf = (specifier: string): string[] => [
+  ...new Set(
+    emittedImports
+      .filter((emitted) => emitted.specifier === specifier)
+      .map(({ file }) => file),
+  ),
+];
+
+describe(`${RULE_NAME} default ignored libraries`, () => {
+  it('derives injected modules from the rule sources', () => {
+    // Controls: a derivation that silently stops finding anything (a parser
+    // swap, a renamed directory) must fail here rather than pass vacuously.
+    expect(SOURCE_DIRS.flatMap(tsFilesIn).length).toBeGreaterThan(150);
+    expect(emittersOf('use-latest-callback')).toContain(
+      'use-latest-callback.ts',
+    );
+    expect(emittersOf('@blumintinc/typescript-memoize')).toContain(
+      'enforce-memoize-async.ts',
+    );
+    expect(emittersOf('react')).toContain('prefer-fragment-component.ts');
+    expect(externalInjected.length).toBeGreaterThanOrEqual(7);
+  });
+
+  it('lists every external module the fixers inject', () => {
+    const unlisted = externalInjected
+      .filter((specifier) => !isIgnoredByDefault(specifier))
+      .map((specifier) => ({ specifier, emittedBy: emittersOf(specifier) }));
+
+    expect(unlisted).toEqual([]);
+  });
+});
+
+// Membership in the list is only a proxy; these run the rule itself, at the
+// shipped defaults, over a static import of every module the fixers inject.
+ruleTester.run(`${RULE_NAME} (fixer-injected modules)`, rule, {
+  valid: externalInjected.map(
+    (specifier) => `import injected from '${specifier}';`,
+  ),
+  invalid: [],
 });
