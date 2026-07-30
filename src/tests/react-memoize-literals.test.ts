@@ -1677,6 +1677,7 @@ function Component() {
               messageId: 'memoizeLiteralSuggestion',
               output:
                 '\n' +
+                "import { useMemo } from 'react';\n" +
                 'function Component() {\n' +
                 '  const options = useMemo(() => ({ debounce: 50 }), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);\n' +
                 '  return <div>{options.debounce}</div>;\n' +
@@ -1708,6 +1709,7 @@ function Component({ onClick }) {
               messageId: 'memoizeLiteralSuggestion',
               output:
                 '\n' +
+                "import { useCallback } from 'react';\n" +
                 'function Component({ onClick }) {\n' +
                 '  const handleClick = useCallback(() => onClick(), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);\n' +
                 '  return <button onClick={handleClick}>Click</button>;\n' +
@@ -2754,6 +2756,426 @@ const MyComponent = () => {
             context: 'component "MyComponent"',
             memoHook: 'useMemo',
           },
+        },
+      ],
+    },
+  ],
+});
+
+// Import carrying (#1421): the suggestion wraps a literal in useMemo/useCallback,
+// so the hook must be bound in the file the suggestion lands in. The import edit
+// and the wrap ship as one fix; when the hook name already resolves to something
+// else, the suggestion is withheld and only the report remains.
+ruleTesterJsx.run('react-memoize-literals', reactMemoizeLiterals, {
+  valid: [],
+  invalid: [
+    // No react import at all: the hook import is inserted ahead of the code.
+    {
+      code: `
+function Component({ onClick }) {
+  const handleClick = () => onClick();
+  return <button onClick={handleClick}>Click</button>;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [
+            {
+              messageId: 'memoizeLiteralSuggestion',
+              output: `
+import { useCallback } from 'react';
+function Component({ onClick }) {
+  const handleClick = useCallback(() => onClick(), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);
+  return <button onClick={handleClick}>Click</button>;
+}
+      `,
+            },
+          ],
+        },
+      ],
+    },
+    // No react import, useMemo path.
+    {
+      code: `
+function Component() {
+  const options = { debounce: 50 };
+  return <Widget options={options} />;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [
+            {
+              messageId: 'memoizeLiteralSuggestion',
+              output: `
+import { useMemo } from 'react';
+function Component() {
+  const options = useMemo(() => ({ debounce: 50 }), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);
+  return <Widget options={options} />;
+}
+      `,
+            },
+          ],
+        },
+      ],
+    },
+    // Unrelated imports only: the hook import goes ahead of the first one.
+    {
+      code: `
+import { BasicInput } from './BasicInput';
+
+function Component({ onChange }) {
+  const handleChange = (value) => onChange(Number(value));
+  return <BasicInput onChange={handleChange} />;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [
+            {
+              messageId: 'memoizeLiteralSuggestion',
+              output: `
+import { useCallback } from 'react';
+import { BasicInput } from './BasicInput';
+
+function Component({ onChange }) {
+  const handleChange = useCallback((value) => onChange(Number(value)), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);
+  return <BasicInput onChange={handleChange} />;
+}
+      `,
+            },
+          ],
+        },
+      ],
+    },
+    // Existing react named import lacking the hook: the specifier list grows.
+    {
+      code: `
+import { useState } from 'react';
+
+function Component({ onClick }) {
+  const handleClick = () => onClick();
+  return <button onClick={handleClick}>Click</button>;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [
+            {
+              messageId: 'memoizeLiteralSuggestion',
+              output: `
+import { useState, useCallback } from 'react';
+
+function Component({ onClick }) {
+  const handleClick = useCallback(() => onClick(), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);
+  return <button onClick={handleClick}>Click</button>;
+}
+      `,
+            },
+          ],
+        },
+      ],
+    },
+    // Default import only: the named list is added beside the default binding.
+    {
+      code: `
+import React from 'react';
+
+function Component({ onClick }) {
+  const handleClick = () => onClick();
+  return <button onClick={handleClick}>Click</button>;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [
+            {
+              messageId: 'memoizeLiteralSuggestion',
+              output: `
+import React, { useCallback } from 'react';
+
+function Component({ onClick }) {
+  const handleClick = useCallback(() => onClick(), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);
+  return <button onClick={handleClick}>Click</button>;
+}
+      `,
+            },
+          ],
+        },
+      ],
+    },
+    // Default import plus named specifiers: the hook joins the named list.
+    {
+      code: `
+import React, { useState } from 'react';
+
+function Component() {
+  const options = { debounce: 50 };
+  return <Widget options={options} />;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [
+            {
+              messageId: 'memoizeLiteralSuggestion',
+              output: `
+import React, { useState, useMemo } from 'react';
+
+function Component() {
+  const options = useMemo(() => ({ debounce: 50 }), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);
+  return <Widget options={options} />;
+}
+      `,
+            },
+          ],
+        },
+      ],
+    },
+    // Namespace import: `import * as React, { useCallback }` is a syntax error,
+    // so the hook gets its own declaration.
+    {
+      code: `
+import * as React from 'react';
+
+function Component({ onClick }) {
+  const handleClick = () => onClick();
+  return <button onClick={handleClick}>Click</button>;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [
+            {
+              messageId: 'memoizeLiteralSuggestion',
+              output: `
+import { useCallback } from 'react';
+import * as React from 'react';
+
+function Component({ onClick }) {
+  const handleClick = useCallback(() => onClick(), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);
+  return <button onClick={handleClick}>Click</button>;
+}
+      `,
+            },
+          ],
+        },
+      ],
+    },
+    // Type-only react import: appending to it would erase at compile time, so
+    // the hook gets a value declaration of its own.
+    {
+      code: `
+import type { FC } from 'react';
+
+const Component: FC = () => {
+  const options = { debounce: 50 };
+  return <Widget options={options} />;
+};
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [
+            {
+              messageId: 'memoizeLiteralSuggestion',
+              output: `
+import { useMemo } from 'react';
+import type { FC } from 'react';
+
+const Component: FC = () => {
+  const options = useMemo(() => ({ debounce: 50 }), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);
+  return <Widget options={options} />;
+};
+      `,
+            },
+          ],
+        },
+      ],
+    },
+    // Hook already imported: no duplicate specifier is added.
+    {
+      code: `
+import { useCallback } from 'react';
+
+function Component({ onClick }) {
+  const handleClick = () => onClick();
+  const handleHover = () => onClick();
+  return <button onClick={handleClick} onMouseOver={handleHover}>Click</button>;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [
+            {
+              messageId: 'memoizeLiteralSuggestion',
+              output: `
+import { useCallback } from 'react';
+
+function Component({ onClick }) {
+  const handleClick = useCallback(() => onClick(), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);
+  const handleHover = () => onClick();
+  return <button onClick={handleClick} onMouseOver={handleHover}>Click</button>;
+}
+      `,
+            },
+          ],
+        },
+        {
+          messageId: 'componentLiteral',
+          suggestions: [
+            {
+              messageId: 'memoizeLiteralSuggestion',
+              output: `
+import { useCallback } from 'react';
+
+function Component({ onClick }) {
+  const handleClick = () => onClick();
+  const handleHover = useCallback(() => onClick(), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);
+  return <button onClick={handleClick} onMouseOver={handleHover}>Click</button>;
+}
+      `,
+            },
+          ],
+        },
+      ],
+    },
+    // Hook already imported via a react-scoped alias of another hook: the
+    // matching specifier is what counts, so the list still grows.
+    {
+      code: `
+import { useMemo as useMemoized } from 'react';
+
+function Component() {
+  const options = { debounce: 50 };
+  return <Widget options={options} />;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [
+            {
+              messageId: 'memoizeLiteralSuggestion',
+              output: `
+import { useMemo as useMemoized, useMemo } from 'react';
+
+function Component() {
+  const options = useMemo(() => ({ debounce: 50 }), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);
+  return <Widget options={options} />;
+}
+      `,
+            },
+          ],
+        },
+      ],
+    },
+    // Hook name shadowed by a local binding: the wrapper would call the shadow,
+    // so the suggestion is withheld while the report stands.
+    {
+      code: `
+import { useCallback } from './hooks';
+
+function Component({ onClick }) {
+  const handleClick = () => onClick();
+  return <button onClick={handleClick}>Click</button>;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [],
+        },
+      ],
+    },
+    // Hook name imported from a different module.
+    {
+      code: `
+import { useMemo } from 'preact/hooks';
+
+function Component() {
+  const options = { debounce: 50 };
+  return <Widget options={options} />;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [],
+        },
+      ],
+    },
+    // Hook name bound to a local variable in the component's own scope.
+    {
+      code: `
+function Component({ onClick }) {
+  const useCallback = buildHandler;
+  const handleClick = () => onClick();
+  return <button onClick={handleClick}>Click</button>;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [],
+        },
+      ],
+    },
+    // Hook name bound to a parameter of the enclosing component.
+    {
+      code: `
+function Component({ onClick, useMemo }) {
+  const options = { debounce: 50 };
+  return <Widget options={options} memo={useMemo} />;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [],
+        },
+      ],
+    },
+    // Hook name aliased onto a non-react module's export.
+    {
+      code: `
+import { useCallbackImpl as useCallback } from 'other-hooks';
+
+function Component({ onClick }) {
+  const handleClick = () => onClick();
+  return <button onClick={handleClick}>Click</button>;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [],
+        },
+      ],
+    },
+    // Type-only react specifier of the hook name: it erases at compile time, so
+    // it cannot bind the wrapper call.
+    {
+      code: `
+import { type useCallback } from 'react';
+
+function Component({ onClick }) {
+  const handleClick = () => onClick();
+  return <button onClick={handleClick}>Click</button>;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [],
         },
       ],
     },

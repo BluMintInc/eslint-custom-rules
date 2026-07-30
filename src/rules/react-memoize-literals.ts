@@ -120,6 +120,7 @@ const COMPARISON_OPERATORS = new Set([
 
 const MEMOIZATION_DEPS_TODO_PLACEHOLDER = '__TODO_MEMOIZATION_DEPENDENCIES__';
 const TODO_DEPS_COMMENT = `/* ${MEMOIZATION_DEPS_TODO_PLACEHOLDER} */`;
+const REACT_MODULE = 'react';
 const PARENTHESIZED_EXPRESSION_TYPE =
   (AST_NODE_TYPES as Record<string, string>).ParenthesizedExpression ??
   'ParenthesizedExpression';
@@ -794,40 +795,153 @@ function isReturnValueFromHook(
 }
 
 /**
+ * Value `react` import declarations in source order. Type-only declarations
+ * (`import type { FC } from 'react'`) are excluded because a hook appended to
+ * one erases at compile time, leaving the wrapper call unbound at runtime.
+ */
+function reactImportsOf(
+  program: TSESTree.Program,
+): TSESTree.ImportDeclaration[] {
+  return program.body.filter(
+    (statement): statement is TSESTree.ImportDeclaration =>
+      statement.type === AST_NODE_TYPES.ImportDeclaration &&
+      statement.source.value === REACT_MODULE &&
+      statement.importKind !== 'type',
+  );
+}
+
+/**
+ * A named specifier that binds `hookName` under its own name — the only shape
+ * that makes a bare `hookName(...)` call resolve to React's hook. An alias
+ * (`import { useMemo as useCallback }`) or a type-only specifier does not.
+ */
+function isHookSpecifier(
+  specifier: TSESTree.Node,
+  hookName: string,
+): specifier is TSESTree.ImportSpecifier {
+  return (
+    specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+    specifier.importKind !== 'type' &&
+    specifier.imported.name === hookName &&
+    specifier.local.name === hookName
+  );
+}
+
+/**
+ * Read the import state off the AST rather than a traversal flag: suggestions
+ * are computed per report and applied one at a time with a re-lint in between,
+ * so each has to be self-contained. A flag would also mis-handle a literal that
+ * precedes the import declaration in source order, since the
+ * `ImportDeclaration` visitor has not run for it yet.
+ */
+function importsHook(program: TSESTree.Program, hookName: string): boolean {
+  return reactImportsOf(program).some((declaration) =>
+    declaration.specifiers.some((specifier) =>
+      isHookSpecifier(specifier, hookName),
+    ),
+  );
+}
+
+/**
+ * Whether every declaration of a visible `hookName` binding is React's hook
+ * import. A local, a parameter, a namespace import, or an import from any other
+ * module all mean the generated wrapper would call something else.
+ */
+function bindsReactHook(
+  variable: TSESLint.Scope.Variable,
+  hookName: string,
+): boolean {
+  return (
+    variable.defs.length > 0 &&
+    variable.defs.every((def) => {
+      const specifier = def.node as TSESTree.Node;
+      if (!isHookSpecifier(specifier, hookName)) {
+        return false;
+      }
+      const declaration = specifier.parent;
+      return (
+        declaration?.type === AST_NODE_TYPES.ImportDeclaration &&
+        declaration.source.value === REACT_MODULE &&
+        declaration.importKind !== 'type'
+      );
+    })
+  );
+}
+
+/**
+ * Edit that makes `hookName` resolve to React's hook, or null when the file
+ * already imports it. Extending an existing declaration is preferred over a new
+ * one so a file keeps a single `react` specifier list.
+ */
+function buildHookImportFix(
+  fixer: TSESLint.RuleFixer,
+  program: TSESTree.Program,
+  hookName: string,
+): TSESLint.RuleFix | null {
+  if (importsHook(program, hookName)) {
+    return null;
+  }
+
+  const declarations = reactImportsOf(program);
+
+  const namedSpecifiers = declarations
+    .flatMap((declaration) => declaration.specifiers)
+    .filter(
+      (specifier): specifier is TSESTree.ImportSpecifier =>
+        specifier.type === AST_NODE_TYPES.ImportSpecifier,
+    );
+  const lastNamedSpecifier = namedSpecifiers[namedSpecifiers.length - 1];
+  if (lastNamedSpecifier) {
+    return fixer.insertTextAfter(lastNamedSpecifier, `, ${hookName}`);
+  }
+
+  // A default import accepts a named list beside it
+  // (`import React, { useCallback } from 'react'`). A namespace import does
+  // not — `import * as React, { useCallback }` is a syntax error — so that
+  // shape, like a bare side-effect import, falls through to its own declaration.
+  const defaultSpecifier = declarations
+    .flatMap((declaration) => declaration.specifiers)
+    .find(
+      (specifier): specifier is TSESTree.ImportDefaultSpecifier =>
+        specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier,
+    );
+  if (defaultSpecifier) {
+    return fixer.insertTextAfter(defaultSpecifier, `, { ${hookName} }`);
+  }
+
+  const statement = `import { ${hookName} } from '${REACT_MODULE}';\n`;
+  const firstImport = program.body.find(
+    (node) => node.type === AST_NODE_TYPES.ImportDeclaration,
+  );
+  const anchor = firstImport ?? program.body[0];
+  return anchor
+    ? fixer.insertTextBefore(anchor, statement)
+    : fixer.insertTextAfterRange([0, 0], statement);
+}
+
+/**
  * Builds memoization suggestions with dependency placeholders for developers.
  * @param node Literal node to wrap.
  * @param descriptor Literal metadata including memo hook.
  * @param sourceCode Source code utility for text extraction.
+ * @param context Rule context used to resolve the hook name at the call site.
  * @returns Suggestion array encouraging memoization with explicit deps TODO.
  */
 function buildMemoSuggestions(
   node: TSESTree.Node,
   descriptor: LiteralDescriptor,
   sourceCode: TSESLint.SourceCode,
+  context: Readonly<TSESLint.RuleContext<MessageIds, []>>,
 ): TSESLint.ReportSuggestionArray<MessageIds> {
   const initializerText = sourceCode.getText(node);
   const wrappedInitializer =
     descriptor.literalType === 'object literal'
       ? `(${initializerText})`
       : initializerText;
-
-  if (descriptor.literalType === 'inline function') {
-    return [
-      {
-        messageId: 'memoizeLiteralSuggestion',
-        data: {
-          literalType: descriptor.literalType,
-          memoHook: descriptor.memoHook,
-        },
-        fix(fixer) {
-          return fixer.replaceText(
-            node,
-            `${descriptor.memoHook}(${initializerText}, [${TODO_DEPS_COMMENT}])`,
-          );
-        },
-      },
-    ];
-  }
+  const replacementText =
+    descriptor.literalType === 'inline function'
+      ? `${descriptor.memoHook}(${initializerText}, [${TODO_DEPS_COMMENT}])`
+      : `${descriptor.memoHook}(() => ${wrappedInitializer}, [${TODO_DEPS_COMMENT}])`;
 
   return [
     {
@@ -837,10 +951,42 @@ function buildMemoSuggestions(
         memoHook: descriptor.memoHook,
       },
       fix(fixer) {
-        return fixer.replaceText(
-          node,
-          `${descriptor.memoHook}(() => ${wrappedInitializer}, [${TODO_DEPS_COMMENT}])`,
+        // The wrapper is only correct if the hook name resolves to React's
+        // hook. A shadowing local/parameter would silently call that value
+        // instead, and an import of the same name from another module would
+        // collide with the inserted specifier, so decline the suggestion and
+        // leave the report for the author to migrate deliberately.
+        const existing = ASTHelpers.findVariableInScope(
+          ASTHelpers.getScope(
+            context as unknown as TSESLint.RuleContext<
+              string,
+              readonly unknown[]
+            >,
+            // Resolve from the declarator, not the literal: a function literal
+            // is its own scope, so its parameters would shadow a name that the
+            // wrapper call — placed outside it — never sees.
+            (node.parent as TSESTree.Node | undefined) ?? node,
+          ),
+          descriptor.memoHook,
         );
+        if (existing && !bindsReactHook(existing, descriptor.memoHook)) {
+          return null;
+        }
+
+        // The import and the wrap are one atomic fix: emitted separately, the
+        // two disjoint ranges can be applied independently, stranding the
+        // wrapper without its binding.
+        const fixes: TSESLint.RuleFix[] = [];
+        const importFix = buildHookImportFix(
+          fixer,
+          sourceCode.ast,
+          descriptor.memoHook,
+        );
+        if (importFix) {
+          fixes.push(importFix);
+        }
+        fixes.push(fixer.replaceText(node, replacementText));
+        return fixes;
       },
     },
   ];
@@ -1917,7 +2063,7 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
       const suggestions =
         node.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
         node.parent.init === node
-          ? buildMemoSuggestions(node, descriptor, sourceCode)
+          ? buildMemoSuggestions(node, descriptor, sourceCode, context)
           : undefined;
 
       context.report({
