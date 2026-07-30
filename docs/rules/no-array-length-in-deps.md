@@ -16,24 +16,34 @@
 
 ## How to fix
 
-- Memoize a content hash: `const itemsHash = useMemo(() => stableHash(items), [items]);`
+- Memoize a content hash inside the component/hook, after the array is declared: `const itemsHash = useMemo(() => stableHash(items), [items]);`
 - Use the hash in dependency arrays: `[itemsHash]` instead of `[items.length]`.
-- Imports for `useMemo` and `stableHash` are added automatically by the fixer.
+- Imports for `useMemo` and `stableHash` are added automatically by the fixer; an existing `react` (or hash helper) import is extended rather than duplicated.
 
 ## Rule Details
 
 This rule flags any usage of `array.length` in the dependency arrays of `useEffect`, `useCallback`, and `useMemo`.
 It auto-fixes by:
 
-- Inserting a memoized hash variable above the hook call:
+- Inserting a memoized hash variable immediately before the statement containing the hook call, inside the same block as the tracked array — so the memo sits after the array's declaration and before its consumer:
   - `const itemsHash = useMemo(() => stableHash(items), [items]);`
-- Adding imports:
+- Adding imports (extending an existing declaration when one imports from the same module):
   - `import { useMemo } from 'react';`
   - `import { stableHash } from 'functions/src/util/hash/stableHash';`
 
 **Note:** The fixer inserts the imports above using the repo’s internal `stableHash` path. Adjust that import to match your project layout if different.
 - Replacing the `array.length` expression inside the dependency array with the memoized variable name.
 - Generating unique variable names by appending `Hash` (e.g., `itemsHash`) or `Hash2`, `Hash3`, etc. on conflict.
+
+### When the fixer bails (report-only)
+
+The fixer only runs when the generated `useMemo` is provably safe at its insertion point. It reports without fixing when:
+
+- The hook call sits at module scope or in an expression-bodied arrow — there is no legal statement position for a `useMemo` declaration.
+- The array (or any variable the memoized expression reads) is not resolvable to a declaration visible at the insertion point — e.g. an ambient global, or a binding scoped to a block the insertion point does not share.
+- The array is declared after the hook statement, where the hoisted read would hit the temporal dead zone.
+
+In those cases, memoize the hash manually in the appropriate scope.
 
 This ensures effects re-run whenever array contents change, not just when its length changes. `stableHash` safely stringifies values to produce a stable hash for arrays and objects.
 
@@ -55,46 +65,65 @@ This ensures effects re-run whenever array contents change, not just when its le
 Bad:
 
 ```tsx
-useEffect(() => {
-  // ...
-}, [items.length]);
+export const useThing = () => {
+  const participants = useParticipants();
+
+  useEffect(() => {
+    // ...
+  }, [participants.length]);
+};
 ```
 
 Good:
 
 ```tsx
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { stableHash } from 'functions/src/util/hash/stableHash';
 
-const itemsHash = useMemo(() => stableHash(items), [items]);
+export const useThing = () => {
+  const participants = useParticipants();
 
-useEffect(() => {
-  // ...
-}, [itemsHash]);
+  const participantsHash = useMemo(() => stableHash(participants), [participants]);
+  useEffect(() => {
+    // ...
+  }, [participantsHash]);
+};
 ```
 
 ### Optional Chaining
 
 ```tsx
 // bad
-useEffect(() => {}, [data?.items.length]);
+const C = ({ data }) => {
+  useEffect(() => {}, [data?.items.length]);
+  return null;
+};
 
 // good
-const itemsHash = useMemo(() => stableHash(data?.items), [data?.items]);
-useEffect(() => {}, [itemsHash]);
+const C = ({ data }) => {
+  const itemsHash = useMemo(() => stableHash(data?.items), [data?.items]);
+  useEffect(() => {}, [itemsHash]);
+  return null;
+};
 ```
 
 ### Multiple array.length Expressions
 
 ```tsx
 // bad
-useEffect(() => {}, [items.length, users.length, messages.length]);
+const C = ({ items, users, messages }) => {
+  useEffect(() => {}, [items.length, users.length, messages.length]);
+  return null;
+};
 
 // good
-const itemsHash = useMemo(() => stableHash(items), [items]);
-const usersHash = useMemo(() => stableHash(users), [users]);
-const messagesHash = useMemo(() => stableHash(messages), [messages]);
-useEffect(() => {}, [itemsHash, usersHash, messagesHash]);
+const C = ({ items, users, messages }) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  const usersHash = useMemo(() => stableHash(users), [users]);
+  const messagesHash = useMemo(() => stableHash(messages), [messages]);
+  useEffect(() => {}, [itemsHash, usersHash, messagesHash]);
+  return null;
+};
 ```
 
 ## Edge Cases
