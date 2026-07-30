@@ -41,6 +41,20 @@ const FUNCTION_TYPES = new Set<string>([
   AST_NODE_TYPES.FunctionDeclaration,
 ]);
 
+/**
+ * Function/constructor/conditional type notation must be parenthesized to
+ * appear as a `|` union member, or the emitted annotation does not parse
+ * ("Function type notation must be parenthesized when used in a union type").
+ * Over-wrapping is harmless — a parenthesized type is valid in any type
+ * position — so this tests the printed text conservatively instead of
+ * re-deriving the printer's precedence rules.
+ */
+function parenthesizeForUnion(text: string): string {
+  const needsParens =
+    text.includes('=>') || /^new\b/.test(text) || /\bextends\b/.test(text);
+  return needsParens ? `(${text})` : text;
+}
+
 export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
   name: 'prefer-map-over-conditional-dispatch',
   meta: {
@@ -200,7 +214,13 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
           parts.push(text);
         }
       }
-      return parts.length > 0 ? parts.join(' | ') : null;
+      if (parts.length === 0) {
+        return null;
+      }
+      if (parts.length === 1) {
+        return parts[0];
+      }
+      return parts.map(parenthesizeForUnion).join(' | ');
     }
 
     function discriminantTypeText(
@@ -217,6 +237,112 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       } catch {
         return null;
       }
+    }
+
+    /**
+     * `checker.typeToString()` prints a symbol's bare name with no regard for
+     * whether that name resolves at the fix site (an unimported helper type
+     * prints the same as an imported one), and exotic printer output can be
+     * invalid in an annotation position. Shipping such an annotation breaks
+     * the build, so the fix is gated on the synthesized text (a) parsing
+     * standalone and (b) referencing only names in scope where the Record is
+     * inserted. Failing the gate downgrades to the report-only path — the
+     * plugin prefers a skipped fix over one that does not compile.
+     */
+    function validateAnnotation(
+      annotationText: string,
+      fixSite: TSESTree.Node,
+    ): 'ok' | 'unparseable' | 'unresolvable' {
+      const sourceFile = ts.createSourceFile(
+        '__annotation__.ts',
+        `type __T = ${annotationText};`,
+        ts.ScriptTarget.Latest,
+        true,
+      );
+      // parseDiagnostics is absent from the public SourceFile type but always
+      // populated at runtime; a diagnostic here means the annotation cannot
+      // ship (e.g. printer truncation, or an unparenthesized member shape the
+      // union-wrapping heuristic does not recognize).
+      const parseDiagnostics = (
+        sourceFile as unknown as { parseDiagnostics?: readonly unknown[] }
+      ).parseDiagnostics;
+      if (!parseDiagnostics || parseDiagnostics.length > 0) {
+        return 'unparseable';
+      }
+
+      const typeReferenceRoots = new Set<string>();
+      const typeQueryRoots = new Set<string>();
+      let hasImportType = false;
+      const rootNameOf = (name: ts.EntityName): string => {
+        let current: ts.EntityName = name;
+        while (ts.isQualifiedName(current)) {
+          current = current.left;
+        }
+        return current.text;
+      };
+      const collect = (node: ts.Node): void => {
+        if (ts.isTypeReferenceNode(node)) {
+          typeReferenceRoots.add(rootNameOf(node.typeName));
+        } else if (ts.isTypeQueryNode(node)) {
+          typeQueryRoots.add(rootNameOf(node.exprName));
+        } else if (ts.isImportTypeNode(node)) {
+          // `import("...").T` paths printed by the checker are absolute or
+          // resolver-relative — never portable source text.
+          hasImportType = true;
+        }
+        ts.forEachChild(node, collect);
+      };
+      collect(sourceFile);
+      if (hasImportType) {
+        return 'unresolvable';
+      }
+
+      // `Record` is the wrapper this rule itself emits — a TS lib global that
+      // is present in any real project. The isolated single-file program a
+      // RuleTester builds loads no lib files at all, so requiring it in scope
+      // would falsely downgrade every fix under test.
+      typeReferenceRoots.delete('Record');
+      if (typeReferenceRoots.size === 0 && typeQueryRoots.size === 0) {
+        return 'ok';
+      }
+
+      const tsFixSite = esTreeNodeToTSNodeMap.get(fixSite);
+      if (!tsFixSite) {
+        return 'unresolvable';
+      }
+      try {
+        const namesInScope = (meaning: ts.SymbolFlags): Set<string> =>
+          new Set(
+            checker
+              .getSymbolsInScope(tsFixSite, meaning)
+              .map((symbol) => symbol.name),
+          );
+        if (typeReferenceRoots.size > 0) {
+          const typeNames = namesInScope(
+            ts.SymbolFlags.Type |
+              ts.SymbolFlags.Namespace |
+              ts.SymbolFlags.Alias,
+          );
+          for (const root of typeReferenceRoots) {
+            if (!typeNames.has(root)) {
+              return 'unresolvable';
+            }
+          }
+        }
+        if (typeQueryRoots.size > 0) {
+          const valueNames = namesInScope(
+            ts.SymbolFlags.Value | ts.SymbolFlags.Alias,
+          );
+          for (const root of typeQueryRoots) {
+            if (!valueNames.has(root)) {
+              return 'unresolvable';
+            }
+          }
+        }
+      } catch {
+        return 'unresolvable';
+      }
+      return 'ok';
     }
 
     // ---- AST helpers --------------------------------------------------------
@@ -598,6 +724,24 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
           data: {
             reason:
               'the branch value type could not be resolved for the annotation',
+          },
+        });
+        return;
+      }
+
+      const verdict = validateAnnotation(
+        `Record<${dText}, ${vText}>`,
+        discriminantOf(node),
+      );
+      if (verdict !== 'ok') {
+        context.report({
+          node,
+          messageId: 'preferMapManual',
+          data: {
+            reason:
+              verdict === 'unparseable'
+                ? 'the branch value type does not print as a parseable annotation — write the Record with an explicit type manually'
+                : 'the annotation would name types that are not in scope at the fix site — import them or write the Record manually',
           },
         });
         return;

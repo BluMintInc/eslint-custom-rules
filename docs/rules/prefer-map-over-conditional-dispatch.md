@@ -139,6 +139,15 @@ report-only message (`preferMapManual`) explaining why and suggesting the shape:
   statement; if that would cross a function boundary (a ternary as an
   expression-bodied arrow's body), the fix is skipped so values/discriminant
   stay in scope.
+- **A printable, in-scope annotation.** The `Record<D, V>` value type is
+  synthesized from the checker's printed types. Union members in function,
+  constructor, or conditional notation are parenthesized, as TypeScript
+  requires (`((a: A) => void) | ((b: B) => void)`, never
+  `(a: A) => void | (b: B) => void`). If the synthesized annotation still
+  fails to parse, or names a type that is not in scope at the fix site (the
+  checker prints a symbol's bare name with no regard for imports — an
+  unimported helper type prints the same as an imported one), the fix is
+  skipped — import the type or write the `Record` manually.
 
 The autofix constructs the `Record` **inline at the site** with an explicit
 `Record<D, V>` annotation (never `satisfies`, which Next.js 12's SWC cannot
