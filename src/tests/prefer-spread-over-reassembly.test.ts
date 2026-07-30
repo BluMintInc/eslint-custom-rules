@@ -260,7 +260,9 @@ const GameCatalogWrapperStable = memo(
     },
 
     // Issue example 2: ChannelManager — all destructured fields forwarded,
-    // plus one extra non-destructured prop (ContentCard) kept explicit.
+    // plus one extra non-destructured prop (ContentCard) kept explicit. The
+    // retained attribute keeps its own line (#1443) so anything attached to it
+    // — comments, directives — survives the collapse.
     {
       code: `
 const ChannelManagerCatalogWrapperStable = memo(
@@ -283,7 +285,10 @@ const ChannelManagerCatalogWrapperStable = memo(
 const ChannelManagerCatalogWrapperStable = memo(
   (props) => {
     return (
-      <UserVerticalCarousel {...props} ContentCard={UserCardAddWithMaxMembers} />
+      <UserVerticalCarousel
+        {...props}
+        ContentCard={UserCardAddWithMaxMembers}
+      />
     );
   },
   compareDeeply('hits'),
@@ -316,7 +321,11 @@ const FriendsViewCatalogWrapperStable = memo(
 const FriendsViewCatalogWrapperStable = memo(
   (props) => {
     return (
-      <FriendVerticalCarousel {...props} noFriends={<NoContent isSelf variant="friends" />} RenderFriendHit={FriendCard} />
+      <FriendVerticalCarousel
+        {...props}
+        noFriends={<NoContent isSelf variant="friends" />}
+        RenderFriendHit={FriendCard}
+      />
     );
   },
   compareDeeply('hits', 'containerSx'),
@@ -600,6 +609,328 @@ const Wrapper = ({ props, isLoading }: ChildProps) => <Child props={props} isLoa
       errors: [{ messageId: 'preferSpread' }],
       output: `
 const Wrapper = (props0: ChildProps) => <Child {...props0} />;
+`,
+    },
+
+    // Regression (#1443): a directive comment attached to a RETAINED attribute
+    // must survive the fix. Destroying it silently re-enables the rule it
+    // suppresses (here `no-console` on the kept `ContentCard` attribute).
+    {
+      code: `
+const Wrapper = memo(
+  ({ hits, isLoading, onNearEnd, header }) => {
+    return (
+      <UserVerticalCarousel
+        // eslint-disable-next-line no-console
+        ContentCard={console.log('x')}
+        header={header}
+        hits={hits}
+        isLoading={isLoading}
+        onNearEnd={onNearEnd}
+      />
+    );
+  },
+  compareDeeply('hits'),
+);
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const Wrapper = memo(
+  (props) => {
+    return (
+      <UserVerticalCarousel
+        {...props}
+        // eslint-disable-next-line no-console
+        ContentCard={console.log('x')}
+      />
+    );
+  },
+  compareDeeply('hits'),
+);
+`,
+    },
+
+    // Regression (#1443): a comment attached to a COLLAPSED attribute goes away
+    // with the attribute it annotates, while the retained attribute's own
+    // comment stays put.
+    {
+      code: `
+const Wrapper = ({ hits, isLoading }) => {
+  return (
+    <Child
+      // this one is forwarded verbatim
+      hits={hits}
+      isLoading={isLoading}
+      // keep me: describes extra
+      extra="x"
+    />
+  );
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const Wrapper = (props) => {
+  return (
+    <Child
+      {...props}
+      // keep me: describes extra
+      extra="x"
+    />
+  );
+};
+`,
+    },
+
+    // Regression (#1443): a block comment above a retained attribute survives.
+    {
+      code: `
+const Wrapper = ({ hits, isLoading }) => {
+  return (
+    <Child
+      hits={hits}
+      isLoading={isLoading}
+      /* documents the render prop */
+      renderRow={RowCard}
+    />
+  );
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const Wrapper = (props) => {
+  return (
+    <Child
+      {...props}
+      /* documents the render prop */
+      renderRow={RowCard}
+    />
+  );
+};
+`,
+    },
+
+    // Regression (#1443): a trailing line comment on a retained attribute stays
+    // on that attribute's line.
+    {
+      code: `
+const Wrapper = ({ hits, isLoading }) => {
+  return (
+    <Child
+      hits={hits}
+      isLoading={isLoading}
+      extra="x" // eslint-disable-line no-magic-numbers
+    />
+  );
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const Wrapper = (props) => {
+  return (
+    <Child
+      {...props}
+      extra="x" // eslint-disable-line no-magic-numbers
+    />
+  );
+};
+`,
+    },
+
+    // Regression (#1443): a multiline attribute value keeps its own formatting
+    // because only the collapsed attributes' ranges are spliced out.
+    {
+      code: `
+const Wrapper = ({ hits, isLoading }) => {
+  return (
+    <Child
+      hits={hits}
+      isLoading={isLoading}
+      sx={{
+        color: 'red',
+        display: 'flex',
+      }}
+    />
+  );
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const Wrapper = (props) => {
+  return (
+    <Child
+      {...props}
+      sx={{
+        color: 'red',
+        display: 'flex',
+      }}
+    />
+  );
+};
+`,
+    },
+
+    // Regression (#1443): when EVERY attribute collapses the element still
+    // shrinks to a single spread, and comments belonging to those collapsed
+    // attributes go away with them.
+    {
+      code: `
+const Wrapper = ({ hits, isLoading, onNearEnd }) => {
+  return (
+    <Child
+      hits={hits}
+      // forwarded verbatim
+      isLoading={isLoading}
+      onNearEnd={onNearEnd}
+    />
+  );
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const Wrapper = (props) => {
+  return (
+    <Child {...props} />
+  );
+};
+`,
+    },
+
+    // Regression (#1443): a comment after the last collapsed attribute belongs
+    // to no attribute, so it survives the collapse.
+    {
+      code: `
+const Wrapper = ({ hits, isLoading }) => {
+  return (
+    <Child
+      hits={hits}
+      isLoading={isLoading}
+      // TODO: pass a fallback too
+    />
+  );
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const Wrapper = (props) => {
+  return (
+    <Child
+      {...props}
+      // TODO: pass a fallback too
+    />
+  );
+};
+`,
+    },
+
+    // Regression (#1443): a retained spread attribute keeps its position after
+    // the inserted props spread.
+    {
+      code: `
+const Wrapper = ({ hits, isLoading }) => {
+  return (
+    <Child
+      hits={hits}
+      isLoading={isLoading}
+      // the caller's overrides must stay last
+      {...rest}
+    />
+  );
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const Wrapper = (props) => {
+  return (
+    <Child
+      {...props}
+      // the caller's overrides must stay last
+      {...rest}
+    />
+  );
+};
+`,
+    },
+
+    // Regression (#1443): a non-self-closing element keeps its children and the
+    // comment on its retained attribute.
+    {
+      code: `
+const Wrapper = ({ hits, isLoading }) => {
+  return (
+    <Child
+      hits={hits}
+      isLoading={isLoading}
+      // eslint-disable-next-line no-console
+      onClick={() => console.log('x')}
+    >
+      <Inner />
+    </Child>
+  );
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const Wrapper = (props) => {
+  return (
+    <Child
+      {...props}
+      // eslint-disable-next-line no-console
+      onClick={() => console.log('x')}
+    >
+      <Inner />
+    </Child>
+  );
+};
+`,
+    },
+
+    // Regression (#1443): the object-literal branch splices too, so a directive
+    // on a retained property survives.
+    {
+      code: `
+const transform = ({ a, b }) => {
+  return {
+    a,
+    b,
+    // eslint-disable-next-line no-console
+    label: console.log('x'),
+  };
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const transform = (props) => {
+  return {
+    ...props,
+    // eslint-disable-next-line no-console
+    label: console.log('x'),
+  };
+};
+`,
+    },
+
+    // Regression (#1443): object-literal splice with the retained property
+    // first and no trailing comma on the last collapsed property.
+    {
+      code: `
+const transform = ({ a, b }) => {
+  return {
+    // eslint-disable-next-line no-console
+    label: console.log('x'),
+    a,
+    b
+  };
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const transform = (props) => {
+  return {
+    ...props,
+    // eslint-disable-next-line no-console
+    label: console.log('x')
+  };
+};
 `,
     },
   ],

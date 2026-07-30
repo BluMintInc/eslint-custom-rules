@@ -376,6 +376,225 @@ function replacePatternWithName(
   );
 }
 
+/** An absolute `[start, end)` slice of the source text to splice out. */
+type RemovalSpan = [number, number];
+
+/**
+ * The span to splice out for an item (JSX attribute or object property) that is
+ * being replaced by the spread. It covers the item, the whitespace separating it
+ * from whatever precedes it, and the comments that belong to it.
+ *
+ * Ownership of a comment is decided by line: a comment sharing a line with the
+ * preceding item belongs to that item, while a comment on its own line belongs
+ * to the item it sits above. Comments attached to a removed item go away with it
+ * (the code they annotate is gone), but a comment belonging to a retained item —
+ * an `eslint-disable-next-line` directive above it, for instance — is never
+ * touched, which is the whole point of splicing instead of re-emitting.
+ */
+function removalSpanOf(
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  item: TSESTree.Node,
+  tail: TSESTree.Node | TSESTree.Token = item,
+): RemovalSpan {
+  const prevToken = sourceCode.getTokenBefore(item);
+  let start = item.range[0];
+  if (prevToken) {
+    start = prevToken.range[1];
+    for (const comment of sourceCode.getCommentsBefore(item)) {
+      if (comment.loc.start.line !== prevToken.loc.end.line) break;
+      start = comment.range[1];
+    }
+  }
+
+  let end = tail.range[1];
+  for (const comment of sourceCode.getCommentsAfter(tail)) {
+    // Only a line comment is unambiguously owned by the item: it runs to the
+    // end of the line, so nothing else can share it. A block comment followed
+    // by more code on the same line may belong to what comes next, so it stays.
+    if (
+      comment.type !== AST_TOKEN_TYPES.Line ||
+      comment.loc.start.line !== tail.loc.end.line
+    ) {
+      break;
+    }
+    end = comment.range[1];
+  }
+
+  return [start, end];
+}
+
+/**
+ * Removes the given spans from `text`, whose first character sits at absolute
+ * offset `textStart`. Overlapping spans are tolerated so callers can widen a
+ * span (e.g. to swallow a separating comma) without coordinating with siblings.
+ */
+function spliceOut(
+  text: string,
+  textStart: number,
+  spans: readonly RemovalSpan[],
+): string {
+  const textEnd = textStart + text.length;
+  const sorted = [...spans].sort((a, b) => a[0] - b[0]);
+  let result = '';
+  let cursor = textStart;
+  for (const [spanStart, spanEnd] of sorted) {
+    const from = Math.max(spanStart, textStart);
+    const to = Math.min(spanEnd, textEnd);
+    if (to <= cursor) continue;
+    if (from > cursor) {
+      result += text.slice(cursor - textStart, from - textStart);
+    }
+    cursor = to;
+  }
+  if (cursor < textEnd) {
+    result += text.slice(cursor - textStart);
+  }
+  return result;
+}
+
+/**
+ * Drops a trailing comma the splice left behind, unless the author's own text
+ * already ended with one (in which case the style is preserved).
+ */
+function dropDanglingComma(
+  remaining: string,
+  originalHadTrailingComma: boolean,
+): string {
+  if (originalHadTrailingComma || !remaining.trimEnd().endsWith(',')) {
+    return remaining;
+  }
+  const commaIndex = remaining.lastIndexOf(',');
+  return remaining.slice(0, commaIndex) + remaining.slice(commaIndex + 1);
+}
+
+/** The leading whitespace of a region, used to indent the inserted spread. */
+function indentationOf(regionText: string): string {
+  const leading = /^\s*/.exec(regionText);
+  return leading && leading[0].length > 0 ? leading[0] : ' ';
+}
+
+/**
+ * The offset where a JSX element's attribute region begins: just past the
+ * element name and its type arguments, if any.
+ */
+function jsxAttributeRegionStart(
+  openingElement: TSESTree.JSXOpeningElement,
+): number {
+  // The property is named `typeParameters` in older AST versions and
+  // `typeArguments` in newer ones; both spell the same `<T>` after the name.
+  const withTypeArgs = openingElement as TSESTree.JSXOpeningElement & {
+    typeArguments?: { range: TSESTree.Range };
+    typeParameters?: { range: TSESTree.Range };
+  };
+  const typeArgs = withTypeArgs.typeArguments ?? withTypeArgs.typeParameters;
+  return (typeArgs ?? openingElement.name).range[1];
+}
+
+/**
+ * The offset where a JSX element's attribute region ends: at the `/` of `/>` for
+ * a self-closing element, otherwise at the `>`.
+ */
+function jsxAttributeRegionEnd(
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  openingElement: TSESTree.JSXOpeningElement,
+): number | null {
+  const lastToken = sourceCode.getLastToken(openingElement);
+  if (!lastToken) return null;
+  if (!openingElement.selfClosing) return lastToken.range[0];
+  const slash = sourceCode.getTokenBefore(lastToken);
+  if (
+    slash &&
+    slash.type === AST_TOKEN_TYPES.Punctuator &&
+    slash.value === '/'
+  ) {
+    return slash.range[0];
+  }
+  return lastToken.range[0];
+}
+
+/**
+ * Replaces the forwarded attributes with a single `{...props}` by splicing out
+ * only their own ranges, so every retained attribute keeps its source text, its
+ * comments and the original line structure.
+ */
+function buildJsxSpreadFix(
+  fixer: TSESLint.RuleFixer,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  openingElement: TSESTree.JSXOpeningElement,
+  removedAttributes: readonly TSESTree.Node[],
+  propsName: string,
+): TSESLint.RuleFix | null {
+  const regionStart = jsxAttributeRegionStart(openingElement);
+  const regionEnd = jsxAttributeRegionEnd(sourceCode, openingElement);
+  if (regionEnd === null || regionEnd < regionStart) return null;
+
+  const regionText = sourceCode.getText().slice(regionStart, regionEnd);
+  const spans = removedAttributes.map((attr) =>
+    removalSpanOf(sourceCode, attr),
+  );
+  const remaining = spliceOut(regionText, regionStart, spans);
+  const spread = `{...${propsName}}`;
+
+  // Nothing survives the collapse, so the element reduces to the spread alone.
+  // A self-closing element keeps a space before its `/>`.
+  const collapsedRegion = openingElement.selfClosing
+    ? ` ${spread} `
+    : ` ${spread}`;
+  const newRegion =
+    remaining.trim() === ''
+      ? collapsedRegion
+      : `${indentationOf(regionText)}${spread}${remaining}`;
+
+  return fixer.replaceTextRange([regionStart, regionEnd], newRegion);
+}
+
+/**
+ * Object-literal counterpart of {@link buildJsxSpreadFix}: splices out the
+ * forwarded shorthand properties (with their separating comma) and inserts
+ * `...props` in their place.
+ */
+function buildObjectSpreadFix(
+  fixer: TSESLint.RuleFixer,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  objectExpression: TSESTree.ObjectExpression,
+  removedProperties: readonly TSESTree.Node[],
+  propsName: string,
+): TSESLint.RuleFix | null {
+  const openBrace = sourceCode.getFirstToken(objectExpression);
+  const closeBrace = sourceCode.getLastToken(objectExpression);
+  if (!openBrace || !closeBrace) return null;
+
+  const regionStart = openBrace.range[1];
+  const regionEnd = closeBrace.range[0];
+  if (regionEnd < regionStart) return null;
+
+  const regionText = sourceCode.getText().slice(regionStart, regionEnd);
+  const spans = removedProperties.map((prop) => {
+    const nextToken = sourceCode.getTokenAfter(prop);
+    const trailingComma =
+      nextToken &&
+      nextToken.type === AST_TOKEN_TYPES.Punctuator &&
+      nextToken.value === ','
+        ? nextToken
+        : null;
+    return removalSpanOf(sourceCode, prop, trailingComma ?? prop);
+  });
+
+  // Removing the final property leaves the comma that separated it from the
+  // previous one, so a separator the author did not write is dropped again.
+  const remaining = dropDanglingComma(
+    spliceOut(regionText, regionStart, spans),
+    regionText.trimEnd().endsWith(','),
+  );
+  const spread = `...${propsName}`;
+  const newRegion =
+    remaining.trim() === ''
+      ? ` ${spread} `
+      : `${indentationOf(regionText)}${spread},${remaining}`;
+
+  return fixer.replaceTextRange([regionStart, regionEnd], newRegion);
+}
+
 export const preferSpreadOverReassembly = createRule<Options, MessageIds>({
   name: 'prefer-spread-over-reassembly',
   meta: {
@@ -439,11 +658,11 @@ export const preferSpreadOverReassembly = createRule<Options, MessageIds>({
       // We need at least minFields to be forwarded identically.
       if (forwarded.length < minFields) return;
 
-      // Build a set of the forwarded nodes so we can exclude them from the
-      // "used elsewhere" check.
-      const forwardedNodeSet = new Set<TSESTree.Node>(
-        forwarded.map((f) => f.node),
-      );
+      // The attribute/property nodes that the spread replaces. They are also
+      // excluded from the "used elsewhere" check below. Captured outside the
+      // fixer so the narrowed (non-null) type survives into the closure.
+      const forwardedNodes: TSESTree.Node[] = forwarded.map((f) => f.node);
+      const forwardedNodeSet = new Set<TSESTree.Node>(forwardedNodes);
 
       // Ensure none of the forwarded names is used anywhere else in the body.
       for (const { name } of forwarded) {
@@ -492,50 +711,30 @@ export const preferSpreadOverReassembly = createRule<Options, MessageIds>({
           }
           fixes.push(paramFix);
 
-          if (target.kind === 'jsx') {
-            // 2a. Build the new JSX opening element text.
-            const attrs = target.openingElement.attributes;
-            const nonForwardedAttrs = attrs.filter(
-              (a) => !forwardedNodeSet.has(a),
-            );
-
-            // Determine if the JSX element is self-closing.
-            const isSelfClosing = target.openingElement.selfClosing;
-            const tagName = sourceCode.getText(target.openingElement.name);
-
-            // Build new attribute list: spread first, then remaining attrs.
-            const spreadAttr = `{...${propsName}}`;
-            const remainingAttrTexts = nonForwardedAttrs.map((a) =>
-              sourceCode.getText(a),
-            );
-
-            const allAttrTexts = [spreadAttr, ...remainingAttrTexts];
-            const attrsText =
-              allAttrTexts.length > 0 ? ' ' + allAttrTexts.join(' ') : '';
-
-            const newOpeningText = isSelfClosing
-              ? `<${tagName}${attrsText} />`
-              : `<${tagName}${attrsText}>`;
-
-            fixes.push(
-              fixer.replaceText(target.openingElement, newOpeningText),
-            );
-          } else {
-            // 2b. Build the new object expression text.
-            const props = target.expression.properties;
-            const nonForwardedProps = props.filter(
-              (p) => !forwardedNodeSet.has(p),
-            );
-
-            const nonForwardedTexts = nonForwardedProps.map((p) =>
-              sourceCode.getText(p),
-            );
-
-            const allPropTexts = [`...${propsName}`, ...nonForwardedTexts];
-            const newObjText = `{ ${allPropTexts.join(', ')} }`;
-
-            fixes.push(fixer.replaceText(target.expression, newObjText));
+          // 2. Collapse the forwarded fields into a single spread. Only the
+          // ranges of the fields being collapsed are spliced out; the retained
+          // ones — and the comments attached to them, which may be
+          // `eslint-disable` directives — are left exactly as authored.
+          const targetFix =
+            target.kind === 'jsx'
+              ? buildJsxSpreadFix(
+                  fixer,
+                  sourceCode,
+                  target.openingElement,
+                  forwardedNodes,
+                  propsName,
+                )
+              : buildObjectSpreadFix(
+                  fixer,
+                  sourceCode,
+                  target.expression,
+                  forwardedNodes,
+                  propsName,
+                );
+          if (!targetFix) {
+            return null;
           }
+          fixes.push(targetFix);
 
           return fixes;
         },
