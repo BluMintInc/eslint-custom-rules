@@ -1,14 +1,16 @@
+import { parse } from '@typescript-eslint/parser';
+import { TSESLint } from '@typescript-eslint/utils';
 import { ruleTesterTs, ruleTesterJsx } from '../utils/ruleTester';
 import { preferMapOverConditionalDispatch } from '../rules/prefer-map-over-conditional-dispatch';
 
-ruleTesterTs.run(
-  'prefer-map-over-conditional-dispatch',
-  preferMapOverConditionalDispatch,
-  {
-    valid: [
-      // Edge 1: discriminated-union tag switch that narrows the object (reads
-      // a sibling variant field) — a flat Record cannot express narrowing.
-      `
+type RuleMessageIds = 'preferMap' | 'preferMapManual';
+type RuleTests = TSESLint.RunTests<RuleMessageIds, []>;
+
+const tsTests: RuleTests = {
+  valid: [
+    // Edge 1: discriminated-union tag switch that narrows the object (reads
+    // a sibling variant field) — a flat Record cannot express narrowing.
+    `
 type Result = { kind: 'success'; data: string } | { kind: 'failure' };
 declare const result: Result;
 function f() {
@@ -20,8 +22,8 @@ function f() {
   }
 }
 `,
-      // Edge 1: multiple variants, each reading its own field.
-      `
+    // Edge 1: multiple variants, each reading its own field.
+    `
 type ReportTarget =
   | { type: 'profile'; userId: string }
   | { type: 'tournament'; tournamentId: string };
@@ -35,8 +37,8 @@ function f() {
   }
 }
 `,
-      // Edge 1: narrowing via a cast of the base object.
-      `
+    // Edge 1: narrowing via a cast of the base object.
+    `
 type Box = { tag: 'a'; a: number } | { tag: 'b'; b: number };
 declare const box: Box;
 function f() {
@@ -48,8 +50,8 @@ function f() {
   }
 }
 `,
-      // Edge 4: discriminant statically 'string' (trust-boundary switch).
-      `
+    // Edge 4: discriminant statically 'string' (trust-boundary switch).
+    `
 declare function split(): string;
 function f() {
   const standard = split();
@@ -63,8 +65,8 @@ function f() {
   }
 }
 `,
-      // Edge 4: discriminant is 'number'.
-      `
+    // Edge 4: discriminant is 'number'.
+    `
 declare const n: number;
 function f() {
   switch (n) {
@@ -77,8 +79,8 @@ function f() {
   }
 }
 `,
-      // Edge 4: discriminant is 'boolean'.
-      `
+    // Edge 4: discriminant is 'boolean'.
+    `
 declare const flag: boolean;
 function f() {
   switch (flag) {
@@ -89,16 +91,16 @@ function f() {
   }
 }
 `,
-      // Edge 4: T | 'disabled' guard ternary — union contains a function type.
-      `
+    // Edge 4: T | 'disabled' guard ternary — union contains a function type.
+    `
 type Handler = (n: number) => void;
 declare const onChange: Handler | 'disabled';
 function f() {
   return onChange === 'disabled' ? 'disabled' : onChange;
 }
 `,
-      // Edge 5: side-effect-only switch (no return/assignment value).
-      `
+    // Edge 5: side-effect-only switch (no return/assignment value).
+    `
 declare const data: unknown;
 type Level = 'warn' | 'error' | 'info';
 declare const level: Level;
@@ -115,8 +117,8 @@ function log() {
   }
 }
 `,
-      // Edge 5: a branch with an extra statement before the return.
-      `
+    // Edge 5: a branch with an extra statement before the return.
+    `
 type K = 'a' | 'b';
 declare const k: K;
 declare function logEvent(s: string): void;
@@ -130,8 +132,8 @@ function f() {
   }
 }
 `,
-      // Edge 9: control-flow-only switch (multi-statement, no unified value).
-      `
+    // Edge 9: control-flow-only switch (multi-statement, no unified value).
+    `
 type Phase = 'checkin' | 'live';
 declare const phase: Phase;
 declare const match: unknown;
@@ -148,16 +150,16 @@ function f() {
   }
 }
 `,
-      // Call-bearing discriminant in a ternary chain (evaluation-count hazard).
-      `
+    // Call-bearing discriminant in a ternary chain (evaluation-count hazard).
+    `
 type K = 'a' | 'b';
 declare function getKind(): K;
 function f() {
   return getKind() === 'a' ? 1 : getKind() === 'b' ? 2 : 3;
 }
 `,
-      // Not exhaustive and no default — genuine partial control flow.
-      `
+    // Not exhaustive and no default — genuine partial control flow.
+    `
 type K = 'a' | 'b' | 'c';
 declare const k: K;
 function f() {
@@ -169,8 +171,8 @@ function f() {
   }
 }
 `,
-      // Partial coverage with a throwing default (guard, not a lookup table).
-      `
+    // Partial coverage with a throwing default (guard, not a lookup table).
+    `
 type K = 'a' | 'b' | 'c';
 declare const k: K;
 function f() {
@@ -182,8 +184,8 @@ function f() {
   }
 }
 `,
-      // Idempotence: the derived Record form must not re-flag.
-      `
+    // Idempotence: the derived Record form must not re-flag.
+    `
 type Side = 'buy' | 'sell';
 declare const side: Side;
 function getLabel() {
@@ -194,15 +196,15 @@ function getLabel() {
   return RESULT_BY_SIDE[side];
 }
 `,
-      // A boolean ternary that is not an equality-against-literal dispatch.
-      `
+    // A boolean ternary that is not an equality-against-literal dispatch.
+    `
 declare const flag: boolean;
 function f() {
   return flag ? 1 : 2;
 }
 `,
-      // An if whose test is not <disc> === <literal>.
-      `
+    // An if whose test is not <disc> === <literal>.
+    `
 declare const k: string;
 function f() {
   if (k.length > 0) {
@@ -212,8 +214,8 @@ function f() {
   }
 }
 `,
-      // An if branch with a side-effect body (not a single value).
-      `
+    // An if branch with a side-effect body (not a single value).
+    `
 declare const x: string;
 declare function doStuff(): void;
 function f() {
@@ -222,8 +224,8 @@ function f() {
   }
 }
 `,
-      // Assignments to different targets across branches — not one lookup.
-      `
+    // Assignments to different targets across branches — not one lookup.
+    `
 type K = 'a' | 'b';
 declare const k: K;
 function f() {
@@ -240,8 +242,8 @@ function f() {
   return a + b;
 }
 `,
-      // Mixed return + assignment branches — inconsistent shape.
-      `
+    // Mixed return + assignment branches — inconsistent shape.
+    `
 type K = 'a' | 'b';
 declare const k: K;
 function f() {
@@ -256,8 +258,8 @@ function f() {
   return x;
 }
 `,
-      // Equality between two non-literal operands — not a literal dispatch.
-      `
+    // Equality between two non-literal operands — not a literal dispatch.
+    `
 type K = 'a' | 'b';
 declare const k: K;
 declare const other: K;
@@ -265,8 +267,8 @@ function f() {
   return k === other ? 1 : 2;
 }
 `,
-      // Empty switch body.
-      `
+    // Empty switch body.
+    `
 type K = 'a' | 'b';
 declare const k: K;
 function f() {
@@ -274,8 +276,8 @@ function f() {
   }
 }
 `,
-      // A group mixing default with a literal case — bail.
-      `
+    // A group mixing default with a literal case — bail.
+    `
 type K = 'a' | 'b';
 declare const k: K;
 function f() {
@@ -288,8 +290,8 @@ function f() {
   }
 }
 `,
-      // Switch default value kind differs from the explicit branches.
-      `
+    // Switch default value kind differs from the explicit branches.
+    `
 type K = 'a' | 'b' | 'c';
 declare const k: K;
 function f() {
@@ -307,8 +309,8 @@ function f() {
   return out;
 }
 `,
-      // else-if chain that switches to a different discriminant.
-      `
+    // else-if chain that switches to a different discriminant.
+    `
 type K = 'a' | 'b' | 'c';
 declare const k: K;
 declare const j: string;
@@ -321,8 +323,8 @@ function f() {
   return 3;
 }
 `,
-      // if / else where the else body is not a single value.
-      `
+    // if / else where the else body is not a single value.
+    `
 type K = 'a' | 'b';
 declare const k: K;
 declare function side(): void;
@@ -334,8 +336,8 @@ function f() {
   }
 }
 `,
-      // if / else with mismatched branch kinds (return vs assignment).
-      `
+    // if / else with mismatched branch kinds (return vs assignment).
+    `
 type K = 'a' | 'b';
 declare const k: K;
 function f() {
@@ -348,12 +350,12 @@ function f() {
   return out;
 }
 `,
-    ],
-    invalid: [
-      // Edge 3/6: full-coverage class-reference switch with a fail-loud default
-      // (deduceConstructor) — autofix drops the unreachable default.
-      {
-        code: `
+  ],
+  invalid: [
+    // Edge 3/6: full-coverage class-reference switch with a fail-loud default
+    // (deduceConstructor) — autofix drops the unreachable default.
+    {
+      code: `
 type TokenStandard = 'native' | 'ERC20' | 'ERC721' | 'ERC1155' | 'offchain' | 'coinflow';
 class NativeTokenEncoder {}
 class Erc20TokenEncoder {}
@@ -381,7 +383,7 @@ function deduceConstructor() {
   }
 }
 `,
-        output: `
+      output: `
 type TokenStandard = 'native' | 'ERC20' | 'ERC721' | 'ERC1155' | 'offchain' | 'coinflow';
 class NativeTokenEncoder {}
 class Erc20TokenEncoder {}
@@ -402,11 +404,11 @@ function deduceConstructor() {
   return RESULT_BY_STANDARD[token.standard];
 }
 `,
-        errors: [{ messageId: 'preferMap' }],
-      },
-      // Edge 8: two-branch ternary on a 2-member literal union.
-      {
-        code: `
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // Edge 8: two-branch ternary on a 2-member literal union.
+    {
+      code: `
 type Side = 'buy' | 'sell';
 declare const side: Side;
 function getLabel() {
@@ -414,7 +416,7 @@ function getLabel() {
   return label;
 }
 `,
-        output: `
+      output: `
 type Side = 'buy' | 'sell';
 declare const side: Side;
 function getLabel() {
@@ -426,11 +428,11 @@ function getLabel() {
   return label;
 }
 `,
-        errors: [{ messageId: 'preferMap' }],
-      },
-      // Edge 2: grouped cases with full coverage.
-      {
-        code: `
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // Edge 2: grouped cases with full coverage.
+    {
+      code: `
 type Raw = 'a' | 'b' | 'c' | 'd';
 declare const raw: Raw;
 function normalize() {
@@ -445,7 +447,7 @@ function normalize() {
   }
 }
 `,
-        output: `
+      output: `
 type Raw = 'a' | 'b' | 'c' | 'd';
 declare const raw: Raw;
 function normalize() {
@@ -458,11 +460,11 @@ function normalize() {
   return RESULT_BY_RAW[raw];
 }
 `,
-        errors: [{ messageId: 'preferMap' }],
-      },
-      // if / else-if chain with a final else covering the last member.
-      {
-        code: `
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // if / else-if chain with a final else covering the last member.
+    {
+      code: `
 type Kind = 'a' | 'b' | 'c';
 declare const kind: Kind;
 function pick() {
@@ -475,7 +477,7 @@ function pick() {
   }
 }
 `,
-        output: `
+      output: `
 type Kind = 'a' | 'b' | 'c';
 declare const kind: Kind;
 function pick() {
@@ -487,11 +489,11 @@ function pick() {
   return RESULT_BY_KIND[kind];
 }
 `,
-        errors: [{ messageId: 'preferMap' }],
-      },
-      // Assignment form.
-      {
-        code: `
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // Assignment form.
+    {
+      code: `
 type Mode = 'on' | 'off';
 declare const mode: Mode;
 function setup() {
@@ -507,7 +509,7 @@ function setup() {
   return label;
 }
 `,
-        output: `
+      output: `
 type Mode = 'on' | 'off';
 declare const mode: Mode;
 function setup() {
@@ -520,11 +522,11 @@ function setup() {
   return label;
 }
 `,
-        errors: [{ messageId: 'preferMap' }],
-      },
-      // Edge 6: selecting a function reference (not invoking).
-      {
-        code: `
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // Edge 6: selecting a function reference (not invoking).
+    {
+      code: `
 type Action = 'start' | 'stop';
 declare const action: Action;
 declare function handleStart(): void;
@@ -538,7 +540,7 @@ function dispatch() {
   }
 }
 `,
-        output: `
+      output: `
 type Action = 'start' | 'stop';
 declare const action: Action;
 declare function handleStart(): void;
@@ -551,11 +553,11 @@ function dispatch() {
   return RESULT_BY_ACTION[action];
 }
 `,
-        errors: [{ messageId: 'preferMap' }],
-      },
-      // Edge 3: n-1 explicit cases + a value default covering the last member.
-      {
-        code: `
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // Edge 3: n-1 explicit cases + a value default covering the last member.
+    {
+      code: `
 type Color = 'red' | 'green' | 'blue';
 declare const color: Color;
 function label() {
@@ -569,7 +571,7 @@ function label() {
   }
 }
 `,
-        output: `
+      output: `
 type Color = 'red' | 'green' | 'blue';
 declare const color: Color;
 function label() {
@@ -581,11 +583,11 @@ function label() {
   return RESULT_BY_COLOR[color];
 }
 `,
-        errors: [{ messageId: 'preferMap' }],
-      },
-      // Ternary chain of length 2 (three members) with a covering tail.
-      {
-        code: `
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // Ternary chain of length 2 (three members) with a covering tail.
+    {
+      code: `
 type T = 'a' | 'b' | 'c';
 declare const t: T;
 function f() {
@@ -593,7 +595,7 @@ function f() {
   return r;
 }
 `,
-        output: `
+      output: `
 type T = 'a' | 'b' | 'c';
 declare const t: T;
 function f() {
@@ -606,11 +608,11 @@ function f() {
   return r;
 }
 `,
-        errors: [{ messageId: 'preferMap' }],
-      },
-      // Number-literal union switch.
-      {
-        code: `
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // Number-literal union switch.
+    {
+      code: `
 type Level = 1 | 2 | 3;
 declare const level: Level;
 function name() {
@@ -624,7 +626,7 @@ function name() {
   }
 }
 `,
-        output: `
+      output: `
 type Level = 1 | 2 | 3;
 declare const level: Level;
 function name() {
@@ -636,11 +638,11 @@ function name() {
   return RESULT_BY_LEVEL[level];
 }
 `,
-        errors: [{ messageId: 'preferMap' }],
-      },
-      // Case tests that are constant references resolved to literals.
-      {
-        code: `
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // Case tests that are constant references resolved to literals.
+    {
+      code: `
 const A = 'a';
 const B = 'b';
 type X = 'a' | 'b';
@@ -654,7 +656,7 @@ function f() {
   }
 }
 `,
-        output: `
+      output: `
 const A = 'a';
 const B = 'b';
 type X = 'a' | 'b';
@@ -667,11 +669,11 @@ function f() {
   return RESULT_BY_X[x];
 }
 `,
-        errors: [{ messageId: 'preferMap' }],
-      },
-      // if / else-if chain with full coverage and no trailing else.
-      {
-        code: `
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // if / else-if chain with full coverage and no trailing else.
+    {
+      code: `
 type K = 'a' | 'b';
 declare const k: K;
 function f() {
@@ -682,7 +684,7 @@ function f() {
   }
 }
 `,
-        output: `
+      output: `
 type K = 'a' | 'b';
 declare const k: K;
 function f() {
@@ -693,11 +695,11 @@ function f() {
   return RESULT_BY_K[k];
 }
 `,
-        errors: [{ messageId: 'preferMap' }],
-      },
-      // Flipped equality (<literal> === <discriminant>) in a ternary.
-      {
-        code: `
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // Flipped equality (<literal> === <discriminant>) in a ternary.
+    {
+      code: `
 type Side = 'buy' | 'sell';
 declare const side: Side;
 function g() {
@@ -705,7 +707,7 @@ function g() {
   return label;
 }
 `,
-        output: `
+      output: `
 type Side = 'buy' | 'sell';
 declare const side: Side;
 function g() {
@@ -717,11 +719,11 @@ function g() {
   return label;
 }
 `,
-        errors: [{ messageId: 'preferMap' }],
-      },
-      // if / else-if chain in assignment form.
-      {
-        code: `
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // if / else-if chain in assignment form.
+    {
+      code: `
 type M = 'a' | 'b';
 declare const m: M;
 function f() {
@@ -734,7 +736,7 @@ function f() {
   return out;
 }
 `,
-        output: `
+      output: `
 type M = 'a' | 'b';
 declare const m: M;
 function f() {
@@ -747,11 +749,11 @@ function f() {
   return out;
 }
 `,
-        errors: [{ messageId: 'preferMap' }],
-      },
-      // Full explicit coverage plus a value default — the default is dropped.
-      {
-        code: `
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // Full explicit coverage plus a value default — the default is dropped.
+    {
+      code: `
 type K = 'a' | 'b';
 declare const k: K;
 function f() {
@@ -765,7 +767,7 @@ function f() {
   }
 }
 `,
-        output: `
+      output: `
 type K = 'a' | 'b';
 declare const k: K;
 function f() {
@@ -776,11 +778,11 @@ function f() {
   return RESULT_BY_K[k];
 }
 `,
-        errors: [{ messageId: 'preferMap' }],
-      },
-      // Report-only: partial-coverage default (remaining >= 2).
-      {
-        code: `
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // Report-only: partial-coverage default (remaining >= 2).
+    {
+      code: `
 type P = 'a' | 'b' | 'c' | 'd';
 declare const p: P;
 function f() {
@@ -792,12 +794,12 @@ function f() {
   }
 }
 `,
-        output: null,
-        errors: [{ messageId: 'preferMapManual' }],
-      },
-      // Report-only: async branches (eager promises would fire side effects).
-      {
-        code: `
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // Report-only: async branches (eager promises would fire side effects).
+    {
+      code: `
 type Source = 'algolia' | 'firestore';
 declare const source: Source;
 declare function fetchA(): Promise<string>;
@@ -811,12 +813,12 @@ async function f() {
   }
 }
 `,
-        output: null,
-        errors: [{ messageId: 'preferMapManual' }],
-      },
-      // Report-only: call-bearing branch values (eager evaluation hazard).
-      {
-        code: `
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // Report-only: call-bearing branch values (eager evaluation hazard).
+    {
+      code: `
 type K = 'a' | 'b';
 declare const k: K;
 declare function makeA(): string;
@@ -830,12 +832,12 @@ function f() {
   }
 }
 `,
-        output: null,
-        errors: [{ messageId: 'preferMapManual' }],
-      },
-      // Edge 2 + 3: grouped cases AND a partial-coverage default — report-only.
-      {
-        code: `
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // Edge 2 + 3: grouped cases AND a partial-coverage default — report-only.
+    {
+      code: `
 type Perm = 'granted' | 'denied' | 'prompt' | 'default' | 'unknown1' | 'unknown2';
 declare const raw: Perm;
 function normalize() {
@@ -852,12 +854,12 @@ function normalize() {
   }
 }
 `,
-        output: null,
-        errors: [{ messageId: 'preferMapManual' }],
-      },
-      // Edge 2 + 7: grouped cases AND call-bearing values — report-only.
-      {
-        code: `
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // Edge 2 + 7: grouped cases AND call-bearing values — report-only.
+    {
+      code: `
 type Reason = 'dob-required' | 'invalid-dob' | 'too-young';
 declare const reason: Reason;
 declare const COPY: { needsDob(): string; tooYoung(): string };
@@ -871,13 +873,13 @@ function classify() {
   }
 }
 `,
-        output: null,
-        errors: [{ messageId: 'preferMapManual' }],
-      },
-      // Report-only: a ternary chain whose tail is a shared default over
-      // multiple remaining members (partial coverage).
-      {
-        code: `
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // Report-only: a ternary chain whose tail is a shared default over
+    // multiple remaining members (partial coverage).
+    {
+      code: `
 type P = 'a' | 'b' | 'c' | 'd';
 declare const p: P;
 function f() {
@@ -885,12 +887,12 @@ function f() {
   return r;
 }
 `,
-        output: null,
-        errors: [{ messageId: 'preferMapManual' }],
-      },
-      // Report-only: the derived lookup name collides in scope.
-      {
-        code: `
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // Report-only: the derived lookup name collides in scope.
+    {
+      code: `
 type S = 'a' | 'b';
 declare const s: S;
 declare const RESULT_BY_S: unknown;
@@ -903,31 +905,151 @@ function f() {
   }
 }
 `,
-        output: null,
-        errors: [{ messageId: 'preferMapManual' }],
-      },
-      // Report-only: ternary inside an expression-bodied function.
-      {
-        code: `
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // Report-only: ternary inside an expression-bodied function.
+    {
+      code: `
 type Side = 'buy' | 'sell';
 declare const side: Side;
 const f = () => (side === 'buy' ? 1 : 2);
 `,
-        output: null,
-        errors: [{ messageId: 'preferMapManual' }],
-      },
-    ],
-  },
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // Union of two distinct function types must be parenthesized per member
+    // (regression: unparenthesized \`=>\` union members do not parse).
+    {
+      code: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+declare const formatPlain: (input: string) => string;
+declare const formatFancy: (input: number) => string;
+function pick() {
+  switch (mode) {
+    case 'plain':
+      return formatPlain;
+    case 'fancy':
+      return formatFancy;
+  }
+}
+`,
+      output: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+declare const formatPlain: (input: string) => string;
+declare const formatFancy: (input: number) => string;
+function pick() {
+  const RESULT_BY_MODE: Record<Mode, ((input: string) => string) | ((input: number) => string)> = {
+    plain: formatPlain,
+    fancy: formatFancy,
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // Ternary selecting between typed function references — the agora
+    // useRouterState shape whose annotation failed to parse. (The original
+    // uses rest-array parameters, but the lib-less program a RuleTester
+    // builds cannot print array types, so this pins the scalar-param form;
+    // the rest-param form is covered by the agora harness.)
+    {
+      code: `
+type ParamMod = { name: string };
+type SegMod = { index: number };
+type Target = 'queryParam' | 'segment';
+declare const target: Target;
+declare const replaceParam: (param: ParamMod) => void;
+declare const replaceSegment: (segment: SegMod) => void;
+function update() {
+  const replace = target === 'queryParam' ? replaceParam : replaceSegment;
+  return replace;
+}
+`,
+      output: `
+type ParamMod = { name: string };
+type SegMod = { index: number };
+type Target = 'queryParam' | 'segment';
+declare const target: Target;
+declare const replaceParam: (param: ParamMod) => void;
+declare const replaceSegment: (segment: SegMod) => void;
+function update() {
+  const RESULT_BY_TARGET: Record<Target, ((param: ParamMod) => void) | ((segment: SegMod) => void)> = {
+    queryParam: replaceParam,
+    segment: replaceSegment,
+  };
+  const replace = RESULT_BY_TARGET[target];
+  return replace;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // Mixed union — only the function-type member gains parentheses.
+    {
+      code: `
+type Choice = 'fn' | 'label';
+declare const choice: Choice;
+declare const toLabel: (value: number) => string;
+function pick() {
+  switch (choice) {
+    case 'fn':
+      return toLabel;
+    case 'label':
+      return 'none';
+  }
+}
+`,
+      output: `
+type Choice = 'fn' | 'label';
+declare const choice: Choice;
+declare const toLabel: (value: number) => string;
+function pick() {
+  const RESULT_BY_CHOICE: Record<Choice, ((value: number) => string) | string> = {
+    fn: toLabel,
+    label: 'none',
+  };
+  return RESULT_BY_CHOICE[choice];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // Report-only: the printed value type names class-expression internals
+    // (\`typeof HiddenA\`) that are not in scope at the fix site — the same
+    // failure mode as an unimported type name printed by the checker.
+    {
+      code: `
+type K = 'a' | 'b';
+declare const k: K;
+const MakeA = class HiddenA { a = 1 };
+const MakeB = class HiddenB { b = 2 };
+function f() {
+  switch (k) {
+    case 'a':
+      return MakeA;
+    case 'b':
+      return MakeB;
+  }
+}
+`,
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+  ],
+};
+
+ruleTesterTs.run(
+  'prefer-map-over-conditional-dispatch',
+  preferMapOverConditionalDispatch,
+  tsTests,
 );
 
 // JSX-specific coverage (Edge 10): branch bodies that create elements.
-ruleTesterJsx.run(
-  'prefer-map-over-conditional-dispatch (jsx)',
-  preferMapOverConditionalDispatch,
-  {
-    valid: [
-      // Narrowing JSX switch (reads a sibling variant field) — must not fire.
-      `
+const jsxTests: RuleTests = {
+  valid: [
+    // Narrowing JSX switch (reads a sibling variant field) — must not fire.
+    `
 type State =
   | { status: 'ready'; label: string }
   | { status: 'error'; message: string };
@@ -942,11 +1064,11 @@ function View() {
   }
 }
 `,
-    ],
-    invalid: [
-      // Edge 10: JSX-per-case dispatch on a status union.
-      {
-        code: `
+  ],
+  invalid: [
+    // Edge 10: JSX-per-case dispatch on a status union.
+    {
+      code: `
 type Status = 'active' | 'blocked';
 declare const status: Status;
 declare const Row: any;
@@ -959,7 +1081,7 @@ function render() {
   }
 }
 `,
-        output: `
+      output: `
 type Status = 'active' | 'blocked';
 declare const status: Status;
 declare const Row: any;
@@ -971,12 +1093,12 @@ function render() {
   return RESULT_BY_STATUS[status];
 }
 `,
-        errors: [{ messageId: 'preferMap' }],
-      },
-      // Edge 10: a branch value that is itself `cond ? <X/> : null` (one
-      // expression) does not disqualify.
-      {
-        code: `
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // Edge 10: a branch value that is itself `cond ? <X/> : null` (one
+    // expression) does not disqualify.
+    {
+      code: `
 type Status = 'active' | 'blocked';
 declare const status: Status;
 declare const device: unknown;
@@ -990,7 +1112,7 @@ function render() {
   }
 }
 `,
-        output: `
+      output: `
 type Status = 'active' | 'blocked';
 declare const status: Status;
 declare const device: unknown;
@@ -1003,20 +1125,22 @@ function render() {
   return RESULT_BY_STATUS[status];
 }
 `,
-        errors: [{ messageId: 'preferMap' }],
-      },
-    ],
-  },
-);
+      errors: [{ messageId: 'preferMap' }],
+    },
+  ],
+};
 
 ruleTesterJsx.run(
-  'prefer-map-over-conditional-dispatch (jsx type annotation)',
+  'prefer-map-over-conditional-dispatch (jsx)',
   preferMapOverConditionalDispatch,
-  {
-    valid: [],
-    invalid: [
-      {
-        code: `
+  jsxTests,
+);
+
+const jsxAnnotationTests: RuleTests = {
+  valid: [],
+  invalid: [
+    {
+      code: `
 export {};
 declare global {
   namespace JSX {
@@ -1037,7 +1161,7 @@ function render() {
   }
 }
 `,
-        output: `
+      output: `
 export {};
 declare global {
   namespace JSX {
@@ -1057,8 +1181,44 @@ function render() {
   return RESULT_BY_VARIANT[variant];
 }
 `,
-        errors: [{ messageId: 'preferMap' }],
-      },
-    ],
-  },
+      errors: [{ messageId: 'preferMap' }],
+    },
+  ],
+};
+
+ruleTesterJsx.run(
+  'prefer-map-over-conditional-dispatch (jsx type annotation)',
+  preferMapOverConditionalDispatch,
+  jsxAnnotationTests,
 );
+
+// The RuleTester never re-parses `output`, so an autofix emitting invalid
+// TypeScript — the exact defect this suite regression-tests — would pass the
+// string comparison silently. Every expected output must parse standalone.
+describe('prefer-map-over-conditional-dispatch fix output parseability', () => {
+  const outputs = [
+    ...tsTests.invalid,
+    ...jsxTests.invalid,
+    ...jsxAnnotationTests.invalid,
+  ]
+    .map((testCase) => testCase.output)
+    .filter((output): output is string => typeof output === 'string');
+
+  it('parses every expected autofix output as valid TypeScript', () => {
+    expect(outputs.length).toBeGreaterThan(0);
+    for (const output of outputs) {
+      expect(() =>
+        parse(output, { ecmaFeatures: { jsx: true }, range: true, loc: true }),
+      ).not.toThrow();
+    }
+  });
+
+  it('rejects an unparenthesized function-type union, proving the guard has teeth', () => {
+    expect(() =>
+      parse(
+        'const R: Record<"a" | "b", (...p: readonly string[]) => void | (...s: readonly number[]) => void> = {};',
+        { range: true },
+      ),
+    ).toThrow();
+  });
+});
