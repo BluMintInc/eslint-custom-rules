@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.20.23",
+    "date": "2026-07-30T01:37:58.854Z",
+    "rules": [
+      {
+        "name": "no-array-length-in-deps",
+        "changeType": "fix",
+        "issues": [
+          1398
+        ],
+        "summary": "insert generated memo in the variable's own scope (closes #1398)"
+      },
+      {
+        "name": "require-dynamic-firebase-imports",
+        "changeType": "fix",
+        "issues": [
+          1399
+        ],
+        "summary": "keep type-only specifiers out of the runtime import (closes #1399)"
+      }
+    ]
+  },
+  {
     "version": "1.20.22",
     "date": "2026-07-30T00:39:18.760Z",
     "rules": [

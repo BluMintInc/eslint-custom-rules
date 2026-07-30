@@ -1,3 +1,11 @@
+## [1.20.23](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.22...v1.20.23) (2026-07-30)
+
+
+### Bug Fixes
+
+* **no-array-length-in-deps:** insert generated memo in the variable's own scope (closes [#1398](https://github.com/BluMintInc/eslint-custom-rules/issues/1398)) ([d007870](https://github.com/BluMintInc/eslint-custom-rules/commit/d007870b641a66b77a46c16da775f9531e110e3e))
+* **require-dynamic-firebase-imports:** keep type-only specifiers out of the runtime import (closes [#1399](https://github.com/BluMintInc/eslint-custom-rules/issues/1399)) ([e8c2a67](https://github.com/BluMintInc/eslint-custom-rules/commit/e8c2a67b9a1d48e349e4fd563c42741a41111bad))
+
 ## [1.20.22](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.21...v1.20.22) (2026-07-30)
 
 
