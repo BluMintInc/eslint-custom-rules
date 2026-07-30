@@ -1,4 +1,8 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  AST_TOKEN_TYPES,
+  TSESTree,
+} from '@typescript-eslint/utils';
 import type { TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
@@ -424,6 +428,110 @@ export const useLatestCallback = createRule<[], MessageIds>({
         const touchesImport =
           specifiers.length > 0 || hasReactMemberUseCallback;
 
+        const isComma = (
+          token: TSESTree.Token | TSESTree.Comment | null,
+        ): token is TSESTree.Token =>
+          !!token &&
+          token.type === AST_TOKEN_TYPES.Punctuator &&
+          token.value === ',';
+
+        /**
+         * Splices out one named specifier and the comma that separates it from
+         * the list, touching nothing else. Re-emitting the surviving specifiers
+         * as a fresh list destroys everything that sits between them —
+         * including an eslint directive governing a specifier that survives,
+         * which silently changes which rules report on the file (issue #1446).
+         *
+         * No comment is ever deleted, not even one that reads as belonging to
+         * the removed specifier: a trailing comment can be a directive that
+         * governs the NEXT line, so guessing at ownership is exactly the
+         * failure this avoids. The comma is dropped separately whenever a
+         * comment sits between it and the specifier, which keeps the surviving
+         * list syntactically valid without swallowing the comment.
+         */
+        const removeNamedSpecifier = (
+          fixer: TSESLint.RuleFixer,
+          specifier: TSESTree.ImportSpecifier,
+          survivors: TSESTree.ImportSpecifier[],
+        ): TSESLint.RuleFix[] => {
+          const hasSurvivorAfter = survivors.some(
+            (survivor) => survivor.range[0] > specifier.range[1],
+          );
+
+          if (hasSurvivorAfter) {
+            const comma = sourceCode.getTokenAfter(specifier);
+            if (!isComma(comma)) {
+              return [fixer.remove(specifier)];
+            }
+            const afterSpecifier = sourceCode.getTokenAfter(specifier, {
+              includeComments: true,
+            });
+            if (afterSpecifier && afterSpecifier.range[0] !== comma.range[0]) {
+              return [
+                fixer.removeRange([
+                  specifier.range[0],
+                  afterSpecifier.range[0],
+                ]),
+                fixer.removeRange(comma.range),
+              ];
+            }
+            // Whitespace after the comma is swallowed so a single-line list
+            // stays tidy, but it stops at the first comment so nothing but
+            // whitespace is consumed.
+            const afterComma = sourceCode.getTokenAfter(comma, {
+              includeComments: true,
+            });
+            return [
+              fixer.removeRange([
+                specifier.range[0],
+                afterComma ? afterComma.range[0] : comma.range[1],
+              ]),
+            ];
+          }
+
+          const comma = sourceCode.getTokenBefore(specifier);
+          if (!isComma(comma)) {
+            return [fixer.remove(specifier)];
+          }
+          const beforeSpecifier = sourceCode.getTokenBefore(specifier, {
+            includeComments: true,
+          });
+          if (beforeSpecifier && beforeSpecifier.range[0] !== comma.range[0]) {
+            return [
+              fixer.removeRange(comma.range),
+              fixer.removeRange([beforeSpecifier.range[1], specifier.range[1]]),
+            ];
+          }
+          return [fixer.removeRange([comma.range[0], specifier.range[1]])];
+        };
+
+        /**
+         * Splices out the whole braced group, plus the comma that separates it
+         * from a surviving default (or namespace) specifier, once every named
+         * specifier in it is removed.
+         */
+        const removeNamedGroup = (
+          fixer: TSESLint.RuleFixer,
+          named: TSESTree.ImportSpecifier[],
+        ): TSESLint.RuleFix[] => {
+          const openBrace = sourceCode.getTokenBefore(
+            named[0],
+            (token) => token.value === '{',
+          );
+          const closeBrace = sourceCode.getTokenAfter(
+            named[named.length - 1],
+            (token) => token.value === '}',
+          );
+          if (!openBrace || !closeBrace) {
+            return named.map((specifier) => fixer.remove(specifier));
+          }
+          const separator = sourceCode.getTokenBefore(openBrace);
+          const start = isComma(separator)
+            ? separator.range[0]
+            : openBrace.range[0];
+          return [fixer.removeRange([start, closeBrace.range[1]])];
+        };
+
         const importFixes = (fixer: TSESLint.RuleFixer): TSESLint.RuleFix[] => {
           if (!touchesImport) {
             return [];
@@ -444,17 +552,16 @@ export const useLatestCallback = createRule<[], MessageIds>({
               s.type === AST_NODE_TYPES.ImportNamespaceSpecifier,
           );
 
-          const remainingNamed = statement.specifiers.filter(
+          const namedSpecifiers = statement.specifiers.filter(
             (s): s is TSESTree.ImportSpecifier =>
-              s.type === AST_NODE_TYPES.ImportSpecifier &&
-              s.imported.type === AST_NODE_TYPES.Identifier &&
-              s.imported.name !== 'useCallback',
+              s.type === AST_NODE_TYPES.ImportSpecifier,
           );
-
-          const prefix =
-            statement.importKind && statement.importKind !== 'value'
-              ? 'import type'
-              : 'import';
+          // Survivors are whatever the removal set does not contain, so a
+          // specifier is kept whatever shape its imported name takes. Deriving
+          // them from a name comparison instead drops every specifier whose
+          // imported name is not a plain identifier.
+          const removed = new Set<TSESTree.Node>(specifiers);
+          const remainingNamed = namedSpecifiers.filter((s) => !removed.has(s));
 
           if (remainingNamed.length === 0 && !defaultOrNamespace) {
             if (!latestCallbackImport) {
@@ -463,25 +570,19 @@ export const useLatestCallback = createRule<[], MessageIds>({
             return [fixer.remove(statement)];
           }
 
-          const parts: string[] = [];
-          if (defaultOrNamespace) {
-            parts.push(sourceCode.getText(defaultOrNamespace));
-          }
-          if (remainingNamed.length > 0) {
-            parts.push(
-              `{ ${remainingNamed
-                .map((s) => sourceCode.getText(s))
-                .join(', ')} }`,
-            );
-          }
-
-          const replacement = `${prefix} ${parts.join(', ')} from 'react';`;
-
           const fixes: TSESLint.RuleFix[] = [];
           if (!latestCallbackImport) {
             fixes.push(fixer.insertTextBefore(statement, `${importText}\n`));
           }
-          fixes.push(fixer.replaceText(statement, replacement));
+          if (remainingNamed.length === 0) {
+            fixes.push(...removeNamedGroup(fixer, namedSpecifiers));
+          } else {
+            fixes.push(
+              ...specifiers.flatMap((specifier) =>
+                removeNamedSpecifier(fixer, specifier, remainingNamed),
+              ),
+            );
+          }
           return fixes;
         };
 

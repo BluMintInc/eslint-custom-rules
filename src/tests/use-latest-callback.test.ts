@@ -639,7 +639,11 @@ function MyComponent() {
 }`,
       errors: errors(),
     },
-    // useCallback with comments in import
+    // useCallback with comments in import. Only the specifier's own tokens and
+    // its separating comma are spliced out, so the rest of the import keeps its
+    // formatting and every comment in it survives (issue #1446). The comment
+    // that described `useCallback` is left behind rather than guessed at,
+    // because a trailing comment can be a directive governing the NEXT line.
     {
       code: `import {
   useCallback, // For memoizing callbacks
@@ -653,7 +657,10 @@ function MyComponent() {
   return <button onClick={handleClick}>Click me</button>;
 }`,
       output: `import useLatestCallback from 'use-latest-callback';
-import { useState } from 'react';
+import {
+  // For memoizing callbacks
+  useState
+} from 'react';
 
 function MyComponent() {
   const handleClick = useLatestCallback(() => {
@@ -1307,6 +1314,324 @@ const A = () => {
 };`,
       errors: errors('useCallback', 'stable'),
     },
+
+    // -----------------------------------------------------------------------
+    // Comments in the react import survive the specifier removal (issue #1446).
+    // A directive comment decides which rules report on the file, so dropping
+    // one silently changes the file's suppressions.
+    // -----------------------------------------------------------------------
+    // An eslint directive above a specifier that SURVIVES must stay put.
+    {
+      code: `import {
+  useCallback, // For memoizing callbacks
+  // eslint-disable-next-line no-console
+  useState
+} from 'react';
+
+function MyComponent() {
+  const handleClick = useCallback(() => {
+    console.log('Clicked');
+  }, []);
+  return <button onClick={handleClick}>Click me</button>;
+}`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import {
+  // For memoizing callbacks
+  // eslint-disable-next-line no-console
+  useState
+} from 'react';
+
+function MyComponent() {
+  const handleClick = useLatestCallback(() => {
+    console.log('Clicked');
+  });
+  return <button onClick={handleClick}>Click me</button>;
+}`,
+      errors: errors(),
+    },
+    // A trailing comment on a surviving specifier stays on its own line.
+    {
+      code: `import {
+  useCallback,
+  useState, // keep this note
+  useEffect
+} from 'react';
+const A = () => {
+  const [s] = useState(0);
+  useEffect(() => {}, []);
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o}>{s}</div>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import {
+  useState, // keep this note
+  useEffect
+} from 'react';
+const A = () => {
+  const [s] = useState(0);
+  useEffect(() => {}, []);
+  const o = useLatestCallback(() => { go(); });
+  return <div onClick={o}>{s}</div>;
+};`,
+      errors: errors(),
+    },
+    // A block comment between specifiers survives.
+    {
+      code: `import { useCallback, /* keep */ useState } from 'react';
+const A = () => {
+  const [s] = useState(0);
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o}>{s}</div>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { /* keep */ useState } from 'react';
+const A = () => {
+  const [s] = useState(0);
+  const o = useLatestCallback(() => { go(); });
+  return <div onClick={o}>{s}</div>;
+};`,
+      errors: errors(),
+    },
+    // A block comment glued to the REMOVED specifier is kept too: the comma is
+    // dropped on its own so the surviving list stays syntactically valid.
+    {
+      code: `import { useCallback /* gone soon */, useState } from 'react';
+const A = () => {
+  const [s] = useState(0);
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o}>{s}</div>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { /* gone soon */ useState } from 'react';
+const A = () => {
+  const [s] = useState(0);
+  const o = useLatestCallback(() => { go(); });
+  return <div onClick={o}>{s}</div>;
+};`,
+      errors: errors(),
+    },
+    // The removed specifier is last in the list: the comma BEFORE it goes with
+    // it, and the surviving specifier's trailing comment is untouched.
+    {
+      code: `import {
+  useState, // keep this note
+  useCallback
+} from 'react';
+const A = () => {
+  const [s] = useState(0);
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o}>{s}</div>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import {
+  useState // keep this note
+} from 'react';
+const A = () => {
+  const [s] = useState(0);
+  const o = useLatestCallback(() => { go(); });
+  return <div onClick={o}>{s}</div>;
+};`,
+      errors: errors(),
+    },
+    // The removed specifier is last on a single line: no comment involved.
+    {
+      code: `import { useState, useCallback } from 'react';
+const A = () => {
+  const [s] = useState(0);
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o}>{s}</div>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { useState } from 'react';
+const A = () => {
+  const [s] = useState(0);
+  const o = useLatestCallback(() => { go(); });
+  return <div onClick={o}>{s}</div>;
+};`,
+      errors: errors(),
+    },
+    // A directive above the removed specifier when it is the ONLY specifier:
+    // the whole declaration goes, comments included, because nothing it could
+    // govern remains.
+    {
+      code: `import {
+  // eslint-disable-next-line no-shadow
+  useCallback
+} from 'react';
+const A = () => {
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o} />;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+const A = () => {
+  const o = useLatestCallback(() => { go(); });
+  return <div onClick={o} />;
+};`,
+      errors: errors(),
+    },
+    // A default specifier survives while the braced group empties out: the
+    // group and its separating comma are spliced away.
+    {
+      code: `import React, { useCallback } from 'react';
+const A = () => {
+  const o = useCallback(() => { go(); }, []);
+  return React.createElement('div', { onClick: o });
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import React from 'react';
+const A = () => {
+  const o = useLatestCallback(() => { go(); });
+  return React.createElement('div', { onClick: o });
+};`,
+      errors: errors(),
+    },
+    // An inline type specifier survives verbatim beside the removal.
+    {
+      code: `import { useCallback, type FC } from 'react';
+const A: FC = () => {
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o} />;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { type FC } from 'react';
+const A: FC = () => {
+  const o = useLatestCallback(() => { go(); });
+  return <div onClick={o} />;
+};`,
+      errors: errors(),
+    },
+    // A comment right after the opening brace belongs to no specifier and stays.
+    {
+      code: `import { /* head */ useCallback, useState } from 'react';
+const A = () => {
+  const [s] = useState(0);
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o}>{s}</div>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { /* head */ useState } from 'react';
+const A = () => {
+  const [s] = useState(0);
+  const o = useLatestCallback(() => { go(); });
+  return <div onClick={o}>{s}</div>;
+};`,
+      errors: errors(),
+    },
+    // A JSDoc block above a surviving specifier keeps its indentation.
+    {
+      code: `import {
+  useCallback,
+  /**
+   * Local state.
+   */
+  useState
+} from 'react';
+const A = () => {
+  const [s] = useState(0);
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o}>{s}</div>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import {
+  /**
+   * Local state.
+   */
+  useState
+} from 'react';
+const A = () => {
+  const [s] = useState(0);
+  const o = useLatestCallback(() => { go(); });
+  return <div onClick={o}>{s}</div>;
+};`,
+      errors: errors(),
+    },
+    // Two specifiers of the same binding are both spliced out: each claims a
+    // different comma, so the fixes never overlap.
+    {
+      code: `import { useCallback, useCallback as uc, useState } from 'react';
+const A = () => {
+  const [s] = useState(0);
+  const o = useCallback(() => { go(); }, []);
+  const p = uc(() => { go(); }, []);
+  return <div onClick={o}>{s}{String(p)}</div>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { useState } from 'react';
+const A = () => {
+  const [s] = useState(0);
+  const o = useLatestCallback(() => { go(); });
+  const p = useLatestCallback(() => { go(); });
+  return <div onClick={o}>{s}{String(p)}</div>;
+};`,
+      errors: [
+        { message: expectedMessage('useCallback') },
+        { message: expectedMessage('useCallback') },
+        { message: expectedMessage('uc') },
+      ] as unknown as RuleError[],
+    },
+    // The same pair trailing the list: each takes the comma before it.
+    {
+      code: `import { useState, useCallback, useCallback as uc } from 'react';
+const A = () => {
+  const [s] = useState(0);
+  const o = useCallback(() => { go(); }, []);
+  const p = uc(() => { go(); }, []);
+  return <div onClick={o}>{s}{String(p)}</div>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { useState } from 'react';
+const A = () => {
+  const [s] = useState(0);
+  const o = useLatestCallback(() => { go(); });
+  const p = useLatestCallback(() => { go(); });
+  return <div onClick={o}>{s}{String(p)}</div>;
+};`,
+      errors: [
+        { message: expectedMessage('useCallback') },
+        { message: expectedMessage('useCallback') },
+        { message: expectedMessage('uc') },
+      ] as unknown as RuleError[],
+    },
+    // A trailing comma in the list is left where it is: still valid syntax.
+    {
+      code: `import { useState, useCallback, } from 'react';
+const A = () => {
+  const [s] = useState(0);
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o}>{s}</div>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { useState, } from 'react';
+const A = () => {
+  const [s] = useState(0);
+  const o = useLatestCallback(() => { go(); });
+  return <div onClick={o}>{s}</div>;
+};`,
+      errors: errors(),
+    },
+    // The react import keeps its own quote style and layout: only the removed
+    // specifier's tokens are touched.
+    {
+      code: `import {
+  useCallback,
+  useState,
+} from "react";
+const A = () => {
+  const [s] = useState(0);
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o}>{s}</div>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import {
+  useState,
+} from "react";
+const A = () => {
+  const [s] = useState(0);
+  const o = useLatestCallback(() => { go(); });
+  return <div onClick={o}>{s}</div>;
+};`,
+      errors: errors(),
+    },
   ],
 });
 
@@ -1455,6 +1780,40 @@ export const useThing = (go) => {
 };
 `);
     expect(remaining).toHaveLength(0);
+  });
+
+  // A directive inside the react import governs which rules report on the file.
+  // RuleTester only compares text, so this asserts the consequence directly: a
+  // rule that the directive suppresses must NOT come back after --fix.
+  it('keeps a directive that suppresses a report on a surviving specifier', () => {
+    const withDirective = `import {
+  useCallback,
+  // eslint-disable-next-line no-unused-vars
+  useState
+} from 'react';
+export const useThing = (go) => {
+  const o = useCallback(() => { go(); }, []);
+  return { o };
+};
+`;
+    const linter = createLinter();
+    const config = {
+      ...parserConfig,
+      rules: {
+        'test/use-latest-callback': 'error' as const,
+        'no-unused-vars': 'error' as const,
+      },
+    };
+    // The directive suppresses the unused `useState` before the fix runs.
+    expect(linter.verify(withDirective, config, 'useThing.ts')).toHaveLength(2);
+
+    const { output, messages } = linter.verifyAndFix(
+      withDirective,
+      config,
+      'useThing.ts',
+    );
+    expect(output).toContain('// eslint-disable-next-line no-unused-vars');
+    expect(messages).toHaveLength(0);
   });
 
   it('keeps the useCallback import when a nested conversion is blocked, then converges', () => {
