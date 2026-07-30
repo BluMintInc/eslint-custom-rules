@@ -75,6 +75,32 @@ function isArrayOrPrimitive(
   }
 }
 
+type PathSegment = {
+  /** Rendered link text: an identifier name (`foo`) or bracket key (`[0]`, `["key"]`). */
+  text: string;
+  computed: boolean;
+  /** Whether this link is accessed via optional chaining (`?.`). */
+  optional: boolean;
+};
+
+function renderPathSegments(
+  baseName: string,
+  segments: readonly PathSegment[],
+): string {
+  let path = baseName;
+  for (const segment of segments) {
+    if (segment.computed) {
+      // why: an optional computed access must render as `?.[` — a bare `?`
+      // before `[` parses as a conditional expression, so `state?[0]` is a
+      // syntax error while `state?.[0]` is the valid optional element access.
+      path += segment.optional ? `?.${segment.text}` : segment.text;
+    } else {
+      path += segment.optional ? `?.${segment.text}` : `.${segment.text}`;
+    }
+  }
+  return path;
+}
+
 function unwrapExpression(expr: TSESTree.Node): TSESTree.Node {
   let current = expr;
   while (
@@ -93,6 +119,10 @@ function getObjectUsagesInHook(
   objectName: string,
 ): { usages: Set<string>; needsEntireObject: boolean; notUsed: boolean } {
   const usages = new Map<string, number>(); // Track usage and its position
+  // why: derived dependency paths (first-optional intermediate, array base)
+  // must be re-rendered from structured links — string surgery on the
+  // rendered path cannot place `?.` markers correctly.
+  const pathSegments = new Map<string, PathSegment[]>();
   const visited = new Set<TSESTree.Node>();
   let needsEntireObject = false;
   let isUsed = false;
@@ -152,25 +182,38 @@ function getObjectUsagesInHook(
   ]);
 
   function buildAccessPath(node: TSESTree.MemberExpression): string | null {
-    const parts: string[] = [];
+    // why: optionality belongs to individual links, not the whole chain.
+    // Rendering from per-link segments keeps `?.` markers at their real
+    // position (a.b?.[0] stays a.b?.[0], not a?.b[0]) and forms the mandatory
+    // `?.[` for optional computed access (state?.[0], never state?[0]).
+    const segments: PathSegment[] = [];
     let current: TSESTree.Node = node;
-    let hasOptionalChaining = false;
 
-    // Collect all parts from leaf to root
+    // Collect all links from leaf to root
     while (current.type === AST_NODE_TYPES.MemberExpression) {
       const memberExpr = current as TSESTree.MemberExpression;
 
       // Handle computed properties (like array indices)
       if (memberExpr.computed) {
-        // why: only a *literal* computed key (obj[0], obj['special-key'])
-        // narrows to a single, stable field. EVERY other computed key —
-        // Identifier (obj[i]), CallExpression (obj[assertSafe(i)]),
-        // BinaryExpression (obj[i+1]), MemberExpression (obj[keys[j]]),
-        // TSAsExpression (obj[k as K]), TemplateLiteral (obj[`row-${i}`]), etc.
-        // — is a dynamic access that can read arbitrary elements across an
-        // iteration. There is no single narrowable field, so the whole object
-        // is a legitimate dependency: resolve the base and mark it accordingly.
-        if (memberExpr.property.type !== AST_NODE_TYPES.Literal) {
+        // why: only a *literal* string/number computed key (obj[0],
+        // obj['special-key']) narrows to a single, stable field. EVERY other
+        // computed key — Identifier (obj[i]), CallExpression
+        // (obj[assertSafe(i)]), BinaryExpression (obj[i+1]), MemberExpression
+        // (obj[keys[j]]), TSAsExpression (obj[k as K]), TemplateLiteral
+        // (obj[`row-${i}`]), etc. — is a dynamic access that can read
+        // arbitrary elements across an iteration. Remaining literal kinds
+        // (boolean/null/regex/bigint keys) have no rendering the fixer can
+        // guarantee round-trips, so they decline narrowing too rather than
+        // emit unreliable text. In every declined case the whole object is a
+        // legitimate dependency: resolve the base and mark it accordingly.
+        const literalValue =
+          memberExpr.property.type === AST_NODE_TYPES.Literal
+            ? memberExpr.property.value
+            : undefined;
+        if (
+          typeof literalValue !== 'number' &&
+          typeof literalValue !== 'string'
+        ) {
           // Check if this is accessing our target object
           let currentBase = unwrapExpression(memberExpr.object);
           while (currentBase.type === AST_NODE_TYPES.MemberExpression) {
@@ -182,23 +225,20 @@ function getObjectUsagesInHook(
             currentBase.type === AST_NODE_TYPES.Identifier &&
             currentBase.name === objectName
           ) {
-            // This is a dynamic computed property access on our target object,
-            // so we need the entire object (no narrowable field exists).
+            // No narrowable field exists, so the entire object is required.
             needsEntireObject = true;
           }
           return null;
         }
 
-        // For computed properties with literals
-        const literalProp = memberExpr.property as TSESTree.Literal;
-        if (typeof literalProp.value === 'number') {
-          parts.unshift(`[${literalProp.value}]`);
-        } else if (typeof literalProp.value === 'string') {
-          parts.unshift(`[${JSON.stringify(literalProp.value)}]`);
-        } else {
-          // For other literal computed properties (e.g. boolean/null), wildcard
-          parts.unshift('[*]');
-        }
+        segments.unshift({
+          text:
+            typeof literalValue === 'number'
+              ? `[${literalValue}]`
+              : `[${JSON.stringify(literalValue)}]`,
+          computed: true,
+          optional: memberExpr.optional,
+        });
       } else {
         // Regular property access
         if (memberExpr.property.type !== AST_NODE_TYPES.Identifier) {
@@ -211,64 +251,41 @@ function getObjectUsagesInHook(
           (ARRAY_METHODS.has(memberExpr.property.name) ||
             STRING_METHODS.has(memberExpr.property.name))
         ) {
-          // Check if this is accessing our target object or a property of it
-          let currentBase = unwrapExpression(memberExpr.object);
-          const pathParts: string[] = [];
-          let hasOptionalChainingInMethod = false;
-
-          // Build the path to the array/string being accessed
-          while (currentBase.type === AST_NODE_TYPES.MemberExpression) {
-            const currentMember = currentBase as TSESTree.MemberExpression;
-            if (currentMember.property.type === AST_NODE_TYPES.Identifier) {
-              pathParts.unshift(currentMember.property.name);
-            }
-            if (currentMember.optional) {
-              hasOptionalChainingInMethod = true;
-            }
-            currentBase = unwrapExpression(currentMember.object);
-          }
-
-          if (
-            currentBase.type === AST_NODE_TYPES.Identifier &&
-            currentBase.name === objectName
-          ) {
-            if (pathParts.length === 0) {
-              // Direct method call on the object (e.g., userData.map(...))
-              needsEntireObject = true;
-            } else {
-              // Method call on a property (e.g., userData.items.map(...) or userData?.items?.map(...))
-              let path = objectName + (hasOptionalChainingInMethod ? '?' : '');
-              path += '.' + pathParts.join('.');
+          const methodTarget = unwrapExpression(memberExpr.object);
+          if (methodTarget.type === AST_NODE_TYPES.MemberExpression) {
+            // Method call on a property (e.g., userData.items.map(...) or
+            // userData?.items?.map(...)): depend on that property's own path,
+            // rendered with the same per-link optional markers as any other
+            // access.
+            const path = buildAccessPath(methodTarget);
+            if (path) {
               usages.set(path, memberExpr.range?.[0] || 0);
             }
+          } else if (
+            methodTarget.type === AST_NODE_TYPES.Identifier &&
+            methodTarget.name === objectName
+          ) {
+            // Direct method call on the object (e.g., userData.map(...))
+            needsEntireObject = true;
           }
           return null;
         }
 
-        parts.unshift(memberExpr.property.name);
+        segments.unshift({
+          text: memberExpr.property.name,
+          computed: false,
+          optional: memberExpr.optional,
+        });
       }
 
-      if (memberExpr.optional) {
-        hasOptionalChaining = true;
-      }
       current = unwrapExpression(memberExpr.object);
     }
 
     // Check if we reached the target identifier
     const base = unwrapExpression(current);
     if (base.type === AST_NODE_TYPES.Identifier && base.name === objectName) {
-      // Build the path with optional chaining
-      let path = objectName + (hasOptionalChaining ? '?' : '');
-
-      // Add each part with proper formatting (dot notation or bracket notation)
-      for (const part of parts) {
-        if (part.startsWith('[')) {
-          path += part; // Already formatted as bracket notation
-        } else {
-          path += '.' + part; // Dot notation
-        }
-      }
-
+      const path = renderPathSegments(objectName, segments);
+      pathSegments.set(path, segments);
       return path;
     }
 
@@ -526,34 +543,37 @@ function getObjectUsagesInHook(
     // Always include the main path
     finalPaths.add(path);
 
-    // For optional chaining, include the FIRST optional chaining point as intermediate
-    if (path.includes('?.')) {
-      // Find the first optional chaining point
-      // For userData?.profile.settings.theme.primary, we want to include userData?.profile
-      const firstOptionalIndex = path.indexOf('?.');
-      if (firstOptionalIndex !== -1) {
-        // Find the end of the first property after the optional chaining
-        const afterOptional = path.substring(firstOptionalIndex + 2);
-        const nextDotIndex = afterOptional.indexOf('.');
-
-        if (nextDotIndex !== -1) {
-          // There are more properties after the first optional property
-          const firstOptionalPath = path.substring(
-            0,
-            firstOptionalIndex + 2 + nextDotIndex,
-          );
-          finalPaths.add(firstOptionalPath);
-        }
-      }
+    const segments = pathSegments.get(path);
+    if (!segments) {
+      return;
     }
 
-    // For array access, include the array property itself
-    if (path.includes('[') && path.includes(']')) {
-      const bracketIndex = path.indexOf('[');
-      if (bracketIndex > 0) {
-        const arrayPath = path.substring(0, bracketIndex);
-        finalPaths.add(arrayPath);
-      }
+    // Include the FIRST optional link as an intermediate dependency when more
+    // links follow it: for userData?.profile.settings.theme.primary we also
+    // want userData?.profile.
+    const firstOptionalIndex = segments.findIndex(
+      (segment) => segment.optional,
+    );
+    if (firstOptionalIndex !== -1 && firstOptionalIndex < segments.length - 1) {
+      finalPaths.add(
+        renderPathSegments(
+          objectName,
+          segments.slice(0, firstOptionalIndex + 1),
+        ),
+      );
+    }
+
+    // For array access, include the array property itself: for
+    // userData.items[0] we also want userData.items. A bracket directly on
+    // the base (state[0], state?.[0]) adds nothing — its "array" is the
+    // entire object dependency this rule exists to narrow away.
+    const firstComputedIndex = segments.findIndex(
+      (segment) => segment.computed,
+    );
+    if (firstComputedIndex > 0) {
+      finalPaths.add(
+        renderPathSegments(objectName, segments.slice(0, firstComputedIndex)),
+      );
     }
   });
 
@@ -564,15 +584,13 @@ function getObjectUsagesInHook(
   // Exception: keep array paths with optional chaining as they represent different dependencies
   const filteredPaths = pathsArray.filter((path) => {
     // Skip array paths if we're accessing specific indices, unless it's optional chaining
+    // why: an optional bracket renders as `?.[`, so the specific-index probe
+    // must accept both `base[0]` and `base?.[0]` shapes.
     const isArrayWithSpecificIndices = pathsArray.some(
       (otherPath) =>
         otherPath !== path &&
         (otherPath.startsWith(path + '[') ||
-          otherPath.match(
-            new RegExp(
-              `^${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\[\\d+\\]`,
-            ),
-          )),
+          otherPath.startsWith(path + '?.[')),
     );
 
     // Keep array paths with optional chaining even if specific indices are accessed

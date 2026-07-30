@@ -1,3 +1,4 @@
+import { parse } from '@typescript-eslint/parser';
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { noEntireObjectHookDeps } from '../rules/no-entire-object-hook-deps';
 
@@ -30,6 +31,191 @@ const removeUnused = (objectName: string): RuleError => ({
   data: {
     objectName,
   },
+});
+
+// Regression cases for issue #1401: the fixer emitted `state?[0]` (a syntax
+// error — it parses as a conditional expression) instead of `state?.[0]` when
+// narrowing an optional-chained computed access. Kept in a named array so the
+// parse-assertion block below can prove every fixed output round-trips through
+// the parser: RuleTester compares fix output as text and never re-parses it,
+// which is exactly how this bug shipped.
+const optionalComputedFixCases = [
+  // Exact shape from agora's useRouterStateFallback.tsx (issue #1401):
+  // optional-chained computed access on the base object.
+  {
+    code: `
+      const useRouterStateFallback = ({ state, defaultStateValue, setDefaultStateValue }) => {
+        const stateValue = useMemo(() => {
+          return state?.[0] || defaultStateValue;
+        }, [defaultStateValue, state]);
+        const setStateValue = useMemo(() => {
+          return state?.[1] || setDefaultStateValue;
+        }, [state, setDefaultStateValue]);
+        return [stateValue, setStateValue];
+      };
+    `,
+    errors: [avoid('state', 'state?.[0]'), avoid('state', 'state?.[1]')],
+    output: `
+      const useRouterStateFallback = ({ state, defaultStateValue, setDefaultStateValue }) => {
+        const stateValue = useMemo(() => {
+          return state?.[0] || defaultStateValue;
+        }, [defaultStateValue, state?.[0]]);
+        const setStateValue = useMemo(() => {
+          return state?.[1] || setDefaultStateValue;
+        }, [state?.[1], setDefaultStateValue]);
+        return [stateValue, setStateValue];
+      };
+    `,
+  },
+  // Plain computed access on the base object stays bracket-only.
+  {
+    code: `
+      const MyComponent = ({ state, fallback }) => {
+        const first = useMemo(() => {
+          return state[0] ?? fallback;
+        }, [state, fallback]);
+        return <div>{first}</div>;
+      };
+    `,
+    errors: [avoid('state', 'state[0]')],
+    output: `
+      const MyComponent = ({ state, fallback }) => {
+        const first = useMemo(() => {
+          return state[0] ?? fallback;
+        }, [state[0], fallback]);
+        return <div>{first}</div>;
+      };
+    `,
+  },
+  // Optional-chained dot access keeps its `?.` marker.
+  {
+    code: `
+      const MyComponent = ({ state }) => {
+        const label = useMemo(() => {
+          return state?.label;
+        }, [state]);
+        return <div>{label}</div>;
+      };
+    `,
+    errors: [avoid('state', 'state?.label')],
+    output: `
+      const MyComponent = ({ state }) => {
+        const label = useMemo(() => {
+          return state?.label;
+        }, [state?.label]);
+        return <div>{label}</div>;
+      };
+    `,
+  },
+  // Optional-chained computed access with a string key renders as ?.["key"].
+  {
+    code: `
+      const MyComponent = ({ state }) => {
+        const special = useMemo(() => {
+          return state?.["special-key"];
+        }, [state]);
+        return <div>{special}</div>;
+      };
+    `,
+    errors: [avoid('state', 'state?.["special-key"]')],
+    output: `
+      const MyComponent = ({ state }) => {
+        const special = useMemo(() => {
+          return state?.["special-key"];
+        }, [state?.["special-key"]]);
+        return <div>{special}</div>;
+      };
+    `,
+  },
+  // Mixed chain: optional dot link followed by a plain bracket. The `?.`
+  // marker stays on the dot link and the bracket stays bare.
+  {
+    code: `
+      const MyComponent = ({ a }) => {
+        const first = useMemo(() => {
+          return a?.b[0];
+        }, [a]);
+        return <div>{first}</div>;
+      };
+    `,
+    errors: [avoid('a', 'a?.b[0], a?.b')],
+    output: `
+      const MyComponent = ({ a }) => {
+        const first = useMemo(() => {
+          return a?.b[0];
+        }, [a?.b[0], a?.b]);
+        return <div>{first}</div>;
+      };
+    `,
+  },
+  // Mixed chain: plain dot link followed by an optional bracket. The `?.`
+  // marker must sit on the bracket link (a.b?.[0]), NOT migrate to the base
+  // (a?.b[0]) — the base rendering would throw at dep-evaluation time when
+  // `a` is defined but `a.b` is not.
+  {
+    code: `
+      const MyComponent = ({ a }) => {
+        const first = useMemo(() => {
+          return a.b?.[0];
+        }, [a]);
+        return <div>{first}</div>;
+      };
+    `,
+    errors: [avoid('a', 'a.b?.[0]')],
+    output: `
+      const MyComponent = ({ a }) => {
+        const first = useMemo(() => {
+          return a.b?.[0];
+        }, [a.b?.[0]]);
+        return <div>{first}</div>;
+      };
+    `,
+  },
+  // Fully optional mixed chain keeps every marker.
+  {
+    code: `
+      const MyComponent = ({ a }) => {
+        const first = useMemo(() => {
+          return a?.b?.[0];
+        }, [a]);
+        return <div>{first}</div>;
+      };
+    `,
+    errors: [avoid('a', 'a?.b?.[0], a?.b')],
+    output: `
+      const MyComponent = ({ a }) => {
+        const first = useMemo(() => {
+          return a?.b?.[0];
+        }, [a?.b?.[0], a?.b]);
+        return <div>{first}</div>;
+      };
+    `,
+  },
+];
+
+describe('no-entire-object-hook-deps fixed outputs parse (issue #1401)', () => {
+  // why: scope analysis inside parseForESLint dereferences node.range, so
+  // range/loc must be enabled or every parse crashes with a TypeError
+  // instead of reporting syntax validity.
+  const parseAsTsx = (code: string) =>
+    parse(code, { ecmaFeatures: { jsx: true }, range: true, loc: true });
+
+  it('rejects the pre-fix broken shape, proving these assertions bite', () => {
+    expect(() =>
+      parseAsTsx(`
+        const stateValue = useMemo(() => {
+          return state?.[0] || defaultStateValue;
+        }, [defaultStateValue, state?[0]]);
+      `),
+    ).toThrow(/expected/);
+  });
+
+  optionalComputedFixCases.forEach(({ code, output }) => {
+    const summary = code.trim().split('\n')[2]?.trim();
+    it(`emits parseable output for: ${summary}`, () => {
+      expect(() => parseAsTsx(output)).not.toThrow();
+    });
+  });
 });
 
 describe('no-entire-object-hook-deps messages', () => {
@@ -735,8 +921,22 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
+    // Boolean literal computed key: no rendering the fixer can guarantee
+    // round-trips (the fixer used to emit the unparseable wildcard `flags[*]`),
+    // so narrowing is declined and the entire object stays a valid dependency.
+    {
+      code: `
+        const MyComponent = ({ flags }) => {
+          const value = useMemo(() => {
+            return flags[true];
+          }, [flags]);
+          return <div>{value}</div>;
+        };
+      `,
+    },
   ],
   invalid: [
+    ...optionalComputedFixCases,
     // Optional chaining case
     {
       code: `
@@ -1152,13 +1352,16 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        avoid('userData', 'userData?.profile.address.city, userData?.profile'),
+        avoid(
+          'userData',
+          'userData?.profile?.address?.city, userData?.profile',
+        ),
       ],
       output: `
         const MyComponent = ({ userData }: { userData: { profile?: { address?: { city?: string } } } }) => {
           const city = useMemo(() => {
             return userData?.profile?.address?.city;
-          }, [userData?.profile.address.city, userData?.profile]);
+          }, [userData?.profile?.address?.city, userData?.profile]);
           return <div>{city}</div>;
         };
       `,
@@ -1273,12 +1476,12 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{firstItem}</div>;
         };
       `,
-      errors: [avoid('userData', 'userData?.items[0], userData?.items')],
+      errors: [avoid('userData', 'userData?.items?.[0], userData?.items')],
       output: `
         const MyComponent = ({ userData }: { userData: { items?: string[] } }) => {
           const firstItem = useMemo(() => {
             return userData?.items?.[0];
-          }, [userData?.items[0], userData?.items]);
+          }, [userData?.items?.[0], userData?.items]);
           return <div>{firstItem}</div>;
         };
       `,
@@ -1623,14 +1826,14 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
       errors: [
         avoid(
           'userData',
-          'userData?.profile.settings.theme.primary, userData?.profile',
+          'userData?.profile?.settings?.theme?.primary, userData?.profile',
         ),
       ],
       output: `
         const MyComponent = ({ userData }: { userData: { profile?: { settings?: { theme?: { primary?: string } } } } }) => {
           const result = useMemo(() => {
             return userData?.profile?.settings?.theme?.primary || 'default';
-          }, [userData?.profile.settings.theme.primary, userData?.profile]);
+          }, [userData?.profile?.settings?.theme?.primary, userData?.profile]);
           return <div>{result}</div>;
         };
       `,
