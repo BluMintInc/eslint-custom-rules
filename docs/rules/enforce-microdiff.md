@@ -59,7 +59,22 @@ export const changes = detailedDiff(oldState, newState);
 
 Calls to `deepDiff`, `fastDiff`, `diffArrays`, and `detailedDiff` are reported only when the callee resolves through the scope chain to an import from one of the libraries this rule replaces (`deep-diff`, `fast-diff`, `diff`, `deep-object-diff`). A name bound to a local function, a variable, a parameter, or an import from any other module is the file's own — it is neither reported nor rewritten. An unbound name is left alone too, since renaming it to `diff` would only trade one unresolved name for another.
 
-Resolution keys on the local name a specifier binds, so `import { somethingElse as detailedDiff } from 'deep-object-diff'` is covered. An alias pointing the other way (`import { detailedDiff as dd } from 'deep-object-diff'`) is caught by the separate tracking of every specifier a competing library's import binds, which follows the local name regardless of what it is called.
+Resolution keys on the local name a specifier binds, so `import { somethingElse as detailedDiff } from 'deep-object-diff'` is covered. An alias pointing the other way (`import { detailedDiff as dd } from 'deep-object-diff'`) is caught by the separate tracking of every specifier a competing library's import binds, whatever name it is bound under.
+
+That tracking resolves call sites too, so a local binding that shadows the imported name answers its own calls:
+
+```ts
+import { detailedDiff } from 'deep-object-diff';
+
+export function compare(oldState, newState) {
+  // Calls the local arrow, so it is neither reported nor rewritten. The import
+  // above is still retired: it is a competing library, shadowed or not.
+  const detailedDiff = (a, b) => [a, b];
+  return detailedDiff(oldState, newState);
+}
+```
+
+Rewriting such a call would substitute microdiff's structural change list for whatever the shadow computed — a swap that compiles cleanly and leaves the shadow unused, so nothing downstream would flag it. Shadowing an import is its own smell, and [`no-shadow`](https://eslint.org/docs/latest/rules/no-shadow) is the rule that reports it.
 
 ## Autofix
 

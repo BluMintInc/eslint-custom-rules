@@ -8,6 +8,31 @@ const DIFF_NAME = 'diff';
 const MICRODIFF_MODULE = 'microdiff';
 
 /**
+ * The names a competing library's diff export is conventionally bound to. They
+ * are candidates for a report, never proof of one: what a call resolves to
+ * decides.
+ */
+const DIFF_FUNCTION_NAMES = new Set([
+  'deepDiff',
+  'fastDiff',
+  'diffArrays',
+  'detailedDiff',
+  // 'fastDeepEqual' and 'isEqual' stay out: they are allowed alternatives.
+]);
+
+/**
+ * The exports of a competing library whose call sites this rule rewrites,
+ * whatever local name the import binds them to.
+ */
+const COMPETING_DIFF_EXPORTS = new Set(['diff', 'diffArrays', 'detailedDiff']);
+
+/** Diff libraries this rule permits, whose calls are tracked but never reported. */
+const ALLOWED_DIFF_MODULES = new Set([
+  'fast-deep-equal',
+  'fast-deep-equal/es6',
+]);
+
+/**
  * The libraries this rule replaces. Every fix retires the whole import
  * declaration of one of these, which is what makes the names it binds available
  * to the microdiff import that takes its place.
@@ -103,8 +128,8 @@ function collectClaimableSpecifiers(
  *
  * Resolution keys on the *local* name a specifier binds, so an alias that
  * renames a competing export onto one of these names is covered, while an alias
- * that renames it away (`detailedDiff as dd`) is left to the imported-name
- * tracking that follows the local name of every known specifier.
+ * that renames it away (`detailedDiff as dd`) is left to `toImportedDiffSource`,
+ * which resolves to the specifier itself under whatever name it is bound.
  */
 function toCompetingDiffImport(
   variable: TSESLint.Scope.Variable | null,
@@ -135,6 +160,36 @@ function toCompetingDiffImport(
       continue;
     }
     return declaration;
+  }
+  return null;
+}
+
+/**
+ * The module a name is imported from, when the name resolves to one of the
+ * specifiers the import handler tracked, and null for every other binding.
+ *
+ * Tracking keys on the specifier node rather than on the local name because
+ * names collide and bindings do not: a parameter, a nested `const`, or a
+ * function declaration that shadows the imported name answers its own calls.
+ * Rewriting one of those to `diff` swaps in microdiff's structural change list
+ * for whatever the shadow computed — a substitution that compiles cleanly and
+ * leaves the shadow unused, so nothing downstream flags it.
+ */
+function toImportedDiffSource(
+  variable: TSESLint.Scope.Variable | null,
+  importedSpecifiers: ReadonlyMap<TSESTree.Node, string>,
+): string | null {
+  if (!variable) {
+    return null;
+  }
+  for (const def of variable.defs) {
+    if (def.type !== 'ImportBinding') {
+      continue;
+    }
+    const source = importedSpecifiers.get(def.node);
+    if (source !== undefined) {
+      return source;
+    }
   }
   return null;
 }
@@ -183,8 +238,21 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
   create(context) {
     const sourceCode = context.sourceCode;
     const importedDiffLibraries = new Map<string, TSESTree.ImportDeclaration>();
-    const importedFunctions = new Map<string, string>(); // Map of imported function names to their sources
+    // The diff specifiers this file imports, keyed by node so a call site can
+    // ask whether the binding it resolves to is one of them.
+    const importedDiffSpecifiers = new Map<TSESTree.Node, string>();
+    // The local names those specifiers bind: a cheap gate that keeps calls with
+    // no relation to a diff library off the scope chain.
+    const importedDiffNames = new Set<string>();
     const reportedNodes = new Set<TSESTree.Node>();
+
+    function trackImportedDiff(
+      specifier: TSESTree.ImportClause,
+      importSource: string,
+    ) {
+      importedDiffSpecifiers.set(specifier, importSource);
+      importedDiffNames.add(specifier.local.name);
+    }
 
     /**
      * Whether the fix may emit a bare `diff` at `node`. The AST is read at fix
@@ -280,13 +348,11 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
           node.specifiers.forEach((specifier) => {
             if (
               specifier.type === AST_NODE_TYPES.ImportSpecifier &&
-              (specifier.imported.name === 'diff' ||
-                specifier.imported.name === 'diffArrays' ||
-                specifier.imported.name === 'detailedDiff')
+              COMPETING_DIFF_EXPORTS.has(specifier.imported.name)
             ) {
-              // Track the local name (which could be different due to renaming)
-              const localName = specifier.local.name;
-              importedFunctions.set(localName, importSource);
+              // Track the specifier itself, so renaming the export and
+              // shadowing the local name both stay accounted for
+              trackImportedDiff(specifier, importSource);
             }
             // Removed the fast-deep-equal handling since it's now allowed
           });
@@ -320,16 +386,11 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
           });
 
           // Check if importing a diff function or a known equality library
-          const hasDiffImport = node.specifiers.some((specifier) => {
-            if (specifier.type === AST_NODE_TYPES.ImportSpecifier) {
-              return (
-                specifier.imported.name === 'diff' ||
-                specifier.imported.name === 'diffArrays' ||
-                specifier.imported.name === 'detailedDiff'
-              );
-            }
-            return false;
-          });
+          const hasDiffImport = node.specifiers.some(
+            (specifier) =>
+              specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+              COMPETING_DIFF_EXPORTS.has(specifier.imported.name),
+          );
 
           if (hasDiffImport) {
             importedDiffLibraries.set(importSource, node);
@@ -337,14 +398,11 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
         }
 
         // Special handling for fast-deep-equal: track it but don't report it
-        if (
-          importSource === 'fast-deep-equal' ||
-          importSource === 'fast-deep-equal/es6'
-        ) {
+        if (ALLOWED_DIFF_MODULES.has(importSource)) {
           // Track imported function names for later reference
           node.specifiers.forEach((specifier) => {
             if (specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
-              importedFunctions.set(specifier.local.name, importSource);
+              trackImportedDiff(specifier, importSource);
             }
           });
 
@@ -365,69 +423,32 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
         // Check for direct calls to imported diff functions
         if (callee.type === AST_NODE_TYPES.Identifier) {
           const name = callee.name;
+          const isDiffFunctionName = DIFF_FUNCTION_NAMES.has(name);
 
-          // Check if this is a function we specifically imported from a diff library
-          if (importedFunctions.has(name)) {
-            usedImportNames.add(name);
-
-            // Get the source of the imported function
-            const importSource = importedFunctions.get(name);
-
-            // Skip reporting if it's from fast-deep-equal
-            if (
-              importSource === 'fast-deep-equal' ||
-              importSource === 'fast-deep-equal/es6'
-            ) {
-              return;
-            }
-
-            // Report it if it's from any other tracked library
-            reportedNodes.add(node);
-            context.report({
-              node,
-              messageId: 'enforceMicrodiff',
-              fix(fixer) {
-                if (!canEmitDiffAt(node)) {
-                  return null;
-                }
-                return fixer.replaceText(callee, DIFF_NAME);
-              },
-            });
-            return;
-          }
-
-          // Check known diff function names
-          const isDiffFunction = [
-            'deepDiff',
-            'fastDiff',
-            'diffArrays',
-            'detailedDiff',
-            // Removed 'fastDeepEqual' and 'isEqual' as they are allowed alternatives
-          ].includes(name);
-
-          if (isDiffFunction) {
-            // The name is only a candidate until the scope chain says what it
-            // binds: a local function, variable, parameter, or an import from
-            // anywhere but a competing diff library keeps its call untouched.
-            const competingImport = toCompetingDiffImport(
-              ASTHelpers.findVariableInScope(
-                ASTHelpers.getScope(context, node),
-                name,
-              ),
+          if (importedDiffNames.has(name) || isDiffFunctionName) {
+            // Both paths below ask what the callee binds, so the scope chain is
+            // walked once for the name they share.
+            const calleeVariable = ASTHelpers.findVariableInScope(
+              ASTHelpers.getScope(context, node),
+              name,
             );
-            if (!competingImport) {
-              return;
-            }
 
-            // Track this import name as used
-            usedImportNames.add(name);
+            // Check if this call resolves to a function we specifically
+            // imported from a diff library
+            const importSource = toImportedDiffSource(
+              calleeVariable,
+              importedDiffSpecifiers,
+            );
 
-            // Check if we have at least 2 arguments that are objects or arrays
-            if (
-              node.arguments.length >= 2 &&
-              isObjectOrArrayType(node.arguments[0]) &&
-              isObjectOrArrayType(node.arguments[1])
-            ) {
+            if (importSource) {
+              usedImportNames.add(name);
+
+              // Skip reporting if it's from fast-deep-equal
+              if (ALLOWED_DIFF_MODULES.has(importSource)) {
+                return;
+              }
+
+              // Report it if it's from any other tracked library
               reportedNodes.add(node);
               context.report({
                 node,
@@ -436,10 +457,43 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
                   if (!canEmitDiffAt(node)) {
                     return null;
                   }
-                  // When handling fast-diff and similar libraries, need to ensure the function name is replaced
                   return fixer.replaceText(callee, DIFF_NAME);
                 },
               });
+              return;
+            }
+
+            if (isDiffFunctionName) {
+              // The name is only a candidate until the scope chain says what it
+              // binds: a local function, variable, parameter, or an import from
+              // anywhere but a competing diff library keeps its call untouched.
+              const competingImport = toCompetingDiffImport(calleeVariable);
+              if (!competingImport) {
+                return;
+              }
+
+              // Track this import name as used
+              usedImportNames.add(name);
+
+              // Check if we have at least 2 arguments that are objects or arrays
+              if (
+                node.arguments.length >= 2 &&
+                isObjectOrArrayType(node.arguments[0]) &&
+                isObjectOrArrayType(node.arguments[1])
+              ) {
+                reportedNodes.add(node);
+                context.report({
+                  node,
+                  messageId: 'enforceMicrodiff',
+                  fix(fixer) {
+                    if (!canEmitDiffAt(node)) {
+                      return null;
+                    }
+                    // When handling fast-diff and similar libraries, need to ensure the function name is replaced
+                    return fixer.replaceText(callee, DIFF_NAME);
+                  },
+                });
+              }
             }
           }
         }
