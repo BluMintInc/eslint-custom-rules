@@ -93,6 +93,7 @@ function validateInput(input: string) {
 
 ```typescript
 // exportPlacement: "bottom"
+// eslint-options: {"exportPlacement": "bottom"}
 function prepareRequest() {}
 
 export function makeRequest() {
