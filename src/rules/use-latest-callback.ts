@@ -4,6 +4,12 @@ import { createRule } from '../utils/createRule';
 
 type MessageIds = 'useLatestCallback';
 
+type Conversion = {
+  node: TSESTree.CallExpression;
+  currentHook: string;
+  callee: TSESTree.Identifier | null;
+};
+
 export const useLatestCallback = createRule<[], MessageIds>({
   name: 'use-latest-callback',
   meta: {
@@ -40,11 +46,7 @@ export const useLatestCallback = createRule<[], MessageIds>({
     // useCallback binding survives the fix, which is only knowable file-wide:
     // ESLint evaluates a report's fixer eagerly, so a call visited before a
     // later JSX-returning call would otherwise commit to a stale name.
-    const conversions: {
-      node: TSESTree.CallExpression;
-      currentHook: string;
-      callee: TSESTree.Identifier | null;
-    }[] = [];
+    const conversions: Conversion[] = [];
 
     const isJSXLikeReturn = (
       node: TSESTree.Node | null | undefined,
@@ -283,11 +285,29 @@ export const useLatestCallback = createRule<[], MessageIds>({
 
         const specifiers = useCallbackSpecifiersOf(statement);
 
+        // A conversion nested inside another conversion cannot join the atomic
+        // batch: the outer replacement re-emits the inner call's original text,
+        // so fixing both at once would produce overlapping edits. The inner
+        // call is reported without a fix; because its callee then counts as a
+        // surviving reference, the react import is preserved and a later pass
+        // converts it against the rewritten text.
+        const isNestedConversion = (candidate: Conversion) =>
+          conversions.some(
+            (other) =>
+              other.node !== candidate.node &&
+              other.node.range[0] <= candidate.node.range[0] &&
+              candidate.node.range[1] <= other.node.range[1],
+          );
+        const batchedConversions = conversions.filter(
+          (conversion) => !isNestedConversion(conversion),
+        );
+        const deferredConversions = conversions.filter(isNestedConversion);
+
         // A reference the fix does not rewrite (a JSX-returning call, an
         // argument-less call, or `useCallback` used as a value) keeps needing
         // react's binding, so the import must be preserved verbatim.
         const convertedCallees = new Set<TSESTree.Node>(
-          conversions
+          batchedConversions
             .map((conversion) => conversion.callee)
             .filter((callee): callee is TSESTree.Identifier => !!callee),
         );
@@ -333,7 +353,117 @@ export const useLatestCallback = createRule<[], MessageIds>({
           ? 'useLatestCallback'
           : useCallbackLocalName;
 
-        for (const conversion of conversions) {
+        const importText = `import ${recommendedHook} from 'use-latest-callback';`;
+
+        // The react import statement participates in the change set only when
+        // it binds useCallback or anchors a React.useCallback member call.
+        const touchesImport =
+          specifiers.length > 0 || hasReactMemberUseCallback;
+
+        const importFixes = (fixer: TSESLint.RuleFixer): TSESLint.RuleFix[] => {
+          if (!touchesImport) {
+            return [];
+          }
+
+          // A surviving reference (or a member-only file) leaves the react
+          // import untouched; only the new import is added when missing.
+          if (hasSurvivingReference || specifiers.length === 0) {
+            if (hasUseLatestCallbackImport) {
+              return [];
+            }
+            return [fixer.insertTextBefore(statement, `${importText}\n`)];
+          }
+
+          const defaultOrNamespace = statement.specifiers.find(
+            (s) =>
+              s.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
+              s.type === AST_NODE_TYPES.ImportNamespaceSpecifier,
+          );
+
+          const remainingNamed = statement.specifiers.filter(
+            (s): s is TSESTree.ImportSpecifier =>
+              s.type === AST_NODE_TYPES.ImportSpecifier &&
+              s.imported.type === AST_NODE_TYPES.Identifier &&
+              s.imported.name !== 'useCallback',
+          );
+
+          const prefix =
+            statement.importKind && statement.importKind !== 'value'
+              ? 'import type'
+              : 'import';
+
+          if (remainingNamed.length === 0 && !defaultOrNamespace) {
+            if (!hasUseLatestCallbackImport) {
+              return [fixer.replaceText(statement, importText)];
+            }
+            return [fixer.remove(statement)];
+          }
+
+          const parts: string[] = [];
+          if (defaultOrNamespace) {
+            parts.push(sourceCode.getText(defaultOrNamespace));
+          }
+          if (remainingNamed.length > 0) {
+            parts.push(
+              `{ ${remainingNamed
+                .map((s) => sourceCode.getText(s))
+                .join(', ')} }`,
+            );
+          }
+
+          const replacement = `${prefix} ${parts.join(', ')} from 'react';`;
+
+          const fixes: TSESLint.RuleFix[] = [];
+          if (!hasUseLatestCallbackImport) {
+            fixes.push(fixer.insertTextBefore(statement, `${importText}\n`));
+          }
+          fixes.push(fixer.replaceText(statement, replacement));
+          return fixes;
+        };
+
+        const conversionFix = (
+          fixer: TSESLint.RuleFixer,
+          conversion: Conversion,
+        ): TSESLint.RuleFix => {
+          const callbackText = sourceCode.getText(conversion.node.arguments[0]);
+          const typeParams = conversion.node.typeParameters
+            ? sourceCode.getText(conversion.node.typeParameters)
+            : '';
+
+          // Replace useCallback with useLatestCallback and remove the dependency array
+          return fixer.replaceText(
+            conversion.node,
+            `${recommendedHook}${typeParams}(${callbackText})`,
+          );
+        };
+
+        // Every call-site conversion and the import rewrite ride on ONE fix
+        // from ONE report. ESLint discards a multi-part fix wholesale when any
+        // part conflicts with another rule's fix and retries it on the next
+        // pass against the updated text, whereas fixes split across reports
+        // land piecemeal: the disjoint import rewrite would apply even when
+        // the call-site conversion is deferred, permanently stranding a
+        // `useCallback(...)` call with no import (issue #1400).
+        const [fixOwner, ...followers] = batchedConversions;
+
+        context.report({
+          node: fixOwner.node,
+          messageId: 'useLatestCallback',
+          data: {
+            currentHook: fixOwner.currentHook,
+            recommendedHook,
+          },
+          fix(fixer) {
+            return [
+              ...batchedConversions.map((conversion) =>
+                conversionFix(fixer, conversion),
+              ),
+              ...importFixes(fixer),
+            ];
+          },
+        });
+
+        for (const conversion of [...followers, ...deferredConversions]) {
           context.report({
             node: conversion.node,
             messageId: 'useLatestCallback',
@@ -341,45 +471,15 @@ export const useLatestCallback = createRule<[], MessageIds>({
               currentHook: conversion.currentHook,
               recommendedHook,
             },
-            fix(fixer) {
-              const callbackText = sourceCode.getText(
-                conversion.node.arguments[0],
-              );
-              const typeParams = conversion.node.typeParameters
-                ? sourceCode.getText(conversion.node.typeParameters)
-                : '';
-
-              // Replace useCallback with useLatestCallback and remove the dependency array
-              return fixer.replaceText(
-                conversion.node,
-                `${recommendedHook}${typeParams}(${callbackText})`,
-              );
-            },
           });
         }
 
-        if (specifiers.length === 0 && !hasReactMemberUseCallback) {
+        if (!touchesImport) {
           return;
         }
 
-        const importText = `import ${recommendedHook} from 'use-latest-callback';`;
-
-        if (hasSurvivingReference) {
-          if (hasUseLatestCallbackImport) {
-            return; // The react import stays as is and the new import exists
-          }
-
-          context.report({
-            node: statement,
-            messageId: 'useLatestCallback',
-            data: {
-              currentHook: useCallbackLocalName,
-              recommendedHook,
-            },
-            fix: (fixer) =>
-              fixer.insertTextBefore(statement, `${importText}\n`),
-          });
-          return;
+        if (hasSurvivingReference && hasUseLatestCallbackImport) {
+          return; // The react import stays as is and the new import exists
         }
 
         context.report({
@@ -388,58 +488,6 @@ export const useLatestCallback = createRule<[], MessageIds>({
           data: {
             currentHook: useCallbackLocalName,
             recommendedHook,
-          },
-          fix(fixer) {
-            if (specifiers.length === 0) {
-              if (hasUseLatestCallbackImport) return null;
-              return fixer.insertTextBefore(statement, `${importText}\n`);
-            }
-
-            const defaultOrNamespace = statement.specifiers.find(
-              (s) =>
-                s.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
-                s.type === AST_NODE_TYPES.ImportNamespaceSpecifier,
-            );
-
-            const remainingNamed = statement.specifiers.filter(
-              (s): s is TSESTree.ImportSpecifier =>
-                s.type === AST_NODE_TYPES.ImportSpecifier &&
-                s.imported.type === AST_NODE_TYPES.Identifier &&
-                s.imported.name !== 'useCallback',
-            );
-
-            const prefix =
-              statement.importKind && statement.importKind !== 'value'
-                ? 'import type'
-                : 'import';
-
-            if (remainingNamed.length === 0 && !defaultOrNamespace) {
-              if (!hasUseLatestCallbackImport) {
-                return fixer.replaceText(statement, importText);
-              }
-              return fixer.remove(statement);
-            }
-
-            const parts: string[] = [];
-            if (defaultOrNamespace) {
-              parts.push(sourceCode.getText(defaultOrNamespace));
-            }
-            if (remainingNamed.length > 0) {
-              parts.push(
-                `{ ${remainingNamed
-                  .map((s) => sourceCode.getText(s))
-                  .join(', ')} }`,
-              );
-            }
-
-            const replacement = `${prefix} ${parts.join(', ')} from 'react';`;
-
-            const fixes: TSESLint.RuleFix[] = [];
-            if (!hasUseLatestCallbackImport) {
-              fixes.push(fixer.insertTextBefore(statement, `${importText}\n`));
-            }
-            fixes.push(fixer.replaceText(statement, replacement));
-            return fixes;
           },
         });
       },
