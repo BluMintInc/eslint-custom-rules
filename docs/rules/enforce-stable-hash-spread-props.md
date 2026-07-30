@@ -71,6 +71,36 @@ const MyComponent = ({ someProp, ...typographyPropsRaw }: Props) => {
 };
 ```
 
+### Interaction with inline disable comments
+
+The `import { stableHash } from 'functions/src/util/hash/stableHash';` statement
+is added once per file, attached to the fix of the first violation that is
+**not** suppressed by an inline `eslint-disable` directive. Suppressing an
+individual dependency array therefore never strands the remaining
+`stableHash(...)` calls without their import:
+
+```tsx
+const First = ({ ...alphaProps }: Props) => {
+  // eslint-disable-next-line @blumintinc/blumint/enforce-stable-hash-spread-props
+  useCallback(() => {}, [alphaProps]); // left alone
+  return <div {...alphaProps} />;
+};
+
+const Second = ({ ...betaProps }: Props) => {
+  // fixed, and carries the import
+  useCallback(() => {}, [betaProps]);
+  return <div {...betaProps} />;
+};
+```
+
+The violation is reported on the dependency array, so a disable comment must sit
+on the line above that array. When a hook call spans several lines, a disable
+placed above the call covers the call line rather than the dependency array and
+suppresses nothing.
+
+The `react-hooks/exhaustive-deps` comments this rule inserts name a different
+rule and never suppress it.
+
 ## When Not To Use It
 
 - If your project uses a different stability helper, configure `hashImport` and/or `allowedHashFunctions` instead of disabling the rule.
