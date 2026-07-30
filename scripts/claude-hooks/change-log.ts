@@ -7,9 +7,41 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 
 export const TMP_DIR_SEGMENT = '.claude/tmp/';
+
+/**
+ * A path belongs in the change log only when it sits inside the workspace being
+ * linted.
+ *
+ * An agent routinely writes scratch harnesses to /tmp and edits sibling
+ * worktrees; neither is a change to this repo. Linting one resolves whatever
+ * ESLint config happens to sit above it, so a stray `/tmp/.eslintrc.js` left by
+ * an unrelated run aborts the entire stop-hook lint on a plugin that was never
+ * installed there. Such entries also outlive their files — worktrees from
+ * months-old issues stayed in the log long after deletion.
+ */
+export function isInsideWorkspace(
+  filePath: string,
+  workspaceRoot: string = process.cwd(),
+): boolean {
+  const root = resolve(workspaceRoot);
+  const target = resolve(root, filePath);
+  return target === root || target.startsWith(root + sep);
+}
+
+/**
+ * The log always lives at `<workspace>/.claude/tmp/hooks/…`, so the workspace is
+ * whatever precedes that segment. Deriving it from the log path rather than
+ * `process.cwd()` keeps the check honest under a test that redirects the log.
+ */
+export function workspaceRootOf(logPath: string): string {
+  const absolute = resolve(logPath);
+  const marker = sep + TMP_DIR_SEGMENT.split('/').join(sep);
+  const index = absolute.indexOf(marker);
+  return index === -1 ? process.cwd() : absolute.slice(0, index);
+}
 export const LOG_FILE = join(
   process.cwd(),
   `${TMP_DIR_SEGMENT}hooks/agent-change-log.json`,
