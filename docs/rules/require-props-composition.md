@@ -182,7 +182,7 @@ the next lint even under a long-lived host (the VS Code ESLint extension,
 ## Options
 
 ```js
-'@blumintinc/blumint/require-props-composition': ['warn', {
+'@blumintinc/blumint/require-props-composition': ['error', {
   // Glob patterns for files to check (default: ['src/components/**/*.tsx'])
   targetPaths: ['src/components/**/*.tsx'],
 

@@ -7,6 +7,7 @@ import { ESLint } from 'eslint';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const plugin = require('..') as {
   rules: Record<string, { meta?: { schema?: unknown } }>;
+  configs: { recommended: { rules: Record<string, unknown> } };
 };
 
 const PREFIX = '@blumintinc/blumint/';
@@ -24,6 +25,13 @@ const DOCS_DIR = path.join(__dirname, '../../docs/rules');
  * escape hatch is undiscoverable, so a consumer meeting a false positive
  * disables the rule instead of configuring it, and in agora a disabled rule
  * never auto-clears once it is override-scoped or optioned.
+ *
+ * A documented example also carries a severity, which is the third place
+ * severity lives. `recommended-severity-consistency.test.ts` pins the config
+ * against `meta.docs.recommended` and requires the doc to mention the shipped
+ * severity, but the auto-generated header satisfies that mention while the
+ * example below it says something else — so an example could hand a consumer
+ * `'warn'` for a rule that ships `'error'`, silently un-gating it (#1472).
  *
  * Two traps make a naive version of this guard vacuous (#1470):
  *
@@ -247,6 +255,27 @@ export function mentions(md: string, name: string): boolean {
 const CONFIG_ERROR =
   /Configuration for rule|should NOT have|should be|Value .* should/;
 
+/** The severity a documented entry configures, or null if it states none. */
+export function severityOf(entry: unknown): string | null {
+  const severity = Array.isArray(entry) ? entry[0] : entry;
+  return severity === 'error' || severity === 'warn' || severity === 'off'
+    ? severity
+    : null;
+}
+
+/**
+ * The severity the recommended config actually ships, restricted to rules it
+ * enables. A rule set to 'off' or absent from the config gates nothing, so its
+ * documented severity is not asserted — the same scope
+ * `recommended-severity-consistency.test.ts` uses.
+ */
+export function shippedSeverity(ruleName: string): string | null {
+  const severity = severityOf(
+    plugin.configs.recommended.rules[`${PREFIX}${ruleName}`],
+  );
+  return severity === 'error' || severity === 'warn' ? severity : null;
+}
+
 /**
  * Validate a payload the way a consumer's ESLint startup does. Resolves to null
  * when accepted, or the validation message when rejected. A rule that throws
@@ -361,6 +390,15 @@ describe('documented rule options', () => {
       expect(configSites(docFor(ruleName), ruleName).unparsed).toEqual([]);
     });
 
+    it('documents the severity the rule ships', () => {
+      const shipped = shippedSeverity(ruleName);
+      if (!shipped) return;
+      const documented = configSites(docFor(ruleName), ruleName)
+        .sites.map((site) => severityOf(site.entry))
+        .filter((severity): severity is string => severity !== null);
+      expect(documented.filter((severity) => severity !== shipped)).toEqual([]);
+    });
+
     it('documents every option it declares', () => {
       const names = schemaOptionNames(plugin.rules[ruleName].meta?.schema);
       if (!names || names.size === 0) return;
@@ -444,6 +482,19 @@ describe('the guard catches what it claims to (controls)', () => {
     const { sites, unparsed } = configSites(md, 'some-rule');
     expect(sites).toEqual([]);
     expect(unparsed.length).toBeGreaterThan(0);
+  });
+
+  it('reads the severity out of either entry shape', () => {
+    expect(severityOf(['warn', { a: 1 }])).toBe('warn');
+    expect(severityOf('error')).toBe('error');
+    // An options-only payload states no severity and must not be compared.
+    expect(severityOf([{ a: 1 }])).toBeNull();
+    expect(severityOf(undefined)).toBeNull();
+  });
+
+  it('scopes the severity check to rules the config enables', () => {
+    expect(shippedSeverity(CONTROL_RULE)).toBe('error');
+    expect(shippedSeverity('not-a-registered-rule')).toBeNull();
   });
 
   it('reads a bare rule entry that omits the rules wrapper', () => {
