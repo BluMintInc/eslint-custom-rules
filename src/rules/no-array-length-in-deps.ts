@@ -6,6 +6,9 @@ import { createSuppressionChecker } from '../utils/disableDirectives';
 // React hooks to check
 const HOOK_NAMES = new Set(['useEffect', 'useCallback', 'useMemo']);
 
+const REACT_MODULE = 'react';
+const MEMO_HOOK_NAME = 'useMemo';
+
 // Name of the rule
 export type MessageIds = 'noArrayLengthInDeps';
 
@@ -297,6 +300,25 @@ function getValueImports(
  * specifier (`useMemo as um`) or a type-only specifier does not count — the
  * value binding under the exact local name must exist.
  */
+function isNamedValueSpecifier(
+  specifier: TSESTree.Node,
+  name: string,
+): specifier is TSESTree.ImportSpecifier {
+  return (
+    specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+    specifier.importKind !== 'type' &&
+    specifier.imported.type === AST_NODE_TYPES.Identifier &&
+    specifier.imported.name === name &&
+    specifier.local.name === name
+  );
+}
+
+/**
+ * Import presence is read off the AST at fix time rather than from a traversal
+ * flag: a hook call that precedes the import declaration in source order would
+ * otherwise be judged against a flag the `ImportDeclaration` visitor has not
+ * set yet, duplicating the import.
+ */
 function hasNamedValueImport(
   sourceCode: TSESLint.SourceCode,
   source: string,
@@ -304,18 +326,41 @@ function hasNamedValueImport(
 ): boolean {
   for (const declaration of getValueImports(sourceCode, source)) {
     for (const spec of declaration.specifiers) {
-      if (
-        spec.type === AST_NODE_TYPES.ImportSpecifier &&
-        spec.importKind !== 'type' &&
-        spec.imported.type === AST_NODE_TYPES.Identifier &&
-        spec.imported.name === name &&
-        spec.local.name === name
-      ) {
+      if (isNamedValueSpecifier(spec, name)) {
         return true;
       }
     }
   }
   return false;
+}
+
+/**
+ * Whether every declaration of a visible binding is the value import this fix
+ * intends to add. A local const/function/class, a parameter, a namespace or
+ * default import, an alias, or a named import from any other module all mean
+ * the emitted `useMemo(() => stableHash(...))` would resolve somewhere other
+ * than the helper — so the binding cannot be reused.
+ */
+function bindsIntendedImport(
+  variable: TSESLint.Scope.Variable,
+  name: string,
+  source: string,
+): boolean {
+  return (
+    variable.defs.length > 0 &&
+    variable.defs.every((def) => {
+      const specifier = def.node as TSESTree.Node;
+      if (!isNamedValueSpecifier(specifier, name)) {
+        return false;
+      }
+      const declaration = specifier.parent;
+      return (
+        declaration?.type === AST_NODE_TYPES.ImportDeclaration &&
+        declaration.importKind !== 'type' &&
+        declaration.source.value === source
+      );
+    })
+  );
 }
 
 /**
@@ -556,6 +601,31 @@ export const noArrayLengthInDeps = createRule<Options, MessageIds>({
             // All bail checks precede any shared-state mutation so a skipped
             // fix cannot make a later fix believe imports or declarations are
             // already handled.
+
+            // The generated declaration spells both helper names bare and
+            // imports both, so a binding of either name breaks the edit two
+            // ways: the inserted import collides with a declaration of that
+            // name (TS2440, or TS2300 when the binding is itself an import),
+            // and a shadowing parameter or block-scoped binding captures the
+            // emitted call with no compile error at all. Resolving through the
+            // scope chain at the hook call catches both, since the insertion
+            // point shares that scope. Because the emitted code needs BOTH
+            // names, a clash on either withholds the whole edit — a partial
+            // one would still be broken. The report stands so the author
+            // resolves the clash deliberately.
+            const scope = ASTHelpers.getScope(context, node);
+            const collides = [
+              { name: MEMO_HOOK_NAME, source: REACT_MODULE },
+              {
+                name: hashImportConfig.importName,
+                source: hashImportConfig.source,
+              },
+            ].some(({ name, source }) => {
+              const existing = ASTHelpers.findVariableInScope(scope, name);
+              return !!existing && !bindsIntendedImport(existing, name, source);
+            });
+            if (collides) return null;
+
             const insertion = findInsertionPoint(node);
             if (!insertion) return null;
             for (const { member } of lengthDeps) {
@@ -623,15 +693,21 @@ export const noArrayLengthInDeps = createRule<Options, MessageIds>({
 
             if (!importsPlanned) {
               const newImportLines: string[] = [];
-              if (!hasNamedValueImport(sourceCode, 'react', 'useMemo')) {
+              if (
+                !hasNamedValueImport(sourceCode, REACT_MODULE, MEMO_HOOK_NAME)
+              ) {
                 const extension = buildImportExtensionFix(
                   fixer,
                   sourceCode,
-                  'react',
-                  'useMemo',
+                  REACT_MODULE,
+                  MEMO_HOOK_NAME,
                 );
                 if (extension) fixes.push(extension);
-                else newImportLines.push(`import { useMemo } from 'react';`);
+                else {
+                  newImportLines.push(
+                    `import { ${MEMO_HOOK_NAME} } from '${REACT_MODULE}';`,
+                  );
+                }
               }
               if (
                 !hasNamedValueImport(
