@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.35",
+    "date": "2026-07-30T16:38:05.368Z",
+    "rules": [
+      {
+        "name": "require-image-optimized",
+        "changeType": "fix",
+        "issues": [
+          1457
+        ],
+        "summary": "decline the autofix when a shadow captures the reused import alias (closes #1457)"
+      }
+    ]
+  },
+  {
     "version": "1.20.34",
     "date": "2026-07-30T16:15:43.598Z",
     "rules": [

@@ -1,3 +1,10 @@
+## [1.20.35](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.34...v1.20.35) (2026-07-30)
+
+
+### Bug Fixes
+
+* **require-image-optimized:** decline the autofix when a shadow captures the reused import alias (closes [#1457](https://github.com/BluMintInc/eslint-custom-rules/issues/1457)) ([f25f504](https://github.com/BluMintInc/eslint-custom-rules/commit/f25f50432c9fff5ade365b8ed30d5ed44b66e68c)), closes [#1455](https://github.com/BluMintInc/eslint-custom-rules/issues/1455)
+
 ## [1.20.34](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.33...v1.20.34) (2026-07-30)
 
 
