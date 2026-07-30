@@ -1,5 +1,35 @@
 [
   {
+    "version": "1.20.30",
+    "date": "2026-07-30T09:38:08.871Z",
+    "rules": [
+      {
+        "name": "enforce-safe-stringify",
+        "changeType": "fix",
+        "issues": [
+          1419
+        ],
+        "summary": "withhold the suggestion when `stringify` is already bound (closes #1419)"
+      },
+      {
+        "name": "prefer-document-flattening",
+        "changeType": "fix",
+        "issues": [
+          1420
+        ],
+        "summary": "anchor the shouldFlatten insertion on the trailing comma (closes #1420)"
+      },
+      {
+        "name": "react-memoize-literals",
+        "changeType": "fix",
+        "issues": [
+          1421
+        ],
+        "summary": "carry the react hook import with the wrapper (closes #1421)"
+      }
+    ]
+  },
+  {
     "version": "1.20.29",
     "date": "2026-07-30T08:31:47.570Z",
     "rules": [

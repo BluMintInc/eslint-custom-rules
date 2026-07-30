@@ -1,3 +1,12 @@
+## [1.20.30](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.29...v1.20.30) (2026-07-30)
+
+
+### Bug Fixes
+
+* **enforce-safe-stringify:** withhold the suggestion when `stringify` is already bound (closes [#1419](https://github.com/BluMintInc/eslint-custom-rules/issues/1419)) ([1f6593b](https://github.com/BluMintInc/eslint-custom-rules/commit/1f6593b8b026206baa94de674e67167a1dcfd2f5))
+* **prefer-document-flattening:** anchor the shouldFlatten insertion on the trailing comma (closes [#1420](https://github.com/BluMintInc/eslint-custom-rules/issues/1420)) ([3d00e52](https://github.com/BluMintInc/eslint-custom-rules/commit/3d00e521b13bd8420e4db1d91fbf3560c2642236))
+* **react-memoize-literals:** carry the react hook import with the wrapper (closes [#1421](https://github.com/BluMintInc/eslint-custom-rules/issues/1421)) ([f469db9](https://github.com/BluMintInc/eslint-custom-rules/commit/f469db9137dfeeee5abaa3d4b7dd7776c5da2846))
+
 ## [1.20.29](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.28...v1.20.29) (2026-07-30)
 
 
