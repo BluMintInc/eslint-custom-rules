@@ -34,26 +34,33 @@ export const preferTypeOverInterface: TSESLint.RuleModule<
           },
           fix(fixer) {
             const sourceCode = context.sourceCode;
-            const openingBrace = sourceCode.getTokenAfter(node.id, {
-              filter: (token) => token.value === '{',
-            });
+            // The `=` must land after the entire declaration header (the
+            // name plus any type-parameter list); anchoring on the
+            // identifier alone emits unparseable `type Name =<T> {`.
+            const header = node.typeParameters ?? node.id;
             const fixes = [
               fixer.replaceTextRange(
-                [node.range[0], node.id.range[1]],
-                `type ${node.id.name} =`,
+                [node.range[0], node.id.range[0]],
+                'type ',
               ),
+              fixer.insertTextAfter(header, ' ='),
             ];
 
-            if (node.extends && node.extends.length > 0 && openingBrace) {
+            if (node.extends && node.extends.length > 0) {
+              // Search from the header end so a constrained type parameter
+              // (`<T extends string>`) cannot shadow the heritage `extends`.
               const extendsKeyword = sourceCode.getFirstTokenBetween(
-                node.id,
-                openingBrace,
+                header,
+                node.body,
                 { filter: (token) => token.value === 'extends' },
               );
               fixes.push(
                 // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
                 fixer.remove(extendsKeyword!),
-                fixer.insertTextBefore(openingBrace, '& '),
+                // The body starts at the opening brace, so anchoring on it
+                // cannot mistake a `{` inside a heritage type argument or a
+                // type-parameter constraint for the body brace.
+                fixer.insertTextBefore(node.body, '& '),
               );
             }
 
