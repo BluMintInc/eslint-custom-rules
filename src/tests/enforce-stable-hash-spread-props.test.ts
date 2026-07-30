@@ -629,6 +629,163 @@ const Second = ({ ...betaProps }) => {
 };
         `,
       },
+      // ------------------------------------------------------------------
+      // Issue #1430: the fix emits a bare `stableHash` call and a top-level
+      // import for it. When that name is already bound where the call lands,
+      // the edit is unsafe — a module-scope binding duplicates the identifier
+      // (TS2440/TS2300) and a narrower shadow silently captures the call — so
+      // the violation is reported with no autofix at all.
+      // ------------------------------------------------------------------
+      {
+        name: 'declines the fix when stableHash is already bound at module scope',
+        code: `
+const stableHash = undefined as unknown as never;
+const MyComponent = ({ ...restProps }) => {
+  useEffect(
+    () => {},
+    [restProps],
+  );
+  return <div {...restProps} />;
+};
+`,
+        errors: [{ messageId: 'wrapSpreadPropsWithStableHash' }],
+        output: `
+const stableHash = undefined as unknown as never;
+const MyComponent = ({ ...restProps }) => {
+  useEffect(
+    () => {},
+    [restProps],
+  );
+  return <div {...restProps} />;
+};
+`,
+      },
+      {
+        name: 'declines the fix when a local const shadows the imported stableHash',
+        code: `
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const MyComponent = ({ ...restProps }) => {
+  const stableHash = (value) => value;
+  useEffect(() => {}, [restProps]);
+  return <div {...restProps} />;
+};
+`,
+        errors: [{ messageId: 'wrapSpreadPropsWithStableHash' }],
+        output: `
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const MyComponent = ({ ...restProps }) => {
+  const stableHash = (value) => value;
+  useEffect(() => {}, [restProps]);
+  return <div {...restProps} />;
+};
+`,
+      },
+      {
+        name: 'declines the fix when a prop named stableHash shadows the import',
+        code: `
+const MyComponent = ({ stableHash, ...restProps }) => {
+  useEffect(() => {}, [restProps]);
+  return <div {...restProps} />;
+};
+`,
+        errors: [{ messageId: 'wrapSpreadPropsWithStableHash' }],
+        output: `
+const MyComponent = ({ stableHash, ...restProps }) => {
+  useEffect(() => {}, [restProps]);
+  return <div {...restProps} />;
+};
+`,
+      },
+      {
+        // A binding the emitted call cannot reach is irrelevant: the import
+        // lands at module scope, where the sibling function's local shadows
+        // nothing.
+        name: 'still fixes when an unrelated function owns a stableHash local',
+        code: `
+const helper = () => {
+  const stableHash = 1;
+  return stableHash;
+};
+
+const MyComponent = ({ ...restProps }) => {
+  useEffect(() => {}, [restProps]);
+  return <div {...restProps} />;
+};
+`,
+        errors: [{ messageId: 'wrapSpreadPropsWithStableHash' }],
+        output: `import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const helper = () => {
+  const stableHash = 1;
+  return stableHash;
+};
+
+const MyComponent = ({ ...restProps }) => {
+  useEffect(() => {}, 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [stableHash(restProps)]);
+  return <div {...restProps} />;
+};
+`,
+      },
+      {
+        // The call is written into the dependency array, which sits outside the
+        // effect callback, so a shadow confined to that callback never captures
+        // it.
+        name: 'still fixes when the shadow is confined to the effect callback',
+        code: `
+const MyComponent = ({ ...restProps }) => {
+  useEffect(() => {
+    const stableHash = 1;
+    console.log(stableHash);
+  }, [restProps]);
+  return <div {...restProps} />;
+};
+`,
+        errors: [{ messageId: 'wrapSpreadPropsWithStableHash' }],
+        output: `import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const MyComponent = ({ ...restProps }) => {
+  useEffect(() => {
+    const stableHash = 1;
+    console.log(stableHash);
+  }, 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [stableHash(restProps)]);
+  return <div {...restProps} />;
+};
+`,
+      },
+      {
+        // The guard weighs the name the fix actually emits. An aliased import
+        // means nothing is emitted under the taken name, so the rewrite stands.
+        name: 'fixes through an aliased import even when stableHash itself is taken',
+        code: `
+import { stableHash as hash } from 'functions/src/util/hash/stableHash';
+
+const stableHash = undefined as unknown as never;
+
+const MyComponent = ({ ...restProps }) => {
+  useEffect(() => {}, [restProps]);
+  return <div {...restProps} />;
+};
+`,
+        errors: [{ messageId: 'wrapSpreadPropsWithStableHash' }],
+        output: `
+import { stableHash as hash } from 'functions/src/util/hash/stableHash';
+
+const stableHash = undefined as unknown as never;
+
+const MyComponent = ({ ...restProps }) => {
+  useEffect(() => {}, 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [hash(restProps)]);
+  return <div {...restProps} />;
+};
+`,
+      },
       {
         // The report sits on the dependency array, so a disable above the
         // hook call covers a different line and — exactly as ESLint itself
@@ -662,56 +819,54 @@ const First = ({ ...alphaProps }) => {
   },
 );
 
-// Issue #1413: RuleTester applies a single fix pass and never shows the file
-// that `eslint --fix` actually writes. These cases run the real multi-pass
-// fixer and assert the invariant the bug violated: an emitted stableHash()
-// call is never left without its import.
-describe('enforce-stable-hash-spread-props: inline disables and the import carrier (issue #1413)', () => {
-  const RULE_ID = '@blumintinc/blumint/enforce-stable-hash-spread-props';
-  const IMPORT_LINE =
-    "import { stableHash } from 'functions/src/util/hash/stableHash';";
+// RuleTester applies a single fix pass and never shows the file that
+// `eslint --fix` actually writes, so the multi-pass invariants are asserted
+// through the real Linter instead.
+const RULE_ID = '@blumintinc/blumint/enforce-stable-hash-spread-props';
+const IMPORT_LINE =
+  "import { stableHash } from 'functions/src/util/hash/stableHash';";
 
-  const lint = (code: string) => {
-    const linter = new Linter();
-    linter.defineParser(
-      '@typescript-eslint/parser',
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      require('@typescript-eslint/parser'),
-    );
-    linter.defineRule(
-      RULE_ID,
-      enforceStableHashSpreadProps as unknown as Rule.RuleModule,
-    );
-    // A near-miss neighbour proves rule matching is exact rather than a
-    // suffix/substring heuristic.
-    linter.defineRule(
-      '@blumintinc/blumint/enforce-stable-hash-spread-props-2',
-      {
-        meta: { schema: [] },
-        create: () => ({}),
-      } as unknown as Rule.RuleModule,
-    );
-    const config = {
-      parser: '@typescript-eslint/parser',
-      parserOptions: {
-        ecmaVersion: 2020 as const,
-        sourceType: 'module' as const,
-        ecmaFeatures: { jsx: true },
-      },
-      rules: { [RULE_ID]: 'error' as const },
-    };
-    const { output } = linter.verifyAndFix(code, config, 'Component.tsx');
-    return output;
+const lint = (code: string) => {
+  const linter = new Linter();
+  linter.defineParser(
+    '@typescript-eslint/parser',
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    require('@typescript-eslint/parser'),
+  );
+  linter.defineRule(
+    RULE_ID,
+    enforceStableHashSpreadProps as unknown as Rule.RuleModule,
+  );
+  // A near-miss neighbour proves rule matching is exact rather than a
+  // suffix/substring heuristic.
+  linter.defineRule('@blumintinc/blumint/enforce-stable-hash-spread-props-2', {
+    meta: { schema: [] },
+    create: () => ({}),
+  } as unknown as Rule.RuleModule);
+  const config = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2020 as const,
+      sourceType: 'module' as const,
+      ecmaFeatures: { jsx: true },
+    },
+    rules: { [RULE_ID]: 'error' as const },
   };
+  const { output } = linter.verifyAndFix(code, config, 'Component.tsx');
+  return output;
+};
 
+const countOf = (output: string, needle: string) =>
+  output.split(needle).length - 1;
+
+// Issue #1413: these cases assert the invariant that bug violated: an emitted
+// stableHash() call is never left without its import.
+describe('enforce-stable-hash-spread-props: inline disables and the import carrier (issue #1413)', () => {
   const expectNoUnboundStableHash = (output: string) => {
     if (output.includes('stableHash(')) {
       expect(output).toContain(IMPORT_LINE);
     }
   };
-
-  const countOf = (output: string, needle: string) =>
-    output.split(needle).length - 1;
 
   it('carries the import on the first surviving violation', () => {
     const output = lint(`const First = ({ ...alphaProps }) => {
@@ -853,5 +1008,92 @@ const Second = ({ ...betaProps }) => {
     expectNoUnboundStableHash(output);
     expect(countOf(output, IMPORT_LINE)).toBe(1);
     expect(countOf(output, 'stableHash(')).toBe(1);
+  });
+});
+
+// Issue #1430: `--fix` used to write a second top-scope `stableHash` over an
+// existing binding, corrupting the file automatically with no prompt. These
+// cases drive the real multi-pass fixer, where a per-pass import decision that
+// looked safe in isolation is where such a duplicate would surface.
+describe('enforce-stable-hash-spread-props: an existing stableHash binding (issue #1430)', () => {
+  it('leaves a file that already binds stableHash at module scope untouched', () => {
+    const code = `const stableHash = undefined as unknown as never;
+const First = ({ ...alphaProps }) => {
+  useCallback(() => {}, [alphaProps]);
+  return <div {...alphaProps} />;
+};
+`;
+
+    expect(lint(code)).toBe(code);
+  });
+
+  it('never declares stableHash twice, whichever violation carries the import', () => {
+    const output = lint(`const stableHash = undefined as unknown as never;
+const First = ({ ...alphaProps }) => {
+  useCallback(() => {}, [alphaProps]);
+  return <div {...alphaProps} />;
+};
+
+const Second = ({ ...betaProps }) => {
+  useCallback(() => {}, [betaProps]);
+  return <div {...betaProps} />;
+};
+`);
+
+    expect(countOf(output, IMPORT_LINE)).toBe(0);
+    expect(countOf(output, 'const stableHash')).toBe(1);
+  });
+
+  it('leaves the violation whose scope is shadowed and fixes its neighbour', () => {
+    const output = lint(`const First = ({ ...alphaProps }) => {
+  const stableHash = (value) => value;
+  useCallback(() => {}, [alphaProps]);
+  return <div {...alphaProps} />;
+};
+
+const Second = ({ ...betaProps }) => {
+  useCallback(() => {}, [betaProps]);
+  return <div {...betaProps} />;
+};
+`);
+
+    expect(countOf(output, IMPORT_LINE)).toBe(1);
+    expect(output).toContain('useCallback(() => {}, [alphaProps]);');
+    expect(output).toContain('[stableHash(betaProps)]');
+  });
+
+  it('reports without fixing rather than falling silent', () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      enforceStableHashSpreadProps as unknown as Rule.RuleModule,
+    );
+    const messages = linter.verify(
+      `const stableHash = undefined as unknown as never;
+const First = ({ ...alphaProps }) => {
+  useCallback(() => {}, [alphaProps]);
+  return <div {...alphaProps} />;
+};
+`,
+      {
+        parser: '@typescript-eslint/parser',
+        parserOptions: {
+          ecmaVersion: 2020 as const,
+          sourceType: 'module' as const,
+          ecmaFeatures: { jsx: true },
+        },
+        rules: { [RULE_ID]: 'error' as const },
+      },
+      'Component.tsx',
+    );
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].ruleId).toBe(RULE_ID);
+    expect(messages[0].fix).toBeUndefined();
   });
 });
