@@ -100,7 +100,7 @@ Examples of **correct** code for this rule:
 ```json
 {
   "@blumintinc/blumint/enforce-m3-sentence-case": [
-    "warn",
+    "error",
     {
       "propsToCheck": ["label", "title", "placeholder", "helperText", "message", "description", "tooltip", "buttonText", "aria-label", "alt"],
       "ignoredWords": ["BluMint", "Google", "Discord"],

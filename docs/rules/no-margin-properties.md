@@ -32,7 +32,7 @@ This rule accepts an options object with the following properties:
 
 ```json
 {
-  "@blumintinc/blumint/no-margin-properties": "warn"
+  "@blumintinc/blumint/no-margin-properties": "error"
 }
 ```
 
@@ -40,7 +40,7 @@ This rule accepts an options object with the following properties:
 
 ```json
 {
-  "@blumintinc/blumint/no-margin-properties": ["warn", { "autofix": false }]
+  "@blumintinc/blumint/no-margin-properties": ["error", { "autofix": false }]
 }
 ```
 

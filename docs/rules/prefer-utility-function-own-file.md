@@ -112,7 +112,7 @@ export default StreamSettingsPage;
 
 ```jsonc
 {
-  "@blumintinc/blumint/prefer-utility-function-own-file": ["warn", {
+  "@blumintinc/blumint/prefer-utility-function-own-file": ["error", {
     "minStatements": 8,     // Flag functions with >= 8 body statements (default: 8)
     "minLines": 12,         // OR >= 12 source lines (default: 12)
     "ignoreClosures": true  // Skip functions referencing module-scoped bindings (default: true)

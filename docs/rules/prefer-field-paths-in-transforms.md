@@ -80,7 +80,7 @@ const strategy = {
 ```json
 {
   "@blumintinc/blumint/prefer-field-paths-in-transforms": [
-    "warn",
+    "error",
     {
       "containers": ["*Aggregation", "previews", "*Previews"],
       "allowNestedIn": ["**/scripts/**", "**/migrations/**"]
