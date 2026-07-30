@@ -5,6 +5,7 @@ import {
   TSESTree,
 } from '@typescript-eslint/utils';
 import { basename, extname } from 'path';
+import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
 
 type Options = [{ componentPath: string }];
@@ -121,6 +122,27 @@ const isBoundAsValue = (scope: TSESLint.Scope.Scope, name: string) => {
 };
 
 /**
+ * Whether the name the fixer is about to emit still resolves, at the report
+ * site, to a declaration in the file's module scope — where the component's
+ * import, and any module-scope stand-in such as `const ImageOptimized =
+ * dynamic(...)`, live. A binding introduced by an enclosing inner scope (a
+ * local, a parameter, a block-scoped const) captures the emitted element
+ * instead: the name is bound, so no reference is stranded and TypeScript
+ * accepts the element, yet the fix silently renders that local value rather
+ * than the shared wrapper.
+ */
+const resolvesToModuleBinding = (scope: TSESLint.Scope.Scope, name: string) => {
+  const variable = ASTHelpers.findVariableInScope(scope, name);
+  // A variable with no definition is an ambient global, which is no component
+  // and cannot be the import the emitted element is meant to reach.
+  return (
+    !!variable &&
+    variable.defs.length > 0 &&
+    variable.scope.block.type === AST_NODE_TYPES.Program
+  );
+};
+
+/**
  * Local name the component is imported under, when it is aliased away from
  * `ImageOptimized`. Reusing the alias keeps the fix bound to a real import
  * instead of introducing a second, unimported name.
@@ -216,7 +238,7 @@ export = createRule<Options, MessageIds>({
           return;
         }
 
-        const scope = context.getScope();
+        const scope = ASTHelpers.getScope(context, node);
         const localName = isBoundAsValue(scope, COMPONENT_NAME)
           ? COMPONENT_NAME
           : aliasedLocalName(sourceCode.ast, componentModule);
@@ -233,6 +255,12 @@ export = createRule<Options, MessageIds>({
             // picking an import path for it is a product decision the rule
             // cannot make; reporting without fixing keeps the file valid.
             if (!localName) {
+              return null;
+            }
+            // A shadow of that name over the report site would make the swap
+            // render the shadow's value; declining leaves the report for the
+            // author to resolve the shadow by hand.
+            if (!resolvesToModuleBinding(scope, localName)) {
               return null;
             }
             const attributes = node.openingElement.attributes
