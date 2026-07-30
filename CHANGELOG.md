@@ -1,3 +1,10 @@
+## [1.20.27](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.26...v1.20.27) (2026-07-30)
+
+
+### Bug Fixes
+
+* **logical-top-to-bottom-grouping:** keep a trailing comment with the statement it annotates (closes [#1416](https://github.com/BluMintInc/eslint-custom-rules/issues/1416)) ([f59dfe1](https://github.com/BluMintInc/eslint-custom-rules/commit/f59dfe1fb8b73a2eda54436e1e29b35c86be0bab))
+
 ## [1.20.26](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.25...v1.20.26) (2026-07-30)
 
 

@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.27",
+    "date": "2026-07-30T06:36:11.493Z",
+    "rules": [
+      {
+        "name": "logical-top-to-bottom-grouping",
+        "changeType": "fix",
+        "issues": [
+          1416
+        ],
+        "summary": "keep a trailing comment with the statement it annotates (closes #1416)"
+      }
+    ]
+  },
+  {
     "version": "1.20.26",
     "date": "2026-07-30T06:12:23.979Z",
     "rules": [
