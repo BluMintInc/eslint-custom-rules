@@ -154,6 +154,26 @@ jest.mock('../media/OptimizedPicture', () => ({
 `,
       options: [{ componentPath: 'src/components/media/OptimizedPicture' }],
     },
+    // The props-spread factory is the module's implementation, so its img is
+    // the wrapper itself rather than a bypass of it.
+    {
+      code: `
+jest.mock('src/components/image/ImageOptimized', () => ({
+  ImageOptimized: (props) => <img {...props} />,
+}));
+`,
+    },
+    // The filename exemption holds however deeply the img is nested inside the
+    // component's own module.
+    {
+      code: `
+export const ImageOptimized = (props) => {
+  const Inner = () => <img {...props} />;
+  return <Inner />;
+};
+`,
+      filename: 'src/components/image/ImageOptimized.tsx',
+    },
   ],
   invalid: [
     {
@@ -541,6 +561,150 @@ export const Gallery = () => <img src="/example.jpg" alt="Example" />;
         },
       ],
       output: null,
+    },
+    // A binding inside the reporting function captures the emitted element, so
+    // the swap would render that local value instead of the imported wrapper.
+    {
+      code: `
+import ImageOptimized from 'src/components/image/ImageOptimized';
+function Component() {
+  const ImageOptimized = undefined as unknown as never;
+  return <img src="/example.jpg" alt="Example" />;
+}
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: null,
+    },
+    // The alias is only worth reusing while it still resolves to the import.
+    {
+      code: `
+import { ImageOptimized as CustomImage } from '../image/ImageOptimized';
+function Component() {
+  const CustomImage = undefined as unknown as never;
+  return <img src="/example.jpg" alt="Example" />;
+}
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: null,
+    },
+    // A default import renamed away from the component name is captured the
+    // same way, even alongside a correct usage of the import elsewhere.
+    {
+      code: `
+import Image from 'src/components/image/ImageOptimized';
+function Component() {
+  const Image = undefined as unknown as never;
+  return <div><Image src="/a.jpg" alt="A" /><img src="/b.jpg" alt="B" /></div>;
+}
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: null,
+    },
+    // A parameter shadows the import for the whole function body.
+    {
+      code: `
+${IMPORT}
+function Component({ ImageOptimized }) {
+  return <img src="/example.jpg" alt="Example" />;
+}
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: null,
+    },
+    // A block-scoped shadow between the import and the report captures it too.
+    {
+      code: `
+${IMPORT}
+function Component({ raw }) {
+  if (raw) {
+    const ImageOptimized = raw;
+    return <img src="/example.jpg" alt="Example" />;
+  }
+  return null;
+}
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: null,
+    },
+    // The shadow captures the reference wherever it is declared in the scope,
+    // including after the JSX it would break.
+    {
+      code: `
+${IMPORT}
+function Component() {
+  const render = () => <img src="/example.jpg" alt="Example" />;
+  const ImageOptimized = render;
+  return render;
+}
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: null,
+    },
+    // A same-named binding in a scope that does not enclose the report cannot
+    // capture the emitted element, so the fix still applies.
+    {
+      code: `
+import ImageOptimized from 'src/components/image/ImageOptimized';
+function Thumbnail() {
+  const ImageOptimized = undefined as unknown as never;
+  return null;
+}
+function Component() {
+  return <img src="/example.jpg" alt="Example" />;
+}
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+import ImageOptimized from 'src/components/image/ImageOptimized';
+function Thumbnail() {
+  const ImageOptimized = undefined as unknown as never;
+  return null;
+}
+function Component() {
+  return <ImageOptimized src="/example.jpg" alt="Example" />;
+}
+`,
+    },
+    // Likewise for an alias: a sibling binding of it never reaches the report.
+    {
+      code: `
+import { ImageOptimized as CustomImage } from '../image/ImageOptimized';
+function Thumbnail() {
+  const CustomImage = undefined as unknown as never;
+  return null;
+}
+function Component() {
+  return <img src="/example.jpg" alt="Example" />;
+}
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+import { ImageOptimized as CustomImage } from '../image/ImageOptimized';
+function Thumbnail() {
+  const CustomImage = undefined as unknown as never;
+  return null;
+}
+function Component() {
+  return <CustomImage src="/example.jpg" alt="Example" />;
+}
+`,
+    },
+    // A module-scope binding of the name is the file's component, not a shadow,
+    // so reusing it keeps the fix bound to something renderable.
+    {
+      code: `
+const ImageOptimized = dynamic(() => import('src/components/image/ImageOptimized'));
+function Component() {
+  return <img src="/example.jpg" alt="Example" />;
+}
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+const ImageOptimized = dynamic(() => import('src/components/image/ImageOptimized'));
+function Component() {
+  return <ImageOptimized src="/example.jpg" alt="Example" />;
+}
+`,
     },
   ],
 });

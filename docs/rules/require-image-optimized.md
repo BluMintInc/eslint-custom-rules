@@ -59,6 +59,25 @@ Inserting an import would have to guess the module's canonical path, and a
 rewrite to an unimported name leaves the file referencing an undefined
 identifier.
 
+The fix is likewise withheld when the name it would emit is shadowed at the
+violation — by a local, a parameter, or a block-scoped binding enclosing the
+`img`. The emitted element would resolve to that binding instead of the
+component, which type-checks and strands no reference while silently rendering
+the wrong thing:
+
+```jsx
+import ImageOptimized from 'src/components/image/ImageOptimized';
+function Component() {
+  const ImageOptimized = useFallbackImage();
+  // reported, not fixed: <ImageOptimized /> here would be the local
+  return <img src="/a.jpg" alt="A" />;
+}
+```
+
+A binding of the same name in a sibling scope does not reach the violation, so
+those fixes still apply, as does reuse of a module-scope binding such as
+`const ImageOptimized = dynamic(() => import('...'))`.
+
 ## Options
 
 This rule accepts an options object with the following properties:
