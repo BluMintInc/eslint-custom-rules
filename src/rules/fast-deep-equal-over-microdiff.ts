@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { createSuppressionChecker } from '../utils/disableDirectives';
 
 type MessageIds = 'useFastDeepEqual' | 'addFastDeepEqualImport';
 
@@ -34,6 +35,14 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
     let fastDeepEqualImportName = 'isEqual';
     const reportedNodes = new Set<TSESTree.Node>();
     let plannedFastDeepEqualImport = false;
+
+    /**
+     * The `import ... from 'fast-deep-equal'` statement rides on a single
+     * violation's fix, so that violation is the file's import carrier. A
+     * suppressed carrier would take the import down with it while the surviving
+     * violations still emit `isEqual(...)` calls, leaving them unbound.
+     */
+    const isReportSuppressed = createSuppressionChecker(context);
 
     const isChainExpression = (
       node: TSESTree.Node,
@@ -367,6 +376,13 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
       diffCall: TSESTree.CallExpression,
       isEquality: boolean,
     ): TSESLint.RuleFix[] | null {
+      // A suppressed report is dropped together with its fix. Producing no fix
+      // — and leaving the import unscheduled — passes the carrier slot to the
+      // first violation that survives.
+      if (isReportSuppressed(node)) {
+        return null;
+      }
+
       const args = diffCall.arguments;
 
       if (args.length !== 2) {
