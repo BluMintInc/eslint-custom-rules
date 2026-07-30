@@ -154,7 +154,10 @@ const declarationRanges = (ast: AstNode): Array<[number, number]> => {
 };
 
 /** Identifier, string-literal and literal-type occurrences of `name`. */
-const referenceRanges = (ast: AstNode, name: string): Array<[number, number]> => {
+const referenceRanges = (
+  ast: AstNode,
+  name: string,
+): Array<[number, number]> => {
   const hits: Array<[number, number]> = [];
   walk(ast, (node) => {
     const matches =
@@ -166,7 +169,10 @@ const referenceRanges = (ast: AstNode, name: string): Array<[number, number]> =>
   return hits;
 };
 
-const isInside = (range: [number, number], ranges: Array<[number, number]>): boolean =>
+const isInside = (
+  range: [number, number],
+  ranges: Array<[number, number]>,
+): boolean =>
   ranges.some(([start, end]) => range[0] >= start && range[1] <= end);
 
 /** Option names the rule source never reads outside meta/defaultOptions. */
@@ -175,12 +181,17 @@ const unreadOptions = (source: string, names: Set<string>): string[] => {
   if (!ast) return [];
   const declared = declarationRanges(ast);
   return [...names].filter(
-    (name) => referenceRanges(ast, name).filter((r) => !isInside(r, declared)).length === 0,
+    (name) =>
+      referenceRanges(ast, name).filter((r) => !isInside(r, declared))
+        .length === 0,
   );
 };
 
 const rulesWithOptions = Object.entries(plugin.rules)
-  .map(([name, rule]) => ({ name, names: schemaPropertyNames(rule.meta?.schema) }))
+  .map(([name, rule]) => ({
+    name,
+    names: schemaPropertyNames(rule.meta?.schema),
+  }))
   .filter(({ names }) => names.size > 0);
 
 describe('schema options are read', () => {
@@ -235,7 +246,9 @@ const samplesFor = (schema: JsonSchema | undefined): [unknown, unknown] => {
   // `undefined`, which is not a legal config value and fakes a crash.
   for (const branch of [schema.anyOf, schema.oneOf, schema.allOf]) {
     if (!branch?.length) continue;
-    const legal = branch.flatMap((entry) => samplesFor(entry)).filter((v) => v !== undefined);
+    const legal = branch
+      .flatMap((entry) => samplesFor(entry))
+      .filter((v) => v !== undefined);
     if (legal.length) return [legal[0], legal[legal.length - 1]];
   }
   if (schema.instanceof === 'RegExp') return [/a/, /b/g];
@@ -271,7 +284,8 @@ const optionCandidates = (
   const first = Array.isArray(schema) ? schema[0] : schema;
   if (!first || typeof first !== 'object') return [];
   const out: Array<{ label: string; options: unknown[] }> = [];
-  const push = (label: string, value: unknown) => out.push({ label, options: [value] });
+  const push = (label: string, value: unknown) =>
+    out.push({ label, options: [value] });
 
   const type = Array.isArray(first.type) ? first.type[0] : first.type;
   if (type === 'object' || first.properties) {
@@ -299,7 +313,10 @@ const optionCandidates = (
 };
 
 const MAX_SNIPPETS = 8;
-const FILENAMES = ['/repo/src/components/Widget.tsx', '/repo/functions/src/util/helper.ts'];
+const FILENAMES = [
+  '/repo/src/components/Widget.tsx',
+  '/repo/functions/src/util/helper.ts',
+];
 
 /**
  * A rule's own test file is the one corpus guaranteed to trigger it, which is
@@ -313,15 +330,27 @@ const harvestSnippets = (ruleName: string): string[] => {
   const out: string[] = [];
   const seen = new Set<string>();
   const push = (value: unknown) => {
-    if (typeof value !== 'string' || value.length < 25 || !/[;{(=<]/.test(value)) return;
+    if (
+      typeof value !== 'string' ||
+      value.length < 25 ||
+      !/[;{(=<]/.test(value)
+    )
+      return;
     if (seen.has(value)) return;
     seen.add(value);
     out.push(value);
   };
   walk(ast, (node) => {
     if (node.type === 'Literal') push(node.value);
-    if (node.type === 'TemplateLiteral' && (node.expressions as unknown[])?.length === 0) {
-      push((node.quasis as Array<{ value: { cooked: string } }>).map((q) => q.value.cooked).join(''));
+    if (
+      node.type === 'TemplateLiteral' &&
+      (node.expressions as unknown[])?.length === 0
+    ) {
+      push(
+        (node.quasis as Array<{ value: { cooked: string } }>)
+          .map((q) => q.value.cooked)
+          .join(''),
+      );
     }
   });
   return out.slice(0, MAX_SNIPPETS);
@@ -339,7 +368,12 @@ const configFor = (ruleId: string, options: unknown[]) => ({
   rules: { [ruleId]: ['error', ...options] as unknown as Linter.RuleLevel },
 });
 
-const throwsWith = (ruleId: string, options: unknown[], code: string, filename: string): string | null => {
+const throwsWith = (
+  ruleId: string,
+  options: unknown[],
+  code: string,
+  filename: string,
+): string | null => {
   try {
     linter.verify(code, configFor(ruleId, options) as never, { filename });
     return null;
@@ -361,14 +395,19 @@ describe('rules survive every schema-valid option object', () => {
         const [{ list }] = context.options as [{ list: string[] }];
         return {
           Identifier(node: { name: string }) {
-            if (list.includes(node.name)) context.report({ node, messageId: 'm' } as never);
+            if (list.includes(node.name))
+              context.report({ node, messageId: 'm' } as never);
           },
         };
       },
     } as never);
 
-    expect(throwsWith(controlId, [], 'const a = 1;', '/repo/src/x.ts')).not.toBeNull();
-    expect(throwsWith(controlId, [{ list: [] }], 'const a = 1;', '/repo/src/x.ts')).toBeNull();
+    expect(
+      throwsWith(controlId, [], 'const a = 1;', '/repo/src/x.ts'),
+    ).not.toBeNull();
+    expect(
+      throwsWith(controlId, [{ list: [] }], 'const a = 1;', '/repo/src/x.ts'),
+    ).toBeNull();
   });
 
   it.each(
@@ -378,7 +417,10 @@ describe('rules survive every schema-valid option object', () => {
         candidates: optionCandidates(plugin.rules[name].meta?.schema),
         snippets: harvestSnippets(name),
       }))
-      .filter(({ candidates, snippets }) => candidates.length > 0 && snippets.length > 0)
+      .filter(
+        ({ candidates, snippets }) =>
+          candidates.length > 0 && snippets.length > 0,
+      )
       .map((entry) => [entry.name, entry] as const),
   )('%s accepts any option object its schema permits', (_name, entry) => {
     const ruleId = PREFIX + entry.name;
