@@ -28,6 +28,25 @@ This rule enforces that boolean equality checks use `fast-deep-equal` instead of
 
 - Adds `fast-deep-equal` import if missing, keeping any existing local alias or adding a default import named `isEqual`.
 - Replaces `microdiff` length comparisons with the imported equality function call (for example, `isEqual(left, right)` or a local alias like `deepEqual(left, right)`), or its negation for inequality checks.
+- Rewrites the comparison in place — only the callee name and the `.length` comparison change — so the argument list keeps its formatting and its comments. A comment inside the call is often an `eslint-disable` directive, and dropping one silently re-enables the rule it suppresses:
+
+```ts
+// before
+return diff(
+  // eslint-disable-next-line no-console
+  console.log(a),
+  b,
+).length === 0;
+
+// after
+return isEqual(
+  // eslint-disable-next-line no-console
+  console.log(a),
+  b,
+);
+```
+
+- Declines to fix when the target name is already bound to something other than `fast-deep-equal`, since the inserted import would either collide with that declaration or bind the emitted call to the local value.
 
 ### Examples of **incorrect** code for this rule:
 
