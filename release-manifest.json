@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.24",
+    "date": "2026-07-30T02:00:54.523Z",
+    "rules": [
+      {
+        "name": "use-latest-callback",
+        "changeType": "fix",
+        "issues": [
+          1400
+        ],
+        "summary": "apply the import rewrite and call conversions atomically (closes #1400)"
+      }
+    ]
+  },
+  {
     "version": "1.20.23",
     "date": "2026-07-30T01:37:58.854Z",
     "rules": [

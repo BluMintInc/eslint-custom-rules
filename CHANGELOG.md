@@ -1,3 +1,10 @@
+## [1.20.24](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.23...v1.20.24) (2026-07-30)
+
+
+### Bug Fixes
+
+* **use-latest-callback:** apply the import rewrite and call conversions atomically (closes [#1400](https://github.com/BluMintInc/eslint-custom-rules/issues/1400)) ([7afff3d](https://github.com/BluMintInc/eslint-custom-rules/commit/7afff3d17a15b97c0812344c5409be0ac6387de4))
+
 ## [1.20.23](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.22...v1.20.23) (2026-07-30)
 
 
