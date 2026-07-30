@@ -1,9 +1,18 @@
-import { ESLintUtils, TSESTree } from '@typescript-eslint/utils';
+import { ESLintUtils, TSESLint, TSESTree } from '@typescript-eslint/utils';
 
 const createRule = ESLintUtils.RuleCreator(
   (name) =>
     `https://github.com/BluMintInc/eslint-custom-rules/blob/main/docs/rules/${name}.md`,
 );
+
+/**
+ * A destructuring binding counts as live when anything other than its own
+ * initializer write references it. The write produced by the declaration itself
+ * carries `init: true`, so it must not be mistaken for a usage.
+ */
+const isBindingReferenced = (variable: TSESLint.Scope.Variable) => {
+  return variable.references.some((reference) => !reference.init);
+};
 
 /**
  * Rule to detect and remove unused useState hooks in React components
@@ -53,6 +62,25 @@ export const noUnusedUseState = createRule({
                 arrayPattern.elements[0].name.startsWith('_'))
             ) {
               const stateIdentifier = arrayPattern.elements[0];
+              const declaredVariables = context.getDeclaredVariables(node);
+              const stateVariable = declaredVariables.find((variable) =>
+                variable.identifiers.includes(stateIdentifier),
+              );
+
+              // The `_` prefix is a convention, not proof: when the value is
+              // actually read the pair is justified and nothing is discarded.
+              if (stateVariable && isBindingReferenced(stateVariable)) {
+                return;
+              }
+
+              // Every other binding of the pattern (the setter, and any nested
+              // or rest binding) must be dead before the declaration can be
+              // deleted. Removing it while the setter is still called strands
+              // the call sites and breaks the component.
+              const hasLiveSiblingBinding = declaredVariables.some(
+                (variable) =>
+                  variable !== stateVariable && isBindingReferenced(variable),
+              );
 
               context.report({
                 node,
@@ -61,6 +89,12 @@ export const noUnusedUseState = createRule({
                   stateName: stateIdentifier.name,
                 },
                 fix: (fixer) => {
+                  // A live setter still needs its declaration, so report the
+                  // discarded value without offering a destructive fix.
+                  if (hasLiveSiblingBinding) {
+                    return null;
+                  }
+
                   // Remove the entire useState declaration
                   const sourceCode = context.sourceCode;
                   const parentStatement = node.parent;
@@ -95,9 +129,19 @@ export const noUnusedUseState = createRule({
                     // Check if there's a comma after this declarator
                     const tokenAfter = sourceCode.getTokenAfter(node);
                     if (tokenAfter && tokenAfter.value === ',') {
+                      // Consume the separator plus the whitespace before the
+                      // surviving declarator so no double space is left behind.
+                      // Comments stop the removal so they survive the fix.
+                      const tokenAfterComma = sourceCode.getTokenAfter(
+                        tokenAfter,
+                        { includeComments: true },
+                      );
+
                       return fixer.removeRange([
                         declaratorRange[0],
-                        tokenAfter.range[1],
+                        tokenAfterComma
+                          ? tokenAfterComma.range[0]
+                          : tokenAfter.range[1],
                       ]);
                     }
 
