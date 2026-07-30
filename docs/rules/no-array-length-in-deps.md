@@ -133,6 +133,28 @@ const C = ({ items, users, messages }) => {
 - Variable naming: Appends `Hash` to the array name or last property (e.g., `listHash`, `usersHash`), adding a numeric suffix on conflict.
 - False positives: If you truly only care about length (e.g., emptiness), temporarily disable: `// eslint-disable-next-line @blumintinc/blumint/no-array-length-in-deps` on the previous line.
 
+## Interaction with inline disable comments
+
+Both `import { useMemo } from 'react';` and the `stableHash` import are added
+once per file, attached to the fix of the first violation that is **not**
+suppressed by an inline `eslint-disable` directive. Suppressing an individual
+hook therefore never strands the remaining `useMemo(() => stableHash(...))`
+declarations without their imports:
+
+```tsx
+const C = ({ items, others }) => {
+  // eslint-disable-next-line @blumintinc/blumint/no-array-length-in-deps
+  useEffect(() => { track(items); }, [items.length]); // left alone
+  useEffect(() => { track(others); }, [others.length]); // fixed, and carries both imports
+  return null;
+};
+```
+
+The violation is reported on the dependency array, so for a hook call spanning
+several lines the `eslint-disable-next-line` comment must sit above the line
+holding the dependency array — a comment above the `useEffect(` line covers a
+different line and suppresses nothing.
+
 ## When Not To Use It
 
 - If performance requirements or architectural constraints mean you only want to trigger when the length changes and not when contents change. Prefer a targeted disable comment for specific cases.

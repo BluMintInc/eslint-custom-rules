@@ -1,3 +1,4 @@
+import { Linter, Rule } from 'eslint';
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { noArrayLengthInDeps } from '../rules/no-array-length-in-deps';
 
@@ -108,6 +109,57 @@ const C = ({ items, id }) => {
 const C = ({ items }) => {
   const cb = useCallback(() => items.length, [items.length]);
   return cb;
+};
+`,
+    },
+    {
+      // Issue #1412: every violation suppressed inline leaves the file with no
+      // reports at all, so no import and no rewrite can be emitted.
+      code: `
+const C = ({ items, others }) => {
+  // eslint-disable-next-line no-array-length-in-deps
+  useEffect(() => { console.log(items); }, [items.length]);
+  // eslint-disable-next-line no-array-length-in-deps
+  useEffect(() => { console.log(others); }, [others.length]);
+  return null;
+};
+`,
+    },
+    {
+      // Issue #1412: a bare line disable targets every rule, including this one.
+      code: `
+const C = ({ items }) => {
+  // eslint-disable-next-line
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+    },
+    {
+      // Issue #1412: a whole-file block disable suppresses every violation.
+      code: `/* eslint-disable no-array-length-in-deps */
+const C = ({ items, others }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  useEffect(() => { console.log(others); }, [others.length]);
+  return null;
+};
+`,
+    },
+    {
+      // Issue #1412: a bare block disable covers this rule too.
+      code: `/* eslint-disable */
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+    },
+    {
+      // Issue #1412: an `eslint-disable-line` trailing the hook suppresses it.
+      code: `
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]); // eslint-disable-line no-array-length-in-deps
+  return null;
 };
 `,
     },
@@ -946,5 +998,611 @@ const C = ({ kind }) => {
       ],
       output: null,
     },
+    {
+      // Issue #1412: the imports ride on a single violation's fix, so that
+      // violation is the file's import carrier. Suppressing the first violation
+      // must hand the carrier slot to the first violation that survives —
+      // otherwise the surviving rewrite references `useMemo` and `stableHash`
+      // with neither imported.
+      code: `import { useEffect } from 'react';
+
+const C = ({ items, others }) => {
+  // eslint-disable-next-line no-array-length-in-deps
+  useEffect(() => { console.log(items); }, [items.length]);
+  useEffect(() => { console.log(others); }, [others.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'others.length' },
+        },
+      ],
+      output: `import { stableHash } from 'functions/src/util/hash/stableHash';
+import { useEffect, useMemo } from 'react';
+
+const C = ({ items, others }) => {
+  // eslint-disable-next-line no-array-length-in-deps
+  useEffect(() => { console.log(items); }, [items.length]);
+  const othersHash = useMemo(() => stableHash(others), [others]);
+  useEffect(() => { console.log(others); }, [othersHash]);
+  return null;
+};
+`,
+    },
+    {
+      // Issue #1412: suppressing a middle violation keeps the carrier on the
+      // first survivor and leaves the later survivors untouched by the change.
+      code: `import { useEffect } from 'react';
+
+const C = ({ first, second, third }) => {
+  useEffect(() => { console.log(first); }, [first.length]);
+  // eslint-disable-next-line no-array-length-in-deps
+  useEffect(() => { console.log(second); }, [second.length]);
+  useEffect(() => { console.log(third); }, [third.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'first.length' },
+        },
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'third.length' },
+        },
+      ],
+      output: `import { stableHash } from 'functions/src/util/hash/stableHash';
+import { useEffect, useMemo } from 'react';
+
+const C = ({ first, second, third }) => {
+  const firstHash = useMemo(() => stableHash(first), [first]);
+  useEffect(() => { console.log(first); }, [firstHash]);
+  // eslint-disable-next-line no-array-length-in-deps
+  useEffect(() => { console.log(second); }, [second.length]);
+  const thirdHash = useMemo(() => stableHash(third), [third]);
+  useEffect(() => { console.log(third); }, [thirdHash]);
+  return null;
+};
+`,
+    },
+    {
+      // Issue #1412: suppressing the last violation leaves the carrier where it
+      // already was — the imports still land exactly once.
+      code: `import { useEffect } from 'react';
+
+const C = ({ items, others }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  // eslint-disable-next-line no-array-length-in-deps
+  useEffect(() => { console.log(others); }, [others.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: `import { stableHash } from 'functions/src/util/hash/stableHash';
+import { useEffect, useMemo } from 'react';
+
+const C = ({ items, others }) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  useEffect(() => { console.log(items); }, [itemsHash]);
+  // eslint-disable-next-line no-array-length-in-deps
+  useEffect(() => { console.log(others); }, [others.length]);
+  return null;
+};
+`,
+    },
+    {
+      // Issue #1412: a disable naming a DIFFERENT rule must not suppress this
+      // one. The memo still lands above the comment so the other rule's
+      // suppression keeps pointing at the hook (see findDeclarationAnchor).
+      code: `import { useEffect } from 'react';
+
+const C = ({ items }) => {
+  // eslint-disable-next-line no-console
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: `import { stableHash } from 'functions/src/util/hash/stableHash';
+import { useEffect, useMemo } from 'react';
+
+const C = ({ items }) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  // eslint-disable-next-line no-console
+  useEffect(() => { console.log(items); }, [itemsHash]);
+  return null;
+};
+`,
+    },
+    {
+      // Issue #1412: both bindings already imported -> the surviving violation
+      // adds no duplicate import of either.
+      code: `import { useEffect, useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ items, others }) => {
+  // eslint-disable-next-line no-array-length-in-deps
+  useEffect(() => { console.log(items); }, [items.length]);
+  useEffect(() => { console.log(others); }, [others.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'others.length' },
+        },
+      ],
+      output: `import { useEffect, useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ items, others }) => {
+  // eslint-disable-next-line no-array-length-in-deps
+  useEffect(() => { console.log(items); }, [items.length]);
+  const othersHash = useMemo(() => stableHash(others), [others]);
+  useEffect(() => { console.log(others); }, [othersHash]);
+  return null;
+};
+`,
+    },
+    {
+      // Issue #1412: only `stableHash` is already imported -> the survivor adds
+      // exactly the missing `useMemo` specifier, once.
+      code: `import { useEffect } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ items, others }) => {
+  // eslint-disable-next-line no-array-length-in-deps
+  useEffect(() => { console.log(items); }, [items.length]);
+  useEffect(() => { console.log(others); }, [others.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'others.length' },
+        },
+      ],
+      output: `import { useEffect, useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ items, others }) => {
+  // eslint-disable-next-line no-array-length-in-deps
+  useEffect(() => { console.log(items); }, [items.length]);
+  const othersHash = useMemo(() => stableHash(others), [others]);
+  useEffect(() => { console.log(others); }, [othersHash]);
+  return null;
+};
+`,
+    },
+    {
+      // Issue #1412: an `eslint-enable` re-opens the rule, so a violation after
+      // it carries the imports even though earlier ones are suppressed.
+      code: `import { useEffect } from 'react';
+
+/* eslint-disable no-array-length-in-deps */
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+/* eslint-enable no-array-length-in-deps */
+
+const D = ({ others }) => {
+  useEffect(() => { console.log(others); }, [others.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'others.length' },
+        },
+      ],
+      output: `import { stableHash } from 'functions/src/util/hash/stableHash';
+import { useEffect, useMemo } from 'react';
+
+/* eslint-disable no-array-length-in-deps */
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+/* eslint-enable no-array-length-in-deps */
+
+const D = ({ others }) => {
+  const othersHash = useMemo(() => stableHash(others), [others]);
+  useEffect(() => { console.log(others); }, [othersHash]);
+  return null;
+};
+`,
+    },
+    {
+      // Issue #1412: two violations in the SAME hook's deps array are one
+      // report, so suppressing the previous hook must still hand both memo
+      // declarations and both imports to this survivor.
+      code: `import { useEffect } from 'react';
+
+const C = ({ items, a, b }) => {
+  // eslint-disable-next-line no-array-length-in-deps
+  useEffect(() => { console.log(items); }, [items.length]);
+  useEffect(() => { console.log(a, b); }, [a.length, b.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'a.length, b.length' },
+        },
+      ],
+      output: `import { stableHash } from 'functions/src/util/hash/stableHash';
+import { useEffect, useMemo } from 'react';
+
+const C = ({ items, a, b }) => {
+  // eslint-disable-next-line no-array-length-in-deps
+  useEffect(() => { console.log(items); }, [items.length]);
+  const aHash = useMemo(() => stableHash(a), [a]);
+  const bHash = useMemo(() => stableHash(b), [b]);
+  useEffect(() => { console.log(a, b); }, [aHash, bHash]);
+  return null;
+};
+`,
+    },
   ],
+});
+
+// Issue #1412: RuleTester applies a single fix pass and never shows the file
+// that `eslint --fix` actually writes. These cases run the real multi-pass fixer
+// and assert the invariant the bug violated: emitted `useMemo(...)` /
+// `stableHash(...)` code is never left without its import.
+describe('no-array-length-in-deps: inline disables and the import carrier (issue #1412)', () => {
+  const RULE_ID = '@blumintinc/blumint/no-array-length-in-deps';
+  const HASH_IMPORT =
+    "import { stableHash } from 'functions/src/util/hash/stableHash';";
+
+  const lint = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      noArrayLengthInDeps as unknown as Rule.RuleModule,
+    );
+    // A near-miss neighbour proves rule matching is exact rather than a
+    // suffix/substring heuristic; the react-hooks rule is the disable users
+    // most often park on a dependency array.
+    for (const neighbour of [
+      '@blumintinc/blumint/no-array-length-in-deps-strict',
+      'react-hooks/exhaustive-deps',
+    ]) {
+      linter.defineRule(neighbour, {
+        meta: { schema: [] },
+        create: () => ({}),
+      } as unknown as Rule.RuleModule);
+    }
+    const config = {
+      parser: '@typescript-eslint/parser',
+      parserOptions: {
+        ecmaVersion: 2020 as const,
+        sourceType: 'module' as const,
+        ecmaFeatures: { jsx: true },
+      },
+      rules: { [RULE_ID]: 'error' as const },
+    };
+    const { output } = linter.verifyAndFix(code, config, 'Component.tsx');
+    return output;
+  };
+
+  /**
+   * The invariant: any emitted call must have a binding. Counting occurrences
+   * also catches the opposite failure, a fix that adds the import twice.
+   */
+  const expectNoUnboundHelpers = (output: string) => {
+    const hashImports = output.split(HASH_IMPORT).length - 1;
+    if (output.includes('stableHash(')) {
+      expect(hashImports).toBe(1);
+    } else {
+      expect(hashImports).toBe(0);
+    }
+
+    const reactImports =
+      output.match(/^import \{[^}]*\} from 'react';$/gm) ?? [];
+    if (output.includes('useMemo(')) {
+      expect(
+        reactImports.filter((line) => /\buseMemo\b/.test(line)),
+      ).toHaveLength(1);
+    }
+  };
+
+  const CONTROL = `import { useEffect } from 'react';
+const C = (items: any[], others: any[]) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  useEffect(() => { console.log(others); }, [others.length]);
+};
+`;
+
+  it('fixes every violation and imports both helpers once when nothing is disabled', () => {
+    const output = lint(CONTROL);
+
+    expect(output).toBe(`${HASH_IMPORT}
+import { useEffect, useMemo } from 'react';
+const C = (items: any[], others: any[]) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  useEffect(() => { console.log(items); }, [itemsHash]);
+  const othersHash = useMemo(() => stableHash(others), [others]);
+  useEffect(() => { console.log(others); }, [othersHash]);
+};
+`);
+    expectNoUnboundHelpers(output);
+  });
+
+  it('carries both imports on the first surviving violation', () => {
+    const output = lint(`import { useEffect } from 'react';
+const C = (items: any[], others: any[]) => {
+  // eslint-disable-next-line @blumintinc/blumint/no-array-length-in-deps
+  useEffect(() => { console.log(items); }, [items.length]);
+  useEffect(() => { console.log(others); }, [others.length]);
+};
+`);
+
+    expect(output).toBe(`${HASH_IMPORT}
+import { useEffect, useMemo } from 'react';
+const C = (items: any[], others: any[]) => {
+  // eslint-disable-next-line @blumintinc/blumint/no-array-length-in-deps
+  useEffect(() => { console.log(items); }, [items.length]);
+  const othersHash = useMemo(() => stableHash(others), [others]);
+  useEffect(() => { console.log(others); }, [othersHash]);
+};
+`);
+    expectNoUnboundHelpers(output);
+  });
+
+  it('keeps the imports when only the middle violation is disabled', () => {
+    const output = lint(`import { useEffect } from 'react';
+const C = (first: any[], second: any[], third: any[]) => {
+  useEffect(() => { console.log(first); }, [first.length]);
+  // eslint-disable-next-line @blumintinc/blumint/no-array-length-in-deps
+  useEffect(() => { console.log(second); }, [second.length]);
+  useEffect(() => { console.log(third); }, [third.length]);
+};
+`);
+
+    expect(output).toBe(`${HASH_IMPORT}
+import { useEffect, useMemo } from 'react';
+const C = (first: any[], second: any[], third: any[]) => {
+  const firstHash = useMemo(() => stableHash(first), [first]);
+  useEffect(() => { console.log(first); }, [firstHash]);
+  // eslint-disable-next-line @blumintinc/blumint/no-array-length-in-deps
+  useEffect(() => { console.log(second); }, [second.length]);
+  const thirdHash = useMemo(() => stableHash(third), [third]);
+  useEffect(() => { console.log(third); }, [thirdHash]);
+};
+`);
+    expectNoUnboundHelpers(output);
+  });
+
+  it('keeps the imports when only the last violation is disabled', () => {
+    const output = lint(`import { useEffect } from 'react';
+const C = (items: any[], others: any[]) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  // eslint-disable-next-line @blumintinc/blumint/no-array-length-in-deps
+  useEffect(() => { console.log(others); }, [others.length]);
+};
+`);
+
+    expect(output).toBe(`${HASH_IMPORT}
+import { useEffect, useMemo } from 'react';
+const C = (items: any[], others: any[]) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  useEffect(() => { console.log(items); }, [itemsHash]);
+  // eslint-disable-next-line @blumintinc/blumint/no-array-length-in-deps
+  useEffect(() => { console.log(others); }, [others.length]);
+};
+`);
+    expectNoUnboundHelpers(output);
+  });
+
+  it('adds neither import nor rewrite when every violation is disabled', () => {
+    const code = `import { useEffect } from 'react';
+const C = (items: any[], others: any[]) => {
+  // eslint-disable-next-line @blumintinc/blumint/no-array-length-in-deps
+  useEffect(() => { console.log(items); }, [items.length]);
+  // eslint-disable-next-line @blumintinc/blumint/no-array-length-in-deps
+  useEffect(() => { console.log(others); }, [others.length]);
+};
+`;
+
+    const output = lint(code);
+
+    expect(output).toBe(code);
+    expect(output).not.toContain('stableHash');
+    expect(output).not.toContain('useMemo');
+  });
+
+  it('adds nothing under a whole-file block disable', () => {
+    const code = `/* eslint-disable @blumintinc/blumint/no-array-length-in-deps */
+import { useEffect } from 'react';
+const C = (items: any[], others: any[]) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  useEffect(() => { console.log(others); }, [others.length]);
+};
+`;
+
+    const output = lint(code);
+
+    expect(output).toBe(code);
+    expect(output).not.toContain('stableHash');
+    expect(output).not.toContain('useMemo');
+  });
+
+  it('treats a bare line disable as covering this rule', () => {
+    const code = `import { useEffect } from 'react';
+const C = (items: any[]) => {
+  // eslint-disable-next-line
+  useEffect(() => { console.log(items); }, [items.length]);
+};
+`;
+
+    expect(lint(code)).toBe(code);
+  });
+
+  it('does not treat a disable for a different rule as its own', () => {
+    const output = lint(`import { useEffect } from 'react';
+const C = (items: any[]) => {
+  // eslint-disable-next-line @blumintinc/blumint/no-array-length-in-deps-strict
+  useEffect(() => { console.log(items); }, [items.length]);
+};
+`);
+
+    expect(output).toBe(`${HASH_IMPORT}
+import { useEffect, useMemo } from 'react';
+const C = (items: any[]) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  // eslint-disable-next-line @blumintinc/blumint/no-array-length-in-deps-strict
+  useEffect(() => { console.log(items); }, [itemsHash]);
+};
+`);
+    expectNoUnboundHelpers(output);
+  });
+
+  it('does not treat a react-hooks disable on the same hook as its own', () => {
+    const output = lint(`import { useEffect } from 'react';
+const C = (items: any[]) => {
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { console.log(items); }, [items.length]);
+};
+`);
+
+    expect(output).toBe(`${HASH_IMPORT}
+import { useEffect, useMemo } from 'react';
+const C = (items: any[]) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { console.log(items); }, [itemsHash]);
+};
+`);
+    expectNoUnboundHelpers(output);
+  });
+
+  // The report is located on the dependency array, so for a multi-line hook the
+  // directive that ESLint honours is the one on the deps line — not the one
+  // above the `useEffect(`. Both placements must leave coherent output.
+  it('withholds the fix when the disable sits on the deps line of a multi-line hook', () => {
+    const output = lint(`import { useEffect } from 'react';
+const C = (items: any[], others: any[]) => {
+  useEffect(() => {
+    console.log(items);
+  // eslint-disable-next-line @blumintinc/blumint/no-array-length-in-deps
+  }, [items.length]);
+  useEffect(() => {
+    console.log(others);
+  }, [others.length]);
+};
+`);
+
+    expect(output).toBe(`${HASH_IMPORT}
+import { useEffect, useMemo } from 'react';
+const C = (items: any[], others: any[]) => {
+  useEffect(() => {
+    console.log(items);
+  // eslint-disable-next-line @blumintinc/blumint/no-array-length-in-deps
+  }, [items.length]);
+  const othersHash = useMemo(() => stableHash(others), [others]);
+  useEffect(() => {
+    console.log(others);
+  }, [othersHash]);
+};
+`);
+    expectNoUnboundHelpers(output);
+  });
+
+  it('fixes a multi-line hook whose disable ESLint does not apply to the deps line', () => {
+    const output = lint(`import { useEffect } from 'react';
+const C = (items: any[]) => {
+  // eslint-disable-next-line @blumintinc/blumint/no-array-length-in-deps
+  useEffect(() => {
+    console.log(items);
+  }, [items.length]);
+};
+`);
+
+    // The memo lands above the directive so the directive keeps pointing at the
+    // hook rather than at the generated declaration (see findDeclarationAnchor).
+    expect(output).toBe(`${HASH_IMPORT}
+import { useEffect, useMemo } from 'react';
+const C = (items: any[]) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  // eslint-disable-next-line @blumintinc/blumint/no-array-length-in-deps
+  useEffect(() => {
+    console.log(items);
+  }, [itemsHash]);
+};
+`);
+    expectNoUnboundHelpers(output);
+  });
+
+  it('does not duplicate imports the file already has', () => {
+    const output = lint(`${HASH_IMPORT}
+import { useEffect, useMemo } from 'react';
+const C = (items: any[], others: any[]) => {
+  // eslint-disable-next-line @blumintinc/blumint/no-array-length-in-deps
+  useEffect(() => { console.log(items); }, [items.length]);
+  useEffect(() => { console.log(others); }, [others.length]);
+};
+`);
+
+    expect(output).toBe(`${HASH_IMPORT}
+import { useEffect, useMemo } from 'react';
+const C = (items: any[], others: any[]) => {
+  // eslint-disable-next-line @blumintinc/blumint/no-array-length-in-deps
+  useEffect(() => { console.log(items); }, [items.length]);
+  const othersHash = useMemo(() => stableHash(others), [others]);
+  useEffect(() => { console.log(others); }, [othersHash]);
+};
+`);
+    expectNoUnboundHelpers(output);
+  });
+
+  it('carries the imports past a block disable that re-enables later', () => {
+    const output = lint(`import { useEffect } from 'react';
+/* eslint-disable @blumintinc/blumint/no-array-length-in-deps */
+const C = (items: any[]) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+};
+/* eslint-enable @blumintinc/blumint/no-array-length-in-deps */
+const D = (others: any[]) => {
+  useEffect(() => { console.log(others); }, [others.length]);
+};
+`);
+
+    expect(output).toBe(`${HASH_IMPORT}
+import { useEffect, useMemo } from 'react';
+/* eslint-disable @blumintinc/blumint/no-array-length-in-deps */
+const C = (items: any[]) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+};
+/* eslint-enable @blumintinc/blumint/no-array-length-in-deps */
+const D = (others: any[]) => {
+  const othersHash = useMemo(() => stableHash(others), [others]);
+  useEffect(() => { console.log(others); }, [othersHash]);
+};
+`);
+    expectNoUnboundHelpers(output);
+  });
 });
