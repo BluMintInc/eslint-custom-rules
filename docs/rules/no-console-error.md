@@ -82,7 +82,7 @@ try {
 ```json
 {
   "@blumintinc/blumint/no-console-error": [
-    "warn",
+    "error",
     {
       "ignorePatterns": ["**/tools/**"],
       "allowWithUseAlertDialog": true,

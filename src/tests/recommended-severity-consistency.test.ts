@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+
 // Using require to avoid test build-time ESM interop issues; the test runner
 // only needs the plugin object shape (configs + rules), not types.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -53,6 +56,52 @@ describe('recommended config ↔ meta.docs.recommended consistency', () => {
       const rule = plugin.rules[name];
       expect(rule).toBeDefined();
       expect(rule.meta?.docs?.recommended).toBe(severity);
+    },
+  );
+});
+
+const DOCS_DIR = path.join(__dirname, '../../docs/rules');
+
+/**
+ * The severity a docs page shows for its own rule, from every JSON/JSONC config
+ * example on the page. Both shapes appear: a bare `"rule": "error"` and an
+ * optioned `"rule": ["error", {...}]`.
+ */
+const documentedSeverities = (name: string): string[] => {
+  const docPath = path.join(DOCS_DIR, `${name}.md`);
+  if (!fs.existsSync(docPath)) return [];
+  const text = fs.readFileSync(docPath, 'utf8');
+  const pattern = new RegExp(
+    `"${PREFIX.replace(/\//g, '\\/')}${name}"\\s*:\\s*(?:\\[\\s*)?"(error|warn|off)"`,
+    'g',
+  );
+  return [...new Set([...text.matchAll(pattern)].map((match) => match[1]))];
+};
+
+/**
+ * The docs page is a THIRD place a severity is written, and the one consumers
+ * copy from. #1282 bumped six rules to 'error' in the config and in
+ * `meta.docs.recommended` — the two locations the assertions above compare —
+ * while every one of their docs pages kept showing `"warn"`, so following the
+ * documentation produced a rule that never gates. Nothing read those config
+ * examples, so the drift survived the fix that was supposed to end it (#1459).
+ *
+ * Only a page's own rule id is asserted. Docs that reference a sibling rule to
+ * contrast behaviour are describing that rule, not configuring this one.
+ */
+describe('recommended config ↔ documented config severity', () => {
+  const documented = enabledRules
+    .map((entry) => ({ ...entry, shown: documentedSeverities(entry.name) }))
+    .filter((entry) => entry.shown.length > 0);
+
+  it('finds documented config examples to check', () => {
+    expect(documented.length).toBeGreaterThan(10);
+  });
+
+  it.each(documented)(
+    'docs/rules/$name.md must document "$severity", the severity it ships',
+    ({ severity, shown }) => {
+      expect(shown).toEqual([severity]);
     },
   );
 });

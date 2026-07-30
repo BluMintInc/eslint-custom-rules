@@ -55,7 +55,7 @@ const onClick = useCallback(() => doThing(a, b), [a, b]);
 ```json
 {
   "@blumintinc/blumint/no-useless-usememo-primitives": [
-    "warn",
+    "error",
     {
       "ignoreCallExpressions": true,
       "ignoreSymbol": true,
