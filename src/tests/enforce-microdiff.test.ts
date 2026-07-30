@@ -749,5 +749,98 @@ function detectDifferences(original, updated) {
       output: null,
       errors: [{ messageId: 'enforceMicrodiff' }],
     },
+    {
+      // A local binding shadowing the import calls the file's own function, not
+      // the library's, so renaming it to `diff` would swap in a function that
+      // computes something else entirely. The import itself is still retired.
+      code: `import { detailedDiff } from 'deep-object-diff';
+
+export function compare(oldState, newState) {
+  const detailedDiff = (a, b) => [a, b];
+  return detailedDiff(oldState, newState);
+}`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'deep-object-diff' },
+        },
+      ],
+      output: `import { diff } from 'microdiff';
+
+export function compare(oldState, newState) {
+  const detailedDiff = (a, b) => [a, b];
+  return detailedDiff(oldState, newState);
+}`,
+    },
+    {
+      // A shadow confined to a nested block leaves the calls outside it bound to
+      // the import, so those are rewritten while the shadowed one is not.
+      code: `import { detailedDiff } from 'deep-object-diff';
+
+export function compare(oldState, newState) {
+  if (oldState) {
+    const detailedDiff = (a, b) => [a, b];
+    return detailedDiff(oldState, newState);
+  }
+  return detailedDiff(oldState, newState);
+}`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'deep-object-diff' },
+        },
+        { messageId: 'enforceMicrodiff' },
+      ],
+      output: `import { diff } from 'microdiff';
+
+export function compare(oldState, newState) {
+  if (oldState) {
+    const detailedDiff = (a, b) => [a, b];
+    return detailedDiff(oldState, newState);
+  }
+  return diff(oldState, newState);
+}`,
+    },
+    {
+      // A parameter shadows the import for the whole function body.
+      code: `import { detailedDiff } from 'deep-object-diff';
+
+export function compare(detailedDiff, oldState, newState) {
+  return detailedDiff(oldState, newState);
+}`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'deep-object-diff' },
+        },
+      ],
+      output: `import { diff } from 'microdiff';
+
+export function compare(detailedDiff, oldState, newState) {
+  return detailedDiff(oldState, newState);
+}`,
+    },
+    {
+      // The same holds for an aliased specifier: the tracked name is the local
+      // one, and a local binding of it answers the call.
+      code: `import { diff as deepDiff } from 'deep-diff';
+
+export function compare(oldConfig, newConfig) {
+  const deepDiff = (a, b) => [a, b];
+  return deepDiff(oldConfig, newConfig);
+}`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'deep-diff' },
+        },
+      ],
+      output: `import { diff } from 'microdiff';
+
+export function compare(oldConfig, newConfig) {
+  const deepDiff = (a, b) => [a, b];
+  return deepDiff(oldConfig, newConfig);
+}`,
+    },
   ],
 });
