@@ -31,25 +31,60 @@ export default createRule<[], MessageIds>({
       );
     }
 
+    // Matches both the bare hook (`useMemo(...)`, including the generic form
+    // `useCallback<T>(...)`, whose callee is still an identifier) and the
+    // namespaced form (`React.useMemo(...)`).
+    function isHookCallee(callee: TSESTree.Node, hookName: string): boolean {
+      if (callee.type === AST_NODE_TYPES.Identifier) {
+        return callee.name === hookName;
+      }
+
+      return (
+        callee.type === AST_NODE_TYPES.MemberExpression &&
+        !callee.computed &&
+        callee.property.type === AST_NODE_TYPES.Identifier &&
+        callee.property.name === hookName
+      );
+    }
+
     function isInsideUseCallback(node: TSESTree.Node): boolean {
       let current: TSESTree.Node | undefined = node.parent;
 
       while (current) {
-        if (current.type === AST_NODE_TYPES.CallExpression) {
-          const { callee } = current;
-          const isDirectUseCallback =
-            callee.type === AST_NODE_TYPES.Identifier &&
-            callee.name === 'useCallback';
-          const isMemberUseCallback =
-            callee.type === AST_NODE_TYPES.MemberExpression &&
-            !callee.computed &&
-            callee.property.type === AST_NODE_TYPES.Identifier &&
-            callee.property.name === 'useCallback';
-
-          if (isDirectUseCallback || isMemberUseCallback) {
-            return true;
-          }
+        if (
+          current.type === AST_NODE_TYPES.CallExpression &&
+          isHookCallee(current.callee, 'useCallback')
+        ) {
+          return true;
         }
+        current = current.parent;
+      }
+
+      return false;
+    }
+
+    // A `useMemo` factory re-runs only when its dependencies change, so every
+    // value it produces — including JSX and the inline handlers nested in that
+    // JSX — is exactly as referentially stable as the memo itself. Demanding an
+    // extra `useCallback` there buys nothing.
+    //
+    // `useCallback` deliberately gets no such treatment: it memoizes a function
+    // that runs on every invocation, so the JSX it returns (and the inline
+    // functions in it) is rebuilt each call and stays worth reporting.
+    function isInsideUseMemoFactory(node: TSESTree.Node): boolean {
+      let child: TSESTree.Node = node;
+      let current: TSESTree.Node | undefined = node.parent;
+
+      while (current) {
+        if (
+          current.type === AST_NODE_TYPES.CallExpression &&
+          isHookCallee(current.callee, 'useMemo') &&
+          // Only the factory argument is memoized; the dependency array is not.
+          current.arguments[0] === child
+        ) {
+          return true;
+        }
+        child = current;
         current = current.parent;
       }
 
@@ -210,6 +245,11 @@ export default createRule<[], MessageIds>({
         !node.value ||
         node.value.type !== AST_NODE_TYPES.JSXExpressionContainer
       ) {
+        return;
+      }
+
+      // Props of JSX built inside a useMemo factory inherit the memo's stability
+      if (isInsideUseMemoFactory(node)) {
         return;
       }
 
