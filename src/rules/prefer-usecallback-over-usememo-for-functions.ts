@@ -544,6 +544,71 @@ function planConversion(
   };
 }
 
+/**
+ * Rebuilds the whitespace of a stretch of source whose tokens are being deleted.
+ * Line breaks are reproduced one for one so a directive keeps the same distance
+ * from the line it governs, and the indentation of the last line is carried over
+ * so what follows lands where the deleted text used to start.
+ */
+function collapsedWhitespace(gap: string, afterOpenParen: boolean) {
+  const newlines = gap.match(/\n/g)?.length ?? 0;
+  if (newlines === 0) {
+    // Nothing separated the neighbours across a line, so a single space is all
+    // that is needed to keep them apart — except against the parenthesis that
+    // opens the argument list, where a comment reads better flush.
+    return afterOpenParen ? '' : ' ';
+  }
+  const lineBreak = gap.includes('\r\n') ? '\r\n' : '\n';
+  const lastLine = gap.slice(gap.lastIndexOf('\n') + 1);
+  const indent = /^[ \t]*/.exec(lastLine)?.[0] ?? '';
+  return lineBreak.repeat(newlines) + indent;
+}
+
+/**
+ * Deletes a stretch of wrapper syntax while keeping every comment inside it.
+ *
+ * Unwrapping `useMemo(() => { return fn; }, deps)` collapses two stretches of
+ * source: the `() => { return` before the returned function and the `; }` after
+ * it. Re-emitting the call from `getText` erased whatever sat in those stretches,
+ * which silently retires the comments they held — and an `eslint-disable` among
+ * them stops suppressing a line that outlives the rewrite. Only the tokens are
+ * removed here: the comments come back out with the line breaks that framed
+ * them, so each one still precedes the same line.
+ */
+function collapseWrapper(
+  sourceCode: TSESLint.SourceCode,
+  fixer: TSESLint.RuleFixer,
+  range: [number, number],
+  appended = '',
+): TSESLint.RuleFix[] {
+  const [start, end] = range;
+  const comments = sourceCode
+    .getAllComments()
+    .filter((comment) => comment.range[0] >= start && comment.range[1] <= end);
+
+  if (comments.length === 0) {
+    if (start === end && appended === '') {
+      return [];
+    }
+    return [fixer.replaceTextRange(range, appended)];
+  }
+
+  const text = sourceCode.getText();
+  let replacement = '';
+  let cursor = start;
+  for (const comment of comments) {
+    replacement += collapsedWhitespace(
+      text.slice(cursor, comment.range[0]),
+      text[cursor - 1] === '(',
+    );
+    replacement += text.slice(comment.range[0], comment.range[1]);
+    cursor = comment.range[1];
+  }
+  replacement += collapsedWhitespace(text.slice(cursor, end), false);
+
+  return [fixer.replaceTextRange(range, replacement + appended)];
+}
+
 function getMemoizedFunctionDescription(node) {
   const parent = node.parent;
 
@@ -582,9 +647,6 @@ function getMemoizedFunctionDescription(node) {
 function reportAndFix(node, context, plan: ConversionPlan) {
   const sourceCode = context.sourceCode;
   const useMemoCallback = node.arguments[0];
-  const dependencyArray = node.arguments[1]
-    ? sourceCode.getText(node.arguments[1])
-    : '[]';
 
   // Get the returned function from useMemo
   let returnedFunction;
@@ -597,14 +659,9 @@ function reportAndFix(node, context, plan: ConversionPlan) {
     returnedFunction = useMemoCallback.body;
   }
 
-  // Create the useCallback replacement
-  const returnedFunctionText = sourceCode.getText(returnedFunction);
-
-  // Check if useMemo has TypeScript generic type parameters
-  const hasTypeParameters = node.typeParameters !== undefined;
-  const typeParametersText = hasTypeParameters
-    ? sourceCode.getText(node.typeParameters)
-    : '';
+  // A call written without a dependency array memoizes nothing, so the
+  // conversion supplies the empty array useCallback needs.
+  const missingDependencies = node.arguments.length < 2 ? ', []' : '';
 
   const callbackDescription = getMemoizedFunctionDescription(node);
 
@@ -614,10 +671,21 @@ function reportAndFix(node, context, plan: ConversionPlan) {
     data: { callbackDescription },
     fix: plan.fixable.has(node)
       ? (fixer: TSESLint.RuleFixer) => {
+          // The call is spliced rather than re-emitted: the callee is renamed
+          // and the wrapper around the returned function is deleted, so the
+          // returned function, the type arguments, the dependency array and
+          // everything between them stay byte-identical — comments included.
           const fixes: TSESLint.RuleFix[] = [
-            fixer.replaceText(
-              node,
-              `${plan.calleeName}${typeParametersText}(${returnedFunctionText}, ${dependencyArray})`,
+            fixer.replaceText(node.callee, plan.calleeName),
+            ...collapseWrapper(sourceCode, fixer, [
+              useMemoCallback.range[0],
+              returnedFunction.range[0],
+            ]),
+            ...collapseWrapper(
+              sourceCode,
+              fixer,
+              [returnedFunction.range[1], useMemoCallback.range[1]],
+              missingDependencies,
             ),
           ];
           // Only one conversion carries the import rewrite so the fixes of
