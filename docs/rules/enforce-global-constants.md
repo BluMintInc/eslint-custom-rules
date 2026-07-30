@@ -98,6 +98,28 @@ const useMyHook = (options = DEFAULT_OPTIONS) => {
 };
 ```
 
+## Autofix safety
+
+The autofix for a destructuring default extracts the value into a module-level
+constant named `DEFAULT_<UPPER_SNAKE_CASE_NAME>` and points the default at it.
+Because that name is generated rather than chosen, the fixer resolves it through
+the scope chain at the report site before emitting anything:
+
+- **Nothing owns the name** — the constant is declared at module scope and the
+  default is rewritten to reference it.
+- **A module-level `const` already holds the identical value** — that constant is
+  reused and nothing is declared.
+- **Anything else owns the name** — a module-level constant holding a *different*
+  value, a `let`/`var`, a function, a class, an import, or any binding in an
+  enclosing scope between the default and module scope — the fix is withheld for
+  that default. Emitting it would silently swap the default's value, redeclare an
+  existing binding, or bind the reference to the wrong constant.
+
+A withheld fix does not silence the report: the violation is still reported and
+is resolved by extracting the constant by hand under a name that does not clash.
+Each default is decided independently, so a withheld default does not block the
+fix for its siblings.
+
 ## When Not To Use It
 
 You might want to disable this rule if:
