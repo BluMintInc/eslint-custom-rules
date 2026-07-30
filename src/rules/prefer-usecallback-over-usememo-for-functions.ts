@@ -1,5 +1,9 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import {
+  createSuppressionChecker,
+  SuppressionChecker,
+} from '../utils/disableDirectives';
 
 type Options = [
   {
@@ -177,6 +181,15 @@ export const preferUseCallbackOverUseMemoForFunctions = createRule<
     // import when no reference to it survives the fixes.
     const candidates: Candidate[] = [];
 
+    /**
+     * A suppressed report is discarded together with its fix, yet its
+     * `useMemo(...)` call stays in the file. Both halves of the import rewrite
+     * therefore hinge on suppression: the rename must not ride on a violation
+     * that disappears, and it must not retire a specifier a suppressed call
+     * still resolves to.
+     */
+    const isReportSuppressed = createSuppressionChecker(context);
+
     return {
       CallExpression(node) {
         // Check if the call is to useMemo
@@ -214,7 +227,7 @@ export const preferUseCallbackOverUseMemoForFunctions = createRule<
         if (candidates.length === 0) {
           return;
         }
-        const plan = planConversion(context, candidates);
+        const plan = planConversion(context, candidates, isReportSuppressed);
         for (const candidate of candidates) {
           reportAndFix(candidate.node, context, plan);
         }
@@ -360,6 +373,7 @@ function removeImportSpecifierFixes(
 function planConversion(
   context: TSESLint.RuleContext<MessageIds, Options>,
   candidates: Candidate[],
+  isReportSuppressed: SuppressionChecker,
 ): ConversionPlan {
   const sourceCode = context.getSourceCode();
   const program = sourceCode.ast;
@@ -371,7 +385,13 @@ function planConversion(
 
   // A local binding of the target name would capture the emitted call, so those
   // conversions are reported without a fix rather than silently miscompiled.
+  // A suppressed violation is skipped for the same reason it is skipped for the
+  // import: ESLint drops its fix, so treating it as unfixable keeps the plan
+  // honest about which useMemo calls actually go away.
   const fixableCandidates = candidates.filter((candidate) => {
+    if (isReportSuppressed(candidate.node)) {
+      return false;
+    }
     const bound = resolveVariable(candidate.scope, calleeName);
     if (!existingUseCallback) {
       return bound === null;
@@ -426,6 +446,10 @@ function planConversion(
       .map((candidate) => candidate.node.callee),
   );
 
+  // Every reference the fixes do not rewrite still needs the specifier: a plain
+  // value memo, a bare `useMemo` mention, a conversion blocked by shadowing, or
+  // the call behind a disable directive. Any one of them turns the rename into
+  // a plain insertion of useCallback beside useMemo.
   const useMemoSurvives = useMemoBinding.variable.references.some(
     (reference) => !convertedReferences.has(reference.identifier),
   );
@@ -440,6 +464,8 @@ function planConversion(
   return {
     calleeName,
     fixable,
+    // The carrier is the first violation whose fix actually survives, so a
+    // suppressed leading violation cannot take the import edit down with it.
     importOwner: fixableCandidates[0].node,
     importFixes: (fixer) => {
       if (shouldAdd && shouldRemove) {
