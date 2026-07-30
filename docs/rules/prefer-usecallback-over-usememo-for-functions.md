@@ -93,12 +93,51 @@ const cb = useCallback(() => {}, []);
 
 Specifics:
 
-- `useCallback` is added to the same declaration `useMemo` was imported from, so `preact/hooks` and similar packages are handled too.
+- `useCallback` is added to the same declaration `useMemo` was imported from.
 - The `useMemo` specifier is only dropped when no reference to it survives the fixes; a remaining `useMemo` call or value usage keeps it (`import { useMemo, useCallback } from 'react';`).
 - An already-imported `useCallback` is reused instead of duplicated, including an aliased one (`import { useCallback as uc }` produces `uc(...)` at the call site).
-- Files with no `useMemo` import (globals, test snippets) get the call rewritten without any import being inserted.
 - If a local binding named `useCallback` would capture the emitted call, the violation is reported without a fix.
 - The member-expression form (`React.useMemo(...)`) is not reported by this rule.
+
+### The autofix requires a `useMemo` it can vouch for
+
+The fix emits a call to `useCallback`, so it only runs when the `useMemo` being
+replaced is provably React's hook — that is what guarantees a `useCallback` with
+the same contract exists for the rewritten import to bind. Concretely, the callee
+must resolve to a **value** import of the name `useMemo` from `react`,
+`preact/hooks`, or `preact/compat` (preact's hooks are React's hooks by
+specification, which is what makes rewriting their specifier sound).
+
+Every other shape is **reported without a fix**:
+
+```jsx
+// left alone: the module need not export useCallback at all, and this useMemo
+// need not be React's — a deep-compare memo, say, does not survive the swap
+import { useMemo } from '../hooks';
+const cb = useMemo(() => () => {}, []); // reported, not fixed
+
+// left alone: a default import, a namespace member, a `require` destructure, a
+// type-only import, `default as useMemo`, or no import at all
+import useMemo from './use-memo';
+const cb = useMemo(() => () => {}, []); // reported, not fixed
+```
+
+Declining is deliberate rather than a limitation: rewriting the call while
+leaving the import untouched used to emit a `useCallback` that nothing bound
+(`TS2304`), and renaming an unknown module's specifier would import a member that
+module may not export. A hook of unknown provenance is left for a human to
+convert.
+
+The same reasoning applies from the other side. When the name `useCallback` is
+already bound by an import from a module outside that set, no conversion in the
+file is fixed: reusing that binding would call a different function, and adding
+React's beside it would collide with a name already in scope.
+
+```jsx
+import { useMemo } from 'react';
+import { useCallback } from '../hooks';
+const cb = useMemo(() => () => {}, []); // reported, not fixed
+```
 
 ### Interaction with inline disable comments
 
