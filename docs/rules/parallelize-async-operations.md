@@ -13,6 +13,7 @@ Parallelizing independent awaits keeps total latency bounded by the slowest call
 Serializing independent async work stretches response time and wastes compute billed per millisecond. Running the calls together lets the runtime issue network or I/O requests concurrently while you preserve clarity by destructuring the results.
 
 The rule reports when all of these are true:
+- The file is not a **test file** (`.test.*`, `.spec.*`, or under `__tests__/` / `__mocks__/`), whose awaits encode ordering rather than latency.
 - Two or more awaits or await-based variable declarations appear consecutively.
 - Later awaits do not reference identifiers created by earlier awaits (direct identifier reference-based dependency check).
 - Later awaits do not share "coordinator" identifiers (like `batchManager`, `transaction`, or `collector`) with earlier awaits.
@@ -111,6 +112,20 @@ Navigation is detected two ways, both case-insensitive:
 - The callee's own method name **starts with** a navigation verb: `push`, `replace`, `navigate`, `redirect`, `reroute`, `goto`. Suffixed forms like `navigateTo()` or `redirectToLogin()` match; a name that merely contains one (`getPushToken()`, `fetchRedirectRules()`) does not.
 - The callee's receiver is exactly `router`, `history`, `navigation`, or `nav`, which makes every method on it navigation (`router.back()`, `history.go(-1)`). Keying on the receiver avoids matching the remaining history verbs bare, since `back`, `forward`, and `go` are too generic. The match is exact, so `navigator.getBattery()` and `historyLog.append(entry)` are still flagged.
 
+### ✅ Correct (test files are exempt)
+
+Test files are skipped entirely. A test suite serves no requests and is not latency-critical, so the rule's rationale — that sequential awaits make network and I/O latency add up — does not apply to it. Its awaits instead encode **ordering**: an awaited assertion observes the DOM or server state produced by a preceding awaited interaction. That dependency is a side effect rather than a value, so it is invisible to every barrier above, and `Promise.all([...])` would race the assertion against the interaction.
+
+```typescript
+// src/components/__tests__/PasswordResetButton.test.tsx — not reported
+await userEvent.click(screen.getByText('Forgot password?'));
+await waitFor(() => {
+  expect(screen.getByText(/reset email will arrive shortly/i)).toBeInTheDocument();
+});
+```
+
+A file counts as a test file when its path ends in `.test.` / `.spec.` followed by a JS/TS extension (`.ts`, `.tsx`, `.js`, `.jsx`, `.mts`, `.cts`, ...), or when it sits under a `__tests__/` or `__mocks__/` path segment. Matching is anchored, so production modules that merely contain the word (`testHelpers.ts`, `latest.ts`, `contest/Thing.ts`, `foo.test.helper.ts`) keep their enforcement. Set the `ignoreTestFiles` option to `false` to enforce inside test files anyway.
+
 ### ✅ Correct (with assignments)
 
 ```typescript
@@ -158,6 +173,8 @@ An array of string, glob, or regex patterns (type: `string[]`) that customizes w
 - `flush`
 - `saveall`
 
+Supplying the option **replaces** this list; supplying any other option leaves it intact.
+
 **Example configuration:**
 ```json
 {
@@ -166,6 +183,24 @@ An array of string, glob, or regex patterns (type: `string[]`) that customizes w
       "error",
       {
         "sideEffectPatterns": ["save.*", "commit.*"]
+      }
+    ]
+  }
+}
+```
+
+### `ignoreTestFiles`
+
+A boolean (default: `true`) that exempts test files from the rule, as described in [Test files are exempt](#-correct-test-files-are-exempt). Set it to `false` to enforce `Promise.all` inside `.test.*` / `.spec.*` files and `__tests__/` / `__mocks__/` directories as well.
+
+**Example configuration:**
+```json
+{
+  "rules": {
+    "@blumintinc/blumint/parallelize-async-operations": [
+      "error",
+      {
+        "ignoreTestFiles": false
       }
     ]
   }

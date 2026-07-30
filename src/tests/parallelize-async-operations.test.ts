@@ -1,3 +1,4 @@
+import { ESLint, Rule } from 'eslint';
 import { parallelizeAsyncOperations } from '../rules/parallelize-async-operations';
 import { ruleTesterTs } from '../utils/ruleTester';
 
@@ -12,6 +13,27 @@ const error = (awaitCount: number) => ({
   data: { awaitCount: awaitCount.toString() },
 });
 
+// An awaited interaction followed by an awaited assertion that observes its
+// side effect. No value flows between them, so every syntactic barrier in the
+// rule considers them independent; only the filename distinguishes a test from
+// production code. Reused across the test-file exemption cases so the filename
+// is the ONLY variable. (#1395)
+const ORDER_DEPENDENT_AWAITS = `
+async function submit() {
+  await userEvent.click(screen.getByText('go'));
+  await waitFor(() => { expect(screen.getByText('done')).toBeInTheDocument(); });
+}
+`;
+
+const ORDER_DEPENDENT_AWAITS_FIXED = `
+async function submit() {
+  await Promise.all([
+  userEvent.click(screen.getByText('go')),
+  waitFor(() => { expect(screen.getByText('done')).toBeInTheDocument(); })
+]);
+}
+`;
+
 // Simple test that will always pass
 test('parallelize-async-operations rule exists', () => {
   expect(parallelizeAsyncOperations).toBeDefined();
@@ -21,6 +43,77 @@ test('parallelize-async-operations message explains why and how to fix', () => {
   expect(formatMessage(2)).toBe(
     'Awaiting 2 independent async operations sequentially makes their network and I/O latency add up, which slows responses and wastes compute. These awaits have no data dependency or per-call error handling, so run them together with Promise.all([...]) and destructure the results when you need individual values.',
   );
+});
+
+// `flush` is one of the rule's built-in side-effect patterns, so this pair is a
+// barrier and must not be reported -- unless those built-in patterns get lost.
+const BUILT_IN_SIDE_EFFECT_CODE = `
+async function persist(entry) {
+  await writeEntry(entry);
+  await flush();
+}
+`;
+
+/**
+ * Lints through the ESLint class rather than RuleTester because only the ESLint
+ * class validates rule options with ajv's `useDefaults`, which is what writes
+ * schema defaults into the supplied options object. RuleTester cannot observe
+ * this failure mode at all.
+ */
+const lintProductionFile = async (options?: Record<string, unknown>) => {
+  const eslint = new ESLint({
+    useEslintrc: false,
+    ignore: false,
+    overrideConfig: {
+      parser: require.resolve('@typescript-eslint/parser'),
+      parserOptions: { ecmaVersion: 2022, sourceType: 'module' },
+      plugins: ['blumint'],
+      rules: {
+        'blumint/parallelize-async-operations': options
+          ? ['error', options]
+          : 'error',
+      },
+    },
+    plugins: {
+      blumint: {
+        rules: {
+          'parallelize-async-operations':
+            parallelizeAsyncOperations as unknown as Rule.RuleModule,
+        },
+      },
+    },
+  });
+  const [result] = await eslint.lintText(BUILT_IN_SIDE_EFFECT_CODE, {
+    filePath: 'src/util/persist.ts',
+  });
+  return result.messages;
+};
+
+// Supplying an options object must not discard the rule's own side-effect
+// pattern defaults. A schema-level `default: []` would be written into the
+// user's options by ESLint's ajv instance and then win the merge against
+// `defaultOptions`, silently dropping `commit`/`flush`/counter barriers and
+// reporting the sequences they exist to protect. (#1395)
+test('sideEffectPatterns declares no schema default that could erase the built-in patterns', () => {
+  const properties = (
+    parallelizeAsyncOperations.meta.schema as [
+      { properties: Record<string, Record<string, unknown>> },
+    ]
+  )[0].properties;
+  expect(properties.sideEffectPatterns.default).toBeUndefined();
+  expect(properties.ignoreTestFiles.default).toBeUndefined();
+});
+
+test('built-in side-effect patterns survive an explicit options object', async () => {
+  expect(await lintProductionFile()).toHaveLength(0);
+  expect(await lintProductionFile({})).toHaveLength(0);
+  expect(await lintProductionFile({ ignoreTestFiles: false })).toHaveLength(0);
+});
+
+test('the side-effect barrier is what suppresses the control snippet', async () => {
+  // Clearing the patterns explicitly is the caller's own choice, and proves the
+  // snippet is otherwise reportable -- so the assertions above are not vacuous.
+  expect(await lintProductionFile({ sideEffectPatterns: [] })).toHaveLength(1);
 });
 
 ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
@@ -803,6 +896,83 @@ async function capturedNavigationResult(url) {
   await acceptPending();
 }
 `,
+    // Test files are exempt: an awaited assertion observes the DOM state a
+    // preceding awaited interaction produces, so the ordering is load-bearing
+    // and the latency rationale does not apply. (#1395)
+    {
+      code: `
+it('shows the message', async () => {
+  await userEvent.click(screen.getByText('go'));
+  await waitFor(() => { expect(screen.getByText('done')).toBeInTheDocument(); });
+});
+`,
+      filename: 'src/components/Thing.test.tsx',
+    },
+    // Every recognized test-file shape, with the code held constant. (#1395)
+    {
+      code: ORDER_DEPENDENT_AWAITS,
+      filename: 'src/hooks/useThing.test.ts',
+    },
+    {
+      code: ORDER_DEPENDENT_AWAITS,
+      filename: 'src/components/Thing.test.tsx',
+    },
+    {
+      code: ORDER_DEPENDENT_AWAITS,
+      filename: 'src/hooks/useThing.spec.ts',
+    },
+    {
+      code: ORDER_DEPENDENT_AWAITS,
+      filename: 'src/components/Thing.spec.tsx',
+    },
+    {
+      code: ORDER_DEPENDENT_AWAITS,
+      filename: 'src/legacy/thing.test.js',
+    },
+    {
+      code: ORDER_DEPENDENT_AWAITS,
+      filename: 'src/legacy/thing.spec.jsx',
+    },
+    // ESM/CJS TypeScript extensions carry the same suffix. (#1395)
+    {
+      code: ORDER_DEPENDENT_AWAITS,
+      filename: 'src/hooks/useThing.test.mts',
+    },
+    // Multi-part suffixes still end in `.test.ts`. (#1395)
+    {
+      code: ORDER_DEPENDENT_AWAITS,
+      filename: 'functions/src/util/EventRegistry.integration.test.ts',
+    },
+    // Jest convention directories exempt their contents regardless of filename.
+    {
+      code: ORDER_DEPENDENT_AWAITS,
+      filename: 'src/components/__tests__/Thing.ts',
+    },
+    {
+      code: ORDER_DEPENDENT_AWAITS,
+      filename: 'src/__mocks__/firebase.ts',
+    },
+    // A `__tests__` segment anywhere in the path counts, including nested
+    // subdirectories beneath it. (#1395)
+    {
+      code: ORDER_DEPENDENT_AWAITS,
+      filename: 'src/a/__tests__/b/c.ts',
+    },
+    // A leading `__tests__/` segment matches the start-of-path alternative.
+    {
+      code: ORDER_DEPENDENT_AWAITS,
+      filename: '__tests__/setup.ts',
+    },
+    // Absolute monorepo paths are the real-world shape reported by ESLint.
+    {
+      code: ORDER_DEPENDENT_AWAITS,
+      filename: '/workspace/src/components/__tests__/Thing.tsx',
+    },
+    // Windows separators are normalized, so the directory check holds there.
+    {
+      code: ORDER_DEPENDENT_AWAITS,
+      filename: 'C:\\repo\\src\\__tests__\\Thing.ts',
+    },
   ],
   invalid: [
     // Control: different receivers, genuinely independent -> still flagged.
@@ -1777,6 +1947,66 @@ async function capturedNavigationResult(url) {
 ]);
       }
       `,
+    },
+
+    // Control for the test-file exemption: the identical code in a production
+    // module still reports, so the exemption keys on the filename alone. (#1395)
+    {
+      code: ORDER_DEPENDENT_AWAITS,
+      filename: 'src/hooks/useThing.ts',
+      errors: [error(2)],
+      output: ORDER_DEPENDENT_AWAITS_FIXED,
+    },
+    // Production modules whose names merely contain "test"/"spec" keep their
+    // enforcement: the exemption matches anchored suffixes and whole path
+    // segments, not a bare substring. (#1395)
+    {
+      code: ORDER_DEPENDENT_AWAITS,
+      filename: 'src/util/testHelpers.ts',
+      errors: [error(2)],
+      output: ORDER_DEPENDENT_AWAITS_FIXED,
+    },
+    {
+      code: ORDER_DEPENDENT_AWAITS,
+      filename: 'src/util/latest.ts',
+      errors: [error(2)],
+      output: ORDER_DEPENDENT_AWAITS_FIXED,
+    },
+    {
+      code: ORDER_DEPENDENT_AWAITS,
+      filename: 'src/contest/Thing.ts',
+      errors: [error(2)],
+      output: ORDER_DEPENDENT_AWAITS_FIXED,
+    },
+    {
+      code: ORDER_DEPENDENT_AWAITS,
+      filename: 'src/inspector/specialize.ts',
+      errors: [error(2)],
+      output: ORDER_DEPENDENT_AWAITS_FIXED,
+    },
+    // `.test.` must be the final suffix: a helper module named
+    // `foo.test.helper.ts` ships production code. (#1395)
+    {
+      code: ORDER_DEPENDENT_AWAITS,
+      filename: 'src/util/foo.test.helper.ts',
+      errors: [error(2)],
+      output: ORDER_DEPENDENT_AWAITS_FIXED,
+    },
+    // A directory that merely starts with `__tests__` is not the Jest
+    // convention directory. (#1395)
+    {
+      code: ORDER_DEPENDENT_AWAITS,
+      filename: 'src/__tests__helpers/Thing.ts',
+      errors: [error(2)],
+      output: ORDER_DEPENDENT_AWAITS_FIXED,
+    },
+    // Consumers can opt back into enforcement inside test files. (#1395)
+    {
+      code: ORDER_DEPENDENT_AWAITS,
+      filename: 'src/components/Thing.test.tsx',
+      options: [{ ignoreTestFiles: false }],
+      errors: [error(2)],
+      output: ORDER_DEPENDENT_AWAITS_FIXED,
     },
   ],
 });
