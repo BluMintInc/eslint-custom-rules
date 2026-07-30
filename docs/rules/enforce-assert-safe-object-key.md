@@ -54,6 +54,23 @@ const b = objB[safeKey];
 const c = objC[safeKey];
 ```
 
+### Interaction with inline disable comments
+
+The `import { assertSafe } from '...';` statement is added once per file,
+attached to the fix of the first violation that is **not** suppressed by an
+inline `eslint-disable` directive. Suppressing an individual key access
+therefore never strands the remaining `assertSafe(...)` calls without their
+import:
+
+```js
+const obj = { alpha: 1, beta: 2 };
+
+// eslint-disable-next-line @blumintinc/blumint/enforce-assert-safe-object-key
+const first = obj[id]; // left alone
+
+const second = obj[id]; // fixed, and carries the import
+```
+
 ## Options
 
 - `assertSafeImportPath` (string, default: `functions/src/util/assertSafe`): the location of the `assertSafe` helper, given as a path anchored at the repo root (relative to the working directory eslint runs from). The fixer derives a specifier relative to the file being fixed from this value rather than emitting it verbatim, so the inserted import resolves from any nesting depth. Set this to your helper's repo-root-relative path when consuming the plugin outside BluMint.

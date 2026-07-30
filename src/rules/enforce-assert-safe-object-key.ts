@@ -2,6 +2,7 @@ import path from 'path';
 import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
+import { createSuppressionChecker } from '../utils/disableDirectives';
 
 type MessageIds = 'useAssertSafe';
 type Options = [
@@ -40,6 +41,14 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
   create(context, [options]) {
     const importPath = options?.assertSafeImportPath || DEFAULT_IMPORT_PATH;
     let hasAssertSafeImport = false;
+
+    /**
+     * The `import { assertSafe }` statement rides on a single violation's fix,
+     * making that violation the file's import carrier. A suppressed carrier
+     * would take the import down with it while the surviving violations still
+     * emit `assertSafe(...)`, leaving the call unbound.
+     */
+    const isReportSuppressed = createSuppressionChecker(context);
 
     /**
      * Computes the module specifier for the injected assertSafe import.
@@ -117,12 +126,22 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       return fixes;
     };
 
+    // The report is emitted even when suppressed: ESLint discards it, and
+    // reporting keeps the user's disable directive "used" so that
+    // `--report-unused-disable-directives` does not flag it.
     const reportUseAssertSafe = (node: TSESTree.Node, expressionText: string) =>
       context.report({
         node,
         messageId: 'useAssertSafe',
         data: { key: expressionText },
         fix(fixer) {
+          // A suppressed report is dropped together with its fix. Producing no
+          // fix — and leaving the import unclaimed — passes the carrier slot to
+          // the first violation that survives.
+          if (isReportSuppressed(node)) {
+            return null;
+          }
+
           return createFixes(fixer, node, expressionText);
         },
       });
