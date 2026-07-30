@@ -6,6 +6,7 @@ import {
   TSESLint,
 } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds = 'preferGlobalRouterStateKey' | 'invalidQueryKeySource';
 
@@ -173,6 +174,45 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
      */
     function isValidQueryKeyConstant(name: string): boolean {
       return name.startsWith('QUERY_KEY_');
+    }
+
+    /**
+     * Whether every declaration of a visible binding is the very import the fix
+     * wants to reference: a value `ImportSpecifier` of `constant` taken from
+     * queryKeys.ts, under any local name. Read off the specifier nodes the scope
+     * points at rather than off the traversal maps, so an import written below
+     * the call site — which the `ImportDeclaration` visitor has not recorded by
+     * the time the fix runs — is recognized instead of duplicated.
+     *
+     * Any other binding (a local declaration, a parameter, an alias of a
+     * different export, a type-only specifier) means a bare reference to the
+     * name would resolve somewhere other than the constant.
+     */
+    function bindsQueryKeyConstant(
+      variable: TSESLint.Scope.Variable,
+      constant: string,
+    ): boolean {
+      return (
+        variable.defs.length > 0 &&
+        variable.defs.every((def) => {
+          const specifier = def.node as TSESTree.Node;
+          if (
+            specifier.type !== AST_NODE_TYPES.ImportSpecifier ||
+            specifier.importKind === 'type' ||
+            specifier.imported.name !== constant
+          ) {
+            return false;
+          }
+          const declaration = specifier.parent;
+          return (
+            declaration?.type === AST_NODE_TYPES.ImportDeclaration &&
+            declaration.importKind !== 'type' &&
+            declaration.source.type === AST_NODE_TYPES.Literal &&
+            typeof declaration.source.value === 'string' &&
+            isQueryKeysSource(declaration.source.value)
+          );
+        })
+      );
     }
 
     /**
@@ -507,6 +547,34 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                                   suggestedConstant,
                                 );
 
+                            // A binding that already owns the emitted name
+                            // makes both halves of the edit wrong: the inserted
+                            // import becomes a second declaration of it
+                            // (TS2440/TS2300), and a shadowing local or
+                            // parameter captures the bare reference with no
+                            // diagnostic at all. Resolving through the scope
+                            // chain at the literal rather than the module scope
+                            // is what exposes such a shadow. Declining leaves
+                            // the report in place for the author to resolve.
+                            // The qualified `alias.CONSTANT` form reaches the
+                            // constant through the alias and claims no name of
+                            // its own.
+                            const visibleBinding = importAlias
+                              ? null
+                              : ASTHelpers.findVariableInScope(
+                                  ASTHelpers.getScope(context, keyValue),
+                                  replacementText,
+                                );
+                            const bindingIsQueryKeyImport =
+                              visibleBinding !== null &&
+                              bindsQueryKeyConstant(
+                                visibleBinding,
+                                suggestedConstant,
+                              );
+                            if (visibleBinding && !bindingIsQueryKeyImport) {
+                              return null;
+                            }
+
                             // 1) Replace the literal with the constant (qualify if alias exists)
                             fixes.push(
                               fixer.replaceText(keyValue, replacementText),
@@ -519,6 +587,13 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                               !existingNamedImport &&
                               !hasNamespaceOrDefault
                             ) {
+                              // The name resolves to the very import this fix
+                              // would write — one declared below this call site,
+                              // which the traversal maps miss — so the
+                              // replacement alone is the complete edit.
+                              if (bindingIsQueryKeyImport) {
+                                return fixes;
+                              }
                               if (
                                 scheduledQueryKeyNamedImports.has(
                                   suggestedConstant,
