@@ -18,6 +18,8 @@ This rule flags `useState` calls where the state value is intentionally discarde
 
 Use a ref or restructure the logic when you only need a mutable holder without triggering stateful re-renders. Keep the `useState` pair when both the value and setter are meaningful to the component.
 
+An `_` prefix is a naming convention, not proof that the binding is dead: the rule resolves the value binding through the scope manager and stays silent when the value is actually read.
+
 ### ❌ Incorrect
 
 ```jsx
@@ -35,9 +37,30 @@ return <div onClick={() => setCount(prev => prev + 1)}>{count}</div>;
 ```
 
 ```jsx
+// The underscore name is irrelevant when the value is consumed
+const [_, setValue] = useState('');
+return <input value={_} onChange={(e) => setValue(e.target.value)} />;
+```
+
+```jsx
 // When only a mutable holder is needed, prefer useRef instead of unused state
 const rerenderCount = useRef(0);
 rerenderCount.current += 1;
+```
+
+## Autofix Scope
+
+The autofix deletes the declaration **only when every binding it introduces is unreferenced** — the discarded value *and* the setter (plus any rest binding). Deleting a declaration whose setter is still called would strand the call sites and break the component, so that shape is reported without a fix and left for a human to convert to `useRef`, a derived value, or a prop callback.
+
+```jsx
+// Fixable: nothing references either binding, so the pair is dead code
+const [_, setUnused] = useState(0);
+```
+
+```jsx
+// Reported but not fixed: setCount is live, so the declaration must stay
+const [_, setCount] = useState(0);
+useEffect(() => subscribe(setCount), []);
 ```
 
 ## When Not To Use It
