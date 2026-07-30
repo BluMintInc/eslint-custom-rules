@@ -329,5 +329,94 @@ const firebaseConfig = (await import('../../config/firebase-client')).default;
 return firebaseConfig;
 }`,
     },
+    // A pre-existing module-scope `FirebaseApp` binding makes the hoisted
+    // `import type` a duplicate identifier (TS2440/TS2300), so the violation
+    // is reported without an autofix
+    {
+      code: `const FirebaseApp = undefined as unknown as never;
+async function loadApp() {
+import firebase, { type FirebaseApp } from 'firebase/app';
+const app: FirebaseApp = firebase.app();
+return app;
+}`,
+      errors: [dynamicImportError('firebase/app')],
+      output: `const FirebaseApp = undefined as unknown as never;
+async function loadApp() {
+import firebase, { type FirebaseApp } from 'firebase/app';
+const app: FirebaseApp = firebase.app();
+return app;
+}`,
+    },
+    // The guard checks the local name an aliased specifier binds, not the
+    // imported name: `type User as FirebaseUser` collides with `FirebaseUser`
+    {
+      code: `const FirebaseUser = undefined as unknown as never;
+async function loadUser() {
+import { getAuth, type User as FirebaseUser } from 'firebase/auth';
+const user: FirebaseUser | null = getAuth().currentUser;
+return user;
+}`,
+      errors: [dynamicImportError('firebase/auth')],
+      output: `const FirebaseUser = undefined as unknown as never;
+async function loadUser() {
+import { getAuth, type User as FirebaseUser } from 'firebase/auth';
+const user: FirebaseUser | null = getAuth().currentUser;
+return user;
+}`,
+    },
+    // A narrower-scope shadow raises no TypeScript diagnostic yet silently
+    // binds the hoisted type to the wrong declaration, so it declines too
+    {
+      code: `async function loadFirestore() {
+class Firestore {}
+import { getFirestore, type Firestore } from 'firebase/firestore';
+const db: Firestore = getFirestore();
+return db;
+}`,
+      errors: [dynamicImportError('firebase/firestore')],
+      output: `async function loadFirestore() {
+class Firestore {}
+import { getFirestore, type Firestore } from 'firebase/firestore';
+const db: Firestore = getFirestore();
+return db;
+}`,
+    },
+    // Only the colliding name matters for the whole-fix decline: a partial fix
+    // that applied the dynamic import but skipped the hoist would strand the
+    // type reference
+    {
+      code: `const Auth = undefined as unknown as never;
+async function loadAuth() {
+import { getAuth, type Auth, type User } from 'firebase/auth';
+const auth: Auth = getAuth();
+const user: User | null = auth.currentUser;
+return user;
+}`,
+      errors: [dynamicImportError('firebase/auth')],
+      output: `const Auth = undefined as unknown as never;
+async function loadAuth() {
+import { getAuth, type Auth, type User } from 'firebase/auth';
+const auth: Auth = getAuth();
+const user: User | null = auth.currentUser;
+return user;
+}`,
+    },
+    // An identical module-scope `import type` is the desired binding already:
+    // reuse it rather than inserting a duplicate declaration
+    {
+      code: `import type { Firestore } from 'firebase/firestore';
+async function initFirestore() {
+import { getFirestore, type Firestore } from 'firebase/firestore';
+const db: Firestore = getFirestore();
+return db;
+}`,
+      errors: [dynamicImportError('firebase/firestore')],
+      output: `import type { Firestore } from 'firebase/firestore';
+async function initFirestore() {
+const { getFirestore } = await import('firebase/firestore');
+const db: Firestore = getFirestore();
+return db;
+}`,
+    },
   ],
 });
