@@ -843,6 +843,107 @@ function areDifferent(a, b) {
   return !isEqual(a, b);
 }`,
     },
+    // Issue #1435: a pre-existing `isEqual` binding makes the import unsafe to
+    // insert, so the violation is reported without an autofix.
+    {
+      name: 'a top-scope isEqual binding declines the fix',
+      code: `const isEqual = undefined as unknown as never;
+import diff from 'microdiff';
+
+function eq(a, b) {
+  return 0 === diff(a, b).length;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `const isEqual = undefined as unknown as never;
+import diff from 'microdiff';
+
+function eq(a, b) {
+  return 0 === diff(a, b).length;
+}`,
+    },
+    // Issue #1435: a narrower-scope shadow raises no TypeScript diagnostic, so
+    // the emitted call would silently bind to the local value.
+    {
+      name: 'a function-scoped isEqual shadow declines the fix',
+      code: `import diff from 'microdiff';
+
+function eq(a, b) {
+  const isEqual = a === b;
+  return diff(a, b).length === 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+
+function eq(a, b) {
+  const isEqual = a === b;
+  return diff(a, b).length === 0;
+}`,
+    },
+    {
+      name: 'an isEqual parameter shadow declines the fix',
+      code: `import diff from 'microdiff';
+
+function eq(a, b, isEqual) {
+  return !diff(a, b).length;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+
+function eq(a, b, isEqual) {
+  return !diff(a, b).length;
+}`,
+    },
+    // Issue #1435: declining must drop the whole fix, including the removal of
+    // the redundant diff variable, rather than leave a half-applied edit.
+    {
+      name: 'a colliding binding keeps the redundant diff variable in place',
+      code: `const isEqual = undefined as unknown as never;
+import diff from 'microdiff';
+
+function eq(a, b) {
+  const changes = diff(a, b);
+  return changes.length === 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `const isEqual = undefined as unknown as never;
+import diff from 'microdiff';
+
+function eq(a, b) {
+  const changes = diff(a, b);
+  return changes.length === 0;
+}`,
+    },
+    // Issue #1435: the guard is per violation — a shadow in one function must
+    // not disarm the rule for the rest of the file, and the declining violation
+    // must not consume the import-carrier slot.
+    {
+      name: 'a shadow in one function still lets another violation carry the import',
+      code: `import diff from 'microdiff';
+
+function shadowed(a, b) {
+  const isEqual = a === b;
+  return diff(a, b).length === 0;
+}
+
+function clean(a, b) {
+  return diff(a, b).length !== 0;
+}`,
+      errors: [
+        { messageId: 'useFastDeepEqual', data: messageData() },
+        { messageId: 'useFastDeepEqual', data: messageData() },
+      ],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function shadowed(a, b) {
+  const isEqual = a === b;
+  return diff(a, b).length === 0;
+}
+
+function clean(a, b) {
+  return !isEqual(a, b);
+}`,
+    },
   ],
 });
 
@@ -1058,6 +1159,48 @@ function areDifferent(a, b) {
       output.match(/import isEqual from 'fast-deep-equal';/g),
     ).toHaveLength(1);
     expect(output).toContain('return !isEqual(a, b);');
+    expectNoUnboundIsEqual(output);
+  });
+
+  // Issue #1435: an existing `isEqual` binding makes the import unsafe, and the
+  // multi-pass fixer is where the duplicate declaration was actually written.
+  it('leaves a file that already binds isEqual untouched', () => {
+    const code = `const isEqual = undefined as unknown as never;
+import diff from 'microdiff';
+
+function eq(a, b) {
+  return 0 === diff(a, b).length;
+}
+`;
+
+    expect(lint(code)).toBe(code);
+  });
+
+  it('carries the import on a violation whose scope has no isEqual shadow', () => {
+    const output = lint(`import diff from 'microdiff';
+
+function shadowed(a, b) {
+  const isEqual = a === b;
+  return diff(a, b).length === 0;
+}
+
+function clean(a, b) {
+  return diff(a, b).length !== 0;
+}
+`);
+
+    expect(output).toBe(`import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function shadowed(a, b) {
+  const isEqual = a === b;
+  return diff(a, b).length === 0;
+}
+
+function clean(a, b) {
+  return !isEqual(a, b);
+}
+`);
     expectNoUnboundIsEqual(output);
   });
 });
