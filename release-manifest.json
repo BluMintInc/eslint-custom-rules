@@ -1,5 +1,108 @@
 [
   {
+    "version": "1.20.26",
+    "date": "2026-07-30T06:12:23.979Z",
+    "rules": [
+      {
+        "name": "enforce-assert-safe-object-key",
+        "changeType": "fix",
+        "issues": [
+          1408
+        ],
+        "summary": "keep the assertSafe import when the carrier violation is disabled inline (closes #1408)"
+      },
+      {
+        "name": "enforce-memoize-async",
+        "changeType": "fix",
+        "issues": [
+          1404
+        ],
+        "summary": "keep the Memoize import when the carrier violation is disabled (closes #1404)"
+      },
+      {
+        "name": "enforce-memoize-getters",
+        "changeType": "fix",
+        "issues": [
+          1409
+        ],
+        "summary": "keep the Memoize import when the carrier violation is disabled inline (closes #1409)"
+      },
+      {
+        "name": "enforce-querykey-ts",
+        "changeType": "fix",
+        "issues": [
+          1410
+        ],
+        "summary": "exclude suppressed reports from the import plan and carrier choice (closes #1410)"
+      },
+      {
+        "name": "enforce-stable-hash-spread-props",
+        "changeType": "fix",
+        "issues": [
+          1413
+        ],
+        "summary": "keep the stableHash import when the carrier violation is disabled inline (closes #1413)"
+      },
+      {
+        "name": "fast-deep-equal-over-microdiff",
+        "changeType": "fix",
+        "issues": [
+          1415
+        ],
+        "summary": "keep the isEqual import when the carrier violation is disabled inline (closes #1415)"
+      },
+      {
+        "name": "logical-top-to-bottom-grouping",
+        "changeType": "fix",
+        "issues": [
+          1405
+        ],
+        "summary": "emit a fully-satisfying reordering as one fix (closes #1405)"
+      },
+      {
+        "name": "no-array-length-in-deps",
+        "changeType": "fix",
+        "issues": [
+          1412
+        ],
+        "summary": "keep both planned imports when the carrier violation is disabled inline (closes #1412)"
+      },
+      {
+        "name": "prefer-fragment-component",
+        "changeType": "fix",
+        "issues": [
+          1407
+        ],
+        "summary": "keep the Fragment import when the carrier violation is disabled inline (closes #1407)"
+      },
+      {
+        "name": "prefer-type-over-interface",
+        "changeType": "fix",
+        "issues": [
+          1403,
+          1406
+        ],
+        "summary": "join heritage clauses with `&` in the autofix (closes #1406); insert `=` after the type parameters (closes #1403)"
+      },
+      {
+        "name": "prefer-usecallback-over-usememo-for-functions",
+        "changeType": "fix",
+        "issues": [
+          1411
+        ],
+        "summary": "exclude suppressed violations from the conversion plan (closes #1411)"
+      },
+      {
+        "name": "require-memoize-jsx-returners",
+        "changeType": "fix",
+        "issues": [
+          1414
+        ],
+        "summary": "keep the Memoize import when the carrier violation is disabled inline (closes #1414)"
+      }
+    ]
+  },
+  {
     "version": "1.20.25",
     "date": "2026-07-30T02:59:17.229Z",
     "rules": [

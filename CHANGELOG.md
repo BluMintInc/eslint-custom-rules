@@ -1,3 +1,22 @@
+## [1.20.26](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.25...v1.20.26) (2026-07-30)
+
+
+### Bug Fixes
+
+* **enforce-assert-safe-object-key:** keep the assertSafe import when the carrier violation is disabled inline (closes [#1408](https://github.com/BluMintInc/eslint-custom-rules/issues/1408)) ([5dd4add](https://github.com/BluMintInc/eslint-custom-rules/commit/5dd4addc8c940de448fc4e282afbe00ddae0c80f))
+* **enforce-memoize-async:** keep the Memoize import when the carrier violation is disabled (closes [#1404](https://github.com/BluMintInc/eslint-custom-rules/issues/1404)) ([56b5b6b](https://github.com/BluMintInc/eslint-custom-rules/commit/56b5b6b4eaef4dcf16dc7a469895457d5b1a3f7b))
+* **enforce-memoize-getters:** keep the Memoize import when the carrier violation is disabled inline (closes [#1409](https://github.com/BluMintInc/eslint-custom-rules/issues/1409)) ([dae59c6](https://github.com/BluMintInc/eslint-custom-rules/commit/dae59c66dae575f0c44a29fe830dca6ff9925c1c))
+* **enforce-querykey-ts:** exclude suppressed reports from the import plan and carrier choice (closes [#1410](https://github.com/BluMintInc/eslint-custom-rules/issues/1410)) ([293d523](https://github.com/BluMintInc/eslint-custom-rules/commit/293d5235ed9db0e715714615f76ffedeccf27a32))
+* **enforce-stable-hash-spread-props:** keep the stableHash import when the carrier violation is disabled inline (closes [#1413](https://github.com/BluMintInc/eslint-custom-rules/issues/1413)) ([e205f76](https://github.com/BluMintInc/eslint-custom-rules/commit/e205f76e9378e3ac0ea394a8fa17848399ad9a4e))
+* **fast-deep-equal-over-microdiff:** keep the isEqual import when the carrier violation is disabled inline (closes [#1415](https://github.com/BluMintInc/eslint-custom-rules/issues/1415)) ([5c17bee](https://github.com/BluMintInc/eslint-custom-rules/commit/5c17bee32ab07005741e50fa44e9ac620c93db24))
+* **logical-top-to-bottom-grouping:** emit a fully-satisfying reordering as one fix (closes [#1405](https://github.com/BluMintInc/eslint-custom-rules/issues/1405)) ([fc21359](https://github.com/BluMintInc/eslint-custom-rules/commit/fc21359708ca65acefd24988345157fb0a275723))
+* **no-array-length-in-deps:** keep both planned imports when the carrier violation is disabled inline (closes [#1412](https://github.com/BluMintInc/eslint-custom-rules/issues/1412)) ([b3d131b](https://github.com/BluMintInc/eslint-custom-rules/commit/b3d131bb9951d22f5551d60a0bae75f56883e279))
+* **prefer-fragment-component:** keep the Fragment import when the carrier violation is disabled inline (closes [#1407](https://github.com/BluMintInc/eslint-custom-rules/issues/1407)) ([484272b](https://github.com/BluMintInc/eslint-custom-rules/commit/484272b7f935340851987732594c092795f6ce9a))
+* **prefer-type-over-interface:** insert `=` after the type parameters (closes [#1403](https://github.com/BluMintInc/eslint-custom-rules/issues/1403)) ([4651cef](https://github.com/BluMintInc/eslint-custom-rules/commit/4651cefaac5794ff46201fdf5de8f5ce5ad4ebd5))
+* **prefer-type-over-interface:** join heritage clauses with `&` in the autofix (closes [#1406](https://github.com/BluMintInc/eslint-custom-rules/issues/1406)) ([7521a8f](https://github.com/BluMintInc/eslint-custom-rules/commit/7521a8fb48632f0630acc224598e50798cfea80c))
+* **prefer-usecallback-over-usememo-for-functions:** exclude suppressed violations from the conversion plan (closes [#1411](https://github.com/BluMintInc/eslint-custom-rules/issues/1411)) ([bd33a34](https://github.com/BluMintInc/eslint-custom-rules/commit/bd33a349efd2f402deae7b365b8bec3ba9012a39))
+* **require-memoize-jsx-returners:** keep the Memoize import when the carrier violation is disabled inline (closes [#1414](https://github.com/BluMintInc/eslint-custom-rules/issues/1414)) ([3e807b3](https://github.com/BluMintInc/eslint-custom-rules/commit/3e807b3b3dc8228b5504751eed7b1acf1a289f5a))
+
 ## [1.20.25](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.24...v1.20.25) (2026-07-30)
 
 
