@@ -1,6 +1,7 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import type { TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds = 'useLatestCallback';
 
@@ -8,6 +9,65 @@ type Conversion = {
   node: TSESTree.CallExpression;
   currentHook: string;
   callee: TSESTree.Identifier | null;
+  // The scope the rewritten call sits in, captured during traversal because
+  // the fix runs from Program:exit, where an ESLint version without
+  // sourceCode.getScope would only be able to report the global scope.
+  scope: TSESLint.Scope.Scope;
+};
+
+const LATEST_CALLBACK_MODULE = 'use-latest-callback';
+const LATEST_CALLBACK_HOOK = 'useLatestCallback';
+
+type LatestCallbackImport = {
+  specifier: TSESTree.ImportClause;
+  /** The local name the rewritten calls must spell to reach the hook. */
+  reference: string;
+};
+
+/**
+ * A specifier that binds the hook itself as a value. The module's sole export
+ * is the hook, so a default specifier binds it under any local name. A
+ * namespace specifier binds the module object rather than a callable, and a
+ * type-only specifier erases at compile time, so neither can carry the call.
+ */
+const bindsLatestCallback = (specifier: TSESTree.ImportClause): boolean => {
+  if (specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
+    return true;
+  }
+  return (
+    specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+    specifier.importKind !== 'type' &&
+    specifier.imported.type === AST_NODE_TYPES.Identifier &&
+    specifier.imported.name === LATEST_CALLBACK_HOOK
+  );
+};
+
+/**
+ * The hook's import read off `Program.body` rather than off a flag set by an
+ * ImportDeclaration visitor, so the answer holds wherever the import sits
+ * relative to the fix site. Reading the AST also exposes the shapes a
+ * name-only flag conflates with a usable binding: a namespace import, a
+ * type-only import, and a reverse alias
+ * (`import { other as useLatestCallback }`) each bind a name without binding
+ * the hook.
+ */
+const findLatestCallbackImport = (
+  program: TSESTree.Program,
+): LatestCallbackImport | null => {
+  for (const statement of program.body) {
+    if (
+      statement.type !== AST_NODE_TYPES.ImportDeclaration ||
+      statement.source.value !== LATEST_CALLBACK_MODULE ||
+      (statement.importKind && statement.importKind !== 'value')
+    ) {
+      continue;
+    }
+    const specifier = statement.specifiers.find(bindsLatestCallback);
+    if (specifier) {
+      return { specifier, reference: specifier.local.name };
+    }
+  }
+  return null;
 };
 
 export const useLatestCallback = createRule<[], MessageIds>({
@@ -33,9 +93,6 @@ export const useLatestCallback = createRule<[], MessageIds>({
       return {};
     }
 
-    // Track if the file already has a useLatestCallback import
-    let hasUseLatestCallbackImport = false;
-    let useLatestCallbackImportName = 'useLatestCallback';
     const useCallbackLocalNames = new Set<string>();
     const reactNamespaceNames = new Set<string>();
     const reactDefaultLikeNames = new Set<string>();
@@ -111,37 +168,7 @@ export const useLatestCallback = createRule<[], MessageIds>({
       ImportDeclaration(node: TSESTree.ImportDeclaration) {
         if (node.importKind && node.importKind !== 'value') return;
 
-        if (node.source.value === 'use-latest-callback') {
-          // Check if useLatestCallback is imported
-          const specifiers = node.specifiers.filter((specifier) => {
-            if (specifier.type === AST_NODE_TYPES.ImportSpecifier) {
-              return (
-                specifier.imported.type === AST_NODE_TYPES.Identifier &&
-                specifier.imported.name === 'useLatestCallback'
-              );
-            }
-            return (
-              specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
-              specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier
-            );
-          });
-
-          if (specifiers.length > 0) {
-            hasUseLatestCallbackImport = true;
-            // Get the local name of the import (in case it's renamed)
-            if (specifiers[0].type === AST_NODE_TYPES.ImportSpecifier) {
-              useLatestCallbackImportName = specifiers[0].local.name;
-            } else if (
-              specifiers[0].type === AST_NODE_TYPES.ImportDefaultSpecifier
-            ) {
-              useLatestCallbackImportName = specifiers[0].local.name;
-            } else if (
-              specifiers[0].type === AST_NODE_TYPES.ImportNamespaceSpecifier
-            ) {
-              useLatestCallbackImportName = `${specifiers[0].local.name}.useLatestCallback`;
-            }
-          }
-        } else if (node.source.value === 'react') {
+        if (node.source.value === 'react') {
           // Check if useCallback is imported from React
           const useCallbackSpecifiers = node.specifiers.filter((specifier) => {
             return (
@@ -239,6 +266,7 @@ export const useLatestCallback = createRule<[], MessageIds>({
                 node.callee.type === AST_NODE_TYPES.Identifier
                   ? node.callee
                   : null,
+              scope: ASTHelpers.getScope(context, node),
             });
           }
         }
@@ -334,26 +362,62 @@ export const useLatestCallback = createRule<[], MessageIds>({
             scope.variables.forEach((variable) => taken.add(variable.name));
             scope.childScopes.forEach(collectNames);
           };
-          collectNames(context.getScope());
+          collectNames(ASTHelpers.getScope(context, program));
 
-          let name = 'useLatestCallback';
+          let name = LATEST_CALLBACK_HOOK;
           let suffix = 2;
           while (taken.has(name)) {
-            name = `useLatestCallback${suffix++}`;
+            name = `${LATEST_CALLBACK_HOOK}${suffix++}`;
           }
           return name;
         };
 
+        const latestCallbackImport = findLatestCallbackImport(program);
+
         const useCallbackLocalName = specifiers[0]?.local.name ?? 'useCallback';
-        const recommendedHook = hasUseLatestCallbackImport
-          ? useLatestCallbackImportName
+        const recommendedHook = latestCallbackImport
+          ? latestCallbackImport.reference
           : hasSurvivingReference
           ? freeImportName()
           : useCallbackLocalName === 'useCallback'
-          ? 'useLatestCallback'
+          ? LATEST_CALLBACK_HOOK
           : useCallbackLocalName;
 
-        const importText = `import ${recommendedHook} from 'use-latest-callback';`;
+        const importText = `import ${recommendedHook} from '${LATEST_CALLBACK_MODULE}';`;
+
+        // The react specifiers this fix deletes stop binding their names, so a
+        // name that comes only from them is free for the rewritten calls to
+        // claim — that is how an aliased `useCallback as uc` hands `uc` over to
+        // the new import.
+        const releasedSpecifiers: TSESTree.Node[] =
+          hasSurvivingReference || specifiers.length === 0 ? [] : specifiers;
+
+        const claimableDefinitions = new Set<TSESTree.Node>(releasedSpecifiers);
+        if (latestCallbackImport) {
+          claimableDefinitions.add(latestCallbackImport.specifier);
+        }
+
+        // Whether the rewritten call reaches the hook rather than an unrelated
+        // binding of the same name. Resolving through the scope chain at each
+        // rewritten call catches both failure modes: a module-scope binding
+        // that the inserted import would redeclare (TS2440, or TS2300 against
+        // another import), and a narrower shadow that silently captures the
+        // call with no diagnostic at all.
+        const reachesHook = (conversion: Conversion) => {
+          const existing = ASTHelpers.findVariableInScope(
+            conversion.scope,
+            recommendedHook,
+          );
+          if (!existing) {
+            return true;
+          }
+          return (
+            existing.defs.length > 0 &&
+            existing.defs.every((def) =>
+              claimableDefinitions.has(def.node as TSESTree.Node),
+            )
+          );
+        };
 
         // The react import statement participates in the change set only when
         // it binds useCallback or anchors a React.useCallback member call.
@@ -368,7 +432,7 @@ export const useLatestCallback = createRule<[], MessageIds>({
           // A surviving reference (or a member-only file) leaves the react
           // import untouched; only the new import is added when missing.
           if (hasSurvivingReference || specifiers.length === 0) {
-            if (hasUseLatestCallbackImport) {
+            if (latestCallbackImport) {
               return [];
             }
             return [fixer.insertTextBefore(statement, `${importText}\n`)];
@@ -393,7 +457,7 @@ export const useLatestCallback = createRule<[], MessageIds>({
               : 'import';
 
           if (remainingNamed.length === 0 && !defaultOrNamespace) {
-            if (!hasUseLatestCallbackImport) {
+            if (!latestCallbackImport) {
               return [fixer.replaceText(statement, importText)];
             }
             return [fixer.remove(statement)];
@@ -414,7 +478,7 @@ export const useLatestCallback = createRule<[], MessageIds>({
           const replacement = `${prefix} ${parts.join(', ')} from 'react';`;
 
           const fixes: TSESLint.RuleFix[] = [];
-          if (!hasUseLatestCallbackImport) {
+          if (!latestCallbackImport) {
             fixes.push(fixer.insertTextBefore(statement, `${importText}\n`));
           }
           fixes.push(fixer.replaceText(statement, replacement));
@@ -454,6 +518,15 @@ export const useLatestCallback = createRule<[], MessageIds>({
             recommendedHook,
           },
           fix(fixer) {
+            // Withhold the whole edit — nothing before this point mutates
+            // state, so a withheld pass cannot leave a later one believing the
+            // import is in place. The violation still stands as a report so
+            // the author resolves the name clash deliberately. The batch is
+            // atomic, so one unreachable call site withholds all of it.
+            if (!batchedConversions.every(reachesHook)) {
+              return null;
+            }
+
             return [
               ...batchedConversions.map((conversion) =>
                 conversionFix(fixer, conversion),
@@ -478,7 +551,7 @@ export const useLatestCallback = createRule<[], MessageIds>({
           return;
         }
 
-        if (hasSurvivingReference && hasUseLatestCallbackImport) {
+        if (hasSurvivingReference && latestCallbackImport) {
           return; // The react import stays as is and the new import exists
         }
 
