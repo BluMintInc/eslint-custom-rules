@@ -631,51 +631,451 @@ const B = () => <Fragment>Two</Fragment>;`,
   ],
 });
 
+// Issue #1426: the fix spells `Fragment` bare and inserts the import that binds
+// it, so any other `Fragment` visible at the rewritten element breaks the edit
+// two ways — the inserted import collides with the existing declaration
+// (TS2440, or TS2300 when that declaration is itself an import), and a
+// narrower-scope shadow captures the emitted `<Fragment>` with no compile error
+// at all. Every such case must report and withhold the edit; the ordinary
+// no-collision path must stay byte-identical.
+ruleTesterJsx.run('prefer-fragment-component', preferFragmentComponent, {
+  valid: [],
+  invalid: [
+    // Module-scope const: the inserted import would be a second declaration.
+    {
+      code: `const Fragment = 1;
+const C = () => <><span>{Fragment}</span></>;`,
+      errors: [
+        {
+          messageId: 'preferFragment',
+          data: { type: 'shorthand fragment (<>)' },
+        },
+      ],
+      output: null,
+    },
+    // Function declaration binding the name.
+    {
+      code: `function Fragment() {
+  return null;
+}
+const C = () => <>Hello</>;`,
+      errors: [
+        {
+          messageId: 'preferFragment',
+          data: { type: 'shorthand fragment (<>)' },
+        },
+      ],
+      output: null,
+    },
+    // Class declaration binding the name.
+    {
+      code: `class Fragment {}
+const C = () => <>Hello</>;`,
+      errors: [
+        {
+          messageId: 'preferFragment',
+          data: { type: 'shorthand fragment (<>)' },
+        },
+      ],
+      output: null,
+    },
+    // `let` binding assigned later still owns the name for the whole scope.
+    {
+      code: `let Fragment;
+Fragment = 2;
+const C = () => <>Hello</>;`,
+      errors: [
+        {
+          messageId: 'preferFragment',
+          data: { type: 'shorthand fragment (<>)' },
+        },
+      ],
+      output: null,
+    },
+    // Named import of the same name from another module: the rewritten element
+    // would render that module's component.
+    {
+      code: `import { Fragment } from 'preact';
+const C = () => <>Hello</>;`,
+      errors: [
+        {
+          messageId: 'preferFragment',
+          data: { type: 'shorthand fragment (<>)' },
+        },
+      ],
+      output: null,
+    },
+    // Namespace import: `Fragment` is a module object, not a component.
+    {
+      code: `import * as Fragment from 'react';
+const C = () => <>Hello</>;`,
+      errors: [
+        {
+          messageId: 'preferFragment',
+          data: { type: 'shorthand fragment (<>)' },
+        },
+      ],
+      output: null,
+    },
+    // Default import under the name.
+    {
+      code: `import Fragment from 'react';
+const C = () => <>Hello</>;`,
+      errors: [
+        {
+          messageId: 'preferFragment',
+          data: { type: 'shorthand fragment (<>)' },
+        },
+      ],
+      output: null,
+    },
+    // Type-only declaration: the binding erases, so `<Fragment>` would be
+    // undefined at runtime while the inserted import still duplicates the name.
+    {
+      code: `import type { Fragment } from 'react';
+const C = () => <>Hello</>;`,
+      errors: [
+        {
+          messageId: 'preferFragment',
+          data: { type: 'shorthand fragment (<>)' },
+        },
+      ],
+      output: null,
+    },
+    // Inline type specifier, same reasoning.
+    {
+      code: `import { type Fragment } from 'react';
+const C = () => <>Hello</>;`,
+      errors: [
+        {
+          messageId: 'preferFragment',
+          data: { type: 'shorthand fragment (<>)' },
+        },
+      ],
+      output: null,
+    },
+    // An alias pointing the name at some other react export.
+    {
+      code: `import { useState as Fragment } from 'react';
+const C = () => <>Hello</>;`,
+      errors: [
+        {
+          messageId: 'preferFragment',
+          data: { type: 'shorthand fragment (<>)' },
+        },
+      ],
+      output: null,
+    },
+    // Shadowing parameter: the silent variant — the rewrite compiles and
+    // renders the parameter instead of react's Fragment.
+    {
+      code: `function C(Fragment) {
+  return <>{Fragment}</>;
+}`,
+      errors: [
+        {
+          messageId: 'preferFragment',
+          data: { type: 'shorthand fragment (<>)' },
+        },
+      ],
+      output: null,
+    },
+    // Destructured parameter shadow.
+    {
+      code: `const C = ({ Fragment }) => <>{Fragment}</>;`,
+      errors: [
+        {
+          messageId: 'preferFragment',
+          data: { type: 'shorthand fragment (<>)' },
+        },
+      ],
+      output: null,
+    },
+    // Block-scoped shadow at the JSX site, with react's Fragment imported at
+    // module scope: only scope-chain resolution from the element catches this.
+    {
+      code: `import { Fragment } from 'react';
+const C = () => {
+  const Fragment = 'div';
+  return <>{Fragment}</>;
+};`,
+      errors: [
+        {
+          messageId: 'preferFragment',
+          data: { type: 'shorthand fragment (<>)' },
+        },
+      ],
+      output: null,
+    },
+    // React.Fragment path takes the same guard.
+    {
+      code: `import React from 'react';
+const Fragment = 1;
+const C = () => <React.Fragment>{Fragment}</React.Fragment>;`,
+      errors: [
+        {
+          messageId: 'preferFragment',
+          data: { type: 'React.Fragment' },
+        },
+      ],
+      output: null,
+    },
+    // Nested React.Fragment/shorthand path, where one fix rewrites both tags.
+    {
+      code: `import React from 'react';
+const Fragment = 1;
+const C = () => (
+  <React.Fragment>
+    <>
+      <div>{Fragment}</div>
+    </>
+  </React.Fragment>
+);`,
+      errors: [
+        {
+          messageId: 'preferFragment',
+          data: { type: 'React.Fragment' },
+        },
+        {
+          messageId: 'preferFragment',
+          data: { type: 'shorthand fragment (<>)' },
+        },
+      ],
+      output: null,
+    },
+    // A collision confined to one function withholds only that element's edit;
+    // the module-scope violation still carries the import.
+    {
+      code: `const A = ({ Fragment }) => <>{Fragment}</>;
+const B = () => <>Two</>;`,
+      errors: [
+        {
+          messageId: 'preferFragment',
+          data: { type: 'shorthand fragment (<>)' },
+        },
+        {
+          messageId: 'preferFragment',
+          data: { type: 'shorthand fragment (<>)' },
+        },
+      ],
+      output: `import { Fragment } from 'react';
+const A = ({ Fragment }) => <>{Fragment}</>;
+const B = () => <Fragment>Two</Fragment>;`,
+    },
+    // Reuse: react's Fragment is already bound, so no second specifier and no
+    // second declaration.
+    {
+      code: `import { Fragment } from 'react';
+const C = () => <>Hello</>;`,
+      errors: [
+        {
+          messageId: 'preferFragment',
+          data: { type: 'shorthand fragment (<>)' },
+        },
+      ],
+      output: `import { Fragment } from 'react';
+const C = () => <Fragment>Hello</Fragment>;`,
+    },
+    // Reuse across two react declarations, one of which already binds Fragment.
+    {
+      code: `import React from 'react';
+import { Fragment } from 'react';
+const C = () => <React.Fragment>Hello</React.Fragment>;`,
+      errors: [
+        {
+          messageId: 'preferFragment',
+          data: { type: 'React.Fragment' },
+        },
+      ],
+      output: `import React from 'react';
+import { Fragment } from 'react';
+const C = () => <Fragment>Hello</Fragment>;`,
+    },
+    // Reuse when the import follows the element in source order: import state
+    // read from Program.body at fix time, not from a visitor flag that the
+    // ImportDeclaration visitor has yet to set.
+    {
+      code: `const C = () => <>Hello</>;
+import { Fragment } from 'react';`,
+      errors: [
+        {
+          messageId: 'preferFragment',
+          data: { type: 'shorthand fragment (<>)' },
+        },
+      ],
+      output: `const C = () => <Fragment>Hello</Fragment>;
+import { Fragment } from 'react';`,
+    },
+    // Over-declining guard: `React.Fragment` is a member access on the default
+    // import, not a `Fragment` binding, so the ordinary edit still lands.
+    {
+      code: `import React from 'react';
+const C = () => <React.Fragment>Hello</React.Fragment>;`,
+      errors: [
+        {
+          messageId: 'preferFragment',
+          data: { type: 'React.Fragment' },
+        },
+      ],
+      output: `import React, { Fragment } from 'react';
+const C = () => <Fragment>Hello</Fragment>;`,
+    },
+    // Over-declining guard: other named specifiers from react are untouched
+    // neighbours, not collisions.
+    {
+      code: `import { useMemo, useState } from 'react';
+const C = () => <>Hello</>;`,
+      errors: [
+        {
+          messageId: 'preferFragment',
+          data: { type: 'shorthand fragment (<>)' },
+        },
+      ],
+      output: `import { useMemo, useState, Fragment } from 'react';
+const C = () => <Fragment>Hello</Fragment>;`,
+    },
+    // Over-declining guard: an alias of react's Fragment leaves the name free.
+    {
+      code: `import { Fragment as Frag } from 'react';
+const C = () => <>Hello</>;`,
+      errors: [
+        {
+          messageId: 'preferFragment',
+          data: { type: 'shorthand fragment (<>)' },
+        },
+      ],
+      output: `import { Fragment as Frag, Fragment } from 'react';
+const C = () => <Fragment>Hello</Fragment>;`,
+    },
+    // A type-only declaration cannot host the specifier: `Fragment` would erase
+    // at compile time and leave the rewritten element undefined at runtime, so
+    // the fix emits its own value declaration.
+    {
+      code: `import type { ReactNode } from 'react';
+const C = () => <>Hello</>;`,
+      errors: [
+        {
+          messageId: 'preferFragment',
+          data: { type: 'shorthand fragment (<>)' },
+        },
+      ],
+      output: `import { Fragment } from 'react';
+import type { ReactNode } from 'react';
+const C = () => <Fragment>Hello</Fragment>;`,
+    },
+    // With both shapes present, the value declaration is the one extended.
+    {
+      code: `import type { ComponentType } from 'react';
+import { useCallback } from 'react';
+const C = () => <>Hello</>;`,
+      errors: [
+        {
+          messageId: 'preferFragment',
+          data: { type: 'shorthand fragment (<>)' },
+        },
+      ],
+      output: `import type { ComponentType } from 'react';
+import { useCallback, Fragment } from 'react';
+const C = () => <Fragment>Hello</Fragment>;`,
+    },
+    // A side-effect import hosts no specifier, so it is skipped as a target
+    // rather than treated as one.
+    {
+      code: `import 'react';
+const C = () => <>Hello</>;`,
+      errors: [
+        {
+          messageId: 'preferFragment',
+          data: { type: 'shorthand fragment (<>)' },
+        },
+      ],
+      output: `import { Fragment } from 'react';
+import 'react';
+const C = () => <Fragment>Hello</Fragment>;`,
+    },
+    // Over-declining guard: an unrelated local name is no reason to decline.
+    {
+      code: `const Fragmentation = 1;
+const C = () => <>{Fragmentation}</>;`,
+      errors: [
+        {
+          messageId: 'preferFragment',
+          data: { type: 'shorthand fragment (<>)' },
+        },
+      ],
+      output: `import { Fragment } from 'react';
+const Fragmentation = 1;
+const C = () => <Fragment>{Fragmentation}</Fragment>;`,
+    },
+    // Over-declining guard: a `Fragment` bound inside an unrelated function
+    // scope is invisible at the reported element.
+    {
+      code: `function other() {
+  const Fragment = 1;
+  return Fragment;
+}
+const C = () => <>Hello</>;`,
+      errors: [
+        {
+          messageId: 'preferFragment',
+          data: { type: 'shorthand fragment (<>)' },
+        },
+      ],
+      output: `import { Fragment } from 'react';
+function other() {
+  const Fragment = 1;
+  return Fragment;
+}
+const C = () => <Fragment>Hello</Fragment>;`,
+    },
+  ],
+});
+
+const RULE_ID = '@blumintinc/blumint/prefer-fragment-component';
+
+const lint = (code: string) => {
+  const linter = new Linter();
+  linter.defineParser(
+    '@typescript-eslint/parser',
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    require('@typescript-eslint/parser'),
+  );
+  linter.defineRule(
+    RULE_ID,
+    preferFragmentComponent as unknown as Rule.RuleModule,
+  );
+  // A near-miss neighbour proves rule matching is exact rather than a
+  // suffix/substring heuristic.
+  linter.defineRule('@blumintinc/blumint/prefer-fragment-component-props', {
+    meta: { schema: [] },
+    create: () => ({}),
+  } as unknown as Rule.RuleModule);
+  const config = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2020 as const,
+      sourceType: 'module' as const,
+      ecmaFeatures: { jsx: true },
+    },
+    rules: { [RULE_ID]: 'error' as const },
+  };
+  const { output } = linter.verifyAndFix(code, config, 'f.tsx');
+  return output;
+};
+
+const expectNoUnboundFragment = (output: string) => {
+  if (/<Fragment[\s/>]/.test(output)) {
+    expect(output).toMatch(
+      /import (?:\w+, )?\{[^}]*\bFragment\b[^}]*\} from 'react';/,
+    );
+  }
+};
+
 // RuleTester applies a single fix pass and never shows the file that
 // `eslint --fix` actually writes. These cases drive the real multi-pass fixer
 // and assert the invariant the bug violated: an emitted <Fragment> is never
 // left without `import { Fragment } from 'react'`.
 describe('prefer-fragment-component: inline disables and the import carrier (issue #1407)', () => {
-  const RULE_ID = '@blumintinc/blumint/prefer-fragment-component';
-
-  const lint = (code: string) => {
-    const linter = new Linter();
-    linter.defineParser(
-      '@typescript-eslint/parser',
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      require('@typescript-eslint/parser'),
-    );
-    linter.defineRule(
-      RULE_ID,
-      preferFragmentComponent as unknown as Rule.RuleModule,
-    );
-    // A near-miss neighbour proves rule matching is exact rather than a
-    // suffix/substring heuristic.
-    linter.defineRule('@blumintinc/blumint/prefer-fragment-component-props', {
-      meta: { schema: [] },
-      create: () => ({}),
-    } as unknown as Rule.RuleModule);
-    const config = {
-      parser: '@typescript-eslint/parser',
-      parserOptions: {
-        ecmaVersion: 2020 as const,
-        sourceType: 'module' as const,
-        ecmaFeatures: { jsx: true },
-      },
-      rules: { [RULE_ID]: 'error' as const },
-    };
-    const { output } = linter.verifyAndFix(code, config, 'f.tsx');
-    return output;
-  };
-
-  const expectNoUnboundFragment = (output: string) => {
-    if (/<Fragment[\s/>]/.test(output)) {
-      expect(output).toMatch(
-        /import (?:\w+, )?\{[^}]*\bFragment\b[^}]*\} from 'react';/,
-      );
-    }
-  };
-
   it('carries the import on the first surviving violation', () => {
     const output = lint(`// eslint-disable-next-line ${RULE_ID}
 const A = () => <>One</>;
@@ -764,6 +1164,112 @@ const B = () => <React.Fragment>Two</React.Fragment>;
     expect(output).toBe(`import React, { Fragment } from 'react';
 // eslint-disable-next-line ${RULE_ID}
 const A = () => <React.Fragment>One</React.Fragment>;
+const B = () => <Fragment>Two</Fragment>;
+`);
+    expectNoUnboundFragment(output);
+  });
+});
+
+// The single fix pass RuleTester applies cannot show what `eslint --fix`
+// leaves on disk after re-linting its own output. A guard that merely defers
+// the collision to a later pass would look correct there and still write a
+// duplicate declaration here.
+describe('prefer-fragment-component: existing Fragment bindings (issue #1426)', () => {
+  // Statements that bind the name `Fragment` at top scope — the count TS2440
+  // and TS2300 key on.
+  const topScopeFragmentDeclarations = (source: string) =>
+    source.match(
+      /^(?:import\b[^\n]*\bFragment\b[^\n]*\bfrom\b|(?:const|let|var|function|class)\s+Fragment\b)/gm,
+    )?.length ?? 0;
+
+  it('leaves a file with a module-scope Fragment const untouched', () => {
+    const code = `const Fragment = 1;
+const C = () => <><span>{Fragment}</span></>;
+`;
+
+    expect(lint(code)).toBe(code);
+    expect(topScopeFragmentDeclarations(lint(code))).toBe(1);
+  });
+
+  it('still reports the violation it declines to fix', () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      preferFragmentComponent as unknown as Rule.RuleModule,
+    );
+    const messages = linter.verify(
+      `const Fragment = 1;
+const C = () => <><span>{Fragment}</span></>;
+`,
+      {
+        parser: '@typescript-eslint/parser',
+        parserOptions: {
+          ecmaVersion: 2020 as const,
+          sourceType: 'module' as const,
+          ecmaFeatures: { jsx: true },
+        },
+        rules: { [RULE_ID]: 'error' as const },
+      },
+      'f.tsx',
+    );
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].fix).toBeUndefined();
+  });
+
+  it('leaves a file whose Fragment comes from another module untouched', () => {
+    const code = `import { Fragment } from 'preact';
+const C = () => <>One</>;
+`;
+
+    expect(lint(code)).toBe(code);
+  });
+
+  it('does not rewrite an element captured by a shadowing parameter', () => {
+    const code = `const C = ({ Fragment }) => <>{Fragment}</>;
+`;
+
+    expect(lint(code)).toBe(code);
+  });
+
+  it('fixes the violations a narrow shadow does not reach', () => {
+    const output = lint(`const A = ({ Fragment }) => <>{Fragment}</>;
+const B = () => <>Two</>;
+`);
+
+    expect(output).toBe(`import { Fragment } from 'react';
+const A = ({ Fragment }) => <>{Fragment}</>;
+const B = () => <Fragment>Two</Fragment>;
+`);
+    expectNoUnboundFragment(output);
+  });
+
+  it('reuses an existing react Fragment import across passes', () => {
+    const output = lint(`import { Fragment } from 'react';
+const A = () => <>One</>;
+const B = () => <React.Fragment>Two</React.Fragment>;
+`);
+
+    expect(output).toBe(`import { Fragment } from 'react';
+const A = () => <Fragment>One</Fragment>;
+const B = () => <Fragment>Two</Fragment>;
+`);
+    expect(output.match(/\bFragment\b(?=[^\n]*from 'react')/g)).toHaveLength(1);
+  });
+
+  it('keeps the no-collision output byte-identical to a plain rewrite', () => {
+    const output = lint(`import React, { useState } from 'react';
+const A = () => <>One</>;
+const B = () => <React.Fragment>Two</React.Fragment>;
+`);
+
+    expect(output).toBe(`import React, { useState, Fragment } from 'react';
+const A = () => <Fragment>One</Fragment>;
 const B = () => <Fragment>Two</Fragment>;
 `);
     expectNoUnboundFragment(output);

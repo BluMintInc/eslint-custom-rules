@@ -65,6 +65,34 @@ import is also placed *above* any `eslint-disable-next-line` comment that
 precedes the first statement, so the inserted line never becomes the line that
 directive governs.
 
+### Existing `Fragment` bindings
+
+The fix emits a **value named specifier** — `import { Fragment } from 'react';`,
+or `, Fragment` appended to an existing `react` import (`, { Fragment }` beside
+a default import, and its own declaration beside a namespace import, since
+`import * as React, { Fragment }` is a syntax error). Type-only declarations are
+never extended, because a specifier added to one erases at compile time.
+
+Because the rewritten element spells `Fragment` bare, the fix is **withheld**
+whenever another `Fragment` is visible at the element — the violation is still
+reported, only the automated edit is skipped:
+
+```jsx
+const Fragment = 1;
+// Reported, not fixed: the inserted import would be a second declaration of
+// `Fragment` (TS2440).
+const C = () => <><span>{Fragment}</span></>;
+
+const D = ({ Fragment }) => <>{Fragment}</>; // Reported, not fixed: the
+// parameter would capture the rewritten <Fragment> with no compile error.
+```
+
+A binding is reused instead of duplicated only when every declaration of it is a
+non-type-only `Fragment` specifier imported from `react` under that exact name.
+An alias (`import { Fragment as Frag } from 'react'`) leaves the name free, so
+the fix adds the specifier it needs. `React.Fragment` is a member access on the
+default import rather than a `Fragment` binding, so it never blocks the fix.
+
 ## When Not To Use It
 
 Skip this rule if your project intentionally mixes fragment styles for brevity and you accept losing fragment props like `key` on shorthand fragments.
