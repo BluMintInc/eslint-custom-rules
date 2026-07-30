@@ -12,6 +12,32 @@ type Options = [
 ];
 
 const DEFAULT_IMPORT_PATH = 'functions/src/util/assertSafe';
+const ASSERT_SAFE_NAME = 'assertSafe';
+
+/**
+ * A named specifier that binds `assertSafe` under its own name — the only shape
+ * that makes a bare `assertSafe(...)` call resolve to the helper. An alias
+ * (`import { assertSafe as ensureSafe }`) leaves the name free for the injected
+ * import, and a type-only specifier erases at compile time.
+ */
+function isAssertSafeSpecifier(
+  specifier: TSESTree.Node,
+): specifier is TSESTree.ImportSpecifier {
+  return (
+    specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+    specifier.importKind !== 'type' &&
+    specifier.imported.name === ASSERT_SAFE_NAME &&
+    specifier.local.name === ASSERT_SAFE_NAME
+  );
+}
+
+/**
+ * Drops the extension and normalizes separators so two spellings of one module
+ * compare equal.
+ */
+function normalizeModulePath(value: string): string {
+  return value.replace(/\\/g, '/').replace(/\.(tsx?|jsx?|mts|cts)$/i, '');
+}
 
 export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
   name: 'enforce-assert-safe-object-key',
@@ -40,7 +66,14 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
   defaultOptions: [{}],
   create(context, [options]) {
     const importPath = options?.assertSafeImportPath || DEFAULT_IMPORT_PATH;
-    let hasAssertSafeImport = false;
+    // Repo-root-anchored location of the helper, the yardstick every module
+    // specifier written in the file is compared against.
+    const assertSafeTarget = normalizeModulePath(importPath);
+    // Whether an earlier fix in this pass already carries the import. The AST is
+    // not re-parsed between the fixes of a single pass, so the import can only
+    // be claimed once: a second fix repeating it would span the same insertion
+    // point, overlap, and be dropped along with its wrap.
+    let importClaimed = false;
 
     /**
      * The `import { assertSafe }` statement rides on a single violation's fix,
@@ -49,6 +82,22 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
      * emit `assertSafe(...)`, leaving the call unbound.
      */
     const isReportSuppressed = createSuppressionChecker(context);
+
+    /**
+     * Directory of the file being fixed, relative to the repo root, or null for
+     * virtual/stdin files (RuleTester default 'file.ts', '<input>', '<text>')
+     * whose non-absolute name cannot anchor a relative path.
+     */
+    const fileDirFromRoot = (): string | null => {
+      const rawFilename = context.getFilename().replace(/\\/g, '/');
+      if (!path.isAbsolute(rawFilename)) {
+        return null;
+      }
+      const fileRelToCwd = path
+        .relative(process.cwd(), rawFilename)
+        .replace(/\\/g, '/');
+      return path.posix.dirname(fileRelToCwd);
+    };
 
     /**
      * Computes the module specifier for the injected assertSafe import.
@@ -63,27 +112,81 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
      * file being fixed so the emitted import resolves from that file's location.
      */
     const computeImportSpecifier = (): string => {
-      const rawFilename = context.getFilename().replace(/\\/g, '/');
-      // Virtual/stdin files (RuleTester default 'file.ts', '<input>', '<text>')
-      // are not absolute; we cannot anchor a relative path, so emit the
-      // configured path verbatim (preserves the option's literal value for
-      // non-file lints).
-      if (!path.isAbsolute(rawFilename)) {
+      const fileDir = fileDirFromRoot();
+      // Emitting the configured path verbatim preserves the option's literal
+      // value for non-file lints.
+      if (fileDir === null) {
         return importPath;
       }
-      const target = importPath
-        .replace(/\\/g, '/')
-        .replace(/\.(tsx?|jsx?|mts|cts)$/i, '');
-      const fileRelToCwd = path
-        .relative(process.cwd(), rawFilename)
-        .replace(/\\/g, '/');
-      const fileDir = path.posix.dirname(fileRelToCwd);
-      let specifier = path.posix.relative(fileDir, target);
+      let specifier = path.posix.relative(fileDir, assertSafeTarget);
       if (!specifier.startsWith('.')) {
         specifier = `./${specifier}`;
       }
       return specifier;
     };
+
+    /**
+     * Whether a module specifier written in the file denotes the same helper the
+     * fix imports. A relative specifier is resolved against the file's own
+     * directory before the comparison, because the configured path is anchored
+     * at the repo root: `../../assertSafe` inside functions/src/util/a/b and
+     * `functions/src/util/assertSafe` name one module, and treating them as
+     * different would withhold the fix from files that import the helper
+     * perfectly well.
+     */
+    const isAssertSafeModule = (source: string): boolean => {
+      const normalized = normalizeModulePath(source);
+      if (normalized === assertSafeTarget) {
+        return true;
+      }
+      if (!normalized.startsWith('.')) {
+        return false;
+      }
+      const fileDir = fileDirFromRoot();
+      if (fileDir === null) {
+        return false;
+      }
+      return (
+        path.posix.normalize(path.posix.join(fileDir, normalized)) ===
+        assertSafeTarget
+      );
+    };
+
+    /**
+     * Read the import off the AST instead of a traversal flag: a violation that
+     * precedes the import declaration in source order would otherwise be judged
+     * against a flag the `ImportDeclaration` visitor has not set yet, emitting a
+     * duplicate import.
+     */
+    const importsAssertSafe = (program: TSESTree.Program): boolean =>
+      program.body.some(
+        (statement) =>
+          statement.type === AST_NODE_TYPES.ImportDeclaration &&
+          statement.importKind !== 'type' &&
+          isAssertSafeModule(statement.source.value) &&
+          statement.specifiers.some(isAssertSafeSpecifier),
+      );
+
+    /**
+     * Whether every declaration of a visible `assertSafe` binding is the helper
+     * import itself. A local const/function/class, a parameter, a namespace or
+     * default import, or a named import from another module all mean the emitted
+     * `assertSafe(...)` call would resolve somewhere other than the helper.
+     */
+    const bindsAssertSafe = (variable: TSESLint.Scope.Variable): boolean =>
+      variable.defs.length > 0 &&
+      variable.defs.every((def) => {
+        const specifier = def.node as TSESTree.Node;
+        if (!isAssertSafeSpecifier(specifier)) {
+          return false;
+        }
+        const declaration = specifier.parent;
+        return (
+          declaration?.type === AST_NODE_TYPES.ImportDeclaration &&
+          declaration.importKind !== 'type' &&
+          isAssertSafeModule(declaration.source.value)
+        );
+      });
 
     /**
      * Helper function to add assertSafe import if needed
@@ -114,10 +217,9 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
     ): TSESLint.RuleFix[] => {
       const fixes: TSESLint.RuleFix[] = [];
 
-      // Add import if not present
-      if (!hasAssertSafeImport) {
+      if (!importClaimed && !importsAssertSafe(context.sourceCode.ast)) {
         fixes.push(addAssertSafeImport(fixer));
-        hasAssertSafeImport = true;
+        importClaimed = true;
       }
 
       // Replace the node with assertSafe(argText)
@@ -139,6 +241,21 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
           // fix — and leaving the import unclaimed — passes the carrier slot to
           // the first violation that survives.
           if (isReportSuppressed(node)) {
+            return null;
+          }
+
+          // Resolve `assertSafe` through the scope chain at the fixed node. A
+          // binding that is not the helper import breaks the edit two ways: the
+          // injected import collides with a module-scope declaration (TS2440,
+          // or TS2300 when the binding is itself an import), and a shadowing
+          // parameter or block-scoped binding captures the emitted call with no
+          // compile error at all. Declining leaves the report standing so the
+          // author resolves the clash deliberately.
+          const existing = ASTHelpers.findVariableInScope(
+            ASTHelpers.getScope(context, node),
+            ASSERT_SAFE_NAME,
+          );
+          if (existing && !bindsAssertSafe(existing)) {
             return null;
           }
 
@@ -175,18 +292,6 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
     };
 
     return {
-      ImportDeclaration(node: TSESTree.ImportDeclaration) {
-        // Check if assertSafe is already imported
-        if (
-          node.specifiers.some(
-            (specifier) =>
-              specifier.type === AST_NODE_TYPES.ImportSpecifier &&
-              specifier.imported.name === 'assertSafe',
-          )
-        ) {
-          hasAssertSafeImport = true;
-        }
-      },
       // Handle computed property in object destructuring
       Property(node: TSESTree.Property) {
         if (node.computed && node.key) {
