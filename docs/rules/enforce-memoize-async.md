@@ -44,6 +44,23 @@ class UserRepo {
 }
 ```
 
+### Interaction with inline disable comments
+
+The `import { Memoize } from '@blumintinc/typescript-memoize';` statement is
+added once per file, attached to the fix of the first violation that is **not**
+suppressed by an inline `eslint-disable` directive. Suppressing an individual
+method therefore never strands the remaining `@Memoize()` decorators without
+their import:
+
+```ts
+class UserRepo {
+  // eslint-disable-next-line @blumintinc/blumint/enforce-memoize-async
+  async currentUser() { return api.getCurrent(); }  // left alone
+
+  async fetchUser(id: string) { return api.getUser(id); }  // fixed, and carries the import
+}
+```
+
 ## When Not To Use It
 
 - Methods whose results must always be fresh (e.g., real-time data or mutation calls).
