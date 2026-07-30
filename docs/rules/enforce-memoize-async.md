@@ -61,6 +61,40 @@ class UserRepo {
 }
 ```
 
+### When the fix is withheld
+
+The fix emits a bare `@Memoize()` decorator and inserts
+`import { Memoize } from '@blumintinc/typescript-memoize';`. Both halves break
+when the name `Memoize` already resolves to something else at the method:
+
+- A module-scope `const`/`function`/`class` named `Memoize`, or an import of
+  that name from another module, collides with the inserted import
+  (TS2440 / TS2300).
+- A shadowing parameter, a block-scoped binding, or an enclosing
+  `class Memoize` captures the emitted decorator with **no** compile error at
+  all, so the method is decorated with the shadow rather than the memoizer.
+- A type-only import erases at compile time and cannot back a decorator.
+
+The rule resolves `Memoize` through the scope chain at the method and withholds
+the fix whenever the visible binding is anything other than a named, value
+`Memoize` specifier imported from `@blumintinc/typescript-memoize` or
+`typescript-memoize` (a namespace or default import binds a different value, so
+it counts as a collision too). The `requireMemoize` report still fires; only the
+automated edit is skipped, leaving the clash for the author to resolve:
+
+```ts
+const Memoize = 1; // a local of the same name
+
+export class Service {
+  async load() { return Memoize; } // reported, but left untouched by --fix
+}
+```
+
+A file that already imports the decorator reuses that import instead of gaining
+a second one, and an aliased import (`import { Memoize as Cache }`) emits
+`@Cache()` — which references no bare `Memoize` — so an unrelated `Memoize`
+binding never blocks it.
+
 ## When Not To Use It
 
 - Methods whose results must always be fresh (e.g., real-time data or mutation calls).
