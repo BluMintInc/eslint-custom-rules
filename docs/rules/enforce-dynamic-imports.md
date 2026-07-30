@@ -109,7 +109,9 @@ Use this option to preserve compatibility with configurations written before 1.1
 
 Used in **enforce-by-default mode** (when `libraries` is absent). An array of library names or glob patterns that are allowed to be imported statically.
 
-Defaults to: `react`, `react/**`, `react-dom`, `react-dom/**`, `next`, `next/**`, `@mui/material`, `@mui/material/**`, `@mui/icons-material`, `@mui/icons-material/**`, `@emotion/**`, `clsx`, `tailwind-merge`.
+Defaults to: `react`, `react/**`, `react-dom`, `react-dom/**`, `next`, `next/**`, `@mui/material`, `@mui/material/**`, `@mui/icons-material`, `@mui/icons-material/**`, `@emotion/**`, `clsx`, `tailwind-merge`, `use-latest-callback`, `@blumintinc/typescript-memoize`, `@blumintinc/use-deep-compare`, `microdiff`, `safe-stable-stringify`, `fast-deep-equal`.
+
+The last six are modules this plugin's own fixers inject: `use-latest-callback`, `enforce-memoize-async`, `enforce-memoize-getters`, `require-memoize-jsx-returners`, `prefer-use-deep-compare-memo`, `enforce-microdiff`, `enforce-safe-stringify`, and `fast-deep-equal-over-microdiff` all write a static import as part of their autofix. Reporting them would turn an auto-fixable violation into one a human has to resolve by hand, and a dynamic import is not even an option for a hook (which must be called unconditionally) or a decorator (which must resolve statically). If you override `ignoredLibraries`, keep these entries.
 
 ### `internalPrefixes` (array, optional)
 

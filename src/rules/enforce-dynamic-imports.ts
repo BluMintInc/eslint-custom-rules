@@ -13,6 +13,19 @@ type Options = [
   },
 ];
 
+/**
+ * A module this plugin injects on the user's behalf must be one the plugin's
+ * own default config accepts. Several rules in the recommended config write a
+ * *static* import as part of their autofix; without these entries `--fix`
+ * would trade an auto-fixable violation for a non-fixable one, and the
+ * suggested remedy is impossible for most of them anyway (hooks must be called
+ * unconditionally and decorators must resolve statically, so neither can be
+ * loaded dynamically).
+ *
+ * `src/tests/enforce-dynamic-imports.test.ts` derives the set of specifiers the
+ * fixers emit from the rule sources and asserts every external one is listed
+ * here, so a seventh injected module cannot slip in unlisted.
+ */
 export const DEFAULT_IGNORED_LIBRARIES = [
   'react',
   'react/**',
@@ -27,6 +40,13 @@ export const DEFAULT_IGNORED_LIBRARIES = [
   '@emotion/**',
   'clsx',
   'tailwind-merge',
+  // Injected by this plugin's own fixers:
+  'use-latest-callback', // use-latest-callback
+  '@blumintinc/typescript-memoize', // enforce-memoize-async, enforce-memoize-getters, require-memoize-jsx-returners
+  '@blumintinc/use-deep-compare', // prefer-use-deep-compare-memo
+  'microdiff', // enforce-microdiff
+  'safe-stable-stringify', // enforce-safe-stringify
+  'fast-deep-equal', // fast-deep-equal-over-microdiff
 ];
 
 export const DEFAULT_INTERNAL_PREFIXES = ['src/', 'functions/'];
