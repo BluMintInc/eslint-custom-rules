@@ -230,6 +230,35 @@ function isStableHashImported(
   return getStableHashLocalNames(sourceCode, hashImport).length > 0;
 }
 
+/**
+ * Whether every declaration of a resolved binding is the configured hash import
+ * itself. A namespace import, an import of another name or module, a parameter,
+ * or a local declaration all mean the emitted call would resolve somewhere other
+ * than the intended hash function.
+ */
+function bindsHashImport(
+  variable: TSESLint.Scope.Variable,
+  hashImport: { source: string; importName: string },
+): boolean {
+  return (
+    variable.defs.length > 0 &&
+    variable.defs.every((def) => {
+      const specifier = def.node as TSESTree.Node;
+      if (
+        specifier.type !== AST_NODE_TYPES.ImportSpecifier ||
+        specifier.imported.name !== hashImport.importName
+      ) {
+        return false;
+      }
+      const declaration = specifier.parent;
+      return (
+        declaration?.type === AST_NODE_TYPES.ImportDeclaration &&
+        declaration.source.value === hashImport.source
+      );
+    })
+  );
+}
+
 function getIndentBeforeNode(
   sourceCode: TSESLint.SourceCode,
   node: TSESTree.Node,
@@ -326,7 +355,6 @@ export const enforceStableHashSpreadProps = createRule<Options, MessageIds>({
     // emit `stableHash(...)`, leaving calls to an unbound identifier.
     let importPlanned = false;
     const isReportSuppressed = createSuppressionChecker(context);
-    const hashIdentifier = existingHashLocalNames[0] ?? hashImport.importName;
     const functionStack: FunctionContext[] = [];
 
     function getCurrentComponentContext(): FunctionContext | undefined {
@@ -432,6 +460,35 @@ export const enforceStableHashSpreadProps = createRule<Options, MessageIds>({
             // to the first violation that survives. The check runs on the
             // reported node so it resolves the same location ESLint does.
             if (isReportSuppressed(depsArg)) {
+              return null;
+            }
+
+            // Derive the emitted name from the file's imports rather than from
+            // traversal state: `--fix` re-lints between passes, so an import a
+            // previous pass landed must be reused, and an alias it introduced
+            // must be honoured.
+            const hashIdentifier =
+              getStableHashLocalNames(sourceCode, hashImport)[0] ??
+              hashImport.importName;
+
+            // The fix writes a bare `hashIdentifier` call into the dependency
+            // array and may add a top-level import for it. Another binding of
+            // that name, visible from the array, makes both halves wrong: a
+            // module-scope binding collides with the inserted import
+            // (TS2440/TS2300), and a narrower shadow silently resolves the
+            // emitted call to the wrong value with no TypeScript diagnostic at
+            // all. Resolving through the scope chain of the reported node — the
+            // exact position the call lands in — covers both, while a binding
+            // that already is the desired import is the reuse path. Declining
+            // leaves the report for the author to resolve deliberately.
+            const existingBinding = ASTHelpers.findVariableInScope(
+              ASTHelpers.getScope(context, depsArg),
+              hashIdentifier,
+            );
+            if (
+              existingBinding &&
+              !bindsHashImport(existingBinding, hashImport)
+            ) {
               return null;
             }
 
