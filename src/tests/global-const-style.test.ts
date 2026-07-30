@@ -282,6 +282,136 @@ ruleTesterTs.run('global-const-style', rule, {
       ].join('\n'),
       filename: 'test.ts',
     },
+    // Issue #1418: the reported shape — a re-export aliasing an imported
+    // function. UPPER_SNAKE_CASE is never right for a callable, and renaming a
+    // re-export breaks every importer (TS2724) since the fixer is single-file.
+    {
+      code: `
+        import { toKvStamp } from './stampedKvValue';
+        export const toUsernameSlugStamp = toKvStamp;
+      `,
+      filename: 'test.ts',
+    },
+    // Issue #1418: a default-imported binding aliases the same way.
+    {
+      code: `
+        import toKvStamp from './stampedKvValue';
+        export const toUsernameSlugStamp = toKvStamp;
+      `,
+      filename: 'test.ts',
+    },
+    // Issue #1418: aliasing a locally declared function.
+    {
+      code: `
+        function toKvStamp(source: number) {
+          return source * 1000;
+        }
+        export const toUsernameSlugStamp = toKvStamp;
+      `,
+      filename: 'test.ts',
+    },
+    // Issue #1418: aliasing a local arrow function, whose own declaration is
+    // already exempt — the alias must not be treated more strictly than it.
+    {
+      code: `
+        const toKvStamp = (source: number) => source * 1000;
+        export const toUsernameSlugStamp = toKvStamp;
+      `,
+      filename: 'test.ts',
+    },
+    // Issue #1418: aliasing a class is the same shape as aliasing a function.
+    {
+      code: `
+        class StampedKvValue {}
+        export const stampedKvValue = StampedKvValue;
+      `,
+      filename: 'test.ts',
+    },
+    // Issue #1418: the exemption is blanket — it does not attempt to resolve
+    // what the identifier points at, so aliasing a config constant is exempt
+    // too. Aliasing is definitionally not declaring a configuration value, and
+    // "prefer false negatives over false positives" settles the trade-off.
+    {
+      code: [
+        'const MAX_RETRIES = 3 as const;',
+        'const alias = MAX_RETRIES;',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Issue #1418: a non-exported alias is exempt as well — the value is still
+    // not a configuration constant, whatever its visibility.
+    {
+      code: `
+        import { toKvStamp } from './stampedKvValue';
+        const toUsernameSlugStamp = toKvStamp;
+      `,
+      filename: 'test.ts',
+    },
+    // Issue #1418: a type-pinned alias unwraps to the same bare identifier, so
+    // `as Foo` / `as const` / `<Foo>` / a double cast are all exempt.
+    {
+      code: `
+        import { toKvStamp } from './stampedKvValue';
+        export const toUsernameSlugStamp = toKvStamp as StampFn;
+      `,
+      filename: 'test.ts',
+    },
+    {
+      code: [
+        'const MAX_RETRIES = 3 as const;',
+        'const retryLimit = MAX_RETRIES as const;',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      code: `
+        import { toKvStamp } from './stampedKvValue';
+        export const toUsernameSlugStamp = <StampFn>toKvStamp;
+      `,
+      filename: 'test.ts',
+    },
+    {
+      code: `
+        import { toKvStamp } from './stampedKvValue';
+        export const toUsernameSlugStamp = toKvStamp as unknown as StampFn;
+      `,
+      filename: 'test.ts',
+    },
+    // Issue #1418: an alias declared with an explicit type annotation.
+    {
+      code: `
+        import { toKvStamp } from './stampedKvValue';
+        export const toUsernameSlugStamp: StampFn = toKvStamp;
+      `,
+      filename: 'test.ts',
+    },
+    // Issue #1418: the exemption is not TypeScript-specific.
+    {
+      code: `
+        const toKvStamp = (source) => source * 1000;
+        export const toUsernameSlugStamp = toKvStamp;
+      `,
+      filename: 'test.js',
+    },
+    // Issue #1418: an alias already spelled UPPER_SNAKE_CASE is untouched too —
+    // no `as const` is demanded of it, since a const assertion may only be
+    // applied to a literal (TS1355).
+    {
+      code: [
+        'const MAX_RETRIES = 3 as const;',
+        'const RETRY_LIMIT = MAX_RETRIES;',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Issue #1418 regression guard: `new X()` initializers stay exempt as
+    // dynamic values — the alias exemption does not disturb that path.
+    {
+      code: `
+        class Service {}
+        const someService = new Service();
+      `,
+      filename: 'test.ts',
+    },
   ],
   invalid: [
     // Issue #1257: the reserved-export exemption only suppresses the unsafe
@@ -708,6 +838,95 @@ ruleTesterTs.run('global-const-style', rule, {
         },
       ],
       output: 'const PHONE_PROVIDER = { a: 1 } as unknown as Foo;',
+    },
+    // Issue #1418 control: the rule's core case — a literal configuration
+    // value — must keep firing, so a clean scan is trustworthy.
+    {
+      code: 'export const maxRetries = 3;',
+      filename: 'test.ts',
+      errors: [
+        { messageId: 'asConst' },
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'maxRetries', suggestedName: 'MAX_RETRIES' },
+        },
+      ],
+      output: 'export const MAX_RETRIES = 3 as const;',
+    },
+    // Issue #1418: `undefined`/`NaN`/`Infinity` parse as identifiers but denote
+    // primitive values, not a binding being aliased, so the naming check still
+    // applies to them exactly as it does to the literals they stand in for.
+    {
+      code: 'const someDefault = undefined;',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'someDefault', suggestedName: 'SOME_DEFAULT' },
+        },
+      ],
+      output: 'const SOME_DEFAULT = undefined;',
+    },
+    {
+      code: 'const notANumber = NaN;',
+      filename: 'test.ts',
+      errors: [{ messageId: 'upperSnakeCase' }],
+      output: 'const NOT_A_NUMBER = NaN;',
+    },
+    {
+      code: 'const maxValue = Infinity;',
+      filename: 'test.ts',
+      errors: [{ messageId: 'upperSnakeCase' }],
+      output: 'const MAX_VALUE = Infinity;',
+    },
+    // Issue #1418: the exemption covers a BARE identifier only. A member
+    // expression reads a property off something rather than aliasing a binding,
+    // so it keeps the behavior `isDynamicValue` already gives it.
+    {
+      code: 'const themeColor = Theme.color;',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'themeColor', suggestedName: 'THEME_COLOR' },
+        },
+      ],
+      output: 'const THEME_COLOR = Theme.color;',
+    },
+    // Issue #1418: the exemption is per declarator — an aliasing declarator in
+    // a multi-declarator statement must not silence its literal siblings.
+    {
+      code: 'const toUsernameSlugStamp = toKvStamp, maxRetries = 3;',
+      filename: 'test.ts',
+      errors: [
+        { messageId: 'asConst' },
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'maxRetries', suggestedName: 'MAX_RETRIES' },
+        },
+      ],
+      output:
+        'const toUsernameSlugStamp = toKvStamp, MAX_RETRIES = 3 as const;',
+    },
+    // Issue #1418 regression guards: literal, object and array initializers are
+    // untouched by the alias exemption and still report both halves of the rule.
+    {
+      code: 'const apiEndpoint = "https://api.example.com";',
+      filename: 'guard.ts',
+      errors: [{ messageId: 'asConst' }, { messageId: 'upperSnakeCase' }],
+      output: 'const API_ENDPOINT = "https://api.example.com" as const;',
+    },
+    {
+      code: 'const themeColors = { primary: "#000" };',
+      filename: 'guard.ts',
+      errors: [{ messageId: 'asConst' }, { messageId: 'upperSnakeCase' }],
+      output: 'const THEME_COLORS = { primary: "#000" } as const;',
+    },
+    {
+      code: 'const retryDelays = [1, 2, 3];',
+      filename: 'guard.ts',
+      errors: [{ messageId: 'asConst' }, { messageId: 'upperSnakeCase' }],
+      output: 'const RETRY_DELAYS = [1, 2, 3] as const;',
     },
   ],
 });

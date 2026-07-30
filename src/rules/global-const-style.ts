@@ -100,6 +100,12 @@ const renameWouldCollide = (
   return false;
 };
 
+// `undefined`, `NaN` and `Infinity` parse as identifiers but denote primitive
+// values rather than a binding being aliased, so they stay subject to the
+// naming check exactly like the literals they stand in for. Every other bare
+// identifier initializer is an alias (see `isBindingAlias`).
+const PRIMITIVE_VALUE_GLOBALS = new Set(['undefined', 'NaN', 'Infinity']);
+
 // Next.js recognizes these export names by their literal identifier, so
 // renaming them to UPPER_SNAKE_CASE silently breaks the framework contract
 // (e.g. `export const config` controls the API-route body parser / runtime).
@@ -172,6 +178,30 @@ export default createRule<[], MessageIds>({
       }
 
       return false;
+    };
+
+    /**
+     * A bare identifier initializer (`export const toUsernameSlugStamp =
+     * toKvStamp;`) aliases an existing binding instead of declaring a
+     * configuration value, so the rule's premise does not hold: the alias
+     * inherits whatever convention its target follows, and a callable — the
+     * dominant case, since aliasing a re-exported function is the idiom — is
+     * always camelCase. Renaming one is also destructive, because the point of
+     * such a re-export is preserving a name importers depend on and a
+     * single-file fixer cannot rewrite them (Issue #1418).
+     *
+     * The check unwraps assertions so a type-pinned alias (`x as Foo`,
+     * `x as const`) is treated the same as the bare form. A `MemberExpression`
+     * (`Foo.bar`) is deliberately not covered — it keeps whatever behavior
+     * `isDynamicValue` already gives it.
+     */
+    const isBindingAlias = (node: TSESTree.Node): boolean => {
+      const target = unwrapAssertions(node);
+
+      return (
+        target.type === AST_NODE_TYPES.Identifier &&
+        !PRIMITIVE_VALUE_GLOBALS.has(target.name)
+      );
     };
 
     const describeValueKind = (node: TSESTree.Node): string => {
@@ -265,8 +295,9 @@ export default createRule<[], MessageIds>({
           const { name } = declaration.id;
           const init = declaration.init;
 
-          // Skip if no initializer or if it's a dynamic value or class instance
-          if (!init || isDynamicValue(init)) {
+          // Skip if no initializer, if it's a dynamic value or class instance,
+          // or if it merely aliases another binding
+          if (!init || isDynamicValue(init) || isBindingAlias(init)) {
             return;
           }
 

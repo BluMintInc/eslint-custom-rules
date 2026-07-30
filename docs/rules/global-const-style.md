@@ -117,6 +117,41 @@ The exemption covers `jest.Mock`, `jest.MockedFunction`, `jest.Mocked`, and
 module configuration, and the `mockedX` camelCase spelling is the established
 idiom, so renaming them to `UPPER_SNAKE_CASE` would fight the convention.
 
+### Aliases of another binding
+
+A `const` whose initializer is a bare identifier aliases an existing binding
+rather than declaring a configuration value, so neither half of the rule
+applies:
+
+```ts
+// Not flagged — a re-export that preserves a callable's name.
+import { toKvStamp } from './stampedKvValue';
+export const toUsernameSlugStamp = toKvStamp;
+
+// Not flagged — component/hook aliases, and aliases carrying a cast.
+export const BalanceGuardProvider = BalanceGuardProviderInternal;
+const mockDb = db as unknown as { collection: jest.Mock };
+```
+
+An alias inherits whatever convention its target follows, and the dominant case
+— aliasing a function, component, or hook — is camelCase everywhere else in the
+codebase. Renaming one is also destructive: the point of such a re-export is
+preserving a name importers depend on, and a single-file fixer cannot rewrite
+them (the rename would produce TS2724 in every importer).
+
+The exemption is deliberately blanket — the rule does not resolve what the
+identifier points at, so `const alias = MAX_RETRIES;` is exempt too. Aliasing is
+not declaring a configuration constant, and a missed rename is preferable to a
+build-breaking one.
+
+Two narrow shapes stay in scope:
+
+- `undefined`, `NaN` and `Infinity` parse as identifiers but denote primitive
+  values, not a binding being aliased, so `const someDefault = undefined;` is
+  still renamed to `SOME_DEFAULT`.
+- A member expression reads a property off something rather than aliasing a
+  binding, so `const themeColor = Theme.color;` is unaffected by this exemption.
+
 ### Reference-safe autofix
 
 The rename fix rewrites the declaration **and every in-file reference** in a
