@@ -1,8 +1,64 @@
 import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds = 'useStableStringify' | 'replaceWithStringify';
 type Options = [];
+
+const STRINGIFY_MODULE = 'safe-stable-stringify';
+const STRINGIFY_NAME = 'stringify';
+
+/**
+ * A default or named specifier whose local name is `stringify` — the two shapes
+ * that make a bare `stringify` call resolve to the module's function.
+ */
+function isStringifySpecifier(
+  specifier: TSESTree.Node,
+): specifier is TSESTree.ImportDefaultSpecifier | TSESTree.ImportSpecifier {
+  return (
+    (specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
+      specifier.type === AST_NODE_TYPES.ImportSpecifier) &&
+    specifier.local.name === STRINGIFY_NAME
+  );
+}
+
+/**
+ * Read the import off the AST instead of a traversal flag: suggestions are
+ * computed per call site, and a `JSON.stringify` that precedes the import
+ * declaration in source order would otherwise be judged against a flag that the
+ * `ImportDeclaration` visitor has not set yet, duplicating the import.
+ */
+function importsStringify(program: TSESTree.Program): boolean {
+  return program.body.some(
+    (statement) =>
+      statement.type === AST_NODE_TYPES.ImportDeclaration &&
+      statement.source.value === STRINGIFY_MODULE &&
+      statement.specifiers.some(isStringifySpecifier),
+  );
+}
+
+/**
+ * Whether every declaration of a visible `stringify` binding is the
+ * safe-stable-stringify import itself. A namespace import, an import from any
+ * other module, a parameter, or a local declaration all mean the replacement
+ * text would resolve somewhere other than the intended function.
+ */
+function bindsSafeStringify(variable: TSESLint.Scope.Variable): boolean {
+  return (
+    variable.defs.length > 0 &&
+    variable.defs.every((def) => {
+      const specifier = def.node as TSESTree.Node;
+      if (!isStringifySpecifier(specifier)) {
+        return false;
+      }
+      const declaration = specifier.parent;
+      return (
+        declaration?.type === AST_NODE_TYPES.ImportDeclaration &&
+        declaration.source.value === STRINGIFY_MODULE
+      );
+    })
+  );
+}
 
 export const enforceStableStringify = createRule<Options, MessageIds>({
   name: 'enforce-safe-stringify',
@@ -31,21 +87,7 @@ export const enforceStableStringify = createRule<Options, MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    let hasStringifyImport = false;
-
     return {
-      ImportDeclaration(node: TSESTree.ImportDeclaration) {
-        if (
-          node.source.value === 'safe-stable-stringify' &&
-          node.specifiers.some(
-            (specifier) =>
-              specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier &&
-              specifier.local.name === 'stringify',
-          )
-        ) {
-          hasStringifyImport = true;
-        }
-      },
       MemberExpression(node: TSESTree.MemberExpression) {
         if (
           node.object.type === AST_NODE_TYPES.Identifier &&
@@ -60,39 +102,48 @@ export const enforceStableStringify = createRule<Options, MessageIds>({
               {
                 messageId: 'replaceWithStringify',
                 fix(fixer) {
-                  const fixes: TSESLint.RuleFix[] = [];
+                  // Resolve `stringify` through the scope chain at the call
+                  // site. A binding that is not the safe-stable-stringify
+                  // import makes both halves of the edit wrong: the inserted
+                  // import collides with it (TS2440/TS2300), and — for a
+                  // shadowing parameter or local — the bare `stringify`
+                  // replacement silently calls the shadow with no compile
+                  // error at all. Declining leaves the report in place so the
+                  // author migrates the call deliberately.
+                  const existing = ASTHelpers.findVariableInScope(
+                    ASTHelpers.getScope(context, node),
+                    STRINGIFY_NAME,
+                  );
+                  if (existing && !bindsSafeStringify(existing)) {
+                    return null;
+                  }
 
-                  // Add the import only when the file lacks it. Unlike the old
-                  // batch auto-fix, suggestions are applied one at a time with a
-                  // re-lint in between, so we must NOT flip a shared flag here:
-                  // each suggestion is computed independently against the
-                  // current file, and adding the import whenever it is absent
-                  // keeps every single-suggestion application self-contained
-                  // (the re-lint suppresses a duplicate for later call sites).
-                  if (!hasStringifyImport) {
-                    const program = context.sourceCode.ast;
+                  const fixes: TSESLint.RuleFix[] = [];
+                  const program = context.sourceCode.ast;
+
+                  // Add the import only when the file lacks it. Suggestions are
+                  // applied one at a time with a re-lint in between, so each is
+                  // computed independently against the current file; adding the
+                  // import whenever it is absent keeps every single-suggestion
+                  // application self-contained (the re-lint suppresses a
+                  // duplicate for later call sites).
+                  if (!importsStringify(program)) {
                     const firstImport = program.body.find(
-                      (node) => node.type === AST_NODE_TYPES.ImportDeclaration,
+                      (statement) =>
+                        statement.type === AST_NODE_TYPES.ImportDeclaration,
                     );
                     const importStatement =
                       "import stringify from 'safe-stable-stringify';\n";
 
-                    if (firstImport) {
-                      fixes.push(
-                        fixer.insertTextBefore(firstImport, importStatement),
-                      );
-                    } else {
-                      fixes.push(
-                        fixer.insertTextBefore(
-                          program.body[0],
-                          importStatement,
-                        ),
-                      );
-                    }
+                    fixes.push(
+                      fixer.insertTextBefore(
+                        firstImport ?? program.body[0],
+                        importStatement,
+                      ),
+                    );
                   }
 
-                  // Replace JSON.stringify with stringify
-                  fixes.push(fixer.replaceText(node, 'stringify'));
+                  fixes.push(fixer.replaceText(node, STRINGIFY_NAME));
 
                   return fixes;
                 },
