@@ -59,10 +59,12 @@ throw new HttpsError({
   message: 'toMilliseconds: missing date value',
 });
 
-// If the error is truly user-caused, acknowledge the warning
-// eslint-disable-next-line @blumintinc/blumint/warn-https-error-message-user-friendly
+// If the error is truly user-caused, acknowledge the warning.
+// The report is anchored to the `messageUserFriendly` property, so the comment
+// goes directly above it; placing it above the `throw` suppresses nothing.
 throw new HttpsError({
   code: 'permission-denied',
+  // eslint-disable-next-line @blumintinc/blumint/warn-https-error-message-user-friendly -- user-caused: the caller is not authorized
   messageUserFriendly: USER_MESSAGE_NOT_AUTHORIZED,
 });
 ```
