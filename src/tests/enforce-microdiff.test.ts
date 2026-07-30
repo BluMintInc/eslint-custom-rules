@@ -198,7 +198,10 @@ function findChanges(prev, next) {
   return diff(prev, next);
 }`,
     },
-    // Using Lodash difference functions
+    // Using Lodash difference functions. `_.differenceWith` returns the
+    // elements of `original` with no comparator-equal match in `updated`, while
+    // microdiff's `diff` returns a structural change list, so the report stands
+    // without a fix.
     {
       code: `import _ from 'lodash';
 
@@ -206,10 +209,85 @@ function detectDifferences(original, updated) {
   return _.differenceWith(original, updated, _.isEqual);
 }`,
       errors: [{ messageId: 'enforceMicrodiff' }],
-      output: `import _ from 'lodash';
+      output: null,
+    },
+    {
+      // Two-argument `_.difference` is no more convertible than the comparator
+      // form: it still yields a subset of `original`, not a change list.
+      code: `import _ from 'lodash';
 
 function detectDifferences(original, updated) {
-  return diff(original, updated, _.isEqual);
+  return _.difference(original, updated);
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: null,
+    },
+    {
+      // `_.differenceBy`'s iteratee has no counterpart in microdiff's signature.
+      code: `import _ from 'lodash';
+
+function detectDifferences(original, updated) {
+  return _.differenceBy(original, updated, 'id');
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: null,
+    },
+    {
+      // An existing microdiff import does not make the lodash call convertible:
+      // the two functions compute different things, so the report stands alone.
+      code: `import { diff } from 'microdiff';
+import _ from 'lodash';
+
+function detectDifferences(original, updated) {
+  return _.differenceWith(original, updated, _.isEqual);
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: null,
+    },
+    {
+      // Declining leaves the comments inside the lodash call untouched.
+      code: `import _ from 'lodash';
+
+function detectDifferences(original, updated) {
+  return _.differenceWith(
+    original, // the baseline
+    updated,
+    _.isEqual,
+  );
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: null,
+    },
+    {
+      // A competing import alongside a lodash call: the import rewrite still
+      // lands, and the lodash call is left for the author.
+      code: `import { diff as deepDiff } from 'deep-diff';
+import _ from 'lodash';
+
+function compareConfigs(oldConfig, newConfig) {
+  return deepDiff(oldConfig, newConfig);
+}
+
+function detectDifferences(original, updated) {
+  return _.difference(original, updated);
+}`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'deep-diff' },
+        },
+        { messageId: 'enforceMicrodiff' },
+        { messageId: 'enforceMicrodiff' },
+      ],
+      output: `import { diff } from 'microdiff';
+import _ from 'lodash';
+
+function compareConfigs(oldConfig, newConfig) {
+  return diff(oldConfig, newConfig);
+}
+
+function detectDifferences(original, updated) {
+  return _.difference(original, updated);
 }`,
     },
     // These test cases for fast-deep-equal have been removed since fast-deep-equal is now allowed
@@ -511,19 +589,15 @@ function run(objA, objB) {
       errors: [{ messageId: 'enforceMicrodiff' }],
     },
     {
-      // The lodash rewrite emits `diff` into the very scope that binds it.
+      // A local `diff` binding changes nothing about the lodash path: it is
+      // report-only regardless of what the surrounding scope binds.
       code: `import _ from 'lodash';
 
 function detectDifferences(original, updated) {
   const diff = 1;
   return _.differenceWith(original, updated, _.isEqual);
 }`,
-      output: `import _ from 'lodash';
-
-function detectDifferences(original, updated) {
-  const diff = 1;
-  return _.differenceWith(original, updated, _.isEqual);
-}`,
+      output: null,
       errors: [{ messageId: 'enforceMicrodiff' }],
     },
   ],
