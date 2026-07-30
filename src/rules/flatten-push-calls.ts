@@ -1,4 +1,9 @@
-import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  AST_TOKEN_TYPES,
+  TSESLint,
+  TSESTree,
+} from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'flattenPushCalls';
@@ -82,21 +87,50 @@ function getPropertyKey(
   return null;
 }
 
-function getCalleeWithTypeParams(
+function getCalleeRange(
   call: TSESTree.CallExpression,
   sourceCode: TSESLint.SourceCode,
-): string {
+): TSESTree.Range {
   const calleeStart = getRangeStart(call.callee, sourceCode);
   const calleeEnd = call.typeParameters
     ? getRangeEnd(call.typeParameters, sourceCode)
     : getRangeEnd(call.callee, sourceCode);
 
+  return [calleeStart, calleeEnd];
+}
+
+function getCalleeWithTypeParams(
+  call: TSESTree.CallExpression,
+  sourceCode: TSESLint.SourceCode,
+): string {
+  const [calleeStart, calleeEnd] = getCalleeRange(call, sourceCode);
   return sourceCode.text.slice(calleeStart, calleeEnd);
 }
 
-function getPreferredCalleeText(group: PushCallStatement[]): string {
+function getPreferredCallee(group: PushCallStatement[]): PushCallStatement {
   const withTypeParams = group.find((entry) => entry.call.typeParameters);
-  return withTypeParams ? withTypeParams.calleeText : group[0].calleeText;
+  return withTypeParams ?? group[0];
+}
+
+/**
+ * Locates the parentheses that delimit the argument list. The opening token
+ * cannot be derived from the first argument because a parenthesized argument
+ * would yield its own wrapper paren instead.
+ */
+function getArgumentListParens(
+  call: TSESTree.CallExpression,
+  sourceCode: TSESLint.SourceCode,
+): { openParen: TSESTree.Token; closeParen: TSESTree.Token } | null {
+  const anchor = call.typeParameters ?? call.callee;
+  const openParen = sourceCode.getTokenAfter(anchor, {
+    filter: (token) =>
+      token.type === AST_TOKEN_TYPES.Punctuator && token.value === '(',
+  });
+  const closeParen = sourceCode.getLastToken(call);
+
+  if (!openParen || !closeParen || closeParen.value !== ')') return null;
+
+  return { openParen, closeParen };
 }
 
 function getExpressionIdentity(expression: TSESTree.Expression): string | null {
@@ -344,13 +378,36 @@ function indentText(text: string, indent: string): string {
     .join('\n');
 }
 
+function indentComment(text: string, indent: string): string {
+  const normalized = normalizeIndentation(text).split('\n');
+  if (normalized.length === 1) return `${indent}${normalized[0]}`;
+
+  const continuationLines = normalized.slice(1);
+  const meaningfulLines = continuationLines.filter(
+    (line) => line.trim().length > 0,
+  );
+  /**
+   * Block comments conventionally align their continuation asterisks one column
+   * past the opening slash, so keep that alignment when re-indenting.
+   */
+  const isStarAligned =
+    meaningfulLines.length > 0 &&
+    meaningfulLines.every((line) => line.trim().startsWith('*'));
+  const continuationIndent = isStarAligned ? `${indent} ` : indent;
+
+  return [
+    `${indent}${normalized[0]}`,
+    ...continuationLines.map((line) => `${continuationIndent}${line}`),
+  ].join('\n');
+}
+
 function formatComments(
   comments: TSESTree.Comment[],
   indent: string,
   sourceCode: TSESLint.SourceCode,
 ): string[] {
   return comments.map((comment) =>
-    indentText(sourceCode.getText(comment), indent),
+    indentComment(sourceCode.getText(comment), indent),
   );
 }
 
@@ -388,15 +445,50 @@ export const flattenPushCalls = createRule<[], MessageIds>({
   create(context) {
     const sourceCode = context.getSourceCode();
 
-    type PushSegment = {
-      comments: TSESTree.Comment[];
-      args: TSESTree.CallExpressionArgument[];
+    /**
+     * An argument together with the comments that sit immediately around it
+     * inside the argument list, so the merged call can carry them along.
+     */
+    type ArgumentChunk = {
+      leading: TSESTree.Comment[];
+      trailing: TSESTree.Comment[];
+      text: string;
+      range: TSESTree.Range;
+      endLine: number;
     };
 
-    function buildSegments(group: PushCallStatement[]): PushSegment[] {
-      return group.map((entry, index) => {
+    type PushSegment = {
+      /** Comments that belong on their own line ahead of the next argument. */
+      comments: TSESTree.Comment[];
+      chunks: ArgumentChunk[];
+    };
+
+    /** An argument rendered with its comments split around the separating comma. */
+    type RenderedArgument = {
+      body: string;
+      suffix: string;
+    };
+
+    function buildChunks(call: TSESTree.CallExpression): ArgumentChunk[] {
+      return call.arguments.map((arg) => ({
+        leading: sourceCode.getCommentsBefore(arg),
+        trailing: sourceCode.getCommentsAfter(arg),
+        text: sourceCode.getText(arg),
+        range: arg.range,
+        endLine: arg.loc.end.line,
+      }));
+    }
+
+    function buildSegments(group: PushCallStatement[]): PushSegment[] | null {
+      const segments: PushSegment[] = [];
+
+      for (let index = 0; index < group.length; index++) {
+        const entry = group[index];
+        const parens = getArgumentListParens(entry.call, sourceCode);
+        if (!parens) return null;
+
         const previousStatement = index > 0 ? group[index - 1].statement : null;
-        const comments =
+        const interstitialComments =
           previousStatement === null
             ? []
             : getLeadingCommentsBetween(
@@ -404,25 +496,84 @@ export const flattenPushCalls = createRule<[], MessageIds>({
                 previousStatement,
                 entry.statement,
               );
-        return { comments, args: entry.call.arguments };
+        /**
+         * An argument-less call contributes no argument to anchor its comments,
+         * so they float forward to the next argument instead.
+         */
+        const emptyCallComments =
+          entry.call.arguments.length === 0
+            ? sourceCode
+                .getCommentsInside(entry.call)
+                .filter(
+                  (comment) => comment.range[0] >= parens.openParen.range[1],
+                )
+            : [];
+
+        segments.push({
+          comments: [...interstitialComments, ...emptyCallComments],
+          chunks: buildChunks(entry.call),
+        });
+      }
+
+      return segments;
+    }
+
+    /**
+     * Comments that the merged call cannot host — for instance one wedged
+     * between the callee and its argument list — would be destroyed by the fix,
+     * so the violation is reported without one.
+     */
+    function findUnhostableComments(
+      group: PushCallStatement[],
+      segments: PushSegment[],
+      calleeRange: TSESTree.Range,
+    ): TSESTree.Comment[] {
+      const groupStart = group[0].statement.range[0];
+      const groupEnd = group[group.length - 1].statement.range[1];
+      const carried = new Set<TSESTree.Comment>();
+      const preservedRanges: TSESTree.Range[] = [calleeRange];
+
+      segments.forEach((segment) => {
+        segment.comments.forEach((comment) => carried.add(comment));
+        segment.chunks.forEach((chunk) => {
+          chunk.leading.forEach((comment) => carried.add(comment));
+          chunk.trailing.forEach((comment) => carried.add(comment));
+          preservedRanges.push(chunk.range);
+        });
+      });
+
+      return sourceCode.getAllComments().filter((comment) => {
+        if (comment.range[0] < groupStart || comment.range[1] > groupEnd) {
+          return false;
+        }
+        if (carried.has(comment)) return false;
+        return !preservedRanges.some(
+          (range) =>
+            comment.range[0] >= range[0] && comment.range[1] <= range[1],
+        );
       });
     }
 
     function shouldUseMultilineFormat(
       segments: PushSegment[],
-      group: PushCallStatement[],
       totalArgs: number,
     ): boolean {
-      const hasInterstitialComments = segments.some(
-        (segment) => segment.comments.length > 0,
+      /**
+       * Comments must go on their own lines: a line comment collapsed into a
+       * single-line argument list would swallow the rest of the call.
+       */
+      const hasAttachedComments = segments.some(
+        (segment) =>
+          segment.comments.length > 0 ||
+          segment.chunks.some(
+            (chunk) => chunk.leading.length > 0 || chunk.trailing.length > 0,
+          ),
       );
-      const hasMultilineArgument = group.some((entry) =>
-        entry.call.arguments.some((arg) =>
-          sourceCode.getText(arg).includes('\n'),
-        ),
+      const hasMultilineArgument = segments.some((segment) =>
+        segment.chunks.some((chunk) => chunk.text.includes('\n')),
       );
 
-      return hasInterstitialComments || hasMultilineArgument || totalArgs > 2;
+      return hasAttachedComments || hasMultilineArgument || totalArgs > 2;
     }
 
     function detectSemicolon(
@@ -439,71 +590,104 @@ export const flattenPushCalls = createRule<[], MessageIds>({
       segments: PushSegment[],
       shouldUseMultiline: boolean,
       argumentIndent: string,
-    ): string[] {
+    ): RenderedArgument[] {
       if (!shouldUseMultiline) {
         return segments.flatMap((segment) =>
-          segment.args.map((arg) => sourceCode.getText(arg)),
+          segment.chunks.map((chunk) => ({ body: chunk.text, suffix: '' })),
         );
       }
 
       return formatMultilineArguments(segments, argumentIndent);
     }
 
+    /**
+     * Trailing comments render after the separating comma so a line comment
+     * cannot comment the comma out.
+     */
+    function formatTrailingComments(
+      chunk: ArgumentChunk,
+      argumentIndent: string,
+    ): string {
+      let previousLine = chunk.endLine;
+
+      return chunk.trailing
+        .map((comment) => {
+          const text = sourceCode.getText(comment);
+          const rendered =
+            comment.loc.start.line === previousLine
+              ? ` ${text}`
+              : `\n${indentComment(text, argumentIndent)}`;
+          previousLine = comment.loc.end.line;
+          return rendered;
+        })
+        .join('');
+    }
+
     function formatMultilineArguments(
       segments: PushSegment[],
       argumentIndent: string,
-    ): string[] {
-      const argumentParts: string[] = [];
+    ): RenderedArgument[] {
+      const renderedArguments: RenderedArgument[] = [];
       let pendingComments: string[] = [];
 
       segments.forEach((segment) => {
-        const formattedComments = formatComments(
-          segment.comments,
-          argumentIndent,
-          sourceCode,
+        pendingComments = pendingComments.concat(
+          formatComments(segment.comments, argumentIndent, sourceCode),
         );
 
-        pendingComments = pendingComments.concat(formattedComments);
-        if (segment.args.length === 0) return;
+        segment.chunks.forEach((chunk) => {
+          const bodyLines = [
+            ...pendingComments,
+            ...formatComments(chunk.leading, argumentIndent, sourceCode),
+            indentText(chunk.text, argumentIndent),
+          ];
+          pendingComments = [];
 
-        segment.args.forEach((arg, index) => {
-          const argText = indentText(sourceCode.getText(arg), argumentIndent);
-          if (index === 0 && pendingComments.length > 0) {
-            argumentParts.push(`${pendingComments.join('\n')}\n${argText}`);
-            pendingComments = [];
-          } else {
-            argumentParts.push(argText);
-          }
+          renderedArguments.push({
+            body: bodyLines.join('\n'),
+            suffix: formatTrailingComments(chunk, argumentIndent),
+          });
         });
       });
 
-      return attachTrailingComments(argumentParts, pendingComments);
+      return attachTrailingComments(renderedArguments, pendingComments);
     }
 
     function attachTrailingComments(
-      argumentParts: string[],
+      renderedArguments: RenderedArgument[],
       pendingComments: string[],
-    ): string[] {
-      if (pendingComments.length > 0 && argumentParts.length > 0) {
-        const lastIndex = argumentParts.length - 1;
-        argumentParts[lastIndex] = `${
-          argumentParts[lastIndex]
-        }\n${pendingComments.join('\n')}`;
+    ): RenderedArgument[] {
+      if (pendingComments.length === 0 || renderedArguments.length === 0) {
+        return renderedArguments;
       }
 
-      return argumentParts;
+      const lastIndex = renderedArguments.length - 1;
+      const last = renderedArguments[lastIndex];
+      renderedArguments[lastIndex] = {
+        body: `${last.body}${last.suffix}\n${pendingComments.join('\n')}`,
+        suffix: '',
+      };
+
+      return renderedArguments;
     }
 
     function buildFinalReplacement(
       calleeText: string,
-      argumentParts: string[],
+      renderedArguments: RenderedArgument[],
       shouldUseMultiline: boolean,
       baseIndent: string,
       hasSemicolon: boolean,
     ): string {
       const argsText = shouldUseMultiline
-        ? `\n${argumentParts.join(',\n')}\n${baseIndent}`
-        : argumentParts.join(', ');
+        ? `\n${renderedArguments
+            .map(
+              (argument, index) =>
+                `${argument.body}${
+                  index < renderedArguments.length - 1 ? ',' : ''
+                }${argument.suffix}`,
+            )
+            .join('\n')}\n${baseIndent}`
+        : renderedArguments.map((argument) => argument.body).join(', ');
 
       return `${calleeText}(${argsText})${hasSemicolon ? ';' : ''}`;
     }
@@ -515,17 +699,22 @@ export const flattenPushCalls = createRule<[], MessageIds>({
         (count, item) => count + item.call.arguments.length,
         0,
       );
-      const calleeText = getPreferredCalleeText(group);
+      const preferredCallee = getPreferredCallee(group);
 
       const segments = buildSegments(group);
-      const shouldUseMultiline = shouldUseMultilineFormat(
-        segments,
+      if (!segments) return null;
+
+      const unhostableComments = findUnhostableComments(
         group,
-        totalArgs,
+        segments,
+        getCalleeRange(preferredCallee.call, sourceCode),
       );
+      if (unhostableComments.length > 0) return null;
+
+      const shouldUseMultiline = shouldUseMultilineFormat(segments, totalArgs);
       const baseIndent = getLineIndent(first.statement, sourceCode);
       const argumentIndent = `${baseIndent}  `;
-      const argumentParts = formatArguments(
+      const renderedArguments = formatArguments(
         segments,
         shouldUseMultiline,
         argumentIndent,
@@ -533,8 +722,8 @@ export const flattenPushCalls = createRule<[], MessageIds>({
       const hasSemicolon = detectSemicolon(first, last);
 
       const replacement = buildFinalReplacement(
-        calleeText,
-        argumentParts,
+        preferredCallee.calleeText,
+        renderedArguments,
         shouldUseMultiline,
         baseIndent,
         hasSemicolon,

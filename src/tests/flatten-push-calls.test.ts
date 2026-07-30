@@ -375,5 +375,232 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
       `,
       errors: [{ messageId: 'flattenPushCalls' }],
     },
+    {
+      code: `
+      const arr = [];
+      arr.push(
+        // eslint-disable-next-line no-console
+        firstItem
+      );
+      arr.push(secondItem);
+      `,
+      output: `
+      const arr = [];
+      arr.push(
+        // eslint-disable-next-line no-console
+        firstItem,
+        secondItem
+      );
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      code: `
+      const arr = [];
+      arr.push(first);
+      arr.push(
+        // eslint-disable-next-line no-console
+        second
+      );
+      `,
+      output: `
+      const arr = [];
+      arr.push(
+        first,
+        // eslint-disable-next-line no-console
+        second
+      );
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      code: `
+      const arr = [];
+      arr.push(
+        alpha // keep alpha
+      );
+      arr.push(beta);
+      `,
+      output: `
+      const arr = [];
+      arr.push(
+        alpha, // keep alpha
+        beta
+      );
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      code: `
+      const arr = [];
+      arr.push(alpha /* inline note */);
+      arr.push(beta);
+      `,
+      output: `
+      const arr = [];
+      arr.push(
+        alpha, /* inline note */
+        beta
+      );
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      code: `
+      const arr = [];
+      arr.push(alpha);
+      arr.push(
+        beta
+        // afterthought
+      );
+      `,
+      output: `
+      const arr = [];
+      arr.push(
+        alpha,
+        beta
+        // afterthought
+      );
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      code: `
+      const arr = [];
+      arr.push(one);
+      arr.push(
+        // middle matters
+        two
+      );
+      arr.push(three);
+      `,
+      output: `
+      const arr = [];
+      arr.push(
+        one,
+        // middle matters
+        two,
+        three
+      );
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      code: `
+      const arr = [];
+      arr.push(/* leading note */ alpha);
+      arr.push(beta);
+      `,
+      output: `
+      const arr = [];
+      arr.push(
+        /* leading note */
+        alpha,
+        beta
+      );
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      code: `
+      const arr = [];
+      arr.push(
+        /**
+         * Alpha is special.
+         */
+        alpha
+      );
+      arr.push(beta);
+      `,
+      output: `
+      const arr = [];
+      arr.push(
+        /**
+         * Alpha is special.
+         */
+        alpha,
+        beta
+      );
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      code: `
+      const arr = [];
+      arr.push(
+        // first
+        a,
+        // second
+        b
+      );
+      arr.push(c);
+      `,
+      output: `
+      const arr = [];
+      arr.push(
+        // first
+        a,
+        // second
+        b,
+        c
+      );
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      code: `
+      const items = [];
+      items.push(a);
+      items.push(/* placeholder */);
+      items.push(b);
+      `,
+      output: `
+      const items = [];
+      items.push(
+        a,
+        /* placeholder */
+        b
+      );
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      code: `
+      const arr = [];
+      // unrelated header
+      arr.push(a);
+      arr.push(b);
+      // unrelated footer
+      const done = true;
+      `,
+      output: `
+      const arr = [];
+      // unrelated header
+      arr.push(a, b);
+      // unrelated footer
+      const done = true;
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      // A comment wedged between the callee and its argument list cannot be
+      // carried into the merged call, so the report stands without a fix.
+      code: `
+      const arr = [];
+      arr.push /* odd spot */ (alpha);
+      arr.push(beta);
+      `,
+      output: null,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      code: `
+      const arr = [];
+      arr.push(alpha) /* tail */;
+      arr.push(beta);
+      `,
+      output: null,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
   ],
 });
