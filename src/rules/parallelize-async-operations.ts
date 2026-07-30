@@ -5,11 +5,34 @@ type MessageIds = 'parallelizeAsyncOperations';
 type Options = [
   {
     sideEffectPatterns?: Array<string | RegExp>;
+    ignoreTestFiles?: boolean;
   },
 ];
 
+// Anchored at the end of the path so multi-part suffixes such as
+// `EventRegistry.integration.test.ts` are recognized while production modules
+// that merely contain the word (`testHelpers.ts`, `latest.ts`, `contest/Thing.ts`)
+// keep their enforcement.
+const TEST_FILE_SUFFIX = /\.(test|spec)\.[cm]?[jt]sx?$/;
+
+// Jest convention directories hold test-only modules regardless of file name.
+const TEST_FILE_DIRECTORY = /(^|\/)(__tests__|__mocks__)\//;
+
+/**
+ * A test suite serves no requests and is not latency-critical, so the rule's
+ * rationale — that sequential awaits make network and I/O latency add up — does
+ * not apply to it. Its awaits instead encode ordering: `await` an interaction,
+ * then `await` an assertion that observes the DOM state the interaction
+ * produced. That dependency is a side effect rather than a value, so it is
+ * invisible to the syntactic barriers below, and Promise.all would race the
+ * assertion against the interaction (issue #1395).
+ */
+const isTestFile = (filename: string) =>
+  TEST_FILE_SUFFIX.test(filename) || TEST_FILE_DIRECTORY.test(filename);
+
 const defaultOptions: Options = [
   {
+    ignoreTestFiles: true,
     sideEffectPatterns: [
       'updatecounter',
       'setcounter',
@@ -35,6 +58,15 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
       recommended: 'error',
     },
     fixable: 'code',
+    // `defaultOptions` above is the single source of truth for defaults; the
+    // schema deliberately declares none. ESLint validates rule options with an
+    // ajv instance configured `useDefaults: true`, which writes schema defaults
+    // INTO the supplied options object before `defaultOptions` are merged. A
+    // schema `default: []` on sideEffectPatterns therefore erases the built-in
+    // side-effect patterns for any consumer who passes an options object at all
+    // -- including one that only sets `ignoreTestFiles` -- so `commit`, `flush`,
+    // and the counter patterns stop acting as ordering barriers and the rule
+    // reports the very sequences it is meant to leave alone.
     schema: [
       {
         type: 'object',
@@ -47,7 +79,9 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
                 { type: 'object', instanceof: 'RegExp' },
               ],
             },
-            default: [],
+          },
+          ignoreTestFiles: {
+            type: 'boolean',
           },
         },
         additionalProperties: false,
@@ -60,6 +94,15 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
   },
   defaultOptions,
   create(context, [options]) {
+    // Normalize Windows backslash separators so the forward-slash directory
+    // check matches on every platform. Without this, `getFilename()` returns
+    // `C:\repo\src\__tests__\Foo.ts` on Windows and the exemption silently
+    // fails there.
+    const filename = context.getFilename().replace(/\\/g, '/');
+    if ((options?.ignoreTestFiles ?? true) && isTestFile(filename)) {
+      return {};
+    }
+
     const sourceCode = context.sourceCode;
     const sideEffectMatchers = (options?.sideEffectPatterns ?? []).map(
       (pattern) =>
