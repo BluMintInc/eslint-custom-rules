@@ -90,6 +90,56 @@ function collectClaimableSpecifiers(
 }
 
 /**
+ * The competing library's import declaration a name resolves to, or null for
+ * every other binding.
+ *
+ * A callee matched by name alone proves nothing on its own: `detailedDiff` is
+ * as likely to be the file's own function, a local variable, or a parameter as
+ * it is to be `deep-object-diff`'s export. Reporting those renames a call to
+ * `diff` that nothing binds while the local definition it was calling survives,
+ * so only a name the import handler is about to retire earns a report. The
+ * declaration is the one whose rewrite makes the emitted `diff` resolvable,
+ * which is what pairs the call fix with the import fix in the same pass.
+ *
+ * Resolution keys on the *local* name a specifier binds, so an alias that
+ * renames a competing export onto one of these names is covered, while an alias
+ * that renames it away (`detailedDiff as dd`) is left to the imported-name
+ * tracking that follows the local name of every known specifier.
+ */
+function toCompetingDiffImport(
+  variable: TSESLint.Scope.Variable | null,
+): TSESTree.ImportDeclaration | null {
+  if (!variable) {
+    return null;
+  }
+  for (const def of variable.defs) {
+    if (def.type !== 'ImportBinding') {
+      continue;
+    }
+    const declaration = def.parent;
+    if (
+      !declaration ||
+      declaration.type !== AST_NODE_TYPES.ImportDeclaration ||
+      declaration.importKind === 'type'
+    ) {
+      continue;
+    }
+    const specifier = def.node;
+    if (
+      specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+      specifier.importKind === 'type'
+    ) {
+      continue;
+    }
+    if (!COMPETING_DIFF_MODULES.has(String(declaration.source.value))) {
+      continue;
+    }
+    return declaration;
+  }
+  return null;
+}
+
+/**
  * Whether a bare `diff` written at `scope` reaches microdiff's function.
  * Resolving through the scope chain catches both failure modes: a module-scope
  * binding that the inserted import redeclares (TS2440, or TS2300 against
@@ -356,6 +406,19 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
           ].includes(name);
 
           if (isDiffFunction) {
+            // The name is only a candidate until the scope chain says what it
+            // binds: a local function, variable, parameter, or an import from
+            // anywhere but a competing diff library keeps its call untouched.
+            const competingImport = toCompetingDiffImport(
+              ASTHelpers.findVariableInScope(
+                ASTHelpers.getScope(context, node),
+                name,
+              ),
+            );
+            if (!competingImport) {
+              return;
+            }
+
             // Track this import name as used
             usedImportNames.add(name);
 
