@@ -100,6 +100,31 @@ Specifics:
 - If a local binding named `useCallback` would capture the emitted call, the violation is reported without a fix.
 - The member-expression form (`React.useMemo(...)`) is not reported by this rule.
 
+### Interaction with inline disable comments
+
+The import edit rides on a single violation's fix, so it is attached to the
+first violation that is **not** suppressed by an inline `eslint-disable`
+directive. A suppressed violation also keeps its `useMemo(...)` call, so the
+specifier it resolves to is never retired: whenever any violation in the file is
+suppressed, the rename degrades to adding `useCallback` beside `useMemo`.
+
+```jsx
+// before
+import { useMemo } from 'react';
+// eslint-disable-next-line @blumintinc/blumint/prefer-usecallback-over-usememo-for-functions
+const alpha = useMemo(() => () => {}, []);
+const beta = useMemo(() => () => {}, []);
+
+// after
+import { useMemo, useCallback } from 'react';
+// eslint-disable-next-line @blumintinc/blumint/prefer-usecallback-over-usememo-for-functions
+const alpha = useMemo(() => () => {}, []);   // left alone, still bound
+const beta = useCallback(() => {}, []);      // fixed, and carries the import
+```
+
+With every violation suppressed the file is left untouched — no specifier is
+added or removed.
+
 ## Options
 
 This rule accepts an options object with the following properties:

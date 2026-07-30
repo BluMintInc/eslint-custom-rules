@@ -135,6 +135,33 @@ const C = () => { const cb = React.useMemo(() => () => {}, []); return cb; };`,
         code: `import { useMemo } from 'react';
 const C = () => { const config = useMemo(() => ({ apiUrl: '/api' }), []); return config; };`,
       },
+      // Issue #1411: every violation suppressed inline leaves the file alone
+      {
+        code: `import { useMemo } from 'react';
+const C = () => {
+  // eslint-disable-next-line prefer-usecallback-over-usememo-for-functions
+  const alpha = useMemo(() => () => {}, []);
+  // eslint-disable-next-line prefer-usecallback-over-usememo-for-functions
+  const beta = useMemo(() => () => {}, []);
+  return [alpha, beta];
+};`,
+      },
+      // Issue #1411: a block disable covering the file suppresses everything
+      {
+        code: `/* eslint-disable prefer-usecallback-over-usememo-for-functions */
+import { useMemo } from 'react';
+const C = () => {
+  const alpha = useMemo(() => () => {}, []);
+  const beta = useMemo(() => () => {}, []);
+  return [alpha, beta];
+};`,
+      },
+      // Issue #1411: a bare block disable suppresses this rule too
+      {
+        code: `/* eslint-disable */
+import { useMemo } from 'react';
+const C = () => { const cb = useMemo(() => () => {}, []); return cb; };`,
+      },
     ],
     invalid: [
       // Invalid case: using useMemo to return a function (with block body)
@@ -674,6 +701,216 @@ const C = () => { const cb = useMemo(() => () => {}, []); return cb; };`,
         output: `import { useCallback } from 'preact/hooks';
 const C = () => { const cb = useCallback(() => {}, []); return cb; };`,
       },
+      // ------------------------------------------------------------------
+      // Issue #1411: the import rewrite is a *rename* of the useMemo
+      // specifier, so a suppressed violation breaks it in both directions:
+      // a suppressed carrier drops the rename while survivors emit
+      // useCallback, and a surviving carrier renames away the specifier the
+      // suppressed useMemo call still needs. Either way an identifier ends up
+      // unbound. Whenever any violation is suppressed the rename must degrade
+      // to adding useCallback alongside useMemo.
+      // ------------------------------------------------------------------
+      // Mode A: the FIRST violation (the carrier) is disabled
+      {
+        code: `import { useMemo } from 'react';
+const C = () => {
+  // eslint-disable-next-line prefer-usecallback-over-usememo-for-functions
+  const alpha = useMemo(() => () => {}, []);
+  const beta = useMemo(() => () => {}, []);
+  return [alpha, beta];
+};`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('beta') },
+          },
+        ],
+        output: `import { useMemo, useCallback } from 'react';
+const C = () => {
+  // eslint-disable-next-line prefer-usecallback-over-usememo-for-functions
+  const alpha = useMemo(() => () => {}, []);
+  const beta = useCallback(() => {}, []);
+  return [alpha, beta];
+};`,
+      },
+      // Mode B: the LAST violation is disabled, so the surviving carrier must
+      // not rename away the specifier the suppressed call still resolves to
+      {
+        code: `import { useMemo } from 'react';
+const C = () => {
+  const alpha = useMemo(() => () => {}, []);
+  // eslint-disable-next-line prefer-usecallback-over-usememo-for-functions
+  const beta = useMemo(() => () => {}, []);
+  return [alpha, beta];
+};`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('alpha') },
+          },
+        ],
+        output: `import { useMemo, useCallback } from 'react';
+const C = () => {
+  const alpha = useCallback(() => {}, []);
+  // eslint-disable-next-line prefer-usecallback-over-usememo-for-functions
+  const beta = useMemo(() => () => {}, []);
+  return [alpha, beta];
+};`,
+      },
+      // Mode B: a MIDDLE violation is disabled
+      {
+        code: `import { useMemo } from 'react';
+const C = () => {
+  const alpha = useMemo(() => () => {}, []);
+  // eslint-disable-next-line prefer-usecallback-over-usememo-for-functions
+  const beta = useMemo(() => () => 1, []);
+  const gamma = useMemo(() => () => 2, []);
+  return [alpha, beta, gamma];
+};`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('alpha') },
+          },
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('gamma') },
+          },
+        ],
+        output: `import { useMemo, useCallback } from 'react';
+const C = () => {
+  const alpha = useCallback(() => {}, []);
+  // eslint-disable-next-line prefer-usecallback-over-usememo-for-functions
+  const beta = useMemo(() => () => 1, []);
+  const gamma = useCallback(() => 2, []);
+  return [alpha, beta, gamma];
+};`,
+      },
+      // Issue #1411: a bare disable suppresses this rule as well
+      {
+        code: `import { useMemo } from 'react';
+const C = () => {
+  // eslint-disable-next-line
+  const alpha = useMemo(() => () => {}, []);
+  const beta = useMemo(() => () => {}, []);
+  return [alpha, beta];
+};`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('beta') },
+          },
+        ],
+        output: `import { useMemo, useCallback } from 'react';
+const C = () => {
+  // eslint-disable-next-line
+  const alpha = useMemo(() => () => {}, []);
+  const beta = useCallback(() => {}, []);
+  return [alpha, beta];
+};`,
+      },
+      // Issue #1411: a disable naming another rule must not suppress, so the
+      // rename stays the fix
+      {
+        code: `import { useMemo } from 'react';
+const C = () => {
+  // eslint-disable-next-line no-console
+  const alpha = useMemo(() => () => {}, []);
+  const beta = useMemo(() => () => {}, []);
+  return [alpha, beta];
+};`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('alpha') },
+          },
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('beta') },
+          },
+        ],
+        output: `import { useCallback } from 'react';
+const C = () => {
+  // eslint-disable-next-line no-console
+  const alpha = useCallback(() => {}, []);
+  const beta = useCallback(() => {}, []);
+  return [alpha, beta];
+};`,
+      },
+      // Issue #1411: useCallback already imported, so a suppressed violation
+      // only has to block the removal of useMemo — no duplicate specifier
+      {
+        code: `import { useMemo, useCallback } from 'react';
+const C = () => {
+  const alpha = useMemo(() => () => {}, []);
+  // eslint-disable-next-line prefer-usecallback-over-usememo-for-functions
+  const beta = useMemo(() => () => {}, []);
+  return [alpha, beta];
+};`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('alpha') },
+          },
+        ],
+        output: `import { useMemo, useCallback } from 'react';
+const C = () => {
+  const alpha = useCallback(() => {}, []);
+  // eslint-disable-next-line prefer-usecallback-over-usememo-for-functions
+  const beta = useMemo(() => () => {}, []);
+  return [alpha, beta];
+};`,
+      },
+      // Issue #1411: an aliased useCallback import is reused while the
+      // suppressed call keeps useMemo
+      {
+        code: `import { useMemo, useCallback as uc } from 'react';
+const C = () => {
+  const alpha = useMemo(() => () => {}, []);
+  // eslint-disable-next-line prefer-usecallback-over-usememo-for-functions
+  const beta = useMemo(() => () => {}, []);
+  return [alpha, beta];
+};`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('alpha') },
+          },
+        ],
+        output: `import { useMemo, useCallback as uc } from 'react';
+const C = () => {
+  const alpha = uc(() => {}, []);
+  // eslint-disable-next-line prefer-usecallback-over-usememo-for-functions
+  const beta = useMemo(() => () => {}, []);
+  return [alpha, beta];
+};`,
+      },
+      // Issue #1411: a block disable/enable pair suppresses the violations it
+      // brackets, and the survivor outside it carries the added specifier
+      {
+        code: `import { useMemo } from 'react';
+const C = () => {
+  /* eslint-disable prefer-usecallback-over-usememo-for-functions */
+  const alpha = useMemo(() => () => {}, []);
+  /* eslint-enable prefer-usecallback-over-usememo-for-functions */
+  const beta = useMemo(() => () => {}, []);
+  return [alpha, beta];
+};`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('beta') },
+          },
+        ],
+        output: `import { useMemo, useCallback } from 'react';
+const C = () => {
+  /* eslint-disable prefer-usecallback-over-usememo-for-functions */
+  const alpha = useMemo(() => () => {}, []);
+  /* eslint-enable prefer-usecallback-over-usememo-for-functions */
+  const beta = useCallback(() => {}, []);
+  return [alpha, beta];
+};`,
+      },
     ],
   },
 );
@@ -754,5 +991,223 @@ const C = () => {
     );
     expect(output).toContain(`import { useMemo, useCallback } from 'react';`);
     expect(messages).toHaveLength(0);
+  });
+});
+
+// Issue #1411: RuleTester applies a single fix pass and never shows the file
+// `eslint --fix` actually writes. These cases run the real multi-pass fixer and
+// assert the invariant the bug violated: every hook call left in the output
+// resolves to a specifier that is still in the import list.
+describe('prefer-usecallback-over-usememo-for-functions: inline disables and the import rename (issue #1411)', () => {
+  const RULE_ID =
+    '@blumintinc/blumint/prefer-usecallback-over-usememo-for-functions';
+
+  const lint = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      preferUseCallbackOverUseMemoForFunctions as unknown as Rule.RuleModule,
+    );
+    // A near-miss neighbour proves rule matching is exact rather than a
+    // prefix/substring heuristic.
+    linter.defineRule('@blumintinc/blumint/prefer-usecallback-over-usememo', {
+      meta: { schema: [] },
+      create: () => ({}),
+    } as unknown as Rule.RuleModule);
+    const config = {
+      parser: '@typescript-eslint/parser',
+      parserOptions: {
+        ecmaVersion: 2018 as const,
+        sourceType: 'module' as const,
+        ecmaFeatures: { jsx: true },
+      },
+      rules: { [RULE_ID]: 'error' as const },
+    };
+    return linter.verifyAndFix(code, config, 'Component.tsx');
+  };
+
+  /** Local names bound by every braced import in the file. */
+  const importedLocals = (output: string) => {
+    const locals = new Set<string>();
+    const importPattern = /import\s+(?:[\w$]+\s*,\s*)?\{([^}]*)\}\s*from/g;
+    let match: RegExpExecArray | null = importPattern.exec(output);
+    while (match !== null) {
+      for (const entry of match[1].split(',')) {
+        const parts = entry.trim().split(/\s+as\s+/);
+        const local = (parts[1] ?? parts[0]).trim();
+        if (local !== '') {
+          locals.add(local);
+        }
+      }
+      match = importPattern.exec(output);
+    }
+    return locals;
+  };
+
+  const expectEveryHookCallBound = (output: string) => {
+    const locals = importedLocals(output);
+    const callPattern = /\b(useMemo|useCallback|uc)\s*(?:<[^>]*>)?\(/g;
+    const called = new Set<string>();
+    let match: RegExpExecArray | null = callPattern.exec(output);
+    while (match !== null) {
+      called.add(match[1]);
+      match = callPattern.exec(output);
+    }
+    expect(called.size).toBeGreaterThan(0);
+    for (const name of called) {
+      expect([...locals]).toContain(name);
+    }
+  };
+
+  it('adds useCallback alongside useMemo when the carrier is suppressed', () => {
+    const { output, messages } = lint(`import { useMemo } from 'react';
+const C = () => {
+  // eslint-disable-next-line @blumintinc/blumint/prefer-usecallback-over-usememo-for-functions
+  const alpha = useMemo(() => () => {}, []);
+  const beta = useMemo(() => () => {}, []);
+  return [alpha, beta];
+};
+`);
+
+    expect(output).toBe(`import { useMemo, useCallback } from 'react';
+const C = () => {
+  // eslint-disable-next-line @blumintinc/blumint/prefer-usecallback-over-usememo-for-functions
+  const alpha = useMemo(() => () => {}, []);
+  const beta = useCallback(() => {}, []);
+  return [alpha, beta];
+};
+`);
+    expect(messages).toHaveLength(0);
+    expectEveryHookCallBound(output);
+  });
+
+  it('keeps useMemo imported when a later violation is suppressed', () => {
+    const { output, messages } = lint(`import { useMemo } from 'react';
+const C = () => {
+  const alpha = useMemo(() => () => {}, []);
+  // eslint-disable-next-line @blumintinc/blumint/prefer-usecallback-over-usememo-for-functions
+  const beta = useMemo(() => () => {}, []);
+  return [alpha, beta];
+};
+`);
+
+    expect(output).toBe(`import { useMemo, useCallback } from 'react';
+const C = () => {
+  const alpha = useCallback(() => {}, []);
+  // eslint-disable-next-line @blumintinc/blumint/prefer-usecallback-over-usememo-for-functions
+  const beta = useMemo(() => () => {}, []);
+  return [alpha, beta];
+};
+`);
+    expect(messages).toHaveLength(0);
+    expectEveryHookCallBound(output);
+  });
+
+  it('binds every hook when a middle violation is suppressed', () => {
+    const { output } = lint(`import { useMemo } from 'react';
+const C = () => {
+  const alpha = useMemo(() => () => {}, []);
+  // eslint-disable-next-line @blumintinc/blumint/prefer-usecallback-over-usememo-for-functions
+  const beta = useMemo(() => () => 1, []);
+  const gamma = useMemo(() => () => 2, []);
+  return [alpha, beta, gamma];
+};
+`);
+
+    expect(output).toContain(`import { useMemo, useCallback } from 'react';`);
+    expect(output).toContain('const beta = useMemo(() => () => 1, []);');
+    expect(output).toContain('const gamma = useCallback(() => 2, []);');
+    expectEveryHookCallBound(output);
+  });
+
+  it('leaves the file untouched when every violation is suppressed', () => {
+    const code = `import { useMemo } from 'react';
+const C = () => {
+  // eslint-disable-next-line @blumintinc/blumint/prefer-usecallback-over-usememo-for-functions
+  const alpha = useMemo(() => () => {}, []);
+  // eslint-disable-next-line @blumintinc/blumint/prefer-usecallback-over-usememo-for-functions
+  const beta = useMemo(() => () => {}, []);
+  return [alpha, beta];
+};
+`;
+
+    const { output, messages } = lint(code);
+
+    expect(output).toBe(code);
+    expect(messages).toHaveLength(0);
+    expect(output).not.toContain('useCallback');
+  });
+
+  it('leaves the file untouched under a whole-file block disable', () => {
+    const code = `/* eslint-disable @blumintinc/blumint/prefer-usecallback-over-usememo-for-functions */
+import { useMemo } from 'react';
+const C = () => {
+  const cb = useMemo(() => () => {}, []);
+  return cb;
+};
+`;
+
+    const { output } = lint(code);
+
+    expect(output).toBe(code);
+  });
+
+  it('does not treat a disable for a similarly named rule as its own', () => {
+    const { output, messages } = lint(`import { useMemo } from 'react';
+const C = () => {
+  // eslint-disable-next-line @blumintinc/blumint/prefer-usecallback-over-usememo
+  const alpha = useMemo(() => () => {}, []);
+  const beta = useMemo(() => () => {}, []);
+  return [alpha, beta];
+};
+`);
+
+    expect(output).toBe(`import { useCallback } from 'react';
+const C = () => {
+  // eslint-disable-next-line @blumintinc/blumint/prefer-usecallback-over-usememo
+  const alpha = useCallback(() => {}, []);
+  const beta = useCallback(() => {}, []);
+  return [alpha, beta];
+};
+`);
+    expect(messages).toHaveLength(0);
+    expectEveryHookCallBound(output);
+  });
+
+  it('adds no duplicate specifier when useCallback is already imported', () => {
+    const { output } = lint(`import { useMemo, useCallback } from 'react';
+const C = () => {
+  const alpha = useMemo(() => () => {}, []);
+  // eslint-disable-next-line @blumintinc/blumint/prefer-usecallback-over-usememo-for-functions
+  const beta = useMemo(() => () => {}, []);
+  return [alpha, beta];
+};
+`);
+
+    expect(output).toContain(`import { useMemo, useCallback } from 'react';`);
+    expect(output.match(/useCallback/g)).toHaveLength(2);
+    expectEveryHookCallBound(output);
+  });
+
+  it('keeps the import usable when only the last violation survives a block disable', () => {
+    const { output } = lint(`import { useMemo } from 'react';
+const C = () => {
+  /* eslint-disable @blumintinc/blumint/prefer-usecallback-over-usememo-for-functions */
+  const alpha = useMemo(() => () => {}, []);
+  /* eslint-enable @blumintinc/blumint/prefer-usecallback-over-usememo-for-functions */
+  const beta = useMemo(() => () => {}, []);
+  return [alpha, beta];
+};
+`);
+
+    expect(output).toContain(`import { useMemo, useCallback } from 'react';`);
+    expect(output).toContain('const alpha = useMemo(() => () => {}, []);');
+    expect(output).toContain('const beta = useCallback(() => {}, []);');
+    expectEveryHookCallBound(output);
   });
 });
