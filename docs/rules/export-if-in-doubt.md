@@ -34,10 +34,14 @@ export type SomeType = { val: number };
 
 
 ```typescript
-function buildCache() {
-  const cache = new Map<string, number>();
-  return cache;
+export function getCachedScore(id: string) {
+  function buildCache() {
+    const cache = new Map<string, number>();
+    return cache;
+  }
+
+  return buildCache().get(id);
 }
 ```
 
-In this example, the declaration is intentionally private, so it is moved into a narrower scope instead of being exported.
+In this example, the declaration is intentionally private, so it is moved into a narrower scope instead of being exported. Only top-level declarations are reported, so nesting `buildCache` inside the exported function satisfies the rule without widening the module's public API.
