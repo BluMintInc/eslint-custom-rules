@@ -1014,6 +1014,299 @@ const A = () => {
 };`,
       errors: errors('useCallback', 'useLatestCallback', 3),
     },
+
+    // -----------------------------------------------------------------------
+    // A colliding `useLatestCallback` binding withholds the edit (issue #1428).
+    // The violation is still reported; only the automated fix is skipped.
+    // -----------------------------------------------------------------------
+    // Module-scope const: the inserted import would be a second declaration.
+    {
+      code: `import { useCallback } from 'react';
+const useLatestCallback = 1;
+const A = () => {
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o}>{useLatestCallback}</div>;
+};`,
+      output: null,
+      errors: errors(),
+    },
+    // Module-scope let.
+    {
+      code: `import { useCallback } from 'react';
+let useLatestCallback;
+const A = () => {
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o}>{useLatestCallback}</div>;
+};`,
+      output: null,
+      errors: errors(),
+    },
+    // Function declaration.
+    {
+      code: `import { useCallback } from 'react';
+function useLatestCallback(fn) { return fn; }
+const A = () => {
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o} />;
+};`,
+      output: null,
+      errors: errors(),
+    },
+    // Class declaration.
+    {
+      code: `import { useCallback } from 'react';
+class useLatestCallback {}
+const A = () => {
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o} />;
+};`,
+      output: null,
+      errors: errors(),
+    },
+    // Named import from a different module.
+    {
+      code: `import { useLatestCallback } from 'other-package';
+import { useCallback } from 'react';
+const A = () => {
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o}>{String(useLatestCallback)}</div>;
+};`,
+      output: null,
+      errors: errors(),
+    },
+    // Default import from a different module.
+    {
+      code: `import useLatestCallback from 'other-package';
+import { useCallback } from 'react';
+const A = () => {
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o}>{String(useLatestCallback)}</div>;
+};`,
+      output: null,
+      errors: errors(),
+    },
+    // Namespace import of the hook module bound to the name: the namespace
+    // object is not callable, so the rewritten call cannot reach the hook.
+    {
+      code: `import * as useLatestCallback from 'use-latest-callback';
+import { useCallback } from 'react';
+const A = () => {
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o}>{String(useLatestCallback)}</div>;
+};`,
+      output: null,
+      errors: errors(),
+    },
+    // Reverse alias from the hook module: the name is bound to another export.
+    {
+      code: `import { getLatestCallback as useLatestCallback } from 'use-latest-callback';
+import { useCallback } from 'react';
+const A = () => {
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o}>{String(useLatestCallback)}</div>;
+};`,
+      output: null,
+      errors: errors(),
+    },
+    // Alias from a different module.
+    {
+      code: `import { stable as useLatestCallback } from 'other-package';
+import { useCallback } from 'react';
+const A = () => {
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o}>{String(useLatestCallback)}</div>;
+};`,
+      output: null,
+      errors: errors(),
+    },
+    // Type-only declaration: the name is taken in the type space, so adding a
+    // value import of it is a duplicate identifier.
+    {
+      code: `import type { useLatestCallback } from 'use-latest-callback';
+import { useCallback } from 'react';
+const A = () => {
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o} />;
+};`,
+      output: null,
+      errors: errors(),
+    },
+    // Inline type specifier: erases at compile time, so it cannot carry the
+    // call, and it still takes the name.
+    {
+      code: `import { type useLatestCallback } from 'use-latest-callback';
+import { useCallback } from 'react';
+const A = () => {
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o} />;
+};`,
+      output: null,
+      errors: errors(),
+    },
+    // Shadowing parameter: the rewritten call would silently bind to it with no
+    // compile error at all.
+    {
+      code: `import { useCallback } from 'react';
+const A = (useLatestCallback) => {
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o}>{useLatestCallback}</div>;
+};`,
+      output: null,
+      errors: errors(),
+    },
+    // Block-scoped shadow covering the fix site.
+    {
+      code: `import { useCallback } from 'react';
+const A = () => {
+  {
+    const useLatestCallback = 1;
+    const o = useCallback(() => { go(); }, []);
+    return <div onClick={o}>{useLatestCallback}</div>;
+  }
+};`,
+      output: null,
+      errors: errors(),
+    },
+    // Shadow at the fix site even though the hook is correctly imported: the
+    // rewritten call would reach the shadow, not the import.
+    {
+      code: `import useLatestCallback from 'use-latest-callback';
+import { useCallback } from 'react';
+const A = () => {
+  const useLatestCallback = 1;
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o}>{useLatestCallback}</div>;
+};`,
+      output: null,
+      errors: errors(),
+    },
+
+    // -----------------------------------------------------------------------
+    // No collision: the edit must still land, byte for byte.
+    // -----------------------------------------------------------------------
+    // A similarly named binding is not the hook's name and must not decline.
+    {
+      code: `import { useCallback } from 'react';
+const useLatestCallbackRef = { current: null };
+const A = () => {
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o}>{String(useLatestCallbackRef)}</div>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+const useLatestCallbackRef = { current: null };
+const A = () => {
+  const o = useLatestCallback(() => { go(); });
+  return <div onClick={o}>{String(useLatestCallbackRef)}</div>;
+};`,
+      errors: errors(),
+    },
+    // A binding in a scope that does not cover the fix site only shadows the
+    // inserted import inside its own function, so the edit is safe.
+    {
+      code: `import { useCallback } from 'react';
+const B = () => {
+  const useLatestCallback = 1;
+  return useLatestCallback;
+};
+const A = () => {
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o}>{B()}</div>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+const B = () => {
+  const useLatestCallback = 1;
+  return useLatestCallback;
+};
+const A = () => {
+  const o = useLatestCallback(() => { go(); });
+  return <div onClick={o}>{B()}</div>;
+};`,
+      errors: errors(),
+    },
+    // The hook import is reused even when it trails the fix site in source
+    // order, because import state is read off the program body.
+    {
+      code: `import { useCallback } from 'react';
+const A = (go) => {
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o} />;
+};
+import useLatestCallback from 'use-latest-callback';`,
+      output: `
+const A = (go) => {
+  const o = useLatestCallback(() => { go(); });
+  return <div onClick={o} />;
+};
+import useLatestCallback from 'use-latest-callback';`,
+      errors: errors(),
+    },
+    // A side-effect-only import binds nothing, so the fix adds its own
+    // declaration rather than trying to extend it.
+    {
+      code: `import 'use-latest-callback';
+import { useCallback } from 'react';
+const A = () => {
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o} />;
+};`,
+      output: `import 'use-latest-callback';
+import useLatestCallback from 'use-latest-callback';
+const A = () => {
+  const o = useLatestCallback(() => { go(); });
+  return <div onClick={o} />;
+};`,
+      errors: errors(),
+    },
+    // A namespace import under another name does not bind a callable hook, so
+    // the fix adds a default import of its own.
+    {
+      code: `import * as latest from 'use-latest-callback';
+import { useCallback } from 'react';
+const A = () => {
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o}>{String(latest)}</div>;
+};`,
+      output: `import * as latest from 'use-latest-callback';
+import useLatestCallback from 'use-latest-callback';
+const A = () => {
+  const o = useLatestCallback(() => { go(); });
+  return <div onClick={o}>{String(latest)}</div>;
+};`,
+      errors: errors(),
+    },
+    // A type-only import of some other export leaves the hook's name free.
+    {
+      code: `import type { LatestCallback } from 'use-latest-callback';
+import { useCallback } from 'react';
+const A = (cb: LatestCallback) => {
+  const o = useCallback(() => { go(cb); }, []);
+  return <div onClick={o} />;
+};`,
+      output: `import type { LatestCallback } from 'use-latest-callback';
+import useLatestCallback from 'use-latest-callback';
+const A = (cb: LatestCallback) => {
+  const o = useLatestCallback(() => { go(cb); });
+  return <div onClick={o} />;
+};`,
+      errors: errors(),
+    },
+    // An aliased hook import is reused under its own name, so the hook's
+    // canonical name being free is irrelevant.
+    {
+      code: `import { useLatestCallback as stable } from 'use-latest-callback';
+import { useCallback } from 'react';
+const A = () => {
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o} />;
+};`,
+      output: `import { useLatestCallback as stable } from 'use-latest-callback';
+
+const A = () => {
+  const o = stable(() => { go(); });
+  return <div onClick={o} />;
+};`,
+      errors: errors('useCallback', 'stable'),
+    },
   ],
 });
 

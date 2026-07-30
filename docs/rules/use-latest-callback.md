@@ -47,6 +47,50 @@ function MyComponent({ items }) {
 }
 ```
 
+### Existing `useLatestCallback` bindings
+
+The fix emits a bare reference to the hook and, when the import is missing, a
+**value default import** — `import useLatestCallback from 'use-latest-callback';`
+— because the package's only export is the hook itself. So the fix is
+**withheld** whenever another `useLatestCallback` is visible at the call being
+rewritten. The violation is still reported; only the automated edit is skipped:
+
+```jsx
+import { useCallback } from 'react';
+const useLatestCallback = 1;
+
+// Reported, not fixed: the inserted import would be a second declaration of
+// `useLatestCallback` (TS2440, or TS2300 when the existing binding is itself
+// an import).
+export function ProfileCard({ user }) {
+  const onSave = useCallback(() => save(user), [user]);
+  return <SaveButton onClick={onSave} />;
+}
+```
+
+```jsx
+import { useCallback } from 'react';
+
+// Reported, not fixed: the parameter would capture the rewritten call with no
+// compile error at all.
+export function ProfileCard(useLatestCallback) {
+  const onSave = useCallback(() => save(), []);
+  return <SaveButton onClick={onSave} />;
+}
+```
+
+An existing binding is reused instead of duplicated only when every declaration
+of it is a value default specifier of `use-latest-callback`, or a value named
+specifier of `useLatestCallback` from it. A namespace import
+(`import * as useLatestCallback`) binds a module object rather than a callable,
+a type-only import erases at compile time, and a reverse alias
+(`import { getLatestCallback as useLatestCallback }`) binds a different export —
+each of those withholds the fix. A hook import aliased the other way
+(`import { useLatestCallback as stable }`) is reused under its own name, and a
+merely similar name such as `useLatestCallbackRef` never trips the guard. The
+name freed by the `react` specifiers the fix deletes stays claimable, so
+`useCallback as uc` still hands `uc` to the new import.
+
 ### ❌ Incorrect
 
 ```jsx
