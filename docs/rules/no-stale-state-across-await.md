@@ -48,13 +48,12 @@ async function loadProfile(id: string) {
 
 ```tsx
 const [profile, setProfile] = useState<Profile | null>(null);
-const [loading, setLoading] = useState(false);
+const [loading, setLoading] = useState(true); // starts in the loading state
 
 async function loadProfile(id: string) {
-  setLoading(true); // dedicated loading flag
   const data = await api.get(`/users/${id}`);
   setProfile(data);
-  setLoading(false);
+  setLoading(false); // each setter is written on one side of the await only
 }
 ```
 
