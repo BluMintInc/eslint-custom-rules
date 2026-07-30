@@ -379,25 +379,19 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
     }
 
     /**
-     * Get the indentation at the start of the current line for a node
+     * The call's own text with nothing but the callee name swapped for the
+     * fast-deep-equal name. Slicing the original text keeps the argument list —
+     * including its formatting and any comments inside it — byte-identical,
+     * which matters when the call has to be re-emitted at another position.
      */
-    function getLineBaseIndent(node: TSESTree.Node): string {
-      const text = sourceCode.text;
-      const start =
-        node.range?.[0] ?? sourceCode.getIndexFromLoc(node.loc.start);
-      const lineStart = text.lastIndexOf('\n', start - 1) + 1;
-      let i = lineStart;
-      let indent = '';
-      while (i < text.length) {
-        const ch = text[i];
-        if (ch === ' ' || ch === '\t') {
-          indent += ch;
-          i++;
-        } else {
-          break;
-        }
-      }
-      return indent;
+    function renameCallee(diffCall: TSESTree.CallExpression): string {
+      const callText = sourceCode.getText(diffCall);
+      const start = diffCall.range[0];
+      return (
+        callText.slice(0, diffCall.callee.range[0] - start) +
+        fastDeepEqualImportName +
+        callText.slice(diffCall.callee.range[1] - start)
+      );
     }
 
     /**
@@ -437,9 +431,6 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
       if (args.length !== 2) {
         return null; // Can't fix if not exactly 2 arguments
       }
-
-      const arg1 = sourceCode.getText(args[0]);
-      const arg2 = sourceCode.getText(args[1]);
 
       const fixes: TSESLint.RuleFix[] = [];
 
@@ -509,31 +500,32 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
         }
       }
 
-      // Replace the equality expression with isEqual call
-      const isMultilineCall =
-        diffCall.loc &&
-        args[0].loc &&
-        (diffCall.loc.start.line !== args[0].loc.start.line ||
-          (args[1] && args[0].loc.start.line !== args[1].loc.start.line));
+      // Comparing a call in place — `diff(a, b).length === 0` — is rewritten by
+      // splicing the two ranges that actually change: the callee name and the
+      // `.length` comparison tail (plus the `!`/`0 ===` head). Re-emitting the
+      // argument list instead destroyed everything between the arguments, and a
+      // dropped `eslint-disable` comment silently re-enables the rule it was
+      // suppressing.
+      const isCallInPlace =
+        diffCall.range[0] >= node.range[0] &&
+        diffCall.range[1] <= node.range[1];
 
-      let replacement: string;
-      if (isMultilineCall) {
-        const baseIndent = getLineBaseIndent(node);
-        const innerIndentPlus = baseIndent + '  ';
-        replacement =
-          `${fastDeepEqualImportName}(` +
-          `\n${innerIndentPlus}${arg1},` +
-          `\n${innerIndentPlus}${arg2},` +
-          `\n${baseIndent})`;
+      if (isCallInPlace) {
+        const headRange: TSESTree.Range = [node.range[0], diffCall.range[0]];
+        if (!isEquality) {
+          fixes.push(fixer.replaceTextRange(headRange, '!'));
+        } else if (headRange[0] !== headRange[1]) {
+          fixes.push(fixer.removeRange(headRange));
+        }
+        fixes.push(fixer.replaceText(diffCall.callee, fastDeepEqualImportName));
+        fixes.push(fixer.removeRange([diffCall.range[1], node.range[1]]));
       } else {
-        replacement = `${fastDeepEqualImportName}(${arg1}, ${arg2})`;
+        // `changes.length === 0` compares a call declared elsewhere, so that
+        // call moves to the comparison's position and its text has to be
+        // re-emitted — verbatim, so its comments move with it.
+        const call = renameCallee(diffCall);
+        fixes.push(fixer.replaceText(node, isEquality ? call : `!${call}`));
       }
-
-      if (!isEquality) {
-        replacement = `!${replacement}`;
-      }
-
-      fixes.push(fixer.replaceText(node, replacement));
 
       return fixes;
     }

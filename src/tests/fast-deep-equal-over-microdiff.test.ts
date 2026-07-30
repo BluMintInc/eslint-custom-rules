@@ -530,6 +530,221 @@ function eq(a, b) {
 }`,
     },
     // ------------------------------------------------------------------
+    // Issue #1442: the fix must not destroy anything between the arguments.
+    // Re-emitting the argument list dropped every comment inside the call, and
+    // an `eslint-disable` directive dropped that way silently re-enables the
+    // rule it was suppressing.
+    // ------------------------------------------------------------------
+    {
+      name: 'a directive between the paren and the first argument survives',
+      code: `import diff from 'microdiff';
+
+function areEqual(a, b) {
+  return diff(
+    // eslint-disable-next-line no-console
+    console.log(a),
+    b,
+  ).length === 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function areEqual(a, b) {
+  return isEqual(
+    // eslint-disable-next-line no-console
+    console.log(a),
+    b,
+  );
+}`,
+    },
+    {
+      name: 'a comment between the two arguments survives',
+      code: `import diff from 'microdiff';
+
+function eq(a, b) {
+  return diff(
+    { ...a },
+    // eslint-disable-next-line no-console
+    { ...b },
+  ).length === 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function eq(a, b) {
+  return isEqual(
+    { ...a },
+    // eslint-disable-next-line no-console
+    { ...b },
+  );
+}`,
+    },
+    {
+      name: 'a trailing comment after the second argument survives',
+      code: `import diff from 'microdiff';
+
+function eq(a, b) {
+  return diff(
+    a,
+    b, // compare by value
+  ).length === 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function eq(a, b) {
+  return isEqual(
+    a,
+    b, // compare by value
+  );
+}`,
+    },
+    {
+      name: 'the inequality form keeps its inline comments',
+      code: `import diff from 'microdiff';
+
+function ne(a, b) {
+  return diff(
+    a, /* left */
+    b, /* right */
+  ).length !== 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function ne(a, b) {
+  return !isEqual(
+    a, /* left */
+    b, /* right */
+  );
+}`,
+    },
+    {
+      name: 'a comment inside a nested object argument survives',
+      code: `import diff from 'microdiff';
+
+function eq(a, b) {
+  return diff(
+    {
+      // eslint-disable-next-line no-console
+      id: a.id,
+    },
+    b,
+  ).length === 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function eq(a, b) {
+  return isEqual(
+    {
+      // eslint-disable-next-line no-console
+      id: a.id,
+    },
+    b,
+  );
+}`,
+    },
+    {
+      name: 'a single-line comment between arguments survives',
+      code: `import diff from 'microdiff';
+
+function eq(a, b) {
+  return diff(a, /* by value */ b).length === 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function eq(a, b) {
+  return isEqual(a, /* by value */ b);
+}`,
+    },
+    {
+      name: 'a comment between the callee and the argument list survives',
+      code: `import diff from 'microdiff';
+
+function eq(a, b) {
+  return diff /* deep */ (a, b).length === 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function eq(a, b) {
+  return isEqual /* deep */ (a, b);
+}`,
+    },
+    {
+      name: 'the unary form keeps its inline comments',
+      code: `import diff from 'microdiff';
+
+function eq(a, b) {
+  return !diff(
+    // eslint-disable-next-line no-console
+    console.log(a),
+    b,
+  ).length;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function eq(a, b) {
+  return isEqual(
+    // eslint-disable-next-line no-console
+    console.log(a),
+    b,
+  );
+}`,
+    },
+    {
+      name: 'the literal-on-the-left form keeps its inline comments',
+      code: `import diff from 'microdiff';
+
+function eq(a, b) {
+  return 0 === diff(a, /* by value */ b).length;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function eq(a, b) {
+  return isEqual(a, /* by value */ b);
+}`,
+    },
+    {
+      // The call moves to the comparison's position here, so its text is
+      // re-emitted; slicing it verbatim still carries the comments along.
+      name: 'a comment inside a hoisted diff variable survives the inlining',
+      code: `import diff from 'microdiff';
+
+function checkAll(previousMetadataRef, newMetadata) {
+  const changesMetadata = diff(
+    // eslint-disable-next-line no-console
+    { ...previousMetadataRef.current },
+    { ...newMetadata },
+  );
+  return changesMetadata.length === 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function checkAll(previousMetadataRef, newMetadata) {
+  return isEqual(
+    // eslint-disable-next-line no-console
+    { ...previousMetadataRef.current },
+    { ...newMetadata },
+  );
+}`,
+    },
+    // ------------------------------------------------------------------
     // Issue #1415: the `import isEqual from 'fast-deep-equal'` fix must ride
     // on the first *surviving* violation. A suppressed violation used to claim
     // the carrier slot and take the import down with it, emitting `isEqual(…)`
@@ -1202,5 +1417,74 @@ function clean(a, b) {
 }
 `);
     expectNoUnboundIsEqual(output);
+  });
+});
+
+// Issue #1442: a comment destroyed by the fix is not merely cosmetic — when it
+// is an `eslint-disable` directive, the fix silently re-enables the rule it was
+// suppressing. RuleTester only compares text, so the suppression itself is
+// asserted here against the real linter.
+describe('fast-deep-equal-over-microdiff: the fix preserves suppressions inside the call (issue #1442)', () => {
+  const RULE_ID = '@blumintinc/blumint/fast-deep-equal-over-microdiff';
+
+  const config = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2020 as const,
+      sourceType: 'module' as const,
+    },
+    rules: {
+      [RULE_ID]: 'error' as const,
+      'no-console': 'error' as const,
+    },
+  };
+
+  const createLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      fastDeepEqualOverMicrodiff as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const countNoConsole = (code: string) =>
+    createLinter()
+      .verify(code, config, 'compare.ts')
+      .filter((message) => message.ruleId === 'no-console').length;
+
+  it('leaves a disable directive inside the call still suppressing after --fix', () => {
+    const code = `import diff from 'microdiff';
+
+function areEqual(a, b) {
+  return diff(
+    // eslint-disable-next-line no-console
+    console.log(a),
+    b,
+  ).length === 0;
+}
+`;
+
+    expect(countNoConsole(code)).toBe(0);
+
+    const { output } = createLinter().verifyAndFix(code, config, 'compare.ts');
+
+    expect(output).toBe(`import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function areEqual(a, b) {
+  return isEqual(
+    // eslint-disable-next-line no-console
+    console.log(a),
+    b,
+  );
+}
+`);
+    expect(countNoConsole(output)).toBe(0);
   });
 });
