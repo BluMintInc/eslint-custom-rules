@@ -1,4 +1,5 @@
 import path from 'path';
+import { Linter, Rule } from 'eslint';
 import type { TSESLint } from '@typescript-eslint/utils';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceAssertSafeObjectKey } from '../rules/enforce-assert-safe-object-key';
@@ -145,6 +146,49 @@ const obj = { key1: 'value1' };
 const rawKey = 'key1';
 const safeKey = assertSafe(rawKey);
 const { [safeKey]: value } = obj;
+      `,
+    },
+    // ------------------------------------------------------------------
+    // Issue #1408: inline disables. Every violation suppressed must leave
+    // the file untouched — no wraps, and above all no orphan import.
+    // ------------------------------------------------------------------
+    {
+      name: 'every violation disabled inline reports nothing',
+      code: `
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+// eslint-disable-next-line enforce-assert-safe-object-key
+const first = obj[id];
+// eslint-disable-next-line enforce-assert-safe-object-key
+const second = obj[id];
+      `,
+    },
+    {
+      name: 'whole-file block disable naming this rule suppresses everything',
+      code: `
+/* eslint-disable enforce-assert-safe-object-key */
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+const first = obj[id];
+const second = obj[id];
+      `,
+    },
+    {
+      name: 'bare block disable suppresses this rule too',
+      code: `
+/* eslint-disable */
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+const first = obj[id];
+      `,
+    },
+    {
+      name: 'bare eslint-disable-next-line suppresses this rule',
+      code: `
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+// eslint-disable-next-line
+const first = obj[id];
       `,
     },
   ],
@@ -624,5 +668,374 @@ const id = 'key1';
 console.log(obj[assertSafe(id)]);
       `,
     },
+    // ------------------------------------------------------------------
+    // Issue #1408: the assertSafe import rides on a single violation's fix,
+    // so that violation is the file's import carrier. A suppressed carrier
+    // used to take the import down with it while surviving violations were
+    // still rewritten to assertSafe(...), leaving the call unbound.
+    // ------------------------------------------------------------------
+    {
+      name: 'disable on the FIRST violation still lands the import',
+      code: `
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+// eslint-disable-next-line enforce-assert-safe-object-key
+const first = obj[id];
+const second = obj[id];
+      `,
+      errors: [lintError('id')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+// eslint-disable-next-line enforce-assert-safe-object-key
+const first = obj[id];
+const second = obj[assertSafe(id)];
+      `,
+    },
+    {
+      name: 'disable on the FIRST of three violations lands exactly one import',
+      code: `
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+// eslint-disable-next-line enforce-assert-safe-object-key
+const first = obj[id];
+const second = obj[String(id)];
+const third = obj[\`\${id}\`];
+      `,
+      errors: [lintError('id'), lintError('id')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+// eslint-disable-next-line enforce-assert-safe-object-key
+const first = obj[id];
+const second = obj[assertSafe(id)];
+const third = obj[assertSafe(id)];
+      `,
+    },
+    {
+      name: 'disable on a MIDDLE violation keeps one import and both survivors',
+      code: `
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+const first = obj[id];
+// eslint-disable-next-line enforce-assert-safe-object-key
+const second = obj[id];
+const third = obj[id];
+      `,
+      errors: [lintError('id'), lintError('id')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+const first = obj[assertSafe(id)];
+// eslint-disable-next-line enforce-assert-safe-object-key
+const second = obj[id];
+const third = obj[assertSafe(id)];
+      `,
+    },
+    {
+      name: 'disable on the LAST violation keeps one import and both survivors',
+      code: `
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+const first = obj[id];
+const second = obj[id];
+// eslint-disable-next-line enforce-assert-safe-object-key
+const third = obj[id];
+      `,
+      errors: [lintError('id'), lintError('id')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+const first = obj[assertSafe(id)];
+const second = obj[assertSafe(id)];
+// eslint-disable-next-line enforce-assert-safe-object-key
+const third = obj[id];
+      `,
+    },
+    {
+      name: 'bare disable on the FIRST violation still lands the import',
+      code: `
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+// eslint-disable-next-line
+const first = obj[id];
+const second = obj[id];
+      `,
+      errors: [lintError('id')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+// eslint-disable-next-line
+const first = obj[id];
+const second = obj[assertSafe(id)];
+      `,
+    },
+    {
+      name: 'a disable naming a DIFFERENT rule does not suppress this one',
+      code: `
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+// eslint-disable-next-line no-console
+const first = obj[id];
+const second = obj[id];
+      `,
+      errors: [lintError('id'), lintError('id')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+// eslint-disable-next-line no-console
+const first = obj[assertSafe(id)];
+const second = obj[assertSafe(id)];
+      `,
+    },
+    {
+      name: 'a block disable ended before the last violation still lands the import',
+      code: `
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+/* eslint-disable enforce-assert-safe-object-key */
+const first = obj[id];
+const second = obj[id];
+/* eslint-enable enforce-assert-safe-object-key */
+const third = obj[id];
+      `,
+      errors: [lintError('id')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+/* eslint-disable enforce-assert-safe-object-key */
+const first = obj[id];
+const second = obj[id];
+/* eslint-enable enforce-assert-safe-object-key */
+const third = obj[assertSafe(id)];
+      `,
+    },
+    {
+      name: 'a file already importing assertSafe never gains a duplicate import',
+      code: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+// eslint-disable-next-line enforce-assert-safe-object-key
+const first = obj[id];
+const second = obj[id];
+      `,
+      errors: [lintError('id')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+// eslint-disable-next-line enforce-assert-safe-object-key
+const first = obj[id];
+const second = obj[assertSafe(id)];
+      `,
+    },
+    {
+      name: 'suppressing the carrier in a destructuring/`in` mix still lands the import',
+      code: `
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+// eslint-disable-next-line enforce-assert-safe-object-key
+const { [String(id)]: first } = obj;
+const exists = String(id) in obj;
+      `,
+      errors: [lintError('id')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+// eslint-disable-next-line enforce-assert-safe-object-key
+const { [String(id)]: first } = obj;
+const exists = assertSafe(id) in obj;
+      `,
+    },
+    {
+      name: 'the injected relative specifier is unaffected by a suppressed carrier',
+      filename: path.join(process.cwd(), 'functions/src/util/a/b/fixture.ts'),
+      code: `
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+// eslint-disable-next-line enforce-assert-safe-object-key
+const first = obj[id];
+const second = obj[id];
+      `,
+      errors: [lintError('id')],
+      output: `
+import { assertSafe } from '../../assertSafe';
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+// eslint-disable-next-line enforce-assert-safe-object-key
+const first = obj[id];
+const second = obj[assertSafe(id)];
+      `,
+    },
   ],
+});
+
+// Issue #1408: RuleTester applies a single fix pass and never shows the file
+// that `eslint --fix` actually writes. These cases run the real multi-pass
+// fixer and assert the invariant the bug violated: an emitted assertSafe(...)
+// call is never left without its import.
+describe('enforce-assert-safe-object-key: inline disables and the import carrier (issue #1408)', () => {
+  const RULE_ID = '@blumintinc/blumint/enforce-assert-safe-object-key';
+  const IMPORT_LINE = `import { assertSafe } from 'functions/src/util/assertSafe';`;
+
+  const lint = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      enforceAssertSafeObjectKey as unknown as Rule.RuleModule,
+    );
+    // A near-miss neighbour proves rule matching is exact rather than a
+    // prefix/substring heuristic.
+    linter.defineRule(
+      '@blumintinc/blumint/enforce-assert-safe-object-key-strict',
+      {
+        meta: { schema: [] },
+        create: () => ({}),
+      } as unknown as Rule.RuleModule,
+    );
+    const config = {
+      parser: '@typescript-eslint/parser',
+      parserOptions: {
+        ecmaVersion: 2020 as const,
+        sourceType: 'module' as const,
+      },
+      rules: { [RULE_ID]: 'error' as const },
+    };
+    // A relative filename keeps the emitted specifier at its configured
+    // repo-root value, isolating these cases from specifier resolution.
+    const { output } = linter.verifyAndFix(code, config, 'lookup.ts');
+    return output;
+  };
+
+  const expectNoUnboundAssertSafe = (output: string) => {
+    if (/assertSafe\(/.test(output)) {
+      expect(output).toContain(IMPORT_LINE);
+    }
+  };
+
+  const countImports = (output: string) => output.split(IMPORT_LINE).length - 1;
+
+  it('carries the import on the first surviving violation', () => {
+    const output = lint(`const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+// eslint-disable-next-line @blumintinc/blumint/enforce-assert-safe-object-key
+const first = obj[id];
+const second = obj[id];
+`);
+
+    expect(output).toBe(`${IMPORT_LINE}
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+// eslint-disable-next-line @blumintinc/blumint/enforce-assert-safe-object-key
+const first = obj[id];
+const second = obj[assertSafe(id)];
+`);
+    expectNoUnboundAssertSafe(output);
+  });
+
+  it('fixes every surviving violation across several passes with one import', () => {
+    const output = lint(`const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+// eslint-disable-next-line @blumintinc/blumint/enforce-assert-safe-object-key
+const first = obj[id];
+const second = obj[String(id)];
+const third = obj[\`\${id}\`];
+const fourth = String(id) in obj;
+`);
+
+    expect(countImports(output)).toBe(1);
+    expect(output).toContain('const first = obj[id];');
+    expect(output).toContain('const second = obj[assertSafe(id)];');
+    expect(output).toContain('const third = obj[assertSafe(id)];');
+    expect(output).toContain('const fourth = assertSafe(id) in obj;');
+    expectNoUnboundAssertSafe(output);
+  });
+
+  it('adds neither import nor wrapper when every violation is disabled', () => {
+    const code = `const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+// eslint-disable-next-line @blumintinc/blumint/enforce-assert-safe-object-key
+const first = obj[id];
+// eslint-disable-next-line @blumintinc/blumint/enforce-assert-safe-object-key
+const second = obj[id];
+`;
+
+    expect(lint(code)).toBe(code);
+  });
+
+  it('adds neither import nor wrapper under a whole-file block disable', () => {
+    const code = `/* eslint-disable @blumintinc/blumint/enforce-assert-safe-object-key */
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+const first = obj[id];
+const second = obj[id];
+`;
+
+    expect(lint(code)).toBe(code);
+  });
+
+  it('keeps the import when only the last violation survives a block disable', () => {
+    const output = lint(`const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+/* eslint-disable @blumintinc/blumint/enforce-assert-safe-object-key */
+const first = obj[id];
+const second = obj[id];
+/* eslint-enable @blumintinc/blumint/enforce-assert-safe-object-key */
+const third = obj[id];
+`);
+
+    expect(output).toBe(`${IMPORT_LINE}
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+/* eslint-disable @blumintinc/blumint/enforce-assert-safe-object-key */
+const first = obj[id];
+const second = obj[id];
+/* eslint-enable @blumintinc/blumint/enforce-assert-safe-object-key */
+const third = obj[assertSafe(id)];
+`);
+    expectNoUnboundAssertSafe(output);
+  });
+
+  it('does not treat a disable for a similarly named rule as its own', () => {
+    const output = lint(`const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+// eslint-disable-next-line @blumintinc/blumint/enforce-assert-safe-object-key-strict
+const first = obj[id];
+`);
+
+    expect(output).toBe(`${IMPORT_LINE}
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+// eslint-disable-next-line @blumintinc/blumint/enforce-assert-safe-object-key-strict
+const first = obj[assertSafe(id)];
+`);
+    expectNoUnboundAssertSafe(output);
+  });
+
+  it('never duplicates an import the file already has', () => {
+    const output = lint(`${IMPORT_LINE}
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+// eslint-disable-next-line @blumintinc/blumint/enforce-assert-safe-object-key
+const first = obj[id];
+const second = obj[id];
+`);
+
+    expect(countImports(output)).toBe(1);
+    expect(output).toContain('const second = obj[assertSafe(id)];');
+  });
 });
