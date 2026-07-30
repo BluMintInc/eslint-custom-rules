@@ -40,3 +40,28 @@ class ProviderFactory {
 - Functions inside React components that rely on hooks (e.g., `useCallback`, `useMemo`) are out of scope because the rule only inspects class members.
 - Recognizes `@Memoize`, aliased imports, and namespaced forms like `@memoize.Memoize()`. Auto-fix reuses existing aliases and inserts `import { Memoize } from '@blumintinc/typescript-memoize';` if missing.
 - When other decorators exist, `@Memoize()` is added without removing them; multiple violations in a file share a single inserted import.
+
+### Interaction with inline disable comments
+
+The `import { Memoize } from '@blumintinc/typescript-memoize';` statement is
+added once per file, attached to the fix of the first violation that is **not**
+suppressed by an inline `eslint-disable` directive. Suppressing an individual
+member therefore never strands the remaining `@Memoize()` decorators without
+their import:
+
+```tsx
+class Widget {
+  // eslint-disable-next-line @blumintinc/blumint/require-memoize-jsx-returners
+  get Alpha() {
+    return () => <div />;
+  } // left alone
+
+  get Beta() {
+    return () => <span />;
+  } // fixed, and carries the import
+}
+```
+
+A member's reported location spans its decorators, so a disable comment must sit
+**above** the first decorator to suppress the report; one placed between a
+decorator and the member signature does not.

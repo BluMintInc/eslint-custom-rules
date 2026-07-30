@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { createSuppressionChecker } from '../utils/disableDirectives';
 
 type MessageIds = 'requireMemoizeJsxReturner';
 type Options = [];
@@ -750,6 +751,15 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
     let memoizeAlias = 'Memoize';
     let memoizeNamespace: string | null = null;
     let scheduledImportFix = false;
+
+    /**
+     * The `import { Memoize }` statement rides on a single violation's fix, so
+     * that violation is the file's import carrier. A suppressed carrier would
+     * take the import down with it while the surviving violations still emit
+     * `@Memoize()`, leaving a decorator with no import.
+     */
+    const isReportSuppressed = createSuppressionChecker(context);
+
     const jsxReturnCache = new WeakMap<FunctionLike, JsxReturnCacheState>();
     const reactMemoIdentifiers = new Set<string>();
     const reactNamespaceIdentifiers = new Set<string>();
@@ -851,11 +861,21 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
           ? `${memoizeNamespace}.Memoize`
           : memoizeAlias;
 
+        // The report is emitted even when suppressed: ESLint discards it, and
+        // reporting keeps the user's disable directive "used" so that
+        // `--report-unused-disable-directives` does not flag it.
         context.report({
           node,
           messageId: 'requireMemoizeJsxReturner',
           data: { name: getMemberName(node) },
           fix(fixer) {
+            // A suppressed report is dropped together with its fix. Producing
+            // no fix — and leaving `scheduledImportFix` untouched — passes the
+            // import to the first violation that survives.
+            if (isReportSuppressed(node)) {
+              return null;
+            }
+
             const sourceCode = context.getSourceCode();
             const { fixes, scheduledImportFix: newScheduledImportFix } =
               getImportFixes(
