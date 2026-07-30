@@ -19,22 +19,47 @@ This rule flags JSX expressions like `{" "}` where the string literal contains o
 
 ### Examples of **incorrect** code for this rule:
 
+A spacer between two words:
+
 ```tsx
 <div>Hello,{" "}world!</div>
+```
+
+```tsx
 <Button>Click{" "}Me</Button>
+```
+
+A spacer between expression children:
+
+```tsx
 <div>{showGreeting && "Hello"}{" "}{username}</div>
+```
+
+A trailing spacer after a mapped list:
+
+```tsx
 <div>{items.map((item) => <span key={item.id}>{item.name}</span>)}{" "}</div>
 ```
 
 ### Examples of **correct** code for this rule:
 
-```tsx
-// Put spacing inside the surrounding text
-<div>Hello, world!</div>
-<Button>Click Me</Button>
-<div>{showGreeting && "Hello "}{username}</div>
+Put spacing inside the surrounding text:
 
-// Use layout spacing instead of text nodes
+```tsx
+<div>Hello, world!</div>
+```
+
+```tsx
+<Button>Click Me</Button>
+```
+
+```tsx
+<div>{showGreeting && "Hello "}{username}</div>
+```
+
+Use layout spacing instead of text nodes:
+
+```tsx
 <div className="flex gap-2">{items.map((item) => <span key={item.id}>{item.name}</span>)}</div>
 ```
 

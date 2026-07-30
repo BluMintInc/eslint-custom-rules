@@ -25,13 +25,23 @@ Props whose type is a **union that mixes a function with a non-function** (for e
 
 ### Examples of **incorrect** code for this rule:
 
-```tsx
-// Props
-<Dialog submit={onSubmit} />          // prop is a function but not prefixed with on
-<Form changeHandler={onChange} />
+Props:
 
-// Implementations
-const handleSubmit = () => save();    // prefer describe action
+```tsx
+<Dialog submit={onSubmit} /> // prop is a function but not prefixed with on
+```
+
+```tsx
+<Form changeHandler={onChange} />
+```
+
+Implementations:
+
+```tsx
+const handleSubmit = () => save(); // prefer describing the action
+```
+
+```tsx
 class Modal {
   handleClose() { this.hide(); }
 }
@@ -39,11 +49,23 @@ class Modal {
 
 ### Examples of **correct** code for this rule:
 
+Props:
+
 ```tsx
 <Dialog onSubmit={submitOrder} />
-<Form onChange={onFormChange} />
+```
 
+```tsx
+<Form onChange={onFormChange} />
+```
+
+Implementations:
+
+```tsx
 const submitOrder = () => save();
+```
+
+```tsx
 class Modal {
   closeModal() { this.hide(); }
   get isOpen() { return this.visible; } // getter allowed

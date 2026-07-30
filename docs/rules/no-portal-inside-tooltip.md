@@ -31,24 +31,31 @@ The rule is purely syntactic (no type checker required) and works with both `@ty
 
 #### ❌ Incorrect
 
+Portal identifier inside tooltip > Fragment:
+
 ```jsx
-/* Portal identifier inside tooltip > Fragment */
 <MatchPayoutTooltip>
   <Fragment>
     <ChipView isEditable={isClickable} isEditing={isOpen} onClick={open} />
     {Portal}
   </Fragment>
 </MatchPayoutTooltip>
+```
 
-/* Menu nested inside WYSIWYGTooltip */
+Menu nested inside `WYSIWYGTooltip`:
+
+```jsx
 <WYSIWYGTooltip tooltipContent={SCHEDULER_TOOLTIP_CONTENT}>
   <Fragment>
     <SchedulerChipView onClick={openMenu} />
     <SchedulerMenu anchorEl={menuAnchor} onClose={closeMenu} />
   </Fragment>
 </WYSIWYGTooltip>
+```
 
-/* Conditionally-rendered Dialog inside Tooltip */
+Conditionally-rendered Dialog inside Tooltip:
+
+```jsx
 <Tooltip title="Click to set prize">
   <>
     <ChipView onClick={open} />
@@ -59,24 +66,31 @@ The rule is purely syntactic (no type checker required) and works with both `@ty
 
 #### ✅ Correct
 
+Portal as sibling of the tooltip:
+
 ```jsx
-/* Portal as sibling of the tooltip */
 <Fragment>
   <MatchPayoutTooltip>
     <ChipView isEditable={isClickable} isEditing={isOpen} onClick={open} />
   </MatchPayoutTooltip>
   {Portal}
 </Fragment>
+```
 
-/* SchedulerMenu as sibling */
+`SchedulerMenu` as sibling:
+
+```jsx
 <Fragment>
   <WYSIWYGTooltip tooltipContent={SCHEDULER_TOOLTIP_CONTENT}>
     <SchedulerChipView onClick={openMenu} />
   </WYSIWYGTooltip>
   <SchedulerMenu anchorEl={menuAnchor} onClose={closeMenu} />
 </Fragment>
+```
 
-/* Tooltip with no portal child — always fine */
+Tooltip with no portal child — always fine:
+
+```jsx
 <Tooltip title="Open settings">
   <Chip onClick={openDialogElsewhere} />
 </Tooltip>
