@@ -12,7 +12,32 @@ Interfaces can merge across files and dependencies, which means a shape may chan
 
 ## Rule Details
 
-The rule reports every `interface` declaration and offers an autofix that rewrites it to a `type` alias. When an interface extends another interface, the fix converts `extends` to an intersection so the composed shape stays explicit.
+The rule reports every `interface` declaration and offers an autofix that rewrites it to a `type` alias. When an interface extends other interfaces, the fix converts the whole heritage list to an intersection so the composed shape stays explicit, including when several interfaces are extended at once:
+
+```typescript
+// before
+interface TeamMember extends UserProfile, Auditable, Archivable {
+  role: string;
+}
+
+// after
+type TeamMember = UserProfile & Auditable & Archivable & {
+  role: string;
+};
+```
+
+### Autofix limitation: comments in the declaration header
+
+The fix rewrites the text spanning the `interface` keyword, the name and the heritage list in one step, so a comment placed inside that span has nowhere to go. Rather than delete it, the rule reports the declaration without offering a fix when a comment sits between `interface` and the opening brace:
+
+```typescript
+// reported, but not autofixed
+interface TeamMember /* audited quarterly */ extends UserProfile {
+  role: string;
+}
+```
+
+Move the comment above the declaration or inside the body to make the declaration autofixable.
 
 Examples of **incorrect** code for this rule:
 
