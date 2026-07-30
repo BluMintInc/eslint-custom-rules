@@ -1,0 +1,320 @@
+import fs from 'fs';
+import path from 'path';
+import { ESLint } from 'eslint';
+
+// Using require to avoid test build-time ESM interop issues; the test runner
+// only needs the plugin object shape (rules), not types.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const plugin = require('..') as {
+  rules: Record<string, { meta?: { schema?: unknown } }>;
+};
+
+const PREFIX = '@blumintinc/blumint/';
+const DOCS_DIR = path.join(__dirname, '../../docs/rules');
+
+/**
+ * ESLint validates rule options when it builds the config, not per file, so a
+ * documented example whose options the schema rejects does not produce a lint
+ * error — it aborts the consumer's entire run with "Configuration for rule ...
+ * is invalid". Nothing asserted that documented options were even valid, and
+ * `docs-examples-conformance.test.ts` exercises options only where a block
+ * carries an explicit `// eslint-options:` hint.
+ *
+ * The mirror failure is an option a rule declares but no doc mentions: the
+ * escape hatch is undiscoverable, so a consumer meeting a false positive
+ * disables the rule instead of configuring it, and in agora a disabled rule
+ * never auto-clears once it is override-scoped or optioned.
+ *
+ * Two traps make a naive version of this guard vacuous (#1470):
+ *
+ * 1. `Linter#verify` does NOT validate rule options. Given an inline config
+ *    object it accepts `['error', 'not-an-object']` against a schema declaring
+ *    `type: 'object'` with `additionalProperties: false`. Only the config-array
+ *    layer behind the `ESLint` class validates, so the guard must go through
+ *    `ESLint`, and the controls below prove it still catches a bad payload.
+ * 2. Config examples appear in three forms. Reading only the
+ *    `"rules": { ... }` block form covers well under half of them, and the
+ *    inline directive form needs its unquoted rule id (which contains `/` and
+ *    `@`) quoted before it parses. A form that silently fails to parse asserts
+ *    nothing — the hole #1466 closed for documented code blocks — so unparsed
+ *    sites fail this suite by name.
+ */
+
+type ConfigSite = {
+  form: 'rules-block' | 'inline-directive' | 'options-hint';
+  entry: unknown;
+};
+
+type UnparsedSite = {
+  form: ConfigSite['form'];
+  snippet: string;
+};
+
+function fences(md: string): string[] {
+  const out: string[] = [];
+  const re = /```[a-zA-Z0-9]*\n([\s\S]*?)```/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(md))) out.push(m[1]);
+  return out;
+}
+
+/** JSON first, then object-literal syntax: docs use both. */
+function parseLoose(text: string): { ok: true; value: any } | { ok: false } {
+  try {
+    return { ok: true, value: JSON.parse(text) };
+  } catch {
+    /* fall through */
+  }
+  try {
+    // eslint-disable-next-line no-new-func
+    return { ok: true, value: new Function(`return (${text})`)() };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/** Every place a doc states this rule's own option payload. */
+export function configSites(
+  md: string,
+  ruleName: string,
+): { sites: ConfigSite[]; unparsed: UnparsedSite[] } {
+  const sites: ConfigSite[] = [];
+  const unparsed: UnparsedSite[] = [];
+  const selfId = `${PREFIX}${ruleName}`;
+
+  for (const body of fences(md)) {
+    if (/["']?rules["']?\s*:/.test(body) && body.includes(selfId)) {
+      const text = body.trim();
+      const candidates = [
+        text,
+        text.replace(/^module\.exports\s*=\s*/, '').replace(/;\s*$/, ''),
+        // Docs often show a bare `"rules": { ... }` fragment, not a whole config.
+        `{${text.replace(/,\s*$/, '')}}`,
+      ];
+      const parsed = candidates
+        .map(parseLoose)
+        .find((r): r is { ok: true; value: any } => r.ok);
+      if (parsed) {
+        const collect = (cfg: any) => {
+          if (!cfg || typeof cfg !== 'object') return;
+          if (cfg.rules && cfg.rules[selfId] !== undefined) {
+            sites.push({ form: 'rules-block', entry: cfg.rules[selfId] });
+          }
+          if (Array.isArray(cfg.overrides)) cfg.overrides.forEach(collect);
+        };
+        collect(parsed.value);
+      } else {
+        unparsed.push({ form: 'rules-block', snippet: text.slice(0, 120) });
+      }
+    }
+
+    const directive = /\/\*\s*eslint\s+([\s\S]*?)\*\//g;
+    let m: RegExpExecArray | null;
+    while ((m = directive.exec(body))) {
+      const inline = m[1].trim();
+      if (!inline.includes(selfId)) continue;
+      const after = inline
+        .slice(inline.indexOf(selfId) + selfId.length)
+        .replace(/^\s*:/, '')
+        .replace(/,\s*$/, '');
+      const parsed = parseLoose(`{${JSON.stringify(selfId)}:${after}}`);
+      if (!parsed.ok) {
+        unparsed.push({
+          form: 'inline-directive',
+          snippet: inline.slice(0, 120),
+        });
+        continue;
+      }
+      if (parsed.value[selfId] !== undefined) {
+        sites.push({ form: 'inline-directive', entry: parsed.value[selfId] });
+      }
+    }
+
+    const hint = /^\s*\/\/\s*eslint-options:\s*(\{.*\})\s*$/im.exec(body);
+    if (hint) {
+      const parsed = parseLoose(hint[1]);
+      if (parsed.ok) {
+        sites.push({ form: 'options-hint', entry: ['error', parsed.value] });
+      } else {
+        unparsed.push({ form: 'options-hint', snippet: hint[1].slice(0, 120) });
+      }
+    }
+  }
+  return { sites, unparsed };
+}
+
+/** Option names a rule's schema declares, or null when not enumerable. */
+export function schemaOptionNames(schema: unknown): Set<string> | null {
+  if (!schema) return new Set();
+  const entries = Array.isArray(schema) ? schema : [schema];
+  const names = new Set<string>();
+  let enumerable = entries.length === 0;
+  const walk = (s: any) => {
+    if (!s || typeof s !== 'object') return;
+    if (s.properties) {
+      enumerable = true;
+      Object.keys(s.properties).forEach((k) => names.add(k));
+    }
+    (['oneOf', 'anyOf', 'allOf'] as const).forEach((k) => {
+      if (Array.isArray(s[k])) s[k].forEach(walk);
+    });
+    if (s.items) walk(s.items);
+  };
+  entries.forEach(walk);
+  return enumerable ? names : null;
+}
+
+/**
+ * Options are frequently documented only as JSON keys inside a config fence, so
+ * a backticks-only scan reports rules that document every option perfectly.
+ */
+export function mentions(md: string, name: string): boolean {
+  return new RegExp(`(^|[^\\w$])${name}([^\\w$]|$)`).test(md);
+}
+
+const CONFIG_ERROR =
+  /Configuration for rule|should NOT have|should be|Value .* should/;
+
+/**
+ * Validate a payload the way a consumer's ESLint startup does. Resolves to null
+ * when accepted, or the validation message when rejected. A rule that throws
+ * while linting is re-thrown rather than counted as an invalid option, so a
+ * crash cannot masquerade as a docs defect.
+ */
+export async function validationErrorFor(
+  ruleName: string,
+  entry: unknown,
+): Promise<string | null> {
+  const eslint = new ESLint({
+    useEslintrc: false,
+    plugins: { '@blumintinc/blumint': plugin as never },
+    baseConfig: {
+      plugins: ['@blumintinc/blumint'],
+      parserOptions: { ecmaVersion: 2021, sourceType: 'module' },
+      rules: { [`${PREFIX}${ruleName}`]: entry as never },
+    },
+  });
+  try {
+    await eslint.lintText('const a = 1;\n', {
+      filePath: path.join(__dirname, 'docs-option-probe.ts'),
+    });
+    return null;
+  } catch (err) {
+    const message = String((err as Error).message);
+    if (!CONFIG_ERROR.test(message)) throw err;
+    return message.split('\n').slice(0, 4).join(' ').trim();
+  }
+}
+
+const ruleNames = Object.keys(plugin.rules)
+  .filter((name) => fs.existsSync(path.join(DOCS_DIR, `${name}.md`)))
+  .sort();
+
+const docFor = (name: string) =>
+  fs.readFileSync(path.join(DOCS_DIR, `${name}.md`), 'utf8');
+
+describe('documented rule options', () => {
+  it('finds rule docs to check', () => {
+    expect(ruleNames.length).toBeGreaterThan(150);
+  });
+
+  it('reads config examples in every form the docs use', () => {
+    const forms = new Set<string>();
+    for (const name of ruleNames) {
+      configSites(docFor(name), name).sites.forEach((s) => forms.add(s.form));
+    }
+    // Losing a form silently shrinks coverage instead of failing, so pin all
+    // three: the inline-directive form alone carries more than half the sites.
+    expect([...forms].sort()).toEqual([
+      'inline-directive',
+      'options-hint',
+      'rules-block',
+    ]);
+  });
+
+  describe.each(ruleNames)('%s', (ruleName) => {
+    it('documents option payloads its schema accepts', async () => {
+      const { sites } = configSites(docFor(ruleName), ruleName);
+      for (const site of sites) {
+        const error = await validationErrorFor(ruleName, site.entry);
+        expect(
+          error && `${site.form}: ${JSON.stringify(site.entry)} -> ${error}`,
+        ).toBeNull();
+      }
+    });
+
+    it('leaves no config example unreadable', () => {
+      expect(configSites(docFor(ruleName), ruleName).unparsed).toEqual([]);
+    });
+
+    it('documents every option it declares', () => {
+      const names = schemaOptionNames(plugin.rules[ruleName].meta?.schema);
+      if (!names || names.size === 0) return;
+      const md = docFor(ruleName);
+      expect([...names].filter((name) => !mentions(md, name))).toEqual([]);
+    });
+  });
+});
+
+describe('the guard catches what it claims to (controls)', () => {
+  // Any rule with an object schema and additionalProperties:false works here;
+  // this one is stable and enabled in the recommended config.
+  const CONTROL_RULE = 'enforce-boolean-naming-prefixes';
+
+  it('rejects an option the schema does not declare', async () => {
+    expect(
+      await validationErrorFor(CONTROL_RULE, [
+        'error',
+        { definitelyNotAnOption: true },
+      ]),
+    ).not.toBeNull();
+  });
+
+  it('rejects a wrongly-typed payload', async () => {
+    expect(
+      await validationErrorFor(CONTROL_RULE, ['error', 'not-an-object']),
+    ).not.toBeNull();
+  });
+
+  it('accepts a payload the schema does declare', async () => {
+    expect(
+      await validationErrorFor(CONTROL_RULE, [
+        'error',
+        { enforceForPropertySignatures: true },
+      ]),
+    ).toBeNull();
+  });
+
+  it('reports an option name absent from the doc', () => {
+    expect(mentions(docFor(CONTROL_RULE), 'zzzOptionNoDocMentions')).toBe(
+      false,
+    );
+    expect(mentions(docFor(CONTROL_RULE), 'enforceForPropertySignatures')).toBe(
+      true,
+    );
+  });
+
+  it('reads an inline directive whose rule id is unquoted', () => {
+    const md = [
+      '```ts',
+      `/* eslint ${PREFIX}some-rule: ["error", { "allowed": true }] */`,
+      'const a = 1;',
+      '```',
+    ].join('\n');
+    const { sites, unparsed } = configSites(md, 'some-rule');
+    expect(unparsed).toEqual([]);
+    expect(sites).toEqual([
+      { form: 'inline-directive', entry: ['error', { allowed: true }] },
+    ]);
+  });
+
+  it('flags a config example it cannot parse', () => {
+    const md = [
+      '```json',
+      '{',
+      `  "rules": { "${PREFIX}some-rule": ["error", { not valid json ] }`,
+      '```',
+    ].join('\n');
+    expect(configSites(md, 'some-rule').unparsed).toHaveLength(1);
+  });
+});
