@@ -1,3 +1,4 @@
+import { Linter, Rule } from 'eslint';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceUniqueCursorHeaders } from '../rules/enforce-unique-cursor-headers';
 
@@ -439,6 +440,8 @@ export const withTemplateNewline = () => null;
 export const withTemplateNewline = () => null;
       `,
     },
+    // An empty template can never satisfy requiredTags, so inserting it would
+    // leave the report standing and let the fix loop re-run forever.
     {
       code: 'export const emptyTemplate = () => null;',
       filename: '/workspace/src/template-empty.ts',
@@ -448,7 +451,122 @@ export const withTemplateNewline = () => null;
         },
       ],
       errors: [{ messageId: 'missingHeader' }],
-      output: '\n\nexport const emptyTemplate = () => null;',
+      output: null,
+    },
+    {
+      code: 'export const a = 1;',
+      filename: '/workspace/src/no-tag-template.ts',
+      options: [
+        {
+          headerTemplate: '/** Copyright Acme Corp. */',
+        },
+      ],
+      errors: [{ messageId: 'missingHeader' }],
+      output: null,
+    },
+    {
+      code: 'export const a = 1;',
+      filename: '/workspace/src/partial-tag-template.ts',
+      options: [
+        {
+          headerTemplate: '/**\n * @fileoverview Thing\n */\n',
+          requiredTags: ['@fileoverview', '@owner'],
+        },
+      ],
+      errors: [{ messageId: 'missingHeader' }],
+      output: null,
+    },
+    // Inserting bare text would make the file unparseable.
+    {
+      code: 'export const a = 1;',
+      filename: '/workspace/src/bare-text-template.ts',
+      options: [
+        {
+          headerTemplate: '@fileoverview thing',
+        },
+      ],
+      errors: [{ messageId: 'missingHeader' }],
+      output: null,
+    },
+    {
+      code: 'export const a = 1;',
+      filename: '/workspace/src/trailing-code-template.ts',
+      options: [
+        {
+          headerTemplate: '/** @fileoverview thing */ const injected = 1;',
+        },
+      ],
+      errors: [{ messageId: 'missingHeader' }],
+      output: null,
+    },
+    // Split templates only satisfy the rule when its own grouping accepts them:
+    // with allowSplitHeaders false, each block stands alone and neither block
+    // carries both tags.
+    {
+      code: 'export const a = 1;',
+      filename: '/workspace/src/split-template-no-split.ts',
+      options: [
+        {
+          allowSplitHeaders: false,
+          requiredTags: ['@fileoverview', '@owner'],
+          headerTemplate:
+            '/**\n * @fileoverview Thing\n */\n/**\n * @owner team\n */\n',
+        },
+      ],
+      errors: [{ messageId: 'missingHeader' }],
+      output: null,
+    },
+    // A blank line between the blocks makes them non-adjacent, so they never
+    // merge into one group even with allowSplitHeaders true.
+    {
+      code: 'export const a = 1;',
+      filename: '/workspace/src/split-template-not-adjacent.ts',
+      options: [
+        {
+          requiredTags: ['@fileoverview', '@owner'],
+          headerTemplate:
+            '/**\n * @fileoverview Thing\n */\n\n/**\n * @owner team\n */\n',
+        },
+      ],
+      errors: [{ messageId: 'missingHeader' }],
+      output: null,
+    },
+    {
+      code: 'export const a = 1;',
+      filename: '/workspace/src/line-comment-template.ts',
+      options: [
+        {
+          headerTemplate: '// @fileoverview thing',
+        },
+      ],
+      errors: [{ messageId: 'missingHeader' }],
+      output: '// @fileoverview thing\n\nexport const a = 1;',
+    },
+    {
+      code: 'export const a = 1;',
+      filename: '/workspace/src/mixed-comment-template.ts',
+      options: [
+        {
+          headerTemplate: '/** Copyright Acme Corp. */\n// @fileoverview thing',
+        },
+      ],
+      errors: [{ messageId: 'missingHeader' }],
+      output:
+        '/** Copyright Acme Corp. */\n// @fileoverview thing\n\nexport const a = 1;',
+    },
+    {
+      code: 'export const a = 1;',
+      filename: '/workspace/src/multi-tag-template.ts',
+      options: [
+        {
+          headerTemplate:
+            '/**\n * @fileoverview Thing\n * @owner BluMint\n */\n',
+          requiredTags: ['@fileoverview', '@owner'],
+        },
+      ],
+      errors: [{ messageId: 'missingHeader' }],
+      output:
+        '/**\n * @fileoverview Thing\n * @owner BluMint\n */\n\nexport const a = 1;',
     },
     {
       code: '#!/usr/bin/env node',
@@ -515,4 +633,185 @@ export const x = 1;
       errors: [{ messageId: 'missingHeader' }],
     },
   ],
+});
+
+// Issue #1461: RuleTester applies a single fix pass, so it cannot show what
+// `eslint --fix` actually writes. These cases run the real multi-pass loop and
+// assert the invariant the bug violated: the header fixer removes its own
+// trigger, so a template the rule would not accept is never inserted at all.
+describe(`${RULE_NAME}: the header fixer must converge (issue #1461)`, () => {
+  const RULE_ID = `@blumintinc/blumint/${RULE_NAME}`;
+  const FILENAME = '/workspace/src/fix-loop.ts';
+  const SOURCE = 'export const a = 1;\n';
+
+  const createLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      enforceUniqueCursorHeaders as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const runFixLoop = (code: string, options: Record<string, unknown>) => {
+    const linter = createLinter();
+    const config = {
+      parser: '@typescript-eslint/parser',
+      parserOptions: {
+        ecmaVersion: 2020 as const,
+        sourceType: 'module' as const,
+      },
+      rules: { [RULE_ID]: ['error', options] as const },
+    };
+    const { output } = linter.verifyAndFix(code, config, {
+      filename: FILENAME,
+    });
+
+    return {
+      output,
+      remaining: linter.verify(output, config, { filename: FILENAME }),
+    };
+  };
+
+  it('inserts a conforming template exactly once and stops reporting', () => {
+    const { output, remaining } = runFixLoop(SOURCE, {
+      headerTemplate: '/**\n * @fileoverview Thing\n */\n',
+    });
+
+    expect(output).toBe(`/**\n * @fileoverview Thing\n */\n\n${SOURCE}`);
+    expect(remaining).toHaveLength(0);
+  });
+
+  it('inserts a conforming line-comment template exactly once', () => {
+    const { output, remaining } = runFixLoop(SOURCE, {
+      headerTemplate: '// @fileoverview thing',
+    });
+
+    expect(output).toBe(`// @fileoverview thing\n\n${SOURCE}`);
+    expect(remaining).toHaveLength(0);
+  });
+
+  it('leaves the source untouched when the template omits a required tag', () => {
+    const { output, remaining } = runFixLoop(SOURCE, {
+      headerTemplate: '/** Copyright Acme Corp. All rights reserved. */',
+    });
+
+    expect(output).toBe(SOURCE);
+    expect(remaining.map((message) => message.messageId)).toEqual([
+      'missingHeader',
+    ]);
+  });
+
+  it('leaves the source untouched when the template satisfies only some required tags', () => {
+    const { output, remaining } = runFixLoop(SOURCE, {
+      headerTemplate: '/**\n * @fileoverview Thing\n */\n',
+      requiredTags: ['@fileoverview', '@owner'],
+    });
+
+    expect(output).toBe(SOURCE);
+    expect(remaining.map((message) => message.messageId)).toEqual([
+      'missingHeader',
+    ]);
+  });
+
+  it('leaves the source untouched for an empty template', () => {
+    const { output, remaining } = runFixLoop(SOURCE, { headerTemplate: '' });
+
+    expect(output).toBe(SOURCE);
+    expect(remaining.map((message) => message.messageId)).toEqual([
+      'missingHeader',
+    ]);
+  });
+
+  // A template can carry every required tag and still fail the rule's own
+  // detection, which groups comments before checking tags. Whether a template
+  // converges therefore depends on allowSplitHeaders and block adjacency, not
+  // on the template text alone.
+  const SPLIT_TAGS = ['@fileoverview', '@owner'];
+  const ADJACENT_BLOCKS =
+    '/**\n * @fileoverview Thing\n */\n/**\n * @owner team\n */\n';
+  const SEPARATED_BLOCKS =
+    '/**\n * @fileoverview Thing\n */\n\n/**\n * @owner team\n */\n';
+  const SINGLE_BLOCK = '/**\n * @fileoverview Thing\n * @owner team\n */\n';
+
+  it('leaves the source untouched for split blocks when allowSplitHeaders is false', () => {
+    const { output, remaining } = runFixLoop(SOURCE, {
+      allowSplitHeaders: false,
+      requiredTags: SPLIT_TAGS,
+      headerTemplate: ADJACENT_BLOCKS,
+    });
+
+    expect(output).toBe(SOURCE);
+    expect(remaining.map((message) => message.messageId)).toEqual([
+      'missingHeader',
+    ]);
+  });
+
+  it('leaves the source untouched for non-adjacent split blocks', () => {
+    const { output, remaining } = runFixLoop(SOURCE, {
+      requiredTags: SPLIT_TAGS,
+      headerTemplate: SEPARATED_BLOCKS,
+    });
+
+    expect(output).toBe(SOURCE);
+    expect(remaining.map((message) => message.messageId)).toEqual([
+      'missingHeader',
+    ]);
+  });
+
+  it('inserts a single block carrying every tag when allowSplitHeaders is false', () => {
+    const { output, remaining } = runFixLoop(SOURCE, {
+      allowSplitHeaders: false,
+      requiredTags: SPLIT_TAGS,
+      headerTemplate: SINGLE_BLOCK,
+    });
+
+    expect(output).toBe(`${SINGLE_BLOCK}\n${SOURCE}`);
+    expect(remaining).toHaveLength(0);
+  });
+
+  it('inserts adjacent split blocks when allowSplitHeaders is true', () => {
+    const { output, remaining } = runFixLoop(SOURCE, {
+      requiredTags: SPLIT_TAGS,
+      headerTemplate: ADJACENT_BLOCKS,
+    });
+
+    expect(output).toBe(`${ADJACENT_BLOCKS}\n${SOURCE}`);
+    expect(remaining).toHaveLength(0);
+  });
+
+  // A template whose extra block trips a different diagnostic still converges:
+  // splitHeaderFragment carries no fix, so the loop stops after one insertion.
+  it('inserts an accepted template once even when a trailing block is reported', () => {
+    const template = `${SINGLE_BLOCK}/**\n * @author BluMint\n */\n`;
+    const { output, remaining } = runFixLoop(SOURCE, {
+      allowSplitHeaders: false,
+      requiredTags: SPLIT_TAGS,
+      headerTemplate: template,
+    });
+
+    expect(output).toBe(`${template}\n${SOURCE}`);
+    expect(remaining.map((message) => message.messageId)).toEqual([
+      'splitHeaderFragment',
+    ]);
+  });
+
+  it('never inserts a non-comment template, which would break parsing', () => {
+    const { output, remaining } = runFixLoop(SOURCE, {
+      headerTemplate: '@fileoverview thing',
+    });
+
+    expect(output).toBe(SOURCE);
+    expect(remaining.map((message) => message.messageId)).toEqual([
+      'missingHeader',
+    ]);
+    expect(
+      remaining.some((message) => message.fatal || message.ruleId === null),
+    ).toBe(false);
+  });
 });

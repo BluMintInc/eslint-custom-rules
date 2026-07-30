@@ -1,6 +1,6 @@
 import path from 'path';
 import { minimatch } from 'minimatch';
-import { TSESLint, TSESTree } from '@typescript-eslint/utils';
+import { AST_TOKEN_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type NormalizedOptions = {
@@ -420,6 +420,91 @@ const analyzeHeaderGroups = (
   return { primaryHeader, duplicateGroups, splitHeaderGroups };
 };
 
+/**
+ * A template made of nothing but comments is safe to prepend to any file;
+ * anything else (bare text, trailing code) would be inserted as source and can
+ * leave the file unparseable.
+ */
+const isCommentOnly = (template: string): boolean =>
+  template
+    .replace(/\/\*[\s\S]*?\*\//gu, '')
+    .replace(/\/\/[^\n]*/gu, '')
+    .trim().length === 0;
+
+const toTemplateComment = (
+  template: string,
+  raw: string,
+  offset: number,
+): TSESTree.Comment => {
+  const isBlock = raw.startsWith('/*');
+  const precedingText = template.slice(0, offset);
+  const startLine = precedingText.split('\n').length;
+  const startColumn = offset - (precedingText.lastIndexOf('\n') + 1);
+  const rawLines = raw.split('\n');
+  const lastLine = rawLines[rawLines.length - 1];
+
+  return {
+    type: isBlock ? AST_TOKEN_TYPES.Block : AST_TOKEN_TYPES.Line,
+    /** Header detection normalizes the raw comment value, so drop only the delimiters. */
+    value: isBlock ? raw.slice(2, -2) : raw.slice(2),
+    range: [offset, offset + raw.length],
+    loc: {
+      start: { line: startLine, column: startColumn },
+      end: {
+        line: startLine + rawLines.length - 1,
+        column:
+          rawLines.length > 1 ? lastLine.length : startColumn + raw.length,
+      },
+    },
+  };
+};
+
+const parseTemplateComments = (template: string): TSESTree.Comment[] => {
+  const commentPattern = /\/\*[\s\S]*?\*\/|\/\/[^\n]*/gu;
+  const comments: TSESTree.Comment[] = [];
+
+  for (
+    let match = commentPattern.exec(template);
+    match !== null;
+    match = commentPattern.exec(template)
+  ) {
+    comments.push(toTemplateComment(template, match[0], match.index));
+  }
+
+  return comments;
+};
+
+/**
+ * A fixer must remove its own trigger. Inserting a template the rule itself
+ * would not accept as a header leaves `missingHeader` reported, so ESLint's fix
+ * loop re-inserts the template on every pass until it hits the pass ceiling.
+ *
+ * Whether a template is acceptable is not a property of its text alone: the
+ * rule groups comments first and demands that a single group carry every tag,
+ * so `allowSplitHeaders` and block adjacency decide the answer. Running the
+ * template through the same grouping the rule applies to real files keeps the
+ * fixer convergent by construction instead of by a second approximation.
+ */
+const canTemplateSatisfyRule = (
+  template: string,
+  options: NormalizedOptions,
+  excludedAtDirectives: Set<string>,
+): boolean => {
+  if (options.requiredTags.length === 0 || !isCommentOnly(template)) {
+    return false;
+  }
+
+  const candidateGroups = collectHeaderGroups(
+    parseTemplateComments(template),
+    options,
+    excludedAtDirectives,
+  );
+
+  return (
+    analyzeHeaderGroups(candidateGroups, options).primaryHeader !== undefined
+  );
+};
+
 const computeHeaderInsertion = (
   sourceText: string,
   headerTemplate: string,
@@ -446,9 +531,8 @@ const reportMissingHeader = (
   fileName: string,
   sourceText: string,
   options: NormalizedOptions,
+  template: string | null,
 ): void => {
-  const template = options.headerTemplate;
-
   context.report({
     loc: { line: 1, column: 0 },
     messageId: 'missingHeader',
@@ -579,6 +663,15 @@ export const enforceUniqueCursorHeaders = createRule<Options, MessageIds>({
     const fileName = context.getFilename();
     const matchPath = fileName.split(path.sep).join('/');
     const excludedAtDirectives = new Set(options.excludedAtDirectives);
+    const fixableTemplate =
+      options.headerTemplate !== null &&
+      canTemplateSatisfyRule(
+        options.headerTemplate,
+        options,
+        excludedAtDirectives,
+      )
+        ? options.headerTemplate
+        : null;
 
     if (fileName === '<input>') {
       return {};
@@ -620,7 +713,13 @@ export const enforceUniqueCursorHeaders = createRule<Options, MessageIds>({
           analyzeHeaderGroups(candidateGroups, options);
 
         if (!primaryHeader) {
-          reportMissingHeader(context, fileName, sourceText, options);
+          reportMissingHeader(
+            context,
+            fileName,
+            sourceText,
+            options,
+            fixableTemplate,
+          );
 
           return;
         }
