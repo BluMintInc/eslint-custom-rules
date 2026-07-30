@@ -1,6 +1,7 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
+import { createSuppressionChecker } from '../utils/disableDirectives';
 
 type MessageIds = 'wrapSpreadPropsWithStableHash';
 
@@ -319,7 +320,12 @@ export const enforceStableHashSpreadProps = createRule<Options, MessageIds>({
     ]);
     const hookNames = new Set<string>([...DEFAULT_HOOKS, ...userHookNames]);
 
+    // The `import { stableHash }` statement rides on a single violation's fix,
+    // so that violation is the file's import carrier. A suppressed carrier
+    // would take the import down with it while the surviving violations still
+    // emit `stableHash(...)`, leaving calls to an unbound identifier.
     let importPlanned = false;
+    const isReportSuppressed = createSuppressionChecker(context);
     const hashIdentifier = existingHashLocalNames[0] ?? hashImport.importName;
     const functionStack: FunctionContext[] = [];
 
@@ -413,11 +419,22 @@ export const enforceStableHashSpreadProps = createRule<Options, MessageIds>({
           new Set(offendingElements.map(({ name }) => name)),
         );
 
+        // The report is emitted even when suppressed: ESLint discards it, and
+        // reporting keeps the user's disable directive "used" so that
+        // `--report-unused-disable-directives` does not flag it.
         context.report({
           node: depsArg,
           messageId: 'wrapSpreadPropsWithStableHash',
           data: { names: offendingNames.join(', ') },
           fix(fixer) {
+            // A suppressed report is dropped together with its fix. Producing
+            // no fix — and leaving the import unscheduled — passes the import
+            // to the first violation that survives. The check runs on the
+            // reported node so it resolves the same location ESLint does.
+            if (isReportSuppressed(depsArg)) {
+              return null;
+            }
+
             const fixes: TSESLint.RuleFix[] = [];
             const seen = new Set<number>();
             for (const { node: targetNode } of offendingElements) {
