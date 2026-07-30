@@ -1122,6 +1122,279 @@ export const useGroupIdMap = () => {
         `,
         errors: [invalidSourceError('keys.user')],
       },
+
+      // -----------------------------------------------------------------------
+      // A binding that already owns the derived constant's name withholds the
+      // edit (issue #1431). The violation is still reported; only the automated
+      // fix is skipped.
+      // -----------------------------------------------------------------------
+      // 36. A pre-existing `QUERY_KEY_USER_PROFILE` binding makes the import
+      // unsafe to insert, so the violation is reported without an autofix.
+      {
+        code: `
+const QUERY_KEY_USER_PROFILE = undefined as unknown as never;
+export const useProfileKey = () => {
+          return useRouterState({ key: 'user-profile' });
+        };
+`,
+        output: `
+const QUERY_KEY_USER_PROFILE = undefined as unknown as never;
+export const useProfileKey = () => {
+          return useRouterState({ key: 'user-profile' });
+        };
+`,
+        errors: [stringLiteralError("'user-profile'")],
+      },
+
+      // 37. The guard follows the name derived from the key, not one constant:
+      // a different key collides with a different existing binding.
+      {
+        code: `
+const QUERY_KEY_USER_SETTINGS = undefined as unknown as never;
+export const useSettingsKey = () => {
+          return useRouterState({ key: 'user-settings' });
+        };
+`,
+        output: `
+const QUERY_KEY_USER_SETTINGS = undefined as unknown as never;
+export const useSettingsKey = () => {
+          return useRouterState({ key: 'user-settings' });
+        };
+`,
+        errors: [stringLiteralError("'user-settings'")],
+      },
+
+      // 38. A binding of some other derived name leaves the fix reachable,
+      // proving the guard is keyed to the constant this fix emits.
+      {
+        code: `
+const QUERY_KEY_USER_SETTINGS = undefined as unknown as never;
+export const useProfileKey = () => {
+          return useRouterState({ key: 'user-profile' });
+        };
+`,
+        output: `import { QUERY_KEY_USER_PROFILE } from 'src/util/routing/queryKeys';
+
+const QUERY_KEY_USER_SETTINGS = undefined as unknown as never;
+export const useProfileKey = () => {
+          return useRouterState({ key: QUERY_KEY_USER_PROFILE });
+        };
+`,
+        errors: [stringLiteralError("'user-profile'")],
+      },
+
+      // 39. A `let` binding of the derived name collides just as a `const` does.
+      {
+        code: `
+let QUERY_KEY_USER_PROFILE;
+
+function Component() {
+  return useRouterState({ key: 'user-profile' });
+}
+`,
+        output: null,
+        errors: [stringLiteralError("'user-profile'")],
+      },
+
+      // 40. A function declaration owns the name at module scope.
+      {
+        code: `
+function QUERY_KEY_USER_PROFILE() {}
+
+function Component() {
+  return useRouterState({ key: 'user-profile' });
+}
+`,
+        output: null,
+        errors: [stringLiteralError("'user-profile'")],
+      },
+
+      // 41. A shadow declared inside the enclosing function raises no TypeScript
+      // diagnostic, so only scope-chain resolution at the literal catches it.
+      {
+        code: `
+function Component() {
+  const QUERY_KEY_USER_PROFILE = 'stale-key';
+  return useRouterState({ key: 'user-profile' });
+}
+`,
+        output: null,
+        errors: [stringLiteralError("'user-profile'")],
+      },
+
+      // 42. A parameter of the enclosing function shadows the name too.
+      {
+        code: `
+export const useProfileKey = (QUERY_KEY_USER_PROFILE) => {
+  return useRouterState({ key: 'user-profile' });
+};
+`,
+        output: null,
+        errors: [stringLiteralError("'user-profile'")],
+      },
+
+      // 43. The name imported from an unrelated module holds a different value.
+      {
+        code: `
+import { QUERY_KEY_USER_PROFILE } from './legacy/keys';
+
+function Component() {
+  return useRouterState({ key: 'user-profile' });
+}
+`,
+        output: null,
+        errors: [stringLiteralError("'user-profile'")],
+      },
+
+      // 44. An inline type-only specifier binds the name without providing a
+      // value, so neither reusing nor re-importing it compiles.
+      {
+        code: `
+import { type QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
+function Component() {
+  return useRouterState({ key: 'user-profile' });
+}
+`,
+        output: null,
+        errors: [stringLiteralError("'user-profile'")],
+      },
+
+      // 45. Extending an existing queryKeys import is withheld as well, since
+      // the added specifier declares the colliding name.
+      {
+        code: `
+import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+const QUERY_KEY_USER_SETTINGS = 'stale-key';
+
+function Component() {
+  const [profile] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+  const [settings] = useRouterState({ key: 'user-settings' });
+  return <div>{profile}{settings}</div>;
+}
+`,
+        output: null,
+        errors: [stringLiteralError("'user-settings'")],
+      },
+
+      // 46. A binding in a scope the literal cannot see is legally shadowed by
+      // the inserted import, so the fix stays available.
+      {
+        code: `
+function other() {
+  const QUERY_KEY_USER_PROFILE = 'stale-key';
+  return QUERY_KEY_USER_PROFILE;
+}
+
+function Component() {
+  return useRouterState({ key: 'user-profile' });
+}
+`,
+        output: `import { QUERY_KEY_USER_PROFILE } from 'src/util/routing/queryKeys';
+
+function other() {
+  const QUERY_KEY_USER_PROFILE = 'stale-key';
+  return QUERY_KEY_USER_PROFILE;
+}
+
+function Component() {
+  return useRouterState({ key: QUERY_KEY_USER_PROFILE });
+}
+`,
+        errors: [stringLiteralError("'user-profile'")],
+      },
+
+      // 47. One colliding literal withholds only its own edit; an independent
+      // literal in the same file is still fixed.
+      {
+        code: `
+const QUERY_KEY_USER_PROFILE = 'stale-key';
+
+function Component() {
+  const [profile] = useRouterState({ key: 'user-profile' });
+  const [settings] = useRouterState({ key: 'user-settings' });
+  return <div>{profile}{settings}</div>;
+}
+`,
+        output: `import { QUERY_KEY_USER_SETTINGS } from 'src/util/routing/queryKeys';
+
+const QUERY_KEY_USER_PROFILE = 'stale-key';
+
+function Component() {
+  const [profile] = useRouterState({ key: 'user-profile' });
+  const [settings] = useRouterState({ key: QUERY_KEY_USER_SETTINGS });
+  return <div>{profile}{settings}</div>;
+}
+`,
+        errors: [
+          stringLiteralError("'user-profile'"),
+          stringLiteralError("'user-settings'"),
+        ],
+      },
+
+      // 48. An alias already carrying the constant is referenced instead, so a
+      // colliding module-scope binding of the constant's own name is harmless.
+      {
+        code: `
+import { QUERY_KEY_USER_PROFILE as PROFILE_KEY } from '@/util/routing/queryKeys';
+const QUERY_KEY_USER_PROFILE = 'stale-key';
+
+function Component() {
+  return useRouterState({ key: 'user-profile' });
+}
+`,
+        output: `
+import { QUERY_KEY_USER_PROFILE as PROFILE_KEY } from '@/util/routing/queryKeys';
+const QUERY_KEY_USER_PROFILE = 'stale-key';
+
+function Component() {
+  return useRouterState({ key: PROFILE_KEY });
+}
+`,
+        errors: [stringLiteralError("'user-profile'")],
+      },
+
+      // 49. A qualified reference through a namespace import declares nothing,
+      // so a colliding binding of the constant's name cannot break it.
+      {
+        code: `
+import * as QueryKeys from '@/util/routing/queryKeys';
+const QUERY_KEY_USER_PROFILE = 'stale-key';
+
+function Component() {
+  return useRouterState({ key: 'user-profile' });
+}
+`,
+        output: `
+import * as QueryKeys from '@/util/routing/queryKeys';
+const QUERY_KEY_USER_PROFILE = 'stale-key';
+
+function Component() {
+  return useRouterState({ key: QueryKeys.QUERY_KEY_USER_PROFILE });
+}
+`,
+        errors: [stringLiteralError("'user-profile'")],
+      },
+
+      // 50. An import written below the call site already binds the constant,
+      // so the literal is rewritten and the import left untouched.
+      {
+        code: `
+function Component() {
+  return useRouterState({ key: 'user-profile' });
+}
+
+import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+`,
+        output: `
+function Component() {
+  return useRouterState({ key: QUERY_KEY_USER_PROFILE });
+}
+
+import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+`,
+        errors: [stringLiteralError("'user-profile'")],
+      },
     ],
   },
 );
