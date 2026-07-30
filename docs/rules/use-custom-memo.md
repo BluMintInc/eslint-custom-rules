@@ -57,7 +57,3 @@ Specifically:
 
 Disable this rule in projects that do not ship a `src/util/memo` module.
 
-## Options
-
-This rule has no options.
-
