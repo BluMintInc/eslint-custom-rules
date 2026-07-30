@@ -24,6 +24,19 @@ type ImportBinding = {
   declaration: TSESTree.ImportDeclaration;
 };
 
+/**
+ * Modules known to export React's hook set. The autofix emits a `useCallback`
+ * call, so it may only run when the `useMemo` it replaces is provably React's
+ * hook: that is what guarantees a `useCallback` with the same contract exists
+ * for the rewritten import to bind. A `useMemo` from anywhere else is an unknown
+ * function whose module need not export `useCallback` at all, so converting the
+ * call would leave the emitted identifier unbound (or bound to a different
+ * contract). Preact's hook entry points are included because their `useCallback`
+ * is React's hook by specification, which is what makes the in-place rename of
+ * their specifier sound.
+ */
+const REACT_HOOK_MODULES = new Set(['react', 'preact/hooks', 'preact/compat']);
+
 type ConversionPlan = {
   /** Identifier to emit at the converted call site (honors an existing alias). */
   calleeName: string;
@@ -283,10 +296,47 @@ function toImportBinding(
   return null;
 }
 
+function isReactHookModule(declaration: TSESTree.ImportDeclaration) {
+  return (
+    typeof declaration.source.value === 'string' &&
+    REACT_HOOK_MODULES.has(declaration.source.value)
+  );
+}
+
+/**
+ * Narrows the callee binding to the single shape the import rewrite can vouch
+ * for: `useMemo` imported by that name, as a value, from a module known to
+ * export React's hooks. Anything else — a default import, a namespace member, a
+ * local rebinding, `default as useMemo`, or a named import from an unfamiliar
+ * module — leaves the rule unable to guarantee the emitted `useCallback`
+ * resolves to React's hook, so the conversion is reported without a fix.
+ */
+function toReactUseMemoBinding(
+  variable: TSESLint.Scope.Variable | null,
+): ImportBinding | null {
+  const binding = toImportBinding(variable);
+  if (!binding || !isReactHookModule(binding.declaration)) {
+    return null;
+  }
+  const { imported } = binding.specifier;
+  if (
+    imported.type !== AST_NODE_TYPES.Identifier ||
+    imported.name !== 'useMemo'
+  ) {
+    return null;
+  }
+  return binding;
+}
+
+type ImportedSpecifier = {
+  specifier: TSESTree.ImportSpecifier;
+  declaration: TSESTree.ImportDeclaration;
+};
+
 function findImportedSpecifier(
   program: TSESTree.Program,
   importedName: string,
-): TSESTree.ImportSpecifier | null {
+): ImportedSpecifier | null {
   for (const statement of program.body) {
     if (
       statement.type !== AST_NODE_TYPES.ImportDeclaration ||
@@ -301,7 +351,7 @@ function findImportedSpecifier(
         specifier.imported.type === AST_NODE_TYPES.Identifier &&
         specifier.imported.name === importedName
       ) {
-        return specifier;
+        return { specifier, declaration: statement };
       }
     }
   }
@@ -378,21 +428,29 @@ function planConversion(
   const sourceCode = context.getSourceCode();
   const program = sourceCode.ast;
 
-  const existingUseCallback = findImportedSpecifier(program, 'useCallback');
+  const useCallbackImport = findImportedSpecifier(program, 'useCallback');
+  const existingUseCallback = useCallbackImport?.specifier ?? null;
   const calleeName = existingUseCallback
     ? existingUseCallback.local.name
     : 'useCallback';
 
+  // A useCallback imported from outside the React hook set is a different
+  // function: reusing its binding would change what the code calls, while adding
+  // React's beside it would collide with the name already bound. Neither is a
+  // safe rewrite, so no conversion in the file is fixed.
+  if (useCallbackImport && !isReactHookModule(useCallbackImport.declaration)) {
+    return {
+      calleeName,
+      fixable: new Set(),
+      importOwner: null,
+      importFixes: () => [],
+    };
+  }
+
   // A local binding of the target name would capture the emitted call, so those
   // conversions are reported without a fix rather than silently miscompiled.
-  // A suppressed violation is skipped for the same reason it is skipped for the
-  // import: ESLint drops its fix, so treating it as unfixable keeps the plan
-  // honest about which useMemo calls actually go away.
-  const fixableCandidates = candidates.filter((candidate) => {
-    if (isReportSuppressed(candidate.node)) {
-      return false;
-    }
-    const bound = resolveVariable(candidate.scope, calleeName);
+  const emitsResolvableCallee = (scope: TSESLint.Scope.Scope) => {
+    const bound = resolveVariable(scope, calleeName);
     if (!existingUseCallback) {
       return bound === null;
     }
@@ -400,9 +458,35 @@ function planConversion(
       bound !== null &&
       bound.defs.some((def) => def.node === existingUseCallback)
     );
-  });
+  };
 
-  const fixable = new Set(fixableCandidates.map((candidate) => candidate.node));
+  // Each fixable conversion is paired with the binding its callee resolves to:
+  // the import rewrite hangs off that binding, and only a binding the rule can
+  // vouch for makes the emitted useCallback resolvable.
+  const conversions: { candidate: Candidate; useMemoBinding: ImportBinding }[] =
+    [];
+  for (const candidate of candidates) {
+    // A suppressed violation is skipped for the same reason it is skipped for
+    // the import: ESLint drops its fix, so treating it as unfixable keeps the
+    // plan honest about which useMemo calls actually go away.
+    if (isReportSuppressed(candidate.node)) {
+      continue;
+    }
+    const useMemoBinding = toReactUseMemoBinding(
+      resolveVariable(
+        candidate.scope,
+        (candidate.node.callee as TSESTree.Identifier).name,
+      ),
+    );
+    if (!useMemoBinding || !emitsResolvableCallee(candidate.scope)) {
+      continue;
+    }
+    conversions.push({ candidate, useMemoBinding });
+  }
+
+  const fixable = new Set(
+    conversions.map((conversion) => conversion.candidate.node),
+  );
   const emptyPlan: ConversionPlan = {
     calleeName,
     fixable,
@@ -410,40 +494,19 @@ function planConversion(
     importFixes: () => [],
   };
 
-  if (fixableCandidates.length === 0) {
+  if (conversions.length === 0) {
     return emptyPlan;
   }
 
-  const useMemoBinding = fixableCandidates.reduce<ImportBinding | null>(
-    (found, candidate) =>
-      found ??
-      toImportBinding(
-        resolveVariable(
-          candidate.scope,
-          (candidate.node.callee as TSESTree.Identifier).name,
-        ),
-      ),
-    null,
-  );
-
-  // Without an imported useMemo there is no import to migrate: the file either
-  // relies on a global or on a local binding this rule must not touch.
-  if (!useMemoBinding) {
-    return emptyPlan;
-  }
+  const { useMemoBinding } = conversions[0];
 
   const convertedReferences = new Set<TSESTree.Node>(
-    fixableCandidates
+    conversions
       .filter(
-        (candidate) =>
-          toImportBinding(
-            resolveVariable(
-              candidate.scope,
-              (candidate.node.callee as TSESTree.Identifier).name,
-            ),
-          )?.variable === useMemoBinding.variable,
+        (conversion) =>
+          conversion.useMemoBinding.variable === useMemoBinding.variable,
       )
-      .map((candidate) => candidate.node.callee),
+      .map((conversion) => conversion.candidate.node.callee),
   );
 
   // Every reference the fixes do not rewrite still needs the specifier: a plain
@@ -466,7 +529,7 @@ function planConversion(
     fixable,
     // The carrier is the first violation whose fix actually survives, so a
     // suppressed leading violation cannot take the import edit down with it.
-    importOwner: fixableCandidates[0].node,
+    importOwner: conversions[0].candidate.node,
     importFixes: (fixer) => {
       if (shouldAdd && shouldRemove) {
         return [fixer.replaceText(useMemoBinding.specifier, calleeName)];

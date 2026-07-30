@@ -162,8 +162,24 @@ const C = () => {
 import { useMemo } from 'react';
 const C = () => { const cb = useMemo(() => () => {}, []); return cb; };`,
       },
+      // Issue #1440: an aliased hook import is never matched, so an unknown
+      // module's memo helper is left alone entirely
+      {
+        code: `import { useMemo as memoize } from '../hooks';
+const C = () => { const cb = memoize(() => () => {}, []); return cb; };`,
+      },
+      // Issue #1440: the namespace form is out of scope for this rule
+      {
+        code: `import * as hooks from '../hooks';
+const C = () => { const cb = hooks.useMemo(() => () => {}, []); return cb; };`,
+      },
     ],
     invalid: [
+      // ------------------------------------------------------------------
+      // Issue #1440: `useMemo` here is bound by nothing this rule can vouch
+      // for, so every one of these violations is reported without a fix.
+      // Emitting `useCallback` would introduce an identifier no import binds.
+      // ------------------------------------------------------------------
       // Invalid case: using useMemo to return a function (with block body)
       {
         code: `
@@ -182,14 +198,7 @@ const C = () => { const cb = useMemo(() => () => {}, []); return cb; };`,
             data: { callbackDescription: callbackDescription('handleClick') },
           },
         ],
-        output: `
-        function Component() {
-          const handleClick = useCallback(() => {
-              console.log('Button clicked');
-            }, []);
-          return <button onClick={handleClick}>Click me</button>;
-        }
-      `,
+        output: null,
       },
       // Invalid case: using useMemo to return a function (with implicit return)
       {
@@ -205,12 +214,7 @@ const C = () => { const cb = useMemo(() => () => {}, []); return cb; };`,
             data: { callbackDescription: callbackDescription('handleClick') },
           },
         ],
-        output: `
-        function Component() {
-          const handleClick = useCallback(() => console.log('Button clicked'), []);
-          return <button onClick={handleClick}>Click me</button>;
-        }
-      `,
+        output: null,
       },
       // Invalid case: using useMemo to return an async function
       {
@@ -231,15 +235,7 @@ const C = () => { const cb = useMemo(() => () => {}, []); return cb; };`,
             data: { callbackDescription: callbackDescription('fetchData') },
           },
         ],
-        output: `
-        function Component({ id }) {
-          const fetchData = useCallback(async () => {
-              const response = await fetch(\`/api/data/\${id}\`);
-              return response.json();
-            }, [id]);
-          return <button onClick={fetchData}>Fetch</button>;
-        }
-      `,
+        output: null,
       },
       // Invalid case: using useMemo to return a function with TypeScript generic
       {
@@ -259,14 +255,7 @@ const C = () => { const cb = useMemo(() => () => {}, []); return cb; };`,
             data: { callbackDescription: callbackDescription('handler') },
           },
         ],
-        output: `
-        function Component() {
-          const handler = useCallback<(id: string) => void>((id) => {
-              console.log(\`Processing \${id}\`);
-            }, []);
-          return <button onClick={() => handler('123')}>Process</button>;
-        }
-      `,
+        output: null,
       },
       // Invalid case: function factory when allowFunctionFactories is false
       {
@@ -283,12 +272,7 @@ const C = () => { const cb = useMemo(() => () => {}, []); return cb; };`,
             data: { callbackDescription: callbackDescription('handler') },
           },
         ],
-        output: `
-        function Component() {
-          const handler = useCallback(() => console.log('Simple function'), []);
-          return <button onClick={handler}>Click me</button>;
-        }
-      `,
+        output: null,
       },
       // Invalid case: with non-empty dependency array
       {
@@ -308,14 +292,55 @@ const C = () => { const cb = useMemo(() => () => {}, []); return cb; };`,
             data: { callbackDescription: callbackDescription('handleClick') },
           },
         ],
-        output: `
-        function Component({ id }) {
-          const handleClick = useCallback(() => {
-              console.log('Button clicked', id);
-            }, [id]);
-          return <button onClick={handleClick}>Click me</button>;
-        }
-      `,
+        output: null,
+      },
+      // Invalid case: the same async shape is fixed once useMemo is imported
+      // from react, including a non-empty dependency array
+      {
+        code: `import { useMemo } from 'react';
+function Component({ id }) {
+  const fetchData = useMemo(() => {
+    return async () => {
+      const response = await fetch(\`/api/data/\${id}\`);
+      return response.json();
+    };
+  }, [id]);
+  return <button onClick={fetchData}>Fetch</button>;
+}`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('fetchData') },
+          },
+        ],
+        output: `import { useCallback } from 'react';
+function Component({ id }) {
+  const fetchData = useCallback(async () => {
+      const response = await fetch(\`/api/data/\${id}\`);
+      return response.json();
+    }, [id]);
+  return <button onClick={fetchData}>Fetch</button>;
+}`,
+      },
+      // Invalid case: allowFunctionFactories: false still fixes a react import
+      {
+        code: `import { useMemo } from 'react';
+function Component() {
+  const handler = useMemo(() => () => console.log('Simple function'), []);
+  return <button onClick={handler}>Click me</button>;
+}`,
+        options: [{ allowFunctionFactories: false }],
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('handler') },
+          },
+        ],
+        output: `import { useCallback } from 'react';
+function Component() {
+  const handler = useCallback(() => console.log('Simple function'), []);
+  return <button onClick={handler}>Click me</button>;
+}`,
       },
       // Invalid case: the autofix must swap the react import over to useCallback
       {
@@ -608,8 +633,8 @@ const C = () => {
   return [cb, other, React.version];
 };`,
       },
-      // Invalid case: a useMemo bound by a default import is left to its own
-      // module, so only the call site changes
+      // Issue #1440: a useMemo bound by a default import is reported without a
+      // fix — converting the call would emit a useCallback nothing binds
       {
         code: `import useMemo from './use-memo';
 const C = () => { const cb = useMemo(() => () => {}, []); return cb; };`,
@@ -619,8 +644,182 @@ const C = () => { const cb = useMemo(() => () => {}, []); return cb; };`,
             data: { callbackDescription: callbackDescription('cb') },
           },
         ],
-        output: `import useMemo from './use-memo';
-const C = () => { const cb = useCallback(() => {}, []); return cb; };`,
+        output: null,
+      },
+      // Issue #1440: a named import from an unknown module is declined too:
+      // renaming that specifier would import a member the module need not
+      // export, and the hook it replaces need not be React's useMemo
+      {
+        code: `import { useMemo } from '../hooks';
+const C = () => { const cb = useMemo(() => () => {}, []); return cb; };`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: null,
+      },
+      // Issue #1440: an unknown-module useMemo stays unfixed even when react's
+      // useCallback is already imported. The emitted call would resolve, but a
+      // hook of unknown semantics must not be swapped for React's silently
+      {
+        code: `import { useMemo } from '../hooks';
+import { useCallback } from 'react';
+const C = () => {
+  const cb = useMemo(() => () => {}, []);
+  const other = useCallback(() => {}, []);
+  return [cb, other];
+};`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: null,
+      },
+      // Issue #1440: a re-exported useMemo barrel is an unknown module as well
+      {
+        code: `import { useMemo } from '@blumintinc/hooks';
+const C = () => {
+  const cb = useMemo(() => () => {}, []);
+  const config = useMemo(() => ({ apiUrl: '/api' }), []);
+  return [cb, config];
+};`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: null,
+      },
+      // Issue #1440: a react useMemo with a useCallback imported from elsewhere
+      // is declined: reusing that binding would call a different function, and
+      // adding react's would collide with the name already bound
+      {
+        code: `import { useMemo } from 'react';
+import { useCallback } from '../hooks';
+const C = () => {
+  const cb = useMemo(() => () => {}, []);
+  const other = useCallback(() => {}, []);
+  return [cb, other];
+};`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: null,
+      },
+      // Issue #1440: the same guard applies to an aliased foreign useCallback,
+      // whose local name would otherwise be emitted at the call site
+      {
+        code: `import { useMemo } from 'react';
+import { useCallback as uc } from '../hooks';
+const C = () => { const cb = useMemo(() => () => {}, []); return [cb, uc]; };`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: null,
+      },
+      // Issue #1440: a type-only useCallback import still binds the name, so the
+      // emitted call would resolve to a type rather than the hook
+      {
+        code: `import { useMemo } from 'react';
+import type { useCallback } from './hook-types';
+const C = () => { const cb = useMemo(() => () => {}, []); return cb; };`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: null,
+      },
+      // Issue #1440: a namespace import offers no specifier list to rewrite
+      {
+        code: `import * as hooks from './hooks';
+const useMemo = hooks.useMemo;
+const C = () => { const cb = useMemo(() => () => {}, []); return cb; };`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: null,
+      },
+      // Issue #1440: a require destructure is not an import binding
+      {
+        code: `const { useMemo } = require('react');
+const C = () => { const cb = useMemo(() => () => {}, []); return cb; };`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: null,
+      },
+      // Issue #1440: `default as useMemo` is react's default export, not the
+      // hook, so the conversion is declined
+      {
+        code: `import { default as useMemo } from 'react';
+const C = () => { const cb = useMemo(() => () => {}, []); return cb; };`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: null,
+      },
+      // Issue #1440: a type-only useMemo import is not a value binding
+      {
+        code: `import type { useMemo } from 'react';
+const C = () => { const cb = useMemo(() => () => {}, []); return cb; };`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: null,
+      },
+      // Issue #1440: a locally rebound useMemo is declined while the react one
+      // beside it is still converted, and the specifier the declined call needs
+      // is the local binding rather than the import
+      {
+        code: `import { useMemo } from 'react';
+const A = () => { const a = useMemo(() => () => {}, []); return a; };
+const B = () => {
+  const useMemo = require('../hooks').useMemo;
+  const b = useMemo(() => () => {}, []);
+  return b;
+};`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('a') },
+          },
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('b') },
+          },
+        ],
+        output: `import { useCallback } from 'react';
+const A = () => { const a = useCallback(() => {}, []); return a; };
+const B = () => {
+  const useMemo = require('../hooks').useMemo;
+  const b = useMemo(() => () => {}, []);
+  return b;
+};`,
       },
       // Invalid case: assignment target names the callback in the message
       {
@@ -688,7 +887,8 @@ const C = () => [useMemo(() => () => {}, [])];`,
         output: `import { useCallback } from 'react';
 const C = () => [useCallback(() => {}, [])];`,
       },
-      // Invalid case: hooks imported from a non-react module are rewritten in place
+      // Invalid case: hooks imported from preact, whose useCallback carries the
+      // same contract as React's, are rewritten in place
       {
         code: `import { useMemo } from 'preact/hooks';
 const C = () => { const cb = useMemo(() => () => {}, []); return cb; };`,
@@ -700,6 +900,31 @@ const C = () => { const cb = useMemo(() => () => {}, []); return cb; };`,
         ],
         output: `import { useCallback } from 'preact/hooks';
 const C = () => { const cb = useCallback(() => {}, []); return cb; };`,
+      },
+      // Invalid case: the preact compat entry point exports the same hooks
+      {
+        code: `import { useMemo } from 'preact/compat';
+const C = () => { const cb = useMemo(() => () => {}, []); return cb; };`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: `import { useCallback } from 'preact/compat';
+const C = () => { const cb = useCallback(() => {}, []); return cb; };`,
+      },
+      // Issue #1440: a react subpath is not the hooks entry point
+      {
+        code: `import { useMemo } from 'react/jsx-runtime';
+const C = () => { const cb = useMemo(() => () => {}, []); return cb; };`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: null,
       },
       // ------------------------------------------------------------------
       // Issue #1411: the import rewrite is a *rename* of the useMemo
@@ -1192,6 +1417,50 @@ const C = () => {
     expect(output).toContain(`import { useMemo, useCallback } from 'react';`);
     expect(output.match(/useCallback/g)).toHaveLength(2);
     expectEveryHookCallBound(output);
+  });
+
+  // Issue #1440: the multi-pass fixer is the only place a stranded identifier is
+  // visible, since RuleTester stops after one pass. Every case here must leave
+  // the file byte-identical while still reporting.
+  it('leaves an unknown-module useMemo alone', () => {
+    const code = `import useMemo from './use-memo';
+const C = () => { const cb = useMemo(() => () => {}, []); return cb; };
+`;
+
+    const { output, messages } = lint(code);
+
+    expect(output).toBe(code);
+    expect(output).not.toContain('useCallback');
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.ruleId).toBe(RULE_ID);
+  });
+
+  it('leaves a named useMemo from an unknown module alone', () => {
+    const code = `import { useMemo } from '../hooks';
+const C = () => { const cb = useMemo(() => () => {}, []); return cb; };
+`;
+
+    const { output, messages } = lint(code);
+
+    expect(output).toBe(code);
+    expect(output).not.toContain('useCallback');
+    expect(messages).toHaveLength(1);
+  });
+
+  it('does not reuse a useCallback imported from an unknown module', () => {
+    const code = `import { useMemo } from 'react';
+import { useCallback } from '../hooks';
+const C = () => {
+  const cb = useMemo(() => () => {}, []);
+  const other = useCallback(() => {}, []);
+  return [cb, other];
+};
+`;
+
+    const { output, messages } = lint(code);
+
+    expect(output).toBe(code);
+    expect(messages).toHaveLength(1);
   });
 
   it('keeps the import usable when only the last violation survives a block disable', () => {
