@@ -1,3 +1,16 @@
+## [1.20.31](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.30...v1.20.31) (2026-07-30)
+
+
+### Bug Fixes
+
+* **enforce-assert-safe-object-key:** decline the fix when `assertSafe` is already bound (closes [#1422](https://github.com/BluMintInc/eslint-custom-rules/issues/1422)) ([a5b8517](https://github.com/BluMintInc/eslint-custom-rules/commit/a5b85174573d5d1db7c1b6793f00e33f6f7db747))
+* **enforce-memoize-async:** decline the fix when `Memoize` is already bound (closes [#1423](https://github.com/BluMintInc/eslint-custom-rules/issues/1423)) ([0c037a4](https://github.com/BluMintInc/eslint-custom-rules/commit/0c037a4d5ba538a7eec48b39bfe126031cd55d63))
+* **enforce-memoize-getters:** decline the fix when `Memoize` is already bound (closes [#1424](https://github.com/BluMintInc/eslint-custom-rules/issues/1424)) ([d0ce6a2](https://github.com/BluMintInc/eslint-custom-rules/commit/d0ce6a2e4e56806ddff34899078ddd02edde7b3a))
+* **no-array-length-in-deps:** decline the fix when a name it needs is already bound (closes [#1425](https://github.com/BluMintInc/eslint-custom-rules/issues/1425)) ([88efd23](https://github.com/BluMintInc/eslint-custom-rules/commit/88efd23a0328df81f6a7695f76a6a84481df1d69))
+* **prefer-fragment-component:** decline the fix when `Fragment` is already bound (closes [#1426](https://github.com/BluMintInc/eslint-custom-rules/issues/1426)) ([7a28c58](https://github.com/BluMintInc/eslint-custom-rules/commit/7a28c58a2f47c3c5303d8629133360552d4d68e9))
+* **require-memo:** decline the fix when `memo` is already bound (closes [#1427](https://github.com/BluMintInc/eslint-custom-rules/issues/1427)) ([2469e87](https://github.com/BluMintInc/eslint-custom-rules/commit/2469e87ce97406b1c63a9245b001b079c0bec87a))
+* **use-latest-callback:** decline the fix when `useLatestCallback` is already bound (closes [#1428](https://github.com/BluMintInc/eslint-custom-rules/issues/1428)) ([c62b091](https://github.com/BluMintInc/eslint-custom-rules/commit/c62b09121db8948e71ba51ffb8738bb19bd11fe7))
+
 ## [1.20.30](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.29...v1.20.30) (2026-07-30)
 
 
