@@ -29,6 +29,8 @@ userIds.forEach((userId) => {
 ```
 
 ```typescript
+const docSetter = new DocSetter<User>(userCollection);
+
 await Promise.all(
   userIds.map((userId) =>
     docSetter.set({ id: userId, activeTournament: FieldValue.delete() }),
@@ -59,6 +61,7 @@ docSetterTransaction.setAll(updates);
 ## Edge Cases and Notes
 
 - Single `set` calls outside of loops or array callbacks are allowed; the rule focuses on iterative writes.
+- The receiver must be resolvable to a setter in the same file — a `new DocSetter(...)`/`new DocSetterTransaction(...)` initializer or a `DocSetter`/`DocSetterTransaction` type annotation. A `set` call on a receiver of unknown origin is left alone so unrelated `map.set(...)`/`ref.set(...)` calls are never flagged, which is why each example below declares its own setter.
 - Keep Firestore batch/transaction limits (500 operations) in mind when batching. The rule does not enforce the limit, so split batches manually when necessary.
 - When building the updates array, prefer `as const` for literal objects so `setAll` keeps the narrow types you expect.
 

@@ -74,6 +74,14 @@ const group = useGroupDoc();
 const { groupTabState } = useGroupRouter();
 const { id } = group || {};
     `,
+    // The settled form of the documented example: the derived destructure sits
+    // next to its dependency, so the trailing pure declaration is not a violation.
+    `
+const { groupTabState } = useGroupRouter();
+const group = useGroupDoc();
+const { id } = group || {};
+const extra = 1;
+    `,
     `
 const state = useState(0);
 console.log('ready');
@@ -927,6 +935,24 @@ const derived = other.value;
 const filler = 2; // note B
 `,
       errors: [{ messageId: 'groupDerived' }, { messageId: 'groupDerived' }],
+    },
+    // Pins the documented incorrect/correct pair in docs/rules/logical-top-to-bottom-grouping.md.
+    // A hook above the dependency is not an intervening barrier, so the derived
+    // destructure is pulled up across the pure declaration between them.
+    {
+      code: `
+const { groupTabState } = useGroupRouter();
+const group = useGroupDoc();
+const extra = 1;
+const { id } = group || {};
+`,
+      output: `
+const { groupTabState } = useGroupRouter();
+const group = useGroupDoc();
+const { id } = group || {};
+const extra = 1;
+`,
+      errors: [{ messageId: 'groupDerived' }],
     },
   ],
 });
