@@ -10,6 +10,8 @@ You keep related statements grouped in a logical, top-to-bottom order. You hoist
 
 You only move placeholder declarations across pure declarations that do not reference the placeholder or its initializer, so closure timing and TDZ behavior remain unchanged.
 
+A derived declaration is only pulled next to its dependency when every statement in between is a pure declaration. An intervening hook call — or any other call-valued initializer — is an ordering barrier: the statement stays put and nothing is reported.
+
 ## Rule Details
 
 This rule rearranges statements inside a block to keep the execution flow readable and chronological.
@@ -26,9 +28,9 @@ const b = a;
 ```
 
 ```typescript
-const group = useGroupDoc();
 const { groupTabState } = useGroupRouter();
-const extra = readExtra();
+const group = useGroupDoc();
+const extra = 1;
 const { id } = group || {};
 ```
 
@@ -55,10 +57,10 @@ const b = a;
 ```
 
 ```typescript
-const group = useGroupDoc();
 const { groupTabState } = useGroupRouter();
+const group = useGroupDoc();
 const { id } = group || {};
-const extra = readExtra();
+const extra = 1;
 ```
 
 ```typescript

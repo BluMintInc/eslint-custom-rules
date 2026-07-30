@@ -27,46 +27,68 @@ Detects `uuidv4Base62()` combined with `useState`, `useRef`, or `useMemo` for st
 - Files outside the configured `targetPaths` (e.g. `src/util/`, backend code)
 - Other ID generators (`nanoid()`, `uuid()`, etc.)
 
+The rule only tracks `uuidv4Base62` when it is imported by name from a module path ending in `uuidv4Base62`, and only inside a component or hook body — a locally defined function of the same name, or a call at module top level, is not flagged. Each example below therefore carries its own import and component wrapper.
+
 ### Examples
 
 #### Incorrect
 
 ```tsx
-// Stable ID that never changes — should use useBase62Id()
-const [placementId] = useState(() => uuidv4Base62());
+// File: src/components/example/ExamplePanel.tsx
+import { useState, useRef, useMemo } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
 
-// Setter destructured but never called
-const [id, setId] = useState(() => uuidv4Base62());
-// ... setId never referenced
+const ExamplePanel = () => {
+  // Stable ID that never changes — should use useBase62Id()
+  const [placementId] = useState(() => uuidv4Base62());
 
-// useRef with stable ID
-const idRef = useRef(uuidv4Base62());
+  // Setter destructured but never called
+  const [id, setId] = useState(() => uuidv4Base62());
 
-// useMemo with empty deps is equivalent to useState initializer
-const stableId = useMemo(() => uuidv4Base62(), []);
+  // useRef with stable ID
+  const idRef = useRef(uuidv4Base62());
+
+  // useMemo with empty deps is equivalent to useState initializer
+  const stableId = useMemo(() => uuidv4Base62(), []);
+
+  return <div id={placementId} data-x={id} ref={idRef} key={stableId} />;
+};
 ```
 
 #### Correct
 
 ```tsx
-// Purpose-built hook: deterministic across SSR and CSR
-const placementId = useBase62Id();
+// File: src/components/example/ExamplePanel.tsx
+import { useState, useMemo } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+import { useBase62Id } from 'src/hooks/useBase62Id';
 
-// Setter IS used — regeneration pattern (e.g. after a completed operation)
-const [idempotencyKey, setIdempotencyKey] = useState(() => uuidv4Base62());
-const handleSubmit = async () => {
-  await submit({ idempotencyKey });
-  setIdempotencyKey(uuidv4Base62()); // intentional regeneration
+const ExamplePanel = ({ prefix, file, submit, upload }) => {
+  // Purpose-built hook: deterministic across SSR and CSR
+  const placementId = useBase62Id();
+
+  // Setter IS used — regeneration pattern (e.g. after a completed operation)
+  const [idempotencyKey, setIdempotencyKey] = useState(() => uuidv4Base62());
+  const handleSubmit = async () => {
+    await submit({ idempotencyKey });
+    setIdempotencyKey(uuidv4Base62()); // intentional regeneration
+  };
+
+  // Per-operation uniqueness inside a callback — valid
+  const handleUpload = () => {
+    const operationId = uuidv4Base62();
+    upload(file, operationId);
+  };
+
+  // Non-empty deps — value recomputed when deps change, not at mount
+  const key = useMemo(() => `${prefix}-${uuidv4Base62()}`, [prefix]);
+
+  return (
+    <form id={placementId} key={key} onSubmit={handleSubmit}>
+      <button onClick={handleUpload}>Upload</button>
+    </form>
+  );
 };
-
-// Per-operation uniqueness inside a callback — valid
-const handleUpload = () => {
-  const operationId = uuidv4Base62();
-  upload(file, operationId);
-};
-
-// Non-empty deps — value recomputed when deps change, not at mount
-const key = useMemo(() => `${prefix}-${uuidv4Base62()}`, [prefix]);
 ```
 
 ## Options

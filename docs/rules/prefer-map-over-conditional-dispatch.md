@@ -157,59 +157,121 @@ re-flags (the fix is idempotent).
 
 ### Incorrect
 
+Because the rule fires only when the discriminant's static type is a finite
+literal union, each example declares that type — an undeclared discriminant is
+`any` and is never flagged.
+
 ```ts
-// Full coverage — autofixes (default throw is dropped)
-switch (token.standard) {
-  case 'native': return NativeTokenEncoder;
-  case 'ERC20': return Erc20TokenEncoder;
-  default: throw new HttpsError({ code: 'invalid-argument' });
+type TokenStandard = 'native' | 'ERC20';
+declare class NativeTokenEncoder {}
+declare class Erc20TokenEncoder {}
+declare class HttpsError {
+  constructor(o: { code: string });
 }
+declare const token: { standard: TokenStandard };
+
+// Full coverage — autofixes (default throw is dropped)
+function deduceConstructor() {
+  switch (token.standard) {
+    case 'native': return NativeTokenEncoder;
+    case 'ERC20': return Erc20TokenEncoder;
+    default: throw new HttpsError({ code: 'invalid-argument' });
+  }
+}
+
+type Side = 'buy' | 'sell';
+declare const side: Side;
 
 // 2-member ternary — autofixes
-const label = side === 'buy' ? 'Buy now' : 'Sell now';
-
-// Partial-coverage default — report-only (use Partial<Record> + ?? fallback)
-switch (raw) {
-  case 'granted': return 'granted';
-  case 'denied': return 'denied';
-  default: return 'unsupported';
+function getLabel() {
+  const label = side === 'buy' ? 'Buy now' : 'Sell now';
+  return label;
 }
 
+type Raw = 'granted' | 'denied' | 'prompt' | 'unknown';
+declare const raw: Raw;
+
+// Partial-coverage default — report-only (use Partial<Record> + ?? fallback)
+function normalize() {
+  switch (raw) {
+    case 'granted': return 'granted';
+    case 'denied': return 'denied';
+    default: return 'unsupported';
+  }
+}
+
+type Source = 'algolia' | 'firestore';
+declare const source: Source;
+declare const query: string;
+declare function fetchFromAlgolia(q: string): Promise<string>;
+declare function fetchFromFirestore(q: string): Promise<string>;
+
 // Async / call-bearing branches — report-only (thunk shape suggested)
-switch (source) {
-  case 'algolia': return await fetchFromAlgolia(query);
-  case 'firestore': return await fetchFromFirestore(query);
+async function search() {
+  switch (source) {
+    case 'algolia': return await fetchFromAlgolia(query);
+    case 'firestore': return await fetchFromFirestore(query);
+  }
 }
 ```
 
 ### Correct
 
 ```ts
+type ReportTarget =
+  | { type: 'profile'; userId: string }
+  | { type: 'tournament'; tournamentId: string };
+declare const target: ReportTarget;
+
 // Discriminated-union narrowing — never fires
-switch (target.type) {
-  case 'profile': return `p-${target.userId}`;
-  case 'tournament': return `t-${target.tournamentId}`;
+function describeTarget() {
+  switch (target.type) {
+    case 'profile': return `p-${target.userId}`;
+    case 'tournament': return `t-${target.tournamentId}`;
+  }
 }
+
+declare function splitEncodedToken<T>(encoded: string, n: number): T;
+declare function decodeNative(encoded: string): string;
+declare const encoded: string;
 
 // Non-literal (trust-boundary) discriminant — never fires
-const [standard] = splitEncodedToken<[string, string]>(encoded, 2);
-switch (standard) {
-  case 'native': return decodeNative(encoded);
-  default: throw new Error('Unsupported standard');
+function decode() {
+  const [standard] = splitEncodedToken<[string, string]>(encoded, 2);
+  switch (standard) {
+    case 'native': return decodeNative(encoded);
+    default: throw new Error('Unsupported standard');
+  }
 }
+
+declare const onChange: 'disabled' | ((next?: number) => void);
+declare function set(next?: number): void;
 
 // Guard idiom whose union contains a function type — never fires
-return onChange === 'disabled' ? 'disabled' : (next?: number) => set(next);
-
-// Side-effect dispatch — never fires (no unified produced value)
-switch (level) {
-  case 'warn': console.warn(data); break;
-  default: console.log(data);
+function resolveOnChange() {
+  return onChange === 'disabled' ? 'disabled' : (next?: number) => set(next);
 }
 
+type Level = 'warn' | 'info';
+declare const level: Level;
+declare const data: unknown;
+
+// Side-effect dispatch — never fires (no unified produced value)
+function log() {
+  switch (level) {
+    case 'warn': console.warn(data); break;
+    default: console.log(data);
+  }
+}
+
+type Side = 'buy' | 'sell';
+declare const side: Side;
+
 // The rule's own derived form — idempotent, never re-flags
-const RESULT_BY_SIDE: Record<Side, string> = { buy: 'Buy now', sell: 'Sell now' };
-return RESULT_BY_SIDE[side];
+function label() {
+  const RESULT_BY_SIDE: Record<Side, string> = { buy: 'Buy now', sell: 'Sell now' };
+  return RESULT_BY_SIDE[side];
+}
 ```
 
 ## When Not To Use It

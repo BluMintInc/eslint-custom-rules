@@ -15,6 +15,8 @@ When you pass nested objects in a `DocSetter` payload, Firestore treats each nes
 - `DocSetter.set()` payloads that contain nested object literals
 - `DocSetter.updateIfExists()` payloads that contain nested object literals
 
+The receiver must be provably a `DocSetter`: either a variable initialized with `new DocSetter(...)` in the same file, or a chained `new DocSetter(...).set(...)`. A `set()` call on a receiver of unknown origin is left alone, which is why every example below constructs its own setter.
+
 ### What This Rule Ignores
 
 - `DocSetter.overwrite()` calls because they intentionally replace the whole document
@@ -38,6 +40,7 @@ await docSetter.set({
 ```
 
 ```javascript
+const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
 await docSetter.set({
   id: tournamentId,
   metadata: { createdAt: new Date(), updatedBy: userId },
@@ -45,6 +48,7 @@ await docSetter.set({
 ```
 
 ```javascript
+const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
 await docSetter.updateIfExists({
   id: tournamentId,
   player: { stats: { score: 100 } },
@@ -64,6 +68,7 @@ await docSetter.set({
 ```
 
 ```javascript
+const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
 await docSetter.set({
   id: tournamentId,
   'metadata.createdAt': new Date(),
@@ -72,6 +77,7 @@ await docSetter.set({
 ```
 
 ```javascript
+const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
 await docSetter.updateIfExists({
   id: tournamentId,
   'player.stats.score': 100,
@@ -79,6 +85,7 @@ await docSetter.updateIfExists({
 ```
 
 ```javascript
+const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
 // This is allowed - overwrite replaces the entire document
 await docSetter.overwrite({
   id: tournamentId,
@@ -87,6 +94,7 @@ await docSetter.overwrite({
 ```
 
 ```javascript
+const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
 // This is allowed - already using FieldPath syntax
 await docSetter.set({
   id: tournamentId,
@@ -95,6 +103,7 @@ await docSetter.set({
 ```
 
 ```javascript
+const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
 // This is allowed - arrays of objects are not converted
 await docSetter.set({
   id: tournamentId,
@@ -109,6 +118,7 @@ await docSetter.set({
 The rule does not flag dynamically constructed objects, as transforming them automatically may be error-prone:
 
 ```javascript
+const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
 // This will NOT be flagged
 const data = { id: tournamentId };
 data.roles = { contributor: FieldValue.arrayUnion(contributorId) };
@@ -120,6 +130,7 @@ await docSetter.set(data);
 Firestore does not support FieldPath notation inside arrays of objects, so these are ignored:
 
 ```javascript
+const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
 // This will NOT be flagged
 await docSetter.set({
   id: tournamentId,
@@ -132,6 +143,7 @@ await docSetter.set({
 The `overwrite` method replaces the entire document, so FieldPath syntax is not required:
 
 ```javascript
+const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
 // This will NOT be flagged
 await docSetter.overwrite({
   id: tournamentId,
@@ -144,6 +156,7 @@ await docSetter.overwrite({
 When keys contain characters that are not valid identifiers (like dots), the auto-fixer quotes them:
 
 ```javascript
+const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
 // Nested key with dot becomes quoted field path
 await docSetter.set({
   'app.config': { version: 1 } // Becomes 'app.config.version': 1
@@ -155,6 +168,7 @@ await docSetter.set({
 You can mix already-flattened paths with nested objects:
 
 ```javascript
+const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
 await docSetter.set({
   'profile.name': 'John',
   settings: { theme: 'dark' } // Becomes 'settings.theme': 'dark'

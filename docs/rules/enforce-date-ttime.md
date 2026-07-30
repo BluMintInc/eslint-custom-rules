@@ -19,27 +19,49 @@ Our Firestore converters automatically translate `Timestamp` to `Date` on the cl
 
 ## Examples
 
+The rule resolves the referenced type and looks for a type parameter literally named `TTime`, so both examples declare the types they reference. A name that resolves to something else — an ambient global such as the DOM's `Notification`, for instance — carries no `TTime` parameter and is left alone.
+
 ### Incorrect
 
 ```typescript
+// File: src/types/notifications.ts
+type Timestamp = { seconds: number; nanoseconds: number };
+interface Notification<TTime = Timestamp> {
+  createdAt: TTime;
+}
+type PendingWalletToken<TType extends string, TTime = Timestamp> = {
+  type: TType;
+  updatedAt: TTime;
+};
+
 // BAD: defaults to Timestamp (incorrect for client)
-type Foo = Notification;
+type NotificationDefaulted = Notification;
 
 // BAD: explicitly set to Timestamp
-type Foo = Notification<Timestamp>;
+type NotificationStamped = Notification<Timestamp>;
 
 // BAD: set to a union or alias
-type Foo = Notification<Date | null>;
+type NotificationUnion = Notification<Date | null>;
 ```
 
 ### Correct
 
 ```typescript
+// File: src/types/notifications.ts
+type Timestamp = { seconds: number; nanoseconds: number };
+interface Notification<TTime = Timestamp> {
+  createdAt: TTime;
+}
+type PendingWalletToken<TType extends string, TTime = Timestamp> = {
+  type: TType;
+  updatedAt: TTime;
+};
+
 // GOOD: explicit Date
-type Foo = Notification<Date>;
+type NotificationDate = Notification<Date>;
 
 // GOOD: explicit Date for TTime in any position
-type Doc = PendingWalletToken<'offchain', Date>;
+type WalletDoc = PendingWalletToken<'offchain', Date>;
 ```
 
 ## When to Use This Rule
