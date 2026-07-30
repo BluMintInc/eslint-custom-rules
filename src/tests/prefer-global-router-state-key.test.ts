@@ -1395,6 +1395,141 @@ import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
 `,
         errors: [stringLiteralError("'user-profile'")],
       },
+
+      // 51. A local binding of the namespace alias captures the qualified
+      // reference, so the fix is withheld and only the report stands.
+      {
+        code: `
+import * as QueryKeys from '@/util/routing/queryKeys';
+
+function Component() {
+  const QueryKeys = { QUERY_KEY_USER_PROFILE: 'shadowed-wrong-key' };
+  const [value] = useRouterState({ key: 'user-profile' });
+  return [value, QueryKeys];
+}
+`,
+        output: null,
+        errors: [stringLiteralError("'user-profile'")],
+      },
+
+      // 52. Same capture through a default import's local name.
+      {
+        code: `
+import queryKeys from '@/util/routing/queryKeys';
+
+function Component() {
+  const queryKeys = { QUERY_KEY_USER_PROFILE: 'shadowed-wrong-key' };
+  const [value] = useRouterState({ key: 'user-profile' });
+  return [value, queryKeys];
+}
+`,
+        output: null,
+        errors: [stringLiteralError("'user-profile'")],
+      },
+
+      // 53. The capturing binding need not sit in the enclosing function: any
+      // block scope between the literal and module scope shadows the alias.
+      {
+        code: `
+import * as QueryKeys from '@/util/routing/queryKeys';
+
+function Component(showProfile) {
+  if (showProfile) {
+    const QueryKeys = { QUERY_KEY_USER_PROFILE: 'shadowed-wrong-key' };
+    const [value] = useRouterState({ key: 'user-profile' });
+    return [value, QueryKeys];
+  }
+  return null;
+}
+`,
+        output: null,
+        errors: [stringLiteralError("'user-profile'")],
+      },
+
+      // 54. A parameter captures the alias just as a local declaration does.
+      {
+        code: `
+import queryKeys from '@/util/routing/queryKeys';
+
+function Component(queryKeys) {
+  const [value] = useRouterState({ key: 'user-profile' });
+  return [value, queryKeys];
+}
+`,
+        output: null,
+        errors: [stringLiteralError("'user-profile'")],
+      },
+
+      // 55. The constant's own imported name leads the emitted text whenever it
+      // is already imported, so a local shadow of it withholds the fix even
+      // though a default import is present.
+      {
+        code: `
+import queryKeys, { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
+function Component() {
+  const QUERY_KEY_USER_PROFILE = 'shadowed-wrong-key';
+  const [value] = useRouterState({ key: 'user-profile' });
+  return [value, QUERY_KEY_USER_PROFILE];
+}
+`,
+        output: null,
+        errors: [stringLiteralError("'user-profile'")],
+      },
+
+      // 56. That same file without the shadow still rewrites the literal to the
+      // imported constant and leaves the import untouched.
+      {
+        code: `
+import queryKeys, { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
+function Component() {
+  const [value] = useRouterState({ key: 'user-profile' });
+  return value;
+}
+`,
+        output: `
+import queryKeys, { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
+function Component() {
+  const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+  return value;
+}
+`,
+        errors: [stringLiteralError("'user-profile'")],
+      },
+
+      // 57. A same-named binding that never shadows the literal leaves the
+      // alias resolving to the import, so the qualified fix still applies.
+      {
+        code: `
+import * as QueryKeys from '@/util/routing/queryKeys';
+
+function Sibling() {
+  const QueryKeys = { QUERY_KEY_USER_PROFILE: 'unrelated' };
+  return QueryKeys;
+}
+
+function Component() {
+  const [value] = useRouterState({ key: 'user-profile' });
+  return value;
+}
+`,
+        output: `
+import * as QueryKeys from '@/util/routing/queryKeys';
+
+function Sibling() {
+  const QueryKeys = { QUERY_KEY_USER_PROFILE: 'unrelated' };
+  return QueryKeys;
+}
+
+function Component() {
+  const [value] = useRouterState({ key: QueryKeys.QUERY_KEY_USER_PROFILE });
+  return value;
+}
+`,
+        errors: [stringLiteralError("'user-profile'")],
+      },
     ],
   },
 );

@@ -216,6 +216,38 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
     }
 
     /**
+     * Whether every declaration of a visible binding is the namespace or
+     * default import of queryKeys.ts that a qualified `alias.CONSTANT` fix
+     * reaches the constant through. The alias only carries the module's
+     * exports where it still resolves to that import at the reference: an inner
+     * `const QueryKeys = {…}` captures the emitted reference, the member access
+     * type-checks against the object, and the router key silently becomes that
+     * object's value instead of the shared constant.
+     */
+    function bindsQueryKeysModule(variable: TSESLint.Scope.Variable): boolean {
+      return (
+        variable.defs.length > 0 &&
+        variable.defs.every((def) => {
+          const specifier = def.node as TSESTree.Node;
+          if (
+            specifier.type !== AST_NODE_TYPES.ImportNamespaceSpecifier &&
+            specifier.type !== AST_NODE_TYPES.ImportDefaultSpecifier
+          ) {
+            return false;
+          }
+          const declaration = specifier.parent;
+          return (
+            declaration?.type === AST_NODE_TYPES.ImportDeclaration &&
+            declaration.importKind !== 'type' &&
+            declaration.source.type === AST_NODE_TYPES.Literal &&
+            typeof declaration.source.value === 'string' &&
+            isQueryKeysSource(declaration.source.value)
+          );
+        })
+      );
+    }
+
+    /**
      * `SourceCode#getScope` supersedes the deprecated `context.getScope`; the
      * fallback keeps the rule working on ESLint versions that predate it.
      */
@@ -547,22 +579,53 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                                   suggestedConstant,
                                 );
 
+                            // An already-imported constant is referenced by its
+                            // own local name, so the alias leads the emitted
+                            // text only when no such import exists.
+                            const referenceAlias = localName
+                              ? undefined
+                              : importAlias;
+                            // Both hazards below turn on what the emitted text's
+                            // leading name resolves to where it is written, so
+                            // the scope chain is entered at the literal rather
+                            // than at module scope.
+                            const scopeAtLiteral = ASTHelpers.getScope(
+                              context,
+                              keyValue,
+                            );
+
+                            // The qualified `alias.CONSTANT` form claims no name
+                            // of its own, yet it reaches the module's exports
+                            // only while the alias still resolves to that import
+                            // here. An inner binding of the alias captures it
+                            // silently — the member access type-checks against
+                            // whatever the local holds — so the router key would
+                            // become that value instead of the constant.
+                            if (referenceAlias) {
+                              const aliasBinding =
+                                ASTHelpers.findVariableInScope(
+                                  scopeAtLiteral,
+                                  referenceAlias,
+                                );
+                              if (
+                                !aliasBinding ||
+                                !bindsQueryKeysModule(aliasBinding)
+                              ) {
+                                return null;
+                              }
+                            }
+
                             // A binding that already owns the emitted name
                             // makes both halves of the edit wrong: the inserted
                             // import becomes a second declaration of it
                             // (TS2440/TS2300), and a shadowing local or
                             // parameter captures the bare reference with no
-                            // diagnostic at all. Resolving through the scope
-                            // chain at the literal rather than the module scope
-                            // is what exposes such a shadow. Declining leaves
-                            // the report in place for the author to resolve.
-                            // The qualified `alias.CONSTANT` form reaches the
-                            // constant through the alias and claims no name of
-                            // its own.
-                            const visibleBinding = importAlias
+                            // diagnostic at all. Declining leaves the report in
+                            // place for the author to resolve.
+                            const visibleBinding = referenceAlias
                               ? null
                               : ASTHelpers.findVariableInScope(
-                                  ASTHelpers.getScope(context, keyValue),
+                                  scopeAtLiteral,
                                   replacementText,
                                 );
                             const bindingIsQueryKeyImport =

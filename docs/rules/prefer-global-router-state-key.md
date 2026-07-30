@@ -81,6 +81,25 @@ is never emitted: that alias is declared in no tsconfig, bundler or Jest config,
 so it resolves nowhere. Where no correct specifier can be derived, the rule
 reports without fixing rather than write an import that fails to resolve.
 
+The emitted reference is only as good as the name it starts with — the namespace
+or default import's alias for a qualified `QueryKeys.QUERY_KEY_*`, otherwise the
+constant's own imported name. That name is resolved through the scope chain at
+the string literal, not at module scope, so a binding in any enclosing block,
+function or parameter list is seen. Where it resolves to anything other than the
+intended import, the fix is withheld and only the report stands:
+
+```tsx
+import * as QueryKeys from '../util/routing/queryKeys';
+
+function Component() {
+  // Rewriting the literal to QueryKeys.QUERY_KEY_USER_PROFILE would read this
+  // object, so the rule reports and leaves the shadow for you to rename.
+  const QueryKeys = { QUERY_KEY_USER_PROFILE: 'wrong-key' };
+  const [value] = useRouterState({ key: 'user-profile' });
+  return [value, QueryKeys];
+}
+```
+
 ## When Not To Use It
 
 You might consider disabling this rule in test files or in cases where you need to quickly prototype with string literals.
