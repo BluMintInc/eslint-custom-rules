@@ -1,7 +1,115 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds = 'enforceMicrodiff' | 'enforceMicrodiffImport';
+
+const DIFF_NAME = 'diff';
+const MICRODIFF_MODULE = 'microdiff';
+
+/**
+ * The libraries this rule replaces. Every fix retires the whole import
+ * declaration of one of these, which is what makes the names it binds available
+ * to the microdiff import that takes its place.
+ */
+const COMPETING_DIFF_MODULES = new Set([
+  'deep-diff',
+  'fast-diff',
+  'diff',
+  'deep-object-diff',
+  // 'fast-deep-equal' and 'fast-deep-equal/es6' stay out of this set: they are
+  // allowed alternatives to microdiff, so their imports survive the fix.
+]);
+
+/**
+ * A specifier that makes a bare `diff` resolve to microdiff's diff function:
+ * its default export, or its named `diff` export, bound under the name the fix
+ * emits.
+ */
+function bindsMicrodiffDiff(specifier: TSESTree.ImportClause): boolean {
+  if (specifier.local.name !== DIFF_NAME) {
+    return false;
+  }
+  if (specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
+    return true;
+  }
+  return (
+    specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+    specifier.importKind !== 'type' &&
+    specifier.imported.name === DIFF_NAME
+  );
+}
+
+/**
+ * microdiff's import read off `Program.body` rather than off a flag raised by
+ * the ImportDeclaration visitor. A competing import that precedes the microdiff
+ * one is fixed before the visitor reaches microdiff, so a flag still unset at
+ * that point makes the fix emit a second `import { diff } from 'microdiff'` and
+ * duplicate the binding (TS2300). Demanding a specifier that binds `diff` also
+ * rejects the shapes a source-only test mistakes for a usable binding: a
+ * namespace import, a type-only import, and an alias of some other export.
+ */
+function findMicrodiffImport(
+  program: TSESTree.Program,
+): TSESTree.ImportDeclaration | undefined {
+  return program.body.find(
+    (statement): statement is TSESTree.ImportDeclaration =>
+      statement.type === AST_NODE_TYPES.ImportDeclaration &&
+      statement.source.value === MICRODIFF_MODULE &&
+      statement.importKind !== 'type' &&
+      statement.specifiers.some(bindsMicrodiffDiff),
+  );
+}
+
+/**
+ * The declarations of `diff` that a fix may write over: microdiff's own
+ * specifier, which an emitted `diff` is meant to resolve to, and the specifiers
+ * of a competing library's import, which the fix replaces or removes outright.
+ * Any other declaration of the name belongs to the file's own code.
+ */
+function collectClaimableSpecifiers(
+  program: TSESTree.Program,
+): Set<TSESTree.Node> {
+  const claimable = new Set<TSESTree.Node>();
+  program.body.forEach((statement) => {
+    if (statement.type !== AST_NODE_TYPES.ImportDeclaration) {
+      return;
+    }
+    const source = statement.source.value;
+    if (source === MICRODIFF_MODULE) {
+      statement.specifiers
+        .filter(bindsMicrodiffDiff)
+        .forEach((specifier) => claimable.add(specifier));
+      return;
+    }
+    if (COMPETING_DIFF_MODULES.has(source)) {
+      statement.specifiers.forEach((specifier) => claimable.add(specifier));
+    }
+  });
+  return claimable;
+}
+
+/**
+ * Whether a bare `diff` written at `scope` reaches microdiff's function.
+ * Resolving through the scope chain catches both failure modes: a module-scope
+ * binding that the inserted import redeclares (TS2440, or TS2300 against
+ * another import), and a narrower shadow that captures the emitted reference
+ * with no diagnostic at all. A binding with no declaration — a global supplied
+ * by the environment — is left alone rather than written over.
+ */
+function canEmitDiff(
+  scope: TSESLint.Scope.Scope,
+  claimable: Set<TSESTree.Node>,
+): boolean {
+  const existing = ASTHelpers.findVariableInScope(scope, DIFF_NAME);
+  if (!existing) {
+    return true;
+  }
+  return (
+    existing.defs.length > 0 &&
+    existing.defs.every((def) => claimable.has(def.node as TSESTree.Node))
+  );
+}
 
 export const enforceMicrodiff = createRule<[], MessageIds>({
   name: 'enforce-microdiff',
@@ -26,8 +134,45 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
     const sourceCode = context.sourceCode;
     const importedDiffLibraries = new Map<string, TSESTree.ImportDeclaration>();
     const importedFunctions = new Map<string, string>(); // Map of imported function names to their sources
-    let hasMicrodiffImport = false;
     const reportedNodes = new Set<TSESTree.Node>();
+
+    /**
+     * Whether the fix may emit a bare `diff` at `node`. The AST is read at fix
+     * time so the answer stays correct under multi-pass `--fix`, where an
+     * earlier pass may already have added the microdiff import.
+     */
+    function canEmitDiffAt(node: TSESTree.Node): boolean {
+      return canEmitDiff(
+        ASTHelpers.getScope(context, node),
+        collectClaimableSpecifiers(sourceCode.ast),
+      );
+    }
+
+    /**
+     * Whether retiring `declaration` leaves every reference it binds able to
+     * take the name `diff`. The import rewrite lands at module scope while the
+     * references it serves sit in nested scopes: one standing where `diff` is
+     * shadowed keeps the old name, because its own fix declines, so rewriting
+     * the import would strand it without a binding (TS2304).
+     */
+    function canRenameReferencesOf(
+      declaration: TSESTree.ImportDeclaration,
+    ): boolean {
+      const claimable = collectClaimableSpecifiers(sourceCode.ast);
+      const declarationScope = ASTHelpers.getScope(context, declaration);
+      return declaration.specifiers.every((specifier) => {
+        const variable = ASTHelpers.findVariableInScope(
+          declarationScope,
+          specifier.local.name,
+        );
+        return (
+          !variable ||
+          variable.references.every((reference) =>
+            canEmitDiff(reference.from, claimable),
+          )
+        );
+      });
+    }
 
     // Add a specific set to track which import names are used
     const usedImportNames = new Set<string>();
@@ -75,22 +220,12 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
         const importSource = node.source.value;
 
         // Check for microdiff import
-        if (importSource === 'microdiff') {
-          hasMicrodiffImport = true;
+        if (importSource === MICRODIFF_MODULE) {
           return;
         }
 
         // Track other diffing libraries
-        if (
-          [
-            'deep-diff',
-            'fast-diff',
-            'diff',
-            'deep-object-diff',
-            // Removed 'fast-deep-equal' and 'fast-deep-equal/es6' from this list
-            // as they are allowed alternatives to microdiff
-          ].includes(importSource)
-        ) {
+        if (COMPETING_DIFF_MODULES.has(importSource)) {
           // Track imported function names and their sources
           node.specifiers.forEach((specifier) => {
             if (
@@ -114,15 +249,22 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
               importSource,
             },
             fix(fixer) {
+              // Decline rather than duplicate or shadow a `diff` this file
+              // already binds to something else. The report stands so the
+              // author resolves the name clash deliberately.
+              if (!canEmitDiffAt(node) || !canRenameReferencesOf(node)) {
+                return null;
+              }
+
               // If we already have a microdiff import, just remove this import
-              if (hasMicrodiffImport) {
+              if (findMicrodiffImport(sourceCode.ast)) {
                 return fixer.remove(node);
               }
 
               // Otherwise, replace with microdiff import
               return fixer.replaceText(
                 node,
-                `import { diff } from 'microdiff';`,
+                `import { ${DIFF_NAME} } from '${MICRODIFF_MODULE}';`,
               );
             },
           });
@@ -195,7 +337,10 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
               node,
               messageId: 'enforceMicrodiff',
               fix(fixer) {
-                return fixer.replaceText(callee, 'diff');
+                if (!canEmitDiffAt(node)) {
+                  return null;
+                }
+                return fixer.replaceText(callee, DIFF_NAME);
               },
             });
             return;
@@ -225,8 +370,11 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
                 node,
                 messageId: 'enforceMicrodiff',
                 fix(fixer) {
+                  if (!canEmitDiffAt(node)) {
+                    return null;
+                  }
                   // When handling fast-diff and similar libraries, need to ensure the function name is replaced
-                  return fixer.replaceText(callee, 'diff');
+                  return fixer.replaceText(callee, DIFF_NAME);
                 },
               });
             }
@@ -251,10 +399,13 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
               node,
               messageId: 'enforceMicrodiff',
               fix(fixer) {
+                if (!canEmitDiffAt(node)) {
+                  return null;
+                }
                 // Replace with microdiff
                 return fixer.replaceText(
                   node,
-                  `diff(${node.arguments
+                  `${DIFF_NAME}(${node.arguments
                     .map((arg) => sourceCode.getText(arg))
                     .join(', ')})`,
                 );
@@ -314,6 +465,10 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
                 node,
                 messageId: 'enforceMicrodiff',
                 fix(fixer) {
+                  if (!canEmitDiffAt(node)) {
+                    return null;
+                  }
+
                   // Find the containing function to add the import
                   let functionNode: TSESTree.Node | null = node;
                   while (
@@ -331,18 +486,18 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
                   if (
                     functionNode &&
                     functionNode.type === AST_NODE_TYPES.Program &&
-                    !hasMicrodiffImport
+                    !findMicrodiffImport(sourceCode.ast)
                   ) {
                     // Need to add an import
                     const importFix = fixer.insertTextBeforeRange(
                       [0, 0],
-                      "import { diff } from 'microdiff';\n\n",
+                      `import { ${DIFF_NAME} } from '${MICRODIFF_MODULE}';\n\n`,
                     );
 
                     // Replace JSON.stringify comparison
                     const compareFix = fixer.replaceText(
                       node,
-                      `diff(${sourceCode.getText(
+                      `${DIFF_NAME}(${sourceCode.getText(
                         leftArg,
                       )}, ${sourceCode.getText(rightArg)})${
                         isEqual ? '.length === 0' : '.length > 0'
@@ -355,9 +510,11 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
                   // Otherwise just replace the comparison
                   return fixer.replaceText(
                     node,
-                    `diff(${sourceCode.getText(leftArg)}, ${sourceCode.getText(
-                      rightArg,
-                    )})${isEqual ? '.length === 0' : '.length > 0'}`,
+                    `${DIFF_NAME}(${sourceCode.getText(
+                      leftArg,
+                    )}, ${sourceCode.getText(rightArg)})${
+                      isEqual ? '.length === 0' : '.length > 0'
+                    }`,
                   );
                 },
               });
@@ -408,16 +565,20 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
                 node,
                 messageId: 'enforceMicrodiff',
                 fix(fixer) {
+                  if (!canEmitDiffAt(node)) {
+                    return null;
+                  }
+
                   // Create a new version of the function with microdiff
                   const newFunctionBody = `{
-  return diff(${param1}, ${param2}).length > 0;
+  return ${DIFF_NAME}(${param1}, ${param2}).length > 0;
 }`;
 
-                  if (!hasMicrodiffImport) {
+                  if (!findMicrodiffImport(sourceCode.ast)) {
                     // Create a new import statement
                     return fixer.replaceText(
                       node,
-                      `import { diff } from 'microdiff';\n\nfunction ${node.id?.name}(${param1}, ${param2}) ${newFunctionBody}`,
+                      `import { ${DIFF_NAME} } from '${MICRODIFF_MODULE}';\n\nfunction ${node.id?.name}(${param1}, ${param2}) ${newFunctionBody}`,
                     );
                   } else {
                     // Just replace the function body

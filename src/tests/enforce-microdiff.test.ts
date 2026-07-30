@@ -309,5 +309,222 @@ function hasConfigChanged(oldConfig, newConfig) {
   return diff(oldConfig, newConfig).length > 0;
 }`,
     },
+    {
+      // A pre-existing `diff` binding makes the import unsafe to insert, so the
+      // violation is reported without an autofix.
+      code: `
+const diff = undefined as unknown as never;
+import { diff as fastDiff } from 'fast-diff';
+
+function findChanges(prev, next) {
+  return fastDiff(prev, next);
+}
+`,
+      output: `
+const diff = undefined as unknown as never;
+import { diff as fastDiff } from 'fast-diff';
+
+function findChanges(prev, next) {
+  return fastDiff(prev, next);
+}
+`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'fast-diff' },
+        },
+        { messageId: 'enforceMicrodiff' },
+      ],
+    },
+    {
+      // A `diff` bound inside the function would capture the rewritten call
+      // without any compile error, so neither the call nor the import it needs
+      // is rewritten.
+      code: `import { diff as fastDiff } from 'fast-diff';
+
+function findChanges(prev, next) {
+  const diff = fastDiff;
+  return fastDiff(prev, next);
+}`,
+      output: `import { diff as fastDiff } from 'fast-diff';
+
+function findChanges(prev, next) {
+  const diff = fastDiff;
+  return fastDiff(prev, next);
+}`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'fast-diff' },
+        },
+        { messageId: 'enforceMicrodiff' },
+      ],
+    },
+    {
+      // A parameter named `diff` shadows the import the rewritten body needs.
+      code: `function hasConfigChanged(diff, newConfig) {
+  return JSON.stringify(diff) !== JSON.stringify(newConfig);
+}`,
+      output: `function hasConfigChanged(diff, newConfig) {
+  return JSON.stringify(diff) !== JSON.stringify(newConfig);
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+    },
+    {
+      // The microdiff import trailing the competing one is still found, so the
+      // competing import is dropped rather than replaced by a duplicate.
+      code: `import { diff as deepDiff } from 'deep-diff';
+import { diff } from 'microdiff';
+
+function compareConfigs(oldConfig, newConfig) {
+  return deepDiff(oldConfig, newConfig);
+}`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'deep-diff' },
+        },
+        { messageId: 'enforceMicrodiff' },
+      ],
+      output: `
+import { diff } from 'microdiff';
+
+function compareConfigs(oldConfig, newConfig) {
+  return diff(oldConfig, newConfig);
+}`,
+    },
+    {
+      // microdiff's default export binds `diff` just as its named export does,
+      // so the existing import carries the rewritten call.
+      code: `import diff from 'microdiff';
+import { diff as deepDiff } from 'deep-diff';
+
+function compareConfigs(oldConfig, newConfig) {
+  return deepDiff(oldConfig, newConfig);
+}`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'deep-diff' },
+        },
+        { messageId: 'enforceMicrodiff' },
+      ],
+      output: `import diff from 'microdiff';
+
+
+function compareConfigs(oldConfig, newConfig) {
+  return diff(oldConfig, newConfig);
+}`,
+    },
+    {
+      // A namespace import of microdiff binds no `diff`, so the rewrite adds
+      // the specifier the call needs instead of leaving it unresolved.
+      code: `import * as microdiff from 'microdiff';
+import { diff as deepDiff } from 'deep-diff';
+
+function compareConfigs(oldConfig, newConfig) {
+  return deepDiff(oldConfig, newConfig);
+}`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'deep-diff' },
+        },
+        { messageId: 'enforceMicrodiff' },
+      ],
+      output: `import * as microdiff from 'microdiff';
+import { diff } from 'microdiff';
+
+function compareConfigs(oldConfig, newConfig) {
+  return diff(oldConfig, newConfig);
+}`,
+    },
+    {
+      // The competing import is itself the only thing binding `diff`, and the
+      // fix retires it, so the name is free for the microdiff import.
+      code: `import { diff } from 'diff';
+
+function compareArrays(oldArray, newArray) {
+  return diff(oldArray, newArray);
+}`,
+      errors: [
+        { messageId: 'enforceMicrodiffImport', data: { importSource: 'diff' } },
+        { messageId: 'enforceMicrodiff' },
+      ],
+      output: `import { diff } from 'microdiff';
+
+function compareArrays(oldArray, newArray) {
+  return diff(oldArray, newArray);
+}`,
+    },
+    {
+      // fast-deep-equal is an allowed alternative, so its import survives the
+      // fix and keeps the name `diff` occupied.
+      code: `import diff from 'fast-deep-equal';
+import { detailedDiff } from 'deep-object-diff';
+
+function compareObjects(oldObj, newObj) {
+  return detailedDiff(oldObj, newObj);
+}`,
+      output: `import diff from 'fast-deep-equal';
+import { detailedDiff } from 'deep-object-diff';
+
+function compareObjects(oldObj, newObj) {
+  return detailedDiff(oldObj, newObj);
+}`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'deep-object-diff' },
+        },
+        { messageId: 'enforceMicrodiff' },
+      ],
+    },
+    {
+      // The rewritten JSON.stringify comparison would read the file's own
+      // `diff`.
+      code: `const diff = 1;
+
+function isSameConfig(oldConfig, newConfig) {
+  return JSON.stringify(oldConfig) === JSON.stringify(newConfig);
+}`,
+      output: `const diff = 1;
+
+function isSameConfig(oldConfig, newConfig) {
+  return JSON.stringify(oldConfig) === JSON.stringify(newConfig);
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+    },
+    {
+      // A call matched by name alone is renamed to `diff`, which the file's own
+      // binding would capture.
+      code: `const diff = 1;
+
+function run(objA, objB) {
+  return fastDiff(objA, objB);
+}`,
+      output: `const diff = 1;
+
+function run(objA, objB) {
+  return fastDiff(objA, objB);
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+    },
+    {
+      // The lodash rewrite emits `diff` into the very scope that binds it.
+      code: `import _ from 'lodash';
+
+function detectDifferences(original, updated) {
+  const diff = 1;
+  return _.differenceWith(original, updated, _.isEqual);
+}`,
+      output: `import _ from 'lodash';
+
+function detectDifferences(original, updated) {
+  const diff = 1;
+  return _.differenceWith(original, updated, _.isEqual);
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+    },
   ],
 });
