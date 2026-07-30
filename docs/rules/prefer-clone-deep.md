@@ -62,27 +62,22 @@ negatives over false positives.
 
 ### Autofix behavior
 
-The fix rewrites the literal into `cloneDeep(base, { ...overrides } as const)` and
-imports `cloneDeep` when the name is not already bound in the file (an existing
-import of the same helper — including a relative path — is reused, and an
-existing import statement from that module is extended rather than duplicated).
+The hazard is always **reported**. The fix — rewriting the literal into
+`cloneDeep(base, { ...overrides } as const)` — is emitted **only when the file
+already imports `cloneDeep` under that name** from the helper module, by any
+specifier that names it (`functions/src/util/cloneDeep`, `../util/cloneDeep`,
+`./cloneDeep`, …), as either a named or a default import. That import is the
+proof that the call the fix writes resolves.
 
-The emitted import specifier is tier-aware, because the two TypeScript projects
-resolve the helper differently:
+The rule never writes an import of its own. Which specifier reaches the helper —
+or whether the helper exists at all — belongs to the consuming project, so a
+guessed import trades working code for a build error. Where the file does not
+already import the helper, the report stands unfixed and adding the import is
+left to whoever applies the change.
 
-| File under lint | Emitted specifier | Why |
-| --- | --- | --- |
-| Inside `functions/src/**` | Relative, e.g. `../../util/cloneDeep` | `functions/tsconfig.json` is rooted at `functions/` and declares no `paths`, so the bare specifier does not resolve there. |
-| Everywhere else | `functions/src/util/cloneDeep` | The root tsconfig maps `functions/*` through `paths`. |
-
-The relative form is derived from the linted file's own depth below the
-`functions/` root, so `functions/src/index.ts` imports `./util/cloneDeep` and a
-sibling in `functions/src/util/` imports `./cloneDeep`. Where no correct
-specifier exists — a file inside the helper's own directory, for instance — the
-rule reports without fixing.
-
-An autofix must never change runtime behavior, so the rule reports **without**
-fixing whenever the overrides object cannot reproduce the literal faithfully:
+An autofix must never change runtime behavior, so the rule also reports
+**without** fixing whenever the overrides object cannot reproduce the literal
+faithfully:
 
 - A nested spread of anything other than the path `cloneDeep` already copies, for
   example `{ ...a, nested: { ...a.other, value: 42 } }`. Dropping `...a.other`
