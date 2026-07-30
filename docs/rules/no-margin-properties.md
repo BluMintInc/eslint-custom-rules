@@ -24,11 +24,7 @@ Margin props push spacing outside a component and bypass MUI's container-control
 
 ## Options
 
-This rule accepts an options object with the following properties:
-
-- `autofix` (boolean, default: `false`): Reserved for future automatic fixes. No fixer is implemented yet; toggling this option currently has no effect (experimental).
-
-### Default Configuration
+This rule has no options.
 
 ```json
 {
@@ -36,13 +32,9 @@ This rule accepts an options object with the following properties:
 }
 ```
 
-### Custom Configuration
-
-```json
-{
-  "@blumintinc/blumint/no-margin-properties": ["error", { "autofix": false }]
-}
-```
+This rule reports without fixing. #726 established that rewriting margins
+automatically risks unintended visual changes, so the violation is surfaced for a
+human to resolve.
 
 ## Examples
 

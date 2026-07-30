@@ -3,12 +3,6 @@ import { createRule } from '../utils/createRule';
 
 type MessageIds = 'noMarginProperties';
 
-type Options = [
-  {
-    autofix?: boolean;
-  },
-];
-
 // Convert camelCase to kebab-case
 function toKebabCase(str: string): string {
   return str.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
@@ -42,7 +36,7 @@ const MARGIN_PROPERTIES = new Set([
   'm',
 ]);
 
-export const noMarginProperties = createRule<Options, MessageIds>({
+export const noMarginProperties = createRule<[], MessageIds>({
   name: 'no-margin-properties',
   meta: {
     type: 'suggestion',
@@ -51,28 +45,15 @@ export const noMarginProperties = createRule<Options, MessageIds>({
         'Prevent margin properties (margin, marginLeft, marginRight, marginTop, marginBottom, mx, my, etc.) in MUI styling because margins fight container-controlled spacing, double gutters, and misaligned breakpoints; keep spacing centralized with padding, gap, or spacing props instead.',
       recommended: 'error',
     },
-    schema: [
-      {
-        type: 'object',
-        properties: {
-          autofix: {
-            type: 'boolean',
-            default: false,
-          },
-        },
-        additionalProperties: false,
-      },
-    ],
+    schema: [],
     messages: {
       noMarginProperties:
         'Margin property "{{property}}" in MUI styling fights container-controlled spacing (Stack/Grid spacing, gap, responsive gutters) and produces double gutters, misalignment, and overflow as layouts shift. Keep spacing inside the component with padding or let the parent handle separation via gap/spacing so layout remains predictable.',
     },
   },
-  defaultOptions: [{ autofix: false }],
+  defaultOptions: [],
   create(context) {
     const seenNodes = new WeakSet<TSESTree.Node>();
-    // Note: autofix option is available but not currently implemented
-    // Future implementation can use: const { autofix = false } = _options;
 
     function checkProperty(propertyName: string): boolean {
       const normalizedName = normalizePropertyName(propertyName);
