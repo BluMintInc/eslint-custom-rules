@@ -1,8 +1,41 @@
 import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 import { createSuppressionChecker } from '../utils/disableDirectives';
 
 type MessageIds = 'useFastDeepEqual' | 'addFastDeepEqualImport';
+
+const FAST_DEEP_EQUAL_MODULES = new Set([
+  'fast-deep-equal',
+  'fast-deep-equal/es6',
+]);
+
+/**
+ * Whether every declaration of a visible binding is a fast-deep-equal import,
+ * i.e. the name already means the comparison function the fix wants to call.
+ * The verdict comes off the AST (each definition's specifier and its import
+ * declaration) rather than a traversal flag, so it holds on every pass of a
+ * multi-pass `--fix`, including the passes that follow an inserted import.
+ */
+function bindsFastDeepEqual(variable: TSESLint.Scope.Variable): boolean {
+  return (
+    variable.defs.length > 0 &&
+    variable.defs.every((def) => {
+      const specifier = def.node as TSESTree.Node;
+      if (
+        specifier.type !== AST_NODE_TYPES.ImportDefaultSpecifier &&
+        specifier.type !== AST_NODE_TYPES.ImportSpecifier
+      ) {
+        return false;
+      }
+      const declaration = specifier.parent;
+      return (
+        declaration?.type === AST_NODE_TYPES.ImportDeclaration &&
+        FAST_DEEP_EQUAL_MODULES.has(declaration.source.value)
+      );
+    })
+  );
+}
 
 export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
   name: 'fast-deep-equal-over-microdiff',
@@ -380,6 +413,22 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
       // — and leaving the import unscheduled — passes the carrier slot to the
       // first violation that survives.
       if (isReportSuppressed(node)) {
+        return null;
+      }
+
+      // A binding for the target name that is not the fast-deep-equal import
+      // makes both halves of the edit wrong: an inserted import collides with a
+      // same-scope declaration (TS2440/TS2300), and a narrower-scope shadow
+      // rebinds the emitted call to the local value with no diagnostic at all.
+      // Resolving from the fixed node's scope chain catches both. Declining
+      // before the import is scheduled leaves the carrier slot to a violation
+      // whose scope is safe, and drops the whole edit — including the removal
+      // of a redundant `const changes = diff(...)` — rather than half of it.
+      const existingBinding = ASTHelpers.findVariableInScope(
+        ASTHelpers.getScope(context, node),
+        fastDeepEqualImportName,
+      );
+      if (existingBinding && !bindsFastDeepEqual(existingBinding)) {
         return null;
       }
 
