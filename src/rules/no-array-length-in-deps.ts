@@ -1,6 +1,7 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
+import { createSuppressionChecker } from '../utils/disableDirectives';
 
 // React hooks to check
 const HOOK_NAMES = new Set(['useEffect', 'useCallback', 'useMemo']);
@@ -485,6 +486,16 @@ export const noArrayLengthInDeps = createRule<Options, MessageIds>({
       Map<string, string>
     >();
 
+    /**
+     * `useMemo` and the hash helper are imported by a single violation's fix,
+     * making that violation the file's import carrier. ESLint builds fixes
+     * before it applies inline disable directives, so a suppressed carrier
+     * takes both imports down with it while the surviving violations still
+     * emit `useMemo(() => stableHash(...))` — two unbound identifiers that no
+     * number of `--fix` passes can repair.
+     */
+    const isReportSuppressed = createSuppressionChecker(context);
+
     return {
       CallExpression(node) {
         if (!isHookCall(node)) return;
@@ -521,7 +532,10 @@ export const noArrayLengthInDeps = createRule<Options, MessageIds>({
           .map(({ element }) => sourceCode.getText(element))
           .join(', ');
 
-        // Report once on the dependency array
+        // Report once on the dependency array. The report is emitted even when
+        // suppressed: ESLint discards it, and reporting keeps the user's
+        // disable directive "used" so `--report-unused-disable-directives`
+        // does not flag it.
         context.report({
           node: depsArg,
           messageId: 'noArrayLengthInDeps',
@@ -529,6 +543,16 @@ export const noArrayLengthInDeps = createRule<Options, MessageIds>({
             dependencies,
           },
           fix(fixer) {
+            // A suppressed report is dropped together with its fix. Declining
+            // to fix — and leaving the imports and the per-block declarations
+            // unclaimed — passes the carrier slot to the first violation that
+            // actually survives. Checked against the reported node so the
+            // resolution matches ESLint's own, and before every other bail so
+            // no shared state is touched.
+            if (isReportSuppressed(depsArg)) {
+              return null;
+            }
+
             // All bail checks precede any shared-state mutation so a skipped
             // fix cannot make a later fix believe imports or declarations are
             // already handled.
