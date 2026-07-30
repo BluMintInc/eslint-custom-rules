@@ -42,8 +42,44 @@ The fixer only runs when the generated `useMemo` is provably safe at its inserti
 - The hook call sits at module scope or in an expression-bodied arrow — there is no legal statement position for a `useMemo` declaration.
 - The array (or any variable the memoized expression reads) is not resolvable to a declaration visible at the insertion point — e.g. an ambient global, or a binding scoped to a block the insertion point does not share.
 - The array is declared after the hook statement, where the hoisted read would hit the temporal dead zone.
+- Either `useMemo` or the hash helper name already resolves to something else at the hook call (see below).
 
 In those cases, memoize the hash manually in the appropriate scope.
+
+### When a name the fix needs is already taken
+
+The generated declaration spells both `useMemo` and `stableHash` bare and
+imports both, so the edit breaks when either name already resolves to something
+else at the hook call:
+
+- A module-scope `const`/`function`/`class` of that name, or an import of it
+  from another module, collides with the inserted import (TS2440 / TS2300).
+- A shadowing parameter or block-scoped binding captures the emitted call with
+  **no** compile error at all, so the memo would call the shadow.
+- A type-only import erases at compile time and cannot back a call.
+
+Each name is resolved through the scope chain at the hook call, and the fix is
+withheld whenever the visible binding is anything other than a named, non-type
+value specifier of that exact name imported from the module the fix would use
+(`react` for `useMemo`, `hashImport.source` for the helper). A namespace import,
+a default import, or an alias binds a different value, so those count as
+collisions too. Because the emitted code needs *both* names, a clash on either
+one withholds the whole edit — a partial one would still be broken. The report
+still fires; only the automated edit is skipped:
+
+```tsx
+const stableHash = (value) => String(value); // a local of the same name
+
+const C = ({ items }) => {
+  useEffect(() => { track(items); }, [items.length]); // reported, left untouched by --fix
+  return null;
+};
+```
+
+A file that already imports `useMemo` from `react` (or the helper from its
+module) reuses that import rather than gaining a second one, and an import
+aliased to a different local name (`import { stableHash as hashOf }`) leaves
+the name free, so it never blocks the fix.
 
 This ensures effects re-run whenever array contents change, not just when its length changes. `stableHash` safely stringifies values to produce a stable hash for arrays and objects.
 

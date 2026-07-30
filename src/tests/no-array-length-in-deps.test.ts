@@ -1261,6 +1261,569 @@ const C = ({ items, a, b }) => {
 };
 `,
     },
+    // ------------------------------------------------------------------
+    // Issue #1425: the fix emits `useMemo(() => stableHash(...))` and imports
+    // both names, so an existing binding of either name makes the edit wrong
+    // twice over — a module-scope declaration collides with the inserted
+    // import (TS2440, or TS2300 when the binding is itself an import), and a
+    // shadow at the fix site captures the emitted call with no compile error
+    // at all. The emitted code needs both names, so a collision on either one
+    // withholds the whole edit. The report stands.
+    // ------------------------------------------------------------------
+    {
+      name: 'a module-scope const named stableHash withholds the fix',
+      code: `
+const stableHash = (value) => String(value);
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      name: 'a module-scope const named useMemo withholds the fix',
+      code: `
+const useMemo = (factory) => factory();
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      name: 'a function declaration named stableHash withholds the fix',
+      code: `
+function stableHash(value) {
+  return String(value);
+}
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      name: 'a function declaration named useMemo withholds the fix',
+      code: `
+function useMemo(factory) {
+  return factory();
+}
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      name: 'a class declaration named stableHash withholds the fix',
+      code: `
+class stableHash {}
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      name: 'a class declaration named useMemo withholds the fix',
+      code: `
+class useMemo {}
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      name: 'a named stableHash import from another module withholds the fix',
+      code: `import { stableHash } from 'some-other-hash';
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      name: 'a named useMemo import from another module withholds the fix',
+      code: `import { useMemo } from 'preact/hooks';
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      name: 'a namespace import named stableHash withholds the fix',
+      code: `import * as stableHash from 'some-other-hash';
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      name: 'a namespace import named useMemo withholds the fix',
+      code: `import * as useMemo from 'some-memo-helpers';
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      name: 'a default import named stableHash withholds the fix',
+      code: `import stableHash from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      name: 'a default import named useMemo withholds the fix',
+      code: `import useMemo from 'react';
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      name: 'a type-only stableHash import withholds the fix',
+      code: `import type { stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      name: 'a type-only useMemo import withholds the fix',
+      code: `import type { useMemo } from 'react';
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      name: 'an inline type-only stableHash specifier withholds the fix',
+      code: `import { type stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      name: 'an aliased stableHash import binding the name withholds the fix',
+      code: `import { hashOf as stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      name: 'a shadowing parameter named stableHash withholds the fix at that site',
+      code: `
+const C = ({ items }) => {
+  const render = (stableHash) => {
+    useEffect(() => { console.log(items); }, [items.length]);
+    return stableHash;
+  };
+  return render;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      name: 'a shadowing parameter named useMemo withholds the fix at that site',
+      code: `
+const C = ({ items }) => {
+  const render = (useMemo) => {
+    useEffect(() => { console.log(items); }, [items.length]);
+    return useMemo;
+  };
+  return render;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      name: 'a block-scoped stableHash binding withholds the fix at that site',
+      code: `
+const C = ({ items }) => {
+  if (items) {
+    const stableHash = compute(items);
+    useEffect(() => { console.log(items, stableHash); }, [items.length]);
+  }
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      name: 'a block-scoped useMemo binding withholds the fix at that site',
+      code: `
+const C = ({ items }) => {
+  if (items) {
+    const useMemo = compute(items);
+    useEffect(() => { console.log(items, useMemo); }, [items.length]);
+  }
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      name: 'a shadowed site declines while an unshadowed site still carries both imports',
+      code: `
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  const render = (stableHash) => {
+    useEffect(() => { console.log(items); }, [items.length]);
+    return stableHash;
+  };
+  return render;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: `import { useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  useEffect(() => { console.log(items); }, [itemsHash]);
+  const render = (stableHash) => {
+    useEffect(() => { console.log(items); }, [items.length]);
+    return stableHash;
+  };
+  return render;
+};
+`,
+    },
+    {
+      name: 'an existing react useMemo import is reused rather than duplicated',
+      code: `import { useEffect, useMemo } from 'react';
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: `import { stableHash } from 'functions/src/util/hash/stableHash';
+import { useEffect, useMemo } from 'react';
+
+const C = ({ items }) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  useEffect(() => { console.log(items); }, [itemsHash]);
+  return null;
+};
+`,
+    },
+    {
+      name: 'an existing stableHash import from the intended module is reused',
+      code: `import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: `import { useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  useEffect(() => { console.log(items); }, [itemsHash]);
+  return null;
+};
+`,
+    },
+    {
+      name: 'both helpers already imported adds no specifier and still rewrites the dep',
+      code: `import { useEffect, useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: `import { useEffect, useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  useEffect(() => { console.log(items); }, [itemsHash]);
+  return null;
+};
+`,
+    },
+    {
+      name: 'a stableHash import aliased to another local name does not decline',
+      code: `import { stableHash as hashOf } from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items, hashOf); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: `import { useMemo } from 'react';
+import { stableHash as hashOf, stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  useEffect(() => { console.log(items, hashOf); }, [itemsHash]);
+  return null;
+};
+`,
+    },
+    {
+      name: 'a configured hash import name is guarded against its own collision',
+      options: [
+        {
+          hashImport: {
+            source: 'src/util/hashValue',
+            importName: 'hashValue',
+          },
+        },
+      ],
+      code: `
+const hashValue = (value) => String(value);
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      name: 'a configured hash import name already imported from its module is reused',
+      options: [
+        {
+          hashImport: {
+            source: 'src/util/hashValue',
+            importName: 'hashValue',
+          },
+        },
+      ],
+      code: `import { hashValue } from 'src/util/hashValue';
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: `import { useMemo } from 'react';
+import { hashValue } from 'src/util/hashValue';
+
+const C = ({ items }) => {
+  const itemsHash = useMemo(() => hashValue(items), [items]);
+  useEffect(() => { console.log(items); }, [itemsHash]);
+  return null;
+};
+`,
+    },
   ],
 });
 
@@ -1605,4 +2168,112 @@ const D = (others: any[]) => {
 `);
     expectNoUnboundHelpers(output);
   });
+});
+
+// Issue #1425: RuleTester shows one fix pass, so it cannot prove that a
+// declined edit stays declined under the multi-pass `eslint --fix` a developer
+// actually runs. These cases run the real fixer and assert the file is left
+// untouched — and that the violation is still reported — whenever `useMemo` or
+// the hash helper is already bound to something else.
+describe('no-array-length-in-deps: existing bindings of the injected names (issue #1425)', () => {
+  const RULE_ID = '@blumintinc/blumint/no-array-length-in-deps';
+  const HASH_IMPORT =
+    "import { stableHash } from 'functions/src/util/hash/stableHash';";
+
+  const makeLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      noArrayLengthInDeps as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const CONFIG = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2020 as const,
+      sourceType: 'module' as const,
+      ecmaFeatures: { jsx: true },
+    },
+    rules: { [RULE_ID]: 'error' as const },
+  };
+
+  const fix = (code: string) =>
+    makeLinter().verifyAndFix(code, CONFIG, 'Component.tsx').output;
+
+  const reportCount = (code: string) =>
+    makeLinter()
+      .verify(code, CONFIG, 'Component.tsx')
+      .filter((message) => message.ruleId === RULE_ID).length;
+
+  /**
+   * A collision is a duplicate declaration only if the name ends up declared
+   * twice, so count the module-scope binders of the name rather than trusting
+   * the rendered text.
+   */
+  const topScopeDeclarations = (code: string, name: string) => {
+    const pattern = new RegExp(
+      `^(?:import[^;]*\\b${name}\\b[^;]*;|(?:const|let|var|function|class)\\s+${name}\\b)`,
+      'gm',
+    );
+    return (code.match(pattern) ?? []).length;
+  };
+
+  const CONTROL = `import { useEffect } from 'react';
+const C = (items: any[]) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+};
+`;
+
+  // Without this the collision cases below would prove nothing: they must
+  // differ from an input the fixer genuinely rewrites.
+  it('still applies the ordinary fix when neither name is bound', () => {
+    expect(fix(CONTROL)).toBe(`${HASH_IMPORT}
+import { useEffect, useMemo } from 'react';
+const C = (items: any[]) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  useEffect(() => { console.log(items); }, [itemsHash]);
+};
+`);
+  });
+
+  for (const name of ['stableHash', 'useMemo']) {
+    it(`leaves the file untouched when \`${name}\` is a module-scope const`, () => {
+      const code = `import { useEffect } from 'react';
+const ${name} = undefined as unknown as never;
+const C = (items: any[]) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+};
+`;
+
+      expect(topScopeDeclarations(code, name)).toBe(1);
+      const output = fix(code);
+      expect(output).toBe(code);
+      expect(topScopeDeclarations(output, name)).toBe(1);
+      // The edit is withheld, not the diagnostic.
+      expect(reportCount(output)).toBe(1);
+    });
+
+    it(`leaves the file untouched when \`${name}\` shadows at the fix site`, () => {
+      const code = `import { useEffect } from 'react';
+const C = (items: any[]) => {
+  const render = (${name}: unknown) => {
+    useEffect(() => { console.log(items); }, [items.length]);
+    return ${name};
+  };
+  return render;
+};
+`;
+
+      const output = fix(code);
+      expect(output).toBe(code);
+      expect(reportCount(output)).toBe(1);
+    });
+  }
 });
