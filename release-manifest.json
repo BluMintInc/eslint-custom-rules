@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.20.21",
+    "date": "2026-07-29T23:50:58.620Z",
+    "rules": [
+      {
+        "name": "enforce-querykey-ts",
+        "changeType": "fix",
+        "issues": [
+          1393
+        ],
+        "summary": "exempt parameter bindings from the constant requirement (closes #1393)"
+      },
+      {
+        "name": "prefer-global-router-state-key",
+        "changeType": "fix",
+        "issues": [
+          1394
+        ],
+        "summary": "exempt parameter bindings from the constant requirement (closes #1394)"
+      }
+    ]
+  },
+  {
     "version": "1.20.20",
     "date": "2026-07-29T19:25:11.467Z",
     "rules": [
