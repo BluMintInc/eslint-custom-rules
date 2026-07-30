@@ -2,6 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
+import { Linter, Rule } from 'eslint';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { testFileLocationEnforcement } from '../rules/test-file-location-enforcement';
 
@@ -467,3 +468,57 @@ ruleTesterTs.run(
     ],
   },
 );
+
+// Issue #1476: the reported path must be anchored at the directory ESLint was
+// configured with, not the node process cwd. RuleTester cannot express this —
+// its Linter's cwd defaults to the process cwd, making the two reads
+// indistinguishable — so the rule is driven through a Linter with an explicit,
+// deliberately different cwd.
+describe('test-file-location-enforcement: reported path anchors at the configured cwd', () => {
+  const lintOrphanWithCwd = (cwd: string, filename: string) => {
+    const linter = new Linter({ cwd });
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      'test/test-file-location-enforcement',
+      testFileLocationEnforcement as unknown as Rule.RuleModule,
+    );
+    return linter.verify(
+      'describe("orphan", () => {});',
+      {
+        parser: '@typescript-eslint/parser',
+        parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+        rules: { 'test/test-file-location-enforcement': 'error' },
+      },
+      filename,
+    );
+  };
+
+  it('names the file relative to the configured cwd, not the process cwd', () => {
+    // The orphan lives inside the OS temp dir, which is never the jest process
+    // cwd — reading the process cwd would emit a path full of `../` segments
+    // that no reader can locate from the configured project root.
+    const configuredCwd = tempDir;
+    const orphan = createFile('cwd-anchor/Unpaired.test.ts');
+
+    const messages = lintOrphanWithCwd(configuredCwd, orphan);
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].message).toContain(
+      `Test file "${path.join('cwd-anchor', 'Unpaired.test.ts')}"`,
+    );
+    expect(messages[0].message).not.toContain('..');
+  });
+
+  it('leaves a non-absolute filename untouched regardless of the configured cwd', () => {
+    const messages = lintOrphanWithCwd(tempDir, 'nested/Unresolved.test.ts');
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].message).toContain(
+      'Test file "nested/Unresolved.test.ts"',
+    );
+  });
+});
