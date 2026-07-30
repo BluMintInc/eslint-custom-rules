@@ -399,6 +399,54 @@ export const useGroupIdMap = () => {
         export const useKeys = (keys) => keys.map((key) => useRouterState({ key }));
       `,
     },
+
+    // 29. Regression #1410: every violation disabled inline leaves the file
+    // untouched — no import may be emitted for keys nobody rewrites.
+    {
+      code: `
+        function Component() {
+          // eslint-disable-next-line enforce-querykey-ts
+          const [match] = useRouterState({ key: 'match-view' });
+          // eslint-disable-next-line enforce-querykey-ts
+          const [tournament] = useRouterState({ key: 'tournament-view' });
+          return <div>{match}{tournament}</div>;
+        }
+      `,
+    },
+
+    // 30. Regression #1410: a block disable naming this rule covers the file.
+    {
+      code: `
+        /* eslint-disable enforce-querykey-ts */
+        function Component() {
+          const [match] = useRouterState({ key: 'match-view' });
+          const [tournament] = useRouterState({ key: 'tournament-view' });
+          return <div>{match}{tournament}</div>;
+        }
+      `,
+    },
+
+    // 31. Regression #1410: a bare block disable suppresses every rule.
+    {
+      code: `
+        /* eslint-disable */
+        function Component() {
+          const [match] = useRouterState({ key: 'match-view' });
+          return <div>{match}</div>;
+        }
+      `,
+    },
+
+    // 32. Regression #1410: a bare line disable suppresses this rule too.
+    {
+      code: `
+        function Component() {
+          // eslint-disable-next-line
+          const [match] = useRouterState({ key: 'match-view' });
+          return <div>{match}</div>;
+        }
+      `,
+    },
   ],
 
   invalid: [
@@ -1331,6 +1379,180 @@ export const useProfileKey = () => {
         };
       `,
     },
+
+    // ------------------------------------------------------------------
+    // Regression #1410: the import rides on one violation's fix, so that
+    // violation is the file's import carrier. ESLint collects fixes before it
+    // applies inline disable directives, so a suppressed carrier used to take
+    // the import down with it while the survivors still substituted their
+    // constants. The carrier must fall to a surviving violation, and the
+    // import must name only the constants the survivors actually use.
+    // ------------------------------------------------------------------
+
+    // 50. A disable on the FIRST violation still lands the import, naming only
+    // the surviving constant.
+    {
+      name: 'disable on the first violation keeps the import minimal',
+      code: `
+        function MatchComponent() {
+          // eslint-disable-next-line enforce-querykey-ts
+          const [value] = useRouterState({ key: 'match-view' });
+          return <div>{value}</div>;
+        }
+
+        function TournamentComponent() {
+          const [other] = useRouterState({ key: 'tournament-view' });
+          return <div>{other}</div>;
+        }
+      `,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: `import { QUERY_KEY_TOURNAMENT_VIEW } from 'src/util/routing/queryKeys';
+
+        function MatchComponent() {
+          // eslint-disable-next-line enforce-querykey-ts
+          const [value] = useRouterState({ key: 'match-view' });
+          return <div>{value}</div>;
+        }
+
+        function TournamentComponent() {
+          const [other] = useRouterState({ key: QUERY_KEY_TOURNAMENT_VIEW });
+          return <div>{other}</div>;
+        }
+      `,
+    },
+
+    // 51. A disable on the MIDDLE violation drops only that constant.
+    {
+      name: 'disable on the middle violation drops only its constant',
+      code: `
+        function Component() {
+          const [match] = useRouterState({ key: 'match-view' });
+          // eslint-disable-next-line enforce-querykey-ts
+          const [tournament] = useRouterState({ key: 'tournament-view' });
+          const [team] = useRouterState({ key: 'team-view' });
+          return <div>{match}{tournament}{team}</div>;
+        }
+      `,
+      errors: [
+        { messageId: 'enforceQueryKeyImport' },
+        { messageId: 'enforceQueryKeyImport' },
+      ],
+      output: `import { QUERY_KEY_MATCH_VIEW, QUERY_KEY_TEAM_VIEW } from 'src/util/routing/queryKeys';
+
+        function Component() {
+          const [match] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
+          // eslint-disable-next-line enforce-querykey-ts
+          const [tournament] = useRouterState({ key: 'tournament-view' });
+          const [team] = useRouterState({ key: QUERY_KEY_TEAM_VIEW });
+          return <div>{match}{tournament}{team}</div>;
+        }
+      `,
+    },
+
+    // 52. A disable on the LAST violation leaves the carrier where it was.
+    {
+      name: 'disable on the last violation drops only its constant',
+      code: `
+        function Component() {
+          const [match] = useRouterState({ key: 'match-view' });
+          // eslint-disable-next-line enforce-querykey-ts
+          const [tournament] = useRouterState({ key: 'tournament-view' });
+          return <div>{match}{tournament}</div>;
+        }
+      `,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: `import { QUERY_KEY_MATCH_VIEW } from 'src/util/routing/queryKeys';
+
+        function Component() {
+          const [match] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
+          // eslint-disable-next-line enforce-querykey-ts
+          const [tournament] = useRouterState({ key: 'tournament-view' });
+          return <div>{match}{tournament}</div>;
+        }
+      `,
+    },
+
+    // 53. A disable naming a different rule suppresses nothing. (A core rule
+    // stands in for the neighbour because `RuleTester` errors on a directive
+    // naming a rule it cannot resolve; the near-miss name is covered by the
+    // `Linter` suite below.)
+    {
+      name: 'a disable for another rule leaves both violations reportable',
+      code: `
+        function Component() {
+          // eslint-disable-next-line no-console
+          const [match] = useRouterState({ key: 'match-view' });
+          const [tournament] = useRouterState({ key: 'tournament-view' });
+          return <div>{match}{tournament}</div>;
+        }
+      `,
+      errors: [
+        { messageId: 'enforceQueryKeyImport' },
+        { messageId: 'enforceQueryKeyImport' },
+      ],
+      output: `import { QUERY_KEY_MATCH_VIEW, QUERY_KEY_TOURNAMENT_VIEW } from 'src/util/routing/queryKeys';
+
+        function Component() {
+          // eslint-disable-next-line no-console
+          const [match] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
+          const [tournament] = useRouterState({ key: QUERY_KEY_TOURNAMENT_VIEW });
+          return <div>{match}{tournament}</div>;
+        }
+      `,
+    },
+
+    // 54. An existing queryKeys import is extended with the surviving constant
+    // alone — a suppressed key must not be added and left unused.
+    {
+      name: 'an existing queryKeys import gains only the surviving constant',
+      code: `
+        import { QUERY_KEY_VALID } from '@/util/routing/queryKeys';
+
+        function Component() {
+          const [valid] = useRouterState({ key: QUERY_KEY_VALID });
+          // eslint-disable-next-line enforce-querykey-ts
+          const [match] = useRouterState({ key: 'match-view' });
+          const [tournament] = useRouterState({ key: 'tournament-view' });
+          return <div>{valid}{match}{tournament}</div>;
+        }
+      `,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: `
+        import { QUERY_KEY_VALID, QUERY_KEY_TOURNAMENT_VIEW } from '@/util/routing/queryKeys';
+
+        function Component() {
+          const [valid] = useRouterState({ key: QUERY_KEY_VALID });
+          // eslint-disable-next-line enforce-querykey-ts
+          const [match] = useRouterState({ key: 'match-view' });
+          const [tournament] = useRouterState({ key: QUERY_KEY_TOURNAMENT_VIEW });
+          return <div>{valid}{match}{tournament}</div>;
+        }
+      `,
+    },
+
+    // 55. A suppressed non-carrier must not rewrite its own key either: with
+    // the first violation surviving, the second one's literal stays put.
+    {
+      name: 'a suppressed non-carrier keeps its literal',
+      code: `
+        function Component() {
+          const [match] = useRouterState({ key: 'match-view' });
+          // eslint-disable-next-line enforce-querykey-ts
+          const [same] = useRouterState({ key: 'match-view' });
+          return <div>{match}{same}</div>;
+        }
+      `,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: `import { QUERY_KEY_MATCH_VIEW } from 'src/util/routing/queryKeys';
+
+        function Component() {
+          const [match] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
+          // eslint-disable-next-line enforce-querykey-ts
+          const [same] = useRouterState({ key: 'match-view' });
+          return <div>{match}{same}</div>;
+        }
+      `,
+    },
   ],
 });
 
@@ -1439,5 +1661,223 @@ function Component() {
 
     expect(output).toBe(code);
     expect(remaining).toHaveLength(1);
+  });
+});
+
+// Issue #1410: `RuleTester` asserts one fix pass, but `eslint --fix` loops and
+// an import stranded by a suppressed carrier never heals on a later pass. These
+// run the real `Linter` to assert the end state of a full `--fix` run.
+describe('enforce-querykey-ts: inline disables and the import carrier (issue #1410)', () => {
+  const RULE_ID = '@blumintinc/blumint/enforce-querykey-ts';
+
+  const lint = (code: string, filename = 'Component.tsx') => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(RULE_ID, enforceQueryKeyTs as unknown as Rule.RuleModule);
+    // A near-miss neighbour proves rule matching is exact rather than a
+    // prefix/substring heuristic.
+    linter.defineRule('@blumintinc/blumint/enforce-querykey-ts-strict', {
+      meta: { schema: [] },
+      create: () => ({}),
+    } as unknown as Rule.RuleModule);
+    const config = {
+      parser: '@typescript-eslint/parser',
+      parserOptions: {
+        ecmaVersion: 2020 as const,
+        sourceType: 'module' as const,
+        ecmaFeatures: { jsx: true },
+      },
+      rules: { [RULE_ID]: 'error' as const },
+    };
+    const { output } = linter.verifyAndFix(code, config, filename);
+    return { output, remaining: linter.verify(output, config, filename) };
+  };
+
+  const importedNamesOf = (output: string) =>
+    new Set(
+      [...output.matchAll(/import\s*\{([^}]*)\}\s*from\s*'[^']*queryKeys'/g)]
+        .flatMap(([, specifiers]) => specifiers.split(','))
+        .map((specifier) => specifier.trim().split(/\s+as\s+/)[0])
+        .filter((name) => name !== ''),
+    );
+
+  /** The defect's signature: a substituted constant with no import behind it. */
+  const expectEveryQueryKeyImported = (output: string) => {
+    const imported = importedNamesOf(output);
+    for (const used of new Set(output.match(/QUERY_KEY_[A-Z0-9_]*/g) ?? [])) {
+      expect(Array.from(imported)).toContain(used);
+    }
+  };
+
+  it('carries the import on the first surviving violation', () => {
+    const { output, remaining } = lint(`function MatchComponent() {
+  // eslint-disable-next-line @blumintinc/blumint/enforce-querykey-ts
+  const [value] = useRouterState({ key: 'match-view' });
+  return value;
+}
+
+function TournamentComponent() {
+  const [other] = useRouterState({ key: 'tournament-view' });
+  return other;
+}
+`);
+
+    expect(output)
+      .toBe(`import { QUERY_KEY_TOURNAMENT_VIEW } from 'src/util/routing/queryKeys';
+
+function MatchComponent() {
+  // eslint-disable-next-line @blumintinc/blumint/enforce-querykey-ts
+  const [value] = useRouterState({ key: 'match-view' });
+  return value;
+}
+
+function TournamentComponent() {
+  const [other] = useRouterState({ key: QUERY_KEY_TOURNAMENT_VIEW });
+  return other;
+}
+`);
+    expectEveryQueryKeyImported(output);
+    expect(remaining).toHaveLength(0);
+  });
+
+  it('imports only the constants the surviving rewrites use', () => {
+    const { output } = lint(`function Component() {
+  const [match] = useRouterState({ key: 'match-view' });
+  // eslint-disable-next-line @blumintinc/blumint/enforce-querykey-ts
+  const [tournament] = useRouterState({ key: 'tournament-view' });
+  const [team] = useRouterState({ key: 'team-view' });
+  return [match, tournament, team];
+}
+`);
+
+    expect(Array.from(importedNamesOf(output)).sort()).toEqual([
+      'QUERY_KEY_MATCH_VIEW',
+      'QUERY_KEY_TEAM_VIEW',
+    ]);
+    expect(output).toContain("key: 'tournament-view'");
+    expectEveryQueryKeyImported(output);
+  });
+
+  it('adds neither import nor substitution when every violation is disabled', () => {
+    const code = `function Component() {
+  // eslint-disable-next-line @blumintinc/blumint/enforce-querykey-ts
+  const [match] = useRouterState({ key: 'match-view' });
+  // eslint-disable-next-line @blumintinc/blumint/enforce-querykey-ts
+  const [tournament] = useRouterState({ key: 'tournament-view' });
+  return [match, tournament];
+}
+`;
+
+    const { output } = lint(code);
+
+    expect(output).toBe(code);
+    expect(output).not.toContain('QUERY_KEY_');
+  });
+
+  it('leaves the file untouched under a whole-file block disable', () => {
+    const code = `/* eslint-disable @blumintinc/blumint/enforce-querykey-ts */
+function Component() {
+  const [match] = useRouterState({ key: 'match-view' });
+  const [tournament] = useRouterState({ key: 'tournament-view' });
+  return [match, tournament];
+}
+`;
+
+    const { output } = lint(code);
+
+    expect(output).toBe(code);
+    expect(output).not.toContain('QUERY_KEY_');
+  });
+
+  it('does not treat a disable for a similarly named rule as its own', () => {
+    const { output, remaining } = lint(`function Component() {
+  // eslint-disable-next-line @blumintinc/blumint/enforce-querykey-ts-strict
+  const [match] = useRouterState({ key: 'match-view' });
+  return match;
+}
+`);
+
+    expect(output)
+      .toBe(`import { QUERY_KEY_MATCH_VIEW } from 'src/util/routing/queryKeys';
+
+function Component() {
+  // eslint-disable-next-line @blumintinc/blumint/enforce-querykey-ts-strict
+  const [match] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
+  return match;
+}
+`);
+    expectEveryQueryKeyImported(output);
+    expect(remaining).toHaveLength(0);
+  });
+
+  it('keeps the import when only the last violation survives a block disable', () => {
+    const { output } = lint(`function Component() {
+  /* eslint-disable @blumintinc/blumint/enforce-querykey-ts */
+  const [match] = useRouterState({ key: 'match-view' });
+  const [tournament] = useRouterState({ key: 'tournament-view' });
+  /* eslint-enable @blumintinc/blumint/enforce-querykey-ts */
+  const [team] = useRouterState({ key: 'team-view' });
+  return [match, tournament, team];
+}
+`);
+
+    expect(Array.from(importedNamesOf(output))).toEqual([
+      'QUERY_KEY_TEAM_VIEW',
+    ]);
+    expectEveryQueryKeyImported(output);
+  });
+
+  it('extends an existing queryKeys import with the survivors alone', () => {
+    const { output, remaining } =
+      lint(`import { QUERY_KEY_VALID } from '@/util/routing/queryKeys';
+
+function Component() {
+  const [valid] = useRouterState({ key: QUERY_KEY_VALID });
+  // eslint-disable-next-line @blumintinc/blumint/enforce-querykey-ts
+  const [match] = useRouterState({ key: 'match-view' });
+  const [tournament] = useRouterState({ key: 'tournament-view' });
+  return [valid, match, tournament];
+}
+`);
+
+    expect(output)
+      .toBe(`import { QUERY_KEY_VALID, QUERY_KEY_TOURNAMENT_VIEW } from '@/util/routing/queryKeys';
+
+function Component() {
+  const [valid] = useRouterState({ key: QUERY_KEY_VALID });
+  // eslint-disable-next-line @blumintinc/blumint/enforce-querykey-ts
+  const [match] = useRouterState({ key: 'match-view' });
+  const [tournament] = useRouterState({ key: QUERY_KEY_TOURNAMENT_VIEW });
+  return [valid, match, tournament];
+}
+`);
+    expect(output.match(/from '@\/util\/routing\/queryKeys'/g)).toHaveLength(1);
+    expectEveryQueryKeyImported(output);
+    expect(remaining).toHaveLength(0);
+  });
+
+  it('fixes every surviving violation across several passes with one import', () => {
+    const { output, remaining } = lint(`function Component() {
+  // eslint-disable-next-line @blumintinc/blumint/enforce-querykey-ts
+  const [match] = useRouterState({ key: 'match-view' });
+  const [tournament] = useRouterState({ key: 'tournament-view' });
+  const [team] = useRouterState({ key: 'team-view' });
+  return [match, tournament, team];
+}
+`);
+
+    expect(output.match(/from 'src\/util\/routing\/queryKeys'/g)).toHaveLength(
+      1,
+    );
+    expect(Array.from(importedNamesOf(output)).sort()).toEqual([
+      'QUERY_KEY_TEAM_VIEW',
+      'QUERY_KEY_TOURNAMENT_VIEW',
+    ]);
+    expectEveryQueryKeyImported(output);
+    expect(remaining).toHaveLength(0);
   });
 });
