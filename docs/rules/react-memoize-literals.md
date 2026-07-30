@@ -176,6 +176,23 @@ const options = useMemo(
 
 This placeholder must be replaced before committing.
 
+#### The hook import travels with the suggestion
+
+Accepting a suggestion also binds the hook it introduces, as part of the same
+edit — a wrapper without its import compiles to `TS2304: Cannot find name
+'useCallback'` and fails at runtime. The import is added in whichever form the
+file already uses: appended to an existing `react` named specifier list, placed
+beside a default binding (`import React, { useCallback } from 'react'`), or
+inserted as its own `import { useCallback } from 'react';` when the file has no
+usable `react` value import (including the namespace and type-only shapes, which
+cannot host a named value specifier). A file that already imports the hook gains
+no duplicate specifier.
+
+When `useMemo`/`useCallback` already resolves to something else at the literal —
+a local, a parameter, a type-only specifier, or an import from another module —
+the suggestion is withheld rather than emitting a wrapper that calls the wrong
+value. The report still stands, so the literal is migrated deliberately.
+
 ## When Not To Use It
 
 - Components that intentionally regenerate literals on every render (e.g., to force recalculation) and where the cost is acceptable.
