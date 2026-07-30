@@ -248,6 +248,21 @@ The fix is declined (the violation is still reported, but nothing is rewritten) 
 
 Note: Auto-fix only works for simple string literals. Complex expressions (concatenation, ternaries, template literals with static content) require manual refactoring.
 
+### Interaction with inline disable comments
+
+The single import is attached to the fix of the first violation that is **not** suppressed by an inline `eslint-disable` directive, and it names only the constants the surviving substitutions use. Suppressing one key therefore neither strands the other rewritten keys without an import nor leaves an unused specifier behind:
+
+```tsx
+function MatchComponent() {
+  // eslint-disable-next-line @blumintinc/blumint/enforce-querykey-ts
+  const [value] = useRouterState({ key: 'match-view' });  // left alone, and not imported
+}
+
+function TournamentComponent() {
+  const [other] = useRouterState({ key: 'tournament-view' });  // fixed, and carries the import
+}
+```
+
 The suggested constant name is derived from the literal, so `queryKeys.ts` may still need the export added; the generated import makes that a compile error instead of an undefined identifier at runtime.
 
 ## When Not to Use

@@ -6,6 +6,7 @@ import {
   TSESTree,
 } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { createSuppressionChecker } from '../utils/disableDirectives';
 
 type MessageIds = 'enforceQueryKeyImport' | 'enforceQueryKeyConstant';
 
@@ -159,6 +160,18 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
      * per-violation insertions that overlap and get dropped.
      */
     const pendingReports: PendingReport[] = [];
+
+    /**
+     * The queryKeys import rides on one violation's fix, which makes that
+     * violation the file's import carrier. ESLint collects fixes before it
+     * applies inline disable directives, so a suppressed carrier takes the
+     * import down with it while the surviving substitutions still land —
+     * leaving the file referencing constants nothing imports (#1410).
+     * Resolving suppression here keeps a suppressed violation out of the plan
+     * entirely: it neither claims the carrier slot nor contributes a specifier
+     * to the import, which would otherwise be imported and never used.
+     */
+    const isReportSuppressed = createSuppressionChecker(context);
 
     /**
      * `SourceCode#getScope` supersedes the deprecated `context.getScope`; the
@@ -367,8 +380,14 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
       const missingConstants: string[] = [];
       const canImport = importSourceOf() !== null;
 
+      // The location handed to `context.report` below is what ESLint matches a
+      // directive against, so suppression is resolved from exactly that node.
+      const suppressed = new Set(
+        pendingReports.filter((report) => isReportSuppressed(report.node)),
+      );
+
       for (const report of pendingReports) {
-        if (!report.substitution) {
+        if (!report.substitution || suppressed.has(report)) {
           continue;
         }
         const { constant, scope } = report.substitution;
@@ -389,11 +408,19 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
       // The first applied substitution carries the import for every other one:
       // its fix range then starts at the top of the file and ends before the
       // remaining literals, so no two fixes of this rule overlap in a pass.
+      // Suppressed reports are skipped so the slot falls to a survivor.
       const importCarrier = pendingReports.find((report) => {
         const resolution = resolutions.get(report);
-        return resolution !== undefined && resolution.state !== 'conflict';
+        return (
+          !suppressed.has(report) &&
+          resolution !== undefined &&
+          resolution.state !== 'conflict'
+        );
       });
 
+      // Suppressed violations are still reported: ESLint discards them, and
+      // reporting keeps the user's directive "used" so that
+      // `--report-unused-disable-directives` does not flag it.
       for (const report of pendingReports) {
         context.report({
           node: report.node,
@@ -403,6 +430,7 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
             const { substitution } = report;
             const resolution = resolutions.get(report);
             if (
+              suppressed.has(report) ||
               !substitution ||
               !resolution ||
               resolution.state === 'conflict'
