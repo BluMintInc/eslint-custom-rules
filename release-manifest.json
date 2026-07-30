@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.20.22",
+    "date": "2026-07-30T00:39:18.760Z",
+    "rules": [
+      {
+        "name": "parallelize-async-operations",
+        "changeType": "fix",
+        "issues": [
+          1395
+        ],
+        "summary": "exempt test files and stop schema defaults erasing barriers (closes #1395)"
+      },
+      {
+        "name": "prefer-clone-deep",
+        "changeType": "fix",
+        "issues": [
+          1396
+        ],
+        "summary": "only autofix when the file already imports the helper (closes #1396)"
+      }
+    ]
+  },
+  {
     "version": "1.20.21",
     "date": "2026-07-29T23:50:58.620Z",
     "rules": [

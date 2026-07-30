@@ -1,3 +1,11 @@
+## [1.20.22](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.21...v1.20.22) (2026-07-30)
+
+
+### Bug Fixes
+
+* **parallelize-async-operations:** exempt test files and stop schema defaults erasing barriers (closes [#1395](https://github.com/BluMintInc/eslint-custom-rules/issues/1395)) ([0058f34](https://github.com/BluMintInc/eslint-custom-rules/commit/0058f347fdc771b42eadb839d73016d70f7da8e3))
+* **prefer-clone-deep:** only autofix when the file already imports the helper (closes [#1396](https://github.com/BluMintInc/eslint-custom-rules/issues/1396)) ([1e7ca8c](https://github.com/BluMintInc/eslint-custom-rules/commit/1e7ca8c646b36b2155acae8f625a770b1d0ab7b2)), closes [#1389](https://github.com/BluMintInc/eslint-custom-rules/issues/1389)
+
 ## [1.20.21](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.20...v1.20.21) (2026-07-29)
 
 
