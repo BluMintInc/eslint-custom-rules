@@ -1011,6 +1011,148 @@ class Widget {
   }
 }`,
     },
+    {
+      // A pre-existing `Memoize` binding makes the import unsafe to insert:
+      // writing it would declare the name twice (TS2440/TS2300). The violation
+      // is still reported so the author resolves the conflict deliberately.
+      name: 'declines the fix when Memoize is bound to an unrelated value',
+      filename: 'file.tsx',
+      code: `const Memoize = undefined as unknown as never;
+class SequenceLastJsx {
+  render() {
+    return (doSomething(), <section />);
+  }
+}`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `const Memoize = undefined as unknown as never;
+class SequenceLastJsx {
+  render() {
+    return (doSomething(), <section />);
+  }
+}`,
+    },
+    {
+      // Every violation in the file consults the same binding, so none of them
+      // may carry the import.
+      name: 'declines the fix for every violation when Memoize is bound',
+      filename: 'file.tsx',
+      code: `const Memoize = createLocalMemoize();
+class Widget {
+  get alpha() {
+    return () => <div />;
+  }
+  renderBeta() {
+    return () => <span />;
+  }
+}`,
+      errors: [
+        { messageId: 'requireMemoizeJsxReturner' },
+        { messageId: 'requireMemoizeJsxReturner' },
+      ],
+      output: `const Memoize = createLocalMemoize();
+class Widget {
+  get alpha() {
+    return () => <div />;
+  }
+  renderBeta() {
+    return () => <span />;
+  }
+}`,
+    },
+    {
+      // A narrower shadow raises no TypeScript diagnostic: the emitted
+      // `@Memoize()` would silently resolve to the local binding instead of the
+      // decorator factory.
+      name: 'declines the fix when a narrower scope shadows the import',
+      filename: 'file.tsx',
+      code: `import { Memoize } from '@blumintinc/typescript-memoize';
+
+export function makeWidget() {
+  const Memoize = () => () => undefined;
+  class Widget {
+    get alpha() {
+      return () => <div />;
+    }
+  }
+  return Widget;
+}`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `import { Memoize } from '@blumintinc/typescript-memoize';
+
+export function makeWidget() {
+  const Memoize = () => () => undefined;
+  class Widget {
+    get alpha() {
+      return () => <div />;
+    }
+  }
+  return Widget;
+}`,
+    },
+    {
+      // Same name, different module: the inserted import would collide with the
+      // local one rather than reuse it.
+      name: 'declines the fix when Memoize is imported from another module',
+      filename: 'file.tsx',
+      code: `import { Memoize } from './decorators';
+
+class Widget {
+  get alpha() {
+    return () => <div />;
+  }
+}`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `import { Memoize } from './decorators';
+
+class Widget {
+  get alpha() {
+    return () => <div />;
+  }
+}`,
+    },
+    {
+      // Import state is read from the program body when the fix is computed, so
+      // an import that follows the class — the shape `eslint --fix` itself
+      // produces between passes — is reused instead of duplicated.
+      name: 'reuses an import that follows the class in source order',
+      filename: 'file.tsx',
+      code: `class Widget {
+  get alpha() {
+    return () => <div />;
+  }
+}
+import { Memoize } from '@blumintinc/typescript-memoize';`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `class Widget {
+  @Memoize()
+  get alpha() {
+    return () => <div />;
+  }
+}
+import { Memoize } from '@blumintinc/typescript-memoize';`,
+    },
+    {
+      // A default specifier binds `Memoize` without exporting it as a named
+      // specifier, so the fixer can neither augment that import nor add a
+      // second one.
+      name: 'declines the fix for a default memoize import named Memoize',
+      filename: 'file.tsx',
+      code: `import Memoize from '@blumintinc/typescript-memoize';
+
+class Widget {
+  get alpha() {
+    return () => <div />;
+  }
+}`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `import Memoize from '@blumintinc/typescript-memoize';
+
+class Widget {
+  get alpha() {
+    return () => <div />;
+  }
+}`,
+    },
   ],
 });
 
@@ -1221,5 +1363,27 @@ export class Widget {
       ),
     ).toHaveLength(1);
     expectNoUnboundMemoize(output);
+  });
+
+  // Issue #1434: the fixer used to insert its import next to an existing
+  // `Memoize` binding, writing a file with the name declared twice (TS2440).
+  it('leaves a file that already binds Memoize untouched across passes', () => {
+    const code = `const Memoize = createLocalMemoize();
+export class Widget {
+  get alpha() {
+    return () => <div />;
+  }
+
+  renderBeta() {
+    return () => <span />;
+  }
+}
+`;
+
+    const output = lint(code);
+
+    expect(output).toBe(code);
+    expect(output).not.toContain('@Memoize');
+    expect(output).not.toContain('typescript-memoize');
   });
 });

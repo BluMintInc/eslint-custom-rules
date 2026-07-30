@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 import { createSuppressionChecker } from '../utils/disableDirectives';
 
 type MessageIds = 'requireMemoizeJsxReturner';
@@ -16,6 +17,7 @@ const MEMOIZE_MODULES = new Set([
   MEMOIZE_PREFERRED_MODULE,
   'typescript-memoize',
 ]);
+const MEMOIZE_EXPORT_NAME = 'Memoize';
 
 type FunctionLike =
   | TSESTree.ArrowFunctionExpression
@@ -659,6 +661,90 @@ function functionReturnsJSX(
   return returnsJSX;
 }
 
+type MemoizeImportBinding = {
+  /** The identifier through which `Memoize` is reachable in the file. */
+  localName: string;
+  /** A namespace binding reaches the decorator as `localName.Memoize`. */
+  isNamespace: boolean;
+};
+
+/**
+ * A specifier that binds the memoize module's `Memoize` export — either by name
+ * (under any local alias) or through the module namespace.
+ */
+function isMemoizeSpecifier(
+  specifier: TSESTree.Node,
+): specifier is TSESTree.ImportSpecifier | TSESTree.ImportNamespaceSpecifier {
+  if (specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
+    return true;
+  }
+  return (
+    specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+    specifier.imported.type === AST_NODE_TYPES.Identifier &&
+    specifier.imported.name === MEMOIZE_EXPORT_NAME
+  );
+}
+
+/**
+ * The binding through which the emitted decorator reaches `Memoize`, read off
+ * the program body rather than a traversal flag. `eslint --fix` re-lints between
+ * passes and inserts the import above code an earlier pass already visited, so a
+ * flag set by the `ImportDeclaration` visitor is not yet accurate for a class
+ * that precedes the import in source order.
+ */
+function findMemoizeImportBinding(
+  program: TSESTree.Program,
+): MemoizeImportBinding | null {
+  let namedAlias: string | null = null;
+  let namespaceAlias: string | null = null;
+
+  for (const statement of program.body) {
+    if (
+      statement.type !== AST_NODE_TYPES.ImportDeclaration ||
+      !MEMOIZE_MODULES.has(String(statement.source.value))
+    ) {
+      continue;
+    }
+
+    for (const specifier of statement.specifiers) {
+      if (specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
+        namespaceAlias = specifier.local.name;
+      } else if (isMemoizeSpecifier(specifier)) {
+        namedAlias = specifier.local?.name ?? namedAlias;
+      }
+    }
+  }
+
+  /** `namespace.Memoize` stays valid whatever the named specifiers are. */
+  if (namespaceAlias) {
+    return { localName: namespaceAlias, isNamespace: true };
+  }
+  return namedAlias ? { localName: namedAlias, isNamespace: false } : null;
+}
+
+/**
+ * Whether every declaration of a visible binding is the memoize import itself.
+ * Anything else — a local declaration, a parameter, a class, a default
+ * specifier, an import of the same name from another module — means the fix
+ * cannot proceed under that name.
+ */
+function bindsMemoizeImport(variable: TSESLint.Scope.Variable): boolean {
+  return (
+    variable.defs.length > 0 &&
+    variable.defs.every((def) => {
+      const specifier = def.node as TSESTree.Node;
+      if (!isMemoizeSpecifier(specifier)) {
+        return false;
+      }
+      const declaration = specifier.parent;
+      return (
+        declaration?.type === AST_NODE_TYPES.ImportDeclaration &&
+        MEMOIZE_MODULES.has(String(declaration.source.value))
+      );
+    })
+  );
+}
+
 function getImportFixes(
   fixer: TSESLint.RuleFixer,
   sourceCode: TSESLint.SourceCode,
@@ -747,8 +833,12 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
       return {} as TSESLint.RuleListener;
     }
 
-    let hasMemoizeImport = false;
-    let memoizeAlias = 'Memoize';
+    /**
+     * Aliases used to recognize an existing `@Memoize()` decorator. The fixer
+     * derives its own import state from the program body instead, so these track
+     * detection only.
+     */
+    let memoizeAlias = MEMOIZE_EXPORT_NAME;
     let memoizeNamespace: string | null = null;
     let scheduledImportFix = false;
 
@@ -812,15 +902,13 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
           if (specifier.type === AST_NODE_TYPES.ImportSpecifier) {
             if (
               specifier.imported.type === AST_NODE_TYPES.Identifier &&
-              specifier.imported.name === 'Memoize'
+              specifier.imported.name === MEMOIZE_EXPORT_NAME
             ) {
-              hasMemoizeImport = true;
               memoizeAlias = specifier.local?.name ?? memoizeAlias;
             }
           } else if (
             specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier
           ) {
-            hasMemoizeImport = true;
             memoizeNamespace = specifier.local.name;
           }
         }
@@ -857,10 +945,6 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
           return;
         }
 
-        const decoratorIdent = memoizeNamespace
-          ? `${memoizeNamespace}.Memoize`
-          : memoizeAlias;
-
         // The report is emitted even when suppressed: ESLint discards it, and
         // reporting keeps the user's disable directive "used" so that
         // `--report-unused-disable-directives` does not flag it.
@@ -877,11 +961,35 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
             }
 
             const sourceCode = context.getSourceCode();
+            const memoizeImport = findMemoizeImportBinding(sourceCode.ast);
+            const decoratorBaseName =
+              memoizeImport?.localName ?? MEMOIZE_EXPORT_NAME;
+
+            // Resolve the decorator's identifier through the scope chain at the
+            // member being fixed. A binding that is not the memoize import
+            // makes both halves of the edit wrong: the inserted
+            // `import { Memoize }` collides with a top-level binding of that
+            // name (TS2440/TS2300), and a narrower shadow silently binds
+            // `@Memoize()` to the shadow with no TypeScript diagnostic at all.
+            // Declining leaves the report in place so the author resolves the
+            // conflict deliberately.
+            const existing = ASTHelpers.findVariableInScope(
+              ASTHelpers.getScope(context, node),
+              decoratorBaseName,
+            );
+            if (existing && !bindsMemoizeImport(existing)) {
+              return null;
+            }
+
+            const decoratorIdent = memoizeImport?.isNamespace
+              ? `${memoizeImport.localName}.${MEMOIZE_EXPORT_NAME}`
+              : decoratorBaseName;
+
             const { fixes, scheduledImportFix: newScheduledImportFix } =
               getImportFixes(
                 fixer,
                 sourceCode,
-                hasMemoizeImport,
+                !!memoizeImport,
                 scheduledImportFix,
               );
             scheduledImportFix = newScheduledImportFix;
