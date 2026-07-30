@@ -1,3 +1,11 @@
+## [1.20.34](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.33...v1.20.34) (2026-07-30)
+
+
+### Bug Fixes
+
+* **enforce-global-constants:** decline the autofix when the generated name is taken (closes [#1455](https://github.com/BluMintInc/eslint-custom-rules/issues/1455)) ([5cc0eed](https://github.com/BluMintInc/eslint-custom-rules/commit/5cc0eedd66bc7a85db5a67b3ef14745217cc8a51))
+* **prefer-global-router-state-key:** decline the autofix when a shadow captures the emitted reference (closes [#1456](https://github.com/BluMintInc/eslint-custom-rules/issues/1456)) ([f18607f](https://github.com/BluMintInc/eslint-custom-rules/commit/f18607f44062401e79d8134dd725d9d96357dc0e))
+
 ## [1.20.33](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.32...v1.20.33) (2026-07-30)
 
 
