@@ -89,9 +89,11 @@ for (const item of items) {
   }
 }
 
-// Sequential execution intentional — suppressed with reason
-// eslint-disable-next-line @blumintinc/blumint/parallelize-loop-awaits -- VIPs must be processed before regular users
+// Sequential execution intentional — suppressed with reason.
+// The report is anchored to the `await`, so the comment goes directly above it;
+// placing it above the `for` suppresses nothing.
 for (const user of sortedUsers) {
+  // eslint-disable-next-line @blumintinc/blumint/parallelize-loop-awaits -- VIPs must be processed before regular users
   await processUserSubscription(user);
 }
 ```
