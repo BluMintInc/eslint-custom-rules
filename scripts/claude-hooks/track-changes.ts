@@ -2,7 +2,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ChangeLog } from './change-log';
-import { LOG_FILE, modifyHeartbeat } from './change-log';
+import {
+  LOG_FILE,
+  isInsideWorkspace,
+  modifyHeartbeat,
+  workspaceRootOf,
+} from './change-log';
 
 // Claude Code PostToolUse input format
 export type Input = {
@@ -67,6 +72,10 @@ export function trackChanges(input: Input, logPath: string = LOG_FILE) {
 
   // Skip tracking files in .claude/tmp/ directory
   if (file_path.includes('.claude/tmp/')) {
+    return;
+  }
+
+  if (!isInsideWorkspace(file_path, workspaceRootOf(logPath))) {
     return;
   }
 
