@@ -394,22 +394,19 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
               property.name,
             )
           ) {
+            // Report only. lodash's difference family returns the elements of
+            // its first array that have no match in the second — a subset of
+            // the input — while microdiff's `diff` returns a structural change
+            // list of `{type, path, value}` records. No mechanical rewrite
+            // preserves the meaning of the call, and the extra iteratee or
+            // comparator argument has no counterpart in `diff(a, b)`, whose
+            // third parameter is an options object. Replacing the call would
+            // silently change what the surrounding code receives, so the author
+            // converts it.
             reportedNodes.add(node);
             context.report({
               node,
               messageId: 'enforceMicrodiff',
-              fix(fixer) {
-                if (!canEmitDiffAt(node)) {
-                  return null;
-                }
-                // Replace with microdiff
-                return fixer.replaceText(
-                  node,
-                  `${DIFF_NAME}(${node.arguments
-                    .map((arg) => sourceCode.getText(arg))
-                    .join(', ')})`,
-                );
-              },
             });
           }
         }
