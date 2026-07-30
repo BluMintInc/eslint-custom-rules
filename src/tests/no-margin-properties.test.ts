@@ -355,7 +355,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         },
       },
     },
-    // Valid usage with autofix option (should not affect valid cases)
+    // Padding is the recommended replacement and must never be flagged
     {
       code: `
         import Box from '@mui/material/Box';
@@ -364,7 +364,6 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           return <Box sx={{ paddingLeft: 4 }} />;
         }
       `,
-      options: [{ autofix: true }],
       parserOptions: {
         ecmaFeatures: {
           jsx: true,
@@ -982,25 +981,11 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         marginError('margin'),
       ],
     },
-    // Test with autofix option set to false (should behave the same)
+    // A bare JSX expression statement, outside any component
     {
       code: `
         <Box sx={{ margin: 2 }} />;
       `,
-      options: [{ autofix: false }],
-      parserOptions: {
-        ecmaFeatures: {
-          jsx: true,
-        },
-      },
-      errors: [marginError('margin')],
-    },
-    // Test with autofix option set to true (should behave the same since no autofix is implemented)
-    {
-      code: `
-        <Box sx={{ margin: 2 }} />;
-      `,
-      options: [{ autofix: true }],
       parserOptions: {
         ecmaFeatures: {
           jsx: true,
