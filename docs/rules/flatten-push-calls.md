@@ -12,6 +12,8 @@ Combine consecutive `push` calls on the same array into a single call so the bat
 
 Array `push` accepts multiple arguments. Batching consecutive calls reduces repeated property access/call overhead and clarifies which values are appended together. The auto-fix only runs when the target is a simple identifier/member chain (no computed properties) and when the target/arguments have no side effects such as calls, `await`/`yield`, updates, or `delete`.
 
+Every comment attached to a merged argument travels with it, so directives such as `eslint-disable-next-line` keep suppressing what they suppressed before the fix. A merged argument list is always laid out across multiple lines when comments are involved, because a line comment on a single-line argument list would swallow the rest of the call.
+
 ### ❌ Incorrect
 
 ```typescript
@@ -46,6 +48,15 @@ items.push(
 );
 ```
 
+```typescript
+const items = [];
+items.push(
+  // eslint-disable-next-line no-console
+  console.error,
+  second
+);
+```
+
 ## When Not To Use It
 
 Skip this rule if your style guide prefers one-argument pushes for logging or tracing purposes, even when they are consecutive.
@@ -53,6 +64,7 @@ Skip this rule if your style guide prefers one-argument pushes for logging or tr
 ## Limitations
 
 - Targets that rely on computed properties (for example, `items[index].push(...)`) or that contain side-effectful evaluation are skipped because batching could change when getters, proxies, or argument side effects run.
+- A comment parked somewhere the merged call cannot host it — between the callee and its argument list (`arr.push /* why */ (a)`), after a trailing comma, or between the closing parenthesis and the semicolon — is reported without an auto-fix rather than being dropped.
 
 ## Implementation
 
