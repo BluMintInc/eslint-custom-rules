@@ -1047,6 +1047,7 @@ function isPropLessImportedComponent(
   localName: string,
   filename: string,
   componentRoot: TSESTree.Node,
+  cwd: string,
 ): boolean {
   const relativeImport = findRelativeImport(program, localName);
   if (!relativeImport) {
@@ -1060,9 +1061,16 @@ function isPropLessImportedComponent(
   }
 
   try {
+    // A relative filename is anchored at the directory ESLint was configured
+    // with, never the node process cwd. The two differ under the VS Code ESLint
+    // extension, in monorepos, and for any programmatic `new Linter({ cwd })`,
+    // and anchoring at the process cwd there resolves the sibling import
+    // against the wrong directory: the child module is not found, the
+    // prop-less relaxation silently stops applying, and the parent reports a
+    // composition it cannot satisfy (issue #1476).
     const absolute = path.isAbsolute(filename)
       ? filename
-      : path.resolve(process.cwd(), filename);
+      : path.resolve(cwd, filename);
     const resolved = resolveRelativeModule(
       path.dirname(absolute),
       relativeImport.source,
@@ -1176,6 +1184,13 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
     // `/src/`) so absolute POSIX and Windows paths both resolve (issue #1268).
     // Glob matching needs forward slashes, while resolving a relative import off
     // disk needs the platform-native path — keep both.
+    // Sibling modules are resolved from disk relative to the file under lint,
+    // so a non-absolute filename needs the directory ESLint itself was
+    // configured with. The node process cwd is only a fallback for harnesses
+    // that predate `getCwd`.
+    const cwd =
+      typeof context.getCwd === 'function' ? context.getCwd() : process.cwd();
+
     const rawFilename = context.getFilename();
     const filename = rawFilename.replace(/\\/g, '/');
     const matchesTargetPath = targetPaths.some((pattern) => {
@@ -1365,7 +1380,8 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
       // suppressing the whole report — a sibling child that genuinely needs
       // composition still fires.
       const reportableDeps = depComponents.filter(
-        (dep) => !isPropLessImportedComponent(prog, dep, rawFilename, funcNode),
+        (dep) =>
+          !isPropLessImportedComponent(prog, dep, rawFilename, funcNode, cwd),
       );
       if (reportableDeps.length < minDependencyCount) {
         return;

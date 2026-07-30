@@ -86,6 +86,15 @@ export const testFileLocationEnforcement = createRule<Options, MessageIds>({
       ),
     ];
 
+    // Anchor the reported path at the directory ESLint was configured with, not
+    // the node process cwd. The two differ under the VS Code ESLint extension,
+    // in monorepos, and for any programmatic `new ESLint({ cwd })`, where
+    // reading the process cwd names the misplaced test by a path the reader
+    // cannot locate (issue #1476). The `typeof` guard keeps the rule working
+    // under harnesses that predate `getCwd`.
+    const cwd =
+      typeof context.getCwd === 'function' ? context.getCwd() : process.cwd();
+
     return {
       Program(node: TSESTree.Program) {
         const filename = context.getFilename();
@@ -115,7 +124,7 @@ export const testFileLocationEnforcement = createRule<Options, MessageIds>({
         }
 
         const relativePath = path.isAbsolute(filename)
-          ? path.relative(process.cwd(), filename) || filename
+          ? path.relative(cwd, filename) || filename
           : filename;
 
         // Naming the shortest prefix alongside the full stem keeps the guidance
