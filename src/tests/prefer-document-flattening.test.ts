@@ -1,12 +1,18 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { preferDocumentFlattening } from '../rules/prefer-document-flattening';
 
+type AddShouldFlattenSuggestion = {
+  messageId: 'addShouldFlatten';
+  output: string;
+};
+
 type PreferDocumentFlatteningError = {
   messageId: 'preferDocumentFlattening';
   data: {
     instanceName: string;
     className: 'DocSetter' | 'DocSetterTransaction';
   };
+  suggestions?: AddShouldFlattenSuggestion[];
 };
 
 const buildMessage = (
@@ -23,6 +29,27 @@ const errorsFor = (
     messageId: 'preferDocumentFlattening',
     data: { instanceName, className },
   },
+];
+
+/**
+ * Asserting the exact suggestion output makes RuleTester parse the fixed text,
+ * so a separator mistake (a doubled comma, a property swallowed by a comment)
+ * surfaces as a test failure instead of shipping unparsable autofixed code.
+ */
+const errorsWithSuggestions = (
+  instanceName: string,
+  suggestions: AddShouldFlattenSuggestion[],
+  className: 'DocSetter' | 'DocSetterTransaction' = 'DocSetter',
+): PreferDocumentFlatteningError[] => [
+  {
+    messageId: 'preferDocumentFlattening',
+    data: { instanceName, className },
+    suggestions,
+  },
+];
+
+const suggests = (output: string): AddShouldFlattenSuggestion[] => [
+  { messageId: 'addShouldFlatten', output },
 ];
 
 describe('prefer-document-flattening message', () => {
@@ -1163,6 +1190,310 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
         });
       `,
       errors: errorsFor('keyTypesSetter'),
+    },
+
+    // Test: options object with a trailing comma (the Prettier-formatted default)
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(walletCollection, {
+  batchManager,
+});
+
+await setter.set({
+  id,
+  roles: { owner: { id } },
+});
+`,
+      errors: errorsWithSuggestions(
+        'setter',
+        suggests(`
+const setter = new DocSetter<VirtualWallet>(walletCollection, {
+  batchManager, shouldFlatten: true
+});
+
+await setter.set({
+  id,
+  roles: { owner: { id } },
+});
+`),
+      ),
+    },
+
+    // Test: multiline options object without a trailing comma
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(walletCollection, {
+  batchManager
+});
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions(
+        'setter',
+        suggests(`
+const setter = new DocSetter<VirtualWallet>(walletCollection, {
+  batchManager, shouldFlatten: true
+});
+
+await setter.set({ id, roles: { owner: { id } } });
+`),
+      ),
+    },
+
+    // Test: single-line options object
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(walletCollection, { batchManager });
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions(
+        'setter',
+        suggests(`
+const setter = new DocSetter<VirtualWallet>(walletCollection, { batchManager, shouldFlatten: true });
+
+await setter.set({ id, roles: { owner: { id } } });
+`),
+      ),
+    },
+
+    // Test: single-line options object with a trailing comma
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(walletCollection, { batchManager, });
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions(
+        'setter',
+        suggests(`
+const setter = new DocSetter<VirtualWallet>(walletCollection, { batchManager, shouldFlatten: true });
+
+await setter.set({ id, roles: { owner: { id } } });
+`),
+      ),
+    },
+
+    // Test: empty options object has no property to anchor the insertion on
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(walletCollection, {});
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions(
+        'setter',
+        suggests(`
+const setter = new DocSetter<VirtualWallet>(walletCollection, { shouldFlatten: true });
+
+await setter.set({ id, roles: { owner: { id } } });
+`),
+      ),
+    },
+
+    // Test: options object whose last entry is a spread element
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(walletCollection, { ...options });
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions(
+        'setter',
+        suggests(`
+const setter = new DocSetter<VirtualWallet>(walletCollection, { ...options, shouldFlatten: true });
+
+await setter.set({ id, roles: { owner: { id } } });
+`),
+      ),
+    },
+
+    // Test: spread element followed by a trailing comma
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(walletCollection, {
+  batchManager,
+  ...options,
+});
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions(
+        'setter',
+        suggests(`
+const setter = new DocSetter<VirtualWallet>(walletCollection, {
+  batchManager,
+  ...options, shouldFlatten: true
+});
+
+await setter.set({ id, roles: { owner: { id } } });
+`),
+      ),
+    },
+
+    // Test: line comment after the last property must not swallow the addition
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(walletCollection, {
+  batchManager, // keep the batch
+});
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions(
+        'setter',
+        suggests(`
+const setter = new DocSetter<VirtualWallet>(walletCollection, {
+  batchManager, shouldFlatten: true // keep the batch
+});
+
+await setter.set({ id, roles: { owner: { id } } });
+`),
+      ),
+    },
+
+    // Test: line comment after a last property that has no trailing comma
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(walletCollection, {
+  batchManager // keep the batch
+});
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions(
+        'setter',
+        suggests(`
+const setter = new DocSetter<VirtualWallet>(walletCollection, {
+  batchManager, shouldFlatten: true // keep the batch
+});
+
+await setter.set({ id, roles: { owner: { id } } });
+`),
+      ),
+    },
+
+    // Test: block comment inside an otherwise empty options object
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(walletCollection, {/* no options */});
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions(
+        'setter',
+        suggests(`
+const setter = new DocSetter<VirtualWallet>(walletCollection, { shouldFlatten: true /* no options */});
+
+await setter.set({ id, roles: { owner: { id } } });
+`),
+      ),
+    },
+
+    // Test: no options argument at all
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(walletCollection);
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions(
+        'setter',
+        suggests(`
+const setter = new DocSetter<VirtualWallet>(walletCollection, { shouldFlatten: true });
+
+await setter.set({ id, roles: { owner: { id } } });
+`),
+      ),
+    },
+
+    // Test: argument list with a trailing comma and no options argument
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(
+  walletCollection,
+);
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions(
+        'setter',
+        suggests(`
+const setter = new DocSetter<VirtualWallet>(
+  walletCollection, { shouldFlatten: true }
+);
+
+await setter.set({ id, roles: { owner: { id } } });
+`),
+      ),
+    },
+
+    // Test: options passed by reference cannot be edited in place, so the
+    // violation is reported without a suggestion
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(walletCollection, options);
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions('setter', []),
+    },
+
+    // Test: an asserted options object is not an ObjectExpression argument, so
+    // the edit is declined rather than appended after the type assertion
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(walletCollection, {
+  batchManager,
+} as DocSetterOptions);
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions('setter', []),
+    },
+
+    // Test: spread arguments hide which position the options occupy
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(...args);
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions('setter', []),
+    },
+
+    // Test: no arguments leaves nowhere to anchor an options object
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>();
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions('setter', []),
+    },
+
+    // Test: DocSetterTransaction options object with a trailing comma
+    {
+      code: `
+const tx = new DocSetterTransaction<VirtualWallet>(walletCollection, {
+  transaction,
+  convertDate: true,
+});
+
+await tx.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions(
+        'tx',
+        suggests(`
+const tx = new DocSetterTransaction<VirtualWallet>(walletCollection, {
+  transaction,
+  convertDate: true, shouldFlatten: true
+});
+
+await tx.set({ id, roles: { owner: { id } } });
+`),
+        'DocSetterTransaction',
+      ),
     },
   ],
 });

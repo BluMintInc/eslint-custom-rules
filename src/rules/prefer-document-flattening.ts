@@ -1,7 +1,19 @@
-import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  AST_TOKEN_TYPES,
+  TSESLint,
+  TSESTree,
+} from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'preferDocumentFlattening' | 'addShouldFlatten';
+
+const SHOULD_FLATTEN_PROPERTY = 'shouldFlatten: true';
+const SHOULD_FLATTEN_OPTIONS = `{ ${SHOULD_FLATTEN_PROPERTY} }`;
+
+function isPunctuator(token: TSESTree.Token, value: string): boolean {
+  return token.type === AST_TOKEN_TYPES.Punctuator && token.value === value;
+}
 
 function isIdentifier(node: TSESTree.Node): node is TSESTree.Identifier {
   return node.type === AST_NODE_TYPES.Identifier;
@@ -21,6 +33,38 @@ function isObjectExpression(
 
 function isProperty(node: TSESTree.Node): node is TSESTree.Property {
   return node.type === AST_NODE_TYPES.Property;
+}
+
+/**
+ * Appends an entry to a comma-separated list by anchoring on its last element
+ * and deriving the separator from whatever already follows that element.
+ * Prettier formats multiline lists with a trailing comma, so prefixing a comma
+ * unconditionally yields `, ,` and a file that no longer parses. Shapes that
+ * end in neither a comma nor the expected closing punctuator are declined so a
+ * withheld suggestion is the worst outcome.
+ */
+function appendAfterLastEntry(
+  fixer: TSESLint.RuleFixer,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  lastEntry: TSESTree.Node,
+  closer: string,
+  text: string,
+): TSESLint.RuleFix | null {
+  const nextToken = sourceCode.getTokenAfter(lastEntry);
+  if (!nextToken) {
+    return null;
+  }
+
+  // Inserting after an existing trailing comma reuses it as the separator.
+  if (isPunctuator(nextToken, ',')) {
+    return fixer.insertTextAfter(nextToken, ` ${text}`);
+  }
+
+  if (isPunctuator(nextToken, closer)) {
+    return fixer.insertTextAfter(lastEntry, `, ${text}`);
+  }
+
+  return null;
 }
 
 /**
@@ -96,40 +140,75 @@ export const preferDocumentFlattening = createRule<[], MessageIds>({
     // Track which DocSetter instances are used to set nested objects
     const docSetterWithNestedObjects = new Set<string>();
 
+    const buildShouldFlattenFix = (
+      fixer: TSESLint.RuleFixer,
+      newExpr: TSESTree.NewExpression,
+    ): TSESLint.RuleFix | null => {
+      const sourceCode = context.getSourceCode();
+      const optionsArg =
+        newExpr.arguments.length >= 2 ? newExpr.arguments[1] : undefined;
+
+      if (optionsArg) {
+        // Options built elsewhere (a reference, a call, a spread) cannot gain a
+        // property through a textual edit at the call site.
+        if (!isObjectExpression(optionsArg)) {
+          return null;
+        }
+
+        const lastEntry =
+          optionsArg.properties[optionsArg.properties.length - 1];
+
+        if (!lastEntry) {
+          // An empty object offers no entry to anchor on, so the opening brace
+          // is the anchor; inserting after it preserves any enclosed comment.
+          const openBrace = sourceCode.getFirstToken(optionsArg);
+          if (!openBrace || !isPunctuator(openBrace, '{')) {
+            return null;
+          }
+          return fixer.insertTextAfter(
+            openBrace,
+            ` ${SHOULD_FLATTEN_PROPERTY} `,
+          );
+        }
+
+        // A spread element is not a Property, yet it anchors the insertion the
+        // same way because only its end position and the token after it matter.
+        return appendAfterLastEntry(
+          fixer,
+          sourceCode,
+          lastEntry,
+          '}',
+          SHOULD_FLATTEN_PROPERTY,
+        );
+      }
+
+      const lastArgument = newExpr.arguments[newExpr.arguments.length - 1];
+
+      // With no arguments, or with spread arguments, the position the options
+      // object belongs in is unknowable.
+      if (!lastArgument || lastArgument.type === AST_NODE_TYPES.SpreadElement) {
+        return null;
+      }
+
+      return appendAfterLastEntry(
+        fixer,
+        sourceCode,
+        lastArgument,
+        ')',
+        SHOULD_FLATTEN_OPTIONS,
+      );
+    };
+
     const buildSuggestion = (
       instance: DocSetterInstance,
     ): TSESLint.ReportSuggestionArray<MessageIds> => {
-      const newExpr = instance.node;
-      const hasOptionsArg = newExpr.arguments.length >= 2;
-      const optionsArg = hasOptionsArg ? newExpr.arguments[1] : undefined;
-
-      if (optionsArg && isObjectExpression(optionsArg)) {
-        const insertPos =
-          (optionsArg.range?.[1] ?? optionsArg.parent?.range?.[1] ?? 0) - 1;
-        const prefix = optionsArg.properties.length ? ', ' : '';
-        return [
-          {
-            messageId: 'addShouldFlatten',
-            fix(fixer: TSESLint.RuleFixer) {
-              return fixer.insertTextBeforeRange(
-                [insertPos, insertPos],
-                `${prefix}shouldFlatten: true`,
-              );
-            },
-          },
-        ];
-      }
-
-      const endPos =
-        (newExpr.range?.[1] ?? newExpr.parent?.range?.[1] ?? 0) - 1;
+      // ESLint drops a suggestion whose fix resolves to null, so the violation
+      // is still reported when no edit can be made confidently.
       return [
         {
           messageId: 'addShouldFlatten',
           fix(fixer: TSESLint.RuleFixer) {
-            return fixer.insertTextBeforeRange(
-              [endPos, endPos],
-              `${hasOptionsArg ? '' : ','} { shouldFlatten: true }`,
-            );
+            return buildShouldFlattenFix(fixer, instance.node);
           },
         },
       ];
