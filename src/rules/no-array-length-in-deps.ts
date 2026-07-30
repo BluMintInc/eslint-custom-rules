@@ -130,6 +130,143 @@ function findEnclosingFunction(node: TSESTree.Node): TSESTree.Node | null {
   return null;
 }
 
+type InsertionPoint = {
+  statement: TSESTree.Statement;
+  block: TSESTree.BlockStatement;
+};
+
+/**
+ * The memo declaration must land immediately before the statement containing
+ * the hook call, inside the innermost enclosing block. Module scope is never
+ * a valid target: useMemo is only legal inside a component/hook, and the
+ * tracked array is typically function-local, so a top-level insertion would
+ * reference an unbound variable and violate the rules of hooks.
+ */
+function findInsertionPoint(
+  node: TSESTree.CallExpression,
+): InsertionPoint | null {
+  const enclosingFunction = findEnclosingFunction(node);
+  if (!enclosingFunction) return null;
+  let current: TSESTree.Node = node;
+  while (current.parent) {
+    // Reaching the function before any block means an expression-bodied
+    // arrow: there is no statement position to hold the declaration.
+    if (current === enclosingFunction) return null;
+    const parent = current.parent as TSESTree.Node;
+    if (parent.type === AST_NODE_TYPES.BlockStatement) {
+      return { statement: current as TSESTree.Statement, block: parent };
+    }
+    current = parent;
+  }
+  return null;
+}
+
+/**
+ * Collects the identifiers a hoisted `stableHash(<base>)` expression would
+ * read: the root object of the member chain plus any computed keys. Property
+ * names are not variable references. Returns false for shapes that cannot be
+ * hoisted verbatim (this-expressions, calls, casts) so the fixer bails.
+ */
+function collectBaseReferences(
+  expr: TSESTree.Node,
+  out: TSESTree.Identifier[],
+): boolean {
+  switch (expr.type) {
+    case AST_NODE_TYPES.Identifier:
+      out.push(expr);
+      return true;
+    case AST_NODE_TYPES.MemberExpression:
+      if (!collectBaseReferences(expr.object, out)) return false;
+      if (expr.computed) return collectBaseReferences(expr.property, out);
+      return true;
+    case AST_NODE_TYPES.ChainExpression:
+      return collectBaseReferences(expr.expression, out);
+    case AST_NODE_TYPES.TSNonNullExpression:
+      return collectBaseReferences(expr.expression, out);
+    case AST_NODE_TYPES.Literal:
+      return true;
+    default:
+      return false;
+  }
+}
+
+/**
+ * A base is safe to memoize at the insertion point only when every variable
+ * it reads is provably bound there: declared in a scope that encloses the
+ * insertion block, and (for lexical declarations) positioned before the
+ * consuming statement so the hoisted read cannot hit the temporal dead zone.
+ * Unresolvable or ambient names are rejected — a report without a fix is
+ * always preferable to generated code that references an unbound variable.
+ */
+function isBaseSafeToHoist(
+  context: Readonly<TSESLint.RuleContext<MessageIds, Options>>,
+  baseExpr: TSESTree.Expression,
+  insertion: InsertionPoint,
+): boolean {
+  const identifiers: TSESTree.Identifier[] = [];
+  if (!collectBaseReferences(baseExpr, identifiers)) return false;
+  if (identifiers.length === 0) return false;
+
+  for (const identifier of identifiers) {
+    const scope = ASTHelpers.getScope(context, identifier);
+    const variable = ASTHelpers.findVariableInScope(scope, identifier.name);
+    if (!variable || variable.defs.length === 0) return false;
+
+    // Visibility: the variable's scope must enclose the insertion block.
+    // Because the insertion point shares the hook's scope chain, an enclosing
+    // scope here guarantees the same binding resolves at both positions.
+    const scopeBlock = variable.scope.block as TSESTree.Node;
+    if (!rangeContains(scopeBlock, insertion.block)) return false;
+
+    for (const def of variable.defs) {
+      if (def.type === 'Parameter' || def.type === 'ImportBinding') continue;
+      if (
+        def.type === 'FunctionName' &&
+        def.node.type === AST_NODE_TYPES.FunctionDeclaration
+      ) {
+        continue;
+      }
+      // Lexical declarations must precede the insertion point textually.
+      if (def.name.range[1] > insertion.statement.range[0]) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * An `eslint-disable-next-line` comment directly above the hook statement
+ * targets the hook, so the memo declaration must go above the comment —
+ * inserting between them would silently re-point the suppression at the memo.
+ */
+function findDeclarationAnchor(
+  sourceCode: TSESLint.SourceCode,
+  statement: TSESTree.Statement,
+): TSESTree.Statement | TSESTree.Comment {
+  let anchor: TSESTree.Statement | TSESTree.Comment = statement;
+  const comments = sourceCode.getCommentsBefore(statement);
+  for (let i = comments.length - 1; i >= 0; i--) {
+    const comment = comments[i];
+    if (
+      comment.loc.end.line === anchor.loc.start.line - 1 &&
+      /^\s*eslint-disable-next-line\b/.test(comment.value)
+    ) {
+      anchor = comment;
+    } else {
+      break;
+    }
+  }
+  return anchor;
+}
+
+function getAnchorIndent(
+  sourceCode: TSESLint.SourceCode,
+  anchor: TSESTree.Statement | TSESTree.Comment,
+): string {
+  const line = sourceCode.lines[anchor.loc.start.line - 1] ?? '';
+  const prefix = line.slice(0, anchor.loc.start.column);
+  return /^\s*$/.test(prefix) ? prefix : '';
+}
+
 function ensureWeakMapEntry<K extends object, V>(
   map: WeakMap<K, V>,
   key: K,
@@ -142,25 +279,71 @@ function ensureWeakMapEntry<K extends object, V>(
   return next;
 }
 
-function isUseMemoImported(sourceCode: TSESLint.SourceCode): boolean {
-  const program = sourceCode.ast;
-  for (const node of program.body) {
-    if (
+function getValueImports(
+  sourceCode: TSESLint.SourceCode,
+  source: string,
+): TSESTree.ImportDeclaration[] {
+  return sourceCode.ast.body.filter(
+    (node): node is TSESTree.ImportDeclaration =>
       node.type === AST_NODE_TYPES.ImportDeclaration &&
-      node.source.value === 'react'
-    ) {
-      for (const spec of node.specifiers) {
-        if (
-          spec.type === AST_NODE_TYPES.ImportSpecifier &&
-          spec.imported.type === AST_NODE_TYPES.Identifier &&
-          spec.imported.name === 'useMemo'
-        ) {
-          return true;
-        }
+      node.source.value === source &&
+      node.importKind !== 'type',
+  );
+}
+
+/**
+ * The generated code calls the helper by its canonical name, so an aliased
+ * specifier (`useMemo as um`) or a type-only specifier does not count — the
+ * value binding under the exact local name must exist.
+ */
+function hasNamedValueImport(
+  sourceCode: TSESLint.SourceCode,
+  source: string,
+  name: string,
+): boolean {
+  for (const declaration of getValueImports(sourceCode, source)) {
+    for (const spec of declaration.specifiers) {
+      if (
+        spec.type === AST_NODE_TYPES.ImportSpecifier &&
+        spec.importKind !== 'type' &&
+        spec.imported.type === AST_NODE_TYPES.Identifier &&
+        spec.imported.name === name &&
+        spec.local.name === name
+      ) {
+        return true;
       }
     }
   }
   return false;
+}
+
+/**
+ * Extends an existing import from `source` with `name` instead of prepending
+ * a duplicate declaration. Namespace-only imports cannot host a named
+ * specifier, so those fall through to a separate declaration (null).
+ */
+function buildImportExtensionFix(
+  fixer: TSESLint.RuleFixer,
+  sourceCode: TSESLint.SourceCode,
+  source: string,
+  name: string,
+): TSESLint.RuleFix | null {
+  for (const declaration of getValueImports(sourceCode, source)) {
+    const named = declaration.specifiers.filter(
+      (spec): spec is TSESTree.ImportSpecifier =>
+        spec.type === AST_NODE_TYPES.ImportSpecifier,
+    );
+    if (named.length > 0) {
+      return fixer.insertTextAfter(named[named.length - 1], `, ${name}`);
+    }
+    const defaultSpec = declaration.specifiers.find(
+      (spec) => spec.type === AST_NODE_TYPES.ImportDefaultSpecifier,
+    );
+    if (defaultSpec) {
+      return fixer.insertTextAfter(defaultSpec, `, { ${name} }`);
+    }
+  }
+  return null;
 }
 
 /**
@@ -248,31 +431,6 @@ function isLengthOnlyUsage(
   return bodyReferences.every((ref) => isLengthAccessOf(ref.identifier));
 }
 
-function isStableHashImported(
-  sourceCode: TSESLint.SourceCode,
-  hashSource: string,
-  hashImportName: string,
-): boolean {
-  const program = sourceCode.ast;
-  for (const node of program.body) {
-    if (
-      node.type === AST_NODE_TYPES.ImportDeclaration &&
-      node.source.value === hashSource
-    ) {
-      for (const spec of node.specifiers) {
-        if (
-          spec.type === AST_NODE_TYPES.ImportSpecifier &&
-          spec.imported.type === AST_NODE_TYPES.Identifier &&
-          spec.imported.name === hashImportName
-        ) {
-          return true;
-        }
-      }
-    }
-  }
-  return false;
-}
-
 export const noArrayLengthInDeps = createRule<Options, MessageIds>({
   name: 'no-array-length-in-deps',
   meta: {
@@ -313,10 +471,19 @@ export const noArrayLengthInDeps = createRule<Options, MessageIds>({
       importName: hashImport?.importName ?? DEFAULT_HASH_IMPORT.importName,
     };
 
-    // Track planned file-wide changes to avoid overlapping fixers
+    // Track planned file-wide changes to avoid overlapping fixers. Bases are
+    // deduplicated per insertion block: a memo declared in one block is not
+    // visible in a sibling block, so sharing across a whole function would
+    // strand references.
     let importsPlanned = false;
-    const perFuncDeclaredBases = new WeakMap<TSESTree.Node, Set<string>>();
-    const perFuncBaseToVar = new WeakMap<TSESTree.Node, Map<string, string>>();
+    const perBlockDeclaredBases = new WeakMap<
+      TSESTree.BlockStatement,
+      Set<string>
+    >();
+    const perBlockBaseToVar = new WeakMap<
+      TSESTree.BlockStatement,
+      Map<string, string>
+    >();
 
     return {
       CallExpression(node) {
@@ -362,17 +529,32 @@ export const noArrayLengthInDeps = createRule<Options, MessageIds>({
             dependencies,
           },
           fix(fixer) {
+            // All bail checks precede any shared-state mutation so a skipped
+            // fix cannot make a later fix believe imports or declarations are
+            // already handled.
+            const insertion = findInsertionPoint(node);
+            if (!insertion) return null;
+            for (const { member } of lengthDeps) {
+              if (
+                !isBaseSafeToHoist(
+                  context,
+                  getBaseExpression(member),
+                  insertion,
+                )
+              ) {
+                return null;
+              }
+            }
+
             const fixes: TSESLint.RuleFix[] = [];
-            const hostFn =
-              findEnclosingFunction(node) ?? (sourceCode.ast as TSESTree.Node);
             const declaredBases = ensureWeakMapEntry(
-              perFuncDeclaredBases,
-              hostFn,
+              perBlockDeclaredBases,
+              insertion.block,
               () => new Set<string>(),
             );
             const baseToVar = ensureWeakMapEntry(
-              perFuncBaseToVar,
-              hostFn,
+              perBlockBaseToVar,
+              insertion.block,
               () => new Map<string, string>(),
             );
 
@@ -393,85 +575,72 @@ export const noArrayLengthInDeps = createRule<Options, MessageIds>({
               }
             }
 
-            // Build declarations text (one per base)
+            // Build declaration lines (one per base) that land immediately
+            // before the statement consuming the hook, inside the same block
+            // as the tracked variable.
+            const anchor = findDeclarationAnchor(
+              sourceCode,
+              insertion.statement,
+            );
+            const indent = getAnchorIndent(sourceCode, anchor);
             let declText = '';
             for (const { member } of lengthDeps) {
               const baseExpr = getBaseExpression(member);
               const baseText = sourceCode.getText(baseExpr);
               if (!declaredBases.has(baseText)) {
                 const varName = baseToVar.get(baseText)!;
-                declText += `const ${varName} = useMemo(() => ${hashImportConfig.importName}(${baseText}), [${baseText}]);\n`;
+                declText += `const ${varName} = useMemo(() => ${hashImportConfig.importName}(${baseText}), [${baseText}]);\n${indent}`;
                 declaredBases.add(baseText);
               }
             }
             if (declText) {
-              // Add a blank line after declarations block
-              declText += `\n`;
+              fixes.push(fixer.insertTextBeforeRange(anchor.range, declText));
             }
 
-            // Determine import text and insertion strategy
-            const program = sourceCode.ast;
-            const importDecls = program.body.filter(
-              (n) => n.type === AST_NODE_TYPES.ImportDeclaration,
-            ) as TSESTree.ImportDeclaration[];
-
-            // Compute indentation based on the whitespace before the first token
-            const fullText = sourceCode.getText();
-            const prefixBeforeProgram = fullText.slice(0, program.range[0]);
-            const lastNewlineIndex = prefixBeforeProgram.lastIndexOf('\n');
-            const indent =
-              lastNewlineIndex >= 0
-                ? prefixBeforeProgram.slice(lastNewlineIndex + 1)
-                : prefixBeforeProgram;
-
-            let importText = '';
-            const needUseMemo = !isUseMemoImported(sourceCode);
-            const needStableHash = !isStableHashImported(
-              sourceCode,
-              hashImportConfig.source,
-              hashImportConfig.importName,
-            );
-            if (needUseMemo)
-              importText += `${indent}import { useMemo } from 'react';\n`;
-            if (needStableHash)
-              importText += `${indent}import { ${hashImportConfig.importName} } from '${hashImportConfig.source}';\n`;
-
-            if (importDecls.length === 0) {
-              // No existing imports. Normalize by removing leading whitespace and inserting at file start with no indentation.
-              if (declText || importText) {
-                // Build non-indented versions of import and decl blocks
-                let importTextNoIndent = '';
-                if (needUseMemo)
-                  importTextNoIndent += `import { useMemo } from 'react';\n`;
-                if (needStableHash)
-                  importTextNoIndent += `import { ${hashImportConfig.importName} } from '${hashImportConfig.source}';\n`;
-                const declNoIndent = declText;
-                const combined = `${importTextNoIndent}${
-                  importTextNoIndent && declNoIndent ? '\n' : ''
-                }${declNoIndent}`;
-                // Remove leading whitespace
-                fixes.push(fixer.replaceTextRange([0, program.range[0]], ''));
-                // Insert at column 0
-                fixes.push(fixer.insertTextBeforeRange([0, 0], combined));
+            if (!importsPlanned) {
+              const newImportLines: string[] = [];
+              if (!hasNamedValueImport(sourceCode, 'react', 'useMemo')) {
+                const extension = buildImportExtensionFix(
+                  fixer,
+                  sourceCode,
+                  'react',
+                  'useMemo',
+                );
+                if (extension) fixes.push(extension);
+                else newImportLines.push(`import { useMemo } from 'react';`);
+              }
+              if (
+                !hasNamedValueImport(
+                  sourceCode,
+                  hashImportConfig.source,
+                  hashImportConfig.importName,
+                )
+              ) {
+                const extension = buildImportExtensionFix(
+                  fixer,
+                  sourceCode,
+                  hashImportConfig.source,
+                  hashImportConfig.importName,
+                );
+                if (extension) fixes.push(extension);
+                else {
+                  newImportLines.push(
+                    `import { ${hashImportConfig.importName} } from '${hashImportConfig.source}';`,
+                  );
+                }
+              }
+              if (newImportLines.length > 0) {
+                const importText = `${newImportLines.join('\n')}\n`;
+                const firstImport = sourceCode.ast.body.find(
+                  (n) => n.type === AST_NODE_TYPES.ImportDeclaration,
+                );
+                if (firstImport) {
+                  fixes.push(fixer.insertTextBefore(firstImport, importText));
+                } else {
+                  fixes.push(fixer.insertTextBeforeRange([0, 0], importText));
+                }
               }
               importsPlanned = true;
-            } else {
-              // Existing imports present: insert missing import lines before the first import, and declarations after the last import
-              const firstImport = importDecls[0];
-              const lastImport = importDecls[importDecls.length - 1];
-              if (importText && !importsPlanned) {
-                fixes.push(fixer.insertTextBefore(firstImport, importText));
-                importsPlanned = true;
-              }
-              if (declText) {
-                const declWithIndent = declText
-                  .split('\n')
-                  .map((line) => (line ? `${indent}${line}` : line))
-                  .join('\n');
-                fixes.push(
-                  fixer.insertTextAfter(lastImport, `\n${declWithIndent}`),
-                );
-              }
             }
 
             // Replace each .length dep with the corresponding var name
