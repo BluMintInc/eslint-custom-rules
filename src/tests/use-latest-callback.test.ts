@@ -1,6 +1,8 @@
+import { Linter, Rule } from 'eslint';
 import { TSESLint } from '@typescript-eslint/utils';
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { useLatestCallback } from '../rules/use-latest-callback';
+import { verticallyGroupRelatedFunctions } from '../rules/vertically-group-related-functions';
 
 type RuleError = TSESLint.TestCaseError<'useLatestCallback'>;
 
@@ -988,5 +990,211 @@ const A = () => {
 };`,
       errors: errors(),
     },
+    // A useCallback nested inside another convertible useCallback cannot join
+    // the atomic fix (the outer rewrite re-emits its original text), so its
+    // conversion is blocked for this pass: the react import MUST survive so a
+    // later pass can still convert it (issue #1400 acceptance criterion).
+    {
+      code: `import { useCallback } from 'react';
+const A = () => {
+  const outer = useCallback(() => {
+    const inner = useCallback(() => { go(); }, []);
+    return inner;
+  }, []);
+  return <div onClick={outer} />;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { useCallback } from 'react';
+const A = () => {
+  const outer = useLatestCallback(() => {
+    const inner = useCallback(() => { go(); }, []);
+    return inner;
+  });
+  return <div onClick={outer} />;
+};`,
+      errors: errors('useCallback', 'useLatestCallback', 3),
+    },
   ],
+});
+
+// RuleTester asserts a single fix pass, but `eslint --fix` loops until stable
+// and interleaves fixes from OTHER rules. When another rule's fix wins the
+// call-site range, any separately-reported import rewrite would land alone and
+// permanently strand `useCallback(...)` without an import (issue #1400). These
+// cases assert the whole change set rides on one atomic fix and that the
+// multi-rule interaction converges.
+describe('use-latest-callback: atomic import+conversion fix (issue #1400)', () => {
+  const parserConfig = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2018 as const,
+      sourceType: 'module' as const,
+      ecmaFeatures: { jsx: true },
+    },
+  };
+
+  const createLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      'test/use-latest-callback',
+      useLatestCallback as unknown as Rule.RuleModule,
+    );
+    linter.defineRule(
+      'test/vertically-group-related-functions',
+      verticallyGroupRelatedFunctions as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  // The issue #1400 reproduction: callers-first ordering moves the block that
+  // holds the useCallback call, so the reorder fix overlaps the conversion.
+  const reorderRepro = `import { useState, useCallback } from 'react';
+
+function formatValue(n) {
+  return String(n);
+}
+
+function renderLabel(n) {
+  return formatValue(n);
+}
+
+export const useThing = () => {
+  const [count, setCount] = useState(0);
+
+  const onPress = useCallback(() => {
+    setCount((prev) => {
+      return prev + renderLabel(1).length;
+    });
+  }, []);
+
+  return { onPress };
+};
+`;
+
+  it('emits every edit on a single report so no partial fix can land', () => {
+    const linter = createLinter();
+    const messages = linter.verify(
+      reorderRepro,
+      {
+        ...parserConfig,
+        rules: { 'test/use-latest-callback': 'error' as const },
+      },
+      'useThing.ts',
+    );
+    expect(messages.length).toBeGreaterThan(0);
+    const fixCarrying = messages.filter((message) => message.fix);
+    expect(fixCarrying).toHaveLength(1);
+    const fix = fixCarrying[0].fix as Linter.LintMessage['fix'] & object;
+    // The one fix must contain BOTH halves of the change: the import rewrite
+    // and the call-site conversion (\b keeps useLatestCallback( from matching).
+    expect(fix.text).toContain(
+      "import useLatestCallback from 'use-latest-callback';",
+    );
+    expect(fix.text).toContain('useLatestCallback(');
+    expect(/\buseCallback\s*\(/.test(fix.text)).toBe(false);
+    // The merged range spans from the react import through the call site, so a
+    // conflict anywhere in between defers the WHOLE fix to the next pass.
+    const covered = reorderRepro.slice(fix.range[0], fix.range[1]);
+    expect(covered).toContain("from 'react'");
+    expect(covered).toContain('useCallback(');
+  });
+
+  it('converges alongside vertically-group-related-functions without stranding useCallback', () => {
+    const linter = createLinter();
+    const { output, messages } = linter.verifyAndFix(
+      reorderRepro,
+      {
+        ...parserConfig,
+        rules: {
+          'test/use-latest-callback': 'error' as const,
+          'test/vertically-group-related-functions': 'error' as const,
+        },
+      },
+      'useThing.ts',
+    );
+    const hasReactUseCallbackImport =
+      /import[^;]*\buseCallback\b[^;]*from\s*'react'/.test(output);
+    const strandedCalls =
+      /\buseCallback\s*\(/.test(output) && !hasReactUseCallbackImport;
+    expect(strandedCalls).toBe(false);
+    // Full convergence: the call is converted AND the import is rewritten.
+    expect(output).toContain(
+      "import useLatestCallback from 'use-latest-callback';",
+    );
+    expect(/\buseCallback\b/.test(output)).toBe(false);
+    expect(output).toContain('useLatestCallback(');
+    expect(messages).toHaveLength(0);
+  });
+
+  it('converts multiple useCallback calls and the import in one atomic pass', () => {
+    const multi = `import { useCallback } from 'react';
+export const useThing = (go) => {
+  const a = useCallback(() => { go(1); }, []);
+  const b = useCallback(() => { go(2); }, []);
+  const c = useCallback(() => { go(3); }, []);
+  return { a, b, c };
+};
+`;
+    const linter = createLinter();
+    const config = {
+      ...parserConfig,
+      rules: { 'test/use-latest-callback': 'error' as const },
+    };
+    const messages = linter.verify(multi, config, 'useThing.ts');
+    expect(messages.filter((message) => message.fix)).toHaveLength(1);
+
+    const { output, messages: remaining } = linter.verifyAndFix(
+      multi,
+      config,
+      'useThing.ts',
+    );
+    expect(output).toBe(`import useLatestCallback from 'use-latest-callback';
+export const useThing = (go) => {
+  const a = useLatestCallback(() => { go(1); });
+  const b = useLatestCallback(() => { go(2); });
+  const c = useLatestCallback(() => { go(3); });
+  return { a, b, c };
+};
+`);
+    expect(remaining).toHaveLength(0);
+  });
+
+  it('keeps the useCallback import when a nested conversion is blocked, then converges', () => {
+    const nested = `import { useCallback } from 'react';
+export const useThing = (go) => {
+  const outer = useCallback(() => {
+    const inner = useCallback(() => { go(); }, []);
+    return inner;
+  }, []);
+  return { outer };
+};
+`;
+    const linter = createLinter();
+    const config = {
+      ...parserConfig,
+      rules: { 'test/use-latest-callback': 'error' as const },
+    };
+    // Pass 1 leaves the react import in place because the blocked inner call
+    // still references it; the fix loop then converts it against fresh text.
+    const { output, messages } = linter.verifyAndFix(
+      nested,
+      config,
+      'useThing.ts',
+    );
+    const hasReactUseCallbackImport =
+      /import[^;]*\buseCallback\b[^;]*from\s*'react'/.test(output);
+    const strandedCalls =
+      /\buseCallback\s*\(/.test(output) && !hasReactUseCallbackImport;
+    expect(strandedCalls).toBe(false);
+    expect(output).toContain(
+      "import useLatestCallback from 'use-latest-callback';",
+    );
+    expect(/\buseCallback\s*\(/.test(output)).toBe(false);
+    expect(messages).toHaveLength(0);
+  });
 });

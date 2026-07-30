@@ -17,6 +17,7 @@ This rule:
 - Auto-fixes by importing from `use-latest-callback`, replacing the call site, and removing the dependency array.
 - Leaves JSX-returning callbacks and render-prop patterns alone because `useCallback` is the right tool for memoizing rendered output.
 - Removes the `useCallback` specifier from the `react` import only when every reference to it is converted. If a JSX-returning call — or any other use of the binding, such as `const cb = useCallback` — survives, the `react` import is kept untouched and the `use-latest-callback` import is added alongside it.
+- Emits the import rewrite and every call-site conversion as **one atomic fix** on a single report. When another rule's fix conflicts with any part of it in the same `--fix` pass, ESLint defers the whole conversion to the next pass instead of applying half of it, so the `useCallback` import can never be removed while a `useCallback(...)` call remains.
 - Skips files in `node_modules` for performance so third-party code is untouched.
 
 ### Mixed files
