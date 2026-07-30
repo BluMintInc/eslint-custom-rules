@@ -1,3 +1,23 @@
+## [1.20.33](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.32...v1.20.33) (2026-07-30)
+
+
+### Bug Fixes
+
+* **enforce-fieldpath-syntax-in-docsetter:** preserve comments and indentation by splicing only the properties that need flattening (closes [#1441](https://github.com/BluMintInc/eslint-custom-rules/issues/1441)) ([91e00d8](https://github.com/BluMintInc/eslint-custom-rules/commit/91e00d8d4170a2b3acfe73832a747b0a54e49249))
+* **enforce-firestore-set-merge:** import setDoc atomically with the rewrite and preserve aliased bindings (closes [#1439](https://github.com/BluMintInc/eslint-custom-rules/issues/1439)) ([30eef0f](https://github.com/BluMintInc/eslint-custom-rules/commit/30eef0f7d0a034186389947d8c728a3feaf8426d))
+* **enforce-microdiff:** decline the lodash difference rewrite instead of emitting an unbound diff with a comparator microdiff cannot accept (closes [#1437](https://github.com/BluMintInc/eslint-custom-rules/issues/1437)) ([6db4941](https://github.com/BluMintInc/eslint-custom-rules/commit/6db4941617547bc44623d16678d864574fef233d))
+* **enforce-microdiff:** resolve call sites through the scope chain so local shadows of competing imports are not rewritten (closes [#1450](https://github.com/BluMintInc/eslint-custom-rules/issues/1450)) ([16206ec](https://github.com/BluMintInc/eslint-custom-rules/commit/16206ec811fbd64574586d10810a2cea0112f0db))
+* **enforce-microdiff:** resolve name-only matches through the scope chain so locally-bound names are not flagged or rewritten (closes [#1449](https://github.com/BluMintInc/eslint-custom-rules/issues/1449)) ([3c7e05d](https://github.com/BluMintInc/eslint-custom-rules/commit/3c7e05d9f0e600af63e23071cee6a8e06d0f9acb))
+* **fast-deep-equal-over-microdiff:** preserve comments by splicing the callee and length tail instead of re-emitting the arguments (closes [#1442](https://github.com/BluMintInc/eslint-custom-rules/issues/1442)) ([31a616c](https://github.com/BluMintInc/eslint-custom-rules/commit/31a616c95ce582a4f1de231eeaf61da5cadcf42c))
+* **fast-deep-equal-over-microdiff:** remove the redundant declaration by node range so single-line shapes cannot produce overlapping fixes (closes [#1448](https://github.com/BluMintInc/eslint-custom-rules/issues/1448)) ([743bdf3](https://github.com/BluMintInc/eslint-custom-rules/commit/743bdf3c5e92adc6f050ea0898cec647ee9752ba))
+* **flatten-push-calls:** preserve comments attached to the merged arguments (closes [#1444](https://github.com/BluMintInc/eslint-custom-rules/issues/1444)) ([802a6b4](https://github.com/BluMintInc/eslint-custom-rules/commit/802a6b4969fa90254ee717846c8f034d0916a1af))
+* **no-unused-usestate:** require both bindings dead before reporting or removing a useState (closes [#1438](https://github.com/BluMintInc/eslint-custom-rules/issues/1438)) ([6a4d8a4](https://github.com/BluMintInc/eslint-custom-rules/commit/6a4d8a41705f0b68501fe5da1f63d95d7ec8e16f))
+* **prefer-spread-over-reassembly:** preserve comments on retained JSX attributes by splicing only the collapsed ones (closes [#1443](https://github.com/BluMintInc/eslint-custom-rules/issues/1443)) ([9334fe9](https://github.com/BluMintInc/eslint-custom-rules/commit/9334fe9da200a7b1976d530814e0c2acf22b57a8))
+* **prefer-usecallback-over-usememo-for-functions:** decline the fix when useMemo is not bound to react (closes [#1440](https://github.com/BluMintInc/eslint-custom-rules/issues/1440)) ([cbecc39](https://github.com/BluMintInc/eslint-custom-rules/commit/cbecc390a45c0ef4eb3e2d34d817b55f9c71177e))
+* **prefer-usecallback-over-usememo-for-functions:** preserve comments when unwrapping useMemo into useCallback (closes [#1447](https://github.com/BluMintInc/eslint-custom-rules/issues/1447)) ([9a73e51](https://github.com/BluMintInc/eslint-custom-rules/commit/9a73e51b1bb4178f57402ee8286916c3afdb1610))
+* **use-custom-memo:** preserve comments attached to surviving import specifiers (closes [#1445](https://github.com/BluMintInc/eslint-custom-rules/issues/1445)) ([e8a6660](https://github.com/BluMintInc/eslint-custom-rules/commit/e8a66607b8a9a9d116323486896f0d793080e116))
+* **use-latest-callback:** preserve comments attached to surviving import specifiers (closes [#1446](https://github.com/BluMintInc/eslint-custom-rules/issues/1446)) ([e456fdb](https://github.com/BluMintInc/eslint-custom-rules/commit/e456fdbd11cbc01b3e1bfaba1c1e00a740877c84))
+
 ## [1.20.32](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.31...v1.20.32) (2026-07-30)
 
 

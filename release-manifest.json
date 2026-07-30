@@ -1,5 +1,95 @@
 [
   {
+    "version": "1.20.33",
+    "date": "2026-07-30T14:50:36.025Z",
+    "rules": [
+      {
+        "name": "enforce-fieldpath-syntax-in-docsetter",
+        "changeType": "fix",
+        "issues": [
+          1441
+        ],
+        "summary": "preserve comments and indentation by splicing only the properties that need flattening (closes #1441)"
+      },
+      {
+        "name": "enforce-firestore-set-merge",
+        "changeType": "fix",
+        "issues": [
+          1439
+        ],
+        "summary": "import setDoc atomically with the rewrite and preserve aliased bindings (closes #1439)"
+      },
+      {
+        "name": "enforce-microdiff",
+        "changeType": "fix",
+        "issues": [
+          1437,
+          1449,
+          1450
+        ],
+        "summary": "resolve call sites through the scope chain so local shadows of competing imports are not rewritten (closes #1450); resolve name-only matches through the scope chain so locally-bound names are not flagged or rewritten (closes #1449); decline the lodash difference rewrite instead of emitting an unbound diff with a comparator microdiff cannot accept (closes #1437)"
+      },
+      {
+        "name": "fast-deep-equal-over-microdiff",
+        "changeType": "fix",
+        "issues": [
+          1442,
+          1448
+        ],
+        "summary": "remove the redundant declaration by node range so single-line shapes cannot produce overlapping fixes (closes #1448); preserve comments by splicing the callee and length tail instead of re-emitting the arguments (closes #1442)"
+      },
+      {
+        "name": "flatten-push-calls",
+        "changeType": "fix",
+        "issues": [
+          1444
+        ],
+        "summary": "preserve comments attached to the merged arguments (closes #1444)"
+      },
+      {
+        "name": "no-unused-usestate",
+        "changeType": "fix",
+        "issues": [
+          1438
+        ],
+        "summary": "require both bindings dead before reporting or removing a useState (closes #1438)"
+      },
+      {
+        "name": "prefer-spread-over-reassembly",
+        "changeType": "fix",
+        "issues": [
+          1443
+        ],
+        "summary": "preserve comments on retained JSX attributes by splicing only the collapsed ones (closes #1443)"
+      },
+      {
+        "name": "prefer-usecallback-over-usememo-for-functions",
+        "changeType": "fix",
+        "issues": [
+          1440,
+          1447
+        ],
+        "summary": "preserve comments when unwrapping useMemo into useCallback (closes #1447); decline the fix when useMemo is not bound to react (closes #1440)"
+      },
+      {
+        "name": "use-custom-memo",
+        "changeType": "fix",
+        "issues": [
+          1445
+        ],
+        "summary": "preserve comments attached to surviving import specifiers (closes #1445)"
+      },
+      {
+        "name": "use-latest-callback",
+        "changeType": "fix",
+        "issues": [
+          1446
+        ],
+        "summary": "preserve comments attached to surviving import specifiers (closes #1446)"
+      }
+    ]
+  },
+  {
     "version": "1.20.32",
     "date": "2026-07-30T12:36:24.525Z",
     "rules": [
