@@ -46,6 +46,21 @@ function isTournamentEqual(beforeTournament, tournament) {
 }
 ```
 
+```ts
+// A local definition owns its name, whatever a diff library calls its exports.
+function detailedDiff(a, b) {
+  return { added: [], removed: [] };
+}
+
+export const changes = detailedDiff(oldState, newState);
+```
+
+### Names are resolved, not matched
+
+Calls to `deepDiff`, `fastDiff`, `diffArrays`, and `detailedDiff` are reported only when the callee resolves through the scope chain to an import from one of the libraries this rule replaces (`deep-diff`, `fast-diff`, `diff`, `deep-object-diff`). A name bound to a local function, a variable, a parameter, or an import from any other module is the file's own — it is neither reported nor rewritten. An unbound name is left alone too, since renaming it to `diff` would only trade one unresolved name for another.
+
+Resolution keys on the local name a specifier binds, so `import { somethingElse as detailedDiff } from 'deep-object-diff'` is covered. An alias pointing the other way (`import { detailedDiff as dd } from 'deep-object-diff'`) is caught by the separate tracking of every specifier a competing library's import binds, which follows the local name regardless of what it is called.
+
 ## Autofix
 
 The fix retires a competing library's import declaration and rewrites its call sites to `diff`, reusing an existing `microdiff` import when the file already has one. It declines whenever the file binds `diff` to something else — a module-scope declaration the inserted import would redeclare, or a narrower shadow that would silently capture the rewritten call — so the report stands for the author to resolve the name clash deliberately.

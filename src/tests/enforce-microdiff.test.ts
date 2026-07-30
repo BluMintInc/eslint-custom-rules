@@ -117,6 +117,61 @@ function areObjectsEqual(obj1, obj2) {
   return isEqual(obj1, obj2);
 }`,
     },
+    // A local function that happens to carry a diff library's export name owes
+    // nothing to that library: the file uses no diff library at all.
+    {
+      code: `function detailedDiff(a, b) {
+  return { added: [], removed: [] };
+}
+
+export const changes = detailedDiff(oldState, newState);`,
+    },
+    // The same for a local arrow assigned to a const.
+    {
+      code: `const deepDiff = (a, b) => ({ ...a, ...b });
+
+export const merged = deepDiff(oldProps, newProps);`,
+    },
+    // A parameter shadows any library of the same name inside the function.
+    {
+      code: `function runComparison(fastDiff, oldItems, newItems) {
+  return fastDiff(oldItems, newItems);
+}`,
+    },
+    // An import of the same name from a module that is not a competing diff
+    // library — a project-local helper — is left alone.
+    {
+      code: `import { detailedDiff } from './utils/detailedDiff';
+
+export const changes = detailedDiff(oldState, newState);`,
+    },
+    // A class method reached through `this` carries the name without binding it.
+    {
+      code: `class ChangeTracker {
+  detailedDiff(oldState, newState) {
+    return { oldState, newState };
+  }
+
+  track(oldState, newState) {
+    return this.detailedDiff(oldState, newState);
+  }
+}`,
+    },
+    // An unbound name is not evidence of a diff library either, and renaming it
+    // to `diff` would only trade one unresolved name for another.
+    {
+      code: `export const changes = detailedDiff(oldState, newState);`,
+    },
+    // A module-scope function shadowed by nothing, called from a nested scope.
+    {
+      code: `function deepDiff(a, b) {
+  return [a, b];
+}
+
+export function compare(oldConfig, newConfig) {
+  return deepDiff(oldConfig, newConfig);
+}`,
+    },
   ],
   invalid: [
     // Using deep-diff
@@ -574,19 +629,113 @@ function isSameConfig(oldConfig, newConfig) {
       errors: [{ messageId: 'enforceMicrodiff' }],
     },
     {
-      // A call matched by name alone is renamed to `diff`, which the file's own
-      // binding would capture.
-      code: `const diff = 1;
+      // The name-only branch fires on a name a competing library binds under an
+      // export the import handler does not track by itself, and the call rename
+      // rides along with the import rewrite that makes `diff` resolvable.
+      code: `import { deepDiff } from 'deep-diff';
+
+function compareConfigs(oldConfig, newConfig) {
+  return deepDiff(oldConfig, newConfig);
+}`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'deep-diff' },
+        },
+        { messageId: 'enforceMicrodiff' },
+      ],
+      output: `import { diff } from 'microdiff';
+
+function compareConfigs(oldConfig, newConfig) {
+  return diff(oldConfig, newConfig);
+}`,
+    },
+    {
+      // The same for a default import of a competing library.
+      code: `import fastDiff from 'fast-diff';
+
+function findChanges(oldItems, newItems) {
+  return fastDiff(oldItems, newItems);
+}`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'fast-diff' },
+        },
+        { messageId: 'enforceMicrodiff' },
+      ],
+      output: `import { diff } from 'microdiff';
+
+function findChanges(oldItems, newItems) {
+  return diff(oldItems, newItems);
+}`,
+    },
+    {
+      // An alias renames the export away from the name-only list, so the call is
+      // caught by the imported-name tracking instead, and both paths land the
+      // same rewrite.
+      code: `import { detailedDiff as dd } from 'deep-object-diff';
+
+function compareObjects(oldObj, newObj) {
+  return dd(oldObj, newObj);
+}`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'deep-object-diff' },
+        },
+        { messageId: 'enforceMicrodiff' },
+      ],
+      output: `import { diff } from 'microdiff';
+
+function compareObjects(oldObj, newObj) {
+  return diff(oldObj, newObj);
+}`,
+    },
+    {
+      // An alias onto one of the name-only names still resolves to a competing
+      // library's import, so the call is rewritten with it.
+      code: `import { somethingElse as detailedDiff } from 'deep-object-diff';
+
+function compareObjects(oldObj, newObj) {
+  return detailedDiff(oldObj, newObj);
+}`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'deep-object-diff' },
+        },
+        { messageId: 'enforceMicrodiff' },
+      ],
+      output: `import { diff } from 'microdiff';
+
+function compareObjects(oldObj, newObj) {
+  return diff(oldObj, newObj);
+}`,
+    },
+    {
+      // A local binding of `diff` blocks the rename of a name-only call that
+      // does resolve to a competing library, so the import is reported and left
+      // in place alongside the call it binds.
+      code: `import { fastDiff } from 'fast-diff';
+const diff = 1;
 
 function run(objA, objB) {
   return fastDiff(objA, objB);
 }`,
-      output: `const diff = 1;
+      output: `import { fastDiff } from 'fast-diff';
+const diff = 1;
 
 function run(objA, objB) {
   return fastDiff(objA, objB);
 }`,
-      errors: [{ messageId: 'enforceMicrodiff' }],
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'fast-diff' },
+        },
+        { messageId: 'enforceMicrodiff' },
+      ],
     },
     {
       // A local `diff` binding changes nothing about the lodash path: it is
