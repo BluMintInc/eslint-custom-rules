@@ -1,3 +1,14 @@
+## [1.20.40](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.39...v1.20.40) (2026-07-30)
+
+
+### Bug Fixes
+
+* **avoid-utils-directory:** report the path relative to ESLint's cwd (closes [#1475](https://github.com/BluMintInc/eslint-custom-rules/issues/1475)) ([90dc87e](https://github.com/BluMintInc/eslint-custom-rules/commit/90dc87e5fbf4b867fad63c0bad1210bc5b821a42))
+* **enforce-assert-safe-object-key:** anchor the injected import at ESLint's cwd (closes [#1473](https://github.com/BluMintInc/eslint-custom-rules/issues/1473)) ([2dc6d3d](https://github.com/BluMintInc/eslint-custom-rules/commit/2dc6d3d878e42794ba76e3d2c6b57758287f3e97))
+* **enforce-dynamic-imports:** accept the helper modules this plugin's own fixers inject (closes [#1474](https://github.com/BluMintInc/eslint-custom-rules/issues/1474)) ([8e07cd7](https://github.com/BluMintInc/eslint-custom-rules/commit/8e07cd7a7cd4e53e9a096b0896187d1dbbf16936))
+* **require-props-composition:** resolve sibling components from ESLint's cwd ([3d2e2cc](https://github.com/BluMintInc/eslint-custom-rules/commit/3d2e2cc6376e493afcb3fe615e8c06ce925ba3c1))
+* **test-file-location-enforcement:** name the file relative to ESLint's cwd ([4eda6c4](https://github.com/BluMintInc/eslint-custom-rules/commit/4eda6c4e1fcb6f33bafaf5832fd9bc81a4cdce5e))
+
 ## [1.20.39](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.38...v1.20.39) (2026-07-30)
 
 

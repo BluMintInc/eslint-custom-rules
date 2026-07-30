@@ -1,5 +1,47 @@
 [
   {
+    "version": "1.20.40",
+    "date": "2026-07-30T23:29:30.176Z",
+    "rules": [
+      {
+        "name": "avoid-utils-directory",
+        "changeType": "fix",
+        "issues": [
+          1475
+        ],
+        "summary": "report the path relative to ESLint's cwd (closes #1475)"
+      },
+      {
+        "name": "enforce-assert-safe-object-key",
+        "changeType": "fix",
+        "issues": [
+          1473
+        ],
+        "summary": "anchor the injected import at ESLint's cwd (closes #1473)"
+      },
+      {
+        "name": "enforce-dynamic-imports",
+        "changeType": "fix",
+        "issues": [
+          1474
+        ],
+        "summary": "accept the helper modules this plugin's own fixers inject (closes #1474)"
+      },
+      {
+        "name": "require-props-composition",
+        "changeType": "fix",
+        "issues": [],
+        "summary": "resolve sibling components from ESLint's cwd"
+      },
+      {
+        "name": "test-file-location-enforcement",
+        "changeType": "fix",
+        "issues": [],
+        "summary": "name the file relative to ESLint's cwd"
+      }
+    ]
+  },
+  {
     "version": "1.20.39",
     "date": "2026-07-30T21:18:09.189Z",
     "rules": []
