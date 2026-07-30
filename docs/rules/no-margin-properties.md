@@ -22,19 +22,11 @@ Margin props push spacing outside a component and bypass MUI's container-control
 - Let the parent own separation between children by using `gap` or MUI's `spacing` prop on layout primitives (`Stack`, `Grid`, etc.).
 - Use `theme.spacing()` or spacing tokens so values stay on the shared spacing scale.
 
-## Options
+### Why there is no autofix
 
-This rule has no options.
-
-```json
-{
-  "@blumintinc/blumint/no-margin-properties": "error"
-}
-```
-
-This rule reports without fixing. #726 established that rewriting margins
-automatically risks unintended visual changes, so the violation is surfaced for a
-human to resolve.
+This rule reports without fixing, and takes no options. #726 established that
+rewriting margins automatically risks unintended visual changes, so a violation is
+surfaced for a human to resolve rather than rewritten.
 
 ## Examples
 
