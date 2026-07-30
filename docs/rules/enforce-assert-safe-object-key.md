@@ -71,6 +71,40 @@ const first = obj[id]; // left alone
 const second = obj[id]; // fixed, and carries the import
 ```
 
+### When the fix is withheld
+
+The fix wraps the key in a bare `assertSafe(...)` call and inserts
+`import { assertSafe } from '...';`. Both halves break when the name
+`assertSafe` already resolves to something else at the key access:
+
+- A module-scope `const`/`function`/`class` named `assertSafe`, or an import of
+  that name from another module, collides with the inserted import
+  (TS2440 / TS2300).
+- A shadowing parameter or block-scoped binding captures the emitted call with
+  **no** compile error at all, so the key is validated by the shadow rather
+  than by the helper.
+
+The rule resolves `assertSafe` through the scope chain at the key access and
+withholds the fix whenever the visible binding is anything other than a named
+`assertSafe` specifier imported from the configured helper module (a namespace
+or default import is a different value, so it counts as a collision too). The
+`useAssertSafe` report still fires; only the automated edit is skipped, leaving
+the clash for the author to resolve:
+
+```js
+const assertSafe = (key) => key; // a local of the same name
+
+const obj = { alpha: 1, beta: 2 };
+const value = obj[id]; // reported, but left untouched by --fix
+```
+
+A file that already imports the helper reuses that import instead of gaining a
+second one, whichever spelling it uses: `../../assertSafe` and
+`functions/src/util/assertSafe` resolve to one module. Because the imports are
+read from the AST when the fix is built rather than from traversal order, a key
+access that appears _before_ the import declaration does not add a duplicate
+either.
+
 ## Options
 
 - `assertSafeImportPath` (string, default: `functions/src/util/assertSafe`): the location of the `assertSafe` helper, given as a path anchored at the repo root (relative to the working directory eslint runs from). The fixer derives a specifier relative to the file being fixed from this value rather than emitting it verbatim, so the inserted import resolves from any nesting depth. Set this to your helper's repo-root-relative path when consuming the plugin outside BluMint.

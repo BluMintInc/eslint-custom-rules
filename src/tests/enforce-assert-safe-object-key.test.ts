@@ -876,6 +876,221 @@ const first = obj[id];
 const second = obj[assertSafe(id)];
       `,
     },
+    // ------------------------------------------------------------------
+    // Issue #1422: the fix inserts an import that binds `assertSafe`, so an
+    // existing binding of that name makes the edit wrong twice over — a
+    // module-scope declaration collides with the import (TS2440/TS2300), and
+    // a shadow at the fix site captures the emitted call with no compile
+    // error at all. The report stands; only the edit is withheld.
+    // ------------------------------------------------------------------
+    {
+      name: 'a module-scope const named assertSafe withholds the fix',
+      code: `
+const assertSafe = (key: string) => key;
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+const first = obj[id];
+      `,
+      errors: [lintError('id')],
+      output: null,
+    },
+    {
+      name: 'a function declaration named assertSafe withholds the fix',
+      code: `
+function assertSafe(key: string) { return key; }
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+const first = obj[String(id)];
+      `,
+      errors: [lintError('id')],
+      output: null,
+    },
+    {
+      name: 'a class declaration named assertSafe withholds the fix',
+      code: `
+class assertSafe {}
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+const first = obj[\`\${id}\`];
+      `,
+      errors: [lintError('id')],
+      output: null,
+    },
+    {
+      name: 'a named assertSafe import from another module withholds the fix',
+      code: `
+import { assertSafe } from 'functions/src/util/legacyAssertSafe';
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+const first = obj[id];
+      `,
+      errors: [lintError('id')],
+      output: null,
+    },
+    {
+      name: 'a namespace import named assertSafe withholds the fix',
+      code: `
+import * as assertSafe from 'functions/src/util/assertSafe';
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+const first = obj[id];
+      `,
+      errors: [lintError('id')],
+      output: null,
+    },
+    {
+      name: 'a default import named assertSafe withholds the fix',
+      code: `
+import assertSafe from 'functions/src/util/assertSafe';
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+const first = obj[id];
+      `,
+      errors: [lintError('id')],
+      output: null,
+    },
+    {
+      name: 'a type-only assertSafe import withholds the fix',
+      code: `
+import type { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+const first = obj[id];
+      `,
+      errors: [lintError('id')],
+      output: null,
+    },
+    {
+      name: 'a shadowing parameter named assertSafe withholds the fix at that site',
+      code: `
+const obj = { alpha: 1, beta: 2 };
+function lookup(assertSafe, id) {
+  return obj[id];
+}
+      `,
+      errors: [lintError('id')],
+      output: null,
+    },
+    {
+      name: 'a block-scoped assertSafe binding withholds the fix at that site',
+      code: `
+const obj = { alpha: 1, beta: 2 };
+function lookup(id) {
+  const assertSafe = (key) => key;
+  return obj[id];
+}
+      `,
+      errors: [lintError('id')],
+      output: null,
+    },
+    {
+      name: 'a shadowed site declines while an unshadowed site still carries the import',
+      code: `
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+function shadowed(assertSafe) {
+  return obj[id];
+}
+const outer = obj[id];
+      `,
+      errors: [lintError('id'), lintError('id')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+function shadowed(assertSafe) {
+  return obj[id];
+}
+const outer = obj[assertSafe(id)];
+      `,
+    },
+    {
+      name: 'an equivalent relative spelling of the helper import is reused',
+      filename: path.join(process.cwd(), 'functions/src/util/a/b/fixture.ts'),
+      code: `
+import { assertSafe } from '../../../util/assertSafe';
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+const first = obj[id];
+      `,
+      errors: [lintError('id')],
+      output: `
+import { assertSafe } from '../../../util/assertSafe';
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+const first = obj[assertSafe(id)];
+      `,
+    },
+    {
+      name: 'the repo-root spelling of the helper import is reused under an absolute filename',
+      filename: path.join(process.cwd(), 'functions/src/util/a/b/fixture.ts'),
+      code: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+const first = obj[id];
+      `,
+      errors: [lintError('id')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+const first = obj[assertSafe(id)];
+      `,
+    },
+    {
+      name: 'an aliased helper import leaves the name free, so the import is added',
+      code: `
+import { assertSafe as ensureSafe } from 'functions/src/util/assertSafe';
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+const first = obj[id];
+      `,
+      errors: [lintError('id')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+import { assertSafe as ensureSafe } from 'functions/src/util/assertSafe';
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+const first = obj[assertSafe(id)];
+      `,
+    },
+    {
+      name: 'a similarly named binding does not withhold the fix',
+      code: `
+const assertSafeKey = (key: string) => key;
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+const first = obj[id];
+      `,
+      errors: [lintError('id')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const assertSafeKey = (key: string) => key;
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+const first = obj[assertSafe(id)];
+      `,
+    },
+    {
+      name: 'the ordinary no-collision fix is byte-identical under the binding guard',
+      code: `
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+const first = obj[id];
+const second = obj[String(id)];
+const third = obj[\`\${id}\`];
+      `,
+      errors: [lintError('id'), lintError('id'), lintError('id')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+const first = obj[assertSafe(id)];
+const second = obj[assertSafe(id)];
+const third = obj[assertSafe(id)];
+      `,
+    },
   ],
 });
 
@@ -1037,5 +1252,92 @@ const second = obj[id];
 
     expect(countImports(output)).toBe(1);
     expect(output).toContain('const second = obj[assertSafe(id)];');
+  });
+});
+
+// Issue #1422: RuleTester stops after one fix pass, so it cannot show that a
+// withheld fix stays withheld. These cases run the real multi-pass fixer and
+// assert the invariant the bug violated: `assertSafe` is never declared twice.
+describe('enforce-assert-safe-object-key: an existing assertSafe binding (issue #1422)', () => {
+  const RULE_ID = '@blumintinc/blumint/enforce-assert-safe-object-key';
+  const IMPORT_LINE = `import { assertSafe } from 'functions/src/util/assertSafe';`;
+
+  const lint = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      enforceAssertSafeObjectKey as unknown as Rule.RuleModule,
+    );
+    const { output } = linter.verifyAndFix(
+      code,
+      {
+        parser: '@typescript-eslint/parser',
+        parserOptions: {
+          ecmaVersion: 2020 as const,
+          sourceType: 'module' as const,
+        },
+        rules: { [RULE_ID]: 'error' as const },
+      },
+      // A relative filename keeps the emitted specifier at its configured
+      // repo-root value, isolating these cases from specifier resolution.
+      'lookup.ts',
+    );
+    return output;
+  };
+
+  // Counts statements that BIND the name `assertSafe`; a call site or a
+  // parameter list merely mentioning it is not a declaration.
+  const countAssertSafeDeclarations = (output: string) =>
+    (
+      output.match(
+        /^\s*(?:import\s+assertSafe\b|import\s[^;]*\{[^}]*\bassertSafe\b[^}]*\}|(?:const|let|var)\s+assertSafe\b|function\s+assertSafe\b|class\s+assertSafe\b)/gm,
+      ) ?? []
+    ).length;
+
+  it('leaves a file whose module scope already declares assertSafe untouched', () => {
+    const code = `const assertSafe = (key) => key;
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+const first = obj[id];
+const second = obj[id];
+`;
+
+    expect(lint(code)).toBe(code);
+    expect(countAssertSafeDeclarations(lint(code))).toBe(1);
+  });
+
+  it('leaves a file importing assertSafe from another module untouched', () => {
+    const code = `import { assertSafe } from 'functions/src/util/legacyAssertSafe';
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+const first = obj[id];
+`;
+
+    expect(lint(code)).toBe(code);
+  });
+
+  it('fixes the unshadowed site only, with a single import', () => {
+    const output = lint(`const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+function shadowed(assertSafe) {
+  return obj[id];
+}
+const outer = obj[id];
+`);
+
+    expect(output).toBe(`${IMPORT_LINE}
+const obj = { alpha: 1, beta: 2 };
+const id = 'alpha';
+function shadowed(assertSafe) {
+  return obj[id];
+}
+const outer = obj[assertSafe(id)];
+`);
+    expect(countAssertSafeDeclarations(output)).toBe(1);
   });
 });
