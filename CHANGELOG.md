@@ -1,3 +1,10 @@
+## [1.20.39](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.38...v1.20.39) (2026-07-30)
+
+
+### Bug Fixes
+
+* **repo:** track only files inside the workspace in the agent change log (closes [#1469](https://github.com/BluMintInc/eslint-custom-rules/issues/1469)) ([69d6ebb](https://github.com/BluMintInc/eslint-custom-rules/commit/69d6ebb228645868160591e8c5238b8245bd285b))
+
 ## [1.20.38](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.37...v1.20.38) (2026-07-30)
 
 
