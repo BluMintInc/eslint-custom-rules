@@ -579,11 +579,12 @@ pushing each cycle), the maintainer or a human can run
 
 ### Release manifest + scope contract
 
-Each release emits a strict, published `release-manifest.json`
-(`version → [{rule, changeType, issues, summary}]`) via
-`scripts/generate-release-manifest.js` (a `@semantic-release/exec` prepareCmd).
-agora re-enables disabled rules from this map by exact rule name — so it MUST be
-trustworthy:
+Each release emits a strict, published `release-manifest.json` — an **array**
+of `{version, date, rules: [{name, changeType, issues, summary}]}` (newest
+first), via `scripts/generate-release-manifest.js` (a `@semantic-release/exec`
+prepareCmd). agora re-enables disabled rules by reading each entry's
+`rules[].name` verbatim (`sync-eslint-rules.ts`), so the key is `name`, not
+`rule`, and the manifest MUST be trustworthy:
 
 * **Every `fix`/`feat` commit's scope must be a real rule name** (one rule per
   commit). Enforced by the `blumint-rule-scope` rule in `commitlint.config.js`
