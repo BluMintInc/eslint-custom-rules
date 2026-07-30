@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.29",
+    "date": "2026-07-30T08:31:47.570Z",
+    "rules": [
+      {
+        "name": "global-const-style",
+        "changeType": "fix",
+        "issues": [
+          1418
+        ],
+        "summary": "exempt bare-identifier binding aliases (closes #1418)"
+      }
+    ]
+  },
+  {
     "version": "1.20.28",
     "date": "2026-07-30T07:59:36.776Z",
     "rules": [

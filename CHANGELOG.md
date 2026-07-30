@@ -1,3 +1,10 @@
+## [1.20.29](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.28...v1.20.29) (2026-07-30)
+
+
+### Bug Fixes
+
+* **global-const-style:** exempt bare-identifier binding aliases (closes [#1418](https://github.com/BluMintInc/eslint-custom-rules/issues/1418)) ([ae19434](https://github.com/BluMintInc/eslint-custom-rules/commit/ae19434c9ae76c4e2fc1911f941387c09303521c))
+
 ## [1.20.28](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.27...v1.20.28) (2026-07-30)
 
 
