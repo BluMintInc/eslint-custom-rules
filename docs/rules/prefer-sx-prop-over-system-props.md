@@ -72,8 +72,8 @@ Merged correctly into an existing `sx` object:
 
 ```js
 '@blumintinc/blumint/prefer-sx-prop-over-system-props': ['error', {
-  // MUI components to check (defaults to the list below)
-  components: ['Box', 'Stack', 'Typography', 'Grid', 'Paper', 'Container', ...],
+  // MUI components to check (replaces the default list documented below)
+  components: ['Box', 'Stack', 'Typography', 'Grid', 'Paper', 'Container'],
   // Additional props to never flag (merged with the built-in allowlist)
   allowedProps: [],
 }]
