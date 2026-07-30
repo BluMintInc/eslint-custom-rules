@@ -426,6 +426,71 @@ ruleTester.run('enforce-callback-memo', rule, {
         };
       `,
     },
+    // Valid: inline callback inside a JSX element built in a useMemo factory is
+    // already stabilized by the memo's dependency list
+    {
+      code: `
+        const Component = () => {
+          return <Dropdown trigger={useMemo(
+            () => <Button onClick={() => open(id)} />,
+            [id, open],
+          )} />;
+        };
+      `,
+    },
+    // Valid: same, with the memo hoisted to a variable
+    {
+      code: `
+        const Component = () => {
+          const trigger = useMemo(() => <Button onClick={() => open(id)} />, [id, open]);
+          return <Dropdown trigger={trigger} />;
+        };
+      `,
+    },
+    // Valid: deeply nested JSX built inside a useMemo factory, including rows
+    // produced by a map that runs while the memo evaluates
+    {
+      code: `
+        const Component = () => {
+          const list = useMemo(
+            () => (
+              <List>
+                {items.map((item) => (
+                  <Row key={item.id} onClick={() => select(item)} />
+                ))}
+              </List>
+            ),
+            [items, select],
+          );
+          return <Panel body={list} />;
+        };
+      `,
+    },
+    // Valid: namespaced and generic hook forms are memoization too
+    {
+      code: `
+        const Component = () => {
+          const trigger = React.useMemo<JSX.Element>(
+            () => <Button onClick={() => open(id)} />,
+            [id, open],
+          );
+          return <Dropdown trigger={trigger} />;
+        };
+      `,
+    },
+    // Valid: object prop containing a function is stable when the JSX is built
+    // inside a useMemo factory
+    {
+      code: `
+        const Component = () => {
+          const wizard = useMemo(
+            () => <Wizard config={{ onNext: () => goToStep(step + 1) }} />,
+            [step],
+          );
+          return <Dialog body={wizard} />;
+        };
+      `,
+    },
   ],
   invalid: [
     // Invalid: Inline function
@@ -1006,6 +1071,56 @@ ruleTester.run('enforce-callback-memo', rule, {
               )}
             </div>
           );
+        };
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: NOT inside any memo factory — still a violation
+    {
+      code: `
+        const Component = () => {
+          return <Dropdown trigger={<Button onClick={() => open(id)} />} />;
+        };
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: inline callback in a plain map callback, with no memo anywhere
+    {
+      code: `
+        const Component = () => {
+          return (
+            <List>
+              {items.map((item) => (
+                <Row key={item.id} onClick={() => select(item)} />
+              ))}
+            </List>
+          );
+        };
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: the render prop itself is not memoized, so it still reports even
+    // though the JSX it returns comes out of a useMemo
+    {
+      code: `
+        const Component = () => {
+          return (
+            <List
+              renderItem={(item) =>
+                useMemo(() => <Row onClick={() => select(item)} />, [item, select])
+              }
+            />
+          );
+        };
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: a useMemo lookalike memoizes nothing React tracks
+    {
+      code: `
+        const Component = () => {
+          const trigger = memoize(() => <Button onClick={() => open(id)} />);
+          return <Dropdown trigger={trigger} />;
         };
       `,
       errors: [{ messageId: 'enforceCallback' }],
