@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.28",
+    "date": "2026-07-30T07:59:36.776Z",
+    "rules": [
+      {
+        "name": "require-image-optimized",
+        "changeType": "fix",
+        "issues": [
+          1417
+        ],
+        "summary": "exempt the component's own implementation and decline unbound fixes (closes #1417)"
+      }
+    ]
+  },
+  {
     "version": "1.20.27",
     "date": "2026-07-30T06:36:11.493Z",
     "rules": [
