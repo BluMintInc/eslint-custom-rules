@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 import { createSuppressionChecker } from '../utils/disableDirectives';
 
 type MessageIds = 'requireMemoizeGetter';
@@ -10,6 +11,51 @@ const MEMOIZE_MODULES = new Set([
   MEMOIZE_PREFERRED_MODULE,
   'typescript-memoize',
 ]);
+const MEMOIZE_NAME = 'Memoize';
+
+/**
+ * A named specifier that binds `Memoize` under its own name — the only shape
+ * that makes a bare `@Memoize()` decorator resolve to the decorator factory. An
+ * alias (`import { Memoize as Cache }`) leaves the name free for the injected
+ * import, and a type-only specifier erases at compile time, so neither backs a
+ * value reference.
+ */
+function isMemoizeSpecifier(
+  specifier: TSESTree.Node,
+): specifier is TSESTree.ImportSpecifier {
+  return (
+    specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+    specifier.importKind !== 'type' &&
+    specifier.imported.type === AST_NODE_TYPES.Identifier &&
+    specifier.imported.name === MEMOIZE_NAME &&
+    specifier.local.name === MEMOIZE_NAME
+  );
+}
+
+/**
+ * Whether every declaration of a visible `Memoize` binding is a value import of
+ * the decorator itself. A local const/function/class, an enclosing class of the
+ * same name, a parameter, a namespace or default import, or a named import from
+ * any other module all mean the emitted `@Memoize()` would resolve somewhere
+ * other than the decorator factory.
+ */
+function bindsMemoize(variable: TSESLint.Scope.Variable): boolean {
+  return (
+    variable.defs.length > 0 &&
+    variable.defs.every((def) => {
+      const specifier = def.node as TSESTree.Node;
+      if (!isMemoizeSpecifier(specifier)) {
+        return false;
+      }
+      const declaration = specifier.parent;
+      return (
+        declaration?.type === AST_NODE_TYPES.ImportDeclaration &&
+        declaration.importKind !== 'type' &&
+        MEMOIZE_MODULES.has(String(declaration.source.value))
+      );
+    })
+  );
+}
 
 function isMemoizeDecorator(
   decorator: TSESTree.Decorator,
@@ -67,10 +113,6 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
     }
 
     const sourceCode = context.getSourceCode();
-    let hasMemoizeImport = false;
-    let memoizeAlias = 'Memoize';
-    let memoizeNamespace: string | null = null;
-    let hasNamedImport = false;
     let scheduledImportFix = false;
 
     /**
@@ -81,27 +123,62 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
      */
     const isReportSuppressed = createSuppressionChecker(context);
 
-    return {
-      ImportDeclaration(node: TSESTree.ImportDeclaration) {
-        if (MEMOIZE_MODULES.has(String(node.source.value))) {
-          for (const spec of node.specifiers) {
-            if (
-              spec.type === AST_NODE_TYPES.ImportSpecifier &&
-              spec.imported.name === 'Memoize'
-            ) {
-              hasMemoizeImport = true;
-              hasNamedImport = true;
-              memoizeAlias = spec.local.name;
-            } else if (spec.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
-              hasMemoizeImport = true;
-              if (!hasNamedImport) {
-                memoizeNamespace = spec.local.name;
-              }
+    /**
+     * The memoize import the file already carries: the local name of a named
+     * `Memoize` specifier, or the local name of a namespace import.
+     *
+     * Read off `Program.body` rather than accumulated by an `ImportDeclaration`
+     * visitor, because a class that precedes the import declaration in source
+     * order is visited — and fixed — before that visitor runs, and would be
+     * judged against state recorded for no import at all. The AST is fixed for
+     * the pass, so a single scan serves every violation.
+     */
+    const readMemoizeImports = () => {
+      let hasMemoizeImport = false;
+      let memoizeAlias = MEMOIZE_NAME;
+      let memoizeNamespace: string | null = null;
+      let hasNamedImport = false;
+      for (const statement of sourceCode.ast.body) {
+        if (statement.type !== AST_NODE_TYPES.ImportDeclaration) {
+          continue;
+        }
+        if (!MEMOIZE_MODULES.has(String(statement.source.value))) {
+          continue;
+        }
+        for (const spec of statement.specifiers) {
+          if (
+            spec.type === AST_NODE_TYPES.ImportSpecifier &&
+            spec.imported.type === AST_NODE_TYPES.Identifier &&
+            spec.imported.name === MEMOIZE_NAME
+          ) {
+            hasMemoizeImport = true;
+            hasNamedImport = true;
+            memoizeAlias = spec.local.name;
+          } else if (spec.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
+            hasMemoizeImport = true;
+            if (!hasNamedImport) {
+              memoizeNamespace = spec.local.name;
             }
           }
         }
-      },
+      }
+      return {
+        hasMemoizeImport,
+        memoizeAlias,
+        memoizeNamespace,
+        hasNamedImport,
+      };
+    };
 
+    let memoizeImportCache: ReturnType<typeof readMemoizeImports> | null = null;
+    const memoizeImports = () => {
+      if (!memoizeImportCache) {
+        memoizeImportCache = readMemoizeImports();
+      }
+      return memoizeImportCache;
+    };
+
+    return {
       MethodDefinition(node: TSESTree.MethodDefinition) {
         // Target: instance private getters
         if (node.kind !== 'get') return;
@@ -110,8 +187,17 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
         // enforce only "private" accessibility (undefined => public)
         if (node.accessibility !== 'private') return;
 
+        const {
+          hasMemoizeImport,
+          memoizeAlias,
+          memoizeNamespace,
+          hasNamedImport,
+        } = memoizeImports();
+
         const decoratorAliases =
-          memoizeAlias === 'Memoize' ? ['Memoize'] : ['Memoize', memoizeAlias];
+          memoizeAlias === MEMOIZE_NAME
+            ? [MEMOIZE_NAME]
+            : [MEMOIZE_NAME, memoizeAlias];
         const hasDecorator = node.decorators?.some((decorator) =>
           decoratorAliases.some((alias) =>
             isMemoizeDecorator(decorator, alias),
@@ -149,6 +235,28 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
               return memoizeAlias;
             };
             const decoratorIdent = getDecoratorIdent();
+
+            // Resolve `Memoize` through the scope chain at the fixed node
+            // whenever the edit spells the decorator bare. A binding that is
+            // not a memoize import breaks the edit two ways: the injected
+            // import collides with a module-scope declaration (TS2440, or
+            // TS2300 when the binding is itself an import), and a shadowing
+            // parameter or block-scoped binding captures the emitted decorator
+            // with no compile error at all. Declining leaves the report
+            // standing so the author resolves the clash deliberately.
+            //
+            // An alias or namespace decorator (`@Cache()`, `@ns.Memoize()`)
+            // neither references the bare name nor injects the import, so it is
+            // unaffected by a `Memoize` binding and must not be declined.
+            if (decoratorIdent === MEMOIZE_NAME) {
+              const existing = ASTHelpers.findVariableInScope(
+                ASTHelpers.getScope(context, node),
+                MEMOIZE_NAME,
+              );
+              if (existing && !bindsMemoize(existing)) {
+                return null;
+              }
+            }
 
             // Insert import if needed, at the top alongside other imports
             if (!hasMemoizeImport && !scheduledImportFix) {
