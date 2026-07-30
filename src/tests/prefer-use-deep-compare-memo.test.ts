@@ -186,6 +186,162 @@ import { useMemo } from 'react';
 const v = useDeepCompareMemo(() => 1, [{ a: 1 }, 2]);
 `,
       },
+      // A pre-existing `useDeepCompareMemo` binding makes the import unsafe to
+      // insert, so the violation is reported without an autofix.
+      {
+        code: `
+const useDeepCompareMemo = undefined as unknown as never;
+
+import { useMemo } from 'react';
+const v = useMemo(() => 1, [{ a: 1 }, 2]);
+`,
+        output: `
+const useDeepCompareMemo = undefined as unknown as never;
+
+import { useMemo } from 'react';
+const v = useMemo(() => 1, [{ a: 1 }, 2]);
+`,
+        errors: [error],
+      },
+      // Declining the insertion must also withhold the useMemo specifier
+      // removal: a member call leaves the named import unreferenced, so the
+      // unguarded fix stripped it while the call site still spelled useMemo.
+      {
+        code: `
+import React, { useMemo } from 'react';
+const useDeepCompareMemo = 1;
+const v = React.useMemo(() => 1, [{ a: 1 }, 2]);
+`,
+        output: `
+import React, { useMemo } from 'react';
+const useDeepCompareMemo = 1;
+const v = React.useMemo(() => 1, [{ a: 1 }, 2]);
+`,
+        errors: [error],
+      },
+      // A function declaration binding the name collides just as a const does.
+      {
+        code: `
+import { useMemo } from 'react';
+function useDeepCompareMemo(factory: () => number, deps: unknown[]) {
+  return factory();
+}
+const v = useMemo(() => 1, [{ a: 1 }, 2]);
+`,
+        output: `
+import { useMemo } from 'react';
+function useDeepCompareMemo(factory: () => number, deps: unknown[]) {
+  return factory();
+}
+const v = useMemo(() => 1, [{ a: 1 }, 2]);
+`,
+        errors: [error],
+      },
+      // A named import of the same name from another module resolves to a
+      // different value, so the rewritten call would change meaning.
+      {
+        code: `
+import { useDeepCompareMemo } from 'other-package';
+import { useMemo } from 'react';
+const v = useMemo(() => 1, [{ a: 1 }, 2]);
+`,
+        output: `
+import { useDeepCompareMemo } from 'other-package';
+import { useMemo } from 'react';
+const v = useMemo(() => 1, [{ a: 1 }, 2]);
+`,
+        errors: [error],
+      },
+      // A type-only import binds the name without binding a callable value.
+      {
+        code: `
+import type { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+import { useMemo } from 'react';
+const v = useMemo(() => 1, [{ a: 1 }, 2]);
+export type Hook = typeof useDeepCompareMemo;
+`,
+        output: `
+import type { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+import { useMemo } from 'react';
+const v = useMemo(() => 1, [{ a: 1 }, 2]);
+export type Hook = typeof useDeepCompareMemo;
+`,
+        errors: [error],
+      },
+      // A shadow narrower than the call site raises no TypeScript diagnostic,
+      // so an unguarded rewrite would silently call the parameter.
+      {
+        code: `
+import { useMemo } from 'react';
+function build(useDeepCompareMemo: (factory: () => number) => number) {
+  return useMemo(() => 1, [{ a: 1 }, 2]);
+}
+`,
+        output: `
+import { useMemo } from 'react';
+function build(useDeepCompareMemo: (factory: () => number) => number) {
+  return useMemo(() => 1, [{ a: 1 }, 2]);
+}
+`,
+        errors: [error],
+      },
+      // The hook's own import is the binding the fix intends to emit, so its
+      // presence reuses the import rather than declining.
+      {
+        code: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+import { useMemo } from 'react';
+const a = useDeepCompareMemo(() => 2, [{ b: 2 }]);
+const v = useMemo(() => 1, [{ a: 1 }, 2]);
+`,
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+import { useMemo } from 'react';
+const a = useDeepCompareMemo(() => 2, [{ b: 2 }]);
+const v = useDeepCompareMemo(() => 1, [{ a: 1 }, 2]);
+`,
+        errors: [error],
+      },
+      // An aliased hook import leaves `useDeepCompareMemo` unbound, so the
+      // rewritten call needs its own specifier to resolve.
+      {
+        code: `
+import { useDeepCompareMemo as deepMemo } from '@blumintinc/use-deep-compare';
+import { useMemo } from 'react';
+const a = deepMemo(() => 2, [{ b: 2 }]);
+const v = useMemo(() => 1, [{ a: 1 }, 2]);
+`,
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+import { useDeepCompareMemo as deepMemo } from '@blumintinc/use-deep-compare';
+import { useMemo } from 'react';
+const a = deepMemo(() => 2, [{ b: 2 }]);
+const v = useDeepCompareMemo(() => 1, [{ a: 1 }, 2]);
+`,
+        errors: [error],
+      },
+      // A block-scoped binding that never reaches the call site leaves the name
+      // free, so the fix applies unchanged.
+      {
+        code: `
+import { useMemo } from 'react';
+function unrelated() {
+  const useDeepCompareMemo = 1;
+  return useDeepCompareMemo;
+}
+const v = useMemo(() => 1, [{ a: 1 }, 2]);
+`,
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+import { useMemo } from 'react';
+function unrelated() {
+  const useDeepCompareMemo = 1;
+  return useDeepCompareMemo;
+}
+const v = useDeepCompareMemo(() => 1, [{ a: 1 }, 2]);
+`,
+        errors: [error],
+      },
     ],
   },
 );

@@ -1,5 +1,9 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
+
+const DEEP_COMPARE_MODULE = '@blumintinc/use-deep-compare';
+const DEEP_COMPARE_HOOK = 'useDeepCompareMemo';
 
 // Consider these as memoizing hooks producing stable references
 const MEMOIZING_HOOKS = new Set([
@@ -166,6 +170,60 @@ function collectMemoizedIdentifiers(
   return memoized;
 }
 
+/**
+ * A specifier that binds the hook as a callable value under the exact name the
+ * rewritten call spells. An alias binds the hook to some other name, leaving
+ * `useDeepCompareMemo` unresolvable, and a type-only specifier erases at
+ * compile time, so neither can carry the call.
+ */
+function bindsDeepCompareMemo(specifier: TSESTree.ImportClause): boolean {
+  return (
+    specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+    specifier.importKind !== 'type' &&
+    specifier.imported.type === AST_NODE_TYPES.Identifier &&
+    specifier.imported.name === DEEP_COMPARE_HOOK &&
+    specifier.local.name === DEEP_COMPARE_HOOK
+  );
+}
+
+/**
+ * The hook's import read off `Program.body` rather than off a flag set by an
+ * ImportDeclaration visitor, so the answer holds under multi-pass `--fix`
+ * wherever the import sits relative to the fix site.
+ */
+function findDeepCompareMemoImport(
+  program: TSESTree.Program,
+): TSESTree.ImportClause | null {
+  for (const statement of program.body) {
+    if (
+      statement.type !== AST_NODE_TYPES.ImportDeclaration ||
+      statement.source.value !== DEEP_COMPARE_MODULE ||
+      (statement.importKind && statement.importKind !== 'value')
+    ) {
+      continue;
+    }
+    const specifier = statement.specifiers.find(bindsDeepCompareMemo);
+    if (specifier) return specifier;
+  }
+  return null;
+}
+
+/**
+ * Whether the visible `useDeepCompareMemo` binding is the very import this fix
+ * would otherwise insert. Reusing that binding is the intended path; any other
+ * binding of the name belongs to the file's author.
+ */
+function bindsHookImport(
+  variable: TSESLint.Scope.Variable,
+  hookImport: TSESTree.ImportClause | null,
+): boolean {
+  return (
+    hookImport !== null &&
+    variable.defs.length > 0 &&
+    variable.defs.every((def) => def.node === hookImport)
+  );
+}
+
 function ensureDeepCompareImportFixes(
   context: TSESLint.RuleContext<'preferUseDeepCompareMemo', []>,
   fixer: TSESLint.RuleFixer,
@@ -175,18 +233,7 @@ function ensureDeepCompareImportFixes(
   const program = sourceCode.ast;
 
   // If already imported anywhere, skip adding
-  const hasImport = program.body.some(
-    (n) =>
-      n.type === AST_NODE_TYPES.ImportDeclaration &&
-      n.source.value === '@blumintinc/use-deep-compare' &&
-      n.specifiers.some(
-        (s) =>
-          s.type === AST_NODE_TYPES.ImportSpecifier &&
-          s.imported.type === AST_NODE_TYPES.Identifier &&
-          s.imported.name === 'useDeepCompareMemo',
-      ),
-  );
-  if (hasImport) return fixes;
+  if (findDeepCompareMemoImport(program)) return fixes;
 
   // Determine insertion point and indentation
   const importDecls = program.body.filter(
@@ -444,6 +491,11 @@ export const preferUseDeepCompareMemo = createRule<[], MessageIds>({
 
         if (!hasUnmemoizedNonPrimitive) return;
 
+        // Captured during traversal because the fix runs afterwards, when an
+        // ESLint version lacking sourceCode.getScope can only report the
+        // global scope and would miss a narrower shadow.
+        const scope = ASTHelpers.getScope(context, node);
+
         context.report({
           node,
           messageId: 'preferUseDeepCompareMemo',
@@ -451,6 +503,28 @@ export const preferUseDeepCompareMemo = createRule<[], MessageIds>({
             hook: 'useMemo',
           },
           fix(fixer) {
+            // Resolve the emitted name through the scope chain at the call
+            // site. A binding that is not this fix's own import makes the edit
+            // wrong twice over: the inserted import declares the name a second
+            // time (TS2440/TS2300), and a shadowing parameter or local silently
+            // routes the call to the wrong value with no diagnostic at all.
+            // Declining leaves the report so the author migrates deliberately —
+            // including the useMemo specifier removal below, which would
+            // otherwise strip an import the untouched call site still needs.
+            const existing = ASTHelpers.findVariableInScope(
+              scope,
+              DEEP_COMPARE_HOOK,
+            );
+            if (
+              existing &&
+              !bindsHookImport(
+                existing,
+                findDeepCompareMemoImport(context.sourceCode.ast),
+              )
+            ) {
+              return null;
+            }
+
             const fixes: TSESLint.RuleFix[] = [];
 
             // Replace callee
