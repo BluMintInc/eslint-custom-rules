@@ -1,5 +1,9 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
+
+const NEXT_DYNAMIC_MODULE = 'next/dynamic';
+const DEFAULT_DYNAMIC_NAME = 'dynamic';
 
 type MessageIds =
   | 'preferNextDynamic'
@@ -145,7 +149,7 @@ function findUseDynamicImport(
 
 function getNextDynamicLocalName(program: TSESTree.Program): string | null {
   for (const imp of getImportDeclarations(program)) {
-    if (imp.source.value === 'next/dynamic') {
+    if (imp.source.value === NEXT_DYNAMIC_MODULE) {
       const def = imp.specifiers.find(
         (s) => s.type === AST_NODE_TYPES.ImportDefaultSpecifier,
       ) as TSESTree.ImportDefaultSpecifier | undefined;
@@ -153,6 +157,29 @@ function getNextDynamicLocalName(program: TSESTree.Program): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Whether every declaration of a visible binding is the `next/dynamic` default
+ * import itself. A local variable, a function declaration, a parameter, or an
+ * import from any other module all mean the emitted call would resolve
+ * somewhere other than Next.js's `dynamic`.
+ */
+function bindsNextDynamicDefault(variable: TSESLint.Scope.Variable): boolean {
+  return (
+    variable.defs.length > 0 &&
+    variable.defs.every((def) => {
+      const specifier = def.node as TSESTree.Node;
+      if (specifier.type !== AST_NODE_TYPES.ImportDefaultSpecifier) {
+        return false;
+      }
+      const declaration = specifier.parent;
+      return (
+        declaration?.type === AST_NODE_TYPES.ImportDeclaration &&
+        declaration.source.value === NEXT_DYNAMIC_MODULE
+      );
+    })
+  );
 }
 
 function buildDynamicReplacement(
@@ -331,10 +358,29 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
           fix(fixer) {
             const fixes: TSESLint.RuleFix[] = [];
 
-            // ensure dynamic import is present
+            // Read the import off Program.body rather than a traversal flag so
+            // the decision stays correct across the re-lints of a multi-pass
+            // `--fix`, where an earlier pass may already have inserted it.
             const programNode = program;
             let dynamicLocal = getNextDynamicLocalName(programNode);
             const hasDynamic = !!dynamicLocal;
+
+            // Resolve the identifier the replacement will emit through the
+            // scope chain at the fix site. Any binding that is not the
+            // `next/dynamic` default import makes the edit wrong: an inserted
+            // import collides with a same-named declaration (TS2440/TS2300),
+            // and a narrower-scope shadow silently binds the emitted call to
+            // the shadow with no TypeScript diagnostic at all. Declining leaves
+            // the report for the author to resolve deliberately.
+            const emittedName = dynamicLocal ?? DEFAULT_DYNAMIC_NAME;
+            const existing = ASTHelpers.findVariableInScope(
+              ASTHelpers.getScope(context, init),
+              emittedName,
+            );
+            if (existing && !bindsNextDynamicDefault(existing)) {
+              return null;
+            }
+
             if (!hasDynamic) {
               // Insert after directive prologue (e.g., "use client")
               const insertionIndex = programNode.body.findIndex((stmt) => {

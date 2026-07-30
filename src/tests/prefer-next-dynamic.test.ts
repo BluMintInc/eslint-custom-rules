@@ -244,6 +244,98 @@ const EmojiPicker = dynamic(
 );
 const App = () => <EmojiPicker/>;`,
     },
+    // A pre-existing `dynamic` binding makes the import unsafe to insert, so the
+    // violation is reported without an autofix.
+    {
+      code: `
+const dynamic = undefined as unknown as never;
+import { useDynamic } from '@org/useDynamic';
+const EmojiPicker = useDynamic(import('@emoji-mart/react'));
+const App = () => <EmojiPicker/>;
+`,
+      output: `
+const dynamic = undefined as unknown as never;
+import { useDynamic } from '@org/useDynamic';
+const EmojiPicker = useDynamic(import('@emoji-mart/react'));
+const App = () => <EmojiPicker/>;
+`,
+      errors: [{ messageId: 'preferNextDynamic' }],
+    },
+    // A `dynamic` function declaration collides with the inserted import too
+    {
+      code: `import { useDynamic } from '../../hooks/useDynamic';
+function dynamic() { return null; }
+const EmojiPicker = useDynamic(import('@emoji-mart/react'));
+const App = () => <EmojiPicker/>;`,
+      output: `import { useDynamic } from '../../hooks/useDynamic';
+function dynamic() { return null; }
+const EmojiPicker = useDynamic(import('@emoji-mart/react'));
+const App = () => <EmojiPicker/>;`,
+      errors: [{ messageId: 'preferNextDynamic' }],
+    },
+    // A `dynamic` bound by an import from another module collides as well
+    {
+      code: `import dynamic from './dynamic';
+import { useDynamic } from '../../hooks/useDynamic';
+const EmojiPicker = useDynamic(import('@emoji-mart/react'));
+const App = () => <EmojiPicker/>;`,
+      output: `import dynamic from './dynamic';
+import { useDynamic } from '../../hooks/useDynamic';
+const EmojiPicker = useDynamic(import('@emoji-mart/react'));
+const App = () => <EmojiPicker/>;`,
+      errors: [{ messageId: 'preferNextDynamic' }],
+    },
+    // A narrower-scope shadow raises no TypeScript diagnostic, yet the emitted
+    // bare `dynamic` would call the parameter instead of the import
+    {
+      code: `import { useDynamic } from '../../hooks/useDynamic';
+function Wrapper(dynamic: unknown) {
+  const EmojiPicker = useDynamic(import('@emoji-mart/react'));
+  return <EmojiPicker data-x={dynamic}/>;
+}`,
+      output: `import { useDynamic } from '../../hooks/useDynamic';
+function Wrapper(dynamic: unknown) {
+  const EmojiPicker = useDynamic(import('@emoji-mart/react'));
+  return <EmojiPicker data-x={dynamic}/>;
+}`,
+      errors: [{ messageId: 'preferNextDynamic' }],
+    },
+    // A shadow of the existing `next/dynamic` alias is equally unsafe to emit
+    {
+      code: `import dyn from 'next/dynamic';
+import { useDynamic } from '../../hooks/useDynamic';
+function Wrapper(dyn: unknown) {
+  const EmojiPicker = useDynamic(import('@emoji-mart/react'));
+  return <EmojiPicker data-x={dyn}/>;
+}`,
+      output: `import dyn from 'next/dynamic';
+import { useDynamic } from '../../hooks/useDynamic';
+function Wrapper(dyn: unknown) {
+  const EmojiPicker = useDynamic(import('@emoji-mart/react'));
+  return <EmojiPicker data-x={dyn}/>;
+}`,
+      errors: [{ messageId: 'preferNextDynamic' }],
+    },
+    // A `dynamic` binding in a sibling scope cannot capture the module-level
+    // insertion, so the fix still applies
+    {
+      code: `import { useDynamic } from '../../hooks/useDynamic';
+const EmojiPicker = useDynamic(import('@emoji-mart/react'));
+function unrelated() { const dynamic = 1; return dynamic; }
+const App = () => <EmojiPicker/>;`,
+      errors: [{ messageId: 'preferNextDynamic' }],
+      output: `import dynamic from 'next/dynamic';
+
+const EmojiPicker = dynamic(
+  async () => {
+    const mod = await import('@emoji-mart/react');
+    return mod.default;
+  },
+  { ssr: false }
+);
+function unrelated() { const dynamic = 1; return dynamic; }
+const App = () => <EmojiPicker/>;`,
+    },
   ],
 });
 
