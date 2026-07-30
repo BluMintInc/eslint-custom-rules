@@ -38,33 +38,53 @@ export const preferTypeOverInterface: TSESLint.RuleModule<
             // name plus any type-parameter list); anchoring on the
             // identifier alone emits unparseable `type Name =<T> {`.
             const header = node.typeParameters ?? node.id;
-            const fixes = [
-              fixer.replaceTextRange(
-                [node.range[0], node.id.range[0]],
-                'type ',
-              ),
-              fixer.insertTextAfter(header, ' ='),
+            const keywordSpan: TSESTree.Range = [
+              node.range[0],
+              node.id.range[0],
+            ];
+            // Everything between the header and the opening brace is
+            // rewritten wholesale rather than patched token by token: the
+            // heritage list needs `,` turned into `&` and the `extends`
+            // keyword dropped, and surgical edits leave the separators and
+            // the keyword's surrounding whitespace behind. The body starts at
+            // the opening brace, so this span cannot swallow a `{` belonging
+            // to a heritage type argument or a type-parameter constraint.
+            const headerSpan: TSESTree.Range = [
+              header.range[1],
+              node.body.range[0],
             ];
 
-            if (node.extends && node.extends.length > 0) {
-              // Search from the header end so a constrained type parameter
-              // (`<T extends string>`) cannot shadow the heritage `extends`.
-              const extendsKeyword = sourceCode.getFirstTokenBetween(
-                header,
-                node.body,
-                { filter: (token) => token.value === 'extends' },
+            // Both rewritten spans are replaced in full, so a comment sitting
+            // inside either one would be silently destroyed (and a line
+            // comment would even swallow the `=` that follows it). Reporting
+            // without a fix preserves the author's prose; the conversion is
+            // then made by hand.
+            const clobbersComment = sourceCode
+              .getAllComments()
+              .some((comment) =>
+                [keywordSpan, headerSpan].some(
+                  ([start, end]) =>
+                    comment.range[0] < end && comment.range[1] > start,
+                ),
               );
-              fixes.push(
-                // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-                fixer.remove(extendsKeyword!),
-                // The body starts at the opening brace, so anchoring on it
-                // cannot mistake a `{` inside a heritage type argument or a
-                // type-parameter constraint for the body brace.
-                fixer.insertTextBefore(node.body, '& '),
-              );
+            if (clobbersComment) {
+              return null;
             }
 
-            return fixes;
+            const heritage = node.extends ?? [];
+            // `getText` round-trips type arguments and qualified names, so
+            // `extends ns.B<T>, C` becomes `ns.B<T> & C`.
+            const intersection = heritage
+              .map((clause) => sourceCode.getText(clause))
+              .join(' & ');
+
+            return [
+              fixer.replaceTextRange(keywordSpan, 'type '),
+              fixer.replaceTextRange(
+                headerSpan,
+                heritage.length > 0 ? ` = ${intersection} & ` : ' = ',
+              ),
+            ];
           },
         });
       },

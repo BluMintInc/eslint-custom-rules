@@ -36,6 +36,21 @@ describe('prefer-type-over-interface fixed-output parse guard', () => {
       ),
     ).not.toThrow();
   });
+
+  // Issue #1406: the heritage separator `,` used to survive into the type
+  // alias. Without this guard, a parse assertion that silently accepted the
+  // broken shape would prove nothing about the multi-heritage cases below.
+  it('rejects the pre-fix broken shape `type A =  B, C & {`', () => {
+    expect(() =>
+      asParseable('export type A =  B, C & {\n  a: string;\n};'),
+    ).toThrow();
+  });
+
+  it('accepts the expected intersection shape `type A = B & C & {`', () => {
+    expect(() =>
+      asParseable('export type A = B & C & {\n  a: string;\n};'),
+    ).not.toThrow();
+  });
 });
 
 ruleTesterTs.run('prefer-type-over-interface', preferTypeOverInterface, {
@@ -65,7 +80,7 @@ ruleTesterTs.run('prefer-type-over-interface', preferTypeOverInterface, {
         },
       ],
       output: asParseable(
-        'type AnotherInterface =  SomeInterface & { otherField: number; }',
+        'type AnotherInterface = SomeInterface & { otherField: number; }',
       ),
     },
     // Issue #1403 reproduction: the fixer must place `=` after the
@@ -154,7 +169,7 @@ export type Filter<T> = {
           data: { interfaceName: 'Derived' },
         },
       ],
-      output: asParseable('type Derived<T> =  Base<T> & { extra: T; }'),
+      output: asParseable('type Derived<T> = Base<T> & { extra: T; }'),
     },
     // Constrained type parameter combined with a heritage clause: the
     // heritage `extends` must be removed, not the constraint's `extends`.
@@ -167,7 +182,7 @@ export type Filter<T> = {
         },
       ],
       output: asParseable(
-        'type Special<T extends string> =  Base & { value: T; }',
+        'type Special<T extends string> = Base & { value: T; }',
       ),
     },
     // Multiline generic interface with members referencing the parameter
@@ -186,6 +201,173 @@ export type Filter<T> = {
   findById(id: string): T | undefined;
   save(entity: T): void;
 }`),
+    },
+    // Issue #1406 reproduction: two heritage clauses must be joined with `&`,
+    // not left separated by the `,` the interface syntax used.
+    {
+      code: `interface B { b: string }
+interface C { c: string }
+export interface A extends B, C {
+  a: string;
+}`,
+      errors: [
+        { messageId: 'preferType', data: { interfaceName: 'B' } },
+        { messageId: 'preferType', data: { interfaceName: 'C' } },
+        { messageId: 'preferType', data: { interfaceName: 'A' } },
+      ],
+      output: asParseable(`type B = { b: string }
+type C = { c: string }
+export type A = B & C & {
+  a: string;
+}`),
+    },
+    // Three heritage clauses
+    {
+      code: 'interface A extends B, C, D { a: string; }',
+      errors: [
+        {
+          messageId: 'preferType',
+          data: { interfaceName: 'A' },
+        },
+      ],
+      output: asParseable('type A = B & C & D & { a: string; }'),
+    },
+    // Generic heritage alongside a plain one: type arguments must round-trip
+    {
+      code: 'interface A<T> extends B<T>, C { a: T; }',
+      errors: [
+        {
+          messageId: 'preferType',
+          data: { interfaceName: 'A' },
+        },
+      ],
+      output: asParseable('type A<T> = B<T> & C & { a: T; }'),
+    },
+    // Qualified (namespaced) heritage names
+    {
+      code: 'interface A extends ns.B, C { a: string; }',
+      errors: [
+        {
+          messageId: 'preferType',
+          data: { interfaceName: 'A' },
+        },
+      ],
+      output: asParseable('type A = ns.B & C & { a: string; }'),
+    },
+    // Deeply qualified plus multiple generic arguments
+    {
+      code: 'interface A extends outer.inner.B<T, U>, C<T> { a: T; }',
+      errors: [
+        {
+          messageId: 'preferType',
+          data: { interfaceName: 'A' },
+        },
+      ],
+      output: asParseable('type A = outer.inner.B<T, U> & C<T> & { a: T; }'),
+    },
+    // Heritage clauses spread across lines collapse onto the alias line
+    {
+      code: `interface A
+  extends B,
+    C {
+  a: string;
+}`,
+      errors: [
+        {
+          messageId: 'preferType',
+          data: { interfaceName: 'A' },
+        },
+      ],
+      output: asParseable(`type A = B & C & {
+  a: string;
+}`),
+    },
+    // A constrained type parameter must not be mistaken for heritage when
+    // several heritage clauses follow it.
+    {
+      code: 'interface A<T extends string> extends B, C { a: T; }',
+      errors: [
+        {
+          messageId: 'preferType',
+          data: { interfaceName: 'A' },
+        },
+      ],
+      output: asParseable('type A<T extends string> = B & C & { a: T; }'),
+    },
+    // No whitespace anywhere in the header still yields a spaced `=`
+    {
+      code: 'interface A{a:string}',
+      errors: [
+        {
+          messageId: 'preferType',
+          data: { interfaceName: 'A' },
+        },
+      ],
+      output: asParseable('type A = {a:string}'),
+    },
+    // Comments outside the rewritten header spans survive the fix
+    {
+      code: `// leading comment
+interface A extends B, C {
+  // member comment
+  a: string;
+}`,
+      errors: [
+        {
+          messageId: 'preferType',
+          data: { interfaceName: 'A' },
+        },
+      ],
+      output: asParseable(`// leading comment
+type A = B & C & {
+  // member comment
+  a: string;
+}`),
+    },
+    // Comments *inside* the rewritten header spans cannot be relocated
+    // safely, so the rule reports without fixing rather than deleting them.
+    {
+      code: 'interface A /* keep */ extends B, C { a: string; }',
+      errors: [
+        {
+          messageId: 'preferType',
+          data: { interfaceName: 'A' },
+        },
+      ],
+      output: null,
+    },
+    {
+      code: 'interface /* keep */ A { a: string; }',
+      errors: [
+        {
+          messageId: 'preferType',
+          data: { interfaceName: 'A' },
+        },
+      ],
+      output: null,
+    },
+    {
+      code: 'interface A extends B /* keep */ { a: string; }',
+      errors: [
+        {
+          messageId: 'preferType',
+          data: { interfaceName: 'A' },
+        },
+      ],
+      output: null,
+    },
+    {
+      code: `interface A // keep
+  extends B, C {
+  a: string;
+}`,
+      errors: [
+        {
+          messageId: 'preferType',
+          data: { interfaceName: 'A' },
+        },
+      ],
+      output: null,
     },
   ],
 });
