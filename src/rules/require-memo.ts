@@ -91,9 +91,109 @@ const isUnmemoizedExportedFunctionComponent = (
   );
 };
 
+const MEMO_NAME = 'memo';
+
 function isMemoImport(importPath: string): boolean {
   // Match both absolute and relative paths ending with util/memo
   return /(?:^|\/|\\)util\/memo$/.test(importPath);
+}
+
+/**
+ * Value `util/memo` import declarations in source order. A type-only
+ * declaration (`import type { MemoOptions } from '../util/memo'`) is excluded
+ * because a specifier appended to one erases at compile time, leaving the
+ * emitted `memo(...)` call unbound at runtime.
+ */
+function memoValueImports(
+  program: TSESTree.Program,
+): TSESTree.ImportDeclaration[] {
+  return program.body.filter(
+    (statement): statement is TSESTree.ImportDeclaration =>
+      statement.type === AST_NODE_TYPES.ImportDeclaration &&
+      statement.importKind !== 'type' &&
+      isMemoImport(statement.source.value),
+  );
+}
+
+/**
+ * A named specifier that binds `memo` under its own name — the only shape that
+ * makes the emitted `memo(...)` call reach the helper. An alias in either
+ * direction (`memo as m`, `createMemo as memo`) or a type-only specifier binds
+ * something else, or nothing at all, at runtime.
+ */
+function isMemoSpecifier(
+  specifier: TSESTree.Node,
+): specifier is TSESTree.ImportSpecifier {
+  return (
+    specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+    specifier.importKind !== 'type' &&
+    specifier.imported.name === MEMO_NAME &&
+    specifier.local.name === MEMO_NAME
+  );
+}
+
+/**
+ * Import state is read off `Program.body` at fix time rather than from a
+ * traversal flag: a component that precedes the import declaration in source
+ * order is fixed before an `ImportDeclaration` visitor would have run, so a
+ * flag would call the import missing and insert a duplicate.
+ */
+function importsMemo(program: TSESTree.Program): boolean {
+  return memoValueImports(program).some((declaration) =>
+    declaration.specifiers.some(isMemoSpecifier),
+  );
+}
+
+/**
+ * Whether every declaration of a visible `memo` binding is the helper import.
+ * A const/let/function/class, a parameter, a namespace or default import, an
+ * alias, or a named import from another module all mean the emitted `memo(...)`
+ * call would resolve somewhere other than the helper.
+ */
+function bindsMemoHelper(variable: TSESLint.Scope.Variable): boolean {
+  return (
+    variable.defs.length > 0 &&
+    variable.defs.every((def) => {
+      const specifier = def.node as TSESTree.Node;
+      if (!isMemoSpecifier(specifier)) {
+        return false;
+      }
+      const declaration = specifier.parent;
+      return (
+        declaration?.type === AST_NODE_TYPES.ImportDeclaration &&
+        declaration.importKind !== 'type' &&
+        isMemoImport(declaration.source.value)
+      );
+    })
+  );
+}
+
+/**
+ * Extends an existing value `util/memo` import with a `memo` specifier instead
+ * of adding a second declaration. A namespace-only or side-effect-only
+ * declaration has nowhere to put a named specifier, so those fall through to a
+ * separate declaration (null).
+ */
+function buildImportExtensionFix(
+  fixer: TSESLint.RuleFixer,
+  program: TSESTree.Program,
+): TSESLint.RuleFix | null {
+  for (const declaration of memoValueImports(program)) {
+    const named = declaration.specifiers.filter(
+      (specifier): specifier is TSESTree.ImportSpecifier =>
+        specifier.type === AST_NODE_TYPES.ImportSpecifier,
+    );
+    if (named.length > 0) {
+      return fixer.insertTextAfter(named[named.length - 1], `, ${MEMO_NAME}`);
+    }
+    const defaultSpecifier = declaration.specifiers.find(
+      (specifier) => specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier,
+    );
+    if (defaultSpecifier) {
+      return fixer.insertTextAfter(defaultSpecifier, `, { ${MEMO_NAME} }`);
+    }
+  }
+  return null;
 }
 
 function checkFunction(
@@ -142,53 +242,56 @@ function checkFunction(
                   return null;
                 }
                 const sourceCode = context.sourceCode;
+                const program = sourceCode.ast;
+
+                // Resolve `memo` through the scope chain at the fixed node. A
+                // binding that is not the helper import breaks the edit two
+                // ways: the inserted import collides with the existing
+                // declaration (TS2440, or TS2300 when that declaration is
+                // itself an import), and a binding visible at the fix site
+                // captures the emitted call with no compile error at all.
+                // Declining leaves the report standing so the author resolves
+                // the clash deliberately. `React.memo` is a member access on
+                // the default import rather than a `memo` binding, so it never
+                // reaches this path.
+                const existingMemo = ASTHelpers.findVariableInScope(
+                  ASTHelpers.getScope(context, node),
+                  MEMO_NAME,
+                );
+                if (existingMemo && !bindsMemoHelper(existingMemo)) {
+                  return null;
+                }
+
                 let importFix: TSESLint.RuleFix | null = null;
 
-                // Search for memo import statement
-                const importDeclarations = sourceCode.ast.body.filter(
-                  (node) => node.type === 'ImportDeclaration',
-                ) as TSESTree.ImportDeclaration[];
+                if (!importsMemo(program)) {
+                  importFix = buildImportExtensionFix(fixer, program);
 
-                const memoImport = importDeclarations.find(
-                  (importDeclaration) =>
-                    isMemoImport(importDeclaration.source.value),
-                );
+                  if (!importFix) {
+                    // Calculate relative path based on current file location
+                    const currentFilePath = context.getFilename();
+                    const importPath = calculateImportPath(currentFilePath);
 
-                if (memoImport) {
-                  // Check if memo is already imported
-                  if (
-                    !memoImport.specifiers.some(
-                      (specifier) => specifier.local.name === 'memo',
-                    )
-                  ) {
-                    // Add memo to existing import statement
-                    const lastSpecifier =
-                      memoImport.specifiers[memoImport.specifiers.length - 1];
-                    importFix = fixer.insertTextAfter(lastSpecifier, ', memo');
-                  }
-                } else {
-                  // Calculate relative path based on current file location
-                  const currentFilePath = context.getFilename();
-                  const importPath = calculateImportPath(currentFilePath);
-
-                  // Find the first import statement to insert after
-                  const firstImport = importDeclarations[0];
-
-                  // Add new import statement for memo
-                  const importStatement = `import { memo } from '${importPath}';\n`;
-
-                  if (firstImport) {
-                    // Insert after the first import with a single newline
-                    importFix = fixer.insertTextAfter(
-                      firstImport,
-                      '\n' + importStatement.trim(),
+                    // Find the first import statement to insert after
+                    const firstImport = program.body.find(
+                      (statement) =>
+                        statement.type === AST_NODE_TYPES.ImportDeclaration,
                     );
-                  } else {
-                    // Insert at the start of the file
-                    importFix = fixer.insertTextBeforeRange(
-                      [sourceCode.ast.range[0], sourceCode.ast.range[0]],
-                      importStatement.trim() + '\n',
-                    );
+
+                    // Add new import statement for memo
+                    const importStatement = `import { memo } from '${importPath}';`;
+
+                    importFix = firstImport
+                      ? // Insert after the first import with a single newline
+                        fixer.insertTextAfter(
+                          firstImport,
+                          '\n' + importStatement,
+                        )
+                      : // Insert at the start of the file
+                        fixer.insertTextBeforeRange(
+                          [program.range[0], program.range[0]],
+                          importStatement + '\n',
+                        );
                   }
                 }
 
