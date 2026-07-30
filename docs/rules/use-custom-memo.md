@@ -53,6 +53,38 @@ Specifically:
 * A statement-level `import type` stays a type import on both halves.
 * The `react` source literal keeps its original quote style.
 
+### Comments
+
+Rebuilding the surviving specifier list would discard the comments attached to
+them, and discarding an `eslint-disable-next-line` silently changes which rules
+report on the file. An import that carries comments is therefore *spliced*: only
+the `memo` bindings are cut out and the rest of the declaration — including its
+comments and line structure — is left byte-for-byte alone.
+
+```ts
+import React, {
+  // eslint-disable-next-line camelcase
+  memo as some_name,
+  useState,
+} from 'react';
+```
+
+becomes
+
+```ts
+// eslint-disable-next-line camelcase
+import { memo as some_name } from 'src/util/memo';
+import React, {
+  useState,
+} from 'react';
+```
+
+A comment in front of `memo` annotates `memo`, so it travels with `memo` to the
+new import and keeps suppressing the line the binding lives on. A comment
+trailing another specifier on that specifier's own line annotates *it*, so it
+stays behind. Imports without comments are still rebuilt, which is why they
+collapse onto a single line.
+
 ## When Not To Use It
 
 Disable this rule in projects that do not ship a `src/util/memo` module.
