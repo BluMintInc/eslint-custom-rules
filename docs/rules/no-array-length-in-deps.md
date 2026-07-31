@@ -110,6 +110,24 @@ export const useThing = () => {
 };
 ```
 
+#### Optional chaining
+
+```tsx
+const C = ({ data }) => {
+  useEffect(() => {}, [data?.items.length]);
+  return null;
+};
+```
+
+#### Several `array.length` dependencies in one hook
+
+```tsx
+const C = ({ items, users, messages }) => {
+  useEffect(() => {}, [items.length, users.length, messages.length]);
+  return null;
+};
+```
+
 ### Examples of correct code
 
 ```tsx
@@ -126,16 +144,11 @@ export const useThing = () => {
 };
 ```
 
-### Optional Chaining
+#### Optional chaining
+
+The optional chain is preserved in both the memoized expression and its own dependency array.
 
 ```tsx
-// bad
-const C = ({ data }) => {
-  useEffect(() => {}, [data?.items.length]);
-  return null;
-};
-
-// good
 const C = ({ data }) => {
   const itemsHash = useMemo(() => stableHash(data?.items), [data?.items]);
   useEffect(() => {}, [itemsHash]);
@@ -143,16 +156,11 @@ const C = ({ data }) => {
 };
 ```
 
-### Multiple array.length Expressions
+#### Several `array.length` dependencies in one hook
+
+Each array gets its own hash, named after the array (or its last property).
 
 ```tsx
-// bad
-const C = ({ items, users, messages }) => {
-  useEffect(() => {}, [items.length, users.length, messages.length]);
-  return null;
-};
-
-// good
 const C = ({ items, users, messages }) => {
   const itemsHash = useMemo(() => stableHash(items), [items]);
   const usersHash = useMemo(() => stableHash(users), [users]);

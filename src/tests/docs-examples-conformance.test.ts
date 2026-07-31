@@ -439,10 +439,10 @@ describe('documented "correct" examples must not report', () => {
   });
 
   afterAll(() => {
-    // Sits just under the real count (360 at the time of writing) so a silent
+    // Sits just under the real count (384 at the time of writing) so a silent
     // drop of a page or two goes red, while adding docs does not require editing
     // this test. Raise it when coverage grows; never lower it to make a run pass.
-    expect(lintedBlocks).toBeGreaterThan(350);
+    expect(lintedBlocks).toBeGreaterThan(375);
     const problems = [
       ...auditPageSkips(skippedPages, PAGES_WITHOUT_CORRECT_EXAMPLES),
       ...auditSkips(skippedBlocks, UNCHECKABLE_BLOCKS),
