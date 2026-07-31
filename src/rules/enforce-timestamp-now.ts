@@ -1,7 +1,12 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'preferTimestampNow';
+
+const FIRESTORE_MODULES = new Set([
+  'firebase-admin/firestore',
+  'firebase/firestore',
+]);
 
 export const enforceTimestampNow = createRule<[], MessageIds>({
   name: 'enforce-timestamp-now',
@@ -39,8 +44,130 @@ export const enforceTimestampNow = createRule<[], MessageIds>({
       return {};
     }
 
-    // Track Timestamp imports and aliases
+    // Names that may denote the Firestore `Timestamp` class when matching
+    // `X.fromDate(new Date())` / `X.fromMillis(Date.now())`. Seeded with the
+    // default name so detection still works when the class reaches the file
+    // through a re-export or a `require()` the rule cannot see. Those reports
+    // rewrite an expression whose object identifier is already written in the
+    // source, so a seeded name can never produce an unbound reference.
     const timestampAliases = new Set<string>(['Timestamp']);
+
+    // Names actually bound by an observed `Timestamp` import. Tracked apart
+    // from `timestampAliases` because the `new Date()` fix synthesizes an
+    // identifier the original code never mentions: with no real import the
+    // rewrite emits an unbound `Timestamp` and turns compiling code into
+    // TS2304 (issue #1521).
+    const importedTimestampAliases: string[] = [];
+
+    function recordTimestampAlias(localName: string): void {
+      timestampAliases.add(localName);
+      if (!importedTimestampAliases.includes(localName)) {
+        importedTimestampAliases.push(localName);
+      }
+    }
+
+    /** Local names a static Firestore import binds to `Timestamp`. */
+    function staticTimestampAliases(
+      node: TSESTree.ImportDeclaration,
+    ): string[] {
+      if (
+        typeof node.source.value !== 'string' ||
+        !FIRESTORE_MODULES.has(node.source.value)
+      ) {
+        return [];
+      }
+      return node.specifiers
+        .filter(
+          (specifier): specifier is TSESTree.ImportSpecifier =>
+            specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+            specifier.imported.type === AST_NODE_TYPES.Identifier &&
+            specifier.imported.name === 'Timestamp',
+        )
+        .map((specifier) => specifier.local.name);
+    }
+
+    /**
+     * Local names a `const { Timestamp } = await import(...)` declarator binds
+     * to `Timestamp`.
+     */
+    function dynamicTimestampAliases(
+      node: TSESTree.VariableDeclarator,
+    ): string[] {
+      if (
+        node.init?.type !== AST_NODE_TYPES.AwaitExpression ||
+        node.init.argument.type !== AST_NODE_TYPES.ImportExpression ||
+        node.id.type !== AST_NODE_TYPES.ObjectPattern
+      ) {
+        return [];
+      }
+      const source = node.init.argument.source;
+      if (
+        source.type !== AST_NODE_TYPES.Literal ||
+        typeof source.value !== 'string' ||
+        !FIRESTORE_MODULES.has(source.value)
+      ) {
+        return [];
+      }
+      const aliases: string[] = [];
+      node.id.properties.forEach((prop) => {
+        if (
+          prop.type === AST_NODE_TYPES.Property &&
+          prop.key.type === AST_NODE_TYPES.Identifier &&
+          prop.key.name === 'Timestamp' &&
+          prop.value.type === AST_NODE_TYPES.Identifier
+        ) {
+          aliases.push(prop.value.name);
+        }
+      });
+      return aliases;
+    }
+
+    /** Whether a resolved binding is the Firestore `Timestamp` class itself. */
+    function isTimestampImportBinding(
+      variable: TSESLint.Scope.Variable,
+    ): boolean {
+      return variable.defs.some((def) => {
+        if (def.node.type === AST_NODE_TYPES.ImportSpecifier) {
+          const declaration = def.node.parent;
+          return (
+            declaration?.type === AST_NODE_TYPES.ImportDeclaration &&
+            staticTimestampAliases(declaration).includes(variable.name)
+          );
+        }
+        if (def.node.type === AST_NODE_TYPES.VariableDeclarator) {
+          return dynamicTimestampAliases(def.node).includes(variable.name);
+        }
+        return false;
+      });
+    }
+
+    /** The binding a name resolves to at the node currently being visited. */
+    function resolveBinding(name: string): TSESLint.Scope.Variable | undefined {
+      let scope: TSESLint.Scope.Scope | null = context.getScope();
+      while (scope) {
+        const binding = scope.variables.find(
+          (variable) => variable.name === name,
+        );
+        if (binding) {
+          return binding;
+        }
+        scope = scope.upper;
+      }
+      return undefined;
+    }
+
+    // A synthesized `Timestamp.now()` is only safe when the alias resolves to
+    // the import at the rewrite site. Resolution has to run per name from the
+    // innermost scope outward: an alias bound by a dynamic import inside another
+    // function is unreachable here, and an inner binding of the same name would
+    // capture the emitted reference and silently swap in a different value
+    // (issues #1455/#1456).
+    function findTimestampAliasInScope(): string | undefined {
+      return importedTimestampAliases.find((alias) => {
+        const binding = resolveBinding(alias);
+        return !!binding && isTimestampImportBinding(binding);
+      });
+    }
 
     function isTimestampFromDateWithNewDate(
       node: TSESTree.CallExpression,
@@ -148,52 +275,21 @@ export const enforceTimestampNow = createRule<[], MessageIds>({
     }
 
     return {
-      ImportDeclaration(node): void {
-        // Track Timestamp imports from Firebase
-        if (
-          node.source.value === 'firebase-admin/firestore' ||
-          node.source.value === 'firebase/firestore'
-        ) {
-          node.specifiers.forEach((specifier) => {
-            if (
-              specifier.type === AST_NODE_TYPES.ImportSpecifier &&
-              specifier.imported.type === AST_NODE_TYPES.Identifier &&
-              specifier.imported.name === 'Timestamp'
-            ) {
-              timestampAliases.add(specifier.local.name);
-            }
-          });
-        }
+      Program(node): void {
+        // Collect static imports before any usage is visited. An import is
+        // hoisted and module-scoped, so it binds `Timestamp` for the whole file
+        // regardless of where it sits; visiting imports in traversal order
+        // would make the guard depend on the import preceding the usage.
+        node.body.forEach((statement) => {
+          if (statement.type === AST_NODE_TYPES.ImportDeclaration) {
+            staticTimestampAliases(statement).forEach(recordTimestampAlias);
+          }
+        });
       },
 
       VariableDeclarator(node): void {
         // Track dynamic imports of Timestamp
-        if (
-          node.init?.type === AST_NODE_TYPES.AwaitExpression &&
-          node.init.argument.type === AST_NODE_TYPES.ImportExpression
-        ) {
-          const importSource = node.init.argument.source;
-          if (
-            importSource.type === AST_NODE_TYPES.Literal &&
-            (importSource.value === 'firebase-admin/firestore' ||
-              importSource.value === 'firebase/firestore')
-          ) {
-            // Handle destructured imports
-            if (node.id.type === AST_NODE_TYPES.ObjectPattern) {
-              node.id.properties.forEach((prop) => {
-                if (
-                  prop.type === AST_NODE_TYPES.Property &&
-                  prop.key.type === AST_NODE_TYPES.Identifier &&
-                  prop.key.name === 'Timestamp'
-                ) {
-                  if (prop.value.type === AST_NODE_TYPES.Identifier) {
-                    timestampAliases.add(prop.value.name);
-                  }
-                }
-              });
-            }
-          }
-        }
+        dynamicTimestampAliases(node).forEach(recordTimestampAlias);
       },
 
       CallExpression(node): void {
@@ -264,22 +360,27 @@ export const enforceTimestampNow = createRule<[], MessageIds>({
                 return;
               }
 
-              // Check if we have a Timestamp import before suggesting
-              if (timestampAliases.size > 0) {
-                const timestampName = Array.from(timestampAliases)[0];
-                const expressionText = sourceCode.getText(node);
-                context.report({
-                  node,
-                  messageId: 'preferTimestampNow',
-                  data: {
-                    expression: expressionText,
-                    timestampAlias: timestampName,
-                  },
-                  fix(fixer) {
-                    return fixer.replaceText(node, `${timestampName}.now()`);
-                  },
-                });
+              // Stay silent unless a real `Timestamp` binding is in scope. The
+              // rewrite names an identifier the source never mentions, and a
+              // file with no Firestore import is almost certainly using the
+              // `Date` for something other than a Firestore document anyway.
+              const timestampName = findTimestampAliasInScope();
+              if (!timestampName) {
+                return;
               }
+
+              const expressionText = sourceCode.getText(node);
+              context.report({
+                node,
+                messageId: 'preferTimestampNow',
+                data: {
+                  expression: expressionText,
+                  timestampAlias: timestampName,
+                },
+                fix(fixer) {
+                  return fixer.replaceText(node, `${timestampName}.now()`);
+                },
+              });
             }
           }
         }
