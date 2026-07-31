@@ -850,6 +850,123 @@ ruleTesterTs.run(
         }
       `,
       },
+      // Typed collection bound to a const, then .doc() (the documented example)
+      {
+        code: `
+        interface UserData {
+          name: string;
+        }
+        const typedUsersCollection = db.collection<UserData>('users');
+        const typedUserDoc = typedUsersCollection.doc('123');
+      `,
+      },
+      // Typed collection bound to a const, then .doc() inside a function body
+      {
+        code: `
+        interface UserData {
+          name: string;
+        }
+        function loadUser(id: string) {
+          const usersCollection = db.collection<UserData>('users');
+          return usersCollection.doc(id);
+        }
+      `,
+      },
+      // Typed collection const declared in an outer scope, .doc() in an inner scope
+      {
+        code: `
+        interface UserData {
+          name: string;
+        }
+        const usersCollection = db.collection<UserData>('users');
+        function loadUser(id: string) {
+          return usersCollection.doc(id);
+        }
+      `,
+      },
+      // Const annotated CollectionReference<T>, then .doc()
+      {
+        code: `
+        interface UserData {
+          name: string;
+        }
+        const usersCollection: CollectionReference<UserData> = db.collection<UserData>('users');
+        const userDoc = usersCollection.doc('123');
+      `,
+      },
+      // Const annotated with a namespaced CollectionReference<T>, then .doc()
+      {
+        code: `
+        interface UserData {
+          name: string;
+        }
+        const usersCollection: firestore.CollectionReference<UserData> = getUsersCollection();
+        const userDoc = usersCollection.doc('123');
+      `,
+      },
+      // Typed collection const, then .doc() with an explicit valid generic
+      {
+        code: `
+        interface UserData {
+          name: string;
+        }
+        interface AdminData {
+          role: string;
+        }
+        const usersCollection = db.collection<UserData>('users');
+        const adminDoc = usersCollection.doc<AdminData>('123');
+      `,
+      },
+      // Const asserted as CollectionReference<T>, then .doc()
+      {
+        code: `
+        interface UserData {
+          name: string;
+        }
+        const usersCollection = getUsersCollection() as CollectionReference<UserData>;
+        const userDoc = usersCollection.doc('123');
+      `,
+      },
+      // Typed collection const consumed by a nested arrow function
+      {
+        code: `
+        interface UserData {
+          name: string;
+        }
+        const usersCollection = db.collection<UserData>('users');
+        const loadUsers = (ids: string[]) => ids.map((id) => usersCollection.doc(id));
+      `,
+      },
+      // Typed collection const inside a class method
+      {
+        code: `
+        interface UserData {
+          name: string;
+        }
+        class UserService {
+          getDoc(id: string) {
+            const usersCollection = db.collection<UserData>('users');
+            return usersCollection.doc(id);
+          }
+        }
+      `,
+      },
+      // Const initialized from a typed sub-collection chain, then .doc()
+      {
+        code: `
+        interface TenantData {
+          name: string;
+        }
+        interface UserData {
+          name: string;
+        }
+        const usersCollection = db
+          .collection<TenantData>('tenants')
+          .doc('1')
+          .collection<UserData>('users');
+        const userDoc = usersCollection.doc('123');
+      `,
+      },
     ],
     invalid: [
       // Missing generic type - DocumentReference
@@ -1120,6 +1237,119 @@ ruleTesterTs.run(
           missingGenericError('CollectionReference'),
           missingGenericError('DocumentReference'),
         ],
+      },
+      // Control: untyped collection bound to a const, then .doc()
+      {
+        code: `
+        const usersCollection = db.collection('users');
+        const userDoc = usersCollection.doc('123');
+      `,
+        errors: [
+          missingGenericError('CollectionReference'),
+          missingGenericError('DocumentReference'),
+        ],
+      },
+      // A let reassigned to an untyped collection is not provably typed
+      {
+        code: `
+        interface UserData {
+          name: string;
+        }
+        let usersCollection = db.collection<UserData>('users');
+        usersCollection = db.collection('users');
+        const userDoc = usersCollection.doc('123');
+      `,
+        errors: [
+          missingGenericError('CollectionReference'),
+          missingGenericError('DocumentReference'),
+        ],
+      },
+      // Only one hop is followed: an alias of a typed collection is not resolved
+      {
+        code: `
+        interface UserData {
+          name: string;
+        }
+        const usersCollection = db.collection<UserData>('users');
+        const aliasCollection = usersCollection;
+        const userDoc = aliasCollection.doc('123');
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // Shadowing: the inner binding is untyped even though the outer one is typed
+      {
+        code: `
+        interface UserData {
+          name: string;
+        }
+        const usersCollection = db.collection<UserData>('users');
+        function loadUser(id: string) {
+          const usersCollection = db.collection('users');
+          return usersCollection.doc(id);
+        }
+      `,
+        errors: [
+          missingGenericError('CollectionReference'),
+          missingGenericError('DocumentReference'),
+        ],
+      },
+      // An untyped function parameter resolves to no declarator, so it still reports
+      {
+        code: `
+        function loadUser(usersCollection, id: string) {
+          return usersCollection.doc(id);
+        }
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // A mutable binding is refused even when it is never reassigned
+      {
+        code: `
+        interface UserData {
+          name: string;
+        }
+        let usersCollection = db.collection<UserData>('users');
+        const userDoc = usersCollection.doc('123');
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // A destructured binding has no resolvable collection initializer
+      {
+        code: `
+        interface UserData {
+          name: string;
+        }
+        const { users } = getCollections<UserData>();
+        const userDoc = users.doc('123');
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // A collection typed with any is reported once, on the collection call
+      {
+        code: `
+        const usersCollection = db.collection<any>('users');
+        const userDoc = usersCollection.doc('123');
+      `,
+        errors: [invalidGenericError('CollectionReference')],
+      },
+      // An imported collection cannot be proven typed in this file
+      {
+        code: `
+        import { usersCollection } from './collections';
+        const userDoc = usersCollection.doc('123');
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // A typed collection const does not excuse an invalid generic on .doc()
+      {
+        code: `
+        interface UserData {
+          name: string;
+        }
+        const usersCollection = db.collection<UserData>('users');
+        const userDoc = usersCollection.doc<any>('123');
+      `,
+        errors: [invalidGenericError('DocumentReference')],
       },
     ],
   },

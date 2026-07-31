@@ -11,10 +11,11 @@ This rule requires every Firestore `DocumentReference`, `CollectionReference`, a
 ## Rule Details
 
 - Provide a concrete document interface or type whenever you create a Firestore reference or call `doc`, `collection`, or `collectionGroup`.
-- Calls on an already typed `CollectionReference<T>` may omit the generic on `collectionRef.doc(...)` because the collection supplies the document shape.
+- Calls on an already typed `CollectionReference<T>` may omit the generic on `collectionRef.doc(...)` because the collection supplies the document shape. This holds whether the collection is chained (`db.collection<T>('x').doc('y')`) or first stored in a `const`.
+- Resolving a stored collection is deliberately shallow: only a `const` whose initializer is a `collection<T>(...)` call, whose annotation is `CollectionReference<T>`, or which asserts that type is followed, and only one hop. An alias of an alias, a `let`, a parameter, or an import cannot be proven typed, so `doc(...)` on those still requires its own generic.
 - Generics that use `any` or `{}` erase the schema and disable compile-time checks; nested `any`/`{}` are flagged when the rule can see them inline or via same-file types.
 
-Examples of **incorrect** code for this rule:
+### Examples of incorrect code
 
 ```ts
 // Missing generic type argument on a reference
@@ -41,7 +42,7 @@ const customerCollection = db.collection<UserProfile>('customers');
 const unsafeCustomerDoc = customerCollection.doc<any>('cust123');
 ```
 
-Examples of **correct** code for this rule:
+### Examples of correct code
 
 ```ts
 interface UserData {
