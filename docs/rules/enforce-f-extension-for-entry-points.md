@@ -92,9 +92,17 @@ export default onWrite;
 // File: functions/src/callable/user/deleteUser.f.ts
 import { onCall } from '../../v2/https/onCall';
 
-export default onCall(async (request) => {
-  // ... logic
-});
+export type Props = { userId: string };
+export type Response = { success: boolean };
+
+const deleteUser = async (
+  request: CallableRequest<Props>,
+): Promise<Response> => {
+  const { userId } = request.data;
+  return { success: true } as const;
+};
+
+export default onCall(deleteUser);
 ```
 
 ## Options
