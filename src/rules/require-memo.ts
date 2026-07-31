@@ -3,6 +3,7 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { RuleContext } from '@typescript-eslint/utils/dist/ts-eslint';
 import { ASTHelpers } from '../utils/ASTHelpers';
+import { createRule } from '../utils/createRule';
 
 export type NodeWithParent = TSESTree.Node & { parent: NodeWithParent };
 
@@ -354,7 +355,8 @@ function calculateImportPath(currentFilePath: string): string {
   return depth > 0 ? '../'.repeat(depth) + 'util/memo' : './util/memo';
 }
 
-export const requireMemo: TSESLint.RuleModule<'requireMemo', []> = {
+export const requireMemo = createRule<[], 'requireMemo'>({
+  name: 'require-memo',
   create: (context) => ({
     ArrowFunctionExpression(node) {
       checkFunction(context, node as any);
@@ -382,4 +384,4 @@ export const requireMemo: TSESLint.RuleModule<'requireMemo', []> = {
     fixable: 'code',
   },
   defaultOptions: [],
-};
+});

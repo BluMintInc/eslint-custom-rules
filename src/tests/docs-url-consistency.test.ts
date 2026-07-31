@@ -22,15 +22,13 @@ const expectedUrl = (name: string) =>
   `https://github.com/BluMintInc/eslint-custom-rules/blob/main/docs/rules/${name}.md`;
 
 /**
- * Rules hand-authored as raw `TSESLint.RuleModule` object literals rather than
- * through the `createRule` factory, and which therefore carry no
- * `meta.docs.url` at all. Tracked one issue per rule; migrating a rule to
- * `createRule` must delete it from this list, so the exact-equality assertion
- * below is what forces the list to shrink rather than quietly outlive the fix.
+ * Rules carrying no `meta.docs.url`, which happens when a rule is hand-authored
+ * as a raw `TSESLint.RuleModule` literal instead of going through `createRule`
+ * — the factory is what supplies the URL. Empty, and the exact-equality
+ * assertion below keeps it that way: a new rule that skips `createRule` fails
+ * here rather than silently shipping a rule with no link to its own docs.
  */
-const RULES_WITHOUT_DOCS_URL = [
-  'require-memo', // #1483
-];
+const RULES_WITHOUT_DOCS_URL: string[] = [];
 
 const allRules = Object.keys(plugin.rules).sort();
 const rulesWithUrl = allRules.filter(
