@@ -22,7 +22,7 @@ This rule enforces that boolean equality checks use `fast-deep-equal` instead of
 
 - Comparisons such as `microdiff(a, b).length === 0`, `0 === diff(a, b).length`, or `!diff(a, b).length`.
 - Comparisons that use a variable assigned to `diff(...)` when that variable is only used for `.length` checks.
-- Aliased imports of both microdiff and `fast-deep-equal`.
+- Aliased imports of both microdiff and the deep-equality function.
 
 ### Which imports count as microdiff
 
@@ -42,9 +42,24 @@ deliberately not matched. The local name is the module rather than the diff
 function, and a member call through it cannot be attributed to microdiff without
 guessing.
 
+### Which imports count as the equality function
+
+Four specifiers resolve to a deep-equality function of the same shape, and a
+file on any of them already has the comparison this rule asks for:
+
+- `@blumintinc/fast-deep-equal` — BluMint's fork, the dependency this codebase declares, and the specifier the fix emits.
+- `@blumintinc/fast-deep-equal/react` — the fork's React entry point, for comparing props.
+- `fast-deep-equal` — upstream.
+- `fast-deep-equal/es6` — upstream's ESM build.
+
+The import also has to bind something callable. A bare `import
+'@blumintinc/fast-deep-equal';` and a namespace import bind no equality
+function, so a file with only one of those still gets its own import rather than
+a call to a name nothing declares.
+
 ### Autofix
 
-- Adds `fast-deep-equal` import if missing, keeping any existing local alias or adding a default import named `isEqual`.
+- Adds an `@blumintinc/fast-deep-equal` import if missing, keeping any existing local alias or adding a default import named `isEqual`. The scoped fork is the declared dependency, so it is the only specifier the fix writes.
 - Replaces `microdiff` length comparisons with the imported equality function call (for example, `isEqual(left, right)` or a local alias like `deepEqual(left, right)`), or its negation for inequality checks.
 - Rewrites the comparison in place — only the callee name and the `.length` comparison change — so the argument list keeps its formatting and its comments. A comment inside the call is often an `eslint-disable` directive, and dropping one silently re-enables the rule it suppresses:
 
@@ -64,7 +79,7 @@ return isEqual(
 );
 ```
 
-- Declines to fix when the target name is already bound to something other than `fast-deep-equal`, since the inserted import would either collide with that declaration or bind the emitted call to the local value.
+- Declines to fix when the target name is already bound to something other than one of the equality-function imports above, since the inserted import would either collide with that declaration or bind the emitted call to the local value.
 - Drops a `const changes = diff(a, b);` statement that exists only to be measured, once the call is inlined into the comparison. The statement is deleted by its own range, not by line boundaries:
 
   - A declaration that occupies its line alone takes the whole line, so no blank line is left behind.
@@ -123,7 +138,7 @@ export function isSame(a: object, b: object) {
 ### Examples of **correct** code for this rule:
 
 ```ts
-import isEqual from 'fast-deep-equal';
+import isEqual from '@blumintinc/fast-deep-equal';
 
 function areObjectsEqual(obj1, obj2) {
   return isEqual(obj1, obj2);
@@ -138,6 +153,14 @@ function updateIfNeeded(obj1, obj2) {
     return false;
   }
   return true;
+}
+```
+
+```ts
+import isEqual from '@blumintinc/fast-deep-equal/react';
+
+function arePropsEqual(prevProps, nextProps) {
+  return isEqual(prevProps, nextProps);
 }
 ```
 
@@ -205,7 +228,7 @@ export function summarize(before: object, after: object) {
 
 ### Interaction with inline disable comments
 
-The `import isEqual from 'fast-deep-equal';` statement is added once per file,
+The `import isEqual from '@blumintinc/fast-deep-equal';` statement is added once per file,
 attached to the fix of the first violation that is **not** suppressed by an
 inline `eslint-disable` directive. Suppressing an individual check therefore
 never strands the remaining `isEqual(...)` calls without their import:

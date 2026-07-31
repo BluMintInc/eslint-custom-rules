@@ -314,6 +314,13 @@ ${FIRESTORE_COMMON}
  * out for it — a fixture inaccuracy, not a rule defect, since the fixers
  * themselves emit the default form.
  *
+ * The scoped fork is what `fast-deep-equal-over-microdiff` actually emits, and
+ * its typings are a different shape from upstream's — `export default` over a
+ * type predicate, copied verbatim from `@blumintinc/fast-deep-equal@4.0.0`.
+ * Without it the emitted import falls to the wildcard and every fixed snippet
+ * of that rule type-checks as `any`, which is the blind spot #1529 closed for
+ * the others.
+ *
  * `microdiff` is deliberately left to the wildcard. Its real typings export
  * `diff` as the *default* only, while `enforce-microdiff`'s fixer emits
  * `import { diff } from 'microdiff'`; stubbing it faithfully would turn that
@@ -328,6 +335,14 @@ declare module 'use-latest-callback' {
 declare module 'fast-deep-equal' {
   const equal: (a: any, b: any) => boolean;
   export = equal;
+}
+declare module '@blumintinc/fast-deep-equal' {
+  function equal<T>(actual: any, expected: T): actual is T;
+  export default equal;
+}
+declare module '@blumintinc/fast-deep-equal/react' {
+  function equal<T>(actual: any, expected: T): actual is T;
+  export default equal;
 }
 declare module '@blumintinc/use-deep-compare' {
   export function useDeepCompareMemo<T>(factory: () => T, dependencies: readonly any[]): T;

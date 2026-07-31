@@ -89,7 +89,7 @@ const FIXER_INJECTED_LIBRARIES = [
   '@blumintinc/typescript-memoize',
   '@blumintinc/use-deep-compare',
   '@blumintinc/microdiff',
-  'fast-deep-equal',
+  '@blumintinc/fast-deep-equal',
 ];
 
 type Block = { lang: string; code: string; line: number };
