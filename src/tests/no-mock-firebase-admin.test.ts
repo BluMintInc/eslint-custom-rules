@@ -117,6 +117,60 @@ ruleTesterTs.run('no-mock-firebase-admin', noMockFirebaseAdmin, {
       code: 'jest.mock(`${dir}/firebaseAdmin`);',
       filename: 'functions/src/util/realtimeDb/updateIfExists.test.ts',
     },
+    // A factory that hand-rolls `collectionGroup`: the shared mockFirestore fake
+    // has no collectionGroup at all, so the prescribed remedy cannot express the
+    // surface under test. Modelled on agora's
+    // migrateOverlaySettingsToPerAlert.f.test.ts, which must exercise the real
+    // __name__-ordered, index-free pagination loop.
+    {
+      code: `jest.mock('../../config/firebaseAdmin', () => {
+        const state = { docs: [], updates: [] };
+        const buildQuery = (afterPath, limitCount) => ({
+          orderBy: () => buildQuery(afterPath, limitCount),
+          limit: (count) => buildQuery(afterPath, count),
+          startAfter: (snapshot) => buildQuery(snapshot.ref.path, limitCount),
+          get: async () => ({ docs: state.docs, empty: state.docs.length === 0 }),
+        });
+        return {
+          db: {
+            collectionGroup: (name) => buildQuery(),
+            batch: () => ({ update: jest.fn(), commit: jest.fn() }),
+          },
+          __mockState: state,
+        };
+      });`,
+      filename:
+        'functions/src/callable/scripts/migrateOverlaySettingsToPerAlert.f.test.ts',
+    },
+    // The collectionGroup call sits deep inside a returned object's method body
+    // rather than at the top level of the factory's return value.
+    {
+      code: `jest.mock('../../config/firebaseAdmin', () => {
+        const actual = jest.requireActual('firebase-admin/firestore');
+        return {
+          db: {
+            queries: {
+              paginate(name, cursor) {
+                return actual
+                  .collectionGroup(name)
+                  .orderBy('__name__')
+                  .limit(500)
+                  .startAfter(cursor);
+              },
+            },
+          },
+        };
+      });`,
+      filename:
+        'functions/src/callable/scripts/backfillOverlaySettings.f.test.ts',
+    },
+    // The same surface declared with a string key
+    {
+      code: `jest.mock('functions/src/config/firebaseAdmin', () => ({
+        db: { 'collectionGroup': jest.fn(() => ({ get: jest.fn() })) },
+      }));`,
+      filename: 'src/test.test.ts',
+    },
     // Valid usage of mockFirestore
     {
       code: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
@@ -356,6 +410,58 @@ ruleTesterTs.run('no-mock-firebase-admin', noMockFirebaseAdmin, {
           };
         });`,
       filename: 'src/test.test.ts',
+      errors: [errorFor('../../config/firebaseAdmin')],
+    },
+    // The collectionGroup exemption is pinned to collectionGroup itself, not to
+    // "the factory is large": this is the same fake with plain `collection`,
+    // which the shared mockFirestore expresses, so it still reports.
+    {
+      code: `jest.mock('../../config/firebaseAdmin', () => {
+        const state = { docs: [], updates: [] };
+        const buildQuery = (afterPath, limitCount) => ({
+          orderBy: () => buildQuery(afterPath, limitCount),
+          limit: (count) => buildQuery(afterPath, count),
+          startAfter: (snapshot) => buildQuery(snapshot.ref.path, limitCount),
+          get: async () => ({ docs: state.docs, empty: state.docs.length === 0 }),
+        });
+        return {
+          db: {
+            collection: (name) => buildQuery(),
+            batch: () => ({ update: jest.fn(), commit: jest.fn() }),
+          },
+          __mockState: state,
+        };
+      });`,
+      filename:
+        'functions/src/callable/scripts/migrateOverlaySettingsToPerAlert.f.test.ts',
+      errors: [errorFor('../../config/firebaseAdmin')],
+    },
+    // Cursor pagination alone is expressible through the shared fake, so
+    // orderBy/limit/startAfter without collectionGroup stays reported.
+    {
+      code: `jest.mock('../../config/firebaseAdmin', () => ({
+        db: {
+          collection: () => ({
+            orderBy: () => ({
+              limit: () => ({ startAfter: () => ({ get: jest.fn() }) }),
+            }),
+          }),
+        },
+      }));`,
+      filename:
+        'functions/src/callable/scripts/migrateOverlaySettingsToPerAlert.f.test.ts',
+      errors: [errorFor('../../config/firebaseAdmin')],
+    },
+    // Merely naming collectionGroup in a string is not exercising it.
+    {
+      code: `jest.mock('../../config/firebaseAdmin', () => ({
+        db: {
+          collection: () => {
+            throw new Error('collectionGroup is not supported here');
+          },
+        },
+      }));`,
+      filename: 'functions/src/util/realtimeDb/updateIfExists.test.ts',
       errors: [errorFor('../../config/firebaseAdmin')],
     },
   ],
