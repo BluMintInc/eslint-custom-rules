@@ -3,6 +3,85 @@ import { memoNestedReactComponents } from '../rules/memo-nested-react-components
 
 ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
   valid: [
+    // A jest.mock() factory runs once per module registration, not per render,
+    // so a component defined inside one has module-scope-stable identity. The
+    // ES-module interop shape puts it one property deep in the returned object.
+    {
+      code: `
+        jest.mock('next/head', () => {
+          const MockHeadUnmemoized = ({ children }) => {
+            return <>{children}</>;
+          };
+          MockHeadUnmemoized.displayName = 'MockHeadUnmemoized';
+          return { __esModule: true, default: MockHeadUnmemoized };
+        });
+      `,
+    },
+    // The interop marker is incidental; a bare `{ default: Component }` is the
+    // same shape.
+    {
+      code: `
+        jest.mock('../Widget', () => {
+          const MockWidget = () => <div />;
+          return { default: MockWidget };
+        });
+      `,
+    },
+    {
+      code: `
+        jest.mock('../Widget', () => {
+          const MockWidget = () => <div />;
+          return { __esModule: true, Widget: MockWidget };
+        });
+      `,
+    },
+    // Named exports sit one level deeper in some mock shapes.
+    {
+      code: `
+        jest.mock('../Widget', () => {
+          const MockWidget = () => <div />;
+          return { __esModule: true, components: { Widget: MockWidget } };
+        });
+      `,
+    },
+    {
+      code: `
+        jest.mock('../Widget', () => {
+          const MockWidget = memo(() => <div />);
+          return { __esModule: true, default: MockWidget };
+        });
+      `,
+    },
+    // The registry shape: the component is reachable only through a call, so
+    // the exemption has to key on the jest.mock() call, not the return value.
+    {
+      code: `
+        jest.mock('../renderers', () => {
+          const StubRenderer = ({ data }) => <div>{data}</div>;
+          return {
+            RENDERERS: Object.fromEntries(ids.map((id) => [id, StubRenderer])),
+          };
+        });
+      `,
+    },
+    {
+      code: `
+        jest.doMock('../renderers', () => {
+          const StubRenderer = () => <div />;
+          return { RENDERERS: [StubRenderer] };
+        });
+      `,
+    },
+    // A factory returning JSX outright is still a mock factory, not a render
+    // body — it runs at registration time either way.
+    {
+      code: `
+        jest.mock('../Widget', function () {
+          const MockWidget = () => <div />;
+          return { default: MockWidget };
+        });
+      `,
+    },
     {
       code: `
         import { useCallback } from 'react';
@@ -341,6 +420,49 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
     },
   ],
   invalid: [
+    // The exemption is keyed on jest.mock/doMock specifically; a lookalike
+    // `.mock()` on some other object earns no such treatment.
+    {
+      code: `
+        registry.mock('../Widget', () => {
+          const InlineWidget = () => <div />;
+          return { count: 1 };
+        });
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'InlineWidget',
+            locationDescription: 'a render body',
+          },
+        },
+      ],
+    },
+    // Returning an object is not itself the escape hatch — the object has to
+    // actually carry a component, or an inline component in a genuine render
+    // body would slip through behind any object return.
+    {
+      code: `
+        import { useMemo } from 'react';
+
+        const useConfig = () => {
+          return useMemo(() => {
+            const InlineBadge = () => <span />;
+            return { label: 'x', count: 2 };
+          }, []);
+        };
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'InlineBadge',
+            locationDescription: 'a render body',
+          },
+        },
+      ],
+    },
     {
       code: `
         import React, { useCallback } from 'react';
