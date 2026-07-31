@@ -1,4 +1,5 @@
-import { ruleTesterTs } from '../utils/ruleTester';
+import { Linter, Rule } from 'eslint';
+import { ruleTesterTs, ruleTesterJson } from '../utils/ruleTester';
 import { preferNullishCoalescingBooleanProps } from '../rules/prefer-nullish-coalescing-boolean-props';
 import path from 'path';
 
@@ -413,8 +414,54 @@ ruleTesterTs.run(
           tsconfigRootDir,
         },
       },
+
+      // ===== REGRESSION TESTS FOR ISSUE #1513 =====
+      // The parser-services guard added for non-TypeScript parsers must not disable
+      // type-aware analysis under @typescript-eslint/parser. Neither operand name nor
+      // surrounding syntax marks this as a boolean context, so only the type checker
+      // can keep it valid.
+      {
+        code: `
+        function combine<T extends boolean>(a: T, b: boolean) {
+          const combined = a || b;
+          return combined;
+        }
+        `,
+        filename: 'src/rules/prefer-nullish-coalescing-boolean-props.ts',
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
+      },
     ],
     invalid: [
+      // ===== REGRESSION TEST FOR ISSUE #1513 =====
+      // Reporting and autofixing still work with full type information available.
+      {
+        code: `
+        function withFallback(a: string | undefined, b: string) {
+          const chosen = a || b;
+          return chosen;
+        }
+        `,
+        filename: 'src/rules/prefer-nullish-coalescing-boolean-props.ts',
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `
+        function withFallback(a: string | undefined, b: string) {
+          const chosen = a ?? b;
+          return chosen;
+        }
+        `,
+      },
       {
         code: `
         function generic<T>(a: T, b: boolean) {
@@ -837,3 +884,54 @@ ruleTesterTs.run(
     ],
   },
 );
+
+// ===== REGRESSION TESTS FOR ISSUE #1513 =====
+// Non-TypeScript parsers expose no parser services. An eager getParserServices call
+// throws there, and a throw at rule-load time fails the ENTIRE lint run for the file
+// ("Error while loading rule ..."), not just this rule. The rule must degrade to its
+// syntactic analysis instead.
+ruleTesterJson.run(
+  'prefer-nullish-coalescing-boolean-props (jsonc parser)',
+  preferNullishCoalescingBooleanProps as unknown as Rule.RuleModule,
+  {
+    valid: [
+      {
+        code: `{"name": "example", "version": "1.0.0", "dependencies": {"eslint": "8.19.0"}}`,
+        filename: 'package.json',
+      },
+    ],
+    invalid: [],
+  },
+);
+
+describe('prefer-nullish-coalescing-boolean-props without TypeScript parser services', () => {
+  const lintWithDefaultParser = () => {
+    const linter = new Linter();
+    linter.defineRule(
+      '@blumintinc/blumint/prefer-nullish-coalescing-boolean-props',
+      preferNullishCoalescingBooleanProps as unknown as Rule.RuleModule,
+    );
+    return linter.verify(
+      'const value = data || fallback;',
+      {
+        parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+        rules: {
+          '@blumintinc/blumint/prefer-nullish-coalescing-boolean-props':
+            'error',
+        },
+      },
+      'example.js',
+    );
+  };
+
+  it('does not fail the lint run for a .js file parsed by espree', () => {
+    expect(lintWithDefaultParser).not.toThrow();
+  });
+
+  it('still applies the syntactic analysis without type information', () => {
+    const messages = lintWithDefaultParser();
+    expect(messages).toHaveLength(1);
+    expect(messages[0].messageId).toBe('preferNullishCoalescing');
+    expect(messages[0].fatal).toBeUndefined();
+  });
+});
