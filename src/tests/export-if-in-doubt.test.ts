@@ -21,6 +21,22 @@ ruleTesterTs.run('export-if-in-doubt', exportIfInDoubt, {
     // Named as default export
     "function myFunction() { const myConst = 'Hello'; }; export { myFunction as default };",
 
+    // `export default <identifier>` publishes the declaration it names, in every
+    // spelling the declaration can take.
+    'const myConst = 1;\nexport default myConst;',
+    'function myFunction() {}\nexport default myFunction;',
+    'const myArrow = () => 1;\nexport default myArrow;',
+
+    // Hoisting makes this legal, and the rule must not depend on the export
+    // appearing after the declaration.
+    'export default myFunction;\nfunction myFunction() {}',
+
+    // Default-exporting an imported binding declares nothing locally.
+    "import myImport from 'z';\nexport default myImport;",
+
+    // Classes are not tracked as top-level declarations at all.
+    'export default class MyClass {}',
+
     `import { https } from 'firebase-functions';
         import { UserItem } from '../../types/firestore/User/UserItem';
         import { db } from '../../config/firebaseAdmin';
@@ -93,6 +109,61 @@ ruleTesterTs.run('export-if-in-doubt', exportIfInDoubt, {
         },
       ],
     },
+    // A name that only flows INTO the default export is still unimportable, so
+    // recognizing `export default <identifier>` must not suppress these.
+    {
+      code: 'const myConst = 1;\nexport default wrap(myConst);',
+      errors: [
+        {
+          messageId: 'exportIfInDoubt',
+          data: {
+            name: 'myConst',
+            kind: 'const',
+            exportExample: 'export const myConst = undefined;',
+          },
+        },
+      ],
+    },
+    {
+      code: 'const myConst = 1;\nexport default { myConst };',
+      errors: [
+        {
+          messageId: 'exportIfInDoubt',
+          data: {
+            name: 'myConst',
+            kind: 'const',
+            exportExample: 'export const myConst = undefined;',
+          },
+        },
+      ],
+    },
+    {
+      code: 'const myConst = 1;\nexport default 42;',
+      errors: [
+        {
+          messageId: 'exportIfInDoubt',
+          data: {
+            name: 'myConst',
+            kind: 'const',
+            exportExample: 'export const myConst = undefined;',
+          },
+        },
+      ],
+    },
+    // Only the default-exported name is spared; its siblings still report.
+    {
+      code: 'const exported = 1;\nconst unexported = 2;\nexport default exported;',
+      errors: [
+        {
+          messageId: 'exportIfInDoubt',
+          data: {
+            name: 'unexported',
+            kind: 'const',
+            exportExample: 'export const unexported = undefined;',
+          },
+        },
+      ],
+    },
     {
       code: `import { https } from 'firebase-functions';
         import { UserItem } from '../../types/firestore/User/UserItem';
@@ -103,7 +174,7 @@ ruleTesterTs.run('export-if-in-doubt', exportIfInDoubt, {
         } from 'firebase-admin/firestore';
         import { UserItemCacher } from '../../util/UserItemCacher';
         import { User } from '../../types/firestore/User';
-        
+
         type ListAssetsImxPayload = {
           address: string;
           userId: string;
