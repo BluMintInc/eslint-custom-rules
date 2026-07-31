@@ -1,3 +1,12 @@
+## [1.20.47](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.46...v1.20.47) (2026-07-31)
+
+
+### Bug Fixes
+
+* **no-explicit-return-type:** stop reporting an annotation TypeScript requires (closes [#1512](https://github.com/BluMintInc/eslint-custom-rules/issues/1512)) ([060121f](https://github.com/BluMintInc/eslint-custom-rules/commit/060121fb633c820f4b0d94ae679cd6a1c8216f7a))
+* **no-mock-firebase-admin:** stop reporting factories the shared fake cannot replace (closes [#1510](https://github.com/BluMintInc/eslint-custom-rules/issues/1510)) ([2536d90](https://github.com/BluMintInc/eslint-custom-rules/commit/2536d9043c2fd2c485100e0a9c728d8364671c10))
+* **no-unnecessary-verb-suffix:** accept a function's own return type as a conformance signal (closes [#1511](https://github.com/BluMintInc/eslint-custom-rules/issues/1511)) ([8fcf495](https://github.com/BluMintInc/eslint-custom-rules/commit/8fcf495e8c05fd2da584f1e2a1dd0881c78cada5)), closes [#1350](https://github.com/BluMintInc/eslint-custom-rules/issues/1350)
+
 ## [1.20.46](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.45...v1.20.46) (2026-07-31)
 
 
