@@ -1,5 +1,6 @@
 import path from 'path';
-import { AST_NODE_TYPES } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'noMockFirebaseAdmin';
@@ -51,6 +52,80 @@ const bypassesSharedMock = (comparisonPath: string) => {
   // prefer reporting over silently allowing an unknown layout to shadow a
   // shared mock.
   return true;
+};
+
+/**
+ * The one Firestore surface the shared `mockFirestore` fake cannot express: it
+ * seeds collections by path and exposes no `collectionGroup` whatsoever. A suite
+ * that must drive a collection-group query — e.g. the `__name__`-ordered,
+ * index-free `orderBy`/`limit`/`startAfter` pagination loop the migration
+ * scripts run — therefore has no way to obey the message's remedy, and
+ * reporting it demands deleting the assertions the suite exists to make.
+ *
+ * Cursor pagination alone is NOT part of this exemption: `orderBy`, `limit` and
+ * `startAfter` over an ordinary collection are expressible through the shared
+ * fake, so exempting on those would excuse nearly every hand-rolled factory.
+ */
+const COLLECTION_GROUP = 'collectionGroup';
+
+/**
+ * A string literal only counts where it names a member — an object key or a
+ * computed access — so prose that merely mentions the method (an error message,
+ * a comment-like string) cannot buy an exemption.
+ */
+const namesCollectionGroupLiteral = (node: TSESTree.Node) => {
+  if (node.type === AST_NODE_TYPES.Property) {
+    return (
+      node.key.type === AST_NODE_TYPES.Literal &&
+      node.key.value === COLLECTION_GROUP
+    );
+  }
+  if (node.type === AST_NODE_TYPES.MemberExpression) {
+    return (
+      node.computed &&
+      node.property.type === AST_NODE_TYPES.Literal &&
+      node.property.value === COLLECTION_GROUP
+    );
+  }
+  return false;
+};
+
+/**
+ * Walk the factory for any reference to `collectionGroup`, at any depth: agora's
+ * fake defines it on a returned `db` object, but an equivalent fake may call it
+ * from inside a nested helper or method body.
+ */
+const exercisesCollectionGroup = (factory: TSESTree.Node) => {
+  const stack: TSESTree.Node[] = [factory];
+  while (stack.length > 0) {
+    const node = stack.pop() as TSESTree.Node;
+    if (
+      node.type === AST_NODE_TYPES.Identifier &&
+      node.name === COLLECTION_GROUP
+    ) {
+      return true;
+    }
+    if (namesCollectionGroupLiteral(node)) {
+      return true;
+    }
+    for (const [key, value] of Object.entries(node)) {
+      // `parent` points back up the tree; following it would walk the whole
+      // program and exempt any file that mentions collectionGroup anywhere.
+      if (key === 'parent') {
+        continue;
+      }
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          if (ASTHelpers.isNode(item)) {
+            stack.push(item);
+          }
+        }
+      } else if (ASTHelpers.isNode(value)) {
+        stack.push(value);
+      }
+    }
+  }
+  return false;
 };
 
 export const noMockFirebaseAdmin = createRule<[], MessageIds>({
@@ -111,6 +186,11 @@ export const noMockFirebaseAdmin = createRule<[], MessageIds>({
           }
 
           if (!bypassesSharedMock(comparisonPathOf(mockPath, filename))) {
+            return;
+          }
+
+          const factory = node.arguments[1];
+          if (factory && exercisesCollectionGroup(factory)) {
             return;
           }
 

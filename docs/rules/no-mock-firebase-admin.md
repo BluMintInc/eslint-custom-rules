@@ -37,6 +37,17 @@ Resolution details:
 
 Because the filename determines the tier, every example below includes the file that performs the mock.
 
+### Collection-group exemption
+
+The remedy the message prescribes has one gap: `mockFirestore` seeds collections by path and exposes **no `collectionGroup`** at all. A suite that must drive a collection-group query — for example the `__name__`-ordered, index-free `orderBy`/`limit`/`startAfter` pagination loop that migration scripts run — cannot be written against the shared fake, so reporting it would demand deleting the very assertions the suite exists to make.
+
+A `jest.mock()` whose factory references `collectionGroup` is therefore not reported. The exemption is deliberately narrow:
+
+- It is anchored on `collectionGroup` alone. Ordinary cursor pagination (`orderBy`, `limit`, `startAfter`) over a plain collection **is** expressible through the shared fake, so a factory using only those is still reported — otherwise nearly every hand-rolled factory would qualify.
+- The reference may sit at any depth inside the factory (a nested helper or a method body counts), and may be written as an identifier, a string key, or a computed access.
+- A string that merely mentions the word (an error message, for instance) is not a reference and does not exempt anything.
+- Size is irrelevant: an elaborate factory with no `collectionGroup` is reported exactly as before.
+
 ### Examples of **incorrect** code for this rule:
 
 ```ts
@@ -59,6 +70,19 @@ jest.mock('functions/src/config/firebaseAdmin', () => ({
 // Partial mocks bypass the shared stub just as completely.
 jest.mock('../../config/firebaseAdmin', () => ({
   db: jest.requireActual('../../config/firebaseAdmin').db,
+}));
+
+// functions/src/util/realtimeDb/updateIfExists.test.ts
+// Cursor pagination over a plain collection IS expressible through the shared
+// fake, so a hand-rolled orderBy/limit/startAfter builder is still reported.
+jest.mock('../../config/firebaseAdmin', () => ({
+  db: {
+    collection: () => ({
+      orderBy: () => ({
+        limit: () => ({ startAfter: () => ({ get: jest.fn() }) }),
+      }),
+    }),
+  },
 }));
 ```
 
@@ -90,6 +114,29 @@ jest.mock('../../../config/firebaseAdmin', () => ({
 // src/components/snapshots/server/buildPreemptionSnapshotStrategy.test.ts
 // Bare frontend specifier, likewise exempt.
 jest.mock('src/config/firebaseAdmin');
+```
+
+```ts
+// functions/src/callable/scripts/migrateOverlaySettingsToPerAlert.f.test.ts
+// The suite must drive a real __name__-ordered, index-free pagination loop, and
+// the shared mockFirestore fake has no collectionGroup, so the factory that
+// hand-rolls one is exempt.
+jest.mock('../../config/firebaseAdmin', () => {
+  const state = { docs: [] };
+  const buildQuery = (afterPath, limitCount) => ({
+    orderBy: () => buildQuery(afterPath, limitCount),
+    limit: (count) => buildQuery(afterPath, count),
+    startAfter: (snapshot) => buildQuery(snapshot.ref.path, limitCount),
+    get: async () => ({ docs: state.docs, empty: state.docs.length === 0 }),
+  });
+  return {
+    db: {
+      collectionGroup: () => buildQuery(),
+      batch: () => ({ update: jest.fn(), commit: jest.fn() }),
+    },
+    __mockState: state,
+  };
+});
 ```
 
 ```ts
