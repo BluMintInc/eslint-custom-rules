@@ -639,7 +639,20 @@ export const preferNullishCoalescingBooleanProps = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const parserServices = ESLintUtils.getParserServices(context, true);
+    // getParserServices throws whenever the parser is not @typescript-eslint/parser
+    // (espree for .js, jsonc-eslint-parser for package.json). A throw here fails the
+    // entire lint run for that file, not just this rule, so mirror the same
+    // precondition it checks and degrade to the syntactic analysis instead. The
+    // `allowWithoutFullTypeInformation` flag only covers a TS parser lacking
+    // `parserOptions.project`; it does not cover a non-TS parser.
+    const services = context.parserServices;
+    const hasTypeServices =
+      !!services?.program &&
+      !!services.esTreeNodeToTSNodeMap &&
+      !!services.tsNodeToESTreeNodeMap;
+    const parserServices = hasTypeServices
+      ? ESLintUtils.getParserServices(context, true)
+      : undefined;
     const checker = parserServices?.program?.getTypeChecker();
 
     return {
