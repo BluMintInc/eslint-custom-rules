@@ -137,6 +137,30 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
         });
       `,
     },
+    // A helper declared in a test body builds a tree once per test rather than
+    // per render, so a stub inside it is scaffolding too. It qualifies only
+    // because it does not itself return JSX.
+    {
+      code: `
+        describe('provider', () => {
+          const renderUpdater = (values) => {
+            const provider = new CentralizedProvider();
+            const { Provider } = provider;
+
+            const Consumer = () => {
+              const { updateObj } = provider.useEntireObject();
+              return <button onClick={() => updateObj(values)} />;
+            };
+
+            return render(<Provider><Consumer /></Provider>);
+          };
+
+          it('updates', () => {
+            renderUpdater({ name: 'beta' });
+          });
+        });
+      `,
+    },
     {
       code: `
         import { useCallback } from 'react';
@@ -487,6 +511,32 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
             return <Inner />;
           };
           render(<Outer />);
+        });
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'Inner',
+            locationDescription: 'a render body',
+          },
+        },
+      ],
+    },
+    // Reaching helpers declared inside a test body must not reach real
+    // components declared there: this one returns JSX, so it is a render body
+    // and its nested component still remounts.
+    {
+      code: `
+        describe('suite', () => {
+          const Wrapper = ({ children }) => {
+            const Inner = () => <span />;
+            return <div><Inner />{children}</div>;
+          };
+
+          it('renders', () => {
+            render(<Wrapper />);
+          });
         });
       `,
       errors: [
