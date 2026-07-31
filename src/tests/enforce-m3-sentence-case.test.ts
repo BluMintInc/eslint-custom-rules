@@ -1,3 +1,4 @@
+import { Linter, Rule } from 'eslint';
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { enforceM3SentenceCase } from '../rules/enforce-m3-sentence-case';
 
@@ -589,4 +590,112 @@ ruleTesterJsx.run('enforce-m3-sentence-case', enforceM3SentenceCase, {
       ],
     },
   ],
+});
+
+// Issue #1534: `ignorePatterns` entries are compiled with `new RegExp` inside
+// `create()`, so a malformed source string used to escape as an opaque
+// `Error while loading rule …` that aborts the whole lint run. RuleTester cannot
+// express this — the throw happens at rule-load time, before a fixture is
+// linted — so these cases drive the real `Linter`.
+describe('enforce-m3-sentence-case: ignorePatterns validation (issue #1534)', () => {
+  const RULE_ID = '@blumintinc/blumint/enforce-m3-sentence-case';
+
+  const lint = (code: string, options?: Record<string, unknown>) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      enforceM3SentenceCase as unknown as Rule.RuleModule,
+    );
+    return linter.verify(
+      code,
+      {
+        parser: '@typescript-eslint/parser',
+        parserOptions: {
+          ecmaVersion: 2020 as const,
+          sourceType: 'module' as const,
+          ecmaFeatures: { jsx: true },
+        },
+        rules: {
+          [RULE_ID]: options ? ['error' as const, options] : ('error' as const),
+        },
+      },
+      'Component.tsx',
+    );
+  };
+
+  const TITLE_CASE_SOURCE = `const el = <Typography>Save Changes Now</Typography>;`;
+
+  it('reports the offending value for a literal brand string mistaken for a regex', () => {
+    // `C++` is schema-valid (a string) but `+` is an unquantifiable token.
+    expect(() => lint(TITLE_CASE_SOURCE, { ignorePatterns: ['C++'] })).toThrow(
+      /invalid ignorePatterns/i,
+    );
+    expect(() => lint(TITLE_CASE_SOURCE, { ignorePatterns: ['C++'] })).toThrow(
+      /C\+\+/,
+    );
+  });
+
+  it('names the rule and the underlying regex reason', () => {
+    expect(() => lint(TITLE_CASE_SOURCE, { ignorePatterns: ['C++'] })).toThrow(
+      /enforce-m3-sentence-case: invalid ignorePatterns: C\+\+ \(.*Nothing to repeat.*\)/,
+    );
+  });
+
+  it.each([['C++'], ['*.test.ts'], ['['], ['(foo']])(
+    'throws an actionable error for the malformed pattern %j',
+    (pattern) => {
+      let thrown: unknown;
+      try {
+        lint(TITLE_CASE_SOURCE, { ignorePatterns: [pattern] });
+      } catch (error: unknown) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(Error);
+      const message = (thrown as Error).message;
+      expect(message).toMatch(/invalid ignorePatterns/i);
+      expect(message).toContain(pattern);
+    },
+  );
+
+  it('reports every malformed pattern in a single error, not just the first', () => {
+    let thrown: unknown;
+    try {
+      lint(TITLE_CASE_SOURCE, {
+        ignorePatterns: ['C++', '^[A-Z]{2,}$', '(foo', '['],
+      });
+    } catch (error: unknown) {
+      thrown = error;
+    }
+    const message = (thrown as Error).message;
+    expect(message).toContain('C++');
+    expect(message).toContain('(foo');
+    expect(message).toContain('[');
+    // The well-formed neighbour is not accused.
+    expect(message).not.toContain('^[A-Z]{2,}$');
+  });
+
+  it('keeps compiling well-formed patterns and skipping the strings they match', () => {
+    // Falsifiability: the same source is reported when the pattern is absent.
+    expect(lint(TITLE_CASE_SOURCE)).toHaveLength(1);
+    expect(
+      lint(TITLE_CASE_SOURCE, { ignorePatterns: ['^Save '] }),
+    ).toHaveLength(0);
+    expect(
+      lint(`const el = <Typography>NFT DROP</Typography>;`, {
+        ignorePatterns: ['^[A-Z ]{2,}$'],
+      }),
+    ).toHaveLength(0);
+  });
+
+  it('accepts an empty or absent ignorePatterns list', () => {
+    expect(() => lint(TITLE_CASE_SOURCE, { ignorePatterns: [] })).not.toThrow();
+    expect(() => lint(TITLE_CASE_SOURCE, {})).not.toThrow();
+    expect(() => lint(TITLE_CASE_SOURCE)).not.toThrow();
+    expect(lint(TITLE_CASE_SOURCE, { ignorePatterns: [] })).toHaveLength(1);
+  });
 });
