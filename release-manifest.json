@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.20.45",
+    "date": "2026-07-31T06:37:56.216Z",
+    "rules": [
+      {
+        "name": "enforce-mui-rounded-icons",
+        "changeType": "fix",
+        "issues": [
+          1502
+        ],
+        "summary": "examine barrel imports, not just deep ones (closes #1502)"
+      },
+      {
+        "name": "enforce-object-literal-as-const",
+        "changeType": "fix",
+        "issues": [
+          1503
+        ],
+        "summary": "stop the autofix destroying an existing type assertion (closes #1503)"
+      }
+    ]
+  },
+  {
     "version": "1.20.44",
     "date": "2026-07-31T05:47:19.150Z",
     "rules": [

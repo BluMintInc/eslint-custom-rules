@@ -1,3 +1,11 @@
+## [1.20.45](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.44...v1.20.45) (2026-07-31)
+
+
+### Bug Fixes
+
+* **enforce-mui-rounded-icons:** examine barrel imports, not just deep ones (closes [#1502](https://github.com/BluMintInc/eslint-custom-rules/issues/1502)) ([bac89c6](https://github.com/BluMintInc/eslint-custom-rules/commit/bac89c6f7ee866da3824734236d1c1a01bcaf732))
+* **enforce-object-literal-as-const:** stop the autofix destroying an existing type assertion (closes [#1503](https://github.com/BluMintInc/eslint-custom-rules/issues/1503)) ([7daaf38](https://github.com/BluMintInc/eslint-custom-rules/commit/7daaf386a3a14f22ad79341f913cd0e26e360f57))
+
 ## [1.20.44](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.43...v1.20.44) (2026-07-31)
 
 
