@@ -727,6 +727,24 @@ const isModuleMockFactory = (fn: TSESTree.Node): boolean => {
 };
 
 /**
+ * Whether `fn` sits lexically inside a test-runner callback, at any depth.
+ *
+ * Unlike {@link isTestRunnerCallback}, which asks whether the function *is* the
+ * callback, this reaches helpers declared within one. Safe to widen this far
+ * only because the caller pairs it with "does not return JSX".
+ */
+const isWithinTestRunnerCallback = (fn: TSESTree.Node): boolean => {
+  let current: TSESTree.Node | undefined = fn;
+  while (current) {
+    if (isTestRunnerCallback(current)) {
+      return true;
+    }
+    current = current.parent as TSESTree.Node | undefined;
+  }
+  return false;
+};
+
+/**
  * True when the nearest enclosing function is an HOC factory—it returns a
  * component (memo/forwardRef/component reference) and never returns JSX. Such
  * a function runs once per call, so components defined inside it have stable
@@ -749,6 +767,13 @@ const isInsideHocFactory = (
     return true;
   }
 
+  // A helper *declared* in a test body — `renderUpdater` and friends, which
+  // build a tree and hand it to `render()` — runs once per test rather than per
+  // render. It is only scaffolding if it is not itself a component, which the
+  // `returnsJsx` check below establishes; a real component in the same describe
+  // body still returns JSX and is still reported.
+  const withinTest = isWithinTestRunnerCallback(enclosing);
+
   const returns = collectDirectReturnExpressions(enclosing);
 
   const returnsComponent = returns.some((expression) =>
@@ -758,7 +783,11 @@ const isInsideHocFactory = (
     returnExpressionIsJsx(expression),
   );
 
-  return returnsComponent && !returnsJsx;
+  if (returnsJsx) {
+    return false;
+  }
+
+  return returnsComponent || withinTest;
 };
 
 export const memoNestedReactComponents = createRule<Options, MessageIds>({
