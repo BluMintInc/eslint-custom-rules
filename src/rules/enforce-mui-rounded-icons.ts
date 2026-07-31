@@ -1,8 +1,11 @@
 import { createRule } from '../utils/createRule';
-import { AST_NODE_TYPES } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 
 type Options = [];
 type MessageIds = 'enforceRoundedVariant';
+
+const MUI_ICONS_BARREL = '@mui/icons-material';
+const MUI_ICONS_DEEP_PREFIX = `${MUI_ICONS_BARREL}/`;
 
 /**
  * Non-Rounded MUI variant suffixes. An icon imported as one of these variants
@@ -34,10 +37,45 @@ const ICONS_WITHOUT_ROUNDED = new Set([
   'YouTube',
 ]);
 
+/**
+ * Names the @mui/icons-material barrel exports that are not icons, so a
+ * `*Rounded` sibling never exists for them. `SvgIconComponent` is the icon
+ * component *type*, reached through the same barrel as the icons themselves.
+ */
+const NON_ICON_EXPORTS = new Set(['SvgIconComponent']);
+
 /** Strips a trailing non-Rounded variant suffix to recover the base icon name. */
 const toBaseIconName = (iconName: string): string => {
   const suffix = VARIANT_SUFFIXES.find((variant) => iconName.endsWith(variant));
   return suffix ? iconName.slice(0, -suffix.length) : iconName;
+};
+
+/**
+ * Single source of truth for both import forms: maps the name an icon is
+ * imported under to the Rounded name that should replace it, or null when the
+ * name needs no change — it is already Rounded, it is not an icon, or MUI ships
+ * that icon without a Rounded variant.
+ */
+const toRoundedIconName = (iconName: string): string | null => {
+  if (
+    !iconName ||
+    iconName.endsWith('Rounded') ||
+    NON_ICON_EXPORTS.has(iconName)
+  ) {
+    return null;
+  }
+
+  // Map a non-Rounded variant to its base icon so the suggestion/fix targets a
+  // name that actually exists.
+  const baseIconName = toBaseIconName(iconName);
+
+  // Brand icons have no Rounded variant — demanding one is a false positive and
+  // the fix would point at a name that does not exist.
+  if (ICONS_WITHOUT_ROUNDED.has(baseIconName)) {
+    return null;
+  }
+
+  return `${baseIconName}Rounded`;
 };
 
 export const enforceMuiRoundedIcons = createRule<Options, MessageIds>({
@@ -57,53 +95,91 @@ export const enforceMuiRoundedIcons = createRule<Options, MessageIds>({
   },
   defaultOptions: [],
   create(context) {
+    /** `import LogoutIcon from '@mui/icons-material/Logout'` — the icon is named by the module path. */
+    const checkDeepImport = (
+      node: TSESTree.ImportDeclaration,
+      iconPath: string,
+    ) => {
+      const iconName = iconPath.split('/').pop();
+      const roundedVariant = iconName ? toRoundedIconName(iconName) : null;
+
+      if (!roundedVariant) {
+        return;
+      }
+
+      context.report({
+        node,
+        messageId: 'enforceRoundedVariant',
+        // The local binding is untouched: only the module the icon comes from
+        // changes.
+        fix: (fixer) =>
+          fixer.replaceText(
+            node.source,
+            `'${MUI_ICONS_DEEP_PREFIX}${roundedVariant}'`,
+          ),
+      });
+    };
+
+    /** `import { Logout } from '@mui/icons-material'` — the icon is named by each specifier. */
+    const checkBarrelImport = (node: TSESTree.ImportDeclaration) => {
+      // A type-only import names a type, and the barrel's type exports are not
+      // icons; nothing it introduces can be rendered.
+      if (node.importKind === 'type') {
+        return;
+      }
+
+      for (const specifier of node.specifiers) {
+        // Default and namespace imports name no individual icon.
+        if (
+          specifier.type !== AST_NODE_TYPES.ImportSpecifier ||
+          specifier.importKind === 'type'
+        ) {
+          continue;
+        }
+
+        const importedName = specifier.imported.name;
+        const roundedVariant = toRoundedIconName(importedName);
+
+        if (!roundedVariant) {
+          continue;
+        }
+
+        // An alias keeps the local binding independent of the imported name, so
+        // swapping the imported name is a self-contained edit. Without one, a
+        // fix would rename the binding and would have to rewrite every
+        // reference to it (shorthand properties, export specifiers, JSX) — so
+        // that form is reported without a fix rather than risking a corrupting
+        // edit.
+        const isAliased = specifier.local.name !== importedName;
+
+        context.report({
+          node: specifier,
+          messageId: 'enforceRoundedVariant',
+          fix: isAliased
+            ? (fixer) => fixer.replaceText(specifier.imported, roundedVariant)
+            : null,
+        });
+      }
+    };
+
     return {
       ImportDeclaration(node) {
-        // Only check imports from @mui/icons-material
         if (
-          node.source.type === AST_NODE_TYPES.Literal &&
-          typeof node.source.value === 'string' &&
-          node.source.value.startsWith('@mui/icons-material/')
+          node.source.type !== AST_NODE_TYPES.Literal ||
+          typeof node.source.value !== 'string'
         ) {
-          const iconPath = node.source.value;
+          return;
+        }
 
-          // Skip if already using -Rounded variant
-          if (iconPath.endsWith('Rounded')) {
-            return;
-          }
+        const source = node.source.value;
 
-          // Extract the icon name from the path
-          const iconName = iconPath.split('/').pop();
+        if (source.startsWith(MUI_ICONS_DEEP_PREFIX)) {
+          checkDeepImport(node, source);
+          return;
+        }
 
-          // Skip if the icon name is not a string (shouldn't happen)
-          if (!iconName) {
-            return;
-          }
-
-          // Map a non-Rounded variant import to its base icon so the Rounded
-          // suggestion/fix targets a name that actually exists.
-          const baseIconName = toBaseIconName(iconName);
-
-          // Brand icons have no Rounded variant — demanding one is a false
-          // positive and the fix would point at a non-existent module.
-          if (ICONS_WITHOUT_ROUNDED.has(baseIconName)) {
-            return;
-          }
-
-          // Create the rounded variant name
-          const roundedVariant = `${baseIconName}Rounded`;
-
-          context.report({
-            node,
-            messageId: 'enforceRoundedVariant',
-            fix: (fixer) => {
-              // Replace the import path with the rounded variant
-              return fixer.replaceText(
-                node.source,
-                `'@mui/icons-material/${roundedVariant}'`,
-              );
-            },
-          });
+        if (source === MUI_ICONS_BARREL) {
+          checkBarrelImport(node);
         }
       },
     };
