@@ -93,6 +93,63 @@ ruleTesterTs.run('enforce-timestamp-now', enforceTimestampNow, {
       `,
       filename: backendFilePath,
     },
+    // Issue #1521: a backend file with no Timestamp import must not be flagged.
+    // The autofix would otherwise emit an unbound `Timestamp` reference and turn
+    // compiling code into TS2304.
+    {
+      code: `
+        export function f() {
+          const now = new Date();
+          return now.toLocaleDateString();
+        }
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1521: same for a timestamp-named variable with no usage at all —
+    // the variable name alone must not unlock a fix that references an
+    // identifier the file never binds.
+    {
+      code: `
+        const createdAt = new Date();
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1521: an unrelated module exporting a `Timestamp` binding is not
+    // evidence of the Firestore class, so rewriting to `Timestamp.now()` would
+    // silently call something else. Stay silent.
+    {
+      code: `
+        import { Timestamp } from './my-own-clock';
+        const createdAt = new Date();
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1521: a local binding shadowing the import captures the emitted
+    // reference, so `Timestamp.now()` here would call something else entirely
+    // (issues #1455/#1456). Stay silent rather than swap the value.
+    {
+      code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f(getClock: () => { now: () => Date }) {
+          const Timestamp = getClock();
+          const createdAt = new Date();
+          return { Timestamp, createdAt };
+        }
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1521: a dynamic import inside another function leaves the alias
+    // out of scope at the `new Date()` site, so no fix can be offered there.
+    {
+      code: `
+        async function load() {
+          const { Timestamp } = await import('firebase-admin/firestore');
+          return Timestamp.now();
+        }
+        const createdAt = new Date();
+      `,
+      filename: backendFilePath,
+    },
   ],
   invalid: [
     // Invalid usage of Timestamp.fromDate(new Date()) in backend
@@ -264,6 +321,181 @@ ruleTesterTs.run('enforce-timestamp-now', enforceTimestampNow, {
         const timestamp = Timestamp.now();
       `,
       filename: windowsBackendFilePath,
+    },
+    // Issue #1521: with the import present the `new Date()` fix still applies —
+    // the guard must be reachable in both directions.
+    {
+      code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f() {
+          const now = new Date();
+          return now.toLocaleDateString();
+        }
+      `,
+      errors: [
+        {
+          messageId: 'preferTimestampNow',
+          data: {
+            expression: 'new Date()',
+            timestampAlias: 'Timestamp',
+          },
+        },
+      ],
+      output: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f() {
+          const now = Timestamp.now();
+          return now.toLocaleDateString();
+        }
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1521: a shadow in a sibling function cannot reach this site, so the
+    // fix still applies here. The shadow check is per report site, not per file.
+    {
+      code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        function other() {
+          const Timestamp = 1;
+          return Timestamp;
+        }
+        export function f() {
+          const createdAt = new Date();
+          return { createdAt, other };
+        }
+      `,
+      errors: [
+        {
+          messageId: 'preferTimestampNow',
+          data: {
+            expression: 'new Date()',
+            timestampAlias: 'Timestamp',
+          },
+        },
+      ],
+      output: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        function other() {
+          const Timestamp = 1;
+          return Timestamp;
+        }
+        export function f() {
+          const createdAt = Timestamp.now();
+          return { createdAt, other };
+        }
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1521: the fix names the imported alias, not the default name.
+    {
+      code: `
+        import { Timestamp as FirestoreTimestamp } from 'firebase-admin/firestore';
+        const createdAt = new Date();
+      `,
+      errors: [
+        {
+          messageId: 'preferTimestampNow',
+          data: {
+            expression: 'new Date()',
+            timestampAlias: 'FirestoreTimestamp',
+          },
+        },
+      ],
+      output: `
+        import { Timestamp as FirestoreTimestamp } from 'firebase-admin/firestore';
+        const createdAt = FirestoreTimestamp.now();
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1521: a module-scope dynamic import binds the alias for the whole
+    // module, so the `new Date()` fix is safe.
+    {
+      code: `
+        const { Timestamp } = await import('firebase-admin/firestore');
+        const createdAt = new Date();
+      `,
+      errors: [
+        {
+          messageId: 'preferTimestampNow',
+          data: {
+            expression: 'new Date()',
+            timestampAlias: 'Timestamp',
+          },
+        },
+      ],
+      output: `
+        const { Timestamp } = await import('firebase-admin/firestore');
+        const createdAt = Timestamp.now();
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1521: the client SDK entrypoint counts as an import too.
+    {
+      code: `
+        import { Timestamp } from 'firebase/firestore';
+        const updatedAt = new Date();
+      `,
+      errors: [
+        {
+          messageId: 'preferTimestampNow',
+          data: {
+            expression: 'new Date()',
+            timestampAlias: 'Timestamp',
+          },
+        },
+      ],
+      output: `
+        import { Timestamp } from 'firebase/firestore';
+        const updatedAt = Timestamp.now();
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1521: import bindings are hoisted, so an import written after the
+    // usage still authorizes the fix. Collecting imports in traversal order
+    // would miss this.
+    {
+      code: `
+        const createdAt = new Date();
+        import { Timestamp } from 'firebase-admin/firestore';
+      `,
+      errors: [
+        {
+          messageId: 'preferTimestampNow',
+          data: {
+            expression: 'new Date()',
+            timestampAlias: 'Timestamp',
+          },
+        },
+      ],
+      output: `
+        const createdAt = Timestamp.now();
+        import { Timestamp } from 'firebase-admin/firestore';
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1521: `Timestamp.fromDate(...)` rewrites an identifier the source
+    // already binds, so it stays reportable even when the import is invisible
+    // to the rule (here a `require`). Only the synthesized-name path needs the
+    // import guard.
+    {
+      code: `
+        const { Timestamp } = require('firebase-admin/firestore');
+        const timestamp = Timestamp.fromDate(new Date());
+      `,
+      errors: [
+        {
+          messageId: 'preferTimestampNow',
+          data: {
+            expression: 'Timestamp.fromDate(new Date())',
+            timestampAlias: 'Timestamp',
+          },
+        },
+      ],
+      output: `
+        const { Timestamp } = require('firebase-admin/firestore');
+        const timestamp = Timestamp.now();
+      `,
+      filename: backendFilePath,
     },
   ],
 });

@@ -10,9 +10,10 @@ Firestore timestamps should originate from the Firestore SDK instead of the loca
 
 ## Rule Details
 
-- Reports `Timestamp.fromDate(new Date())`, `Timestamp.fromMillis(Date.now())`, and direct `new Date()` assignments to timestamp-like variables when a `Timestamp` import is present.
+- Reports `Timestamp.fromDate(new Date())`, `Timestamp.fromMillis(Date.now())`, and direct `new Date()` assignments to timestamp-like variables.
 - Allows `Date` objects that are mutated before conversion (e.g., scheduling a future time) because those require the custom logic provided by the mutation.
 - Auto-fixes replace the flagged expression with the detected `Timestamp` alias' `now()` call.
+- A bare `new Date()` is only reported when a Firestore `Timestamp` import (static or dynamic, under either `firebase-admin/firestore` or `firebase/firestore`) is in scope at that point. The rewrite names an identifier the source never mentions, so without a binding it would emit an unbound `Timestamp`; a file with no Firestore import is also unlikely to be building a Firestore document at all. `Timestamp.fromDate(...)` and `Timestamp.fromMillis(...)` are unaffected by this gate because they rewrite an identifier the source already binds.
 
 ### Examples of **incorrect** code for this rule:
 ```ts
@@ -35,6 +36,16 @@ const updatedAt = FirestoreTimestamp.now();
 const future = new Date();
 future.setDate(future.getDate() + 30);
 const readyAt = Timestamp.fromDate(future);
+```
+
+A file with no Firestore `Timestamp` import keeps its plain `Date` usage: rewriting it would reference a name the file never binds.
+
+```ts
+// File: functions/src/util/formatDate.ts
+export function label() {
+  const now = new Date();
+  return now.toLocaleDateString();
+}
 ```
 
 ## When Not To Use It
