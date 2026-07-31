@@ -343,6 +343,47 @@ ruleTesterTs.run('enforce-timestamp-now', enforceTimestampNow, {
       `,
       filename: backendFilePath,
     },
+    // Issue #1530: a whole-declaration `import type` binds `Timestamp` as a
+    // type only, so emitting `Timestamp.now()` against it is TS1361.
+    {
+      code: `
+        import type { Timestamp } from 'firebase-admin/firestore';
+        export function f(): void {
+          const now = new Date();
+        }
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1530: the inline-specifier spelling is type-only just the same.
+    {
+      code: `
+        import { type Timestamp } from 'firebase-admin/firestore';
+        export function f(): void {
+          const now = new Date();
+        }
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1530: an aliased type-only import is no more usable as a value.
+    {
+      code: `
+        import type { Timestamp as FirestoreTimestamp } from 'firebase-admin/firestore';
+        const createdAt = new Date();
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1530: a Timestamp-compatible member use does not rescue a
+    // type-only binding — the emitted receiver is still unusable as a value.
+    {
+      code: `
+        import type { Timestamp } from 'firebase-admin/firestore';
+        export function f() {
+          const now = new Date();
+          return now.toMillis();
+        }
+      `,
+      filename: backendFilePath,
+    },
   ],
   invalid: [
     // Invalid usage of Timestamp.fromDate(new Date()) in backend
@@ -743,6 +784,114 @@ ruleTesterTs.run('enforce-timestamp-now', enforceTimestampNow, {
         export function f(other: Timestamp) {
           const updatedAt = Timestamp.now();
           return updatedAt.seconds + updatedAt.nanoseconds + Number(updatedAt.isEqual(other));
+        }
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1530 control: the same file with a value import still fixes, so
+    // the type-only screen narrows nothing it should not.
+    {
+      code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f(): void {
+          const now = new Date();
+        }
+      `,
+      errors: [
+        {
+          messageId: 'preferTimestampNow',
+          data: {
+            expression: 'new Date()',
+            timestampAlias: 'Timestamp',
+          },
+        },
+      ],
+      output: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f(): void {
+          const now = Timestamp.now();
+        }
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1530: an inline `type` specifier disqualifies only itself, so a
+    // value import of `Timestamp` alongside it still authorizes the fix.
+    {
+      code: `
+        import { type DocumentData, Timestamp } from 'firebase-admin/firestore';
+        export function f(data: DocumentData): void {
+          const createdAt = new Date();
+        }
+      `,
+      errors: [
+        {
+          messageId: 'preferTimestampNow',
+          data: {
+            expression: 'new Date()',
+            timestampAlias: 'Timestamp',
+          },
+        },
+      ],
+      output: `
+        import { type DocumentData, Timestamp } from 'firebase-admin/firestore';
+        export function f(data: DocumentData): void {
+          const createdAt = Timestamp.now();
+        }
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1530: a separate type-only import declaration from the same module
+    // does not taint the value import that sits beside it.
+    {
+      code: `
+        import type { DocumentData } from 'firebase-admin/firestore';
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f(data: DocumentData): void {
+          const updatedAt = new Date();
+        }
+      `,
+      errors: [
+        {
+          messageId: 'preferTimestampNow',
+          data: {
+            expression: 'new Date()',
+            timestampAlias: 'Timestamp',
+          },
+        },
+      ],
+      output: `
+        import type { DocumentData } from 'firebase-admin/firestore';
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f(data: DocumentData): void {
+          const updatedAt = Timestamp.now();
+        }
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1530: a type-only import of `Timestamp` in one declaration and a
+    // value import of it in another still leaves a usable value binding.
+    {
+      code: `
+        import type { Timestamp } from 'firebase-admin/firestore';
+        import { Timestamp as FirestoreTimestamp } from 'firebase-admin/firestore';
+        export function f(previous: Timestamp): void {
+          const createdAt = new Date();
+        }
+      `,
+      errors: [
+        {
+          messageId: 'preferTimestampNow',
+          data: {
+            expression: 'new Date()',
+            timestampAlias: 'FirestoreTimestamp',
+          },
+        },
+      ],
+      output: `
+        import type { Timestamp } from 'firebase-admin/firestore';
+        import { Timestamp as FirestoreTimestamp } from 'firebase-admin/firestore';
+        export function f(previous: Timestamp): void {
+          const createdAt = FirestoreTimestamp.now();
         }
       `,
       filename: backendFilePath,

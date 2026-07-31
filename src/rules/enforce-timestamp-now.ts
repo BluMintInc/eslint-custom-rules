@@ -88,13 +88,25 @@ export const enforceTimestampNow = createRule<[], MessageIds>({
       }
     }
 
-    /** Local names a static Firestore import binds to `Timestamp`. */
+    /**
+     * Local names a static Firestore import binds to `Timestamp` as a *value*.
+     *
+     * A type-only binding is erased at emit, so referencing it from the
+     * synthesized `Timestamp.now()` turns compiling code into TS1361 (issue
+     * #1530). This is the same shape as #1521: the gate has to prove not just
+     * that a binding exists but that it is the kind of binding the emitted code
+     * requires. Both spellings are type-only and neither implies the other —
+     * `import type { Timestamp }` marks the declaration while leaving its
+     * specifier `value`, and `import { type Timestamp }` marks the specifier
+     * while leaving the declaration `value`.
+     */
     function staticTimestampAliases(
       node: TSESTree.ImportDeclaration,
     ): string[] {
       if (
         typeof node.source.value !== 'string' ||
-        !FIRESTORE_MODULES.has(node.source.value)
+        !FIRESTORE_MODULES.has(node.source.value) ||
+        node.importKind === 'type'
       ) {
         return [];
       }
@@ -102,6 +114,7 @@ export const enforceTimestampNow = createRule<[], MessageIds>({
         .filter(
           (specifier): specifier is TSESTree.ImportSpecifier =>
             specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+            specifier.importKind !== 'type' &&
             specifier.imported.type === AST_NODE_TYPES.Identifier &&
             specifier.imported.name === 'Timestamp',
         )
@@ -111,6 +124,12 @@ export const enforceTimestampNow = createRule<[], MessageIds>({
     /**
      * Local names a `const { Timestamp } = await import(...)` declarator binds
      * to `Timestamp`.
+     *
+     * No type-only screen is needed here the way the static path needs one
+     * (#1530): a destructured `await import(...)` is a runtime value binding by
+     * construction. TypeScript spells a type-only dynamic import as the
+     * `import('...').Timestamp` type node, which never appears as a variable
+     * initializer, and `ImportExpression` carries no `importKind` to check.
      */
     function dynamicTimestampAliases(
       node: TSESTree.VariableDeclarator,
