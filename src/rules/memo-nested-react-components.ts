@@ -499,6 +499,23 @@ const returnExpressionIsComponent = (
     return Boolean(functionCreatesComponent(unwrapped, reactImports));
   }
 
+  // A factory that hands its component back inside an object is still an HOC
+  // factory, not a render body — the ES-module interop shape
+  // `{ __esModule: true, default: Component }` that every `jest.mock()` factory
+  // uses puts the component one property deep. Recursing covers nesting; render
+  // bodies return JSX rather than object literals, so this does not blur the
+  // two.
+  if (unwrapped.type === AST_NODE_TYPES.ObjectExpression) {
+    return unwrapped.properties.some(
+      (property) =>
+        property.type === AST_NODE_TYPES.Property &&
+        returnExpressionIsComponent(
+          property.value as TSESTree.Expression,
+          reactImports,
+        ),
+    );
+  }
+
   return false;
 };
 
@@ -618,6 +635,41 @@ const collectDirectReturnExpressions = (
   return returns;
 };
 
+/** Module-mock registrars whose factory argument runs at registration time. */
+const MODULE_MOCK_REGISTRARS = new Set(['mock', 'doMock']);
+
+/**
+ * True when `fn` is the factory argument of a `jest.mock()` / `jest.doMock()`
+ * call.
+ *
+ * Such a factory runs once when the module registry resolves the mock, never
+ * per render, so a component defined inside it is as identity-stable as a
+ * module-scope export and the remount harm this rule describes cannot occur.
+ * Keyed on the call rather than on what the factory returns because the
+ * component is often unreachable from the return expression — the common
+ * registry shape hands it back through
+ * `Object.fromEntries(ids.map((id) => [id, Stub]))`, where no amount of
+ * unwrapping the returned object literal finds it.
+ */
+const isModuleMockFactory = (fn: TSESTree.Node): boolean => {
+  const call = fn.parent;
+  if (!call || call.type !== AST_NODE_TYPES.CallExpression) {
+    return false;
+  }
+  if (!call.arguments.includes(fn as TSESTree.CallExpressionArgument)) {
+    return false;
+  }
+  const { callee } = call;
+  return (
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    !callee.computed &&
+    callee.object.type === AST_NODE_TYPES.Identifier &&
+    callee.object.name === 'jest' &&
+    callee.property.type === AST_NODE_TYPES.Identifier &&
+    MODULE_MOCK_REGISTRARS.has(callee.property.name)
+  );
+};
+
 /**
  * True when the nearest enclosing function is an HOC factory—it returns a
  * component (memo/forwardRef/component reference) and never returns JSX. Such
@@ -632,6 +684,10 @@ const isInsideHocFactory = (
   const enclosing = findEnclosingFunction(node);
   if (!enclosing) {
     return false;
+  }
+
+  if (isModuleMockFactory(enclosing)) {
+    return true;
   }
 
   const returns = collectDirectReturnExpressions(enclosing);
