@@ -118,6 +118,26 @@ This rule accepts an options object with the following properties:
 }
 ```
 
+### `allowNames` entries are regex sources
+
+Each `allowNames` entry must be a valid regular expression **source** string, not
+a glob and not a literal to match verbatim. An entry that fails to compile is a
+configuration error: the rule fails fast and names the option, the offending
+value, and the reason, e.g.
+
+```text
+no-render-function-components: invalid allowNames: *Legacy (Invalid regular expression: /*Legacy/: Nothing to repeat)
+```
+
+Every malformed entry is listed in that single error, so a well-formed neighbour
+in the same array is not accused. To exempt a name containing regex
+metacharacters, escape them (regex source `render\+Plus`, written
+`"render\\+Plus"` in JSON or JavaScript config). To express a glob-like intent
+such as `*Legacy`, write it as a pattern instead (`Legacy$`).
+
+An absent `allowNames` and an explicit empty list are equivalent — the option has
+no built-in defaults, so neither exempts anything.
+
 ## When Not To Use It
 
 If your codebase intentionally uses `render*` helper functions as a convention

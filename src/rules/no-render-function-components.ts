@@ -117,9 +117,36 @@ export const noRenderFunctionComponents = createRule<Options, MessageIds>({
       ...DEFAULT_RENDER_PROP_NAMES,
       ...userRenderPropNames,
     ]);
-    const allowNamePatterns = (options?.allowNames ?? []).map(
-      (pattern) => new RegExp(pattern),
-    );
+    // `allowNames` entries are regex source strings, but the schema can only
+    // check that each element is a string. Compiling them unguarded lets a
+    // malformed source (a glob such as `*Legacy`, say) escape `create()` as an
+    // opaque `Error while loading rule …` that aborts the whole lint run while
+    // naming neither the option nor the offending value. Every failure is
+    // collected and rethrown as a single actionable configuration error:
+    // dropping the pattern silently would leave the consumer's allowlist inert,
+    // so the functions they deliberately exempted would be reported anyway with
+    // no indication why.
+    const invalidAllowNames: string[] = [];
+    const allowNamePatterns = (options?.allowNames ?? []).flatMap((pattern) => {
+      try {
+        return [new RegExp(pattern)];
+      } catch (error: unknown) {
+        const reason =
+          error && typeof error === 'object' && 'message' in error
+            ? ` (${String((error as { message?: string }).message)})`
+            : '';
+        invalidAllowNames.push(`${pattern}${reason}`);
+        return [];
+      }
+    });
+
+    if (invalidAllowNames.length > 0) {
+      throw new Error(
+        `no-render-function-components: invalid allowNames: ${invalidAllowNames.join(
+          ', ',
+        )}`,
+      );
+    }
 
     type Candidate = {
       name: string;
