@@ -1,4 +1,5 @@
-import { TSESLint, TSESTree } from '@typescript-eslint/utils';
+import { TSESTree } from '@typescript-eslint/utils';
+import { createRule } from '../utils/createRule';
 
 /**
  * Normalizes JSX child node types into short descriptors used inside lint messages.
@@ -21,7 +22,8 @@ const describeChild = (child: TSESTree.JSXChild): string => {
   }
 };
 
-export const noUselessFragment: TSESLint.RuleModule<'noUselessFragment', []> = {
+export const noUselessFragment = createRule<[], 'noUselessFragment'>({
+  name: 'no-useless-fragment',
   create(context) {
     return {
       JSXFragment(node: TSESTree.JSXFragment) {
@@ -81,4 +83,4 @@ export const noUselessFragment: TSESLint.RuleModule<'noUselessFragment', []> = {
     fixable: 'code',
   },
   defaultOptions: [],
-};
+});
