@@ -1,5 +1,29 @@
 [
   {
+    "version": "1.20.42",
+    "date": "2026-07-31T04:16:11.179Z",
+    "rules": [
+      {
+        "name": "logical-top-to-bottom-grouping",
+        "changeType": "fix",
+        "issues": [
+          1493
+        ],
+        "summary": "stop hoisting effects above captured state (closes #1493)"
+      },
+      {
+        "name": "memo-nested-react-components",
+        "changeType": "fix",
+        "issues": [
+          1491,
+          1494,
+          1495
+        ],
+        "summary": "exempt stubs inside test helper functions (closes #1495); exempt components defined in test bodies (closes #1494); exempt components defined in jest.mock factories (closes #1491)"
+      }
+    ]
+  },
+  {
     "version": "1.20.41",
     "date": "2026-07-31T01:39:15.741Z",
     "rules": [

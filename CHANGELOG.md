@@ -1,3 +1,13 @@
+## [1.20.42](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.41...v1.20.42) (2026-07-31)
+
+
+### Bug Fixes
+
+* **logical-top-to-bottom-grouping:** stop hoisting effects above captured state (closes [#1493](https://github.com/BluMintInc/eslint-custom-rules/issues/1493)) ([fa22167](https://github.com/BluMintInc/eslint-custom-rules/commit/fa221679c5abec16fe027df9b61027ae476e720d))
+* **memo-nested-react-components:** exempt components defined in jest.mock factories (closes [#1491](https://github.com/BluMintInc/eslint-custom-rules/issues/1491)) ([cc2e704](https://github.com/BluMintInc/eslint-custom-rules/commit/cc2e7046266ebd99e2269f23aa736b05eaad818f))
+* **memo-nested-react-components:** exempt components defined in test bodies (closes [#1494](https://github.com/BluMintInc/eslint-custom-rules/issues/1494)) ([b6792ea](https://github.com/BluMintInc/eslint-custom-rules/commit/b6792ea8ec251d73bfb2ec75d41c0282f275fe17)), closes [#1491](https://github.com/BluMintInc/eslint-custom-rules/issues/1491)
+* **memo-nested-react-components:** exempt stubs inside test helper functions (closes [#1495](https://github.com/BluMintInc/eslint-custom-rules/issues/1495)) ([41dd028](https://github.com/BluMintInc/eslint-custom-rules/commit/41dd028a983853b1c758142bcb142531c5b858f7)), closes [#1491](https://github.com/BluMintInc/eslint-custom-rules/issues/1491) [#1494](https://github.com/BluMintInc/eslint-custom-rules/issues/1494)
+
 ## [1.20.41](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.40...v1.20.41) (2026-07-31)
 
 
