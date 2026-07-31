@@ -60,8 +60,7 @@ const PARENTHESES_FREE_PARENTS = new Set<AST_NODE_TYPES>([
 ]);
 
 /**
- * What the emitted `isSnapshotReady` call would resolve to once a suggestion is
- * applied.
+ * What the emitted guard call would resolve to once a suggestion is applied.
  */
 type GuardBinding =
   /** Already callable in this scope; the rewrite stands alone. */
@@ -93,7 +92,8 @@ export const enforceSnapshotStateNarrowing = createRule<Options, MessageIds>({
           guardFunctions: {
             type: 'array',
             items: { type: 'string' },
-            description: 'Canonical type guard function names',
+            description:
+              'Type guard function names; the first is the one suggestions call and import',
           },
           excludeFiles: {
             type: 'array',
@@ -103,17 +103,20 @@ export const enforceSnapshotStateNarrowing = createRule<Options, MessageIds>({
           guardImportSource: {
             type: 'string',
             description:
-              'Module specifier the suggestion imports isSnapshotReady from',
+              'Module specifier the suggestion imports the guard from',
           },
         },
         additionalProperties: false,
       },
     ],
     messages: {
+      // `guard` is the configured canonical guard name, so a consumer who
+      // renames it is not told to call a function their config says does not
+      // exist. Every report and suggestion supplies it.
       noFalsyCheck:
-        "Do not use boolean coercion on FirestoreSnapshotState<T>. All string states ('idle', 'loading', 'not-found') are truthy, so '{{expression}}' does not behave as intended. Use isSnapshotReady(state) to narrow to T, or compare explicitly (e.g., state === 'loading').",
+        "Do not use boolean coercion on FirestoreSnapshotState<T>. All string states ('idle', 'loading', 'not-found') are truthy, so '{{expression}}' does not behave as intended. Use {{guard}}(state) to narrow to T, or compare explicitly (e.g., state === 'loading').",
       noRawTypeof:
-        "Do not use '{{expression}}' to narrow FirestoreSnapshotState<T> to data. Use isSnapshotReady(state) instead to maintain the abstraction boundary.",
+        "Do not use '{{expression}}' to narrow FirestoreSnapshotState<T> to data. Use {{guard}}(state) instead to maintain the abstraction boundary.",
     },
   },
   defaultOptions: [{}],
@@ -121,9 +124,16 @@ export const enforceSnapshotStateNarrowing = createRule<Options, MessageIds>({
     const snapshotHooks = new Set(
       options?.snapshotHooks ?? DEFAULT_SNAPSHOT_HOOKS,
     );
-    // guardFunctions is accepted in config for documentation and future extensibility
-    // but detection is purely syntactic (by hook source), not by guard function name.
-    void (options?.guardFunctions ?? DEFAULT_GUARD_FUNCTIONS);
+    /**
+     * The name every suggestion calls, resolves in scope, and imports.
+     * `guardFunctions` may list several recognized guards; the first usable one
+     * is canonical. A list that names nothing callable — empty, or holding only
+     * blanks — falls back to the default rather than leaving the suggestion to
+     * emit `undefined(state)` or `(state)`.
+     */
+    const guardName =
+      options?.guardFunctions?.find((name) => name.trim().length > 0) ??
+      DEFAULT_GUARD_FUNCTIONS[0];
     const excludeFiles = options?.excludeFiles ?? [
       'src/types/FirestoreSnapshotState.ts',
     ];
@@ -222,7 +232,7 @@ export const enforceSnapshotStateNarrowing = createRule<Options, MessageIds>({
      * import, or would collide with an unrelated binding of the same name.
      */
     function resolveGuardBinding(scope: TSESLint.Scope.Scope): GuardBinding {
-      const variable = ASTUtils.findVariable(scope, GUARD_NAME);
+      const variable = ASTUtils.findVariable(scope, guardName);
       if (!variable) {
         return 'missing';
       }
@@ -293,7 +303,7 @@ export const enforceSnapshotStateNarrowing = createRule<Options, MessageIds>({
           isValueImportSpecifier,
         );
         const lastSpecifier = namedSpecifiers[namedSpecifiers.length - 1];
-        return fixer.insertTextAfter(lastSpecifier, `, ${GUARD_NAME}`);
+        return fixer.insertTextAfter(lastSpecifier, `, ${guardName}`);
       }
 
       // A namespace or type-only import of the module cannot take a named value
@@ -301,7 +311,7 @@ export const enforceSnapshotStateNarrowing = createRule<Options, MessageIds>({
       const source = guardDeclarations.length
         ? String(guardDeclarations[0].source.value)
         : guardImportSource;
-      const importText = `import { ${GUARD_NAME} } from '${source}';\n`;
+      const importText = `import { ${guardName} } from '${source}';\n`;
 
       const [firstImport] = declarations;
       if (firstImport) {
@@ -315,7 +325,7 @@ export const enforceSnapshotStateNarrowing = createRule<Options, MessageIds>({
 
     /**
      * Builds the single suggestion shared by every report: swap the flagged
-     * expression for its guard-based equivalent and bring `isSnapshotReady` into
+     * expression for its guard-based equivalent and bring the guard into
      * scope. Declines (no suggestion) when the name is already taken by
      * something that is not the guard.
      */
@@ -328,7 +338,7 @@ export const enforceSnapshotStateNarrowing = createRule<Options, MessageIds>({
       return [
         {
           messageId,
-          data: { expression: replacement },
+          data: { expression: replacement, guard: guardName },
           fix(fixer) {
             const binding = resolveGuardBinding(scope);
             if (binding === 'conflict') {
@@ -407,11 +417,11 @@ export const enforceSnapshotStateNarrowing = createRule<Options, MessageIds>({
             context.report({
               node,
               messageId: 'noRawTypeof',
-              data: { expression: getText(node) },
+              data: { expression: getText(node), guard: guardName },
               suggest: guardSuggestion(
                 'noRawTypeof',
                 node,
-                `${GUARD_NAME}(${operand.name})`,
+                `${guardName}(${operand.name})`,
                 context.getScope(),
               ),
             });
@@ -439,7 +449,7 @@ export const enforceSnapshotStateNarrowing = createRule<Options, MessageIds>({
       context.report({
         node,
         messageId: 'noFalsyCheck',
-        data: { expression },
+        data: { expression, guard: guardName },
         suggest: guardSuggestion(
           'noFalsyCheck',
           fixNode,
@@ -501,7 +511,7 @@ export const enforceSnapshotStateNarrowing = createRule<Options, MessageIds>({
           reportFalsyCheck(
             node,
             `!${argument.name}`,
-            `!${GUARD_NAME}(${argument.name})`,
+            `!${guardName}(${argument.name})`,
           );
         }
         // !!state — the argument is another `!` whose argument is the snapshot var.
@@ -513,7 +523,7 @@ export const enforceSnapshotStateNarrowing = createRule<Options, MessageIds>({
           isSnapshotVar(argument.argument as TSESTree.Identifier)
         ) {
           const varName = (argument.argument as TSESTree.Identifier).name;
-          reportFalsyCheck(node, `!!${varName}`, `${GUARD_NAME}(${varName})`);
+          reportFalsyCheck(node, `!!${varName}`, `${guardName}(${varName})`);
         }
       },
 
@@ -522,7 +532,7 @@ export const enforceSnapshotStateNarrowing = createRule<Options, MessageIds>({
       IfStatement(node: TSESTree.IfStatement) {
         const test = node.test;
         if (test.type === AST_NODE_TYPES.Identifier && isSnapshotVar(test)) {
-          reportFalsyCheck(test, test.name, `${GUARD_NAME}(${test.name})`);
+          reportFalsyCheck(test, test.name, `${guardName}(${test.name})`);
         }
       },
 
@@ -530,7 +540,7 @@ export const enforceSnapshotStateNarrowing = createRule<Options, MessageIds>({
       ConditionalExpression(node: TSESTree.ConditionalExpression) {
         const test = node.test;
         if (test.type === AST_NODE_TYPES.Identifier && isSnapshotVar(test)) {
-          reportFalsyCheck(test, test.name, `${GUARD_NAME}(${test.name})`);
+          reportFalsyCheck(test, test.name, `${guardName}(${test.name})`);
         }
       },
 
@@ -545,13 +555,13 @@ export const enforceSnapshotStateNarrowing = createRule<Options, MessageIds>({
           if (node.operator === '&&') {
             // `state && expr` guards expr, so swapping the operand for the
             // guard keeps both the polarity and the narrowing of `state`.
-            reportFalsyCheck(left, left.name, `${GUARD_NAME}(${left.name})`);
+            reportFalsyCheck(left, left.name, `${guardName}(${left.name})`);
             return;
           }
           // `state || fallback` evaluates to the state itself when it is
           // usable, so a bare operand swap would yield `true` instead of the
           // data. Only the conditional form preserves that value.
-          const guarded = `${GUARD_NAME}(${left.name}) ? ${
+          const guarded = `${guardName}(${left.name}) ? ${
             left.name
           } : ${getText(node.right)}`;
           reportFalsyCheck(
@@ -584,7 +594,7 @@ export const enforceSnapshotStateNarrowing = createRule<Options, MessageIds>({
           reportFalsyCheck(
             node,
             `Boolean(${varName})`,
-            `${GUARD_NAME}(${varName})`,
+            `${guardName}(${varName})`,
           );
         }
       },

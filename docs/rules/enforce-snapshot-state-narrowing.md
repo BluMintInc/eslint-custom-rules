@@ -73,6 +73,8 @@ A falsy check keeps its negation — replacing `!state` with the positive guard 
 
 The suggestion also imports `isSnapshotReady`. It extends an existing import of the guard's module (reusing that file's own path), inserts `guardImportSource` when there is none, and does nothing when the guard is already in scope. When the name is taken by something that is not the guard — an unrelated binding or a type-only import — the suggestion is withheld rather than emitting a call to the wrong thing.
 
+A codebase whose guard is named something else sets `guardFunctions`: the first entry is the name the suggestion calls, looks up in scope, and imports, so it pairs with `guardImportSource` to point at an export that exists. With `guardFunctions: ['isReady']` and `guardImportSource: 'src/utils/guards'`, the suggestion writes `import { isReady } from 'src/utils/guards';` and rewrites `!state` as `!isReady(state)`.
+
 ## Options
 
 ```js
@@ -82,15 +84,19 @@ The suggestion also imports `isSnapshotReady`. It extends an existing import of 
     // Default: ['useDocSnapshot', 'useCollectionSnapshot', 'useCachedDocSnapshot', 'useFirestore']
     snapshotHooks: ['useDocSnapshot', 'useCollectionSnapshot'],
 
-    // Canonical guard function names.
+    // Guard function names. The first usable entry is the canonical one: it is
+    // the name every suggestion calls, resolves in scope, and imports. A list
+    // that names nothing (empty, or only blanks) leaves the default in place.
+    // Detection of violations does not depend on this option — it is purely
+    // syntactic, by hook source.
     // Default: ['isSnapshotReady']
     guardFunctions: ['isSnapshotReady'],
 
-    // Files to exclude (e.g. the isSnapshotReady implementation itself).
+    // Files to exclude (e.g. the guard implementation itself).
     // Default: ['src/types/FirestoreSnapshotState.ts']
     excludeFiles: ['src/types/FirestoreSnapshotState.ts'],
 
-    // Module the suggestion imports isSnapshotReady from when the file has no
+    // Module the suggestion imports the guard from when the file has no
     // import of the guard's module to extend.
     // Default: 'src/types/FirestoreSnapshotState'
     guardImportSource: '@/types/FirestoreSnapshotState',
