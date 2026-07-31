@@ -9,6 +9,13 @@ import { enforceSnapshotStateNarrowing } from '../rules/enforce-snapshot-state-n
 const withGuardImport = (code: string) =>
   `import { isSnapshotReady } from 'src/types/FirestoreSnapshotState';\n${code}`;
 
+/**
+ * Same prefix for a configured guard name and/or module, so a case can pin
+ * exactly which identifier the suggestion imports.
+ */
+const withImport = (name: string, source: string, code: string) =>
+  `import { ${name} } from '${source}';\n${code}`;
+
 ruleTesterJsx.run(
   'enforce-snapshot-state-narrowing',
   enforceSnapshotStateNarrowing,
@@ -965,6 +972,263 @@ return isSnapshotReady(state) ? state.name : null;
             ],
           },
         ],
+      },
+
+      // ---- REGRESSIONS: configurable guard name (issue #1505) ----
+
+      // 37. Default options emit the canonical guard, pinning the behaviour
+      // every consumer who sets no options gets
+      {
+        code: `
+const state = useDocSnapshot({ docPath });
+if (!state) return null;
+        `,
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withImport(
+                  'isSnapshotReady',
+                  'src/types/FirestoreSnapshotState',
+                  `
+const state = useDocSnapshot({ docPath });
+if (!isSnapshotReady(state)) return null;
+        `,
+                ),
+              },
+            ],
+          },
+        ],
+      },
+
+      // 38. A configured guard name reaches both the suggestion text and the
+      // inserted import
+      {
+        code: `
+const state = useDocSnapshot({ docPath });
+if (!state) return null;
+        `,
+        options: [{ guardFunctions: ['isReady'] }],
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withImport(
+                  'isReady',
+                  'src/types/FirestoreSnapshotState',
+                  `
+const state = useDocSnapshot({ docPath });
+if (!isReady(state)) return null;
+        `,
+                ),
+              },
+            ],
+          },
+        ],
+      },
+
+      // 39. A renamed guard in a relocated module: both options apply to the
+      // same import, so the suggestion names an export that exists
+      {
+        code: `
+const state = useDocSnapshot({ docPath });
+if (typeof state === 'object') { return state; }
+        `,
+        options: [
+          {
+            guardFunctions: ['isReady'],
+            guardImportSource: 'src/utils/guards',
+          },
+        ],
+        errors: [
+          {
+            messageId: 'noRawTypeof',
+            suggestions: [
+              {
+                messageId: 'noRawTypeof',
+                output: withImport(
+                  'isReady',
+                  'src/utils/guards',
+                  `
+const state = useDocSnapshot({ docPath });
+if (isReady(state)) { return state; }
+        `,
+                ),
+              },
+            ],
+          },
+        ],
+      },
+
+      // 40. The configured guard also drives the `||` rewrite, which builds its
+      // replacement text separately
+      {
+        code: `
+const state = useCachedDocSnapshot({ docPath });
+const data = state || defaultUser;
+        `,
+        options: [{ guardFunctions: ['isSnapshotDataReady'] }],
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withImport(
+                  'isSnapshotDataReady',
+                  'src/types/FirestoreSnapshotState',
+                  `
+const state = useCachedDocSnapshot({ docPath });
+const data = isSnapshotDataReady(state) ? state : defaultUser;
+        `,
+                ),
+              },
+            ],
+          },
+        ],
+      },
+
+      // 41. An empty list names no guard, so the default stands rather than the
+      // suggestion emitting `undefined(state)`
+      {
+        code: `
+const state = useDocSnapshot({ docPath });
+if (state) { return state.name; }
+        `,
+        options: [{ guardFunctions: [] }],
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withGuardImport(`
+const state = useDocSnapshot({ docPath });
+if (isSnapshotReady(state)) { return state.name; }
+        `),
+              },
+            ],
+          },
+        ],
+      },
+
+      // 42. A blank entry names nothing callable, so the default stands rather
+      // than the suggestion emitting `(state)`
+      {
+        code: `
+const state = useDocSnapshot({ docPath });
+if (state) { return state.name; }
+        `,
+        options: [{ guardFunctions: ['  '] }],
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withGuardImport(`
+const state = useDocSnapshot({ docPath });
+if (isSnapshotReady(state)) { return state.name; }
+        `),
+              },
+            ],
+          },
+        ],
+      },
+
+      // 43. Only the first entry is emitted; the rest are recognised names, not
+      // candidates for the rewrite
+      {
+        code: `
+const state = useDocSnapshot({ docPath });
+const ready = !!state;
+        `,
+        options: [{ guardFunctions: ['isReady', 'isSnapshotReady'] }],
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withImport(
+                  'isReady',
+                  'src/types/FirestoreSnapshotState',
+                  `
+const state = useDocSnapshot({ docPath });
+const ready = isReady(state);
+        `,
+                ),
+              },
+            ],
+          },
+        ],
+      },
+
+      // 44. An import of the configured guard is already in scope, so the
+      // suggestion adds no second import
+      {
+        code: `
+import { isReady } from 'src/types/FirestoreSnapshotState';
+const state = useDocSnapshot({ docPath });
+if (!state) return null;
+        `,
+        options: [{ guardFunctions: ['isReady'] }],
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: `
+import { isReady } from 'src/types/FirestoreSnapshotState';
+const state = useDocSnapshot({ docPath });
+if (!isReady(state)) return null;
+        `,
+              },
+            ],
+          },
+        ],
+      },
+
+      // 45. A local declaration of the configured guard is callable as written
+      {
+        code: `
+function isReady(value) { return typeof value !== 'string'; }
+const state = useDocSnapshot({ docPath });
+if (state) return state.name;
+        `,
+        options: [{ guardFunctions: ['isReady'] }],
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: `
+function isReady(value) { return typeof value !== 'string'; }
+const state = useDocSnapshot({ docPath });
+if (isReady(state)) return state.name;
+        `,
+              },
+            ],
+          },
+        ],
+      },
+
+      // 46. The conflict check follows the configured name: something else owns
+      // `isReady`, so no suggestion is offered
+      {
+        code: `
+const isReady = 'not-a-guard';
+const state = useDocSnapshot({ docPath });
+if (!state) return null;
+        `,
+        options: [{ guardFunctions: ['isReady'] }],
+        errors: [{ messageId: 'noFalsyCheck', suggestions: [] }],
       },
     ],
   },
