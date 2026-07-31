@@ -160,6 +160,101 @@ function areSame(a, b) {
   return diff(a, b).length === 0;
 }`,
     },
+    // ------------------------------------------------------------------
+    // Issue #1532: the scoped fork is microdiff too, so every shape the
+    // unscoped specifier declines must stay declined under the scoped one —
+    // and an import that binds no diff function is not microdiff's presence.
+    // ------------------------------------------------------------------
+    {
+      name: 'the scoped fork used for diff analysis is not an equality check',
+      code: `import diff from '@blumintinc/microdiff';
+
+function getConfigChanges(oldConfig, newConfig) {
+  const changes = diff(oldConfig, newConfig);
+  return changes;
+}`,
+    },
+    {
+      name: 'the scoped fork compared against a non-zero length is left alone',
+      code: `import diff from '@blumintinc/microdiff';
+
+function hasConfigChanged(oldConfig, newConfig) {
+  return diff(oldConfig, newConfig).length > 0;
+}`,
+    },
+    {
+      name: 'a scoped variable read beyond its length is left alone',
+      code: `import diff from '@blumintinc/microdiff';
+
+function processChanges(a, b) {
+  const changes = diff(a, b);
+  const same = changes.length === 0;
+  for (const change of changes) {
+    if (change.type === 'CREATE') return false;
+  }
+  return same;
+}`,
+    },
+    // The specifier alone proves nothing: microdiff's named exports are types,
+    // so a file importing only `Difference` binds no callable `diff` and its
+    // own `diff` helper is unrelated to the library.
+    {
+      name: 'importing only the Difference type binds no diff function',
+      code: `import { Difference } from '@blumintinc/microdiff';
+
+function diff(a, b): Difference[] {
+  return [{ type: 'CREATE', path: [], value: [a, b] }] as Difference[];
+}
+
+function isSame(a, b) {
+  return diff(a, b).length === 0;
+}`,
+    },
+    {
+      name: 'a type-only Difference import binds no diff function',
+      code: `import type { Difference } from '@blumintinc/microdiff';
+
+function diff(a, b): Difference[] {
+  return [] as Difference[];
+}
+
+function isSame(a, b) {
+  const changes = diff(a, b);
+  return changes.length === 0;
+}`,
+    },
+    // A type-only import binds nothing in value space, so the same name is
+    // free for a local function — and that local call is not microdiff's.
+    {
+      name: 'a type-only diff import leaves the name free for a local function',
+      code: `import type diff from '@blumintinc/microdiff';
+
+export type Differ = typeof diff;
+
+export function isSame(a, b) {
+  const diff = (x, y) => [{ x, y }];
+  return diff(a, b).length === 0;
+}`,
+    },
+    // A namespace import is deliberately out of scope: the local name is the
+    // module, not the diff function, and inferring a call through it would
+    // report on member calls this rule cannot prove are microdiff's.
+    {
+      name: 'a namespace import of the scoped fork is not flagged',
+      code: `import * as microdiff from '@blumintinc/microdiff';
+
+function isSame(a, b) {
+  return microdiff.default(a, b).length === 0;
+}`,
+    },
+    {
+      name: 'a namespace import of upstream microdiff is not flagged',
+      code: `import * as microdiff from 'microdiff';
+
+function isSame(a, b) {
+  return microdiff.default(a, b).length === 0;
+}`,
+    },
   ],
   invalid: [
     // Using microdiff for equality check with .length === 0
@@ -1337,6 +1432,259 @@ function shadowed(a, b) {
 
 function clean(a, b) {
   return !isEqual(a, b);
+}`,
+    },
+    // ------------------------------------------------------------------
+    // Issue #1532: `@blumintinc/microdiff` is the specifier the codebase
+    // actually depends on, so every shape recognised under the unscoped name
+    // has to be recognised under the scoped one — the rule was inert on all of
+    // them. Both specifiers are asserted for each shape.
+    // ------------------------------------------------------------------
+    {
+      name: 'the scoped fork is recognised as microdiff',
+      code: `import diff from '@blumintinc/microdiff';
+export const same = (a: object, b: object) => diff(a, b).length === 0;`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from '@blumintinc/microdiff';
+import isEqual from 'fast-deep-equal';
+export const same = (a: object, b: object) => isEqual(a, b);`,
+    },
+    {
+      name: 'a scoped named diff import is recognised',
+      code: `import { diff } from '@blumintinc/microdiff';
+
+function areObjectsEqual(obj1, obj2) {
+  return diff(obj1, obj2).length === 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import { diff } from '@blumintinc/microdiff';
+import isEqual from 'fast-deep-equal';
+
+function areObjectsEqual(obj1, obj2) {
+  return isEqual(obj1, obj2);
+}`,
+    },
+    {
+      name: 'the scoped fork with a loose equality comparison',
+      code: `import diff from '@blumintinc/microdiff';
+
+function areObjectsEqual(obj1, obj2) {
+  return diff(obj1, obj2).length == 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from '@blumintinc/microdiff';
+import isEqual from 'fast-deep-equal';
+
+function areObjectsEqual(obj1, obj2) {
+  return isEqual(obj1, obj2);
+}`,
+    },
+    {
+      name: 'the scoped fork with a strict inequality comparison',
+      code: `import diff from '@blumintinc/microdiff';
+
+function objectsAreDifferent(obj1, obj2) {
+  return diff(obj1, obj2).length !== 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from '@blumintinc/microdiff';
+import isEqual from 'fast-deep-equal';
+
+function objectsAreDifferent(obj1, obj2) {
+  return !isEqual(obj1, obj2);
+}`,
+    },
+    {
+      name: 'the scoped fork with a loose inequality comparison',
+      code: `import diff from '@blumintinc/microdiff';
+
+function objectsAreDifferent(obj1, obj2) {
+  return diff(obj1, obj2).length != 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from '@blumintinc/microdiff';
+import isEqual from 'fast-deep-equal';
+
+function objectsAreDifferent(obj1, obj2) {
+  return !isEqual(obj1, obj2);
+}`,
+    },
+    {
+      name: 'the scoped fork with the unary length form',
+      code: `import diff from '@blumintinc/microdiff';
+
+function areSame(a, b) {
+  return !diff(a, b).length;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from '@blumintinc/microdiff';
+import isEqual from 'fast-deep-equal';
+
+function areSame(a, b) {
+  return isEqual(a, b);
+}`,
+    },
+    {
+      name: 'the scoped fork with the literal on the left',
+      code: `import diff from '@blumintinc/microdiff';
+
+function eq(a, b) {
+  return 0 === diff(a, b).length;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from '@blumintinc/microdiff';
+import isEqual from 'fast-deep-equal';
+
+function eq(a, b) {
+  return isEqual(a, b);
+}`,
+    },
+    {
+      name: 'the scoped fork inside an if condition',
+      code: `import diff from '@blumintinc/microdiff';
+
+function updateIfNeeded(obj1, obj2) {
+  if (diff(obj1, obj2).length === 0) {
+    return false;
+  }
+  return true;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from '@blumintinc/microdiff';
+import isEqual from 'fast-deep-equal';
+
+function updateIfNeeded(obj1, obj2) {
+  if (isEqual(obj1, obj2)) {
+    return false;
+  }
+  return true;
+}`,
+    },
+    {
+      name: 'a hoisted scoped diff variable measured once is inlined and dropped',
+      code: `import diff from '@blumintinc/microdiff';
+
+function areSame(a, b) {
+  const changes = diff(a, b);
+  return changes.length === 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from '@blumintinc/microdiff';
+import isEqual from 'fast-deep-equal';
+
+function areSame(a, b) {
+  return isEqual(a, b);
+}`,
+    },
+    // agora's actual import shape: the diff function plus its Difference type.
+    {
+      name: 'a scoped default import beside a named type import is recognised',
+      code: `import diff, { Difference } from '@blumintinc/microdiff';
+
+export function isSame(a: object, b: object) {
+  const changes: Difference[] = diff(a, b);
+  return changes.length === 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff, { Difference } from '@blumintinc/microdiff';
+import isEqual from 'fast-deep-equal';
+
+export function isSame(a: object, b: object) {
+  return isEqual(a, b);
+}`,
+    },
+    // An aliased default import: the report names the local alias, and the fix
+    // rewrites the call under that name.
+    {
+      name: 'an aliased default import of the scoped fork is recognised',
+      code: `import compareDeep from '@blumintinc/microdiff';
+
+function areSame(a, b) {
+  return compareDeep(a, b).length === 0;
+}`,
+      errors: [
+        { messageId: 'useFastDeepEqual', data: messageData('compareDeep') },
+      ],
+      output: `import compareDeep from '@blumintinc/microdiff';
+import isEqual from 'fast-deep-equal';
+
+function areSame(a, b) {
+  return isEqual(a, b);
+}`,
+    },
+    {
+      name: 'an aliased default import of upstream microdiff is recognised',
+      code: `import compareDeep from 'microdiff';
+
+function areSame(a, b) {
+  return compareDeep(a, b).length === 0;
+}`,
+      errors: [
+        { messageId: 'useFastDeepEqual', data: messageData('compareDeep') },
+      ],
+      output: `import compareDeep from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function areSame(a, b) {
+  return isEqual(a, b);
+}`,
+    },
+    {
+      name: 'an aliased named import of the scoped fork is recognised',
+      code: `import { diff as compareObjects } from '@blumintinc/microdiff';
+
+function areObjectsEqual(obj1, obj2) {
+  const changes = compareObjects(obj1, obj2);
+  return changes.length === 0;
+}`,
+      errors: [
+        { messageId: 'useFastDeepEqual', data: messageData('compareObjects') },
+      ],
+      output: `import { diff as compareObjects } from '@blumintinc/microdiff';
+import isEqual from 'fast-deep-equal';
+
+function areObjectsEqual(obj1, obj2) {
+  return isEqual(obj1, obj2);
+}`,
+    },
+    {
+      name: 'an existing aliased fast-deep-equal import is reused for the scoped fork',
+      code: `import diff from '@blumintinc/microdiff';
+import deepEqual from 'fast-deep-equal';
+
+function areObjectsEqual(obj1, obj2) {
+  return diff(obj1, obj2).length === 0;
+}`,
+      errors: [
+        {
+          messageId: 'useFastDeepEqual',
+          data: messageData('diff', 'deepEqual'),
+        },
+      ],
+      output: `import diff from '@blumintinc/microdiff';
+import deepEqual from 'fast-deep-equal';
+
+function areObjectsEqual(obj1, obj2) {
+  return deepEqual(obj1, obj2);
+}`,
+    },
+    // The inserted import is anchored on the microdiff declaration, which the
+    // scoped specifier has to match or the import lands on the wrong statement.
+    {
+      name: 'the inserted import is anchored on the scoped microdiff declaration',
+      code: `import diff from '@blumintinc/microdiff';
+import { helper } from './helper';
+
+function areSame(a, b) {
+  return helper(diff(a, b).length === 0);
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from '@blumintinc/microdiff';
+import isEqual from 'fast-deep-equal';
+import { helper } from './helper';
+
+function areSame(a, b) {
+  return helper(isEqual(a, b));
 }`,
     },
   ],

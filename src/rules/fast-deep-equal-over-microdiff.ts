@@ -2,6 +2,7 @@ import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
 import { createSuppressionChecker } from '../utils/disableDirectives';
+import { MICRODIFF_MODULES } from '../utils/microdiffModules';
 
 type MessageIds = 'useFastDeepEqual' | 'addFastDeepEqualImport';
 
@@ -9,6 +10,37 @@ const FAST_DEEP_EQUAL_MODULES = new Set([
   'fast-deep-equal',
   'fast-deep-equal/es6',
 ]);
+
+const DIFF_EXPORT_NAME = 'diff';
+
+/**
+ * Whether a declaration imports values — a `import type ...` declaration binds
+ * nothing at runtime, so it neither supplies a callable `diff` nor satisfies
+ * the `fast-deep-equal` import the fix emits.
+ */
+function isValueImport(declaration: TSESTree.ImportDeclaration): boolean {
+  return declaration.importKind !== 'type';
+}
+
+/**
+ * Whether a specifier binds microdiff's diff function: the module default, or
+ * its named `diff` export under whatever local name. Type-only specifiers are
+ * excluded for the same reason a type-only declaration is.
+ *
+ * The check matters because microdiff's other exports are types — a file
+ * importing only `Difference` binds no `diff` at all, and treating that import
+ * as proof of one turns any local `diff(...)` in the file into a violation.
+ */
+function bindsMicrodiffDiff(specifier: TSESTree.ImportClause): boolean {
+  if (specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
+    return true;
+  }
+  return (
+    specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+    specifier.importKind !== 'type' &&
+    specifier.imported.name === DIFF_EXPORT_NAME
+  );
+}
 
 /**
  * Whether every declaration of a visible binding is a fast-deep-equal import,
@@ -31,7 +63,8 @@ function bindsFastDeepEqual(variable: TSESLint.Scope.Variable): boolean {
       const declaration = specifier.parent;
       return (
         declaration?.type === AST_NODE_TYPES.ImportDeclaration &&
-        FAST_DEEP_EQUAL_MODULES.has(declaration.source.value)
+        isValueImport(declaration) &&
+        FAST_DEEP_EQUAL_MODULES.has(String(declaration.source.value))
       );
     })
   );
@@ -539,8 +572,8 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
         (statement): statement is TSESTree.ImportDeclaration =>
           statement.type === AST_NODE_TYPES.ImportDeclaration,
       );
-      const microdiffImport = importDeclarations.find(
-        (declaration) => declaration.source.value === 'microdiff',
+      const microdiffImport = importDeclarations.find((declaration) =>
+        MICRODIFF_MODULES.has(String(declaration.source.value)),
       );
       const anchor =
         microdiffImport ?? importDeclarations[importDeclarations.length - 1];
@@ -656,30 +689,26 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
     return {
       // Track imports of microdiff and fast-deep-equal
       ImportDeclaration(node) {
-        const importSource = node.source.value;
+        const importSource = String(node.source.value);
+        if (!isValueImport(node)) {
+          return;
+        }
 
-        // Check for microdiff import
-        if (importSource === 'microdiff') {
-          hasMicrodiffImport = true;
-          // Get the local name of the imported diff function
-          node.specifiers.forEach((specifier) => {
-            if (
-              specifier.type === AST_NODE_TYPES.ImportSpecifier &&
-              specifier.imported.name === 'diff'
-            ) {
-              microdiffImportName = specifier.local.name;
-            }
-            if (specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
-              microdiffImportName = specifier.local.name;
-            }
+        // A microdiff import counts only once it binds the diff function
+        // itself. Every other export of the package is a type, so
+        // `import { Difference } from '@blumintinc/microdiff'` brings in
+        // nothing callable — reading it as microdiff's presence turns an
+        // unrelated local `diff(...)` in that file into a violation whose fix
+        // rewrites it to an equality check.
+        if (MICRODIFF_MODULES.has(importSource)) {
+          node.specifiers.filter(bindsMicrodiffDiff).forEach((specifier) => {
+            hasMicrodiffImport = true;
+            microdiffImportName = specifier.local.name;
           });
         }
 
         // Check for fast-deep-equal import
-        if (
-          importSource === 'fast-deep-equal' ||
-          importSource === 'fast-deep-equal/es6'
-        ) {
+        if (FAST_DEEP_EQUAL_MODULES.has(importSource)) {
           hasFastDeepEqualImport = true;
           // Get the local name of the imported isEqual function
           node.specifiers.forEach((specifier) => {

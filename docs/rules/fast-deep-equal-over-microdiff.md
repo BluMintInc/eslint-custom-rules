@@ -22,7 +22,25 @@ This rule enforces that boolean equality checks use `fast-deep-equal` instead of
 
 - Comparisons such as `microdiff(a, b).length === 0`, `0 === diff(a, b).length`, or `!diff(a, b).length`.
 - Comparisons that use a variable assigned to `diff(...)` when that variable is only used for `.length` checks.
-- Aliased imports of both `microdiff` and `fast-deep-equal`.
+- Aliased imports of both microdiff and `fast-deep-equal`.
+
+### Which imports count as microdiff
+
+Both specifiers are recognised, since they are the same library under two names:
+
+- `@blumintinc/microdiff` — BluMint's fork, and the dependency this codebase declares.
+- `microdiff` — upstream, for files not yet on the fork.
+
+The specifier alone is not enough: the import has to bind microdiff's diff
+function, through a default specifier or a named `diff` specifier. microdiff's
+other exports are types, so `import type { Difference } from '@blumintinc/microdiff'`
+brings no `diff` into the file, and an unrelated local `diff(...)` there is not a
+microdiff call.
+
+A namespace import (`import * as microdiff from '@blumintinc/microdiff'`) is
+deliberately not matched. The local name is the module rather than the diff
+function, and a member call through it cannot be attributed to microdiff without
+guessing.
 
 ### Autofix
 
@@ -90,6 +108,15 @@ function updateIfNeeded(obj1, obj2) {
     return false;
   }
   return true;
+}
+```
+
+```ts
+import diff, { Difference } from '@blumintinc/microdiff';
+
+export function isSame(a: object, b: object) {
+  const changes: Difference[] = diff(a, b);
+  return changes.length === 0;
 }
 ```
 
@@ -161,6 +188,18 @@ function detectItemChanges(oldItems, newItems) {
 
 function hasConfigChanged(oldConfig, newConfig) {
   return diff(oldConfig, newConfig).length > 0;
+}
+```
+
+The same holds for the fork, and for a file that imports only microdiff's types:
+
+```ts
+import diff from '@blumintinc/microdiff';
+import type { Difference } from '@blumintinc/microdiff';
+
+export function summarize(before: object, after: object) {
+  const changes: Difference[] = diff(before, after);
+  return changes.map((change) => change.path.join('.'));
 }
 ```
 
