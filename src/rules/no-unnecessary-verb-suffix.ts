@@ -282,14 +282,62 @@ function checksExcessProperties(typeNode: TSESTree.Node | null): boolean {
   return typeNode !== null && !UNCHECKED_ANNOTATION_TYPES.has(typeNode.type);
 }
 
+type FunctionNode =
+  | TSESTree.FunctionDeclaration
+  | TSESTree.FunctionExpression
+  | TSESTree.ArrowFunctionExpression;
+
+function isFunctionNode(node: TSESTree.Node): node is FunctionNode {
+  return (
+    node.type === AST_NODE_TYPES.FunctionDeclaration ||
+    node.type === AST_NODE_TYPES.FunctionExpression ||
+    node.type === AST_NODE_TYPES.ArrowFunctionExpression
+  );
+}
+
+/**
+ * The function a `return` statement belongs to — the nearest function ancestor,
+ * which is what the language binds the return to. Scoping to the NEAREST one
+ * keeps a nested callback's literal from inheriting an outer function's
+ * annotation.
+ */
+function enclosingFunction(node: TSESTree.Node): FunctionNode | null {
+  let current: TSESTree.Node | undefined = node.parent;
+  while (current) {
+    if (isFunctionNode(current)) {
+      return current;
+    }
+    current = current.parent;
+  }
+  return null;
+}
+
+/**
+ * Reports whether `fn` declares a return type that checks the shape of what it
+ * returns. Which type it names is irrelevant — the signal is that the author
+ * declared a contract at all, matching how an annotated variable is treated.
+ */
+function declaresCheckedReturnType(fn: FunctionNode | null): boolean {
+  return (
+    fn !== null && checksExcessProperties(fn.returnType?.typeAnnotation ?? null)
+  );
+}
+
 /**
  * Reports whether `node` sits inside a value whose shape TypeScript checks
- * against a declared type — a type-annotated variable or class field, or a
- * `satisfies` clause. Excess-property checking makes such a literal unable to
- * carry a member the target type does not declare, so a member name there is
- * dictated by that type rather than chosen by the author, and renaming it would
- * break conformance (#1350). No member resolution is needed: the signal alone
- * is proof, because code carrying an undeclared member does not compile.
+ * against a declared type — a type-annotated variable or class field, a
+ * `satisfies` clause, or the return-type annotation of the function that
+ * returns it. Excess-property checking makes such a literal unable to carry a
+ * member the target type does not declare, so a member name there is dictated
+ * by that type rather than chosen by the author, and renaming it would break
+ * conformance (#1350). No member resolution is needed: the signal alone is
+ * proof, because code carrying an undeclared member does not compile.
+ *
+ * The return-type form is the only one a RECURSIVE factory can reach (#1511):
+ * `return {...} satisfies Q` inside a self-referencing factory does not compile
+ * at all (TS7023 — the return type becomes implicitly `any` because the
+ * function is referenced in its own return expression), so the annotation is
+ * that shape's sole way to declare the contract it imitates.
  *
  * The walk climbs object/array containers so an outer signal covers nested
  * members, and stops at anything else — notably `as` assertions, which do not
@@ -318,6 +366,16 @@ function hasConformanceSignal(node: TSESTree.Node): boolean {
           parent.value === current &&
           checksExcessProperties(declaredTypeNode(parent))
         );
+      case AST_NODE_TYPES.ReturnStatement:
+        // Only the returned value is covered; a literal elsewhere in the body
+        // of an annotated function is unrelated to its declared return type.
+        return (
+          parent.argument === current &&
+          declaresCheckedReturnType(enclosingFunction(parent))
+        );
+      case AST_NODE_TYPES.ArrowFunctionExpression:
+        // A concise arrow body is the returned value.
+        return parent.body === current && declaresCheckedReturnType(parent);
       case AST_NODE_TYPES.Property:
       case AST_NODE_TYPES.ObjectExpression:
       case AST_NODE_TYPES.ArrayExpression:

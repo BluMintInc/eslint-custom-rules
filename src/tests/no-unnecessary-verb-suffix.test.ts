@@ -474,6 +474,105 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
   type Validator = (rules: string) => boolean;
   let validateBy!: Validator;
 `,
+
+    // D (#1511): the enclosing function's own return-type annotation. A
+    // RECURSIVE factory cannot reach signals A or B — `satisfies` on the return
+    // expression leaves TypeScript with nothing to infer from and it errors
+    // TS7023 ("implicitly has return type 'any' because it ... is referenced
+    // directly or indirectly in one of its return expressions"), so annotating
+    // the factory is the only shape that compiles.
+    `
+  type FakeSnapshot = { ref: { path: string } };
+  interface FakeQuery {
+    orderBy: () => FakeQuery;
+    limit: (count: number) => FakeQuery;
+    startAfter: (snapshot: FakeSnapshot) => FakeQuery;
+  }
+  const buildQuery = (afterPath?: string, limitCount?: number): FakeQuery => {
+    return {
+      orderBy: () => {
+        return buildQuery(afterPath, limitCount);
+      },
+      limit: (count: number) => {
+        return buildQuery(afterPath, count);
+      },
+      startAfter: (snapshot: FakeSnapshot) => {
+        return buildQuery(snapshot.ref.path, limitCount);
+      },
+    };
+  };
+`,
+    // D via a concise arrow body: the returned literal is the arrow's body
+    // rather than a return argument.
+    `
+  interface FakeQuery {
+    orderBy: () => FakeQuery;
+  }
+  const buildQuery = (): FakeQuery => ({
+    orderBy: () => {
+      return buildQuery();
+    },
+  });
+`,
+    // D on a function declaration, whose return type is annotated the same way.
+    `
+  interface FakeQuery {
+    orderBy: () => FakeQuery;
+  }
+  function buildQuery(): FakeQuery {
+    return {
+      orderBy: () => {
+        return buildQuery();
+      },
+    };
+  }
+`,
+    // D on a method's return type: a contract declared on the member signature
+    // pins the returned literal's names just as a free function's does.
+    `
+  interface FakeQuery {
+    orderBy: () => FakeQuery;
+  }
+  class Fixture {
+    public buildQuery(): FakeQuery {
+      return {
+        orderBy: () => {
+          return this.buildQuery();
+        },
+      };
+    }
+  }
+`,
+    // D reaching a nested literal: the return annotation checks the whole shape.
+    `
+  interface Cfg {
+    handlers: { orderBy: (field: string) => void };
+  }
+  const buildCfg = (): Cfg => {
+    return {
+      handlers: {
+        orderBy: (field: string) => {
+          return;
+        },
+      },
+    };
+  };
+`,
+    // B on a return statement is ALREADY a signal — the walk hits the
+    // `satisfies` clause before it ever asks about the enclosing function. Pinned
+    // so the D work cannot regress it.
+    `
+  interface FakeQuery {
+    orderBy: () => void;
+  }
+  const buildQuery = () => {
+    return {
+      orderBy: () => {
+        return;
+      },
+    } satisfies FakeQuery;
+  };
+`,
   ],
   invalid: [
     // Controls (#1227): a NOUN object before the particle is a genuine
@@ -1939,6 +2038,98 @@ function computeFrom(compute: string) {
   `,
       errors: [{ messageId: 'unnecessaryVerbSuffix' }],
       output: null,
+    },
+
+    // === #1511 fence: the return-type signal is pinned to the ANNOTATION, not
+    // to "any factory", and it reaches only what the annotated function
+    // actually returns. ===
+
+    // The valid recursive factory with its return-type annotation removed: no
+    // declared contract, so the member name is the author's again.
+    {
+      code: `
+    type FakeSnapshot = { ref: { path: string } };
+    const buildQuery = (afterPath?: string, limitCount?: number) => {
+      return {
+        orderBy: () => {
+          return buildQuery(afterPath, limitCount);
+        },
+        limit: (count: number) => {
+          return buildQuery(afterPath, count);
+        },
+        startAfter: (snapshot: FakeSnapshot) => {
+          return buildQuery(snapshot.ref.path, limitCount);
+        },
+      };
+    };
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // An annotated function whose literal is NOT what it returns: the literal is
+    // an argument to a helper call, so the annotation says nothing about it.
+    {
+      code: `
+    interface FakeQuery {
+      limit: (count: number) => FakeQuery;
+    }
+    const buildQuery = (): FakeQuery => {
+      register({
+        fetchTournamentsBy: (key: string) => {
+          return key;
+        },
+      });
+      return { limit: (count: number) => buildQuery() };
+    };
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // A nested callback's own returned literal is scoped to the NEAREST
+    // enclosing function, which carries no annotation — the outer function's
+    // annotation must not reach through it.
+    {
+      code: `
+    interface FakeQuery {
+      limit: (count: number) => FakeQuery;
+    }
+    const buildQuery = (): FakeQuery => {
+      register(() => {
+        return {
+          fetchTournamentsBy: (key: string) => {
+            return key;
+          },
+        };
+      });
+      return { limit: (count: number) => buildQuery() };
+    };
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // A return type of `any` imposes no excess-property check, so it proves
+    // nothing about where the member name came from.
+    {
+      code: `
+    const buildQuery = (): any => {
+      return {
+        fetchTournamentsBy: (key: string) => {
+          return key;
+        },
+      };
+    };
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // Same for `unknown`.
+    {
+      code: `
+    const buildQuery = (): unknown => {
+      return {
+        fetchTournamentsBy: (key: string) => {
+          return key;
+        },
+      };
+    };
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
     },
   ],
 });

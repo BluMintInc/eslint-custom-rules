@@ -110,13 +110,15 @@ function handleCheckIn() {}
 A member name is only the author's to change when the author chose it. When the
 surrounding value declares conformance to a type, the member name belongs to
 that type — renaming it would break conformance — so the rule stays silent
-without needing a disable comment. Three declarations count as such a signal:
+without needing a disable comment. Four declarations count as such a signal:
 
 1. **A type annotation** on the variable or class field holding the object
    literal.
 2. **A `satisfies` clause** on the object literal.
 3. **A class heritage clause** (`implements` or `extends`) that accounts for the
    member.
+4. **A return-type annotation** on the function that returns the object literal
+   (either from a `return` statement or as a concise arrow body).
 
 ```ts
 interface QueryLike {
@@ -149,9 +151,50 @@ class FakeQuery implements QueryLike {
     return this as never;
   }
 }
+
+// 4. Return-type annotation on the function producing the literal
+const buildQuery = (): QueryLike => {
+  return {
+    orderBy: (field, direction) => buildQuery(),
+  };
+};
+
+// The concise arrow body is the returned value, so it is covered too
+const buildQueryTerse = (): QueryLike => ({
+  orderBy: (field, direction) => buildQueryTerse(),
+});
 ```
 
-For annotations and `satisfies`, the signal alone is enough: TypeScript's
+#### Why the return type is its own signal
+
+A **recursive** factory — the common shape for a hand-built SDK double, where
+every chainable member returns the factory again — cannot reach signals 1 or 2.
+`return { … } satisfies QueryLike` leaves the compiler with nothing to infer
+from and it errors **TS7023**: *"`buildQuery` implicitly has return type `any`
+because it does not have a return type annotation and is referenced directly or
+indirectly in one of its return expressions."* Annotating the function's return
+type is the only shape that compiles, so that annotation carries the same weight
+as an annotated `const`.
+
+The signal covers what the function *returns*, and only for the **nearest**
+enclosing function — an unrelated literal elsewhere in an annotated function's
+body, or a literal returned from a nested callback, is not covered:
+
+```ts
+const buildQuery = (): QueryLike => {
+  // Reported: this literal is an argument, not the declared return value
+  register({ fetchTournamentsBy: (key: string) => key });
+
+  // Reported: the nearest enclosing function is the unannotated callback
+  register(() => {
+    return { fetchTournamentsBy: (key: string) => key };
+  });
+
+  return { orderBy: (field, direction) => buildQuery() };
+};
+```
+
+For annotations, `satisfies` and return types, the signal alone is enough: TypeScript's
 excess-property check rejects a literal carrying a member its target type does
 not declare, so code that compiles cannot have invented the name. For class
 heritage the check is stricter, because a class may declare members beyond its
@@ -167,6 +210,11 @@ The following still fire, because none of them pins the name to a type:
 // No declared target type at all — these names are the author's
 const chain = {
   orderBy: (field: string, direction: string) => chain,
+};
+
+// A factory with no return-type annotation declares no contract either
+const buildChain = () => {
+  return { orderBy: (field: string, direction: string) => buildChain() };
 };
 
 // `any`/`unknown` disable excess-property checking, so they prove nothing
@@ -189,9 +237,10 @@ class FakeQuery implements Limitable {
 ```
 
 To silence the rule on a hand-built test double or adapter, annotate it against
-the contract it imitates (`const chain: QueryLike = { … }`) rather than
-disabling the rule — the annotation documents the constraint and lets the
-compiler enforce it.
+the contract it imitates (`const chain: QueryLike = { … }`, or
+`const buildChain = (): QueryLike => { … }` when the double is built by a
+factory) rather than disabling the rule — the annotation documents the
+constraint and lets the compiler enforce it.
 
 Note that the exemption covers an *implementation* conforming to a contract, not
 the contract's own declaration: `interface Repository { fetchRecordFrom(source: string): unknown }`
