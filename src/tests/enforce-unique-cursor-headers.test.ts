@@ -41,7 +41,7 @@ export const useId = () => id;
     },
     {
       code: `
-/* eslint-disable */
+/* banner */
 // Copyright 2024 BluMint
 /**
  * @fileoverview Utilities with mixed comments
