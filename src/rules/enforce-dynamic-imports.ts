@@ -44,7 +44,8 @@ export const DEFAULT_IGNORED_LIBRARIES = [
   'use-latest-callback', // use-latest-callback
   '@blumintinc/typescript-memoize', // enforce-memoize-async, enforce-memoize-getters, require-memoize-jsx-returners
   '@blumintinc/use-deep-compare', // prefer-use-deep-compare-memo
-  'microdiff', // enforce-microdiff
+  '@blumintinc/microdiff', // enforce-microdiff
+  'microdiff', // enforce-microdiff, for files already on upstream
   'safe-stable-stringify', // enforce-safe-stringify
   'fast-deep-equal', // fast-deep-equal-over-microdiff
 ];

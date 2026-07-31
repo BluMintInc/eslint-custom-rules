@@ -88,7 +88,7 @@ const FIXER_INJECTED_LIBRARIES = [
   'use-latest-callback',
   '@blumintinc/typescript-memoize',
   '@blumintinc/use-deep-compare',
-  'microdiff',
+  '@blumintinc/microdiff',
   'fast-deep-equal',
 ];
 
