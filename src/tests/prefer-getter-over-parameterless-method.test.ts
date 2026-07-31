@@ -40,6 +40,25 @@ ruleTesterTs.run(
       }
       `,
 
+      // `ignoreAbstract` can only decide anything for an abstract method that
+      // HAS a body: the `!node.value.body` backstop sits immediately after the
+      // check and drops every bodiless one. `tsc` rejects an abstract method
+      // with an implementation (TS1245) yet the shape parses cleanly, which is
+      // why no ordinary fixture reaches the option. `true` (the default)
+      // suppresses the report the `false` case below asserts.
+      // The name must not be `parse` — that is in DEFAULT_IGNORED_METHODS and
+      // would swallow the report regardless of this option.
+      {
+        code: `
+        abstract class BaseParser {
+          abstract getValue(): string {
+            return 'value';
+          }
+        }
+        `,
+        options: [{ ignoreAbstract: true }],
+      },
+
       // Ignored methods list
       `
       class Serializer {
@@ -1023,6 +1042,27 @@ ruleTesterTs.run(
         ].join('\n'),
         output: null,
         errors: [{ messageId: 'preferGetter' }],
+      },
+
+      // `ignoreAbstract: false` opts the abstract-with-body shape back in (see
+      // the matching valid case for why that shape is the only one the option
+      // can change). Unspecified accessibility: autofix withheld.
+      {
+        code: `
+        abstract class BaseParser {
+          abstract getValue(): string {
+            return 'value';
+          }
+        }
+        `,
+        options: [{ ignoreAbstract: false }],
+        output: null,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'getValue', suggestedName: 'value' },
+          },
+        ],
       },
 
       // A genuinely `private` parameterless method with no in-file caller is
