@@ -1,3 +1,10 @@
+## [1.20.46](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.45...v1.20.46) (2026-07-31)
+
+
+### Bug Fixes
+
+* **enforce-snapshot-state-narrowing:** make the guardFunctions option actually select the emitted guard name (closes [#1505](https://github.com/BluMintInc/eslint-custom-rules/issues/1505)) ([e04d132](https://github.com/BluMintInc/eslint-custom-rules/commit/e04d1326eb5b9be70fb788468110e562a96117e3))
+
 ## [1.20.45](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.44...v1.20.45) (2026-07-31)
 
 
