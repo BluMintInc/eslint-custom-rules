@@ -21,7 +21,7 @@ Why this matters:
 
 ## Examples
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```ts
 export class DataProcessor {
@@ -45,7 +45,7 @@ export class JsonParser {
 }
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```ts
 // Extracted to a reusable utility

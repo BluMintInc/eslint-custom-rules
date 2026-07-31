@@ -14,7 +14,7 @@ Use this rule when you need to block risky properties (for example, untyped `req
 - Skips safe array members on the arrays returned by `Object.keys()` and `Object.values()` to avoid noisy false positives.
 - Explains why an access is blocked and reminds developers to choose the approved alternative.
 
-Examples of **correct** code with this rule:
+### Examples of **correct** code with this rule:
 
 ```js
 // These should not be flagged even if 'length' is restricted
@@ -36,7 +36,7 @@ const router = { push: (path) => path };
 router.push('/home'); // OK due to allowObjects
 ```
 
-Examples of **incorrect** code with this rule:
+### Examples of **incorrect** code with this rule:
 
 ```js
 /* eslint @blumintinc/blumint/no-restricted-properties-fix: ["error", [{ "object": "disallowedObject", "property": "disallowedProperty", "message": "This property is disallowed." }]] */

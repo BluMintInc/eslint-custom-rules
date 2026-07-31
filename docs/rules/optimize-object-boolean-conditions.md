@@ -24,9 +24,11 @@ The rule inspects dependency arrays of `useEffect`, `useCallback`, and `useMemo`
 
 ### Examples
 
-❌ **Incorrect** – Boolean conditions remain inline in dependency arrays, so any object reference change forces a rerun even when the boolean outcome is identical:
+#### ❌ Incorrect
 
-```javascript
+Boolean conditions remain inline in dependency arrays, so any object reference change forces a rerun even when the boolean outcome is identical:
+
+```jsx
 const tabPanes = useMemo(() => {
   const tabs = [
     {
@@ -44,21 +46,23 @@ const tabPanes = useMemo(() => {
 }, [roundPreviews, cohortPreviews, mode, phase]);
 ```
 
-```javascript
+```jsx
 const result = useMemo(() => {
   return !data ? [] : processData();
 }, [!data]); // Boolean condition in dependency array → triggers the rule
 ```
 
-```javascript
+```jsx
 const callback = useCallback(() => {
   return Object.keys(items).length === 0 ? 'empty' : 'not empty';
 }, [Object.keys(items).length === 0]); // Object key count check in dependency array
 ```
 
-✅ **Correct** – Extract boolean conditions into named variables and depend on them:
+#### ✅ Correct
 
-```javascript
+Extract boolean conditions into named variables and depend on them:
+
+```jsx
 // Extract boolean conditions to optimize hook re-runs
 const hasRoundPreviews = roundPreviews && Object.keys(roundPreviews).length > 0;
 const hasCohortPreviews = cohortPreviews && Object.keys(cohortPreviews).length > 0;
@@ -78,14 +82,14 @@ const tabPanes = useMemo(() => {
 }, [hasRoundPreviews, hasCohortPreviews, mode, phase]);
 ```
 
-```javascript
+```jsx
 const hasData = data && Object.keys(data).length > 0;
 const result = useMemo(() => {
   return hasData ? processData() : [];
 }, [hasData]);
 ```
 
-```javascript
+```jsx
 const hasItems = items && Object.keys(items).length > 0;
 const callback = useCallback(() => {
   return hasItems ? 'not empty' : 'empty';

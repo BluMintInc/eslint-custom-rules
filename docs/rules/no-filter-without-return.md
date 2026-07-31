@@ -20,7 +20,7 @@ This rule disallows `Array.filter` callbacks that use braces but never return a 
 - Add `return <condition>` inside the block.
 - Or switch to a concise arrow when the body is a single expression, e.g., `array.filter((item) => condition(item))`.
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```typescript
 ['a'].filter((x) => { console.log(x) })
@@ -42,7 +42,7 @@ Examples of **incorrect** code for this rule:
 })
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```typescript
 ['a'].filter((x) => !x)

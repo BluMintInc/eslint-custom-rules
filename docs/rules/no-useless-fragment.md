@@ -14,18 +14,18 @@ Fragments exist to group multiple siblings without inserting an extra DOM elemen
 
 The rule reports fragments with exactly one child and auto-fixes by removing the `<>` and `</>` wrappers so the child is returned directly.
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```jsx
-<><ChildComponent /></>
-<><NestedComponent><ChildComponent /></NestedComponent></>
-<>{"text"}</>
+<><ChildComponent /></>;
+<><NestedComponent><ChildComponent /></NestedComponent></>;
+<>{"text"}</>;
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```jsx
-<><ChildComponent /><AnotherChild /></>
-<><ChildComponent />Some Text<AnotherChild /></>
-<ChildComponent />
+<><ChildComponent /><AnotherChild /></>;
+<><ChildComponent />Some Text<AnotherChild /></>;
+<ChildComponent />;
 ```

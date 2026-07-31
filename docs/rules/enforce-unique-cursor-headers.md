@@ -45,7 +45,7 @@ Ensure each checked file has exactly one cursor header before any code so owners
 
 ## Examples
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```ts
 // No header at all
@@ -73,7 +73,7 @@ import { utils } from './utils';
 export const lateHeader = () => utils;
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```ts
 /**

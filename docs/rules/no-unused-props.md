@@ -16,7 +16,7 @@ Props define the contract for a component. When a prop appears in the type but i
 
 The rule flags any prop declared in a `Props` type alias that is not read in the component body and not forwarded via `...rest`.
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```tsx
 type MyComponentProps = {
@@ -41,7 +41,7 @@ const GroupModeToggles = ({ mode, preferences }: GroupModeTogglesProps) => (
 );
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```tsx
 type MyComponentProps = {

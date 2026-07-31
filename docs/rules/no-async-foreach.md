@@ -10,7 +10,7 @@ Passing an async function to `Array.forEach` does not behave like a sequential l
 
 This rule reports any async callback passed to `Array.forEach`, including inline async callbacks and async functions referenced by name.
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```typescript
 ['a', 'b', 'c'].forEach(async (letter) => {
@@ -30,7 +30,7 @@ async function handle(letter: string) {
 ['a', 'b'].forEach(handle);
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```typescript
 for (const letter of ['a', 'b', 'c']) {

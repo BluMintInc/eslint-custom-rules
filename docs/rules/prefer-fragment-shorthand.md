@@ -10,18 +10,18 @@ Prefer the fragment shorthand `<>...</>` instead of the verbose `<React.Fragment
 
 ## Rule Details
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```jsx
-<React.Fragment>Hello World</React.Fragment>
-<React.Fragment><ChildComponent /></React.Fragment>
+<React.Fragment>Hello World</React.Fragment>;
+<React.Fragment><ChildComponent /></React.Fragment>;
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```jsx
-<>Hello World</>
-<><ChildComponent /></>
+<>Hello World</>;
+<><ChildComponent /></>;
 ```
 
 ### When the long form is necessary

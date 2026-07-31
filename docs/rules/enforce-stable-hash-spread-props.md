@@ -30,7 +30,7 @@ Rest objects that are already hashed (e.g., `stableHash(restProps)`) or memoized
 
 ## Examples
 
-Bad:
+### Examples of incorrect code
 
 ```tsx
 const MyComponent = ({ someProp, ...typographyProps }: Props) => {
@@ -42,7 +42,7 @@ const MyComponent = ({ someProp, ...typographyProps }: Props) => {
 };
 ```
 
-Good:
+### Examples of correct code
 
 ```tsx
 import { stableHash } from 'functions/src/util/hash/stableHash';
@@ -58,7 +58,7 @@ const MyComponent = ({ someProp, ...typographyProps }: Props) => {
 };
 ```
 
-Already memoized (no report):
+#### Already memoized (no report)
 
 ```tsx
 const MyComponent = ({ someProp, ...typographyPropsRaw }: Props) => {

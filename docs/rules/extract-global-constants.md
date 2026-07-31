@@ -21,6 +21,8 @@ This rule flags two patterns you will see in reviews or CI:
 
 ## Examples
 
+### Examples of incorrect code
+
 ```typescript
 function renderPage() {
   const DEFAULT_PAGE_SIZE = 50; // ❌ you recreate it on every render
@@ -33,6 +35,8 @@ function loop() {
   }
 }
 ```
+
+### Examples of correct code
 
 ```typescript
 const DEFAULT_PAGE_SIZE = 50 as const; // ✅ module-scoped and reusable

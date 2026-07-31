@@ -20,7 +20,7 @@ Using a single fragment style keeps React dependencies explicit and avoids short
 - Do not use shorthand fragments `<>...</>` or `React.Fragment`.
 - The fixer will add the missing `Fragment` import when needed and replace fragment wrappers.
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```jsx
 const Component = () => <>Hello World</>;
@@ -32,7 +32,7 @@ const Component = () => (
 );
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```jsx
 import { Fragment } from 'react';

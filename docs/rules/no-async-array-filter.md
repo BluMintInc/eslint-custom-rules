@@ -21,7 +21,7 @@ This rule forbids `async` predicates passed to `Array.filter()`. The intent is t
 
 - Or move the logic to a synchronous predicate (e.g., use cached data or a precomputed lookup).
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```typescript
 
@@ -32,7 +32,7 @@ Examples of **incorrect** code for this rule:
 });
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```typescript
 

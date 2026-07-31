@@ -12,7 +12,7 @@ Generic parameters represent type placeholders. When they are not prefixed with 
 
 If a generic type parameter does not start with `T`, the rule reports an error suggesting a `T`-prefixed alternative so you can rename it consistently (e.g., `Param` → `TParam`, `P` → `TP`).
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```typescript
 type GenericType<Param> = Param[];
@@ -20,7 +20,7 @@ type GenericType<TParam, Param> = [TParam, Param];
 type GenericType<P> = P[];
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```typescript
 type GenericType<TParam> = TParam[];

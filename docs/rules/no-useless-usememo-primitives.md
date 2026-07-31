@@ -22,7 +22,7 @@
 
 ### Examples
 
-Bad – memoizing primitives:
+#### Examples of incorrect code — memoizing primitives
 
 ```tsx
 const label = useMemo(() => {
@@ -33,7 +33,7 @@ const countText = useMemo(() => `Count: ${count}`, [count]);
 const isEnabled = useMemo(() => flagA && flagB, [flagA, flagB]);
 ```
 
-Good – compute primitives directly:
+#### Examples of correct code — compute primitives directly
 
 ```tsx
 const label = isPendingToJoinTeam ? 'Pending Response' : 'Request to Join';
@@ -41,7 +41,7 @@ const countText = `Count: ${count}`;
 const isEnabled = flagA && flagB;
 ```
 
-Good – memoization still useful for reference types:
+#### Examples of correct code — memoization still useful for reference types
 
 ```tsx
 const options = useMemo(() => ({ a, b }), [a, b]);

@@ -45,54 +45,54 @@ The replacement is re-escaped for the literal form it is written back into, so a
 
 Template literals are treated as dynamic and are never checked or rewritten.
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```jsx
 // Title Case in JSX text
-<Button>Back To App</Button>
-<Button>Save Changes</Button>
+<Button>Back To App</Button>;
+<Button>Save Changes</Button>;
 
 // Title Case in props
-<TextField label="Full Name" />
-<DateTimePicker label="Scheduled For" />
-<TextField placeholder="Enter Your Name" />
-<img alt="User Profile Picture" />
+<TextField label="Full Name" />;
+<DateTimePicker label="Scheduled For" />;
+<TextField placeholder="Enter Your Name" />;
+<img alt="User Profile Picture" />;
 
 // ALL CAPS
-<Button>SUBMIT FORM</Button>
-<Typography>CLICK HERE TO CONTINUE</Typography>
-<button aria-label={'THE USER\'S FILE'} />
+<Button>SUBMIT FORM</Button>;
+<Typography>CLICK HERE TO CONTINUE</Typography>;
+<button aria-label={'THE USER\'S FILE'} />;
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```jsx
 // Sentence case in JSX text
-<Button>Back to app</Button>
-<Button>Save changes</Button>
+<Button>Back to app</Button>;
+<Button>Save changes</Button>;
 
 // Sentence case in props
-<TextField label="Full name" />
-<DateTimePicker label="Scheduled for" />
-<TextField placeholder="Enter your name" />
-<img alt="User profile picture" />
+<TextField label="Full name" />;
+<DateTimePicker label="Scheduled for" />;
+<TextField placeholder="Enter your name" />;
+<img alt="User profile picture" />;
 
 // Proper nouns and brand names are always allowed
-<Typography>Sign in with Google</Typography>
-<Typography>Welcome to BluMint</Typography>
-<TextField label="Enter BluMint username" />
+<Typography>Sign in with Google</Typography>;
+<Typography>Welcome to BluMint</Typography>;
+<TextField label="Enter BluMint username" />;
 
 // Acronyms are always allowed
-<Typography>Connect via API</Typography>
-<TextField label="Enter URL" />
-<Typography>Your user ID</Typography>
+<Typography>Connect via API</Typography>;
+<TextField label="Enter URL" />;
+<Typography>Your user ID</Typography>;
 
 // Single-word strings are never flagged
-<Button>Cancel</Button>
-<Button>OK</Button>
+<Button>Cancel</Button>;
+<Button>OK</Button>;
 
 // Sentence-cased possessives
-<button aria-label={'The user\'s file'} />
+<button aria-label={'The user\'s file'} />;
 ```
 
 ## Options

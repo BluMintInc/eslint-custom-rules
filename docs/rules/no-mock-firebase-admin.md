@@ -37,7 +37,7 @@ Resolution details:
 
 Because the filename determines the tier, every example below includes the file that performs the mock.
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```ts
 // functions/src/util/realtimeDb/updateIfExists.test.ts
@@ -62,7 +62,7 @@ jest.mock('../../config/firebaseAdmin', () => ({
 }));
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```ts
 // functions/src/util/realtimeDb/updateIfExists.test.ts

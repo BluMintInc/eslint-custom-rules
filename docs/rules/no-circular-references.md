@@ -25,7 +25,7 @@ How to fix:
 
 ## Examples
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```ts
 // Direct self-reference
@@ -38,7 +38,7 @@ const obj2 = { ref: obj1 };
 obj1.ref = obj2;
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```ts
 // Store a serializable ID instead of the full object

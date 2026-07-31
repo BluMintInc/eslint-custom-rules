@@ -17,7 +17,7 @@ Why this matters:
 - Removing or inlining a `useMemo` that returns a function often re-creates the callback on every render, causing child components that receive it as a prop to re-render unnecessarily.
 - Using the hook that matches the intent keeps code reviews, linting, and mental models aligned with React guidance.
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```jsx
 // Using useMemo to memoize a function with block body
@@ -48,7 +48,7 @@ const handleClick = useMemo(() => {
 }, [id]);
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```jsx
 // Using useCallback for function memoization

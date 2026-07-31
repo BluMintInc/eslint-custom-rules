@@ -25,7 +25,7 @@ When reported, move the JSX into a dedicated component and, if stability is requ
 
 ### Examples
 
-❌ **Incorrect**: useMemo hides a component inside another component
+#### ❌ Incorrect: useMemo hides a component inside another component
 
 ```jsx
 const LivestreamInfo = ({ streamer, title, description }) => {
@@ -58,7 +58,7 @@ const LivestreamInfo = ({ streamer, title, description }) => {
 };
 ```
 
-✅ **Correct**: extract components and memoize with `React.memo`
+#### ✅ Correct: extract components and memoize with `React.memo`
 
 ```jsx
 // UserAvatar.tsx
@@ -102,7 +102,7 @@ This rule automatically allows:
 1. Memoized JSX that is reused multiple times within the same component (to avoid duplication).
 1. Memoized JSX that is passed through as a prop or spread attribute to other components.
 
-Example of allowed usage (memoized JSX used multiple times):
+### ✅ Correct: memoized JSX reused multiple times (allowed)
 
 ```jsx
 const AvatarStatusUnmemoized = ({

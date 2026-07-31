@@ -10,7 +10,7 @@
 
 This rule reports any `export const SOME_CONSTANT = ...` declarations in files ending with `.dynamic.ts` or `.dynamic.tsx` when the identifier is SCREAMING_SNAKE_CASE. It does not auto-fix because constants should be relocated, not renamed.
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```ts
 // file: data.dynamic.ts
@@ -30,7 +30,7 @@ const settings = ['https://api.example.com', 5000];
 export const [API_URL, TIMEOUT] = settings;
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```ts
 // file: config.ts

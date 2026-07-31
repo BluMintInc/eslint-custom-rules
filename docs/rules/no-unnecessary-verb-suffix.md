@@ -12,7 +12,7 @@ Discourages verb-preposition suffixes in function and method names when the suff
 
 This rule keeps names action-oriented by removing trailing verb-preposition suffixes (e.g., `From`, `For`, `With`, `To`, `By`, `In`, `On`). The suffix rarely carries new information because the parameters already express the relationship. Redundant endings make call sites harder to scan, obscure the primary verb, and create noisy diffs when the relationship changes. Rename the function to the verb phrase and let arguments communicate the context.
 
-Examples of **incorrect** code:
+### Examples of **incorrect** code:
 
 ```ts
 // Redundant suffix repeats the relationship already shown by parameters
@@ -38,7 +38,7 @@ const validateBy = (rules) => {};
 const searchIn = (scope) => {};
 ```
 
-Examples of **correct** code:
+### Examples of **correct** code:
 
 ```ts
 // Concise names highlight the action; parameters show the relationship

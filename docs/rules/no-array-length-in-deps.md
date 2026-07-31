@@ -98,7 +98,7 @@ This ensures effects re-run whenever array contents change, not just when its le
 
 ## Examples
 
-Bad:
+### Examples of incorrect code
 
 ```tsx
 export const useThing = () => {
@@ -110,7 +110,7 @@ export const useThing = () => {
 };
 ```
 
-Good:
+### Examples of correct code
 
 ```tsx
 import { useEffect, useMemo } from 'react';

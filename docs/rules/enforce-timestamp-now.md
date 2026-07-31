@@ -14,8 +14,7 @@ Firestore timestamps should originate from the Firestore SDK instead of the loca
 - Allows `Date` objects that are mutated before conversion (e.g., scheduling a future time) because those require the custom logic provided by the mutation.
 - Auto-fixes replace the flagged expression with the detected `Timestamp` alias' `now()` call.
 
-Examples of **incorrect** code for this rule:
-
+### Examples of **incorrect** code for this rule:
 ```ts
 import { Timestamp } from 'firebase-admin/firestore';
 
@@ -24,8 +23,7 @@ const expiresAt = Timestamp.fromMillis(Date.now());
 const timestamp = new Date();
 ```
 
-Examples of **correct** code for this rule:
-
+### Examples of **correct** code for this rule:
 ```ts
 import { Timestamp } from 'firebase-admin/firestore';
 

@@ -18,7 +18,7 @@ The rule inspects `package.json` (including JSON/JSONC) and reports any dependen
 - Non-deterministic installs create drift between environments and brittle rollbacks.
 - Pinned versions keep lockfiles trustworthy and make dependency audits reliable.
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```json
 {
@@ -31,7 +31,7 @@ Examples of **incorrect** code for this rule:
 }
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```json
 {

@@ -21,7 +21,9 @@ The rule only flags spreads of identifiers introduced as rest-objects in the cur
 
 ## Examples
 
-**Bad examples** – The following patterns spread a props object that may contain `children` while also providing explicit JSX children in the element body. The spread overwrites any incoming `children`, silently discarding them:
+### Examples of incorrect code
+
+The following patterns spread a props object that may contain `children` while also providing explicit JSX children in the element body. The spread overwrites any incoming `children`, silently discarding them:
 
 ```tsx
 type AlertDialogProps = DialogProps;
@@ -60,7 +62,9 @@ const ConditionalWrapper = (props: DialogProps) => (
 );
 ```
 
-**Good examples** – These patterns avoid the issue by either destructuring and rendering children explicitly, or by excluding children from the props type:
+### Examples of correct code
+
+These patterns avoid the issue by either destructuring and rendering children explicitly, or by excluding children from the props type:
 
 ```tsx
 // Safe: children are destructured separately and rendered explicitly.
@@ -83,7 +87,7 @@ const Accordion = (props: AccordionProps) => (
 );
 ```
 
-Already forwarding children explicitly (allowed):
+#### Already forwarding children explicitly (allowed)
 
 ```tsx
 const Passthrough = (props: DialogProps) => (

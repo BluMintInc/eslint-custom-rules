@@ -12,7 +12,7 @@ Using `{ ...obj }` inside an object pattern clones the entire object without sel
 
 This rule reports object destructuring patterns that contain only a single rest element, such as `{ ...source }`. In these cases every property is kept, so the destructuring adds no value beyond creating a new object reference. The rule prefers direct assignment to preserve readability and avoid unnecessary allocations.
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```ts
 const { ...config } = getConfiguration();
@@ -21,7 +21,7 @@ let obj;
 ({ ...obj } = source);
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```ts
 const config = getConfiguration();

@@ -13,7 +13,7 @@
 1. **Falsy/truthy checks** — `!state`, `if (state)`, `state && ...`, `state ? a : b`, `!!state`, `Boolean(state)` — all string states (`'idle'`, `'loading'`, `'not-found'`) are truthy, so these checks never behave as intended. The correct pattern is `isSnapshotReady(state)`.
 2. **Raw `typeof` narrowing to data** — `typeof state === 'object'` or `typeof state !== 'string'` are manual reimplementations of `isSnapshotReady` and bypass the abstraction boundary.
 
-Examples of **incorrect** code:
+### Examples of **incorrect** code:
 
 ```ts
 const state = useDocSnapshot<User>({ docPath });
@@ -35,7 +35,7 @@ if (typeof state !== 'string') {
 }
 ```
 
-Examples of **correct** code:
+### Examples of **correct** code:
 
 ```ts
 const state = useDocSnapshot<User>({ docPath });
