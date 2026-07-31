@@ -8,7 +8,9 @@
 
 ## Rule Details
 
-Deep comparison of objects and arrays is standardized on [`microdiff`](https://github.com/AsyncBanana/microdiff). This rule reports competing diffing libraries, hand-rolled deep-comparison helpers, and `JSON.stringify` equality checks, steering them to `diff` from `microdiff`.
+Deep comparison of objects and arrays is standardized on `@blumintinc/microdiff`, BluMint's fork of [`microdiff`](https://github.com/AsyncBanana/microdiff). This rule reports competing diffing libraries, hand-rolled deep-comparison helpers, and `JSON.stringify` equality checks, steering them to that package's `diff`.
+
+Both packages export their diff function as the module **default**, so the import is `import diff from '@blumintinc/microdiff'` — `Difference`, `MicrodiffOptions` and the `default*` predicates are the only named exports, and a `{ diff }` specifier binds nothing. A file already importing from upstream `microdiff` satisfies the rule and is left as it is.
 
 `fast-deep-equal` (and `fast-deep-equal/es6`) is an allowed alternative for plain equality checks and is never reported.
 
@@ -31,7 +33,7 @@ function hasConfigChanged(oldConfig, newConfig) {
 ### Examples of **correct** code
 
 ```ts
-import { diff } from 'microdiff';
+import diff from '@blumintinc/microdiff';
 
 function hasConfigChanged(oldConfig, newConfig) {
   return diff(oldConfig, newConfig).length > 0;
@@ -78,7 +80,37 @@ Rewriting such a call would substitute microdiff's structural change list for wh
 
 ## Autofix
 
-The fix retires a competing library's import declaration and rewrites its call sites to `diff`, reusing an existing `microdiff` import when the file already has one. It declines whenever the file binds `diff` to something else — a module-scope declaration the inserted import would redeclare, or a narrower shadow that would silently capture the rewritten call — so the report stands for the author to resolve the name clash deliberately.
+The fix retires a competing library's import declaration and rewrites its call sites to `diff`, reusing an existing microdiff import when the file already has one. It declines whenever the file binds `diff` to something else — a module-scope declaration the inserted import would redeclare, or a narrower shadow that would silently capture the rewritten call — so the report stands for the author to resolve the name clash deliberately.
+
+### The import and its call sites move together
+
+Retiring an import is what frees the name `diff` and binds it to microdiff, so the two halves of the fix are all-or-nothing. The import is retired only when every reference it binds is a call this rule rewrites, and a call is renamed only when the import binding its callee is retired in the same pass (or microdiff is already imported). Either half alone leaves a name unresolved, so the following are reported without a fix:
+
+```ts
+// `applyChange` has no microdiff counterpart, so the declaration binding it has
+// to stay — and `deepDiff` stays with it.
+import { diff as deepDiff, applyChange } from 'deep-diff';
+
+export function compare(oldConfig, newConfig) {
+  applyChange(oldConfig, newConfig);
+  return deepDiff(oldConfig, newConfig);
+}
+```
+
+```ts
+// Passed as a value rather than called: there is no call site to rewrite.
+import { detailedDiff } from 'deep-object-diff';
+
+export const chosen = detailedDiff;
+```
+
+```ts
+// `diff(obj, newObj, options?)` needs both operands, so a one-argument call has
+// no conversion.
+import deepDiff from 'deep-diff';
+
+export const f = (oldConfig) => deepDiff(oldConfig);
+```
 
 ### lodash's difference family is report-only
 

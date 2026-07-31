@@ -172,6 +172,24 @@ export function compare(oldConfig, newConfig) {
   return deepDiff(oldConfig, newConfig);
 }`,
     },
+    // The package the fix emits, imported the way it actually exports its diff
+    // function: as the module default.
+    {
+      code: `import diff from '@blumintinc/microdiff';
+
+function hasConfigChanged(oldConfig, newConfig) {
+  return diff(oldConfig, newConfig).length > 0;
+}`,
+    },
+    // The default alongside the named type export, which is how call sites that
+    // annotate the change list import it.
+    {
+      code: `import diff, { Difference } from '@blumintinc/microdiff';
+
+export function changesOf(oldConfig, newConfig): Difference[] {
+  return diff(oldConfig, newConfig);
+}`,
+    },
   ],
   invalid: [
     // Using deep-diff
@@ -188,7 +206,7 @@ function compareConfigs(oldConfig, newConfig) {
         },
         { messageId: 'enforceMicrodiff' },
       ],
-      output: `import { diff } from 'microdiff';
+      output: `import diff from '@blumintinc/microdiff';
 
 function compareConfigs(oldConfig, newConfig) {
   return diff(oldConfig, newConfig);
@@ -205,7 +223,7 @@ function compareArrays(oldArray, newArray) {
         { messageId: 'enforceMicrodiffImport', data: { importSource: 'diff' } },
         { messageId: 'enforceMicrodiff' },
       ],
-      output: `import { diff } from 'microdiff';
+      output: `import diff from '@blumintinc/microdiff';
 
 function compareArrays(oldArray, newArray) {
   return diff(oldArray, newArray);
@@ -225,7 +243,7 @@ function compareObjects(oldObj, newObj) {
         },
         { messageId: 'enforceMicrodiff' },
       ],
-      output: `import { diff } from 'microdiff';
+      output: `import diff from '@blumintinc/microdiff';
 
 function compareObjects(oldObj, newObj) {
   return diff(oldObj, newObj);
@@ -247,7 +265,7 @@ function findChanges(prev, next) {
           messageId: 'enforceMicrodiff',
         },
       ],
-      output: `import { diff } from 'microdiff';
+      output: `import diff from '@blumintinc/microdiff';
 
 function findChanges(prev, next) {
   return diff(prev, next);
@@ -334,7 +352,7 @@ function detectDifferences(original, updated) {
         { messageId: 'enforceMicrodiff' },
         { messageId: 'enforceMicrodiff' },
       ],
-      output: `import { diff } from 'microdiff';
+      output: `import diff from '@blumintinc/microdiff';
 import _ from 'lodash';
 
 function compareConfigs(oldConfig, newConfig) {
@@ -353,7 +371,7 @@ function detectDifferences(original, updated) {
   return JSON.stringify(oldConfig) !== JSON.stringify(newConfig);
 }`,
       errors: [{ messageId: 'enforceMicrodiff' }],
-      output: `import { diff } from 'microdiff';
+      output: `import diff from '@blumintinc/microdiff';
 
 function hasConfigChanged(oldConfig, newConfig) {
   return diff(oldConfig, newConfig).length > 0;
@@ -566,7 +584,7 @@ function compareConfigs(oldConfig, newConfig) {
         { messageId: 'enforceMicrodiff' },
       ],
       output: `import * as microdiff from 'microdiff';
-import { diff } from 'microdiff';
+import diff from '@blumintinc/microdiff';
 
 function compareConfigs(oldConfig, newConfig) {
   return diff(oldConfig, newConfig);
@@ -584,7 +602,7 @@ function compareArrays(oldArray, newArray) {
         { messageId: 'enforceMicrodiffImport', data: { importSource: 'diff' } },
         { messageId: 'enforceMicrodiff' },
       ],
-      output: `import { diff } from 'microdiff';
+      output: `import diff from '@blumintinc/microdiff';
 
 function compareArrays(oldArray, newArray) {
   return diff(oldArray, newArray);
@@ -644,7 +662,7 @@ function compareConfigs(oldConfig, newConfig) {
         },
         { messageId: 'enforceMicrodiff' },
       ],
-      output: `import { diff } from 'microdiff';
+      output: `import diff from '@blumintinc/microdiff';
 
 function compareConfigs(oldConfig, newConfig) {
   return diff(oldConfig, newConfig);
@@ -664,7 +682,7 @@ function findChanges(oldItems, newItems) {
         },
         { messageId: 'enforceMicrodiff' },
       ],
-      output: `import { diff } from 'microdiff';
+      output: `import diff from '@blumintinc/microdiff';
 
 function findChanges(oldItems, newItems) {
   return diff(oldItems, newItems);
@@ -686,7 +704,7 @@ function compareObjects(oldObj, newObj) {
         },
         { messageId: 'enforceMicrodiff' },
       ],
-      output: `import { diff } from 'microdiff';
+      output: `import diff from '@blumintinc/microdiff';
 
 function compareObjects(oldObj, newObj) {
   return diff(oldObj, newObj);
@@ -707,7 +725,7 @@ function compareObjects(oldObj, newObj) {
         },
         { messageId: 'enforceMicrodiff' },
       ],
-      output: `import { diff } from 'microdiff';
+      output: `import diff from '@blumintinc/microdiff';
 
 function compareObjects(oldObj, newObj) {
   return diff(oldObj, newObj);
@@ -765,7 +783,7 @@ export function compare(oldState, newState) {
           data: { importSource: 'deep-object-diff' },
         },
       ],
-      output: `import { diff } from 'microdiff';
+      output: `import diff from '@blumintinc/microdiff';
 
 export function compare(oldState, newState) {
   const detailedDiff = (a, b) => [a, b];
@@ -791,7 +809,7 @@ export function compare(oldState, newState) {
         },
         { messageId: 'enforceMicrodiff' },
       ],
-      output: `import { diff } from 'microdiff';
+      output: `import diff from '@blumintinc/microdiff';
 
 export function compare(oldState, newState) {
   if (oldState) {
@@ -814,7 +832,7 @@ export function compare(detailedDiff, oldState, newState) {
           data: { importSource: 'deep-object-diff' },
         },
       ],
-      output: `import { diff } from 'microdiff';
+      output: `import diff from '@blumintinc/microdiff';
 
 export function compare(detailedDiff, oldState, newState) {
   return detailedDiff(oldState, newState);
@@ -835,11 +853,190 @@ export function compare(oldConfig, newConfig) {
           data: { importSource: 'deep-diff' },
         },
       ],
-      output: `import { diff } from 'microdiff';
+      output: `import diff from '@blumintinc/microdiff';
 
 export function compare(oldConfig, newConfig) {
   const deepDiff = (a, b) => [a, b];
   return deepDiff(oldConfig, newConfig);
+}`,
+    },
+    {
+      // The import rewrite carries the call site it feeds. Argument names told
+      // the call fix nothing the resolved callee had not already settled, and
+      // gating on them retired the import while `deepDiff` stayed behind,
+      // unbound.
+      code: `import deepDiff from 'deep-diff';
+
+export const f = (a: object, b: object) => deepDiff(a, b);`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'deep-diff' },
+        },
+        { messageId: 'enforceMicrodiff' },
+      ],
+      output: `import diff from '@blumintinc/microdiff';
+
+export const f = (a: object, b: object) => diff(a, b);`,
+    },
+    {
+      // A reference that is not a callee has no rewrite of its own, so the
+      // import that binds it stays put and the report stands alone.
+      code: `import { detailedDiff } from 'deep-object-diff';
+
+export const chosen = detailedDiff;`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'deep-object-diff' },
+        },
+      ],
+      output: null,
+    },
+    {
+      // A specifier this rule has no rewrite for keeps the whole declaration
+      // alive, so the call that would have been renamed is left alone too:
+      // renaming it would emit a `diff` the surviving import does not bind.
+      code: `import { diff as deepDiff, applyChange } from 'deep-diff';
+
+export function compare(oldConfig, newConfig) {
+  applyChange(oldConfig, newConfig);
+  return deepDiff(oldConfig, newConfig);
+}`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'deep-diff' },
+        },
+        { messageId: 'enforceMicrodiff' },
+      ],
+      output: null,
+    },
+    {
+      // `diff(obj, newObj)` needs both operands, so a one-argument call has no
+      // conversion — and the import that binds it cannot be retired either.
+      code: `import deepDiff from 'deep-diff';
+
+export const f = (oldConfig) => deepDiff(oldConfig);`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'deep-diff' },
+        },
+        { messageId: 'enforceMicrodiff' },
+      ],
+      output: null,
+    },
+    {
+      // A comparison inside a function still needs the import: deciding on the
+      // enclosing node emitted a bare `diff` nothing bound.
+      code: `export const isSameConfig = (oldConfig, newConfig) =>
+  JSON.stringify(oldConfig) === JSON.stringify(newConfig);`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: `import diff from '@blumintinc/microdiff';
+
+export const isSameConfig = (oldConfig, newConfig) =>
+  diff(oldConfig, newConfig).length === 0;`,
+    },
+    {
+      // The same comparison against an existing import reuses it.
+      code: `import diff from '@blumintinc/microdiff';
+
+export const isSameConfig = (oldConfig, newConfig) =>
+  JSON.stringify(oldConfig) === JSON.stringify(newConfig);`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: `import diff from '@blumintinc/microdiff';
+
+export const isSameConfig = (oldConfig, newConfig) =>
+  diff(oldConfig, newConfig).length === 0;`,
+    },
+    {
+      // Only the body is rewritten, so the signature keeps its annotations and
+      // its `export`, and the import lands at the top of the file rather than
+      // in front of the declaration it would otherwise replace.
+      code: `export function hasConfigChanged(oldConfig: object, newConfig: object): boolean {
+  return JSON.stringify(oldConfig) !== JSON.stringify(newConfig);
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: `import diff from '@blumintinc/microdiff';
+
+export function hasConfigChanged(oldConfig: object, newConfig: object): boolean {
+  return diff(oldConfig, newConfig).length > 0;
+}`,
+    },
+    {
+      // A nested declaration takes the import to module scope, where the
+      // grammar allows it.
+      code: `export function outer() {
+  function hasConfigChanged(oldConfig, newConfig) {
+    return JSON.stringify(oldConfig) !== JSON.stringify(newConfig);
+  }
+  return hasConfigChanged;
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: `import diff from '@blumintinc/microdiff';
+
+export function outer() {
+  function hasConfigChanged(oldConfig, newConfig) {
+  return diff(oldConfig, newConfig).length > 0;
+}
+  return hasConfigChanged;
+}`,
+    },
+    {
+      // A destructured parameter binds no single name to pass to `diff`, so the
+      // report stands without a fix.
+      code: `function hasConfigChanged({ current }, newConfig) {
+  return JSON.stringify(current) !== JSON.stringify(newConfig);
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: null,
+    },
+    {
+      // A file already importing the fork gets its competing import removed
+      // rather than a second binding of `diff` (TS2300).
+      code: `import diff from '@blumintinc/microdiff';
+import { diff as deepDiff } from 'deep-diff';
+
+function compareConfigs(oldConfig, newConfig) {
+  return deepDiff(oldConfig, newConfig);
+}`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'deep-diff' },
+        },
+        { messageId: 'enforceMicrodiff' },
+      ],
+      output: `import diff from '@blumintinc/microdiff';
+
+
+function compareConfigs(oldConfig, newConfig) {
+  return diff(oldConfig, newConfig);
+}`,
+    },
+    {
+      // The competing import precedes the fork's, so it is fixed before the
+      // visitor ever reaches the fork. Reading `Program.body` rather than a flag
+      // the visitor raises is what keeps the second binding from being emitted.
+      code: `import { diff as deepDiff } from 'deep-diff';
+import diff from '@blumintinc/microdiff';
+
+function compareConfigs(oldConfig, newConfig) {
+  return deepDiff(oldConfig, newConfig);
+}`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'deep-diff' },
+        },
+        { messageId: 'enforceMicrodiff' },
+      ],
+      output: `
+import diff from '@blumintinc/microdiff';
+
+function compareConfigs(oldConfig, newConfig) {
+  return diff(oldConfig, newConfig);
 }`,
     },
   ],
