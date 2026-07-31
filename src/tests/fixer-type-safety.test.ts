@@ -52,7 +52,9 @@ const TESTS_DIR = __dirname;
  *    import cannot manufacture a TS2307 the input lacked, and `export {}` is
  *    appended to every file so script-scope declarations cannot collide across
  *    the flat corpus. Both transforms apply identically to the before and after
- *    corpora, so they cancel in the diff.
+ *    corpora, so they cancel in the diff. `export {}` does not contain a
+ *    `declare global`, though, which is why snippets carrying one are dropped
+ *    from the corpus outright (see `DECLARES_INTO_SHARED_SCOPE`).
  */
 const STUBS = `
 declare module '*';
@@ -248,27 +250,40 @@ const walkAst = (node: any, visit: (n: any) => void) => {
  * per rule. Any string or no-substitution template literal is a candidate; one
  * that makes the rule fire is usable regardless of which array it came from,
  * and an `output` string doubles as an already-fixed input.
+ *
+ * A template literal with substitutions is not reconstructable here, so it is
+ * counted rather than dropped in silence: a test file that assembles every case
+ * from a shared prelude (`${typedPrelude}\n...`) is invisible to this harvest,
+ * and that is a property of the harness, not evidence the rule has no trigger.
  */
-const harvestSnippets = (testFile: string): string[] => {
+const harvestSnippets = (testFile: string) => {
   const parsed = parse(fs.readFileSync(testFile, 'utf8'), testFile);
-  if (!parsed) return [];
-  const out: string[] = [];
+  if (!parsed) return { snippets: [] as string[], interpolated: 0 };
+  const snippets: string[] = [];
   const seen = new Set<string>();
+  let interpolated = 0;
   const push = (s: unknown) => {
     if (typeof s !== 'string') return;
     // Shorter than this is a messageId or a rule name, not a snippet.
     if (s.length < 25 || !/[;{(=<]/.test(s)) return;
     if (seen.has(s)) return;
     seen.add(s);
-    out.push(s);
+    snippets.push(s);
   };
   walkAst(parsed.ast, (node: any) => {
     if (node.type === 'Literal') push(node.value);
-    if (node.type === 'TemplateLiteral' && node.expressions.length === 0) {
+    if (node.type !== 'TemplateLiteral') return;
+    if (node.expressions.length === 0) {
       push(node.quasis.map((q: any) => q.value.cooked).join(''));
+      return;
     }
+    const width = node.quasis.reduce(
+      (total: number, q: any) => total + q.value.cooked.length,
+      0,
+    );
+    if (width >= 25) interpolated++;
   });
-  return out;
+  return { snippets, interpolated };
 };
 
 const linter = new Linter();
@@ -447,45 +462,117 @@ for (const control of CONTROLS) {
   linter.defineRule(`control/${control.name}`, control.rule as never);
 }
 
-// Compiling more than this per rule buys little and costs corpus size; the
-// dropped tail is reported below so the cap can never read as full coverage.
-const MAX_SNIPPETS_PER_RULE = 30;
+/**
+ * The cap counts *fix pairs*, not harvested snippets, and every snippet a rule
+ * offers is scanned until that many pairs exist.
+ *
+ * Capping the harvest instead silently excluded rules (#1527). Snippets come out
+ * in test-file order, `valid` cases first, and a rule with more than the cap's
+ * worth of them spent its whole budget before reaching a single trigger — so it
+ * contributed nothing and was listed as a rule with no fixable trigger,
+ * indistinguishable from one that genuinely has none. `enforce-object-literal-
+ * as-const` was the proof: 122 snippets, the first 30 all `valid`, and its
+ * TS4104 defect (#1526) sat outside the window the guard could ever see.
+ */
+const MAX_PAIRS_PER_RULE = 30;
+
+/**
+ * A snippet that declares into the *shared* scope — `declare global`, or an
+ * ambient/augmenting `declare module 'x'` — retypes every other file in the
+ * corpus, because one program compiles them all. `export {}` makes each file a
+ * module and so contains ordinary declarations; it cannot contain these.
+ *
+ * The damage is not hypothetical: one `prefer-map-over-conditional-dispatch`
+ * fixture declares `namespace JSX { interface Element { readonly _brand: unique
+ * symbol } }` globally, which brands `JSX.Element` for the whole corpus and
+ * makes every component whose return type is concrete a TS2786 — in whichever
+ * of the two corpora happens to have the concrete type. Such snippets are
+ * dropped, and counted below.
+ */
+const DECLARES_INTO_SHARED_SCOPE = /\bdeclare\s+(?:global\b|module\s+['"])/;
 
 const fixableRules = Object.entries(plugin.rules)
   .filter(([, rule]) => rule && rule.meta && rule.meta.fixable)
   .map(([name]) => name)
   .sort();
 
+/**
+ * Why a rule's fixer went unprobed, established by re-running the rule over the
+ * same snippets: a rule that never reports on its own test corpus is a different
+ * (and more surprising) fact than one that reports and declines to fix.
+ */
+const noFixReasonFor = (ruleId: string, snippets: string[]) => {
+  let reported = false;
+  let offeredFix = false;
+  for (const snippet of snippets) {
+    for (const filename of FILENAMES) {
+      let messages;
+      try {
+        messages = linter.verify(snippet, configFor(ruleId), { filename });
+      } catch {
+        continue;
+      }
+      for (const message of messages) {
+        // A parse failure surfaces as a message with no rule attached.
+        if (message.ruleId !== ruleId) continue;
+        reported = true;
+        if (message.fix) offeredFix = true;
+      }
+    }
+  }
+  if (offeredFix) return 'offers a fix that the fix loop then discards';
+  if (reported) return 'reports on its own snippets but never offers a fix';
+  return 'never reports on any of its own snippets, under any probed filename';
+};
+
 const coverage = {
   noTestFile: [] as string[],
   noSnippets: [] as string[],
   neverFixed: [] as string[],
+  illTypedInput: [] as string[],
   covered: [] as string[],
-  droppedTail: [] as string[],
+  unscannedTail: [] as string[],
 };
+const explanation = new Map<string, string>();
 
 const pairs: Pair[] = [];
 let harvested = 0;
-let dropped = 0;
+let unscanned = 0;
+let sharedScopeDropped = 0;
+let interpolatedSkipped = 0;
 
 for (const rule of fixableRules) {
   const testFile = path.join(TESTS_DIR, `${rule}.test.ts`);
   if (!fs.existsSync(testFile)) {
     coverage.noTestFile.push(rule);
+    explanation.set(rule, `no ${rule}.test.ts to harvest triggers from`);
     continue;
   }
-  const snippets = harvestSnippets(testFile);
+  const harvest = harvestSnippets(testFile);
+  interpolatedSkipped += harvest.interpolated;
+  const snippets = harvest.snippets.filter(
+    (snippet) => !DECLARES_INTO_SHARED_SCOPE.test(snippet),
+  );
+  sharedScopeDropped += harvest.snippets.length - snippets.length;
   if (!snippets.length) {
     coverage.noSnippets.push(rule);
+    explanation.set(
+      rule,
+      `its test file yields no corpusable snippet (${harvest.snippets.length} ` +
+        `literal(s) harvested, ${
+          harvest.snippets.length - snippets.length
+        } declaring into the shared scope, ${
+          harvest.interpolated
+        } case(s) assembled by interpolation and so unharvestable)`,
+    );
     continue;
   }
   harvested += snippets.length;
-  if (snippets.length > MAX_SNIPPETS_PER_RULE) {
-    coverage.droppedTail.push(`${rule} ${snippets.length}`);
-    dropped += snippets.length - MAX_SNIPPETS_PER_RULE;
-  }
   let fixed = 0;
-  for (const snippet of snippets.slice(0, MAX_SNIPPETS_PER_RULE)) {
+  let scanned = 0;
+  for (const snippet of snippets) {
+    if (fixed >= MAX_PAIRS_PER_RULE) break;
+    scanned++;
     const result = fixWith(PREFIX + rule, snippet);
     if (!result) continue;
     pairs.push({
@@ -498,8 +585,20 @@ for (const rule of fixableRules) {
     });
     fixed++;
   }
-  if (fixed) coverage.covered.push(rule);
-  else coverage.neverFixed.push(rule);
+  if (scanned < snippets.length) {
+    coverage.unscannedTail.push(`${rule} ${snippets.length - scanned}`);
+    unscanned += snippets.length - scanned;
+  }
+  if (!fixed) {
+    coverage.neverFixed.push(rule);
+    explanation.set(
+      rule,
+      `${snippets.length} snippets scanned; ${noFixReasonFor(
+        PREFIX + rule,
+        snippets,
+      )}`,
+    );
+  }
 }
 
 const controlPairs: Pair[] = [];
@@ -529,9 +628,54 @@ const introducedFor = (pair: Pair) =>
     afterDiagnostics.get(pair.name) || [],
   );
 
+/**
+ * The claim being tested is that an autofix does not turn *compiling* code into
+ * non-compiling code, so a snippet that does not compile is no baseline at all.
+ * Against a broken input the differential reports re-wordings rather than
+ * defects, and every one of them costs a maintainer a full investigation:
+ *
+ *   before: TS2739: Type 'any[]' is missing ... from type 'Promise<[A, B]>'
+ *   after:  TS2322: Type 'readonly [any, any]' is not assignable to 'Promise<[A, B]>'
+ *
+ * That pair (a non-`async` function annotated `Promise<...>` returning an array
+ * literal) is not valid TypeScript with or without the fix, and the same shape
+ * written `async` — the one that does compile — is already left alone. A pair
+ * whose input carries a real type error is therefore excluded and reported,
+ * never silently dropped.
+ *
+ * Unresolved *names* are the deliberate exception. The corpus is test fragments
+ * full of identifiers no program defines; excluding those would leave nearly
+ * nothing, and the artifact filter above already handles them in the diff.
+ */
+const baselineCompiles = (pair: Pair) =>
+  (beforeDiagnostics.get(pair.name) || []).every(
+    (diagnostic) => missingNameOf(diagnostic) !== null,
+  );
+
+const assertedPairs = pairs.filter(baselineCompiles);
+const assertedByRule = new Set(assertedPairs.map((pair) => pair.rule));
+for (const rule of fixableRules) {
+  if (assertedByRule.has(rule)) {
+    coverage.covered.push(rule);
+    continue;
+  }
+  if (explanation.has(rule)) continue;
+  const rulePairs = pairs.filter((pair) => pair.rule === rule);
+  coverage.illTypedInput.push(rule);
+  explanation.set(
+    rule,
+    `all ${rulePairs.length} fix pairs start from an input that does not ` +
+      `type-check, e.g. ${
+        rulePairs
+          .flatMap((pair) => beforeDiagnostics.get(pair.name) || [])
+          .find((diagnostic) => !missingNameOf(diagnostic)) || 'unknown'
+      }`,
+  );
+}
+
 const findingsByRule = new Map<string, Array<Pair & { added: string[] }>>();
 for (const rule of fixableRules) findingsByRule.set(rule, []);
-for (const pair of pairs) {
+for (const pair of assertedPairs) {
   const added = introducedFor(pair);
   if (added.length) findingsByRule.get(pair.rule)!.push({ ...pair, added });
 }
@@ -540,6 +684,7 @@ const controlOutcomes = controlPairs.map((pair) => ({
   name: pair.rule,
   fired: pair.after !== pair.before,
   flagged: introducedFor(pair).length > 0,
+  baselineCompiles: baselineCompiles(pair),
 }));
 
 const report = (finding: Pair & { added: string[] }) =>
@@ -551,26 +696,48 @@ const report = (finding: Pair & { added: string[] }) =>
     finding.after,
   ].join('\n');
 
-// Printed rather than merely asserted: a coverage floor that silently skips
-// rules reads as "swept everything" when it did not, and the snippet cap drops
-// a real share of the harvest.
+const uncovered = [
+  ...coverage.noTestFile,
+  ...coverage.noSnippets,
+  ...coverage.neverFixed,
+  ...coverage.illTypedInput,
+].sort();
+
+const heldOutByRule = coverage.covered
+  .map((rule) => {
+    const total = pairs.filter((pair) => pair.rule === rule).length;
+    const asserted = assertedPairs.filter((pair) => pair.rule === rule).length;
+    return { rule, held: total - asserted, total };
+  })
+  .filter((entry) => entry.held > 0)
+  .map((entry) => `${entry.rule} ${entry.held}/${entry.total}`);
+
+/**
+ * Printed, not merely asserted, and printed *per rule with its reason*: an
+ * uncovered rule that lands in an unlabelled bucket reads as "this rule has no
+ * fixable trigger" when the truth may be that the harness dropped it, which is
+ * how #1526's defect stayed invisible under a rule the guard listed as swept.
+ */
 console.log(
   [
-    `[fixer-type-safety] compiled ${pairs.length} fix pairs from ` +
-      `${coverage.covered.length} of ${fixableRules.length} fixable rules`,
-    `  no fix pair produced (${coverage.neverFixed.length}): ${
-      coverage.neverFixed.join(', ') || 'none'
-    }`,
-    `  no test file (${coverage.noTestFile.length}): ${
-      coverage.noTestFile.join(', ') || 'none'
-    }`,
-    `  no harvestable snippet (${coverage.noSnippets.length}): ${
-      coverage.noSnippets.join(', ') || 'none'
-    }`,
-    `  snippet cap ${MAX_SNIPPETS_PER_RULE}/rule dropped ${dropped} of ` +
-      `${harvested} harvested snippets, truncating ${
-        coverage.droppedTail.length
-      } rule(s) [rule totals]: ${coverage.droppedTail.join(', ') || 'none'}`,
+    `[fixer-type-safety] asserted ${assertedPairs.length} of ${pairs.length} ` +
+      `fix pairs across ${coverage.covered.length} of ${fixableRules.length} ` +
+      `fixable rules`,
+    `  uncovered (${uncovered.length}), each with its reason:`,
+    ...uncovered.map((rule) => `    ${rule}: ${explanation.get(rule)}`),
+    `  pair cap ${MAX_PAIRS_PER_RULE}/rule left ${unscanned} of ${harvested} ` +
+      `harvested snippets unscanned, in ${
+        coverage.unscannedTail.length
+      } rule(s) [unscanned tail]: ${
+        coverage.unscannedTail.join(', ') || 'none'
+      }`,
+    `  ${sharedScopeDropped} snippet(s) dropped for declaring into the shared ` +
+      `scope, ${interpolatedSkipped} case(s) unharvestable (interpolated)`,
+    `  ${
+      pairs.length - assertedPairs.length
+    } pair(s) held out for an input that does not type-check, in ${
+      heldOutByRule.length
+    } covered rule(s) [held/total]: ${heldOutByRule.join(', ') || 'none'}`,
   ].join('\n'),
 );
 
@@ -585,6 +752,9 @@ describe('an autofix must not turn compiling code into non-compiling code', () =
     (name, expectFlagged) => {
       const outcome = controlOutcomes.find((o) => o.name === name)!;
       expect(outcome.fired).toBe(true);
+      // A control whose own input stopped type-checking would be held out by
+      // the baseline gate and prove nothing about the gate's other side.
+      expect(outcome.baselineCompiles).toBe(true);
       expect(outcome.flagged).toBe(expectFlagged);
     },
   );
@@ -595,8 +765,19 @@ describe('an autofix must not turn compiling code into non-compiling code', () =
    */
   it('compiles a meaningful share of the fixable rules', () => {
     expect(fixableRules.length).toBeGreaterThan(70);
-    expect(coverage.covered.length).toBeGreaterThanOrEqual(60);
-    expect(pairs.length).toBeGreaterThanOrEqual(400);
+    expect(coverage.covered.length).toBeGreaterThanOrEqual(74);
+    expect(assertedPairs.length).toBeGreaterThanOrEqual(1300);
+  });
+
+  /**
+   * "Uncovered" must never be a silent bucket (#1527). Every fixable rule lands
+   * in exactly one bucket, and every rule outside `covered` carries a reason —
+   * so a rule the harness drops can never again read as a rule with no fixable
+   * trigger.
+   */
+  it('accounts for every fixable rule, uncovered ones by reason', () => {
+    expect([...coverage.covered, ...uncovered].sort()).toEqual(fixableRules);
+    expect(uncovered.filter((rule) => !explanation.get(rule))).toEqual([]);
   });
 
   it.each(fixableRules)('%s', (rule) => {
