@@ -7,6 +7,6 @@
  * Shared by the commitlint scope rule (commit-msg hook) and the CI scope
  * validator so the two enforcement points never drift.
  */
-const ALLOWED_NON_RULE_SCOPES = ['deps'];
+const ALLOWED_NON_RULE_SCOPES = ['deps', 'createRule'];
 
 module.exports = { ALLOWED_NON_RULE_SCOPES };
