@@ -324,6 +324,105 @@ ruleTester.run('enforce-object-literal-as-const', enforceObjectLiteralAsConst, {
         }
       `,
     },
+    // Valid case: the declared return type is a mutable array, so `as const`
+    // would emit a readonly tuple that TS4104 rejects. Nothing the developer
+    // can do at the literal satisfies the rule, so it stays silent (#1526).
+    {
+      code: `
+        export function getNames(): string[] {
+          return ['a', 'b'];
+        }
+      `,
+    },
+    // Valid case: a mutable tuple annotation rejects a readonly tuple the same
+    // way (#1526)
+    {
+      code: `
+        function getPair(): [string, number] {
+          return ['a', 1];
+        }
+      `,
+    },
+    // Valid case: `Array<T>` spells the same mutable array (#1526)
+    {
+      code: `
+        function getNames(): Array<string> {
+          return ['a', 'b'];
+        }
+      `,
+    },
+    // Valid case: no member of the union accepts a readonly tuple (#1526)
+    {
+      code: `
+        function getNames(): string[] | undefined {
+          return ['a', 'b'];
+        }
+      `,
+    },
+    // Valid case: an async function's literal is typed by the awaited type, so
+    // `Promise<string[]>` is a mutable array position (#1526)
+    {
+      code: `
+        async function getNames(): Promise<string[]> {
+          return ['a', 'b'];
+        }
+      `,
+    },
+    // Valid case: a generator's declared return type is its second type
+    // argument (#1526)
+    {
+      code: `
+        function* generateNames(): Generator<number, string[], void> {
+          yield 1;
+          return ['a', 'b'];
+        }
+      `,
+    },
+    // Valid case: the annotation sits on the declared variable rather than on
+    // the arrow function itself (#1526)
+    {
+      code: `
+        const getNames: () => string[] = () => {
+          return ['a', 'b'];
+        };
+      `,
+    },
+    // Valid case: an assertion on the function expression carries the same
+    // declared return type (#1526)
+    {
+      code: `
+        const getNames = (() => {
+          return ['a', 'b'];
+        }) as () => string[];
+      `,
+    },
+    // Valid case: a class property's function-type annotation (#1526)
+    {
+      code: `
+        class NameService {
+          getNames: () => string[] = () => {
+            return ['a', 'b'];
+          };
+        }
+      `,
+    },
+    // Valid case: a method's own mutable array annotation (#1526)
+    {
+      code: `
+        class NameService {
+          getNames(): string[] {
+            return ['a', 'b'];
+          }
+        }
+      `,
+    },
+    // Valid case: an array literal in a mutable-annotated variable declaration
+    // is outside the rule entirely — only `return` arguments are inspected
+    {
+      code: `
+        const names: string[] = ['a', 'b'];
+      `,
+    },
   ],
   invalid: [
     // Invalid case: array literal without 'as const'
@@ -895,6 +994,130 @@ ruleTester.run('enforce-object-literal-as-const', enforceObjectLiteralAsConst, {
             foo: 'bar',
             baz: 42,
           } as const;
+        }
+      `,
+    },
+    // Invalid case: a `readonly string[]` annotation accepts the readonly tuple
+    // `as const` produces, so the fix still applies (#1526)
+    {
+      code: `
+        function getNames(): readonly string[] {
+          return ['a', 'b'];
+        }
+      `,
+      errors: [{ messageId: 'enforceAsConst' }],
+      output: `
+        function getNames(): readonly string[] {
+          return ['a', 'b'] as const;
+        }
+      `,
+    },
+    // Invalid case: `ReadonlyArray<T>` is the same type spelled differently
+    // (#1526)
+    {
+      code: `
+        function getNames(): ReadonlyArray<string> {
+          return ['a', 'b'];
+        }
+      `,
+      errors: [{ messageId: 'enforceAsConst' }],
+      output: `
+        function getNames(): ReadonlyArray<string> {
+          return ['a', 'b'] as const;
+        }
+      `,
+    },
+    // Invalid case: a readonly tuple annotation accepts a readonly tuple
+    // (#1526)
+    {
+      code: `
+        function getPair(): readonly [string, number] {
+          return ['a', 1];
+        }
+      `,
+      errors: [{ messageId: 'enforceAsConst' }],
+      output: `
+        function getPair(): readonly [string, number] {
+          return ['a', 1] as const;
+        }
+      `,
+    },
+    // Invalid case: an awaited readonly array accepts it too (#1526)
+    {
+      code: `
+        async function getNames(): Promise<readonly string[]> {
+          return ['a', 'b'];
+        }
+      `,
+      errors: [{ messageId: 'enforceAsConst' }],
+      output: `
+        async function getNames(): Promise<readonly string[]> {
+          return ['a', 'b'] as const;
+        }
+      `,
+    },
+    // Invalid case: a union with a readonly member accepts a readonly tuple, so
+    // the fix applies (#1526)
+    {
+      code: `
+        function getNames(): readonly string[] | undefined {
+          return ['a', 'b'];
+        }
+      `,
+      errors: [{ messageId: 'enforceAsConst' }],
+      output: `
+        function getNames(): readonly string[] | undefined {
+          return ['a', 'b'] as const;
+        }
+      `,
+    },
+    // Invalid case: a variable annotated with a readonly-returning function
+    // type still fixes — the decline follows the declared type, not the
+    // declaration site (#1526)
+    {
+      code: `
+        const getNames: () => readonly string[] = () => {
+          return ['a', 'b'];
+        };
+      `,
+      errors: [{ messageId: 'enforceAsConst' }],
+      output: `
+        const getNames: () => readonly string[] = () => {
+          return ['a', 'b'] as const;
+        };
+      `,
+    },
+    // Invalid case (control for #1526): an unannotated array literal still
+    // fixes. If this stops fixing, the decline was scoped too widely.
+    {
+      code: `
+        function getNames() {
+          return ['a', 'b'];
+        }
+      `,
+      errors: [{ messageId: 'enforceAsConst' }],
+      output: `
+        function getNames() {
+          return ['a', 'b'] as const;
+        }
+      `,
+    },
+    // Invalid case: an object literal in a mutable-annotated position still
+    // fixes. `readonly` property modifiers do not affect assignability, so
+    // `as const` on an object literal stays assignable to a mutable target —
+    // the TS4104 conflict is specific to array literals (#1526).
+    {
+      code: `
+        type Config = { name: string; count: number };
+        function getConfig(): Config {
+          return { name: 'a', count: 1 };
+        }
+      `,
+      errors: [{ messageId: 'enforceAsConst' }],
+      output: `
+        type Config = { name: string; count: number };
+        function getConfig(): Config {
+          return { name: 'a', count: 1 } as const;
         }
       `,
     },

@@ -2,6 +2,165 @@ import { TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
 
+type FunctionNode =
+  | TSESTree.FunctionDeclaration
+  | TSESTree.FunctionExpression
+  | TSESTree.ArrowFunctionExpression;
+
+const FUNCTION_TYPES = new Set([
+  'FunctionDeclaration',
+  'FunctionExpression',
+  'ArrowFunctionExpression',
+]);
+
+/**
+ * A `return` inside a generator yields the generator type's *second* type
+ * argument; the first types the `yield`s. `IterableIterator` and friends leave
+ * `TReturn` unparameterised, so they carry no constraint on the returned value.
+ */
+const GENERATOR_TYPE_NAMES = new Set(['Generator', 'AsyncGenerator']);
+
+const PROMISE_TYPE_NAMES = new Set(['Promise', 'PromiseLike']);
+
+/**
+ * A readonly tuple is assignable to none of these, so a union member spelled
+ * this way cannot rescue an `as const` the rest of the union rejects.
+ */
+const NON_ARRAY_KEYWORDS = new Set([
+  'TSBigIntKeyword',
+  'TSBooleanKeyword',
+  'TSLiteralType',
+  'TSNeverKeyword',
+  'TSNullKeyword',
+  'TSNumberKeyword',
+  'TSStringKeyword',
+  'TSSymbolKeyword',
+  'TSUndefinedKeyword',
+  'TSVoidKeyword',
+]);
+
+/**
+ * Type arguments are `typeParameters` on this parser version and
+ * `typeArguments` on newer ones; both spell the same `<T>` after the name.
+ */
+function typeArgumentsOf(node: TSESTree.TSTypeReference): TSESTree.TypeNode[] {
+  const withTypeArgs = node as unknown as {
+    typeArguments?: TSESTree.TSTypeParameterInstantiation;
+    typeParameters?: TSESTree.TSTypeParameterInstantiation;
+  };
+  return (
+    (withTypeArgs.typeArguments ?? withTypeArgs.typeParameters)?.params ?? []
+  );
+}
+
+function typeReferenceNameOf(node: TSESTree.TypeNode): string | undefined {
+  if (node.type !== 'TSTypeReference' || node.typeName.type !== 'Identifier') {
+    return undefined;
+  }
+  return node.typeName.name;
+}
+
+/**
+ * Whether a readonly tuple — what `as const` makes of an array literal — can be
+ * assigned to this annotation, judged from syntax alone.
+ *
+ * Only shapes the annotation states outright are treated as hostile. Anything
+ * the rule cannot resolve (a type reference, a type parameter, an object type)
+ * counts as accepting, because declining on no evidence would silence the rule
+ * across most annotated code.
+ */
+function acceptsReadonlyArray(typeNode: TSESTree.TypeNode): boolean {
+  switch (typeNode.type) {
+    // `string[]` and `[string, number]` are mutable: TS4104 rejects a readonly
+    // tuple assigned to either.
+    case 'TSArrayType':
+    case 'TSTupleType':
+      return false;
+    // `readonly string[]` / `readonly [string, number]`.
+    case 'TSTypeOperator':
+      return typeNode.operator === 'readonly';
+    case 'TSTypeReference':
+      return typeReferenceNameOf(typeNode) !== 'Array';
+    // Assignable to the union as a whole iff assignable to some member.
+    case 'TSUnionType':
+      return typeNode.types.some(acceptsReadonlyArray);
+    case 'TSIntersectionType':
+      return typeNode.types.every(acceptsReadonlyArray);
+    default:
+      return !NON_ARRAY_KEYWORDS.has(typeNode.type);
+  }
+}
+
+/**
+ * The type a function type annotation declares for its return value, or
+ * `undefined` when the annotation is not a function type (a type reference to
+ * an aliased signature, say) and so states nothing resolvable here.
+ */
+function returnTypeOfFunctionType(
+  typeNode: TSESTree.TypeNode | undefined,
+): TSESTree.TypeNode | undefined {
+  if (typeNode?.type !== 'TSFunctionType') {
+    return undefined;
+  }
+  return typeNode.returnType?.typeAnnotation;
+}
+
+/**
+ * The declared return type visible for `fn`, whether written on the function
+ * itself (`function f(): string[]`) or on the site that declares it — a typed
+ * variable, a typed class property, or an assertion on the function expression.
+ *
+ * A callback passed as a call argument is deliberately not resolved: its
+ * contextual type lives on the callee's declaration, which is usually in
+ * another file, and the in-file shapes that do reach here (`useMemo`, `.map`)
+ * annotate their callbacks generically rather than with a mutable array.
+ */
+function declaredReturnTypeOf(fn: FunctionNode): TSESTree.TypeNode | undefined {
+  if (fn.returnType) {
+    return fn.returnType.typeAnnotation;
+  }
+  const { parent } = fn;
+  if (!parent) {
+    return undefined;
+  }
+  if (parent.type === 'VariableDeclarator') {
+    return parent.id.type === 'Identifier'
+      ? returnTypeOfFunctionType(parent.id.typeAnnotation?.typeAnnotation)
+      : undefined;
+  }
+  if (parent.type === 'PropertyDefinition') {
+    return returnTypeOfFunctionType(parent.typeAnnotation?.typeAnnotation);
+  }
+  if (parent.type === 'TSAsExpression') {
+    return returnTypeOfFunctionType(parent.typeAnnotation);
+  }
+  return undefined;
+}
+
+/**
+ * The type the *returned expression* must satisfy. For an async function or a
+ * generator the declared return type wraps that expression's type, so the
+ * wrapper is peeled off before the annotation is judged.
+ */
+function returnedValueTypeOf(fn: FunctionNode): TSESTree.TypeNode | undefined {
+  const declared = declaredReturnTypeOf(fn);
+  if (!declared) {
+    return undefined;
+  }
+  const referenceName = typeReferenceNameOf(declared);
+  if (fn.generator) {
+    return referenceName && GENERATOR_TYPE_NAMES.has(referenceName)
+      ? typeArgumentsOf(declared as TSESTree.TSTypeReference)[1]
+      : undefined;
+  }
+  if (fn.async) {
+    return referenceName && PROMISE_TYPE_NAMES.has(referenceName)
+      ? typeArgumentsOf(declared as TSESTree.TSTypeReference)[0]
+      : undefined;
+  }
+  return declared;
+}
+
 export const enforceObjectLiteralAsConst = createRule({
   name: 'enforce-object-literal-as-const',
   meta: {
@@ -60,6 +219,51 @@ export const enforceObjectLiteralAsConst = createRule({
      */
     function isArrayLiteral(node: TSESTree.Node): boolean {
       return node.type === 'ArrayExpression';
+    }
+
+    /**
+     * The function the `return` belongs to — the nearest one, so a `return`
+     * inside a nested callback is judged against that callback's annotation
+     * rather than the outer function's.
+     */
+    function enclosingFunctionOf(
+      ancestors: TSESTree.Node[],
+    ): FunctionNode | undefined {
+      for (let i = ancestors.length - 1; i >= 0; i--) {
+        const ancestor = ancestors[i];
+        if (FUNCTION_TYPES.has(ancestor.type)) {
+          return ancestor as FunctionNode;
+        }
+      }
+      return undefined;
+    }
+
+    /**
+     * `as const` turns an array literal into a readonly *tuple*, which TS4104
+     * refuses to assign to a mutable array or tuple. Where the annotation says
+     * the value must be mutable, appending `as const` breaks the build, and no
+     * edit at the literal can satisfy the rule — honouring it would mean
+     * rewriting the signature, a call the author has to make. So the rule stays
+     * silent rather than reporting something the developer cannot act on
+     * (#1526).
+     *
+     * Object literals are unaffected: `readonly` property modifiers do not
+     * enter assignability, so `{ a: 1 } as const` still satisfies a mutable
+     * `{ a: number }`.
+     */
+    function conflictsWithDeclaredType(
+      literal: TSESTree.Node,
+      ancestors: TSESTree.Node[],
+    ): boolean {
+      if (!isArrayLiteral(literal)) {
+        return false;
+      }
+      const enclosingFunction = enclosingFunctionOf(ancestors);
+      if (!enclosingFunction) {
+        return false;
+      }
+      const returnedValueType = returnedValueTypeOf(enclosingFunction);
+      return !!returnedValueType && !acceptsReadonlyArray(returnedValueType);
     }
 
     return {
@@ -131,16 +335,21 @@ export const enforceObjectLiteralAsConst = createRule({
           return;
         }
 
+        const literal =
+          argument.type === 'TSAsExpression'
+            ? (argument as TSESTree.TSAsExpression).expression
+            : argument;
+
         // Skip arrays returned from React hooks (memoized data/prop lists that
         // must not be frozen into readonly tuples — see #511 and #1324)
-        if (
-          isInsideReactHook(ancestors) &&
-          isArrayLiteral(
-            argument.type === 'TSAsExpression'
-              ? (argument as TSESTree.TSAsExpression).expression
-              : argument,
-          )
-        ) {
+        if (isInsideReactHook(ancestors) && isArrayLiteral(literal)) {
+          return;
+        }
+
+        // Skip arrays the enclosing signature declares mutable: `as const`
+        // cannot compile there and the developer cannot act on the report
+        // (#1526)
+        if (conflictsWithDeclaredType(literal, ancestors)) {
           return;
         }
 
