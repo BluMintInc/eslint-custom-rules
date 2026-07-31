@@ -8,6 +8,28 @@ const FIRESTORE_MODULES = new Set([
   'firebase/firestore',
 ]);
 
+/**
+ * Members whose meaning survives the `new Date()` → `Timestamp.now()` rewrite,
+ * taken from the shipped typings rather than from `Date`'s surface:
+ * `@google-cloud/firestore` (what `firebase-admin/firestore` re-exports)
+ * declares `seconds`, `nanoseconds`, `toDate()`, `toMillis()`, `isEqual()` and
+ * `valueOf()`, and `@firebase/firestore` adds `toString()` and `toJSON()`.
+ *
+ * `valueOf`, `toString` and `toJSON` are excluded on purpose even though
+ * `Timestamp` declares them, because their contracts differ from `Date`'s:
+ * `Timestamp#valueOf()` returns an encoded `string` where `Date#valueOf()`
+ * returns a `number`, and the string forms render `Timestamp(seconds=…,
+ * nanoseconds=…)` instead of a date. Those call sites keep compiling while the
+ * value silently changes, which is harder to catch than a type error.
+ */
+const TIMESTAMP_COMPATIBLE_MEMBERS = new Set([
+  'toDate',
+  'toMillis',
+  'isEqual',
+  'seconds',
+  'nanoseconds',
+]);
+
 export const enforceTimestampNow = createRule<[], MessageIds>({
   name: 'enforce-timestamp-now',
   meta: {
@@ -247,31 +269,70 @@ export const enforceTimestampNow = createRule<[], MessageIds>({
       );
     }
 
-    // Check if a Date object is being modified (e.g., futureDate.setDate())
-    function isDateBeingModified(dateVar: string): boolean {
-      // Look through the scope to find if this variable is modified
-      const scope = context.getScope();
-      const variable = scope.variables.find((v) => v.name === dateVar);
+    /**
+     * Whether a single use of the rewritten binding would still type-check and
+     * mean the same thing once its initializer is a `Timestamp`.
+     *
+     * Only a read of a member that `Timestamp` shares with `Date` qualifies.
+     * Every other shape — a write, an argument, a return, a comparison, an
+     * interpolation, a computed access — hands the value to a position whose
+     * expected type this rule cannot see, so it cannot be shown safe.
+     */
+    function isTimestampCompatibleReference(
+      reference: TSESLint.Scope.Reference,
+    ): boolean {
+      // The declaration's own initializer write is the site being rewritten,
+      // not a use of the resulting value.
+      if (reference.init) {
+        return true;
+      }
+      // A later assignment rebinds the variable to a value typed elsewhere,
+      // which the rewritten initializer no longer matches.
+      if (!reference.isReadOnly()) {
+        return false;
+      }
+      const identifier = reference.identifier;
+      const parent = identifier.parent;
+      if (
+        !parent ||
+        parent.type !== AST_NODE_TYPES.MemberExpression ||
+        parent.object !== identifier ||
+        parent.computed ||
+        parent.property.type !== AST_NODE_TYPES.Identifier
+      ) {
+        return false;
+      }
+      return TIMESTAMP_COMPATIBLE_MEMBERS.has(parent.property.name);
+    }
 
-      if (!variable) return false;
-
-      // Check if any references to this variable are followed by property access and modification
-      return variable.references.some((ref) => {
-        const id = ref.identifier;
-        const parent = id.parent;
-
-        // Check for patterns like dateVar.setDate(), dateVar.setHours(), etc.
-        return (
-          parent &&
-          parent.type === AST_NODE_TYPES.MemberExpression &&
-          parent.object === id &&
-          parent.property.type === AST_NODE_TYPES.Identifier &&
-          (parent.property.name.startsWith('set') ||
-            parent.property.name === 'toISOString' ||
-            parent.property.name === 'toLocaleString' ||
-            parent.property.name === 'toString')
-        );
-      });
+    /**
+     * Whether every use of a `new Date()` binding survives the rewrite to
+     * `Timestamp.now()`.
+     *
+     * `Timestamp` shares almost none of `Date`'s surface, so rewriting the
+     * initializer turns each `getX`/`setX`/`toLocaleX` call on the binding into
+     * TS2339 (issue #1528). A denylist of the `Date` members `Timestamp` lacks
+     * can only ever be incomplete, so the question is inverted: the fix is
+     * offered only when the whole use set is provably part of the `Timestamp`
+     * API. Declining on an unrecognized use trades a missed rewrite for never
+     * breaking the build, which is the trade this repo prefers.
+     */
+    function usesOnlyTimestampCompatibleMembers(
+      declarator: TSESTree.VariableDeclarator,
+    ): boolean {
+      // An exported binding is read by files this rule never sees, so its use
+      // set cannot be enumerated and the rewrite would break importers instead.
+      if (
+        declarator.parent?.parent?.type ===
+        AST_NODE_TYPES.ExportNamedDeclaration
+      ) {
+        return false;
+      }
+      const [variable] = context.getDeclaredVariables(declarator);
+      if (!variable) {
+        return false;
+      }
+      return variable.references.every(isTimestampCompatibleReference);
     }
 
     return {
@@ -354,9 +415,9 @@ export const enforceTimestampNow = createRule<[], MessageIds>({
               varName.includes('created') ||
               varName.includes('updated')
             ) {
-              // Check if the Date object is being modified
-              if (isDateBeingModified(parent.id.name)) {
-                // If the Date is being modified, don't flag it
+              // Stay silent when any use of the binding relies on the `Date`
+              // API, since the rewrite would strip it (issue #1528).
+              if (!usesOnlyTimestampCompatibleMembers(parent)) {
                 return;
               }
 
