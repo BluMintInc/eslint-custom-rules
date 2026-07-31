@@ -1,3 +1,14 @@
+## [1.20.50](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.49...v1.20.50) (2026-07-31)
+
+
+### Bug Fixes
+
+* **consistent-callback-naming:** stop autofixing prop renames, which broke compilation (closes [#1522](https://github.com/BluMintInc/eslint-custom-rules/issues/1522)) ([836bf8f](https://github.com/BluMintInc/eslint-custom-rules/commit/836bf8f89f7105f5bdccf4f7a0ef9bbd5095d8d0))
+* **enforce-early-destructuring:** drop the synthesized `= {}` on nested object patterns (closes [#1523](https://github.com/BluMintInc/eslint-custom-rules/issues/1523)) ([70a7585](https://github.com/BluMintInc/eslint-custom-rules/commit/70a75856b7bf791c90ed1dae3e9ae10a07ecbfd3))
+* **enforce-object-literal-as-const:** skip array literals a signature declares mutable (closes [#1526](https://github.com/BluMintInc/eslint-custom-rules/issues/1526)) ([7712b04](https://github.com/BluMintInc/eslint-custom-rules/commit/7712b0423d80b1da7c8eaa23464fe207ffc1a38b))
+* **enforce-timestamp-now:** gate the new Date() autofix on an in-scope Timestamp import (closes [#1521](https://github.com/BluMintInc/eslint-custom-rules/issues/1521)) ([a9320b3](https://github.com/BluMintInc/eslint-custom-rules/commit/a9320b3e37e2a8f951d7e4dc3b9c664353571209))
+* **no-class-instance-destructuring:** bind the instance once instead of reconstructing per property (closes [#1524](https://github.com/BluMintInc/eslint-custom-rules/issues/1524)) ([90967ab](https://github.com/BluMintInc/eslint-custom-rules/commit/90967ab48ea20c74c85ddcea61e51fb3b24237a7))
+
 ## [1.20.49](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.48...v1.20.49) (2026-07-31)
 
 
