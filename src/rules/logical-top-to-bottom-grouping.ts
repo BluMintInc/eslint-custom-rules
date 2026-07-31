@@ -1004,11 +1004,57 @@ function statementDeclaresAny(
   return false;
 }
 
+/**
+ * Whether the subtree contains a property read. `parent` is skipped because it
+ * points back up the tree and would make this walk unbounded.
+ */
+function containsMemberRead(node: TSESTree.Node): boolean {
+  if (node.type === AST_NODE_TYPES.MemberExpression) {
+    return true;
+  }
+  return Object.entries(node).some(([key, value]) => {
+    if (key === 'parent') {
+      return false;
+    }
+    if (Array.isArray(value)) {
+      return value.some(
+        (item) => ASTHelpers.isNode(item) && containsMemberRead(item),
+      );
+    }
+    return ASTHelpers.isNode(value) && containsMemberRead(value);
+  });
+}
+
+/**
+ * Whether a declaration captures a value read off some object's property.
+ *
+ * Such a read is side-effect-*free*, which is what `isPureDeclaration` answers,
+ * but it is not order-*independent*: the value is whatever that property held at
+ * this point in the block. Those are different questions, and only the second
+ * licenses moving an effect across the declaration. Conflating them let a
+ * hoisted call land above a deliberate before-snapshot, turning a before/after
+ * comparison into a self-referential one that still type-checks and still lints
+ * clean.
+ */
+function capturesObservableState(statement: TSESTree.Statement): boolean {
+  if (statement.type !== AST_NODE_TYPES.VariableDeclaration) {
+    return false;
+  }
+  return statement.declarations.some(
+    (declarator) =>
+      Boolean(declarator.init) &&
+      containsMemberRead(declarator.init as TSESTree.Node),
+  );
+}
+
 function findEarliestSafeIndex(
   body: TSESTree.Statement[],
   startIndex: number,
   dependencies: Set<string>,
-  { allowHooks }: { allowHooks: boolean },
+  {
+    allowHooks,
+    stopAtObservableState = false,
+  }: { allowHooks: boolean; stopAtObservableState?: boolean },
 ): number {
   // Reuse the backward scan so guard/side-effect movers stop before impure work or any declaration/reference of tracked dependencies.
   let targetIndex = startIndex;
@@ -1021,6 +1067,9 @@ function findEarliestSafeIndex(
       break;
     }
     if (statementReferencesAny(candidate, dependencies)) {
+      break;
+    }
+    if (stopAtObservableState && capturesObservableState(candidate)) {
       break;
     }
     targetIndex = cursor;
@@ -2153,6 +2202,7 @@ function handleSideEffects(
 
     const targetIndex = findEarliestSafeIndex(body, index, dependencies, {
       allowHooks: false,
+      stopAtObservableState: true,
     });
 
     if (targetIndex === index) {

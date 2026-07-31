@@ -5,6 +5,43 @@ import { logicalTopToBottomGrouping } from '../rules/logical-top-to-bottom-group
 
 ruleTesterTs.run('logical-top-to-bottom-grouping', logicalTopToBottomGrouping, {
   valid: [
+    // A declaration reading a property captures whatever that property held at
+    // that point, so hoisting an effect above it changes what was measured. The
+    // before/after comparison from #1493 is the shape that breaks silently.
+    `
+it('re-renders when the tournament changes', () => {
+  render('goalBar');
+  setLiveTournament(buildTournament());
+  const rendersAfterMount = COUNTS.goalBar;
+
+  setLiveTournament(buildTournament({ intermissions: [] }));
+
+  expect(COUNTS.goalBar).toBeGreaterThan(rendersAfterMount);
+});
+`,
+    `
+const before = counter.value;
+
+bump();
+
+expect(counter.value).toBeGreaterThan(before);
+`,
+    // The barrier follows the read wherever it sits in the initializer, not just
+    // at the top level.
+    `
+const snapshot = { count: counter.value, label: 'x' };
+
+bump();
+
+use(snapshot);
+`,
+    `
+const doubled = counter.value * 2;
+
+bump();
+
+use(doubled);
+`,
     `
 const group = useGroupDoc();
 const { id } = group || {};
@@ -431,6 +468,26 @@ const { a } = props.group;
 const b = a;
       `,
       errors: [{ messageId: 'moveGuardUp' }],
+    },
+    // A declaration that captures no property read is not a measurement point,
+    // so hoisting across it still applies -- the #1493 barrier is targeted, not
+    // a blanket stop at every declaration.
+    {
+      code: `
+const threshold = 10;
+
+logStart();
+
+use(threshold);
+`,
+      output: `
+logStart();
+
+const threshold = 10;
+
+use(threshold);
+`,
+      errors: [{ messageId: 'moveSideEffect' }],
     },
     {
       code: `
