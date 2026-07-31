@@ -135,10 +135,11 @@ const useHits = (hits: readonly { id: string }[], hasQuery: boolean) => {
 ```
 
 ```ts
-// Resolving a reported `as SomeType` by hand: state the type on the signature
-// and return a named value, which the rule does not inspect
+// Resolving a reported `as SomeType` by hand: annotate a named value and
+// return it, which the rule does not inspect. Annotating the signature instead
+// would work here too, but `no-explicit-return-type` reports that.
 type SomeType = { foo: string };
-function getData(): SomeType {
+function getData() {
   const data: SomeType = { foo: 'bar' };
   return data;
 }
