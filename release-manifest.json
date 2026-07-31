@@ -1,5 +1,43 @@
 [
   {
+    "version": "1.20.51",
+    "date": "2026-07-31T15:20:05.562Z",
+    "rules": [
+      {
+        "name": "enforce-dynamic-imports",
+        "changeType": "fix",
+        "issues": [],
+        "summary": "allow the scoped @blumintinc/fast-deep-equal specifier; allow the scoped @blumintinc/microdiff specifier"
+      },
+      {
+        "name": "enforce-microdiff",
+        "changeType": "fix",
+        "issues": [
+          1531
+        ],
+        "summary": "emit a default import from @blumintinc/microdiff and stop stranding the call site (closes #1531)"
+      },
+      {
+        "name": "enforce-timestamp-now",
+        "changeType": "fix",
+        "issues": [
+          1528,
+          1530
+        ],
+        "summary": "reject type-only imports as evidence of a value binding (closes #1530); only rewrite new Date() when every use is Timestamp-compatible (closes #1528)"
+      },
+      {
+        "name": "fast-deep-equal-over-microdiff",
+        "changeType": "fix",
+        "issues": [
+          1532,
+          1533
+        ],
+        "summary": "emit and recognize @blumintinc/fast-deep-equal (closes #1533); recognize the scoped @blumintinc/microdiff fork (closes #1532)"
+      }
+    ]
+  },
+  {
     "version": "1.20.50",
     "date": "2026-07-31T12:53:09.792Z",
     "rules": [

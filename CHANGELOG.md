@@ -1,3 +1,16 @@
+## [1.20.51](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.50...v1.20.51) (2026-07-31)
+
+
+### Bug Fixes
+
+* **enforce-dynamic-imports:** allow the scoped @blumintinc/fast-deep-equal specifier ([bb0fa10](https://github.com/BluMintInc/eslint-custom-rules/commit/bb0fa10bd3b4dae16e00540cfd4aeb7289fffa83))
+* **enforce-dynamic-imports:** allow the scoped @blumintinc/microdiff specifier ([a93a1c3](https://github.com/BluMintInc/eslint-custom-rules/commit/a93a1c3cc0000a5686d3713ee22768bee6a2eeec))
+* **enforce-microdiff:** emit a default import from @blumintinc/microdiff and stop stranding the call site (closes [#1531](https://github.com/BluMintInc/eslint-custom-rules/issues/1531)) ([e74e7da](https://github.com/BluMintInc/eslint-custom-rules/commit/e74e7da3167b3bdc3713166a8a0c183cbad6dc28))
+* **enforce-timestamp-now:** only rewrite new Date() when every use is Timestamp-compatible (closes [#1528](https://github.com/BluMintInc/eslint-custom-rules/issues/1528)) ([43232eb](https://github.com/BluMintInc/eslint-custom-rules/commit/43232eb8dac0ec51a21de691a9750aafcc99981d))
+* **enforce-timestamp-now:** reject type-only imports as evidence of a value binding (closes [#1530](https://github.com/BluMintInc/eslint-custom-rules/issues/1530)) ([cd63279](https://github.com/BluMintInc/eslint-custom-rules/commit/cd63279ad713b254ab4dd9609be0fab69a04f150)), closes [#1521](https://github.com/BluMintInc/eslint-custom-rules/issues/1521)
+* **fast-deep-equal-over-microdiff:** emit and recognize @blumintinc/fast-deep-equal (closes [#1533](https://github.com/BluMintInc/eslint-custom-rules/issues/1533)) ([0f4bd50](https://github.com/BluMintInc/eslint-custom-rules/commit/0f4bd5079ec9e699db05422e32dd3a0da9bfb015))
+* **fast-deep-equal-over-microdiff:** recognize the scoped @blumintinc/microdiff fork (closes [#1532](https://github.com/BluMintInc/eslint-custom-rules/issues/1532)) ([873701b](https://github.com/BluMintInc/eslint-custom-rules/commit/873701be35a2b843a95a24bfbdb327d6fad65d14))
+
 ## [1.20.50](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.49...v1.20.50) (2026-07-31)
 
 
