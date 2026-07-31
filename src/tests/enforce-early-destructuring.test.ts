@@ -132,6 +132,31 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
           };
         `,
     },
+    // A nested destructure behind a truthiness guard stays put: hoisting it above
+    // the guard would dereference an object the guard exists to protect.
+    {
+      code: `
+          const MyComponent = ({ user }: { user?: User }) => {
+            useEffect(() => {
+              if (!user) return;
+              const { profile: { name, age } } = user;
+              renderProfile(name, age);
+            }, [user]);
+          };
+        `,
+    },
+    {
+      code: `
+          const MyComponent = ({ user }: { user?: User }) => {
+            useEffect(() => {
+              if (user.profile) {
+                const { profile: { name, age } } = user;
+                renderProfile(name, age);
+              }
+            }, [user]);
+          };
+        `,
+    },
   ],
   invalid: [
     {
@@ -247,10 +272,135 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ user }) => {
-            const { profile: { name, age } = {} } = (user) ?? {};
+            const { profile: { name, age } } = (user) ?? {};
             useEffect(() => {
               renderProfile(name, age);
             }, [name, age]);
+          };
+        `,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    // Regression (#1523): the hoisted pattern must not gain a synthesized `= {}`.
+    // `{}` provides no value for `name`/`age`, so TS reports TS2525 once per
+    // binding and an input that compiled stops compiling after --fix.
+    {
+      code: `
+          const Profile = ({ user }: { user: User }) => {
+            useEffect(() => {
+              const { profile: { name, age } } = user;
+              renderProfile(name, age);
+            }, [user]);
+            return null;
+          };
+        `,
+      output: `
+          const Profile = ({ user }: { user: User }) => {
+            const { profile: { name, age } } = (user) ?? {};
+            useEffect(() => {
+              renderProfile(name, age);
+            }, [name, age]);
+            return null;
+          };
+        `,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      code: `
+          const MyComponent = ({ user }) => {
+            useEffect(() => {
+              const { id, profile: { name } } = user;
+              render(id, name);
+            }, [user]);
+          };
+        `,
+      output: `
+          const MyComponent = ({ user }) => {
+            const { id, profile: { name } } = (user) ?? {};
+            useEffect(() => {
+              render(id, name);
+            }, [id, name]);
+          };
+        `,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      code: `
+          const MyComponent = ({ user }) => {
+            useEffect(() => {
+              const { profile: { address: { city } } } = user;
+              render(city);
+            }, [user]);
+          };
+        `,
+      output: `
+          const MyComponent = ({ user }) => {
+            const { profile: { address: { city } } } = (user) ?? {};
+            useEffect(() => {
+              render(city);
+            }, [city]);
+          };
+        `,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    // Defaults written by the author survive the hoist verbatim; only the
+    // synthesized nested `= {}` is dropped.
+    {
+      code: `
+          const MyComponent = ({ user }) => {
+            useEffect(() => {
+              const { profile: { name = 'Anonymous', age } } = user;
+              renderProfile(name, age);
+            }, [user]);
+          };
+        `,
+      output: `
+          const MyComponent = ({ user }) => {
+            const { profile: { name = 'Anonymous', age } } = (user) ?? {};
+            useEffect(() => {
+              renderProfile(name, age);
+            }, [name, age]);
+          };
+        `,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    // An object pattern nested inside an array pattern loses its `= {}` too; the
+    // array's own `= []` is type-safe and stays.
+    {
+      code: `
+          const MyComponent = ({ response }) => {
+            useEffect(() => {
+              const { items: [{ id }] } = response;
+              consume(id);
+            }, [response]);
+          };
+        `,
+      output: `
+          const MyComponent = ({ response }) => {
+            const { items: [{ id }] = [] } = (response) ?? {};
+            useEffect(() => {
+              consume(id);
+            }, [id]);
+          };
+        `,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    // An optional source only compiles when the destructure asserts non-null, and
+    // the assertion carries through the hoist, so `?? {}` stays type-neutral.
+    {
+      code: `
+          const MyComponent = ({ user }: { user?: User }) => {
+            useEffect(() => {
+              const { profile: { name } } = user!;
+              renderProfile(name);
+            }, [user]);
+          };
+        `,
+      output: `
+          const MyComponent = ({ user }: { user?: User }) => {
+            const { profile: { name } } = (user!) ?? {};
+            useEffect(() => {
+              renderProfile(name);
+            }, [name]);
           };
         `,
       errors: [{ messageId: 'hoistDestructuring' }],
@@ -718,7 +868,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ user }) => {
-            const { profile: { name } = {}, profile: { age } = {} } = (user) ?? {};
+            const { profile: { name }, profile: { age } } = (user) ?? {};
             useEffect(() => {
               doSomething(name, age);
             }, [name, age]);

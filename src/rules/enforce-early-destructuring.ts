@@ -628,8 +628,9 @@ function renderArrayPatternWithDefaults(
       return `${leftText} = ${sourceCode.getText(element.right)}`;
     }
     if (element.type === AST_NODE_TYPES.ObjectPattern) {
-      const nested = renderObjectPatternWithDefaults(element, sourceCode);
-      return `${nested} = {}`;
+      // No synthesized `= {}` here either, for the reason spelled out in
+      // formatPropertyText: the default is checked against the bindings under it.
+      return renderObjectPatternWithDefaults(element, sourceCode);
     }
     if (element.type === AST_NODE_TYPES.ArrayPattern) {
       const nested = renderArrayPatternWithDefaults(element, sourceCode);
@@ -671,11 +672,20 @@ function formatPropertyText(
   }
 
   if (value.type === AST_NODE_TYPES.ObjectPattern) {
+    // A nested object pattern is re-emitted as authored, without a synthesized
+    // `= {}`. TypeScript checks such a default against every binding element
+    // beneath it, so `{ profile: { name, age } = {} }` reports TS2525 once per
+    // name: `{}` supplies no value and the names carry no defaults of their own.
+    // The default also only ever guarded a nullish parent (an explicitly `null`
+    // one still throws), so dropping it costs a partial runtime guard and buys
+    // back the invariant that compiling input yields compiling output.
     const nested = renderObjectPatternWithDefaults(value, sourceCode);
-    return `${keyText}: ${nested} = {}`;
+    return `${keyText}: ${nested}`;
   }
 
   if (value.type === AST_NODE_TYPES.ArrayPattern) {
+    // An array pattern's `= []` default is safe to synthesize: TypeScript does
+    // not push it down onto the element bindings the way it does for objects.
     const nested = renderArrayPatternWithDefaults(value, sourceCode);
     return `${keyText}: ${nested} = []`;
   }

@@ -12,12 +12,36 @@ Destructuring inside `useEffect`, `useLayoutEffect`, `useCallback`, or `useMemo`
 
 The fixer:
 - Hoists object destructuring out of the hook callback.
-- Adds `?? {}` plus `= {}` / `= []` defaults for nested object or array patterns so hoisted destructuring tolerates missing/undefined inputs (nested properties that are explicitly `null` still throw).
+- Adds `?? {}` on the hoisted initializer so the destructuring tolerates a missing/undefined object once it runs during render, plus an `= []` default for nested array patterns.
+- Re-emits nested object patterns exactly as authored (see below).
 - Replaces the object dependency with the destructured bindings when the callback no longer references the base object; otherwise, keeps the original dependency and adds the bindings.
 - Merges multiple destructures of the same object into a single hoisted pattern.
 - Skips destructuring inside async callbacks or nested async helpers.
 - Skips destructuring that depends on type-narrowing checks, including truthiness guards on the object (e.g., `if (!response) return;`).
 - Reports without fixing when any destructuring statement it would hoist carries a type annotation (see below).
+
+### Nested object patterns keep no synthesized default
+
+A nested object pattern is hoisted verbatim — the fixer does not add `= {}` to it:
+
+```typescript
+// Input
+useEffect(() => {
+  const { profile: { name, age } } = user;
+  renderProfile(name, age);
+}, [user]);
+
+// Fixed
+const { profile: { name, age } } = (user) ?? {};
+
+useEffect(() => {
+  renderProfile(name, age);
+}, [name, age]);
+```
+
+TypeScript checks a destructuring default against every binding element beneath it, so `{ profile: { name, age } = {} }` reports [TS2525](https://typescript.tv/errors/#ts2525) once per name: `{}` supplies no value for `name` or `age` and neither carries a default of its own. Emitting that default turned compiling input into non-compiling output. The guard it provided was partial anyway — a `profile` that is explicitly `null` still throws — so the plain hoist is used instead, which reproduces the original statement's runtime behavior exactly. Nested array patterns still get `= []`, which TypeScript does not push down onto the element bindings.
+
+If the hoisted object can be nullish at render time, guard it at the source (`useMemo`, a default prop, or an early return) rather than relying on the destructuring pattern.
 
 ### Type-annotated declarations report without a fix
 
