@@ -72,6 +72,11 @@ module.exports = {
   modulePathIgnorePatterns: ['<rootDir>/lib/'],
   reporters: ['default', 'jest-junit'],
 
+  // Asserts every RuleTester `valid` case can actually fail. Loaded globally
+  // rather than from `src/utils/ruleTester.ts` because suites that build their
+  // own RuleTester would otherwise skip the check.
+  setupFiles: ['<rootDir>/src/utils/installValidCaseGuard.ts'],
+
   // Adaptive resource limits (see above) to keep full-suite runs within memory.
   maxWorkers: calculateWorkers(),
   workerIdleMemoryLimit: computeWorkerIdleMemoryLimit(),
