@@ -48,12 +48,9 @@ const BASELINE: Record<string, readonly string[]> = {
     'functionTypes',
   ],
   'enforce-snapshot-state-narrowing': ['excludeFiles'],
-  'enforce-stable-hash-spread-props': [
-    'allowedHashFunctions',
-    'hashImport',
-    'importName',
-    'source',
-  ],
+  // `hashImport` (with its nested `source`/`importName`) is covered by the
+  // fixer-output cases; `allowedHashFunctions` remains genuinely inert (#1507).
+  'enforce-stable-hash-spread-props': ['allowedHashFunctions'],
   'enforce-types-directory-placement': ['frontendCoupledImportPatterns'],
   'enforce-unique-cursor-headers': [
     'excludedPatterns',
