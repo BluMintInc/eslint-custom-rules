@@ -1,5 +1,35 @@
 [
   {
+    "version": "1.20.52",
+    "date": "2026-07-31T19:23:46.059Z",
+    "rules": [
+      {
+        "name": "enforce-m3-sentence-case",
+        "changeType": "fix",
+        "issues": [
+          1534
+        ],
+        "summary": "validate ignorePatterns regexes with an actionable error (closes #1534)"
+      },
+      {
+        "name": "no-render-function-components",
+        "changeType": "fix",
+        "issues": [
+          1536
+        ],
+        "summary": "validate allowNames regexes with an actionable error (closes #1536)"
+      },
+      {
+        "name": "no-separate-loading-state",
+        "changeType": "fix",
+        "issues": [
+          1535
+        ],
+        "summary": "validate patterns regexes with an actionable error (closes #1535)"
+      }
+    ]
+  },
+  {
     "version": "1.20.51",
     "date": "2026-07-31T15:20:05.562Z",
     "rules": [

@@ -1,3 +1,12 @@
+## [1.20.52](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.51...v1.20.52) (2026-07-31)
+
+
+### Bug Fixes
+
+* **enforce-m3-sentence-case:** validate ignorePatterns regexes with an actionable error (closes [#1534](https://github.com/BluMintInc/eslint-custom-rules/issues/1534)) ([8432520](https://github.com/BluMintInc/eslint-custom-rules/commit/8432520a4afbfd47ae31bd9846f37c6f0980798d))
+* **no-render-function-components:** validate allowNames regexes with an actionable error (closes [#1536](https://github.com/BluMintInc/eslint-custom-rules/issues/1536)) ([2bde041](https://github.com/BluMintInc/eslint-custom-rules/commit/2bde041f442bb38d88be86a3e19086d7e12e42ce))
+* **no-separate-loading-state:** validate patterns regexes with an actionable error (closes [#1535](https://github.com/BluMintInc/eslint-custom-rules/issues/1535)) ([e35666f](https://github.com/BluMintInc/eslint-custom-rules/commit/e35666f8ad61d99dd07e917961abfe9d765390d5))
+
 ## [1.20.51](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.50...v1.20.51) (2026-07-31)
 
 
