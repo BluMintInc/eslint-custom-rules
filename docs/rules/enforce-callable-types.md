@@ -88,20 +88,25 @@ export default onCall(myCallableFunction);
 ### Examples of **correct** code
 
 ```ts
+// File: functions/src/callable/user/deleteUser.f.ts
 import { onCall } from '../../v2/https/onCall';
 
 export type Props = { userId: string };
 export type Response = { success: boolean };
 
-const myCallableFunction = async (
+const deleteUser = async (
   request: CallableRequest<Props>,
 ): Promise<Response> => {
   const { userId } = request.data;
-  return { success: true };
+  return { success: true } as const;
 };
 
-export default onCall(myCallableFunction);
+export default onCall(deleteUser);
 ```
+
+The `.f.ts` path is what exempts the `Promise<Response>` annotation from
+`no-explicit-return-type`, so a callable written anywhere else reports under
+both rules at once.
 
 ## When Not To Use It
 
