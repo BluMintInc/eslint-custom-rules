@@ -252,6 +252,32 @@ ruleTester.run('enforce-object-literal-as-const', enforceObjectLiteralAsConst, {
         }
       `,
     },
+    // Valid case: `as const` on an object literal needs no change — pinned
+    // alongside the #1503 decline so the two assertion paths stay distinct
+    {
+      code: `
+        function getData() {
+          return { foo: 'bar' } as const;
+        }
+      `,
+    },
+    // Valid case: the angle-bracket assertion form is not detected. Only
+    // `TSAsExpression` is inspected, so `<SomeType>{...}` (a `TSTypeAssertion`,
+    // and illegal in TSX) goes unreported. Pinned as-is: extending detection
+    // here is a separate change, and whoever makes it must decide the fix
+    // behaviour deliberately rather than inherit the #1503 loss.
+    {
+      code: `
+        function getData() {
+          return <SomeType>{ foo: 'bar' };
+        }
+      `,
+      parserOptions: {
+        ecmaVersion: 2018,
+        sourceType: 'module',
+        ecmaFeatures: { jsx: false },
+      },
+    },
     // Valid case: returning a complex expression with non-literal
     {
       code: `
@@ -381,11 +407,100 @@ ruleTester.run('enforce-object-literal-as-const', enforceObjectLiteralAsConst, {
         }
       `,
     },
-    // Invalid case: with another type assertion
+    // Invalid case: with another type assertion — reported, but deliberately
+    // not auto-fixed. Rewriting `as SomeType` into `as const` would drop the
+    // declared type (#1503), so the diagnostic stands and the rewrite is left
+    // to a human.
     {
       code: `
         function getData() {
           return { foo: 'bar' } as SomeType;
+        }
+      `,
+      errors: [{ messageId: 'enforceAsConst' }],
+      output: null,
+    },
+    // Invalid case: the declared type is in scope, making the loss concrete —
+    // `as const` infers `{ readonly foo: 'bar' }`, not `SomeType` (#1503)
+    {
+      code: `
+        type SomeType = { foo: string };
+        function getData() {
+          return { foo: 'bar' } as SomeType;
+        }
+      `,
+      errors: [{ messageId: 'enforceAsConst' }],
+      output: null,
+    },
+    // Invalid case: array literal with another type assertion is declined too
+    {
+      code: `
+        function getPair() {
+          return [group, groupRef] as SomePair;
+        }
+      `,
+      errors: [{ messageId: 'enforceAsConst' }],
+      output: null,
+    },
+    // Invalid case: a generic assertion is declined the same way
+    {
+      code: `
+        function getRecords() {
+          return { a: 1 } as Record<string, number>;
+        }
+      `,
+      errors: [{ messageId: 'enforceAsConst' }],
+      output: null,
+    },
+    // Invalid case: an assertion in an arrow function body is declined too —
+    // the decline follows the assertion, not the enclosing function shape
+    {
+      code: `
+        const getData = () => {
+          return { foo: 'bar' } as SomeType;
+        };
+      `,
+      errors: [{ messageId: 'enforceAsConst' }],
+      output: null,
+    },
+    // Invalid case: an assertion on an array *element* leaves the outer literal
+    // fixable — the decline is scoped to an assertion on the returned literal
+    // itself, not one nested inside it
+    {
+      code: `
+        function getItems() {
+          return [{ foo: 'bar' } as SomeType, other];
+        }
+      `,
+      errors: [{ messageId: 'enforceAsConst' }],
+      output: `
+        function getItems() {
+          return [{ foo: 'bar' } as SomeType, other] as const;
+        }
+      `,
+    },
+    // Invalid case: an assertion on a *property value* likewise leaves the outer
+    // object literal fixable
+    {
+      code: `
+        function getConfig() {
+          return { nested: { foo: 'bar' } as SomeType };
+        }
+      `,
+      errors: [{ messageId: 'enforceAsConst' }],
+      output: `
+        function getConfig() {
+          return { nested: { foo: 'bar' } as SomeType } as const;
+        }
+      `,
+    },
+    // Invalid case (control for #1503): a plain literal carrying no assertion
+    // still auto-fixes. Declining must be scoped to the assertion case — if this
+    // stops fixing, fixing was disabled generally.
+    {
+      code: `
+        function getData() {
+          return { foo: 'bar' };
         }
       `,
       errors: [{ messageId: 'enforceAsConst' }],
