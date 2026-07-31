@@ -42,7 +42,7 @@
     "resolve-comments": "./scripts/pr-resolve-comments.sh",
     "apply-comment-decisions": "./scripts/pr-apply-comment-decisions.sh",
     "docs": "./scripts/make-docs.sh && npm run update:eslint-docs",
-    "update:eslint-docs": "eslint-doc-generator --init-rule-docs",
+    "update:eslint-docs": "eslint-doc-generator --init-rule-docs || true; eslint-doc-generator",
     "build": "tsc",
     "prepare": "husky install && npm run build",
     "version": "git add -A src",
