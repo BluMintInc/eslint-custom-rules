@@ -1,4 +1,5 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import { createRule } from '../utils/createRule';
 
 type AsyncCallbackNode =
   | TSESTree.ArrowFunctionExpression
@@ -353,7 +354,8 @@ const analyzeCallbackAsyncStatus = (
   return lastWrite && lastWrite.isAsync ? lastWrite.info : null;
 };
 
-export const noAsyncForEach: TSESLint.RuleModule<'noAsyncForEach', []> = {
+export const noAsyncForEach = createRule<[], 'noAsyncForEach'>({
+  name: 'no-async-foreach',
   create(context) {
     const sourceCode = getSourceCode(context);
 
@@ -395,4 +397,4 @@ export const noAsyncForEach: TSESLint.RuleModule<'noAsyncForEach', []> = {
     schema: [],
   },
   defaultOptions: [],
-};
+});

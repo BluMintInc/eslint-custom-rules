@@ -29,7 +29,6 @@ const expectedUrl = (name: string) =>
  * below is what forces the list to shrink rather than quietly outlive the fix.
  */
 const RULES_WITHOUT_DOCS_URL = [
-  'no-async-foreach', // #1480
   'no-useless-fragment', // #1481
   'prefer-fragment-shorthand', // #1482
   'require-memo', // #1483
