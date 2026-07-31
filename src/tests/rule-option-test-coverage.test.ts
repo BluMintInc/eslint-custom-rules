@@ -38,49 +38,23 @@ const plugin = require('..') as {
  */
 
 /**
- * Known-unexercised options, by rule. Shrink this; never extend it. A new option
- * belongs in a test, not here.
+ * The only options no test exercises, and both are here because they are
+ * *provably inert* rather than merely untested — each is blocked on a product
+ * decision (make it work, or delete it), so there is no behaviour to write a
+ * test against.
+ *
+ * Shrink this; never extend it. An untested option belongs in a test, not here:
+ * every one of the other 30 gaps this guard originally baselined turned out to
+ * be a live code path, and all of them were closed by exercising the option.
  */
 const BASELINE: Record<string, readonly string[]> = {
-  'enforce-is-prefix-validators': ['excludePatterns', 'requiredPrefix'],
-  'enforce-serializable-params': [
-    'additionalNonSerializableTypes',
-    'functionTypes',
-  ],
-  'enforce-snapshot-state-narrowing': ['excludeFiles'],
-  // `hashImport` (with its nested `source`/`importName`) is covered by the
-  // fixer-output cases; `allowedHashFunctions` remains genuinely inert (#1507).
+  // Its recognition check and the identifier check are mutually exclusive by
+  // node type and both land on the same `continue`, so no dependency-array
+  // element can reach it (#1507).
   'enforce-stable-hash-spread-props': ['allowedHashFunctions'],
-  'enforce-types-directory-placement': ['frontendCoupledImportPatterns'],
-  'enforce-unique-cursor-headers': [
-    'excludedPatterns',
-    'generatedMarkers',
-    'requiredPatterns',
-  ],
-  'no-direct-function-state': ['functionPatterns'],
-  'no-empty-dependency-use-callbacks': ['ignoreTestFiles', 'testFilePatterns'],
-  'no-excessive-parent-chain': ['max'],
-  'no-inline-component-prop': ['allowModuleScopeFactories'],
-  'no-misleading-boolean-prefixes': ['prefixes'],
-  'no-redundant-boolean-callback-props': [
-    'booleanPrefixes',
-    'booleanSuffixesToStrip',
-    'callbackPrefixes',
-    'exemptQualifiers',
-    'minNounLengthForSuffixMatch',
-  ],
-  'no-satisfies-in-frontend-bundle': ['excludePaths', 'includePaths'],
-  'no-separate-loading-state': ['patterns'],
+  // Registering an HOC-wrapped component sets `returnsJsx: false`, so both the
+  // configured and unconfigured paths skip (#1504).
   'no-unmemoized-memo-without-props': ['ignoreHocs'],
-  'parallelize-async-operations': ['sideEffectPatterns'],
-  'prefer-getter-over-parameterless-method': [
-    'factoryMethods',
-    'ignoredMethods',
-    'respectJsDocSideEffects',
-  ],
-  'prefer-use-base62-id': ['targetPaths'],
-  'require-migration-script-metadata': ['targetGlobs'],
-  'require-server-timestamp-for-firestore-dates': ['ignoreTestFiles'],
 };
 
 /**

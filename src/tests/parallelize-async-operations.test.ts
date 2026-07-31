@@ -54,6 +54,37 @@ async function persist(entry) {
 }
 `;
 
+// What the same snippet becomes once a caller clears `sideEffectPatterns`, so
+// `flush` stops acting as an ordering barrier.
+const BUILT_IN_SIDE_EFFECT_FIXED = `
+async function persist(entry) {
+  await Promise.all([
+  writeEntry(entry),
+  flush()
+]);
+}
+`;
+
+// The mirror direction: neither callee matches a built-in pattern, so this
+// parallelizes under the defaults and only a caller-supplied pattern can hold
+// it back. `sideEffectPatterns` REPLACES the built-in list rather than
+// extending it, which is why both directions are asserted.
+const CUSTOM_SIDE_EFFECT_CODE = `
+async function sync(a, b) {
+  await uploadAvatar(a);
+  await archiveEntry(b);
+}
+`;
+
+const CUSTOM_SIDE_EFFECT_FIXED = `
+async function sync(a, b) {
+  await Promise.all([
+  uploadAvatar(a),
+  archiveEntry(b)
+]);
+}
+`;
+
 /**
  * Lints through the ESLint class rather than RuleTester because only the ESLint
  * class validates rule options with ajv's `useDefaults`, which is what writes
@@ -972,6 +1003,18 @@ it('shows the message', async () => {
     {
       code: ORDER_DEPENDENT_AWAITS,
       filename: 'C:\\repo\\src\\__tests__\\Thing.ts',
+    },
+    // `flush` is a built-in side-effect pattern, so the defaults treat this as
+    // an ordering barrier. Paired with the invalid case that empties
+    // `sideEffectPatterns` over the identical snippet.
+    {
+      code: BUILT_IN_SIDE_EFFECT_CODE,
+    },
+    // A caller-supplied pattern makes `archiveEntry` a barrier, suppressing the
+    // report the defaults produce for this same snippet.
+    {
+      code: CUSTOM_SIDE_EFFECT_CODE,
+      options: [{ sideEffectPatterns: ['archiveEntry'] }],
     },
   ],
   invalid: [
@@ -2007,6 +2050,21 @@ it('shows the message', async () => {
       options: [{ ignoreTestFiles: false }],
       errors: [error(2)],
       output: ORDER_DEPENDENT_AWAITS_FIXED,
+    },
+    // Clearing `sideEffectPatterns` drops the `flush` barrier that makes the
+    // identical snippet valid at the defaults.
+    {
+      code: BUILT_IN_SIDE_EFFECT_CODE,
+      options: [{ sideEffectPatterns: [] }],
+      errors: [error(2)],
+      output: BUILT_IN_SIDE_EFFECT_FIXED,
+    },
+    // The defaults parallelize this snippet; the matching valid case above adds
+    // the pattern that stops them.
+    {
+      code: CUSTOM_SIDE_EFFECT_CODE,
+      errors: [error(2)],
+      output: CUSTOM_SIDE_EFFECT_FIXED,
     },
   ],
 });

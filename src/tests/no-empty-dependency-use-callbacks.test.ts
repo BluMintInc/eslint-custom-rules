@@ -1,6 +1,26 @@
 import { noEmptyDependencyUseCallbacks } from '../rules/no-empty-dependency-use-callbacks';
 import { ruleTesterJsx } from '../utils/ruleTester';
 
+// Shared across the filename-gated option cases below so that the option (or
+// the filename it is matched against) is the only difference between the valid
+// and invalid twins. Anything else varying would let a case pass even if the
+// rule ignored the option entirely.
+const OPTION_PAIR_CODE = `
+import { useCallback } from 'react';
+const Component = () => {
+  const formatLabel = useCallback((value) => value.trim(), []);
+  return <div>{formatLabel('x')}</div>;
+};
+`;
+
+const OPTION_PAIR_OUTPUT = `
+import { useCallback } from 'react';
+const formatLabel = (value) => value.trim();
+const Component = () => {
+  return <div>{formatLabel('x')}</div>;
+};
+`;
+
 const valid = [
   `
 import { useCallback } from 'react';
@@ -256,6 +276,22 @@ function Component() {
   return handler({ id: 'a' });
 }
 `,
+  // ignoreTestFiles: true is the default, but stating it explicitly pairs this
+  // with the invalid twin that only flips it to false on the same fixture.
+  {
+    filename: 'OptionPair.test.tsx',
+    code: OPTION_PAIR_CODE,
+    options: [{ ignoreTestFiles: true }] as [{ ignoreTestFiles: boolean }],
+  },
+  // testFilePatterns widened: a filename the built-in patterns never treat as a
+  // test file becomes one, so the rule goes quiet on code it otherwise reports.
+  {
+    filename: 'OptionPair.stories.tsx',
+    code: OPTION_PAIR_CODE,
+    options: [{ testFilePatterns: ['**/*.stories.*'] }] as [
+      { testFilePatterns: string[] },
+    ],
+  },
 ];
 
 const invalid = [
@@ -588,6 +624,35 @@ function Component() {
   return <div>{handler({ id: 'a' })}</div>;
 }
     `,
+  },
+  // Twin of the valid ignoreTestFiles case: same fixture, same test filename,
+  // only the option flips, so the rule stops skipping the file.
+  {
+    filename: 'OptionPair.test.tsx',
+    code: OPTION_PAIR_CODE,
+    options: [{ ignoreTestFiles: false }] as [{ ignoreTestFiles: boolean }],
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: OPTION_PAIR_OUTPUT,
+  },
+  // Twin of the valid testFilePatterns case: the same .stories.tsx fixture is
+  // reported once the widened pattern is withdrawn.
+  {
+    filename: 'OptionPair.stories.tsx',
+    code: OPTION_PAIR_CODE,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: OPTION_PAIR_OUTPUT,
+  },
+  // The opposite direction: testFilePatterns replaces the built-in list rather
+  // than extending it, so a genuine .test.tsx file loses its exemption when the
+  // supplied patterns do not cover it.
+  {
+    filename: 'OptionPair.test.tsx',
+    code: OPTION_PAIR_CODE,
+    options: [{ testFilePatterns: ['**/*.stories.*'] }] as [
+      { testFilePatterns: string[] },
+    ],
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: OPTION_PAIR_OUTPUT,
   },
 ];
 

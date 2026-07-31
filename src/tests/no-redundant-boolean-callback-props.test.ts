@@ -191,6 +191,59 @@ ruleTesterTs.run(
         onSave?: () => void;
       };
       `,
+
+      // 23. `booleanPrefixes` default half of the pin: `can` is not a default
+      // boolean prefix, so this exact-noun pair is not a candidate at all.
+      // Identical code appears in the invalid set with `booleanPrefixes: ['can']`.
+      `
+      type ProfileCardProps = {
+        canEditProfile?: boolean;
+        onEditProfile?: () => void;
+      };
+      `,
+
+      // 24. `callbackPrefixes` default half of the pin: `toggleSidebar` matches
+      // neither default callback prefix (`on`, `handle`), so no callback noun is
+      // collected. Same code is invalid under `callbackPrefixes: ['toggle']`.
+      `
+      type SidebarProps = {
+        showSidebar?: boolean;
+        toggleSidebar?: () => void;
+      };
+      `,
+
+      // 25. `booleanSuffixesToStrip` default half of the pin: the leftover after
+      // the `Settings` noun is `Panel`, which is not a default decorative suffix
+      // (Icon/Button/Action/Control/Badge), so the tier-2 match is refused.
+      `
+      type SettingsProps = {
+        showSettingsPanel?: boolean;
+        onSettings?: () => void;
+      };
+      `,
+
+      // 26. `exemptQualifiers` widened to a project-specific qualifier. The
+      // default config REPORTS this exact code (see the invalid twin), so the
+      // option is the only thing suppressing it.
+      {
+        code: `
+        type ExportProps = {
+          showLegacyExport?: boolean;
+          onLegacyExport?: () => void;
+        };
+        `,
+        options: [{ exemptQualifiers: ['Legacy'] }],
+      },
+
+      // 27. `minNounLengthForSuffixMatch` default half of the pin: noun `Close`
+      // is 5 chars, below the default floor of 6, so the `Icon` suffix strip is
+      // not trusted. Same code is invalid at `minNounLengthForSuffixMatch: 5`.
+      `
+      type DialogProps = {
+        showCloseIcon?: boolean;
+        onClose?: () => void;
+      };
+      `,
     ],
 
     invalid: [
@@ -460,6 +513,75 @@ ruleTesterTs.run(
           onShare?: () => void;
         };
         `,
+        errors: [{ messageId: 'redundantBooleanProp' }],
+      },
+
+      // 24. `booleanPrefixes` widened to `can`. Byte-identical to valid case 23;
+      // the option alone turns `canEditProfile` into a boolean candidate whose
+      // remainder `EditProfile` exactly matches `onEditProfile`'s noun.
+      {
+        code: `
+        type ProfileCardProps = {
+          canEditProfile?: boolean;
+          onEditProfile?: () => void;
+        };
+        `,
+        options: [{ booleanPrefixes: ['can'] }],
+        errors: [{ messageId: 'redundantBooleanProp' }],
+      },
+
+      // 25. `callbackPrefixes` widened to `toggle`. Byte-identical to valid case
+      // 24; the option alone makes `toggleSidebar` a recognized callback whose
+      // noun `Sidebar` matches the `show` remainder.
+      {
+        code: `
+        type SidebarProps = {
+          showSidebar?: boolean;
+          toggleSidebar?: () => void;
+        };
+        `,
+        options: [{ callbackPrefixes: ['toggle'] }],
+        errors: [{ messageId: 'redundantBooleanProp' }],
+      },
+
+      // 26. `booleanSuffixesToStrip` widened to `Panel`. Byte-identical to valid
+      // case 25; the option alone makes the leftover after the 8-char noun
+      // `Settings` a recognized decorative suffix.
+      {
+        code: `
+        type SettingsProps = {
+          showSettingsPanel?: boolean;
+          onSettings?: () => void;
+        };
+        `,
+        options: [{ booleanSuffixesToStrip: ['Panel'] }],
+        errors: [{ messageId: 'redundantBooleanProp' }],
+      },
+
+      // 27. Default-config twin of valid case 26, on byte-identical code: with
+      // `Legacy` absent from the default qualifiers the pair is reported, so the
+      // silence over there is produced by `exemptQualifiers` and nothing else.
+      {
+        code: `
+        type ExportProps = {
+          showLegacyExport?: boolean;
+          onLegacyExport?: () => void;
+        };
+        `,
+        errors: [{ messageId: 'redundantBooleanProp' }],
+      },
+
+      // 28. `minNounLengthForSuffixMatch` lowered to 5. Byte-identical to valid
+      // case 27; the option alone admits the 5-char noun `Close` to the
+      // suffix-strip tier so `showCloseIcon` matches `onClose`.
+      {
+        code: `
+        type DialogProps = {
+          showCloseIcon?: boolean;
+          onClose?: () => void;
+        };
+        `,
+        options: [{ minNounLengthForSuffixMatch: 5 }],
         errors: [{ messageId: 'redundantBooleanProp' }],
       },
     ],

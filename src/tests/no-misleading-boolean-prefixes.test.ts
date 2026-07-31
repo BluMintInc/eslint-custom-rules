@@ -52,6 +52,26 @@ ruleTesterTs.run(
 
       // Promise<boolean | undefined>
       'async function hasToken(): Promise<boolean | undefined> { return true; }',
+
+      // `prefixes` option — a prefix outside the default list is not checked.
+      // Pairs with the `prefixes: ['can']` invalid case on identical code: the
+      // option is the only difference, so this pair fails if it is ignored.
+      'function canRetry() { return "yes"; }',
+
+      // `prefixes` option narrowed away from the defaults: `is` is no longer a
+      // boolean-style prefix, so the same code the default config reports is
+      // now clean.
+      {
+        code: 'function isAvailable() { return "yes"; }',
+        options: [{ prefixes: ['can'] }],
+      },
+
+      // A custom prefix on a genuinely boolean-returning function stays clean —
+      // the option widens the checked names, it does not report unconditionally.
+      {
+        code: 'function canRetry(): boolean { return true; }',
+        options: [{ prefixes: ['can'] }],
+      },
     ],
     invalid: [
       // Examples from spec
@@ -162,6 +182,20 @@ ruleTesterTs.run(
       {
         code: 'async function shouldClear(): Promise<boolean | string> { return true; }',
         errors: [error('shouldClear')],
+      },
+
+      // `prefixes` option widened to a non-default prefix. Identical code to the
+      // corresponding valid case; only the option differs, and the reported
+      // prefix list echoes the configured value rather than the defaults.
+      {
+        code: 'function canRetry() { return "yes"; }',
+        options: [{ prefixes: ['can'] }],
+        errors: [
+          {
+            messageId: 'nonBooleanReturn' as const,
+            data: { name: 'canRetry', prefixes: 'can' },
+          },
+        ],
       },
     ],
   },

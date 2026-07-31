@@ -2,7 +2,8 @@ import { ruleTesterTs } from '../utils/ruleTester';
 import { requireMigrationScriptMetadata } from '../rules/require-migration-script-metadata';
 
 const filename = 'functions/src/callable/scripts/testScript.f.ts';
-const absolutePath = '/home/user/project/functions/src/callable/scripts/testScript.f.ts';
+const absolutePath =
+  '/home/user/project/functions/src/callable/scripts/testScript.f.ts';
 
 ruleTesterTs.run(
   'require-migration-script-metadata',
@@ -88,6 +89,30 @@ import { onCallVaripotent } from '../../v2/https/onCall';
 const x = 1;
       `,
         filename: 'src/otherFile.ts',
+      },
+      {
+        // `targetGlobs` baseline for the WIDENING pair: a metadata-less script
+        // outside the default glob is exempt. The matching invalid case runs
+        // the same code and filename with `targetGlobs` extended to cover it.
+        code: `
+export const backfill = async () => {
+  return true;
+};
+      `,
+        filename: 'src/migrations/backfillUsers.ts',
+      },
+      {
+        // `targetGlobs` NARROWED away from the default location exempts a file
+        // the default glob covers. `targetGlobs` is an inclusion filter, so it
+        // only proves itself when probed in both directions — the same code and
+        // filename report with the option omitted.
+        code: `
+export const backfill = async () => {
+  return true;
+};
+      `,
+        filename,
+        options: [{ targetGlobs: ['**/other/**/*.f.ts'] }],
       },
       {
         code: `
@@ -424,6 +449,30 @@ import { onCallVaripotent } from '../../v2/https/onCall';
       `,
         filename,
         errors: [{ messageId: 'invalidDependenciesTag' }],
+      },
+      {
+        // `targetGlobs` WIDENED to a second script location pulls a file the
+        // default glob ignores into scope. Pairs with the valid case on
+        // identical code and filename.
+        code: `
+export const backfill = async () => {
+  return true;
+};
+      `,
+        filename: 'src/migrations/backfillUsers.ts',
+        options: [{ targetGlobs: ['**/src/migrations/**/*.ts'] }],
+        errors: [{ messageId: 'missingMetadata' }],
+      },
+      {
+        // The default-`targetGlobs` half of the NARROWING pair: the same
+        // metadata-less script reports once the option stops excluding it.
+        code: `
+export const backfill = async () => {
+  return true;
+};
+      `,
+        filename,
+        errors: [{ messageId: 'missingMetadata' }],
       },
     ],
   },

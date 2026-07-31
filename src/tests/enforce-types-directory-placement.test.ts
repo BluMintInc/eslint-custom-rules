@@ -242,6 +242,31 @@ export type CenteredHeaderProps = Readonly<DialogHeaderProps & { compact?: boole
 export type { UseGuardResult } from 'src/hooks/guard/useGuard';
 `,
       },
+
+      // 24. frontendCoupledImportPatterns widened to a module family the
+      // defaults don't cover. `src/util/**` is not frontend-coupled by default,
+      // so this exact file/code is flagged in invalid case 18 below; only the
+      // option makes it exempt.
+      {
+        filename: '/project/src/payment/PriceLabel.ts',
+        code: `
+import type { CurrencyCode } from 'src/util/currency/CurrencyCode';
+export type PriceLabel = Readonly<{ amount: number; currency: CurrencyCode }>;
+`,
+        options: [{ frontendCoupledImportPatterns: ['src/util/**'] }],
+      },
+
+      // 25. The widened pattern is matched against a RELATIVE specifier only
+      // after it is resolved against the importing file, so a custom pattern
+      // must exempt relative imports too (paired with invalid case 19).
+      {
+        filename: '/project/src/payment/PriceLabel.ts',
+        code: `
+import type { CurrencyCode } from './CurrencyCode';
+export type PriceLabel = Readonly<{ amount: number; currency: CurrencyCode }>;
+`,
+        options: [{ frontendCoupledImportPatterns: ['src/payment/**'] }],
+      },
     ],
 
     // ─── Invalid Cases ──────────────────────────────────────────────────────
@@ -455,6 +480,42 @@ export type GuardResult = Readonly<{ method: AllSignInMethod }>;
 import type { SessionRecord } from './records';
 export type SessionSummary = Readonly<{ record: SessionRecord }>;
 `,
+        errors: [{ messageId: errorMessageId }],
+      },
+
+      // 18. Option-dependence pair for valid case 24: identical file and code,
+      // no frontendCoupledImportPatterns override. `src/util/**` is outside the
+      // defaults, so the file has a valid backend target and stays flagged.
+      {
+        filename: '/project/src/payment/PriceLabel.ts',
+        code: `
+import type { CurrencyCode } from 'src/util/currency/CurrencyCode';
+export type PriceLabel = Readonly<{ amount: number; currency: CurrencyCode }>;
+`,
+        errors: [{ messageId: errorMessageId }],
+      },
+
+      // 19. Option-dependence pair for valid case 25 (relative specifier).
+      {
+        filename: '/project/src/payment/PriceLabel.ts',
+        code: `
+import type { CurrencyCode } from './CurrencyCode';
+export type PriceLabel = Readonly<{ amount: number; currency: CurrencyCode }>;
+`,
+        errors: [{ messageId: errorMessageId }],
+      },
+
+      // 20. A custom frontendCoupledImportPatterns list REPLACES the defaults
+      // rather than extending them, so a src/components import stops being
+      // exempt once the option names a different family. This is the mirror of
+      // valid case 22, which is exempt under the defaults.
+      {
+        filename: '/project/src/components/dialog/dialogTypes.ts',
+        code: `
+import type { DialogHeaderProps } from './DialogHeader';
+export type CenteredHeaderProps = Readonly<DialogHeaderProps & { compact?: boolean }>;
+`,
+        options: [{ frontendCoupledImportPatterns: ['src/util/**'] }],
         errors: [{ messageId: errorMessageId }],
       },
     ],

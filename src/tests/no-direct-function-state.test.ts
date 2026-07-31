@@ -121,6 +121,28 @@ ruleTesterTs.run('no-direct-function-state', noDirectFunctionState, {
     const [m, setM] = useState<Map<string, string>>(new Map());
     setM(new Map([['a', 'b']]));
     `,
+
+    // functionPatterns narrowed away from the name the defaults catch. A custom
+    // list REPLACES the defaults, so `on[A-Z].*` no longer applies and the
+    // otherwise-identical invalid case below (same code, no options) stops
+    // reporting. A member expression keeps the scope-binding fallback out of it,
+    // so the naming patterns are the only thing deciding the outcome.
+    {
+      code: `
+const [value, setValue] = useState(null);
+setValue(props.onDismiss);
+      `,
+      options: [{ functionPatterns: ['neverMatchesAnything'] }],
+    },
+
+    // Untyped useState plus a name outside the default patterns — the paired
+    // invalid case below adds `refresh` to functionPatterns to flag it.
+    {
+      code: `
+const [value, setValue] = useState(null);
+setValue(actions.refresh);
+      `,
+    },
   ],
 
   invalid: [
@@ -365,6 +387,36 @@ const [cb, setCb] = useState<(() => void) | null>(null);
 const myFn = () => {};
 setCount(1);
 setCb(() => myFn);
+      `,
+    },
+
+    // functionPatterns widened to a project-specific name. `refresh` is outside
+    // the defaults, so the identical code is valid without this option (see the
+    // paired valid case).
+    {
+      code: `
+const [value, setValue] = useState(null);
+setValue(actions.refresh);
+      `,
+      options: [{ functionPatterns: ['refresh'] }],
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+const [value, setValue] = useState(null);
+setValue(() => actions.refresh);
+      `,
+    },
+
+    // Option-dependence baseline for the narrowed valid case above: the same
+    // code with the default patterns, where `on[A-Z].*` matches onDismiss.
+    {
+      code: `
+const [value, setValue] = useState(null);
+setValue(props.onDismiss);
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+const [value, setValue] = useState(null);
+setValue(() => props.onDismiss);
       `,
     },
   ],

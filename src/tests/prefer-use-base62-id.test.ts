@@ -9,7 +9,8 @@ const OUT_OF_SCOPE_FILE = 'src/util/lookupSessionId.ts';
 const ABSOLUTE_IN_SCOPE_FILE =
   '/Users/dev/agora/src/components/example/ExamplePanel.tsx';
 const WINDOWS_IN_SCOPE_HOOK = 'C:\\repo\\src\\hooks\\useExample.ts';
-const ABSOLUTE_OUT_OF_SCOPE_FILE = '/Users/dev/agora/src/util/lookupSessionId.ts';
+const ABSOLUTE_OUT_OF_SCOPE_FILE =
+  '/Users/dev/agora/src/util/lookupSessionId.ts';
 
 ruleTesterJsx.run('prefer-use-base62-id', preferUseBase62Id, {
   valid: [
@@ -138,6 +139,38 @@ const lookupSessionId = () => {
   return uuidv4Base62();
 };
 `,
+    },
+
+    // 8c. `targetPaths` baseline for the WIDENING pair: with the option left at
+    // its default this out-of-scope file is exempt. Invalid case 28 runs the
+    // same code and filename with `targetPaths` widened to cover `src/util/**`.
+    {
+      filename: OUT_OF_SCOPE_FILE,
+      code: `
+import { useState } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+const SessionPanel = () => {
+  const [id] = useState(() => uuidv4Base62());
+  return id;
+};
+`,
+    },
+
+    // 8d. `targetPaths` NARROWED away from `src/hooks/**` exempts a file the
+    // default list covers. An inclusion filter has to be probed in both
+    // directions — widening alone cannot tell a narrow default from an
+    // ignored option.
+    {
+      filename: IN_SCOPE_HOOK,
+      code: `
+import { useState } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+const SessionPanel = () => {
+  const [id] = useState(() => uuidv4Base62());
+  return id;
+};
+`,
+      options: [{ targetPaths: ['src/pages/**'] }],
     },
 
     // 9. No import of uuidv4Base62 — do NOT flag
@@ -715,6 +748,38 @@ export function useExampleForm() {
 }
 `,
       errors: [{ messageId: 'preferUseBase62IdTopLevel' }],
+    },
+
+    // 28. `targetPaths` WIDENED to include `src/util/**` brings a file the
+    // defaults exempt into scope. Pairs with valid case 8c on identical code
+    // and filename, so the option is the only difference.
+    {
+      filename: OUT_OF_SCOPE_FILE,
+      code: `
+import { useState } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+const SessionPanel = () => {
+  const [id] = useState(() => uuidv4Base62());
+  return id;
+};
+`,
+      options: [{ targetPaths: ['src/util/**'] }],
+      errors: [{ messageId: 'preferUseBase62IdHook' }],
+    },
+
+    // 29. The default-`targetPaths` half of the NARROWING pair with valid case
+    // 8d: the same hook file reports once the option stops excluding it.
+    {
+      filename: IN_SCOPE_HOOK,
+      code: `
+import { useState } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+const SessionPanel = () => {
+  const [id] = useState(() => uuidv4Base62());
+  return id;
+};
+`,
+      errors: [{ messageId: 'preferUseBase62IdHook' }],
     },
   ],
 });
