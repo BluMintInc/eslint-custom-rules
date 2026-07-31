@@ -21,6 +21,34 @@ A `return` statement is reported when all of the following hold:
 
 Arrays returned from a React hook callback (`useMemo`, `useCallback`, or any `use*` hook) are also exempt, whatever their elements. These are memoized prop and data lists that flow into mutable or `readonly` array parameters downstream, and freezing them into readonly tuples produced false positives (see issues #511 and #1324). An **object** literal returned from a hook callback is still reported.
 
+### An array literal the signature declares mutable
+
+An **array** literal is also exempt where the enclosing signature spells its type as a mutable array or tuple:
+
+```ts
+function getNames(): string[] {
+  return ['a', 'b']; // not reported
+}
+```
+
+`as const` makes an array literal a readonly *tuple*, and TypeScript rejects that against a mutable target: `TS4104: The type 'readonly ["a", "b"]' is 'readonly' and cannot be assigned to the mutable type 'string[]'`. Appending it here would turn compiling code into code that does not compile (issue #1526).
+
+The rule stays **silent** rather than reporting without a fix. Nothing the author can do at the literal satisfies the rule — honouring it means widening the signature to `readonly string[]`, which changes the function's contract and every call site that mutates the result. A finding no local edit can resolve is noise, and noise on a file is what blocks the rule's adoption.
+
+The declared type is read syntactically, from wherever it is written for the enclosing function:
+
+- its own return annotation, including a method's (`getNames(): string[]`);
+- the annotation on the variable or class property that declares it (`const getNames: () => string[] = () => …`);
+- an assertion on the function expression (`(() => …) as () => string[]`).
+
+For an `async` function the awaited type is used (`Promise<string[]>` is a mutable array position), and for a generator the second type argument is (`Generator<number, string[], void>`).
+
+A `readonly` spelling accepts the readonly tuple, so those positions are reported and fixed as usual: `readonly string[]`, `ReadonlyArray<string>`, `readonly [string, number]`, `Promise<readonly string[]>`, and any union with a `readonly` member. Only the mutable spellings — `T[]`, `[A, B]`, `Array<T>` — and unions in which no member accepts a readonly tuple (`string[] | undefined`) are exempt. An unannotated function is reported: with no declared type there is nothing for the readonly tuple to conflict with.
+
+Where the declared type is a name the rule cannot resolve (a type alias, an interface, an imported type), it is treated as accepting, and a callback's contextual type coming from the callee's parameter list is not resolved at all. `as const` is still appended in those positions.
+
+**Object** literals are unaffected by any of this. `readonly` property modifiers do not enter assignability, so `{ name: 'a' } as const` still satisfies a mutable `{ name: string }` — a `Config` return annotation is reported and fixed exactly as an unannotated one is.
+
 ### A literal that already carries an assertion
 
 A literal carrying a different assertion — `return { foo: 'bar' } as SomeType` — is reported, but **not auto-fixed**. `--fix` leaves it exactly as written.
@@ -86,6 +114,23 @@ function getItems() {
 }
 ```
 
+```ts
+// A readonly array annotation accepts a readonly tuple, so this is reported
+// and fixed
+function getNames(): readonly string[] {
+  return ['a', 'b'];
+}
+```
+
+```ts
+// An object literal is reported whatever the annotation says: `as const` only
+// adds `readonly` property modifiers, which assignability ignores
+type Config = { name: string; count: number };
+function getConfig(): Config {
+  return { name: 'a', count: 1 };
+}
+```
+
 ### Examples of correct code
 
 ```ts
@@ -120,6 +165,28 @@ function mergeData() {
 const avatarUsers = useMemo(() => {
   return [{ userId: id, imgUrl }];
 }, [id, imgUrl]);
+```
+
+```ts
+// The signature declares a mutable array, so `as const` would not compile
+// (TS4104) and the rule stays silent
+function getNames(): string[] {
+  return ['a', 'b'];
+}
+```
+
+```ts
+// The same, with the type declared on the variable rather than the arrow
+const getNames: () => string[] = () => {
+  return ['a', 'b'];
+};
+```
+
+```ts
+// A readonly annotation takes the fix
+function getPair(): readonly [string, number] {
+  return ['a', 1] as const;
+}
 ```
 
 ```ts
