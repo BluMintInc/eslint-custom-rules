@@ -1,3 +1,14 @@
+## [1.20.41](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.40...v1.20.41) (2026-07-31)
+
+
+### Bug Fixes
+
+* **createRule:** point rule docs URLs at the blob path so they resolve (closes [#1479](https://github.com/BluMintInc/eslint-custom-rules/issues/1479)) ([d425de7](https://github.com/BluMintInc/eslint-custom-rules/commit/d425de70e20d6f0e24f6e07705462aa6b5b8d114)), closes [1480-#1483](https://github.com/1480-/issues/1483)
+* **no-async-foreach:** build via createRule so it ships a docs URL (closes [#1480](https://github.com/BluMintInc/eslint-custom-rules/issues/1480)) ([73face2](https://github.com/BluMintInc/eslint-custom-rules/commit/73face290a097b93f80894769f2e565cb2fc7773))
+* **no-useless-fragment:** build via createRule so it ships a docs URL (closes [#1481](https://github.com/BluMintInc/eslint-custom-rules/issues/1481)) ([3030bcd](https://github.com/BluMintInc/eslint-custom-rules/commit/3030bcd1f21969918dc1f6f222554a1550780f0b))
+* **prefer-fragment-shorthand:** build via createRule so it ships a docs URL (closes [#1482](https://github.com/BluMintInc/eslint-custom-rules/issues/1482)) ([0421be8](https://github.com/BluMintInc/eslint-custom-rules/commit/0421be89562ec28905995ce1928c0db21e91abeb))
+* **require-memo:** build via createRule so it ships a docs URL (closes [#1483](https://github.com/BluMintInc/eslint-custom-rules/issues/1483)) ([4477620](https://github.com/BluMintInc/eslint-custom-rules/commit/4477620ee7a24c1e39f6f907308a1ed8b9e3476d))
+
 ## [1.20.40](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.39...v1.20.40) (2026-07-30)
 
 

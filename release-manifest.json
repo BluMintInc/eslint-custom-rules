@@ -1,5 +1,43 @@
 [
   {
+    "version": "1.20.41",
+    "date": "2026-07-31T01:39:15.741Z",
+    "rules": [
+      {
+        "name": "no-async-foreach",
+        "changeType": "fix",
+        "issues": [
+          1480
+        ],
+        "summary": "build via createRule so it ships a docs URL (closes #1480)"
+      },
+      {
+        "name": "no-useless-fragment",
+        "changeType": "fix",
+        "issues": [
+          1481
+        ],
+        "summary": "build via createRule so it ships a docs URL (closes #1481)"
+      },
+      {
+        "name": "prefer-fragment-shorthand",
+        "changeType": "fix",
+        "issues": [
+          1482
+        ],
+        "summary": "build via createRule so it ships a docs URL (closes #1482)"
+      },
+      {
+        "name": "require-memo",
+        "changeType": "fix",
+        "issues": [
+          1483
+        ],
+        "summary": "build via createRule so it ships a docs URL (closes #1483)"
+      }
+    ]
+  },
+  {
     "version": "1.20.40",
     "date": "2026-07-30T23:29:30.176Z",
     "rules": [
