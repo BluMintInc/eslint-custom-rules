@@ -815,6 +815,88 @@ const First = ({ ...alphaProps }) => {
 };
         `,
       },
+      {
+        // `hashImport` never influences detection — all four of its reads live
+        // inside `fix()` — so only the emitted text proves the option is live:
+        // both the inserted import and the call written into the deps array
+        // follow the configured source and name.
+        name: 'emits the configured hashImport source and importName',
+        code: `
+const MyComponent = ({ ...rest }) => {
+  useEffect(() => {}, [rest]);
+  return <div {...rest} />;
+};
+`,
+        options: [
+          {
+            hashImport: {
+              source: 'app/utils/stableHash',
+              importName: 'stableHashCustom',
+            },
+          },
+        ],
+        errors: [{ messageId: 'wrapSpreadPropsWithStableHash' }],
+        output: `import { stableHashCustom } from 'app/utils/stableHash';
+
+const MyComponent = ({ ...rest }) => {
+  useEffect(() => {}, 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [stableHashCustom(rest)]);
+  return <div {...rest} />;
+};
+`,
+      },
+      {
+        // A local binding of the name the fix would emit makes both halves of
+        // the rewrite wrong, so the fixer declines while the report stands.
+        // `output: null` is the assertion that matters: a report that looks
+        // fixable but silently produces nothing is otherwise invisible.
+        name: 'reports without fixing when the default importName is taken',
+        code: `
+function stableHash(x) { return x; }
+
+const MyComponent = ({ ...rest }) => {
+  useEffect(() => {}, [rest]);
+  return <div {...rest} />;
+};
+`,
+        errors: [{ messageId: 'wrapSpreadPropsWithStableHash' }],
+        output: null,
+      },
+      {
+        // The same collision resolved by pointing `hashImport` at a name the
+        // file does not bind: the collision guard weighs the configured name,
+        // not the default one, so the fix applies.
+        name: 'fixes the collided case once hashImport renames the import',
+        code: `
+function stableHash(x) { return x; }
+
+const MyComponent = ({ ...rest }) => {
+  useEffect(() => {}, [rest]);
+  return <div {...rest} />;
+};
+`,
+        options: [
+          {
+            hashImport: {
+              source: 'my/custom/hash/module',
+              importName: 'myHash',
+            },
+          },
+        ],
+        errors: [{ messageId: 'wrapSpreadPropsWithStableHash' }],
+        output: `import { myHash } from 'my/custom/hash/module';
+
+function stableHash(x) { return x; }
+
+const MyComponent = ({ ...rest }) => {
+  useEffect(() => {}, 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [myHash(rest)]);
+  return <div {...rest} />;
+};
+`,
+      },
     ],
   },
 );
