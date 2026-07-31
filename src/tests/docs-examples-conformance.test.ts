@@ -77,7 +77,13 @@ const ROOT = '/repo/';
 const anchor = (p: string) => (p.startsWith('/') ? p : ROOT + p);
 
 type Block = {
-  polarity: 'correct' | 'incorrect';
+  /**
+   * `null` for a fence under no example heading. Such blocks are kept rather
+   * than dropped: a page whose fences all come back unlabelled is a detection
+   * failure, and dropping them made it indistinguishable from a page that
+   * documents no examples at all (#1499).
+   */
+  polarity: 'correct' | 'incorrect' | null;
   lang: string;
   code: string;
   line: number;
@@ -106,11 +112,20 @@ export function headingPolarity(line: string): Block['polarity'] | null {
   return null;
 }
 
-/** Pull fenced code blocks that sit under an example heading. */
+/**
+ * Pull every fenced code block, tagged with the polarity of the example heading
+ * it sits under (`null` when it sits under none).
+ *
+ * Polarity is inherited by DEEPER headings, because docs routinely split an
+ * example section into named cases (`#### Option 1: …` under `### Examples of
+ * correct code`). Treating such a sub-heading as the end of the section dropped
+ * every block beneath it, which is how three whole pages asserted nothing.
+ */
 export function extractBlocks(md: string): Block[] {
   const lines = md.split('\n');
   const blocks: Block[] = [];
   let polarity: Block['polarity'] | null = null;
+  let polarityDepth = 0;
   let fence: string | null = null;
   let buf: string[] = [];
   let lang = '';
@@ -126,14 +141,12 @@ export function extractBlocks(md: string): Block[] {
         fenceMatch[1][0] === fence[0] &&
         fenceMatch[1].length >= fence.length
       ) {
-        if (polarity) {
-          blocks.push({
-            polarity,
-            lang: lang.trim().toLowerCase(),
-            code: buf.join('\n'),
-            line: startLine,
-          });
-        }
+        blocks.push({
+          polarity,
+          lang: lang.trim().toLowerCase(),
+          code: buf.join('\n'),
+          line: startLine,
+        });
         fence = null;
         buf = [];
       } else {
@@ -142,9 +155,19 @@ export function extractBlocks(md: string): Block[] {
       continue;
     }
 
-    if (/^#{1,6}\s/.test(line)) {
-      // An H1 or a non-example H2+ heading both end the current example section.
-      polarity = headingPolarity(line);
+    const heading = /^(#{1,6})\s/.exec(line);
+    if (heading) {
+      const depth = heading[1].length;
+      const own = headingPolarity(line);
+      if (own) {
+        polarity = own;
+        polarityDepth = depth;
+      } else if (!(polarity && depth > polarityDepth)) {
+        // A sibling or shallower heading ends the example section; a deeper one
+        // is a named case inside it and keeps the section's polarity.
+        polarity = null;
+        polarityDepth = 0;
+      }
       continue;
     }
 
@@ -342,6 +365,64 @@ export function auditSkips(
   return problems;
 }
 
+export type SkippedPage = { rule: string; blocks: number };
+
+/**
+ * Rule docs that carry lintable code fences yet document no CORRECT example,
+ * keyed by rule name and carrying the reason.
+ *
+ * Empty on purpose. A page whose examples are announced in prose
+ * (`Examples of **correct** code for this rule:`) rather than in a heading set
+ * no polarity, so every one of its fences was discarded and the page skipped
+ * itself in silence — 42 pages and roughly 77 unverified examples (#1499),
+ * including the one that hid #1498. Both anti-vacuity defences sat downstream of
+ * that skip and could not see it. Fix the page's headings rather than adding an
+ * entry here.
+ */
+export const PAGES_WITHOUT_CORRECT_EXAMPLES: Record<string, string> = {};
+
+/**
+ * A page with lintable fences but no correct example is a detection failure
+ * until proven otherwise, so it fails by name instead of skipping. A page with
+ * no lintable fence at all (directory layouts in ```text, config in ```json) is
+ * genuinely out of scope and never reaches here.
+ */
+export function auditPageSkips(
+  skips: readonly SkippedPage[],
+  allowlist: Record<string, string>,
+): string[] {
+  const problems: string[] = [];
+  const seen = new Set<string>();
+
+  for (const skip of skips) {
+    seen.add(skip.rule);
+    if (skip.rule in allowlist) continue;
+    problems.push(
+      [
+        `docs/rules/${skip.rule}.md has ${skip.blocks} lintable code block(s) but none is labelled a CORRECT example, so the whole page was skipped`,
+        '  Nothing on this page was asserted. Polarity is read from HEADINGS only:',
+        "  give the section a heading such as '### Examples of correct code' and",
+        "  '### Examples of incorrect code'. A prose line like",
+        "  'Examples of **correct** code for this rule:' is not a heading and",
+        '  matches nothing. If the page truly documents no correct example, add',
+        `  '${skip.rule}' to PAGES_WITHOUT_CORRECT_EXAMPLES with the reason.`,
+      ].join('\n'),
+    );
+  }
+
+  for (const [rule, reason] of Object.entries(allowlist)) {
+    if (seen.has(rule)) continue;
+    problems.push(
+      [
+        `PAGES_WITHOUT_CORRECT_EXAMPLES lists '${rule}' (${reason}) but that page now contributes assertions.`,
+        '  Delete the entry: a stale exemption hides the next page that vanishes.',
+      ].join('\n'),
+    );
+  }
+
+  return problems;
+}
+
 /**
  * Coverage floor. If heading matching or fence extraction ever breaks, every
  * block silently disappears and the whole suite passes while asserting nothing —
@@ -350,6 +431,7 @@ export function auditSkips(
  */
 let lintedBlocks = 0;
 const skippedBlocks: SkippedBlock[] = [];
+const skippedPages: SkippedPage[] = [];
 
 describe('documented "correct" examples must not report', () => {
   it('finds rule docs to check', () => {
@@ -357,8 +439,14 @@ describe('documented "correct" examples must not report', () => {
   });
 
   afterAll(() => {
-    expect(lintedBlocks).toBeGreaterThan(250);
-    const problems = auditSkips(skippedBlocks, UNCHECKABLE_BLOCKS);
+    // Sits just under the real count (360 at the time of writing) so a silent
+    // drop of a page or two goes red, while adding docs does not require editing
+    // this test. Raise it when coverage grows; never lower it to make a run pass.
+    expect(lintedBlocks).toBeGreaterThan(350);
+    const problems = [
+      ...auditPageSkips(skippedPages, PAGES_WITHOUT_CORRECT_EXAMPLES),
+      ...auditSkips(skippedBlocks, UNCHECKABLE_BLOCKS),
+    ];
     if (problems.length > 0) {
       throw new Error(
         [
@@ -376,6 +464,11 @@ describe('documented "correct" examples must not report', () => {
     const incorrect = blocks.filter((b) => b.polarity === 'incorrect');
 
     if (correct.length === 0) {
+      // Recorded rather than thrown here so the audit can name every vanished
+      // page at once instead of failing on the first.
+      if (blocks.length > 0) {
+        skippedPages.push({ rule: ruleName, blocks: blocks.length });
+      }
       it.skip('has no documented correct examples', () => undefined);
       return;
     }
@@ -492,5 +585,90 @@ describe('unlintable blocks are surfaced, not silently skipped', () => {
   // invisible set.
   it('ships with an empty allowlist, so every correct block is asserted', () => {
     expect(Object.keys(UNCHECKABLE_BLOCKS)).toEqual([]);
+  });
+});
+
+/**
+ * Planted-defect controls for the page-level hole (#1499). The per-block audit
+ * above cannot see a page that never produced a block, so the detector is
+ * exercised on the exact markdown shapes that caused and cured the blind spot.
+ */
+describe('pages whose examples are announced in prose fail, not skip', () => {
+  const PROSE = [
+    '# Rule (`@blumintinc/blumint/planted-rule`)',
+    '',
+    '## Rule Details',
+    '',
+    'Examples of **correct** code for this rule:',
+    '',
+    '```ts',
+    'const ok = 1;',
+    '```',
+    '',
+  ].join('\n');
+
+  const HEADING = PROSE.replace(
+    'Examples of **correct** code for this rule:',
+    '### Examples of **correct** code for this rule:',
+  );
+
+  it('leaves every block of a prose-announced page unlabelled (control)', () => {
+    const blocks = extractBlocks(PROSE);
+    expect(blocks).toHaveLength(1);
+    // Unlabelled, so nothing is asserted about it — but still counted, which is
+    // what lets the page-level audit tell this apart from a page with no code.
+    expect(blocks[0].polarity).toBeNull();
+    // The same page one heading marker later is fully classified, which is what
+    // makes the drop a detection failure rather than an absent example.
+    expect(extractBlocks(HEADING)).toHaveLength(1);
+    expect(extractBlocks(HEADING)[0].polarity).toBe('correct');
+  });
+
+  it('keeps a section polarity across deeper sub-headings (control)', () => {
+    const nested = [
+      '### Examples of correct code',
+      '',
+      '#### Option 1',
+      '',
+      '```ts',
+      'const a = 1;',
+      '```',
+      '',
+      '## When Not To Use It',
+      '',
+      '```ts',
+      'const b = 2;',
+      '```',
+    ].join('\n');
+
+    // Only the block under the deeper `#### Option 1` keeps the section's
+    // polarity; the sibling `## When Not To Use It` ends the section, so its
+    // fence comes back unlabelled.
+    const blocks = extractBlocks(nested);
+    expect(blocks.map((b) => b.polarity)).toEqual(['correct', null]);
+  });
+
+  it('fails an unlisted page skip and clears a listed one (control)', () => {
+    const skip: SkippedPage = { rule: 'planted-rule', blocks: 4 };
+
+    const unlisted = auditPageSkips([skip], {});
+    expect(unlisted).toHaveLength(1);
+    expect(unlisted[0]).toContain('docs/rules/planted-rule.md');
+    expect(unlisted[0]).toContain('4 lintable code block(s)');
+    expect(unlisted[0]).toContain('### Examples of correct code');
+
+    expect(
+      auditPageSkips([skip], { 'planted-rule': 'documents only violations' }),
+    ).toEqual([]);
+
+    const stale = auditPageSkips([], {
+      'planted-rule': 'documents only violations',
+    });
+    expect(stale).toHaveLength(1);
+    expect(stale[0]).toContain('now contributes assertions');
+  });
+
+  it('ships with no exempt pages, so no doc page is silently skipped', () => {
+    expect(Object.keys(PAGES_WITHOUT_CORRECT_EXAMPLES)).toEqual([]);
   });
 });

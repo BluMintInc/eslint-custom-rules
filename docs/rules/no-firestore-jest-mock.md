@@ -18,7 +18,7 @@ This rule ensures every test relies on the same Firestore test harness:
 - Autofix is conservative: it rewrites only single-value imports or single-binding dynamic destructures. Mixed type and value imports or multi-binding destructures are reported without a fix to avoid dropping types or changing runtime bindings.
 - This repository ships a stubbed `__test-utils__/mockFirestore` to anchor autofixes; consuming projects should map that path (via resolver or tsconfig paths) to their real shared helper.
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```ts
 import { mockFirebase, mockSet } from 'firestore-jest-mock';
@@ -40,7 +40,7 @@ import { mockFirebase as myMock } from 'firestore-jest-mock';
 const loadMock = async () => import('firestore-jest-mock');
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```ts
 import { mockFirestore } from '../../__test-utils__/mockFirestore';

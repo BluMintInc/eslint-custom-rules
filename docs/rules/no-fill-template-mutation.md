@@ -36,7 +36,7 @@ The rule intentionally does **not** cross function boundaries. If you pass `filt
 
 Instead of appending conditions after `fillTemplate()`, bake all conditions into a new template variant in `REALTIME_PREEMPTIVE_FILTER_TEMPLATES` or `PREEMPTIVE_FILTER_TEMPLATES` and select the right template before calling `fillTemplate()`.
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```typescript
 import { fillTemplate } from 'functions/src/util/algoliaRealtime/fillTemplate';
@@ -60,7 +60,7 @@ const filter = fillTemplate({ template, placeholderValue: id });
 return filter.replace('accepted', 'pending'); // flagged
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```typescript
 import { fillTemplate } from 'functions/src/util/algoliaRealtime/fillTemplate';

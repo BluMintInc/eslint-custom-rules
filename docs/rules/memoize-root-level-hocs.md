@@ -14,7 +14,7 @@ Prevent creating Higher-Order Components (HOCs) at the root of a React component
 
 ## Rule Details
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```tsx
 function MyComponent({ data }) {
@@ -41,7 +41,7 @@ function ReduxComponent() {
 // Configure connect as an additional HOC name to catch this form
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```tsx
 function MyComponent({ data }) {

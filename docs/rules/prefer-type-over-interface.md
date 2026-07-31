@@ -39,7 +39,7 @@ interface TeamMember /* audited quarterly */ extends UserProfile {
 
 Move the comment above the declaration or inside the body to make the declaration autofixable.
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 The following interface declarations are reported and autofixed:
 
@@ -53,7 +53,7 @@ interface TeamMember extends UserProfile {
 }
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 Equivalent shapes written as type aliases (allowed):
 

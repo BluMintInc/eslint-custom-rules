@@ -30,9 +30,10 @@ This pattern enables you to:
 
 ## Examples
 
-Valid (primitive arrays and map shapes):
+### Valid (primitive arrays and map shapes)
 
 ```ts
+// File: functions/src/types/firestore/UserProfile.ts
 export type UserProfile = {
   id: string;
   tags: string[];
@@ -43,9 +44,10 @@ export type UserProfile = {
 };
 ```
 
-Invalid (arrays of objects — convert to a map keyed by id and index):
+### Invalid (arrays of objects — convert to a map keyed by id and index)
 
 ```ts
+// File: functions/src/types/firestore/UserProfile.ts
 export type UserProfile = {
   friends: { id: string; name: string }[]; // ❌ Use Record<string, Friend & { index: number }>
 };

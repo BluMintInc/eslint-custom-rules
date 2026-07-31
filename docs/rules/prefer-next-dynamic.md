@@ -17,9 +17,10 @@ Enforce Next.js `dynamic()` for dynamically importing React components instead o
 ## Rule Details
 
 ### Examples
-Bad:
 
-```ts
+#### Examples of incorrect code
+
+```tsx
 import { useDynamic } from '../../hooks/useDynamic';
 
 const EmojiPicker = useDynamic(import('@emoji-mart/react'));
@@ -27,9 +28,9 @@ const App = () => <EmojiPicker/>;
 // Note: If this value were never rendered as <EmojiPicker />, the rule would not flag it.
 ```
 
-Good:
+#### Examples of correct code
 
-```ts
+```tsx
 import dynamic from 'next/dynamic';
 
 const EmojiPicker = dynamic(
@@ -43,9 +44,9 @@ const EmojiPicker = dynamic(
 const App = () => <EmojiPicker/>;
 ```
 
-Named export:
+##### Named export
 
-```ts
+```tsx
 import dynamic from 'next/dynamic';
 
 const Picker = dynamic(

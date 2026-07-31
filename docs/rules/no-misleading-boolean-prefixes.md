@@ -17,7 +17,10 @@ Reserve boolean-style prefixes like is, has, or should for functions that actual
 
 ## Examples
 
-Bad: names suggest booleans but return non-boolean values.
+### Examples of incorrect code
+
+Names suggest booleans but return non-boolean values.
+
 ```javascript
 function isAvailable() {
   return 'yes';
@@ -38,7 +41,10 @@ function hasConfig() {
 }
 ```
 
-Good: boolean prefixes return explicit booleans or use non-boolean names.
+### Examples of correct code
+
+Boolean prefixes return explicit booleans, or the name drops the prefix.
+
 ```javascript
 function isAvailable() {
   return Math.random() > 0.5;

@@ -15,7 +15,7 @@ This ensures consistency with React's conventions, improving readability and mai
 
 ## Rule Details
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```tsx
 const MyComponent: JSX.Element = <div>Hello</div>; // ❌ Should be lowercase
@@ -26,7 +26,7 @@ function useCustomHook(Component: ReactNode) { // ❌ Should be lowercase
 }
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```tsx
 const myComponent: JSX.Element = <div>Hello</div>; // ✅ Lowercase for JSX.Element

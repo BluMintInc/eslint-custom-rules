@@ -42,12 +42,12 @@ This rule accepts an options object with the following property:
 
 Registers extra file extensions that count as a valid subject when they sit next to the test with the same basename. Use this when a jest test covers a sibling artifact written in another language — a jq filter, a shell script, a YAML fixture — instead of a JavaScript/TypeScript module. Each entry is normalized to include a leading dot, so both `jq` and `.jq` are accepted. The built-in `.ts`, `.tsx`, `.js`, and `.jsx` extensions are always honored regardless of this option.
 
-```js
+```json
 {
-  '@blumintinc/blumint/test-file-location-enforcement': [
-    'error',
-    { additionalSubjectExtensions: ['.jq', '.sh'] },
-  ],
+  "@blumintinc/blumint/test-file-location-enforcement": [
+    "error",
+    { "additionalSubjectExtensions": [".jq", ".sh"] }
+  ]
 }
 ```
 

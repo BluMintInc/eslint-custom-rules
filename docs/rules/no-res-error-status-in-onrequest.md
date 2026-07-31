@@ -22,7 +22,7 @@ Cloud Functions `onRequest` handlers must throw structured `HttpsError` instance
 
 ## Rule Details
 
-**Incorrect** code (violations):
+### Examples of incorrect code (violations)
 
 ```typescript
 import onRequest from 'functions/src/v2/https/onRequest';
@@ -35,7 +35,7 @@ export default onRequest((req, res) => {
 });
 ```
 
-**Correct** code:
+### Examples of correct code
 
 ```typescript
 import onRequest from 'functions/src/v2/https/onRequest';

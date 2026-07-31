@@ -19,7 +19,7 @@ Why this matters:
 - `useMemo` around primitives implies there is a referential contract, which can mislead readers and reviewers.
 - Removing the wrapper eliminates dead dependency arrays and unused imports.
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```ts
 import { useMemo } from 'react';
@@ -37,7 +37,7 @@ export function useTuple(slug: string) {
 }
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```ts
 // Return primitives or primitive containers directly

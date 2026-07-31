@@ -14,27 +14,27 @@ Using "ID" (uppercase) improves readability and maintains a professional standar
 
 This rule aims to enforce consistent capitalization of "ID" in user-facing text. It specifically excludes code-level identifiers such as variable names, property names, and type definitions, focusing only on strings that will be displayed to users.
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
-```js
+```tsx
 const message = "Please enter your in-game id.";
 const label = "User id:";
 const error = "Invalid id format";
-<div>Please enter your id</div>
-<Button>Submit id</Button>
-const message = `Your id is ${userId}`;
+const prompt = <div>Please enter your id</div>;
+const submit = <Button>Submit id</Button>;
+const interpolated = `Your id is ${userId}`;
 t("user.profile.id");
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
-```js
+```tsx
 const message = "Please enter your in-game ID.";
 const label = "User ID:";
 const error = "Invalid ID format";
-<div>Please enter your ID</div>
-<Button>Submit ID</Button>
-const message = `Your ID is ${userId}`;
+const prompt = <div>Please enter your ID</div>;
+const submit = <Button>Submit ID</Button>;
+const interpolated = `Your ID is ${userId}`;
 t("user.profile.ID");
 
 // The following are not affected by this rule:
@@ -44,8 +44,8 @@ interface User { id: string; } // Interface properties
 type UserData = { id: number; } // Type properties
 export type CallerRequestButtonsProps = Pick<CallerCardBaseProps, 'status' | 'id'>; // Type definitions with Pick utility
 type UserSummary = Pick<User, 'id' | 'name'>; // Type utility with property names
-const message = "This grid system is flexible."; // "id" as part of another word
-const message = "Rapid development"; // "id" as part of another word
+const flexible = "This grid system is flexible."; // "id" as part of another word
+const rapid = "Rapid development"; // "id" as part of another word
 ```
 
 ## When Not To Use It

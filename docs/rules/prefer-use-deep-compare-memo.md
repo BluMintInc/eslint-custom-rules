@@ -22,7 +22,7 @@ import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 
 ### Examples
 
-Bad – non-primitive dependency recreates each render:
+#### Examples of incorrect code — non-primitive dependency recreates each render
 
 ```tsx
 const UserProfile: FC<UserProfileProps> = ({ userConfig }) => {
@@ -38,7 +38,7 @@ const UserProfile: FC<UserProfileProps> = ({ userConfig }) => {
 };
 ```
 
-Good – compare dependency by value with `useDeepCompareMemo`:
+#### Examples of correct code — compare dependency by value with `useDeepCompareMemo`
 
 ```tsx
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
@@ -56,13 +56,16 @@ const UserProfile: FC<UserProfileProps> = ({ userConfig }) => {
 };
 ```
 
-Good – memoize the dependency first (no rule warning):
+#### Examples of correct code — memoize the dependency first (no rule warning)
+
+Build the object from primitives so the memo that produces it is itself stable;
+downstream memos may then depend on it by reference.
 
 ```tsx
-const UserProfile: FC<UserProfileProps> = ({ userConfig }) => {
+const UserProfile: FC<UserProfileProps> = ({ userId, userName, userStatus }) => {
   const memoizedConfig = useMemo(
-    () => ({ ...userConfig, status: getStatusLabel(userConfig.status) }),
-    [userConfig],
+    () => ({ id: userId, name: userName, status: getStatusLabel(userStatus) }),
+    [userId, userName, userStatus],
   );
 
   const formattedData = useMemo(() => memoizedConfig.status, [memoizedConfig]);
@@ -70,6 +73,11 @@ const UserProfile: FC<UserProfileProps> = ({ userConfig }) => {
   return <ProfileCard status={formattedData} />;
 };
 ```
+
+Memoizing a non-primitive prop with plain `useMemo` does not silence the rule:
+that `useMemo` still lists an unmemoized object in its own dependency array, so
+it is reported in turn. Depend on the object's primitive fields, or reach for
+`useDeepCompareMemo` as shown above.
 
 ### Edge Cases
 

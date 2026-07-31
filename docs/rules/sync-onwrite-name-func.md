@@ -20,7 +20,7 @@
 
 ## Examples
 
-Valid: aligned names keep deployments and monitoring consistent.
+### Valid: aligned names keep deployments and monitoring consistent
 
 ```ts
 const onWriteConfig = {
@@ -35,7 +35,7 @@ const viaAlias = {
 };
 ```
 
-Invalid: the rule reports the mismatch and suggests how to fix it.
+### Invalid: the rule reports the mismatch and suggests how to fix it
 
 ```ts
 const config = {

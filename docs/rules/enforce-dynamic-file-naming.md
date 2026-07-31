@@ -16,7 +16,7 @@ The rule applies to any `.ts` or `.tsx` file, including multi-dot names such as 
 - If you disable `@blumintinc/blumint/enforce-dynamic-imports` or `@blumintinc/blumint/require-dynamic-firebase-imports`, name the file `*.dynamic.ts` or `*.dynamic.tsx`.
 - If you name a file `*.dynamic.ts` or `*.dynamic.tsx`, include a disable directive for one of the two rules above.
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```tsx
 // File: example.tsx
@@ -41,7 +41,7 @@ import SomeFunction from './SomeFunction';
 import SomeModule from './SomeModule';
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```tsx
 // File: example.dynamic.tsx

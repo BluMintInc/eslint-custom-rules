@@ -15,7 +15,7 @@ Top-level constants should read as immutable configuration and stay frozen at th
 
 Global configuration often feeds props, feature flags, and lookups. When these values look like regular variables or lose their literal types, downstream code can mutate them or accidentally rely on widened types. UPPER_SNAKE_CASE signals “static config lives here,” and `as const` preserves literal types so enums, discriminated unions, and memoized consumers stay stable.
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```ts
 // Looks like a runtime variable and can be widened
@@ -28,7 +28,7 @@ const COLORS = { primary: '#000', secondary: '#fff' };
 const buttonSizes = ['small', 'medium', 'large'];
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```ts
 const API_ENDPOINT = 'https://api.bluemint.com/v1' as const;

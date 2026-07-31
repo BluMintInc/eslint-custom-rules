@@ -15,7 +15,7 @@ Why singular names matter:
 - Singling out cardinality in the name keeps public APIs self-documenting and reduces accidental collection handling bugs.
 - Reserving plural names for arrays/maps keeps naming consistent across variable declarations and type definitions.
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```ts
 type Users = {
@@ -39,7 +39,7 @@ enum Colors {
 // Type name 'Users' is plural, which signals a collection and hides whether this alias, interface, or enum represents one value or many. Plural type identifiers push callers to misuse the symbol for arrays or maps. Rename it to a singular noun such as 'User' so the declaration clearly models a single instance and leaves plural names for container types.
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```ts
 type User = {

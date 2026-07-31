@@ -84,10 +84,11 @@ car.initialize(); // ✅ Subclass state is ready
 ```typescript
 abstract class Vehicle {
   protected constructor(type: string, details: string) {
-    this.log(type, details); // ✅ Uses constructor parameters, not overridable methods
+    this.log(type, details); // ✅ Uses constructor parameters, and `log` is private
   }
 
-  protected log(type: string, details: string) {
+  // Private, so no subclass can override it and no override runs mid-construction.
+  private log(type: string, details: string) {
     console.log(type, details);
   }
 }

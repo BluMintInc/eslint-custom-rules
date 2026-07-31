@@ -13,7 +13,7 @@ This rule aims to ensure:
 1. `renderHits` is only used inside a memoized context (e.g., `useMemo` or `useCallback`).
 1. React components are never passed directly to `render`, but rather wrapped in a memoized arrow function.
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```js
 // ❌ transformBefore and render are not memoized
@@ -38,7 +38,7 @@ function renderResults(hits) {
 }
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```js
 // ✅ Memoized transformBefore and render

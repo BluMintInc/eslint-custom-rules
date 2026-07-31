@@ -17,7 +17,7 @@ Use the shared `src/components/Link` wrapper instead of importing `next/link` di
 
 ## Examples
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```tsx
 import Link from 'next/link';
@@ -25,7 +25,7 @@ import Link from 'next/link';
 import { default as NextLink } from 'next/link';
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```tsx
 import Link from 'src/components/Link';

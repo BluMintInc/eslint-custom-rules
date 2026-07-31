@@ -22,7 +22,7 @@ This rule keeps Firebase `HttpsError` messages stable for monitoring while prese
 - Keep the second argument a constant string that describes the error type.
 - Put interpolated or request-specific values (ids, emails, payload snippets) in the third argument as an object or string.
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```typescript
 // Missing third argument
@@ -143,7 +143,7 @@ new HttpsError({
   });
   ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```typescript
 // Static message with contextual details in third argument

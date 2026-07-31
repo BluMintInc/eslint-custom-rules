@@ -18,7 +18,9 @@ The rule ignores components that already provide a comparison function and skips
 
 ## Examples
 
-Bad: memoized with shallow comparison on an object prop.
+### Examples of incorrect code
+
+Memoized with shallow comparison on an object prop.
 
 ```tsx
 import React, { memo } from 'react';
@@ -36,7 +38,9 @@ const UserProfileCard: React.FC<Props> = ({ userId, userSettings }) => (
 export const UserProfileCardMemo = memo(UserProfileCard); // 🔴 shallow compare re-renders on every new object reference
 ```
 
-Good: deep-compare the object prop so memoization stays effective.
+### Examples of correct code
+
+Deep-compare the object prop so memoization stays effective.
 
 ```tsx
 import { memo, compareDeeply } from 'src/util/memo';

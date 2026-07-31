@@ -14,14 +14,12 @@ insertion order, so two structurally equal objects can produce different strings
 [`safe-stable-stringify`](https://www.npmjs.com/package/safe-stable-stringify)
 handles cycles and sorts keys deterministically.
 
-Examples of **incorrect** code for this rule:
-
+### Examples of **incorrect** code for this rule:
 ```ts
 const key = JSON.stringify(payload);
 ```
 
-Examples of **correct** code for this rule:
-
+### Examples of **correct** code for this rule:
 ```ts
 import stringify from 'safe-stable-stringify';
 

@@ -19,20 +19,20 @@ To fix the warning, either:
 - Wrap the conditional expression in its own element so the text node stays intact while preserving the original operator: `<div>text <span>{condition && 'more text'}</span></div>` or `<div>text <span>{value || 'fallback'}</span></div>`
 - Move the entire sentence into the conditional: `{condition && <div>text more text</div>}`
 
-Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```jsx
-<div>Welcome {isReturning && 'back'} user</div>
-<p>Cart total: {showAmount && '$42.00'}</p>
-<div><span>This is {maybe && 'sometimes'} split</span></div>
-<div>Status: {state || 'unknown'}</div>
+<div>Welcome {isReturning && 'back'} user</div>;
+<p>Cart total: {showAmount && '$42.00'}</p>;
+<div><span>This is {maybe && 'sometimes'} split</span></div>;
+<div>Status: {state || 'unknown'}</div>;
 ```
 
-Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule:
 
 ```jsx
-<div>Welcome <span>{isReturning && 'back'}</span> user</div>
-<p>{showAmount && 'Cart total: $42.00'}</p>
-{maybe && <div><span>This stays together</span></div>}
-<div>Status: <span>{state || 'unknown'}</span></div>
+<div>Welcome <span>{isReturning && 'back'}</span> user</div>;
+<p>{showAmount && 'Cart total: $42.00'}</p>;
+<div>{maybe && <div><span>This stays together</span></div>}</div>;
+<div>Status: <span>{state || 'unknown'}</span></div>;
 ```
