@@ -24,25 +24,65 @@ This rule keeps Firebase `HttpsError` messages stable for monitoring while prese
 
 ### Examples of **incorrect** code for this rule:
 
+#### Missing details
+
+The positional signature reports `missingThirdArgument`; the object-based signature reports `missingDetailsProperty`, or `missingDetailsDueToSpread` when an object spread prevents static verification that `details` is present, or `unexpectedExtraArgumentForObjectCall` when the object signature is given more than one argument.
+
 ```typescript
 // Missing third argument
 throw new HttpsError('invalid-argument', 'No orderBy found');
 throw new https.HttpsError('permission-denied', 'Access denied');
+throw new HttpsError('not-found', 'Resource not found');
+```
 
-// Dynamic content in second argument (message field)
-throw new https.HttpsError('foo', `Error: ${bar}`, 'baz');
-throw new HttpsError('foo', `Error: ${bar}`, 'baz');
-
-// Both issues: missing third argument AND dynamic content in message
-throw new HttpsError('foo', `Error: ${bar}`);
-
-// Object-based signature (missing details)
+```typescript
+// Object-based signature without a details property
 new HttpsError({
   code: 'unauthenticated',
   message: 'User must be authenticated',
 });
+```
 
-// Object-based signature (dynamic message)
+```typescript
+// Object-based calls must have exactly one argument
+throw new HttpsError({
+  code: 'not-found',
+  message: 'Resource not found',
+  details: { id: resourceId },
+}, 'extra-arg');
+```
+
+```typescript
+// An object spread prevents static verification that "details" is present
+throw new HttpsError({
+  ...config,
+  code: 'not-found',
+  message: 'Resource not found',
+});
+```
+
+#### Dynamic content in the message
+
+All of these report `dynamicHttpsErrors`.
+
+```typescript
+// Template literal with interpolation in the second argument
+throw new https.HttpsError('foo', `Error: ${bar}`, 'baz');
+throw new HttpsError('foo', `Error: ${bar}`, 'baz');
+throw new https.HttpsError('permission-denied', `User ${userId} cannot access`, {
+  path,
+});
+```
+
+```typescript
+// Other dynamic forms
+throw new HttpsError('foo', getErrorMessage(), { id: resourceId });
+throw new HttpsError('foo', condition ? 'A' : 'B', { id: resourceId });
+throw new HttpsError('foo', someVar || 'default', { id: resourceId });
+```
+
+```typescript
+// The message property of the object-based signature is checked the same way
 new HttpsError({
   code: 'unauthenticated',
   message: `User ${userId} must be authenticated`,
@@ -50,115 +90,56 @@ new HttpsError({
 });
 ```
 
-**Missing third argument (messageId: `missingThirdArgument`, `missingDetailsProperty`, `missingDetailsDueToSpread`, or `unexpectedExtraArgumentForObjectCall`)**
+#### Both defects at once
 
-- ❌ Invalid (positional):
-
-  ```typescript
-  throw new HttpsError('not-found', 'Resource not found');
-  ```
-
-- ❌ Invalid (object-based):
-
-  ```typescript
-  throw new HttpsError({
-    code: 'not-found',
-    message: 'Resource not found',
-  });
-  ```
-
-- ❌ Invalid (object-based with extra arguments):
-
-  ```typescript
-  throw new HttpsError({
-    code: 'not-found',
-    message: 'Resource not found',
-    details: { id: resourceId },
-  }, 'extra-arg');
-  // Error: Object-based HttpsError calls must have exactly one argument.
-  ```
-
-- ❌ Invalid (object-based with spread):
-
-  ```typescript
-  throw new HttpsError({
-    ...config,
-    code: 'not-found',
-    message: 'Resource not found',
-  });
-  // Error: HttpsError calls must include a "details" property. This call uses an object spread, which prevents static verification that "details" is present.
-  ```
-
-- ✅ Valid (positional):
-
-  ```typescript
-  throw new HttpsError('not-found', 'Resource not found', { id: resourceId });
-  ```
-
-- ✅ Valid (object-based):
-
-  ```typescript
-  throw new HttpsError({
-    code: 'not-found',
-    message: 'Resource not found',
-    details: { id: resourceId },
-  });
-  ```
-
-- ✅ Valid (with TypeScript assertions):
-
-  ```typescript
-  throw new HttpsError('invalid-argument', 'Static message' as const, { details });
-  new HttpsError({
-    code: 'unauthenticated',
-    message: 'User must be authenticated' satisfies string,
-    details: { userUid: 'guest' },
-  });
-  ```
-
-**Dynamic message content (messageId: `dynamicHttpsErrors`)**
-
-- ❌ Invalid (template literal):
-
-  ```typescript
-  throw new https.HttpsError('permission-denied', `User ${userId} cannot access`, {
-    path,
-  });
-  ```
-
-- ❌ Invalid (other dynamic forms):
-
-  ```typescript
-  throw new HttpsError('foo', getErrorMessage(), { id: resourceId });
-  throw new HttpsError('foo', condition ? 'A' : 'B', { id: resourceId });
-  throw new HttpsError('foo', someVar || 'default', { id: resourceId });
-  ```
-
-- ✅ Valid:
-
-  ```typescript
-  throw new https.HttpsError('permission-denied', 'User cannot access', {
-    path,
-    userId,
-  });
-  ```
+```typescript
+// Dynamic message AND missing third argument
+throw new HttpsError('foo', `Error: ${bar}`);
+```
 
 ### Examples of **correct** code for this rule:
 
+#### Positional signature
+
 ```typescript
-// Static message with contextual details in third argument
+// Static message with contextual details in the third argument
 throw new HttpsError('invalid-argument', 'No orderBy found', { afterData, scoreOptions });
 throw new https.HttpsError('permission-denied', 'Access denied', { userId, resource });
+throw new HttpsError('not-found', 'Resource not found', { id: resourceId });
+```
 
-// Static message with dynamic details in third argument
+```typescript
+// Only the message is hashed, so the details argument may itself be dynamic
 throw new https.HttpsError('foo', 'bar', 'baz');
 throw new https.HttpsError('foo', 'bar', `Details: ${baz}`);
-throw new HttpsError('not-found', 'Resource not found', { id: resourceId });
+throw new https.HttpsError('permission-denied', 'User cannot access', {
+  path,
+  userId,
+});
+```
 
-// Object-based signature
+#### Object-based signature
+
+```typescript
 new HttpsError({
   code: 'unauthenticated',
   message: 'User must be authenticated',
+  details: { userUid: 'guest' },
+});
+```
+
+#### With TypeScript assertions
+
+The message is unwrapped through `as`, `satisfies`, `!`, and angle-bracket assertions before it is checked, so an asserted string literal is still static.
+
+```typescript
+throw new HttpsError('invalid-argument', 'Static message' as const, { details });
+```
+
+```typescript
+new HttpsError({
+  code: 'unauthenticated',
+  message: 'User must be authenticated' satisfies string,
   details: { userUid: 'guest' },
 });
 ```
