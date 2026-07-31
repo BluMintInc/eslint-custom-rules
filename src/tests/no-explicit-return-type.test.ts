@@ -227,6 +227,92 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
       `,
     },
 
+    // Recursion (issue #1512): a function referenced from inside its own return
+    // expression has no inferable return type — TypeScript reports
+    // "TS7023: '<name>' implicitly has return type 'any' because it does not
+    // have a return type annotation and is referenced directly or indirectly in
+    // one of its return expressions" — so removing the annotation stops the code
+    // compiling. Every snippet below was checked against `tsc --noEmit --strict`
+    // with and without the annotation.
+
+    // Recursive factory from the issue: the self-reference sits inside a closure
+    // in the returned object literal.
+    `
+    type FakeQuery = { orderBy: () => FakeQuery };
+    const buildQuery = (p?: string): FakeQuery => {
+      return { orderBy: () => buildQuery(p) };
+    };
+    `,
+
+    // Same factory with the returned literal contextually checked, which is the
+    // form the issue verified as TS7023.
+    `
+    type FakeQuery = { orderBy: () => FakeQuery };
+    const buildQuery = (p?: string): FakeQuery => {
+      return { orderBy: () => buildQuery(p) } satisfies FakeQuery;
+    };
+    `,
+
+    // Arrow function with a block body calling itself directly
+    `
+    const countdown = (n: number): number => {
+      if (n <= 0) {
+        return 0;
+      }
+      return countdown(n - 1);
+    };
+    `,
+
+    // Concise arrow body calling itself directly
+    `
+    const depthOf = (node: { parent?: unknown }): number =>
+      node.parent ? depthOf(node.parent as { parent?: unknown }) + 1 : 0;
+    `,
+
+    // Function declaration returning a self-reference
+    `
+    type Counter = { value: number; next: () => Counter };
+    function createCounter(value: number): Counter {
+      return { value, next: () => createCounter(value + 1) } satisfies Counter;
+    }
+    `,
+
+    // Named function expression referring to itself by its own id
+    `
+    type Chain = { next: () => Chain };
+    const makeChain = function build(depth: number): Chain {
+      return { next: () => build(depth + 1) } satisfies Chain;
+    };
+    `,
+
+    // Object method reaching itself through its owner
+    `
+    type Query = { orderBy: () => Query };
+    const api = {
+      build(p?: string): Query {
+        return { orderBy: () => api.build(p) } satisfies Query;
+      },
+    };
+    `,
+
+    // Class method reaching itself through \`this\`
+    `
+    type Query = { orderBy: () => Query };
+    class Builder {
+      build(p?: string): Query {
+        return { orderBy: () => this.build(p) } satisfies Query;
+      }
+    }
+    `,
+
+    // Mutual recursion between module-scope functions: TS7023 names both
+    `
+    const isEvenNumber = (n: number): boolean =>
+      n === 0 ? true : isOddNumber(n - 1);
+    const isOddNumber = (n: number): boolean =>
+      n === 0 ? false : isEvenNumber(n - 1);
+    `,
+
     // Firestore function files
     {
       code: `
@@ -536,6 +622,132 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
       ],
       output: 'const getNum = () => 1;',
     },
+    // The recursion exemption (issue #1512) is pinned to an actual
+    // self-reference in the return expression, not to annotated factories in
+    // general: each snippet below compiles without its annotation, so TS7023
+    // never applies and the report must stand.
+
+    // Same factory as the valid case, with the self-reference removed
+    {
+      code: `
+        type FakeQuery = { orderBy: () => FakeQuery };
+        declare const fallback: FakeQuery;
+        const buildQuery = (p?: string): FakeQuery => {
+          return { orderBy: () => fallback };
+        };
+      `,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildQuery"' },
+        },
+      ],
+      output: `
+        type FakeQuery = { orderBy: () => FakeQuery };
+        declare const fallback: FakeQuery;
+        const buildQuery = (p?: string) => {
+          return { orderBy: () => fallback };
+        };
+      `,
+    },
+
+    // Self-call in a non-returned position (side effects only): the return type
+    // is still inferable, so TS7023 does not apply
+    {
+      code: `
+        const walkTree = (nodes: number[][], depth: number): number => {
+          nodes.forEach((child) => walkTree([child], depth + 1));
+          return depth;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "walkTree"' },
+        },
+      ],
+      output: `
+        const walkTree = (nodes: number[][], depth: number) => {
+          nodes.forEach((child) => walkTree([child], depth + 1));
+          return depth;
+        };
+      `,
+    },
+    {
+      code: `
+        function walkTree(nodes: number[][], depth: number): number {
+          nodes.forEach((child) => walkTree([child], depth + 1));
+          return depth;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "walkTree"' },
+        },
+      ],
+      output: `
+        function walkTree(nodes: number[][], depth: number) {
+          nodes.forEach((child) => walkTree([child], depth + 1));
+          return depth;
+        }
+      `,
+    },
+
+    // Anonymous function: no resolvable name, so it cannot be self-referential
+    {
+      code: `
+        const lengths = ['a', 'bb'].map(function (item): number {
+          return item.length;
+        });
+      `,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function expression' },
+        },
+      ],
+      output: `
+        const lengths = ['a', 'bb'].map(function (item) {
+          return item.length;
+        });
+      `,
+    },
+
+    // A member named like the function is not a reference to the function
+    {
+      code: `
+        const format = (value: string): string => helpers.format(value);
+      `,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "format"' },
+        },
+      ],
+      output: `
+        const format = (value: string) => helpers.format(value);
+      `,
+    },
+
+    // Calling another function from the return expression is not a cycle
+    {
+      code: `
+        const firstStep = (): number => secondStep();
+        const secondStep = () => 1;
+      `,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "firstStep"' },
+        },
+      ],
+      output: `
+        const firstStep = () => secondStep();
+        const secondStep = () => 1;
+      `,
+    },
+
     {
       code: `
         class Foo {
