@@ -82,6 +82,61 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
         });
       `,
     },
+    // A describe body runs once at collection time and an it/hook body once per
+    // test; neither re-renders, so a stub defined there is identity-stable.
+    {
+      code: `
+        describe('EditableWrapper', () => {
+          const MockViewComponent = ({ value }) => <span>{value}</span>;
+
+          it('renders', () => {
+            render(<MockViewComponent value="x" />);
+          });
+        });
+      `,
+    },
+    {
+      code: `
+        it('forwards the override', () => {
+          const MockAvatar = () => <span>mock-avatar</span>;
+          render(<Competitor AvatarComponent={MockAvatar} />);
+        });
+      `,
+    },
+    {
+      code: `
+        beforeEach(() => {
+          const StubProbe = () => <div />;
+          register(StubProbe);
+        });
+      `,
+    },
+    {
+      code: `
+        it.each([1, 2])('case %s', (value) => {
+          const StubProbe = () => <div>{value}</div>;
+          render(<StubProbe />);
+        });
+      `,
+    },
+    {
+      code: `
+        describe.only('suite', () => {
+          const StubProbe = () => <div />;
+          render(<StubProbe />);
+        });
+      `,
+    },
+    {
+      code: `
+        test('uses a local stub', () => {
+          function StubProbe() {
+            return <div />;
+          }
+          render(<StubProbe />);
+        });
+      `,
+    },
     {
       code: `
         import { useCallback } from 'react';
@@ -420,6 +475,50 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
     },
   ],
   invalid: [
+    // The test-runner exemption reads only the NEAREST enclosing function, so a
+    // component nested inside a component that itself sits in an it() body is
+    // still a genuine violation — it really does remount when the outer one
+    // re-renders.
+    {
+      code: `
+        it('renders the tree', () => {
+          const Outer = () => {
+            const Inner = () => <span />;
+            return <Inner />;
+          };
+          render(<Outer />);
+        });
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'Inner',
+            locationDescription: 'a render body',
+          },
+        },
+      ],
+    },
+    // A same-named helper called for its value is not a runner callback; the
+    // exemption requires the call to stand alone as a statement.
+    {
+      code: `
+        const outcome = test(() => {
+          const InlineProbe = () => <div />;
+          register(InlineProbe);
+          return 1;
+        });
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'InlineProbe',
+            locationDescription: 'a render body',
+          },
+        },
+      ],
+    },
     // The exemption is keyed on jest.mock/doMock specifically; a lookalike
     // `.mock()` on some other object earns no such treatment.
     {

@@ -639,6 +639,62 @@ const collectDirectReturnExpressions = (
 const MODULE_MOCK_REGISTRARS = new Set(['mock', 'doMock']);
 
 /**
+ * Test-runner callbacks. A `describe` body runs once at collection time and an
+ * `it`/hook body once per test — neither re-renders, so a component defined
+ * directly in one has an identity as stable as a module-scope export.
+ */
+const TEST_RUNNER_NAMES = new Set([
+  'describe',
+  'it',
+  'test',
+  'beforeEach',
+  'beforeAll',
+  'afterEach',
+  'afterAll',
+]);
+
+/**
+ * The identifier a callee is rooted at, so `it`, `it.only`, `it.each(...)` and
+ * `describe.each`...`` all resolve to the runner's own name.
+ */
+const calleeRootName = (callee: TSESTree.Node): string | undefined => {
+  switch (callee.type) {
+    case AST_NODE_TYPES.Identifier:
+      return callee.name;
+    case AST_NODE_TYPES.MemberExpression:
+      return calleeRootName(callee.object);
+    case AST_NODE_TYPES.CallExpression:
+      return calleeRootName(callee.callee);
+    case AST_NODE_TYPES.TaggedTemplateExpression:
+      return calleeRootName(callee.tag);
+    default:
+      return undefined;
+  }
+};
+
+/**
+ * True when `fn` is a callback handed to a test-runner call.
+ *
+ * Requiring the call to stand alone as a statement keeps an ordinary helper that
+ * merely shares a name — a `test(...)` used for its return value, say — from
+ * collecting the exemption, since runner calls are always statements.
+ */
+const isTestRunnerCallback = (fn: TSESTree.Node): boolean => {
+  const call = fn.parent;
+  if (!call || call.type !== AST_NODE_TYPES.CallExpression) {
+    return false;
+  }
+  if (!call.arguments.includes(fn as TSESTree.CallExpressionArgument)) {
+    return false;
+  }
+  if (call.parent?.type !== AST_NODE_TYPES.ExpressionStatement) {
+    return false;
+  }
+  const root = calleeRootName(call.callee);
+  return root !== undefined && TEST_RUNNER_NAMES.has(root);
+};
+
+/**
  * True when `fn` is the factory argument of a `jest.mock()` / `jest.doMock()`
  * call.
  *
@@ -686,7 +742,10 @@ const isInsideHocFactory = (
     return false;
   }
 
-  if (isModuleMockFactory(enclosing)) {
+  // Both checks look only at the NEAREST enclosing function, so a component
+  // nested inside another component that itself sits in an it() body is still
+  // reported — the exemption does not leak down the tree.
+  if (isModuleMockFactory(enclosing) || isTestRunnerCallback(enclosing)) {
     return true;
   }
 
