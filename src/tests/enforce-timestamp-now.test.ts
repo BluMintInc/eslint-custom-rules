@@ -150,6 +150,199 @@ ruleTesterTs.run('enforce-timestamp-now', enforceTimestampNow, {
       `,
       filename: backendFilePath,
     },
+    // Issue #1528: `Timestamp` exposes none of `Date`'s formatting helpers or
+    // `getX` accessors, so rewriting the initializer turns each of these calls
+    // into TS2339. Every member below was measured as broken by the autofix.
+    {
+      code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f() {
+          const now = new Date();
+          return now.toLocaleDateString();
+        }
+      `,
+      filename: backendFilePath,
+    },
+    {
+      code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f() {
+          const now = new Date();
+          return now.toLocaleTimeString();
+        }
+      `,
+      filename: backendFilePath,
+    },
+    {
+      code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f() {
+          const now = new Date();
+          return now.getTime();
+        }
+      `,
+      filename: backendFilePath,
+    },
+    {
+      code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f() {
+          const now = new Date();
+          return now.getFullYear();
+        }
+      `,
+      filename: backendFilePath,
+    },
+    {
+      code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f() {
+          const now = new Date();
+          return now.toDateString();
+        }
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1528: the members the original denylist happened to name stay
+    // exempt — the fix generalizes the guard, it does not narrow it.
+    {
+      code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f() {
+          const now = new Date();
+          return now.toISOString();
+        }
+      `,
+      filename: backendFilePath,
+    },
+    {
+      code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f() {
+          const now = new Date();
+          return now.toLocaleString();
+        }
+      `,
+      filename: backendFilePath,
+    },
+    {
+      code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f() {
+          const now = new Date();
+          return now.toString();
+        }
+      `,
+      filename: backendFilePath,
+    },
+    {
+      code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f() {
+          const expiresAt = new Date();
+          expiresAt.setDate(expiresAt.getDate() + 30);
+          return expiresAt;
+        }
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1528: `Timestamp` declares `valueOf()` too, but it returns an
+    // encoded `string` where `Date#valueOf()` returns a `number`. The call site
+    // keeps compiling while the value silently changes type, so decline.
+    {
+      code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f() {
+          const now = new Date();
+          return now.valueOf();
+        }
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1528: a use that escapes the declaration carries a type this rule
+    // cannot see. Passing the binding to a function typed `(date: Date)` would
+    // become TS2345.
+    {
+      code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        declare function elapsed(since: Date): number;
+        export function f() {
+          const now = new Date();
+          return elapsed(now);
+        }
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1528: returning the binding exports the swapped type to every
+    // caller, and an annotated return type would become TS2322.
+    {
+      code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f(): Date {
+          const now = new Date();
+          return now;
+        }
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1528: a comparison relies on `Date`'s numeric primitive; the
+    // `Timestamp` primitive is a string.
+    {
+      code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f(deadline: Date) {
+          const now = new Date();
+          return now > deadline;
+        }
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1528: interpolation renders a completely different string.
+    {
+      code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f() {
+          const now = new Date();
+          return \`run at \${now}\`;
+        }
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1528: a computed member access hides which member is read.
+    {
+      code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f(key: 'toMillis') {
+          const now = new Date();
+          return now[key]();
+        }
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1528: an exported binding is read by files this rule never sees,
+    // so the rewrite would move the breakage into an importer.
+    {
+      code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        export const createdAt = new Date();
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1528: a later write rebinds the variable to a real `Date`, which
+    // no longer matches the rewritten initializer.
+    {
+      code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f(override?: Date) {
+          let now = new Date();
+          if (override) {
+            now = override;
+          }
+          return now;
+        }
+      `,
+      filename: backendFilePath,
+    },
   ],
   invalid: [
     // Invalid usage of Timestamp.fromDate(new Date()) in backend
@@ -323,13 +516,14 @@ ruleTesterTs.run('enforce-timestamp-now', enforceTimestampNow, {
       filename: windowsBackendFilePath,
     },
     // Issue #1521: with the import present the `new Date()` fix still applies —
-    // the guard must be reachable in both directions.
+    // the guard must be reachable in both directions. The use has to be one
+    // `Timestamp` supports, or the #1528 usage guard declines instead.
     {
       code: `
         import { Timestamp } from 'firebase-admin/firestore';
         export function f() {
           const now = new Date();
-          return now.toLocaleDateString();
+          return now.toMillis();
         }
       `,
       errors: [
@@ -345,7 +539,7 @@ ruleTesterTs.run('enforce-timestamp-now', enforceTimestampNow, {
         import { Timestamp } from 'firebase-admin/firestore';
         export function f() {
           const now = Timestamp.now();
-          return now.toLocaleDateString();
+          return now.toMillis();
         }
       `,
       filename: backendFilePath,
@@ -361,7 +555,7 @@ ruleTesterTs.run('enforce-timestamp-now', enforceTimestampNow, {
         }
         export function f() {
           const createdAt = new Date();
-          return { createdAt, other };
+          return { createdAt: createdAt.toMillis(), other };
         }
       `,
       errors: [
@@ -381,7 +575,7 @@ ruleTesterTs.run('enforce-timestamp-now', enforceTimestampNow, {
         }
         export function f() {
           const createdAt = Timestamp.now();
-          return { createdAt, other };
+          return { createdAt: createdAt.toMillis(), other };
         }
       `,
       filename: backendFilePath,
@@ -494,6 +688,88 @@ ruleTesterTs.run('enforce-timestamp-now', enforceTimestampNow, {
       output: `
         const { Timestamp } = require('firebase-admin/firestore');
         const timestamp = Timestamp.now();
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1528: `toDate()` is part of the `Timestamp` surface, so the
+    // rewritten binding still answers the call.
+    {
+      code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f() {
+          const createdAt = new Date();
+          return createdAt.toDate();
+        }
+      `,
+      errors: [
+        {
+          messageId: 'preferTimestampNow',
+          data: {
+            expression: 'new Date()',
+            timestampAlias: 'Timestamp',
+          },
+        },
+      ],
+      output: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f() {
+          const createdAt = Timestamp.now();
+          return createdAt.toDate();
+        }
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1528: the `seconds` / `nanoseconds` fields and `isEqual()` are
+    // `Timestamp` members too, so a binding using only those is safe to rewrite.
+    {
+      code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f(other: Timestamp) {
+          const updatedAt = new Date();
+          return updatedAt.seconds + updatedAt.nanoseconds + Number(updatedAt.isEqual(other));
+        }
+      `,
+      errors: [
+        {
+          messageId: 'preferTimestampNow',
+          data: {
+            expression: 'new Date()',
+            timestampAlias: 'Timestamp',
+          },
+        },
+      ],
+      output: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f(other: Timestamp) {
+          const updatedAt = Timestamp.now();
+          return updatedAt.seconds + updatedAt.nanoseconds + Number(updatedAt.isEqual(other));
+        }
+      `,
+      filename: backendFilePath,
+    },
+    // Issue #1528: a binding with no member access at all keeps its fix — there
+    // is no `Date` surface for the rewrite to break.
+    {
+      code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f() {
+          const createdAt = new Date();
+        }
+      `,
+      errors: [
+        {
+          messageId: 'preferTimestampNow',
+          data: {
+            expression: 'new Date()',
+            timestampAlias: 'Timestamp',
+          },
+        },
+      ],
+      output: `
+        import { Timestamp } from 'firebase-admin/firestore';
+        export function f() {
+          const createdAt = Timestamp.now();
+        }
       `,
       filename: backendFilePath,
     },
