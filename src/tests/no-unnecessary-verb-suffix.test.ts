@@ -84,23 +84,23 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
     'function createDataStructure() {}',
     'function validateFormInput() {}',
 
-    // Cases where suffix adds necessary context (with eslint-disable)
-    '/* eslint-disable no-unnecessary-verb-suffix */ function migrateDataFromLegacy(data) {} /* eslint-enable no-unnecessary-verb-suffix */',
-    '/* eslint-disable no-unnecessary-verb-suffix */ function mergeConfigWithDefaults(config) {} /* eslint-enable no-unnecessary-verb-suffix */',
-    '/* eslint-disable no-unnecessary-verb-suffix */ function convertTemperatureToCelsius(temp) {} /* eslint-enable no-unnecessary-verb-suffix */',
-    '/* eslint-disable no-unnecessary-verb-suffix */ function sortUsersByRank(users) {} /* eslint-enable no-unnecessary-verb-suffix */',
-    '/* eslint-disable no-unnecessary-verb-suffix */ function searchProductsInCategory(category) {} /* eslint-enable no-unnecessary-verb-suffix */',
-    '/* eslint-disable no-unnecessary-verb-suffix */ function validateInputAgainstSchema(input) {} /* eslint-enable no-unnecessary-verb-suffix */',
-    '/* eslint-disable no-unnecessary-verb-suffix */ function processEventsUntilTimeout(events) {} /* eslint-enable no-unnecessary-verb-suffix */',
-    '/* eslint-disable no-unnecessary-verb-suffix */ function computeScoreViaAlgorithm(data) {} /* eslint-enable no-unnecessary-verb-suffix */',
+    // Cases where suffix adds necessary context
+    'function migrateDataFromLegacy(data) {}',
+    'function mergeConfigWithDefaults(config) {}',
+    'function convertTemperatureToCelsius(temp) {}',
+    'function sortUsersByRank(users) {}',
+    'function searchProductsInCategory(category) {}',
+    'function validateInputAgainstSchema(input) {}',
+    'function processEventsUntilTimeout(events) {}',
+    'function computeScoreViaAlgorithm(data) {}',
 
     // More legitimate cases with meaningful context
-    '/* eslint-disable no-unnecessary-verb-suffix */ function fetchDataFromApi() {} /* eslint-enable no-unnecessary-verb-suffix */',
-    '/* eslint-disable no-unnecessary-verb-suffix */ function saveDataToDatabase() {} /* eslint-enable no-unnecessary-verb-suffix */',
-    '/* eslint-disable no-unnecessary-verb-suffix */ function filterUsersByRole() {} /* eslint-enable no-unnecessary-verb-suffix */',
-    '/* eslint-disable no-unnecessary-verb-suffix */ function processEventsInBatch() {} /* eslint-enable no-unnecessary-verb-suffix */',
-    '/* eslint-disable no-unnecessary-verb-suffix */ function executeTasksInParallel() {} /* eslint-enable no-unnecessary-verb-suffix */',
-    '/* eslint-disable no-unnecessary-verb-suffix */ function transformDataWithPipeline() {} /* eslint-enable no-unnecessary-verb-suffix */',
+    'function fetchDataFromApi() {}',
+    'function saveDataToDatabase() {}',
+    'function filterUsersByRole() {}',
+    'function processEventsInBatch() {}',
+    'function executeTasksInParallel() {}',
+    'function transformDataWithPipeline() {}',
 
     // Edge cases with non-standard naming
     'function _privateProcess() {}',
