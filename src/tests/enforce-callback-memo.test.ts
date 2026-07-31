@@ -491,6 +491,141 @@ ruleTester.run('enforce-callback-memo', rule, {
         };
       `,
     },
+    // Valid: JSX at module scope — no enclosing function, so useCallback is impossible
+    {
+      code: `
+        const TREE = <Child onReady={(v) => { sink = v; }} />;
+      `,
+    },
+    // Valid: JSX inside a plain non-component, non-hook function — hooks are illegal here
+    {
+      code: `
+        function buildTree(emit) {
+          return <Child onReady={(v) => { emit(v); }} />;
+        }
+      `,
+    },
+    // Valid: JSX inside a Jest test body via React Testing Library — calling
+    // useCallback here is a Rules-of-Hooks violation ("Invalid hook call")
+    {
+      code: `
+        it('captures the value the child hands back', () => {
+          let captured;
+          render(<Child onReady={(v) => { captured = v; }} />);
+          expect(captured).toBe(1);
+        });
+      `,
+      filename: 'useThing.test.tsx',
+    },
+    // Valid: module-scope JSX whose object prop holds a function — the useMemo
+    // branch is out of reach at module scope for the same reason
+    {
+      code: `
+        const TREE = <Child config={{ onDone: () => { sink(); } }} />;
+      `,
+    },
+    // Valid: module-scope JSX collected into an array literal
+    {
+      code: `
+        const TREES = [<Child key="a" onReady={() => { sink(); }} />];
+      `,
+    },
+    // Valid: lowercase arrow assigned to a const is a plain helper, not a component
+    {
+      code: `
+        const buildRow = () => <X onClick={() => { emit(); }} />;
+      `,
+    },
+    // Valid: a lowercase name is authoritative even when the function returns JSX
+    // from every branch — the developer signalled it is not a component
+    {
+      code: `
+        function renderBadge(kind) {
+          if (kind === 'a') {
+            return <Badge onPress={() => { track('a'); }} />;
+          }
+          return <Badge onPress={() => { track('b'); }} />;
+        }
+      `,
+    },
+    // Valid: object property holding a render helper (camelCase key)
+    {
+      code: `
+        const helpers = {
+          renderRow: () => <X onClick={() => { emit(); }} />,
+        };
+      `,
+    },
+    // Valid: shorthand object method with a camelCase key
+    {
+      code: `
+        const harness = {
+          buildRow() {
+            return <X onClick={() => { emit(); }} />;
+          },
+        };
+      `,
+    },
+    // Valid: "use" not followed by an uppercase letter is not the hook convention
+    {
+      code: `
+        const usage = () => <X onClick={() => { emit(); }} />;
+      `,
+    },
+    // Valid: JSX inside describe/beforeEach test scaffolding
+    {
+      code: `
+        describe('Child', () => {
+          beforeEach(() => {
+            render(<Child onReady={(v) => { captured = v; }} />);
+          });
+        });
+      `,
+      filename: 'Child.test.tsx',
+    },
+    // Valid: JSX inside a jest.mock factory, produced by a camelCase stub
+    {
+      code: `
+        jest.mock('./Widget', () => {
+          const stub = () => <div onClick={() => {}} />;
+          return { Widget: stub };
+        });
+      `,
+      filename: 'Widget.test.tsx',
+    },
+    // Valid: a class method is not a hook site — a React class component cannot
+    // call useCallback at all, so the rule's remediation is illegal there
+    {
+      code: `
+        class Panel extends React.Component {
+          render() {
+            return <X onClick={() => { this.select(); }} />;
+          }
+        }
+      `,
+    },
+    // Valid: assignment to a camelCase binding names the function
+    {
+      code: `
+        let renderTree;
+        renderTree = () => <X onClick={() => { emit(); }} />;
+      `,
+    },
+    // Valid: assignment to a camelCase member expression names the function
+    {
+      code: `
+        exports.renderTree = () => <X onClick={() => { emit(); }} />;
+      `,
+    },
+    // Valid: a nested callback inside a plain helper is no more of a render path
+    // than the helper itself
+    {
+      code: `
+        function buildRows(items) {
+          return items.map((i) => <Row key={i} onClick={() => { pick(i); }} />);
+        }
+      `,
+    },
   ],
   invalid: [
     // Invalid: Inline function
@@ -1122,6 +1257,156 @@ ruleTester.run('enforce-callback-memo', rule, {
           const trigger = memoize(() => <Button onClick={() => open(id)} />);
           return <Dropdown trigger={trigger} />;
         };
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: a .map() render callback nested inside a real component still has a
+    // component ancestor, so the report must survive the scope check
+    {
+      code: `
+        const List = ({ items }) => {
+          const [, setC] = useState(0);
+          return (
+            <div>
+              {items.map((i) => <Child key={i} onReady={() => { setC(i); }} />)}
+            </div>
+          );
+        };
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: inside a custom hook (use* prefix) — still a real render path
+    {
+      code: `
+        const useThing = () => {
+          const [, setC] = useState(0);
+          return <Child onReady={(v) => { setC(v); }} />;
+        };
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: PascalCase function declaration is a component
+    {
+      code: `
+        function Row({ id }) {
+          return <X onClick={() => { select(id); }} />;
+        }
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: PascalCase hook declaration (function form)
+    {
+      code: `
+        function useRow(id) {
+          return <X onClick={() => { select(id); }} />;
+        }
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: default-exported component
+    {
+      code: `
+        export default function Page() {
+          return <X onClick={() => { go(); }} />;
+        }
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: memo() is transparent for naming, so the component takes the name
+    // of the binding it is assigned to
+    {
+      code: `
+        const Card = memo(() => <X onClick={() => { open(); }} />);
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: a memo argument with no binding to take a name from is truly
+    // anonymous — only the returnsJSX fallback classifies it as a component
+    {
+      code: `
+        register(memo(() => <X onClick={() => { open(); }} />));
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: forwardRef render function, named through the wrapper
+    {
+      code: `
+        const Input = forwardRef((props, ref) => (
+          <input ref={ref} onFocus={() => { props.onFocus(); }} />
+        ));
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: component assigned to a PascalCase object property
+    {
+      code: `
+        const screens = {
+          Home: () => <X onClick={() => { go(); }} />,
+        };
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: a component defined inside a plain helper — the component
+    // ancestor sits at the inner level, and hooks are legal in it
+    {
+      code: `
+        function setupHarness() {
+          const Harness = () => <Child onReady={() => { record(); }} />;
+          return Harness;
+        }
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: a component defined inside a test body is still a render path
+    {
+      code: `
+        it('renders', () => {
+          const Harness = () => <Child onReady={() => { record(); }} />;
+          render(<Harness />);
+        });
+      `,
+      filename: 'Child.test.tsx',
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: a plain helper nested inside a component — the chain still holds
+    // a component above it, so the report survives
+    {
+      code: `
+        const Panel = () => {
+          const buildRow = () => <X onClick={() => { pick(); }} />;
+          return <div>{buildRow()}</div>;
+        };
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: component -> plain helper -> map callback, three levels deep
+    {
+      code: `
+        const Panel = ({ items }) => {
+          const buildRows = () =>
+            items.map((i) => <Row key={i} onClick={() => { pick(i); }} />);
+          return <div>{buildRows()}</div>;
+        };
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: object prop containing a function inside a component reached
+    // through a plain helper
+    {
+      code: `
+        const Panel = () => {
+          const buildRow = () => <X config={{ onDone: () => { pick(); } }} />;
+          return <div>{buildRow()}</div>;
+        };
+      `,
+      errors: [{ messageId: 'enforceMemo' }],
+    },
+    // Invalid: a component named through a transparent memo wrapper
+    {
+      code: `
+        const Row = memo(function Inner({ id }) {
+          return <X onClick={() => { select(id); }} />;
+        });
       `,
       errors: [{ messageId: 'enforceCallback' }],
     },

@@ -1001,6 +1001,189 @@ export class ASTHelpers {
   }
 
   /**
+   * Calls that wrap a component/hook definition without renaming it, so the
+   * binding they are assigned to still names the wrapped function
+   * (`const Component = memo(() => ...)`).
+   */
+  private static readonly TRANSPARENT_WRAPPER_CALLEES = new Set([
+    'forwardRef',
+    'memo',
+    'observer',
+    'useCallback',
+    'useMemo',
+  ]);
+
+  private static isFunctionNode(
+    node: TSESTree.Node,
+  ): node is
+    | TSESTree.ArrowFunctionExpression
+    | TSESTree.FunctionExpression
+    | TSESTree.FunctionDeclaration {
+    return (
+      node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+      node.type === AST_NODE_TYPES.FunctionExpression ||
+      node.type === AST_NODE_TYPES.FunctionDeclaration
+    );
+  }
+
+  private static isTransparentWrapperCall(
+    node: TSESTree.CallExpression,
+  ): boolean {
+    const { callee } = node;
+    if (callee.type === AST_NODE_TYPES.Identifier) {
+      return this.TRANSPARENT_WRAPPER_CALLEES.has(callee.name);
+    }
+    return (
+      callee.type === AST_NODE_TYPES.MemberExpression &&
+      !callee.computed &&
+      callee.property.type === AST_NODE_TYPES.Identifier &&
+      this.TRANSPARENT_WRAPPER_CALLEES.has(callee.property.name)
+    );
+  }
+
+  private static staticPropertyName(
+    key: TSESTree.Node,
+    computed: boolean,
+  ): string | null {
+    if (computed) {
+      return null;
+    }
+    if (key.type === AST_NODE_TYPES.Identifier) {
+      return key.name;
+    }
+    if (key.type === AST_NODE_TYPES.Literal && typeof key.value === 'string') {
+      return key.value;
+    }
+    return null;
+  }
+
+  /**
+   * Resolves the name a function is known by: its own identifier, or the
+   * binding it is assigned to (variable, object property, class field,
+   * assignment target). Returns null only when the function is truly
+   * anonymous, e.g. an inline callback argument such as `items.map(() => ...)`.
+   */
+  public static inferFunctionName(
+    node:
+      | TSESTree.ArrowFunctionExpression
+      | TSESTree.FunctionExpression
+      | TSESTree.FunctionDeclaration,
+  ): string | null {
+    if (node.id?.name) {
+      return node.id.name;
+    }
+
+    let child: TSESTree.Node = node;
+    let parent: TSESTree.Node | undefined = node.parent;
+
+    while (parent) {
+      switch (parent.type) {
+        case AST_NODE_TYPES.VariableDeclarator:
+          return parent.id.type === AST_NODE_TYPES.Identifier
+            ? parent.id.name
+            : null;
+        case AST_NODE_TYPES.Property:
+          return this.staticPropertyName(parent.key, parent.computed);
+        case AST_NODE_TYPES.PropertyDefinition:
+        case AST_NODE_TYPES.MethodDefinition:
+          return this.staticPropertyName(parent.key, parent.computed);
+        case AST_NODE_TYPES.AssignmentExpression: {
+          const { left } = parent;
+          if (left.type === AST_NODE_TYPES.Identifier) {
+            return left.name;
+          }
+          if (left.type === AST_NODE_TYPES.MemberExpression) {
+            return this.staticPropertyName(left.property, left.computed);
+          }
+          return null;
+        }
+        case AST_NODE_TYPES.TSAsExpression:
+        case AST_NODE_TYPES.TSSatisfiesExpression:
+        case AST_NODE_TYPES.TSNonNullExpression:
+        case AST_NODE_TYPES.TSTypeAssertion:
+          child = parent;
+          parent = parent.parent;
+          continue;
+        case AST_NODE_TYPES.CallExpression:
+          // Only step through wrappers that preserve identity; an arbitrary
+          // callback argument (`items.map(fn)`) is not named by whatever the
+          // call's result is assigned to.
+          if (
+            parent.arguments.includes(
+              child as TSESTree.CallExpressionArgument,
+            ) &&
+            this.isTransparentWrapperCall(parent)
+          ) {
+            child = parent;
+            parent = parent.parent;
+            continue;
+          }
+          return null;
+        default:
+          return null;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * React's universal convention: only PascalCase-initial identifiers are
+   * components, and only `use`-prefixed ones are hooks. A camelCase name is a
+   * plain helper or a render-prop callback.
+   */
+  private static isComponentOrHookName(name: string): boolean {
+    return /^[A-Z]/.test(name) || /^use[A-Z0-9_]/.test(name);
+  }
+
+  /**
+   * Reports whether a node sits anywhere inside a React component or hook, so a
+   * rule whose remediation is a hook call (useCallback/useMemo/useState) can
+   * stay silent where that call would be a Rules-of-Hooks violation: module
+   * scope, a plain helper function, or a test body such as `it(() => ...)`.
+   *
+   * The whole enclosing-function ancestry is consulted, not just the nearest
+   * function: a `.map()` render callback inside a component is still a render
+   * path and must stay reportable.
+   *
+   * Classification is name-first. A function the developer named is judged by
+   * that name alone — `buildTree` is not a component even though it returns
+   * JSX, because the name is an explicit signal about its role. Only a truly
+   * anonymous function falls back to "does it return JSX", which is what makes
+   * `memo(() => <div />)` a component. That fallback is suppressed when some
+   * enclosing function carries a non-component name, since a callback nested in
+   * a plain helper is no more of a render path than the helper itself.
+   */
+  public static isInsideComponentOrHook(
+    node: TSESTree.Node,
+    context?: Readonly<TSESLint.RuleContext<string, readonly unknown[]>>,
+  ): boolean {
+    const anonymousFunctions: TSESTree.Node[] = [];
+    let hasNamedNonComponent = false;
+
+    let current: TSESTree.Node | undefined = node.parent;
+    while (current) {
+      if (this.isFunctionNode(current)) {
+        const name = this.inferFunctionName(current);
+        if (name === null) {
+          anonymousFunctions.push(current);
+        } else if (this.isComponentOrHookName(name)) {
+          return true;
+        } else {
+          hasNamedNonComponent = true;
+        }
+      }
+      current = current.parent;
+    }
+
+    if (hasNamedNonComponent) {
+      return false;
+    }
+
+    return anonymousFunctions.some((fn) => this.returnsJSX(fn, context));
+  }
+
+  /**
    * Helper to get ancestors of a node in a way that is compatible with both ESLint v8 and v9.
    * In ESLint v9, context.getAncestors() is deprecated and moved to context.sourceCode.getAncestors(node).
    */
