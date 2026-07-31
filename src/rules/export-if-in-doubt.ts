@@ -64,6 +64,18 @@ export const exportIfInDoubt: TSESLint.RuleModule<'exportIfInDoubt', never[]> =
             });
           }
         },
+        ExportDefaultDeclaration: (node: TSESTree.ExportDefaultDeclaration) => {
+          // `export default x` reaches the outside world through the default
+          // binding, so the declaration it names is already public API. Only
+          // the bare identifier form counts: in `export default wrap(x)` the
+          // name itself stays unimportable.
+          if (
+            node.declaration.type === 'Identifier' &&
+            !exportedIdentifiers.includes(node.declaration.name)
+          ) {
+            exportedIdentifiers.push(node.declaration.name);
+          }
+        },
         'Program:exit': () => {
           topLevelDeclarations.forEach((node) => {
             if (
