@@ -111,6 +111,32 @@ ruleTesterTs.run(
         }
       `,
       },
+      // A correctly named constructor parameter on a generic class: neither the
+      // constructor visitor nor the function visitor may fire (Issue #1514).
+      {
+        code: `
+        type FieldPrepperProps<TData> = { data: TData; path: string };
+        export class FieldPrepper<TData> {
+          constructor(props: FieldPrepperProps<TData>) {
+            this.data = props.data;
+          }
+        }
+      `,
+      },
+      // A parameter property and a plain parameter both typed "Props" is a
+      // multi-Props constructor, which defers to enforce-props-argument-name.
+      // The constructor visitor owns this counting because only it can see the
+      // parameter property (Issue #1514).
+      {
+        code: `
+        class DataManager {
+          constructor(
+            private readonly settings: ManagerProps,
+            options: OptionsProps,
+          ) {}
+        }
+      `,
+      },
     ],
     invalid: [
       // Issue #1358 repro: the annotation must survive and body references must
@@ -441,6 +467,106 @@ ruleTesterTs.run(
         output: `
         function config(props: ComponentProps) {
           return props.id;
+        }
+      `,
+      },
+      // Issue #1514 repro: a plain constructor parameter is a `MethodDefinition`
+      // AND a `FunctionExpression`, so it used to be reported twice with an
+      // identical message and an identical fix range. Exactly one report, and
+      // the rename converges in a single pass.
+      {
+        code: `
+        type FieldPrepperProps<TData> = { data: TData; path: string };
+        export class FieldPrepper<TData> {
+          constructor(settings: FieldPrepperProps<TData>) {
+            this.data = settings.data;
+          }
+        }
+      `,
+        errors: [
+          { messageId: 'usePropsName', data: { paramName: 'settings' } },
+        ],
+        output: `
+        type FieldPrepperProps<TData> = { data: TData; path: string };
+        export class FieldPrepper<TData> {
+          constructor(props: FieldPrepperProps<TData>) {
+            this.data = props.data;
+          }
+        }
+      `,
+      },
+      // A constructor and a regular method in one class: the constructor is
+      // reported once (not twice), and the method still reported at all — the
+      // deduplication must not swallow non-constructor `FunctionExpression`s.
+      {
+        code: `
+        class ComponentManager {
+          constructor(settings: ManagerProps) {
+            this.settings = settings;
+          }
+          initialize(config: ComponentProps) {
+            return config.id;
+          }
+        }
+      `,
+        errors: [
+          { messageId: 'usePropsName', data: { paramName: 'settings' } },
+          { messageId: 'usePropsName', data: { paramName: 'config' } },
+        ],
+        output: `
+        class ComponentManager {
+          constructor(props: ManagerProps) {
+            this.settings = props;
+          }
+          initialize(props: ComponentProps) {
+            return props.id;
+          }
+        }
+      `,
+      },
+      // A static method and an accessor keep their own coverage.
+      {
+        code: `
+        class WidgetFactory {
+          static build(config: WidgetProps) {
+            return config.id;
+          }
+          set options(config: WidgetProps) {
+            this.stored = config;
+          }
+        }
+      `,
+        errors: [
+          { messageId: 'usePropsName', data: { paramName: 'config' } },
+          { messageId: 'usePropsName', data: { paramName: 'config' } },
+        ],
+        output: `
+        class WidgetFactory {
+          static build(props: WidgetProps) {
+            return props.id;
+          }
+          set options(props: WidgetProps) {
+            this.stored = props;
+          }
+        }
+      `,
+      },
+      // A constructor parameter property stays reported exactly once, and the
+      // constructor-only safety gate still supplies the fix.
+      {
+        code: `
+        type FieldPrepperProps<TData> = { data: TData };
+        export class FieldPrepper<TData> {
+          constructor(private readonly settings: FieldPrepperProps<TData>) {}
+        }
+      `,
+        errors: [
+          { messageId: 'usePropsName', data: { paramName: 'settings' } },
+        ],
+        output: `
+        type FieldPrepperProps<TData> = { data: TData };
+        export class FieldPrepper<TData> {
+          constructor(private readonly props: FieldPrepperProps<TData>) {}
         }
       `,
       },
