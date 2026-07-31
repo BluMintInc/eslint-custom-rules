@@ -20,6 +20,27 @@ This rule reports explicit return type annotations on functions that include an 
 - Recursive functions, overloads, interface method signatures, and abstract methods when those allowances are enabled.
 - `.d.ts` declaration files and `.f.ts` Firestore function files when configured to allow them.
 
+### Recursion: the annotation is mandatory, not redundant
+
+TypeScript cannot infer the return type of a function that is referenced from inside its own return expression. It gives up and reports:
+
+> **TS7023**: `'buildQuery'` implicitly has return type `'any'` because it does not have a return type annotation and is referenced directly or indirectly in one of its return expressions.
+
+Deleting the annotation there does not simplify the code — it stops it compiling. The rule therefore stays silent when it can see the self-reference syntactically:
+
+- The function has a resolvable name: its own `id`, the identifier of the `VariableDeclarator` it initialises, or the key of the object property / class member / assignment target it is attached to (reached as `this.name`, `Owner.name`).
+- That name is referenced somewhere inside one of the function's own `return` expressions, or inside a concise arrow body. Nested closures inside the returned expression count, because their types are part of the return type.
+- Or the function takes part in a **cycle of module-scope functions** — `a` returns something referencing `b`, and `b` returns something referencing `a` — which triggers the same TS7023.
+
+The search is deliberately restricted to return expressions. A function that calls itself only for side effects (inside a `forEach` callback, say) still has an inferable return type, so its annotation is still reported.
+
+Limitations, all of which err toward silence or toward the status quo:
+
+- A self-reference inside a closure in the returned value counts, even though TypeScript can sometimes still break the cycle (it depends on how the returned value is contextually typed, which needs type information this rule does not have).
+- Mutual recursion is resolved among module-scope functions only. A mutually recursive pair declared inside another function body is still reported.
+- Annotating *either* member of a mutually recursive pair is enough for TypeScript; the rule exempts both rather than picking one.
+- A function with no resolvable name (an anonymous callback) cannot be self-referential by name, so it is always reported.
+
 ### Examples of incorrect code
 
 ```ts
@@ -41,6 +62,13 @@ class Service {
     return 'Service';
   }
 }
+
+// Calling itself only for side effects leaves the return type inferable, so
+// TS7023 does not apply and the annotation is still redundant
+const walkTree = (nodes: number[][], depth: number): number => {
+  nodes.forEach((child) => walkTree([child], depth + 1));
+  return depth;
+};
 ```
 
 ### Examples of correct code
@@ -61,6 +89,26 @@ function isString(value: unknown): value is string {
 interface Logger {
   log(message: string): void;
 }
+
+// Recursion: without the annotation this is TS7023, so it is kept
+const countdown = (n: number): number => {
+  if (n <= 0) {
+    return 0;
+  }
+  return countdown(n - 1);
+};
+
+// The self-reference may sit inside a closure in the returned value
+type FakeQuery = { orderBy: () => FakeQuery };
+const buildQuery = (p?: string): FakeQuery => {
+  return { orderBy: () => buildQuery(p) };
+};
+
+// Mutual recursion between module-scope functions is TS7023 for both
+const isEvenNumber = (n: number): boolean =>
+  n === 0 ? true : isOddNumber(n - 1);
+const isOddNumber = (n: number): boolean =>
+  n === 0 ? false : isEvenNumber(n - 1);
 ```
 
 ## Options
