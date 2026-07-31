@@ -272,6 +272,61 @@ const MyComponent = () => {
 };
 `,
     },
+
+    // 19. Bare top-level call whose result is discarded — nothing to stabilize,
+    // so no hydration mismatch is possible. Only an assigned value is flagged.
+    {
+      filename: IN_SCOPE_FILE,
+      code: `
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+const MyComponent = () => {
+  uuidv4Base62();
+  return <div />;
+};
+`,
+    },
+
+    // 20. Call nested in an event handler — runs per interaction, not per
+    // render, so the ID is meant to be fresh each time.
+    {
+      filename: IN_SCOPE_FILE,
+      code: `
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+const MyComponent = () => {
+  const submit = () => {
+    const requestId = uuidv4Base62();
+    send(requestId);
+  };
+  return <button onClick={submit}>Send</button>;
+};
+`,
+    },
+
+    // 21. Plain camelCase helper is not a component or hook, so a per-call ID
+    // is the expected behaviour.
+    {
+      filename: IN_SCOPE_FILE,
+      code: `
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+const buildPayload = () => {
+  const requestId = uuidv4Base62();
+  return { requestId };
+};
+`,
+    },
+
+    // 22. Same top-level assignment, but outside the enforced directories.
+    // Kept JSX-free because the out-of-scope fixture is a .ts path.
+    {
+      filename: OUT_OF_SCOPE_FILE,
+      code: `
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+const MyComponent = () => {
+  const id = uuidv4Base62();
+  return id;
+};
+`,
+    },
   ],
 
   invalid: [
@@ -604,6 +659,62 @@ export function useExampleForm() {
 }
 `,
       errors: [{ messageId: 'preferUseBase62IdHook' }],
+    },
+
+    // 24. Top-level assignment in a component: regenerates the ID on every
+    // render. This is the only shape that reports preferUseBase62IdTopLevel,
+    // and #1484 found the branch had no coverage at all.
+    {
+      filename: IN_SCOPE_FILE,
+      code: `
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+const MyComponent = () => {
+  const id = uuidv4Base62();
+  return <div id={id} />;
+};
+`,
+      errors: [{ messageId: 'preferUseBase62IdTopLevel' }],
+    },
+
+    // 25. The import may be aliased; tracking is by local binding, not by the
+    // exported name.
+    {
+      filename: IN_SCOPE_FILE,
+      code: `
+import { uuidv4Base62 as makeId } from 'functions/src/util/uuidv4Base62';
+const MyComponent = () => {
+  const id = makeId();
+  return <div id={id} />;
+};
+`,
+      errors: [{ messageId: 'preferUseBase62IdTopLevel' }],
+    },
+
+    // 26. Function-declaration component form, not just the arrow form.
+    {
+      filename: IN_SCOPE_FILE,
+      code: `
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+export function MyComponent() {
+  const id = uuidv4Base62();
+  return <div id={id} />;
+}
+`,
+      errors: [{ messageId: 'preferUseBase62IdTopLevel' }],
+    },
+
+    // 27. Custom hooks re-render with their caller, so the same instability
+    // applies there.
+    {
+      filename: IN_SCOPE_HOOK,
+      code: `
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+export function useExampleForm() {
+  const id = uuidv4Base62();
+  return { id };
+}
+`,
+      errors: [{ messageId: 'preferUseBase62IdTopLevel' }],
     },
   ],
 });
