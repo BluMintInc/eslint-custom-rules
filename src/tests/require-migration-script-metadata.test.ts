@@ -44,7 +44,6 @@ export default () => null;
       },
       {
         code: `
-/* eslint-disable */
 /**
  * Legacy callable script
  */
