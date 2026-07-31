@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.46",
+    "date": "2026-07-31T07:08:55.415Z",
+    "rules": [
+      {
+        "name": "enforce-snapshot-state-narrowing",
+        "changeType": "fix",
+        "issues": [
+          1505
+        ],
+        "summary": "make the guardFunctions option actually select the emitted guard name (closes #1505)"
+      }
+    ]
+  },
+  {
     "version": "1.20.45",
     "date": "2026-07-31T06:37:56.216Z",
     "rules": [
