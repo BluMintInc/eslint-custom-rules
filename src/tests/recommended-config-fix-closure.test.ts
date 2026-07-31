@@ -411,16 +411,6 @@ export const FIX_INDUCED_BASELINE: Record<string, string> = {
   'require-hooks-default-params -> react-memoize-literals':
     'the `= {}` default parameter the fix adds is an object literal recreated on every render',
 
-  // --- The fix produces a shape a second rule wants collapsed further.
-  // Open question: should the shorthand fixer decline for a single-child
-  // fragment (which no-useless-fragment says should not exist at all), or is the
-  // two-pass `--fix` convergence `<React.Fragment><X /></React.Fragment>` ->
-  // `<><X /></>` -> `<X />` the intended path? Reachable only since #1499 made
-  // the documented snippet parse; before that the fence held two statements and
-  // ran no rule at all.
-  'prefer-fragment-shorthand -> no-useless-fragment':
-    'a single-child <React.Fragment> becomes a single-child <>, which is exactly the useless fragment no-useless-fragment reports',
-
   // --- The fix changes what a pre-existing line comment sits above.
   // Open question: should a fixer relocate or rewrite comments it strands?
   'enforce-dynamic-firebase-imports -> prefer-block-comments-for-declarations':

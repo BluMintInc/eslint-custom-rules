@@ -13,16 +13,18 @@ Prefer the fragment shorthand `<>...</>` instead of the verbose `<React.Fragment
 ### Examples of **incorrect** code for this rule:
 
 ```jsx
-<React.Fragment>Hello World</React.Fragment>;
-<React.Fragment><ChildComponent /></React.Fragment>;
+<React.Fragment>Hello <strong>World</strong></React.Fragment>;
+<React.Fragment><ChildComponent /><SiblingComponent /></React.Fragment>;
 ```
 
 ### Examples of **correct** code for this rule:
 
 ```jsx
-<>Hello World</>;
-<><ChildComponent /></>;
+<>Hello <strong>World</strong></>;
+<><ChildComponent /><SiblingComponent /></>;
 ```
+
+Each example wraps more than one child. A fragment around a single child — `<><ChildComponent /></>` — is redundant no matter which syntax it uses, and `no-useless-fragment` reports it; return the child directly instead.
 
 ### When the long form is necessary
 
