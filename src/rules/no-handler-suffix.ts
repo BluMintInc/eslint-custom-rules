@@ -1,5 +1,9 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { minimatch } from 'minimatch';
+import {
+  PatternRejection,
+  compilePatternOption,
+} from '../utils/compilePatternOption';
 import { createRule } from '../utils/createRule';
 
 type Options = [
@@ -39,6 +43,14 @@ function isUnsafeAllowPattern(pattern: string): boolean {
   const nestedQuantifierPattern = /\((?:[^()\\]|\\.)*[+*{][^)]*\)\s*[+*{]/;
   return nestedQuantifierPattern.test(pattern);
 }
+
+// A pattern that compiles can still hang the linter, so allowlist sources are
+// refused for catastrophic-backtracking risk as well as for syntax.
+const UNSAFE_ALLOW_PATTERN_REJECTION: PatternRejection = {
+  isRejected: isUnsafeAllowPattern,
+  describe: (optionName) =>
+    `unsafe ${optionName} (avoid nested quantifiers that risk catastrophic backtracking)`,
+};
 
 function getStaticKeyName(
   key:
@@ -187,43 +199,13 @@ export const noHandlerSuffix = createRule<Options, MessageIds>({
     const resolvedOptions = { ...DEFAULT_OPTIONS, ...(options ?? {}) };
     const allowNames = new Set(resolvedOptions.allowNames);
     const interfaceAllowlist = new Set(resolvedOptions.interfaceAllowlist);
-    const invalidAllowPatterns: string[] = [];
-    const unsafeAllowPatterns: string[] = [];
-    const allowPatterns = (resolvedOptions.allowPatterns ?? []).flatMap(
-      (pattern) => {
-        try {
-          if (isUnsafeAllowPattern(pattern)) {
-            unsafeAllowPatterns.push(pattern);
-            return [];
-          }
-          return [new RegExp(pattern)];
-        } catch (error: unknown) {
-          const reason =
-            error && typeof error === 'object' && 'message' in error
-              ? ` (${String((error as { message?: string }).message)})`
-              : '';
-          invalidAllowPatterns.push(`${pattern}${reason}`);
-          return [];
-        }
-      },
+    const allowPatterns = compilePatternOption(
+      'no-handler-suffix',
+      'allowPatterns',
+      resolvedOptions.allowPatterns ?? [],
+      undefined,
+      UNSAFE_ALLOW_PATTERN_REJECTION,
     );
-
-    if (invalidAllowPatterns.length > 0 || unsafeAllowPatterns.length > 0) {
-      const errorParts: string[] = [];
-      if (invalidAllowPatterns.length > 0) {
-        errorParts.push(
-          `invalid allowPatterns: ${invalidAllowPatterns.join(', ')}`,
-        );
-      }
-      if (unsafeAllowPatterns.length > 0) {
-        errorParts.push(
-          `unsafe allowPatterns (avoid nested quantifiers that risk catastrophic backtracking): ${unsafeAllowPatterns.join(
-            ', ',
-          )}`,
-        );
-      }
-      throw new Error(`no-handler-suffix: ${errorParts.join('; ')}`);
-    }
 
     if (isInAllowedFile(filename, resolvedOptions.allowFilePatterns ?? [])) {
       return {};

@@ -1,4 +1,5 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { compilePatternOption } from '../utils/compilePatternOption';
 import { createRule } from '../utils/createRule';
 
 type Options = [
@@ -498,37 +499,15 @@ export const enforceM3SentenceCase = createRule<Options, MessageIds>({
       ...(options.ignoredWords ?? []),
     ]);
 
-    // `ignorePatterns` entries are regex source strings, but the schema can only
-    // check that each element is a string. Compiling them unguarded lets a
-    // malformed source escape `create()` as an opaque `Error while loading
-    // rule …` that aborts the whole lint run while naming neither the option nor
-    // the offending value. Every failure is collected and rethrown as a single
-    // actionable configuration error: dropping the pattern silently would leave
-    // the consumer's exception list inert, so text they deliberately excluded
-    // would start getting reported with no indication why.
-    const invalidIgnorePatterns: string[] = [];
-    const ignorePatternRegexes = (options.ignorePatterns ?? []).flatMap(
-      (pattern) => {
-        try {
-          return [new RegExp(pattern)];
-        } catch (error: unknown) {
-          const reason =
-            error && typeof error === 'object' && 'message' in error
-              ? ` (${String((error as { message?: string }).message)})`
-              : '';
-          invalidIgnorePatterns.push(`${pattern}${reason}`);
-          return [];
-        }
-      },
+    // Rejecting a malformed `ignorePatterns` entry rather than dropping it keeps
+    // the consumer's exception list honest: a silently discarded pattern would
+    // make text they deliberately excluded start getting reported with no
+    // indication why.
+    const ignorePatternRegexes = compilePatternOption(
+      'enforce-m3-sentence-case',
+      'ignorePatterns',
+      options.ignorePatterns ?? [],
     );
-
-    if (invalidIgnorePatterns.length > 0) {
-      throw new Error(
-        `enforce-m3-sentence-case: invalid ignorePatterns: ${invalidIgnorePatterns.join(
-          ', ',
-        )}`,
-      );
-    }
 
     const allowListSet = new Set(options.allowList ?? []);
 
