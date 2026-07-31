@@ -3,20 +3,19 @@ import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
 import { createSuppressionChecker } from '../utils/disableDirectives';
 import { MICRODIFF_MODULES } from '../utils/microdiffModules';
+import {
+  FAST_DEEP_EQUAL_MODULES,
+  fastDeepEqualImport,
+} from '../utils/fastDeepEqualModules';
 
 type MessageIds = 'useFastDeepEqual' | 'addFastDeepEqualImport';
-
-const FAST_DEEP_EQUAL_MODULES = new Set([
-  'fast-deep-equal',
-  'fast-deep-equal/es6',
-]);
 
 const DIFF_EXPORT_NAME = 'diff';
 
 /**
  * Whether a declaration imports values — a `import type ...` declaration binds
  * nothing at runtime, so it neither supplies a callable `diff` nor satisfies
- * the `fast-deep-equal` import the fix emits.
+ * the fast-deep-equal import the fix emits.
  */
 function isValueImport(declaration: TSESTree.ImportDeclaration): boolean {
   return declaration.importKind !== 'type';
@@ -39,6 +38,21 @@ function bindsMicrodiffDiff(specifier: TSESTree.ImportClause): boolean {
     specifier.type === AST_NODE_TYPES.ImportSpecifier &&
     specifier.importKind !== 'type' &&
     specifier.imported.name === DIFF_EXPORT_NAME
+  );
+}
+
+/**
+ * Whether a specifier binds a callable equality function rather than the module
+ * object: the default export the package is, or a named specifier of it. A
+ * namespace import binds the module, and a bare `import '...'` binds nothing at
+ * all — reading either as the file's equality function leaves the emitted
+ * `isEqual(...)` call with no declaration behind it.
+ */
+function bindsFastDeepEqualFunction(specifier: TSESTree.ImportClause): boolean {
+  return (
+    specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
+    (specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+      specifier.importKind !== 'type')
   );
 }
 
@@ -100,9 +114,9 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
         'Why it matters: `{{diffName}}` allocates a full change list (paths, types, values) before you compare it to zero, which hides the boolean intent and wastes memory/time.\n' +
         'How to fix: Call `{{fastEqualName}}(left, right)` for equality (or prefix with `!` for inequality) using the same two arguments instead of counting diff length.',
       addFastDeepEqualImport:
-        "What's wrong: This file checks equality via `{{diffName}}(...).length` but does not import `fast-deep-equal`.\n" +
-        'Why it matters: Without `fast-deep-equal`, equality checks keep building diff entries just to count them, adding overhead and obscuring intent.\n' +
-        'How to fix: Add a default import for `fast-deep-equal` as `{{fastEqualName}}` and use `{{fastEqualName}}(a, b)` for equality checks.',
+        "What's wrong: This file checks equality via `{{diffName}}(...).length` but does not import a deep-equality function.\n" +
+        'Why it matters: Without `@blumintinc/fast-deep-equal`, equality checks keep building diff entries just to count them, adding overhead and obscuring intent.\n' +
+        'How to fix: Add a default import from `@blumintinc/fast-deep-equal` as `{{fastEqualName}}` and use `{{fastEqualName}}(a, b)` for equality checks.',
     },
   },
   defaultOptions: [],
@@ -116,8 +130,8 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
     let plannedFastDeepEqualImport = false;
 
     /**
-     * The `import ... from 'fast-deep-equal'` statement rides on a single
-     * violation's fix, so that violation is the file's import carrier. A
+     * The `import ... from '@blumintinc/fast-deep-equal'` statement rides on a
+     * single violation's fix, so that violation is the file's import carrier. A
      * suppressed carrier would take the import down with it while the surviving
      * violations still emit `isEqual(...)` calls, leaving them unbound.
      */
@@ -554,11 +568,15 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
     }
 
     /**
-     * The `import ... from 'fast-deep-equal'` edit, scheduled at most once per
-     * file. Claiming the carrier slot is a side effect, so this runs last —
-     * after every reason to decline the fix has been ruled out — otherwise a
-     * declining violation takes the import down with it and leaves the
-     * surviving violations' `isEqual(...)` calls unbound.
+     * The `import ... from '@blumintinc/fast-deep-equal'` edit, scheduled at
+     * most once per file. Claiming the carrier slot is a side effect, so this
+     * runs last — after every reason to decline the fix has been ruled out —
+     * otherwise a declining violation takes the import down with it and leaves
+     * the surviving violations' `isEqual(...)` calls unbound.
+     *
+     * The specifier is the scoped fork: it is the dependency this codebase
+     * declares, so any other name would be written as an import that resolves
+     * nowhere.
      */
     function planFastDeepEqualImport(
       fixer: TSESLint.RuleFixer,
@@ -568,6 +586,7 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
       }
       plannedFastDeepEqualImport = true;
 
+      const importStatement = fastDeepEqualImport(fastDeepEqualImportName);
       const importDeclarations = sourceCode.ast.body.filter(
         (statement): statement is TSESTree.ImportDeclaration =>
           statement.type === AST_NODE_TYPES.ImportDeclaration,
@@ -579,19 +598,9 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
         microdiffImport ?? importDeclarations[importDeclarations.length - 1];
 
       if (anchor) {
-        return [
-          fixer.insertTextAfter(
-            anchor,
-            `\nimport ${fastDeepEqualImportName} from 'fast-deep-equal';`,
-          ),
-        ];
+        return [fixer.insertTextAfter(anchor, `\n${importStatement}`)];
       }
-      return [
-        fixer.insertTextBeforeRange(
-          [0, 0],
-          `import ${fastDeepEqualImportName} from 'fast-deep-equal';\n`,
-        ),
-      ];
+      return [fixer.insertTextBeforeRange([0, 0], `${importStatement}\n`)];
     }
 
     /**
@@ -707,8 +716,17 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
           });
         }
 
-        // Check for fast-deep-equal import
-        if (FAST_DEEP_EQUAL_MODULES.has(importSource)) {
+        // An equality function the file already has, under any of the
+        // specifiers that resolve to one — the scoped fork this codebase
+        // depends on, its React entry point, and upstream. Missing one of them
+        // costs the fix twice over: a second import of a function already in
+        // scope, and, when that import's local name is the one the fix emits, a
+        // collision with it that makes the fix decline outright and leaves the
+        // report with no remedy.
+        if (
+          FAST_DEEP_EQUAL_MODULES.has(importSource) &&
+          node.specifiers.some(bindsFastDeepEqualFunction)
+        ) {
           hasFastDeepEqualImport = true;
           // Get the local name of the imported isEqual function
           node.specifiers.forEach((specifier) => {
