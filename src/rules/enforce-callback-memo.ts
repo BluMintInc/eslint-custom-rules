@@ -1,5 +1,6 @@
 import { createRule } from '../utils/createRule';
 import { TSESTree, AST_NODE_TYPES } from '@typescript-eslint/utils';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds = 'enforceCallback' | 'enforceMemo';
 
@@ -245,6 +246,15 @@ export default createRule<[], MessageIds>({
         !node.value ||
         node.value.type !== AST_NODE_TYPES.JSXExpressionContainer
       ) {
+        return;
+      }
+
+      // The only remediation this rule offers is a hook call, which is legal
+      // solely inside a component or a hook. Module-scope JSX, a plain helper
+      // that happens to build JSX, and JSX rendered from a test body are all
+      // outside any render path, so wrapping there would throw
+      // "Invalid hook call" while saving no re-render.
+      if (!ASTHelpers.isInsideComponentOrHook(node, context)) {
         return;
       }
 
