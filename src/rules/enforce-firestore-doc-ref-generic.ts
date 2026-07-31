@@ -9,6 +9,7 @@
 
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds = 'missingGeneric' | 'invalidGeneric';
 
@@ -391,7 +392,81 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
         return true;
       }
 
+      // Resolve the binding through the scope chain so that a typed collection
+      // stored in a variable still supplies the document generic to .doc().
+      if (isTypedCollectionBinding(node)) {
+        return true;
+      }
+
       return false;
+    }
+
+    /**
+     * Resolves an identifier to its declaration and reports whether that
+     * declaration provably yields a typed CollectionReference.
+     *
+     * Deliberately conservative: only immutable (`const`) bindings with a
+     * single definition are followed, and only for one hop. An alias such as
+     * `const b = a;` is not resolved because chasing arbitrary dataflow
+     * syntactically produces unsound exemptions; `let`/`var` are refused
+     * because a later assignment can replace the value with an untyped
+     * collection. Anything unresolvable (parameters, imports, destructuring)
+     * keeps reporting, since the rule cannot prove the reference is typed.
+     */
+    function isTypedCollectionBinding(node: TSESTree.Identifier): boolean {
+      const scope = ASTHelpers.getScope(context, node);
+      const variable = ASTHelpers.findVariableInScope(scope, node.name);
+      if (!variable || variable.defs.length !== 1) {
+        return false;
+      }
+
+      const def = variable.defs[0];
+      if (
+        def.type !== 'Variable' ||
+        def.node.type !== AST_NODE_TYPES.VariableDeclarator ||
+        def.parent?.type !== AST_NODE_TYPES.VariableDeclaration ||
+        def.parent.kind !== 'const'
+      ) {
+        return false;
+      }
+
+      const declarator = def.node;
+      if (
+        declarator.id.type === AST_NODE_TYPES.Identifier &&
+        declarator.id.typeAnnotation
+      ) {
+        return hasCollectionReferenceType(
+          declarator.id.typeAnnotation.typeAnnotation,
+        );
+      }
+
+      return isTypedCollectionInitializer(declarator.init);
+    }
+
+    function isTypedCollectionInitializer(
+      init: TSESTree.Expression | null | undefined,
+    ): boolean {
+      if (!init) {
+        return false;
+      }
+
+      // An explicit assertion states the schema just as an annotation does.
+      if (init.type === AST_NODE_TYPES.TSAsExpression) {
+        return hasCollectionReferenceType(init.typeAnnotation);
+      }
+
+      // Mirrors the chained `db.collection<T>('x').doc('y')` detection: the
+      // presence of the type argument is what matters here. An `any`/`{}`
+      // argument is already reported on the collection call itself, so it is
+      // not reported a second time on the derived document reference.
+      return (
+        init.type === AST_NODE_TYPES.CallExpression &&
+        init.callee.type === AST_NODE_TYPES.MemberExpression &&
+        init.callee.property.type === AST_NODE_TYPES.Identifier &&
+        init.callee.property.name === 'collection' &&
+        !!init.typeParameters &&
+        init.typeParameters.params.length > 0
+      );
     }
 
     function checkCallExpressionForCollectionReference(
