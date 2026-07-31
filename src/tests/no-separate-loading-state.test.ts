@@ -1,4 +1,5 @@
 import { ESLintUtils, TSESLint } from '@typescript-eslint/utils';
+import { Linter, Rule } from 'eslint';
 import { noSeparateLoadingState } from '../rules/no-separate-loading-state';
 
 const ruleTester = new ESLintUtils.RuleTester({
@@ -248,4 +249,127 @@ ruleTester.run('no-separate-loading-state', noSeparateLoadingState, {
       errors: [errorWithMessage('fetchingUsers')],
     },
   ],
+});
+
+// Issue #1535: `patterns` entries are compiled with `new RegExp` inside
+// `create()`, so a malformed source string used to escape as an opaque
+// `Error while loading rule …` that aborts the whole lint run. RuleTester cannot
+// express this — the throw happens at rule-load time, before a fixture is
+// linted — so these cases drive the real `Linter`.
+describe('no-separate-loading-state: patterns validation (issue #1535)', () => {
+  const RULE_ID = '@blumintinc/blumint/no-separate-loading-state';
+
+  const lint = (code: string, options?: Record<string, unknown>) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      noSeparateLoadingState as unknown as Rule.RuleModule,
+    );
+    return linter.verify(
+      code,
+      {
+        parser: '@typescript-eslint/parser',
+        parserOptions: {
+          ecmaVersion: 2020 as const,
+          sourceType: 'module' as const,
+          ecmaFeatures: { jsx: true },
+        },
+        rules: {
+          [RULE_ID]: options ? ['error' as const, options] : ('error' as const),
+        },
+      },
+      'Component.tsx',
+    );
+  };
+
+  // Same shape as CUSTOM_MATCHED_STATE but with a leading capital, so only a
+  // case-insensitive `^fetching` matches it.
+  const CASE_VARIANT_STATE = `
+const [FetchingUsers, setFetchingUsers] = useState(false);
+
+async function loadUsers() {
+  setFetchingUsers(true);
+  await fetchUsers();
+  setFetchingUsers(false);
+}
+`;
+
+  it('reports the offending value for a glob mistaken for a regex', () => {
+    expect(() =>
+      lint(DEFAULT_MATCHED_STATE, { patterns: ['*Loading'] }),
+    ).toThrow(/invalid patterns/i);
+    expect(() =>
+      lint(DEFAULT_MATCHED_STATE, { patterns: ['*Loading'] }),
+    ).toThrow(/\*Loading/);
+  });
+
+  it('names the rule and the underlying regex reason', () => {
+    expect(() =>
+      lint(DEFAULT_MATCHED_STATE, { patterns: ['*Loading'] }),
+    ).toThrow(
+      /no-separate-loading-state: invalid patterns: \*Loading \(.*Nothing to repeat.*\)/,
+    );
+  });
+
+  it.each([['*Loading'], ['['], ['(foo'], ['C++']])(
+    'throws an actionable error for the malformed pattern %j',
+    (pattern) => {
+      let thrown: unknown;
+      try {
+        lint(DEFAULT_MATCHED_STATE, { patterns: [pattern] });
+      } catch (error: unknown) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(Error);
+      const message = (thrown as Error).message;
+      expect(message).toMatch(/invalid patterns/i);
+      expect(message).toContain(pattern);
+    },
+  );
+
+  it('reports every malformed pattern in a single error, not just the first', () => {
+    let thrown: unknown;
+    try {
+      lint(DEFAULT_MATCHED_STATE, {
+        patterns: ['*Loading', '^fetching', '(foo', 'C++'],
+      });
+    } catch (error: unknown) {
+      thrown = error;
+    }
+    const message = (thrown as Error).message;
+    expect(message).toContain('*Loading');
+    expect(message).toContain('(foo');
+    expect(message).toContain('C++');
+    // The well-formed neighbour is not accused.
+    expect(message).not.toContain('^fetching');
+  });
+
+  it('keeps compiling well-formed patterns with the case-insensitive flag', () => {
+    // Falsifiability: the same sources report differently with and without the
+    // custom list, so a fix that ignored `patterns` would fail here.
+    expect(lint(CASE_VARIANT_STATE)).toHaveLength(0);
+    expect(
+      lint(CASE_VARIANT_STATE, { patterns: FETCHING_PATTERNS }),
+    ).toHaveLength(1);
+    expect(lint(DEFAULT_MATCHED_STATE)).toHaveLength(1);
+    expect(
+      lint(DEFAULT_MATCHED_STATE, { patterns: FETCHING_PATTERNS }),
+    ).toHaveLength(0);
+  });
+
+  it('accepts an empty or absent patterns list', () => {
+    expect(() => lint(DEFAULT_MATCHED_STATE, { patterns: [] })).not.toThrow();
+    expect(() => lint(DEFAULT_MATCHED_STATE, {})).not.toThrow();
+    expect(() => lint(DEFAULT_MATCHED_STATE)).not.toThrow();
+    // An absent list falls back to LOADING_PATTERNS; an explicit empty list
+    // replaces them, matching nothing.
+    expect(lint(DEFAULT_MATCHED_STATE, {})).toHaveLength(1);
+    expect(lint(DEFAULT_MATCHED_STATE)).toHaveLength(1);
+    expect(lint(DEFAULT_MATCHED_STATE, { patterns: [] })).toHaveLength(0);
+  });
 });

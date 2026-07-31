@@ -30,6 +30,14 @@ Not provided – switching to a sentinel or discriminated union requires manual 
 
 - `patterns` (`string[]`, optional): Custom regex strings for detecting loading-state variable names. Defaults to `['^is.*Loading$', '^isLoading.+']`.
 
+Each entry is a **regular-expression source string**, not a glob: `*Loading` is invalid, while `.*Loading` matches the same names a glob author intends. Every entry is compiled with the case-insensitive `i` flag, so `^fetching` also matches `FetchingUsers`. Supplying `patterns` **replaces** the defaults rather than extending them; an explicit empty list therefore matches nothing, while omitting the option keeps the built-in patterns.
+
+An entry that is not a valid regular expression is a configuration error and fails fast — the rule throws instead of silently dropping the entry, because a discarded pattern would leave the detection list inert while appearing configured. All malformed entries are reported together, each with the reason it failed to compile:
+
+```text
+no-separate-loading-state: invalid patterns: *Loading (Invalid regular expression: /*Loading/i: Nothing to repeat)
+```
+
 ## Examples
 
 ### ❌ Incorrect

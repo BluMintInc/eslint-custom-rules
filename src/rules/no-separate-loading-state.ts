@@ -42,8 +42,40 @@ export const noSeparateLoadingState = createRule<Options, MessageIds>({
   },
   defaultOptions: [{}],
   create(context, [options]) {
-    const effectivePatterns =
-      options?.patterns?.map((p) => new RegExp(p, 'i')) ?? LOADING_PATTERNS;
+    // `patterns` entries are regex source strings, but the schema can only check
+    // that each element is a string. Compiling them unguarded lets a malformed
+    // source (a glob such as `*Loading`, say) escape `create()` as an opaque
+    // `Error while loading rule …` that aborts the whole lint run while naming
+    // neither the option nor the offending value. Every failure is collected and
+    // rethrown as a single actionable configuration error: falling back to
+    // `LOADING_PATTERNS` instead would leave the consumer's detection list inert
+    // while appearing configured, so names they meant to flag would go unreported
+    // with no indication why.
+    const invalidPatterns: string[] = [];
+    const configuredPatterns = options?.patterns?.flatMap((pattern) => {
+      try {
+        return [new RegExp(pattern, 'i')];
+      } catch (error: unknown) {
+        const reason =
+          error && typeof error === 'object' && 'message' in error
+            ? ` (${String((error as { message?: string }).message)})`
+            : '';
+        invalidPatterns.push(`${pattern}${reason}`);
+        return [];
+      }
+    });
+
+    if (invalidPatterns.length > 0) {
+      throw new Error(
+        `no-separate-loading-state: invalid patterns: ${invalidPatterns.join(
+          ', ',
+        )}`,
+      );
+    }
+
+    // An absent `patterns` falls back to the built-ins; an explicit empty list
+    // stays empty, so the option can disable name matching entirely.
+    const effectivePatterns = configuredPatterns ?? LOADING_PATTERNS;
 
     const setterTrackers: Array<{
       declarator: TSESTree.VariableDeclarator;
