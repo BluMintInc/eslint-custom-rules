@@ -1,3 +1,4 @@
+import { Linter, Rule } from 'eslint';
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { noRenderFunctionComponents } from '../rules/no-render-function-components';
 
@@ -352,4 +353,120 @@ ruleTesterJsx.run('no-render-function-components', noRenderFunctionComponents, {
       errors: [{ messageId: 'renderFunctionComponent' }],
     },
   ],
+});
+
+// Issue #1536: `allowNames` entries are compiled with `new RegExp` inside
+// `create()`, so a malformed source string used to escape as an opaque
+// `Error while loading rule …` that aborts the whole lint run. RuleTester cannot
+// express this — the throw happens at rule-load time, before a fixture is
+// linted — so these cases drive the real `Linter`.
+describe('no-render-function-components: allowNames validation (issue #1536)', () => {
+  const RULE_ID = '@blumintinc/blumint/no-render-function-components';
+
+  const lint = (code: string, options?: Record<string, unknown>) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      noRenderFunctionComponents as unknown as Rule.RuleModule,
+    );
+    return linter.verify(
+      code,
+      {
+        parser: '@typescript-eslint/parser',
+        parserOptions: {
+          ecmaVersion: 2020 as const,
+          sourceType: 'module' as const,
+          ecmaFeatures: { jsx: true },
+        },
+        rules: {
+          [RULE_ID]: options ? ['error' as const, options] : ('error' as const),
+        },
+      },
+      'Component.tsx',
+    );
+  };
+
+  // A `render*` function passed by reference into `.map` — flagged unless its
+  // name is exempted by `allowNames`.
+  const LEGACY_ROW_SOURCE = `
+const renderLegacyRow = (row) => <Row {...row} />;
+const Panel = ({ rows }) => <div>{rows.map(renderLegacyRow)}</div>;
+`;
+
+  it('reports the offending value for a glob mistaken for a regex', () => {
+    expect(() => lint(LEGACY_ROW_SOURCE, { allowNames: ['*Legacy'] })).toThrow(
+      /invalid allowNames/i,
+    );
+    expect(() => lint(LEGACY_ROW_SOURCE, { allowNames: ['*Legacy'] })).toThrow(
+      /\*Legacy/,
+    );
+  });
+
+  it('names the rule and the underlying regex reason', () => {
+    expect(() => lint(LEGACY_ROW_SOURCE, { allowNames: ['*Legacy'] })).toThrow(
+      /no-render-function-components: invalid allowNames: \*Legacy \(.*Nothing to repeat.*\)/,
+    );
+  });
+
+  it.each([['*Legacy'], ['['], ['(foo'], ['C++']])(
+    'throws an actionable error for the malformed pattern %j',
+    (pattern) => {
+      let thrown: unknown;
+      try {
+        lint(LEGACY_ROW_SOURCE, { allowNames: [pattern] });
+      } catch (error: unknown) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(Error);
+      const message = (thrown as Error).message;
+      expect(message).toMatch(/invalid allowNames/i);
+      expect(message).toContain(pattern);
+    },
+  );
+
+  it('reports every malformed pattern in a single error, not just the first', () => {
+    let thrown: unknown;
+    try {
+      lint(LEGACY_ROW_SOURCE, {
+        allowNames: ['*Legacy', '^renderLegacy', '(foo', 'C++'],
+      });
+    } catch (error: unknown) {
+      thrown = error;
+    }
+    const message = (thrown as Error).message;
+    expect(message).toContain('*Legacy');
+    expect(message).toContain('(foo');
+    expect(message).toContain('C++');
+    // The well-formed neighbour is not accused.
+    expect(message).not.toContain('^renderLegacy');
+  });
+
+  it('keeps compiling well-formed patterns and exempting the names they match', () => {
+    // Falsifiability: the same source is reported when the pattern is absent,
+    // so a fix that dropped `allowNames` entirely would fail here.
+    expect(lint(LEGACY_ROW_SOURCE)).toHaveLength(1);
+    expect(
+      lint(LEGACY_ROW_SOURCE, { allowNames: ['^renderLegacy'] }),
+    ).toHaveLength(0);
+    // A well-formed pattern that does NOT match still leaves the report intact.
+    expect(
+      lint(LEGACY_ROW_SOURCE, { allowNames: ['^renderModern'] }),
+    ).toHaveLength(1);
+  });
+
+  it('accepts an empty or absent allowNames list', () => {
+    expect(() => lint(LEGACY_ROW_SOURCE, { allowNames: [] })).not.toThrow();
+    expect(() => lint(LEGACY_ROW_SOURCE, {})).not.toThrow();
+    expect(() => lint(LEGACY_ROW_SOURCE)).not.toThrow();
+    // `allowNames` has no built-in defaults, so an absent list and an explicit
+    // empty list are equivalent: neither exempts anything.
+    expect(lint(LEGACY_ROW_SOURCE, { allowNames: [] })).toHaveLength(1);
+    expect(lint(LEGACY_ROW_SOURCE, {})).toHaveLength(1);
+    expect(lint(LEGACY_ROW_SOURCE)).toHaveLength(1);
+  });
 });
