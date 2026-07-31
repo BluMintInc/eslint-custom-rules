@@ -1,3 +1,10 @@
+## [1.20.43](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.42...v1.20.43) (2026-07-31)
+
+
+### Bug Fixes
+
+* **enforce-callback-memo:** only report inside a component or hook (closes [#1496](https://github.com/BluMintInc/eslint-custom-rules/issues/1496)) ([a5e8a82](https://github.com/BluMintInc/eslint-custom-rules/commit/a5e8a827df3e4bd1a45a7827cd08900eb9d67ae4))
+
 ## [1.20.42](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.41...v1.20.42) (2026-07-31)
 
 
