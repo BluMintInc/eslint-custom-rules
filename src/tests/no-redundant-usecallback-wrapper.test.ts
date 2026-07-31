@@ -106,6 +106,37 @@ function C() {
   return <button onClick={handle}/>;
 }`,
   },
+  // assumeAllUseAreMemoized: false leaves an unlisted use* hook untracked. Same
+  // code is reported once the flag is on (see the invalid section), so the flag
+  // is what drives the report, not the fixture.
+  {
+    code: `import { useCallback } from 'react';
+import { useMyCustomThing } from 'src/hooks/useMyCustomThing';
+
+function C() {
+  const signIn = useMyCustomThing();
+  const handle = useCallback(() => signIn(), [signIn]);
+  return <button onClick={handle}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: false }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+  },
+  // The assumption is scoped to the `use` prefix, not to any call result: a
+  // plain factory call returns no stability guarantee, so the wrapper stays.
+  {
+    code: `import { useCallback } from 'react';
+import { getSomething } from 'src/hooks/getSomething';
+
+function C() {
+  const signIn = getSomething();
+  const handle = useCallback(() => signIn(), [signIn]);
+  return <button onClick={handle}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+  },
 ];
 
 const invalid = [
@@ -278,6 +309,71 @@ function C() {
   const handle = signIn;
   return <button onClick={handle}/>;
 }`,
+  },
+  // assumeAllUseAreMemoized: true treats every `use`-prefixed call as a source
+  // of stable references, so a hook absent from memoizedHookNames is tracked.
+  {
+    code: `import { useCallback } from 'react';
+import { useMyCustomThing } from 'src/hooks/useMyCustomThing';
+
+function C() {
+  const signIn = useMyCustomThing();
+  const handle = useCallback(() => signIn(), [signIn]);
+  return <button onClick={handle}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+    errors: [redundantError('signIn')],
+    output: `import { useCallback } from 'react';
+import { useMyCustomThing } from 'src/hooks/useMyCustomThing';
+
+function C() {
+  const signIn = useMyCustomThing();
+  const handle = signIn;
+  return <button onClick={handle}/>;
+}`,
+  },
+  // Same assumption applied to the direct pass-through form.
+  {
+    code: `import { useCallback } from 'react';
+import { useMyCustomThing } from 'src/hooks/useMyCustomThing';
+
+function C() {
+  const signIn = useMyCustomThing();
+  const handle = useCallback(signIn, [signIn]);
+  return <button onClick={handle}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+    errors: [redundantError('signIn')],
+    output: `import { useCallback } from 'react';
+import { useMyCustomThing } from 'src/hooks/useMyCustomThing';
+
+function C() {
+  const signIn = useMyCustomThing();
+  const handle = signIn;
+  return <button onClick={handle}/>;
+}`,
+  },
+  // Namespaced hook call: the assumption reads the member property name, so
+  // `hooks.useMyCustomThing()` is tracked too. Member callbacks are reported
+  // without a fix — rebinding `svc.handle` would drop its `this`.
+  {
+    code: `import { useCallback } from 'react';
+import * as hooks from 'src/hooks';
+
+function C() {
+  const svc = hooks.useMyCustomThing();
+  const click = useCallback(() => svc.handle(), [svc]);
+  return <button onClick={click}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+    errors: [redundantError('svc.handle')],
+    output: null,
   },
 ];
 
