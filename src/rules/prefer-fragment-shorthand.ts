@@ -1,9 +1,8 @@
-import { TSESLint, TSESTree } from '@typescript-eslint/utils';
+import { TSESTree } from '@typescript-eslint/utils';
+import { createRule } from '../utils/createRule';
 
-export const preferFragmentShorthand: TSESLint.RuleModule<
-  'preferShorthand',
-  []
-> = {
+export const preferFragmentShorthand = createRule<[], 'preferShorthand'>({
+  name: 'prefer-fragment-shorthand',
   create(context) {
     return {
       JSXElement(node: TSESTree.JSXElement) {
@@ -43,4 +42,4 @@ export const preferFragmentShorthand: TSESLint.RuleModule<
     fixable: 'code',
   },
   defaultOptions: [],
-};
+});
