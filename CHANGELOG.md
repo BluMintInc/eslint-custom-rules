@@ -1,3 +1,10 @@
+## [1.20.49](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.48...v1.20.49) (2026-07-31)
+
+
+### Bug Fixes
+
+* **export-if-in-doubt:** recognize `export default <identifier>` as an export (closes [#1520](https://github.com/BluMintInc/eslint-custom-rules/issues/1520)) ([f53a3aa](https://github.com/BluMintInc/eslint-custom-rules/commit/f53a3aa77a424656eebd9787aef37e42a8dbff74))
+
 ## [1.20.48](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.47...v1.20.48) (2026-07-31)
 
 

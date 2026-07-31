@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.49",
+    "date": "2026-07-31T10:04:24.469Z",
+    "rules": [
+      {
+        "name": "export-if-in-doubt",
+        "changeType": "fix",
+        "issues": [
+          1520
+        ],
+        "summary": "recognize `export default <identifier>` as an export (closes #1520)"
+      }
+    ]
+  },
+  {
     "version": "1.20.48",
     "date": "2026-07-31T09:14:53.303Z",
     "rules": [
