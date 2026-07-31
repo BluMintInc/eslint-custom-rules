@@ -149,18 +149,27 @@ export const enforceObjectLiteralAsConst = createRule({
           node,
           messageId: 'enforceAsConst',
           fix(fixer) {
-            const text = sourceCode.getText(argument);
-
-            // If it's already a type assertion but not 'as const'
+            // A literal already carrying an explicit assertion states a contract
+            // the fix cannot preserve: `as const` produces a readonly,
+            // literal-typed shape that is structurally different from the
+            // asserted type, so rewriting `as SomeType` into `as const` silently
+            // changes what the function returns and can break the signature the
+            // assertion was written to satisfy. The diagnostic still holds — the
+            // author may well want `as const` — but choosing between the two
+            // types needs a human, so decline to fix (#1503).
+            //
+            // Any `TSAsExpression` reaching here is a non-`const` assertion; the
+            // `as const` case returns before the report. The angle-bracket form
+            // (`<SomeType>{...}`, a `TSTypeAssertion`) needs no branch here
+            // because it is never detected above — tsc rejects testing for it.
             if (argument.type === 'TSAsExpression') {
-              // Get the expression part (before the 'as')
-              const expressionText = sourceCode.getText(
-                (argument as TSESTree.TSAsExpression).expression,
-              );
-              return fixer.replaceText(argument, `${expressionText} as const`);
+              return null;
             }
 
-            return fixer.replaceText(argument, `${text} as const`);
+            return fixer.replaceText(
+              argument,
+              `${sourceCode.getText(argument)} as const`,
+            );
           },
         });
       },

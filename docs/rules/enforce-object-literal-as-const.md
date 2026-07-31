@@ -8,7 +8,7 @@
 
 An object or array literal returned from a function is widened by TypeScript: `return { role: 'admin' }` infers `{ role: string }`, and `return [group, groupRef]` infers `(GroupInfo | DocumentReference<GroupInfo>)[]` rather than the tuple the caller destructures. Marking the literal `as const` keeps the literal types and the tuple shape, and makes the returned value readonly so callers cannot mutate a value the producer treats as constant.
 
-This rule reports object and array literals returned directly from a function and auto-fixes by appending `as const`.
+This rule reports object and array literals returned directly from a function and auto-fixes by appending `as const`. One reported shape is deliberately left unfixed — see [A literal that already carries an assertion](#a-literal-that-already-carries-an-assertion).
 
 ## Rule Details
 
@@ -21,7 +21,17 @@ A `return` statement is reported when all of the following hold:
 
 Arrays returned from a React hook callback (`useMemo`, `useCallback`, or any `use*` hook) are also exempt, whatever their elements. These are memoized prop and data lists that flow into mutable or `readonly` array parameters downstream, and freezing them into readonly tuples produced false positives (see issues #511 and #1324). An **object** literal returned from a hook callback is still reported.
 
-A literal carrying a different assertion — `return { foo: 'bar' } as SomeType` — is reported too, and the fix replaces that assertion with `as const`.
+### A literal that already carries an assertion
+
+A literal carrying a different assertion — `return { foo: 'bar' } as SomeType` — is reported, but **not auto-fixed**. `--fix` leaves it exactly as written.
+
+The rewrite the fix would have to make is lossy. `as const` infers `{ readonly foo: 'bar' }`, which is a structurally different type from `SomeType`: property types narrow to literals and every property becomes readonly. Replacing the assertion would silently change what the function returns, and where the assertion was written to widen the literal to satisfy a signature, it would break that signature — an automatic, information-destroying edit. Which of the two types is wanted is a decision only the author can make, so the rule states the finding and stops there.
+
+Resolve it by hand in one of two ways: drop the assertion if `as const` was the intent, or move the declared type somewhere the rule does not inspect — a return type annotation on the function, or a typed local returned by name.
+
+The assertion must sit on the returned literal itself. One nested inside it — on an array element or a property value — does not suppress the fix, because appending `as const` to the outer literal preserves the inner assertion verbatim.
+
+The angle-bracket assertion form (`return <SomeType>{ foo: 'bar' }`, which is illegal in `.tsx` files) is not detected at all, so it is neither reported nor fixed.
 
 ### Examples of incorrect code
 
@@ -56,6 +66,23 @@ const config = useMemo(() => {
 // An identifier-element array outside a hook callback is reported
 function getHits() {
   return [ANY_GAME_HIT];
+}
+```
+
+```ts
+// Reported but NOT auto-fixed: rewriting `as SomeType` into `as const` would
+// discard the declared type
+type SomeType = { foo: string };
+function getData() {
+  return { foo: 'bar' } as SomeType;
+}
+```
+
+```ts
+// The assertion sits on an array element, not on the returned literal, so this
+// is reported AND fixed — to `[{ foo: 'bar' } as SomeType, other] as const`
+function getItems() {
+  return [{ foo: 'bar' } as SomeType, other];
 }
 ```
 
@@ -105,6 +132,16 @@ const useHits = (hits: readonly { id: string }[], hasQuery: boolean) => {
     return hits;
   }, [hits, hasQuery]);
 };
+```
+
+```ts
+// Resolving a reported `as SomeType` by hand: state the type on the signature
+// and return a named value, which the rule does not inspect
+type SomeType = { foo: string };
+function getData(): SomeType {
+  const data: SomeType = { foo: 'bar' };
+  return data;
+}
 ```
 
 ## When Not To Use It
