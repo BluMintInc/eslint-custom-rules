@@ -47,7 +47,8 @@ export const DEFAULT_IGNORED_LIBRARIES = [
   '@blumintinc/microdiff', // enforce-microdiff
   'microdiff', // enforce-microdiff, for files already on upstream
   'safe-stable-stringify', // enforce-safe-stringify
-  'fast-deep-equal', // fast-deep-equal-over-microdiff
+  '@blumintinc/fast-deep-equal', // fast-deep-equal-over-microdiff
+  'fast-deep-equal', // fast-deep-equal-over-microdiff, for files already on upstream
 ];
 
 export const DEFAULT_INTERNAL_PREFIXES = ['src/', 'functions/'];
