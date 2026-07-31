@@ -32,7 +32,7 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
       callbackPropPrefix:
         'Callback prop "{{propName}}" is a function but lacks the "on" prefix. ' +
         'Consistent "on" prefixes signal event handlers to consumers and distinguish callbacks from data props. ' +
-        'Rename to "on{{eventName}}".',
+        'Rename to "on{{eventName}}" here, in the props type that declares it, and in every reader of that prop.',
       callbackFunctionPrefix:
         'Function "{{functionName}}" uses the "handle" prefix. ' +
         'The "handle" prefix is redundant and less descriptive than action-oriented verb phrases. ' +
@@ -298,16 +298,24 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
           ) {
             const eventName =
               propName.charAt(0).toUpperCase() + propName.slice(1);
+            // Reported without an autofix (Bug #1522). A JSX attribute name is
+            // one end of a props contract: the other end is the declaration
+            // that binds the name — a props `type`/`interface`, a
+            // `JSX.IntrinsicElements` augmentation for host elements — plus
+            // every reader of that member (`props.validate`, destructuring) and
+            // every other call site of the component. Rewriting only the
+            // attribute yields TS2322, and renaming the local declaration
+            // as well merely relocates the break: readers in the same file fail
+            // with TS2551 and call sites in other files (which a single-file
+            // fixer cannot see, let alone edit atomically) fail with TS2322.
+            // No subset of the rename is safe to apply in isolation, so the
+            // report carries the full instruction instead of a broken fix.
             context.report({
               node,
               messageId: 'callbackPropPrefix',
               data: {
                 propName,
                 eventName,
-              },
-              fix(fixer) {
-                // Convert camelCase to PascalCase for the event name
-                return fixer.replaceText(node.name, `on${eventName}`);
               },
             });
           }

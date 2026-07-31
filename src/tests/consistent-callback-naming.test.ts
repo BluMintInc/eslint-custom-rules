@@ -380,6 +380,107 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
     },
   ],
   invalid: [
+    // Bug #1522: the prop rename spans the JSX usage AND the props type
+    // declaration that binds the name (here `ChildProps`, plus every reader of
+    // it such as `props.validate`). ESLint fixes a single file and cannot
+    // rename the whole contract, so the violation is reported without an
+    // autofix — rewriting only the JSX attribute produced TS2322.
+    {
+      code: `
+        type ChildProps = {
+          validate: (value: string) => void;
+        };
+        const Child = (props: ChildProps) => <div>{String(props.validate)}</div>;
+        const fn = (v: string) => {};
+        const Parent = () => <Child validate={fn} />;
+      `,
+      errors: [{ messageId: 'callbackPropPrefix' }],
+      output: null,
+    },
+    // Bug #1522: an `interface` declares the contract exactly as a `type` alias
+    // does, and the component destructures the prop — the rename would have to
+    // reach the member, the binding and every reference to it.
+    {
+      code: `
+        interface ChildProps {
+          validate: (value: string) => void;
+        }
+        const Child = ({ validate }: ChildProps) => <div>{String(validate)}</div>;
+        const fn = (v: string) => {};
+        const Parent = () => <Child validate={fn} />;
+      `,
+      errors: [{ messageId: 'callbackPropPrefix' }],
+      output: null,
+    },
+    // Bug #1522: an optional member on an in-file interface. The `?` sits
+    // between the name token and the type, so a naive rename is doubly unsafe.
+    {
+      code: `
+        interface ChildProps {
+          submit?: (value: string) => void;
+        }
+        const Child = (props: ChildProps) => <div>{String(props.submit)}</div>;
+        const fn = (v: string) => {};
+        const Parent = () => <Child submit={fn} />;
+      `,
+      errors: [{ messageId: 'callbackPropPrefix' }],
+      output: null,
+    },
+    // Bug #1522: the props type lives in another module. The declaration is
+    // outside the fixed file entirely, so renaming the attribute alone would
+    // half-rename the contract with no chance of repairing the other end.
+    {
+      code: `
+        import type { ChildProps } from './ChildProps';
+        const Child = (props: ChildProps) => <div />;
+        const fn = (v: string) => {};
+        const Parent = () => <Child validate={fn} />;
+      `,
+      errors: [{ messageId: 'callbackPropPrefix' }],
+      output: null,
+    },
+    // Bug #1522: the component itself is imported — neither its props type nor
+    // its other call sites are visible here.
+    {
+      code: `
+        import { Child } from './Child';
+        const fn = (v: string) => {};
+        const Parent = () => <Child validate={fn} />;
+      `,
+      errors: [{ messageId: 'callbackPropPrefix' }],
+      output: null,
+    },
+    // Bug #1522: a component whose props type cannot be resolved syntactically
+    // (an inline literal on an untyped local). Nothing identifies where the
+    // name is bound, so the rename cannot be completed.
+    {
+      code: `
+        const Child = (props: { validate: (value: string) => void }) => <div />;
+        const fn = (v: string) => {};
+        const Parent = () => <Child validate={fn} />;
+      `,
+      errors: [{ messageId: 'callbackPropPrefix' }],
+      output: null,
+    },
+    // Bug #1522: several call sites of the same locally declared component. A
+    // fixer renaming the declaration once would have to keep every usage in
+    // step; both usages are reported and neither is rewritten.
+    {
+      code: `
+        type ChildProps = {
+          validate: (value: string) => void;
+        };
+        const Child = (props: ChildProps) => <div>{String(props.validate)}</div>;
+        const fn = (v: string) => {};
+        const First = () => <Child validate={fn} />;
+        const Second = () => <Child validate={fn} />;
+      `,
+      errors: [
+        { messageId: 'callbackPropPrefix' },
+        { messageId: 'callbackPropPrefix' },
+      ],
+      output: null,
+    },
     // Bug #1182 control: an exclusively-function prop on a typed component must
     // still be flagged — the union exemption must not suppress real callbacks.
     // The signature returns void (a genuine event handler), so the #1262
@@ -394,14 +495,8 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         const Parent = () => <Child validate={fn} />;
       `,
       errors: [{ messageId: 'callbackPropPrefix' }],
-      output: `
-        type ChildProps = {
-          validate: (value: string) => void;
-        };
-        const Child = (props: ChildProps) => <div />;
-        const fn = (v: string) => {};
-        const Parent = () => <Child onValidate={fn} />;
-      `,
+      // Bug #1522: `ChildProps.validate` binds the prop name, so no autofix.
+      output: null,
     },
     // Bug #1182 control: an optional pure callback (function | undefined) is not
     // a mixed union, so it must still be flagged. Void return => event handler,
@@ -416,14 +511,9 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         const Parent = () => <Child submit={fn} />;
       `,
       errors: [{ messageId: 'callbackPropPrefix' }],
-      output: `
-        type ChildProps = {
-          submit?: (value: string) => void;
-        };
-        const Child = (props: ChildProps) => <div />;
-        const fn = (v: string) => {};
-        const Parent = () => <Child onSubmit={fn} />;
-      `,
+      // Bug #1522: an optional member binds the name just as a required one
+      // does, so the rename still spans the declaration — no autofix.
+      output: null,
     },
     // Bug #1182 control: a nullable pure callback (function | null) is not a
     // mixed union once null is filtered, so it must still be flagged.
@@ -437,14 +527,8 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         const Parent = () => <Child submit={fn} />;
       `,
       errors: [{ messageId: 'callbackPropPrefix' }],
-      output: `
-        type ChildProps = {
-          submit: (() => void) | null;
-        };
-        const Child = (props: ChildProps) => <div />;
-        const fn = () => {};
-        const Parent = () => <Child onSubmit={fn} />;
-      `,
+      // Bug #1522: reported, not fixed.
+      output: null,
     },
     // Bug #1182 control: a union whose members are all functions has no
     // non-function member, so it must still be flagged. Every member returns
@@ -459,14 +543,8 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         const Parent = () => <Child validate={fn} />;
       `,
       errors: [{ messageId: 'callbackPropPrefix' }],
-      output: `
-        type ChildProps = {
-          validate: ((v: string) => void) | ((v: number) => void);
-        };
-        const Child = (props: ChildProps) => <div />;
-        const fn = (v: string) => {};
-        const Parent = () => <Child onValidate={fn} />;
-      `,
+      // Bug #1522: reported, not fixed.
+      output: null,
     },
     // Function prop without 'on' prefix. The flagged prop returns void (a
     // genuine handler); the #1262 accessor exemption applies only to
@@ -486,19 +564,10 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         );
       `,
       errors: [{ messageId: 'callbackPropPrefix' }],
-      output: `
-        interface Props {
-          submitForm: (data: FormData) => Promise<void>;
-          validateInput: (value: string) => void;
-        }
-
-        const Form = ({ submitForm, validateInput }: Props) => (
-          <form>
-            <input onValidateInput={validateInput} />
-            <button onClick={() => submitForm(new FormData())}>Submit</button>
-          </form>
-        );
-      `,
+      // Bug #1522: a host element's props are bound by `JSX.IntrinsicElements`
+      // (which a project can augment, e.g. react-three-fiber), so a host
+      // attribute is no safer to rewrite than a component's — no autofix.
+      output: null,
     },
     // Function with 'handle' prefix
     {
