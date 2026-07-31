@@ -157,6 +157,19 @@ ruleTesterJsx.run(
       const state = useFirestore({ path });
       if (typeof state === 'string') return <Spinner />;
       `,
+
+      // 23. excludeFiles widened to cover this file. `excludeFiles` is matched
+      // against the filename, so the case has to name one; invalid case 47 is
+      // the same code under the same filename with no options and it reports,
+      // which leaves the option as the only difference.
+      {
+        filename: 'src/components/UserCard.tsx',
+        code: `
+const state = useDocSnapshot({ docPath });
+if (state) { return state.name; }
+        `,
+        options: [{ excludeFiles: ['UserCard.tsx'] }],
+      },
     ],
 
     invalid: [
@@ -1229,6 +1242,61 @@ if (!state) return null;
         `,
         options: [{ guardFunctions: ['isReady'] }],
         errors: [{ messageId: 'noFalsyCheck', suggestions: [] }],
+      },
+
+      // ---- REGRESSIONS: excludeFiles (issue #1509) ----
+
+      // 47. The unexcluded twin of valid case 23: identical filename and code,
+      // no options, so the default exclusion list decides nothing here.
+      {
+        filename: 'src/components/UserCard.tsx',
+        code: `
+const state = useDocSnapshot({ docPath });
+if (state) { return state.name; }
+        `,
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withGuardImport(`
+const state = useDocSnapshot({ docPath });
+if (isSnapshotReady(state)) { return state.name; }
+        `),
+              },
+            ],
+          },
+        ],
+      },
+
+      // 48. The other direction: an empty list retracts the default exemption
+      // for the guard's own module, so that file is linted like any other. The
+      // guard is declared locally there, so the suggestion calls it without
+      // importing it.
+      {
+        filename: 'src/types/FirestoreSnapshotState.ts',
+        code: `
+export function isSnapshotReady(value) { return typeof value !== 'string'; }
+const state = useDocSnapshot({ docPath });
+if (state) { return state.name; }
+        `,
+        options: [{ excludeFiles: [] }],
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: `
+export function isSnapshotReady(value) { return typeof value !== 'string'; }
+const state = useDocSnapshot({ docPath });
+if (isSnapshotReady(state)) { return state.name; }
+        `,
+              },
+            ],
+          },
+        ],
       },
     ],
   },

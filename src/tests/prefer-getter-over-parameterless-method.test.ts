@@ -59,6 +59,53 @@ ruleTesterTs.run(
         options: [{ ignoreAbstract: true }],
       },
 
+      // `ignoredMethods` replaces DEFAULT_IGNORED_METHODS wholesale, so the
+      // exempted name must be one the defaults do NOT already cover — otherwise
+      // the case passes without the option doing any work. `renderSummary`
+      // reports by default (see the matching invalid case on identical code).
+      {
+        code: `
+        class Report {
+          renderSummary(): string {
+            return this.title;
+          }
+        }
+        `,
+        options: [{ ignoredMethods: ['renderSummary'] }],
+      },
+
+      // `factoryMethods` exempts builder terminals whose external callers would
+      // break on conversion. DEFAULT_FACTORY_METHODS matches the exact names
+      // `build`/`create`/`make`, never a prefixed name like `buildQuery`, so
+      // this fixture only goes silent because the option names it.
+      {
+        code: `
+        class QueryBuilder {
+          buildQuery(): string {
+            return this.clauses.join(' ');
+          }
+        }
+        `,
+        options: [{ factoryMethods: ['buildQuery'] }],
+      },
+
+      // `respectJsDocSideEffects: true` (the default) honours the `@sideEffect`
+      // tag. Stated explicitly here to pair with the `false` invalid case on
+      // byte-identical code.
+      {
+        code: `
+        class Metrics {
+          /**
+           * @sideEffect records a page view
+           */
+          getViewCount(): number {
+            return this.views;
+          }
+        }
+        `,
+        options: [{ respectJsDocSideEffects: true }],
+      },
+
       // Ignored methods list
       `
       class Serializer {
@@ -1061,6 +1108,72 @@ ruleTesterTs.run(
           {
             messageId: 'preferGetter',
             data: { name: 'getValue', suggestedName: 'value' },
+          },
+        ],
+      },
+
+      // Each of the next three pairs with a valid case above on identical code;
+      // the option is the only difference. Unspecified accessibility means the
+      // autofix is withheld, hence `output: null`.
+
+      // `ignoredMethods` omitted → `renderSummary` reports.
+      {
+        code: `
+        class Report {
+          renderSummary(): string {
+            return this.title;
+          }
+        }
+        `,
+        output: null,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'renderSummary', suggestedName: 'renderSummary' },
+          },
+        ],
+      },
+
+      // `factoryMethods` omitted → `buildQuery` reports (the `build` prefix is
+      // stripped to suggest `query`, proving the default factory list matches
+      // whole names only).
+      {
+        code: `
+        class QueryBuilder {
+          buildQuery(): string {
+            return this.clauses.join(' ');
+          }
+        }
+        `,
+        output: null,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'buildQuery', suggestedName: 'query' },
+          },
+        ],
+      },
+
+      // `respectJsDocSideEffects: false` opts the `@sideEffect`-tagged method
+      // back in. Without the tag on the fixture the flag would have nothing to
+      // respect and the case would pass either way.
+      {
+        code: `
+        class Metrics {
+          /**
+           * @sideEffect records a page view
+           */
+          getViewCount(): number {
+            return this.views;
+          }
+        }
+        `,
+        options: [{ respectJsDocSideEffects: false }],
+        output: null,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'getViewCount', suggestedName: 'viewCount' },
           },
         ],
       },

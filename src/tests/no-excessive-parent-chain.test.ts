@@ -30,6 +30,51 @@ const errorWithoutSuggestion = (count: number) => ({
   suggestions: [],
 });
 
+// The `max` cases below reuse these two fixtures verbatim on both sides of the
+// valid/invalid divide so the option value is the only difference. The
+// three-hop chain exceeds the default of 2 and has to be silenced by widening
+// `max`; the two-hop chain sits at the default and only reports once `max` is
+// narrowed below it.
+const MAX_THREE_HOP_CODE = `
+      export const maxOptionThreeHopHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (event) => {
+        const { data: change } = event;
+        const uid = change.after.ref.parent.parent.parent.id;
+      };
+      `;
+
+const MAX_THREE_HOP_SUGGESTION = `
+      export const maxOptionThreeHopHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (event) => {
+        const { data: change } = event;
+        const uid = event.params.id;
+      };
+      `;
+
+const MAX_TWO_HOP_CODE = `
+      export const maxOptionTwoHopHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (event) => {
+        const { data: change } = event;
+        const uid = change.after.ref.parent.parent.id;
+      };
+      `;
+
+const MAX_TWO_HOP_SUGGESTION = `
+      export const maxOptionTwoHopHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (event) => {
+        const { data: change } = event;
+        const uid = event.params.id;
+      };
+      `;
+
 describe('no-excessive-parent-chain messages', () => {
   it('matches the documented template', () => {
     expect(noExcessiveParentChain.meta.messages.excessiveParentChain).toBe(
@@ -754,6 +799,18 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const docId = change.after.ref.parent.parent.id;
       };
       `,
+    },
+    // `max` widened above the chain length silences a chain that the default
+    // max of 2 reports (see the invalid twin on the identical fixture).
+    {
+      code: MAX_THREE_HOP_CODE,
+      options: [{ max: 3 }],
+    },
+    // The default value stated explicitly, pairing with the invalid twin that
+    // narrows it to 1 on the identical fixture.
+    {
+      code: MAX_TWO_HOP_CODE,
+      options: [{ max: 2 }],
     },
   ],
   invalid: [
@@ -1809,6 +1866,19 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
       `,
         ),
       ],
+    },
+    // Twin of the `max: 3` valid case: the same three-hop chain reports under
+    // the default max of 2.
+    {
+      code: MAX_THREE_HOP_CODE,
+      errors: [errorWithSuggestion(3, MAX_THREE_HOP_SUGGESTION)],
+    },
+    // Twin of the `max: 2` valid case: narrowing `max` to 1 turns a two-hop
+    // chain the default permits into a violation.
+    {
+      code: MAX_TWO_HOP_CODE,
+      options: [{ max: 1 }],
+      errors: [errorWithSuggestion(2, MAX_TWO_HOP_SUGGESTION)],
     },
   ],
 });

@@ -70,6 +70,25 @@ const mock: TokenMetadata<'offchain', Date> = { createdAt: new Date() };
 `,
         filename: 'src/components/Token.test.ts',
       },
+      // `ignoreTestFiles: true` stated explicitly, to pair with the invalid
+      // case that sets it to `false` on byte-identical code and filename.
+      {
+        code: `
+import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+const mock: TokenMetadata<'offchain', Date> = { createdAt: new Date() };
+`,
+        filename: 'src/components/Token.test.ts',
+        options: [{ ignoreTestFiles: true }],
+      },
+      // A `__tests__/` directory is matched by path, not by file suffix — the
+      // default exemption covers it too.
+      {
+        code: `
+import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+const mock: TokenMetadata<'offchain', Date> = { createdAt: new Date() };
+`,
+        filename: 'src/components/__tests__/Token.ts',
+      },
       // spec file — also ignored
       {
         code: `
@@ -492,6 +511,29 @@ async function write() {
 }
 `,
         filename: 'src/hooks/useExample.ts',
+        errors: [{ messageId: 'useServerTimestamp' }],
+      },
+      // `ignoreTestFiles: false` opts test files back in. Pairs with the valid
+      // case above on identical code and filename, so the option is the only
+      // difference.
+      {
+        code: `
+import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+const mock: TokenMetadata<'offchain', Date> = { createdAt: new Date() };
+`,
+        filename: 'src/components/Token.test.ts',
+        options: [{ ignoreTestFiles: false }],
+        errors: [{ messageId: 'useServerTimestamp' }],
+      },
+      // The same opt-in reaches directory-matched test files, not just the
+      // `.test.`/`.spec.` suffixes.
+      {
+        code: `
+import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+const mock: TokenMetadata<'offchain', Date> = { createdAt: new Date() };
+`,
+        filename: 'src/components/__tests__/Token.ts',
+        options: [{ ignoreTestFiles: false }],
         errors: [{ messageId: 'useServerTimestamp' }],
       },
     ],

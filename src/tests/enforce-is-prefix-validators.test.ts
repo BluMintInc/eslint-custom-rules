@@ -196,6 +196,17 @@ ruleTesterTs.run('enforce-is-prefix-validators', enforceIsPrefixValidators, {
       ],
     },
 
+    // ── Custom excludePatterns option, widened ───────────────────────────────
+    // An exclusion filter only shows an effect when widened to cover the
+    // fixture. This filename and code are identical to the first `invalid`
+    // case, which reports under the default patterns, so the option is the only
+    // thing standing between the two.
+    {
+      filename: VALIDATORS_FILE,
+      code: `export const validateDecreaseOnly = (before = {}) => { return (after = {}) => true; };`,
+      options: [{ excludePatterns: ['**/validators/string/*.ts'] }],
+    },
+
     // Issue #1269: a Windows backslash path OUTSIDE the validators directory
     // stays exempt after separator normalization — the rule only applies to
     // validators files, so a validate-prefixed export elsewhere is not flagged.
@@ -378,6 +389,54 @@ export const checkPhoneNumber = (v: string) => true;
         },
       ],
       errors: [{ messageId: 'disallowedPrefix' }],
+    },
+
+    // ── Custom excludePatterns option, narrowed ───────────────────────────────
+    // The mirror of the widened case: an empty list retracts the default
+    // `**/*.test.ts` exemption, so the file the matching valid case treats as
+    // exempt is linted here. Same filename, same code, option only.
+    {
+      filename: TEST_FILE,
+      code: `export const validateSomething = (v: string) => true;`,
+      options: [{ excludePatterns: [] }],
+      errors: [{ messageId: 'disallowedPrefix' }],
+    },
+
+    // ── Custom requiredPrefix option ──────────────────────────────────────────
+    // requiredPrefix does not decide whether a name is reported; it decides what
+    // the report tells you to rename it to. Both cases pin `data`, so the
+    // rendered message — and therefore the test — differs from its
+    // default-option twin above purely on the option.
+    {
+      filename: VALIDATORS_FILE,
+      code: `export const emailValidator = (value: string) => { return true; };`,
+      options: [{ requiredPrefix: 'assert' }],
+      errors: [
+        {
+          messageId: 'missingRequiredPrefix',
+          data: {
+            name: 'emailValidator',
+            requiredPrefix: 'assert',
+            suggestion: 'assertEmailValidator',
+          },
+        },
+      ],
+    },
+    {
+      filename: VALIDATORS_FILE,
+      code: `export const validateDecreaseOnly = (before = {}) => { return (after = {}) => true; };`,
+      options: [{ requiredPrefix: 'assert' }],
+      errors: [
+        {
+          messageId: 'disallowedPrefix',
+          data: {
+            name: 'validateDecreaseOnly',
+            prefix: 'validate',
+            requiredPrefix: 'assert',
+            suggestion: 'assertDecreaseOnly',
+          },
+        },
+      ],
     },
   ],
 });

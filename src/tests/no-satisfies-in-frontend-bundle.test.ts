@@ -1,6 +1,25 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { noSatisfiesInFrontendBundle } from '../rules/no-satisfies-in-frontend-bundle';
 
+// Shared by the four option cases below (27-30). Each option is asserted as a
+// valid/invalid pair over this identical source and an identical filename, so
+// the configured path list is the only difference between the two outcomes and
+// neither case could pass if the rule ignored the option it sets.
+const PATH_OPTION_CODE = `
+type ThemeConfig = { spacing: number };
+const THEME = { spacing: 8 } satisfies ThemeConfig;
+`;
+
+// Inside the default include paths and outside the default exclude paths.
+const FRONTEND_FILE = '/project/src/config/theme.ts';
+
+// Inside the default exclude paths.
+const EXCLUDED_BACKEND_FILE =
+  '/project/functions/src/firestore/report/reasons.ts';
+
+// Outside the default include paths entirely.
+const UNINCLUDED_FILE = '/project/scripts/buildTheme.ts';
+
 ruleTesterTs.run(
   'no-satisfies-in-frontend-bundle',
   noSatisfiesInFrontendBundle,
@@ -163,6 +182,38 @@ type ReportType = { kind: string };
 const report = { kind: 'spam' } satisfies ReportType;
 `,
       },
+
+      // 27a. excludePaths WIDENED to cover a frontend file that the defaults
+      // enforce. Paired with invalid 27b: same code, same filename.
+      {
+        filename: FRONTEND_FILE,
+        code: PATH_OPTION_CODE,
+        options: [{ excludePaths: ['src/config/**'] }],
+      },
+
+      // 28a. The backend file the default excludePaths already cover. Paired
+      // with invalid 28b, which empties that list over the same file.
+      {
+        filename: EXCLUDED_BACKEND_FILE,
+        code: PATH_OPTION_CODE,
+      },
+
+      // 29a. includePaths NARROWED to the backend only, so a frontend file
+      // falls outside enforcement. The default excludePaths do not match
+      // `src/config/**`, so includePaths is what silences this. Paired with
+      // invalid 27b, which lints the same file and code with the defaults.
+      {
+        filename: FRONTEND_FILE,
+        code: PATH_OPTION_CODE,
+        options: [{ includePaths: ['functions/src/**'] }],
+      },
+
+      // 30a. A file outside every default include path. Paired with invalid
+      // 30b, which widens includePaths to reach it.
+      {
+        filename: UNINCLUDED_FILE,
+        code: PATH_OPTION_CODE,
+      },
     ],
 
     invalid: [
@@ -276,6 +327,34 @@ const VARIANT_CONFIG = {
 type Exports = { version: string };
 const exports_ = { version: '1.0.0' } satisfies Exports;
 `,
+        errors: [{ messageId: 'noSatisfiesOperator' }],
+      },
+
+      // 27b. The default counterpart of valid 27a and 29a: with no options this
+      // exact file and source is reported, so those two valid cases are decided
+      // by their excludePaths/includePaths values alone.
+      {
+        filename: FRONTEND_FILE,
+        code: PATH_OPTION_CODE,
+        errors: [{ messageId: 'noSatisfiesOperator' }],
+      },
+
+      // 28b. excludePaths EMPTIED, so the backend directory the defaults exempt
+      // (valid 28a) is enforced instead.
+      {
+        filename: EXCLUDED_BACKEND_FILE,
+        code: PATH_OPTION_CODE,
+        options: [{ excludePaths: [] }],
+        errors: [{ messageId: 'noSatisfiesOperator' }],
+      },
+
+      // 30b. includePaths WIDENED to reach a directory the defaults ignore
+      // (valid 30a). An inclusion filter only demonstrates an effect when
+      // narrowed or widened past its default, never at its default.
+      {
+        filename: UNINCLUDED_FILE,
+        code: PATH_OPTION_CODE,
+        options: [{ includePaths: ['**/scripts/**'] }],
         errors: [{ messageId: 'noSatisfiesOperator' }],
       },
     ],

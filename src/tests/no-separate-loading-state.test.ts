@@ -24,6 +24,32 @@ const errorWithMessage = (
     message: loadingMessage(stateName),
   } as unknown as TSESLint.TestCaseError<'separateLoadingState'>);
 
+// `patterns` REPLACES the built-in loading-name regexes rather than adding to
+// them, so it is asserted in both directions over these two snippets: a name the
+// defaults match and a name only a custom pattern matches. Each snippet appears
+// as both a valid and an invalid case, with `options` the sole difference.
+const DEFAULT_MATCHED_STATE = `
+const [isDataLoading, setIsDataLoading] = useState(false);
+
+async function loadData() {
+  setIsDataLoading(true);
+  await fetchData();
+  setIsDataLoading(false);
+}
+`;
+
+const CUSTOM_MATCHED_STATE = `
+const [fetchingUsers, setFetchingUsers] = useState(false);
+
+async function loadUsers() {
+  setFetchingUsers(true);
+  await fetchUsers();
+  setFetchingUsers(false);
+}
+`;
+
+const FETCHING_PATTERNS = ['^fetching'];
+
 ruleTester.run('no-separate-loading-state', noSeparateLoadingState, {
   valid: [
     // Valid: Using sentinel value instead of separate loading state
@@ -118,6 +144,26 @@ ruleTester.run('no-separate-loading-state', noSeparateLoadingState, {
         }
       `,
     },
+
+    // Valid: custom `patterns` replace the built-in ones, so a name the
+    // defaults flag (see the matching invalid case) is no longer matched.
+    {
+      code: DEFAULT_MATCHED_STATE,
+      options: [{ patterns: FETCHING_PATTERNS }],
+    },
+
+    // Valid: an empty `patterns` list matches nothing, disabling the rule for
+    // the same snippet the defaults report.
+    {
+      code: DEFAULT_MATCHED_STATE,
+      options: [{ patterns: [] }],
+    },
+
+    // Valid: a name outside the built-in loading patterns, under the defaults.
+    // Paired with the invalid case that adds `patterns` to reach it.
+    {
+      code: CUSTOM_MATCHED_STATE,
+    },
   ],
 
   invalid: [
@@ -185,6 +231,21 @@ ruleTester.run('no-separate-loading-state', noSeparateLoadingState, {
         }
       `,
       errors: [errorWithMessage('ISLOADING')],
+    },
+
+    // Invalid under the defaults: the counterpart of the two valid cases that
+    // override `patterns` over this identical snippet.
+    {
+      code: DEFAULT_MATCHED_STATE,
+      errors: [errorWithMessage('isDataLoading')],
+    },
+
+    // Invalid only because `patterns` extends enforcement to a name the
+    // built-in regexes ignore (the same snippet is valid at the defaults).
+    {
+      code: CUSTOM_MATCHED_STATE,
+      options: [{ patterns: FETCHING_PATTERNS }],
+      errors: [errorWithMessage('fetchingUsers')],
     },
   ],
 });

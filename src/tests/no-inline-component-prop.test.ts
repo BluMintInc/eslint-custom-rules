@@ -1,6 +1,31 @@
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { noInlineComponentProp } from '../rules/no-inline-component-prop';
 
+// Both fixtures declare their wrapper at module scope, which is exactly what
+// allowModuleScopeFactories exempts. Reusing the same text on both sides of the
+// valid/invalid divide leaves the option as the sole difference. The object
+// variant matters separately because member-expression props take their own
+// allowModuleScopeFactories branch in the rule.
+const MODULE_SCOPE_WRAPPER = `
+    const StableWrapper = (props: { children: unknown }) => (
+      <div>{props.children}</div>
+    );
+
+    function Page() {
+      return <AlgoliaLayout CatalogWrapper={StableWrapper} />;
+    }
+    `;
+
+const MODULE_SCOPE_WRAPPER_OBJECT = `
+    const wrappers = {
+      CatalogWrapper: (props: { children: JSX.Element }) => <div>{props.children}</div>,
+    };
+
+    function Page() {
+      return <AlgoliaLayout CatalogWrapper={wrappers.CatalogWrapper} />;
+    }
+    `;
+
 ruleTesterJsx.run('no-inline-component-prop', noInlineComponentProp, {
   valid: [
     `
@@ -93,6 +118,16 @@ ruleTesterJsx.run('no-inline-component-prop', noInlineComponentProp, {
       }
       `,
       options: [{ props: ['*a*b*c*'] }],
+    },
+    // allowModuleScopeFactories: true is the default, stated explicitly to pair
+    // with the invalid twin that only flips it to false.
+    {
+      code: MODULE_SCOPE_WRAPPER,
+      options: [{ allowModuleScopeFactories: true }],
+    },
+    {
+      code: MODULE_SCOPE_WRAPPER_OBJECT,
+      options: [{ allowModuleScopeFactories: true }],
     },
   ],
   invalid: [
@@ -250,6 +285,18 @@ ruleTesterJsx.run('no-inline-component-prop', noInlineComponentProp, {
       }
       `,
       options: [{ props: ['customProp'] }],
+      errors: [{ messageId: 'inlineComponentProp' }],
+    },
+    // Twin of the valid allowModuleScopeFactories case: withdrawing the module
+    // scope exemption reports the identical fixture.
+    {
+      code: MODULE_SCOPE_WRAPPER,
+      options: [{ allowModuleScopeFactories: false }],
+      errors: [{ messageId: 'inlineComponentProp' }],
+    },
+    {
+      code: MODULE_SCOPE_WRAPPER_OBJECT,
+      options: [{ allowModuleScopeFactories: false }],
       errors: [{ messageId: 'inlineComponentProp' }],
     },
   ],
