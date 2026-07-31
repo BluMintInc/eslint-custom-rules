@@ -133,6 +133,14 @@ Default: `[]`
 
 Strings matching any of these patterns are skipped entirely. Useful for intentional exceptions such as pure acronyms or marketing taglines.
 
+Each entry must be a valid regular expression **source** string, not a glob and not a literal to match verbatim. An entry that fails to compile is a configuration error: the rule fails fast and names the option, the offending value, and the reason, e.g.
+
+```text
+enforce-m3-sentence-case: invalid ignorePatterns: C++ (Invalid regular expression: /C++/: Nothing to repeat)
+```
+
+Every malformed entry is listed in that single error. To exclude text containing regex metacharacters, escape them (regex source `C\+\+`, written `"C\\+\\+"` in JSON or JavaScript config) or use `allowList` for an exact-string match. To skip a glob-like string such as `*.test.ts`, express it as a pattern instead (`\.test\.ts$`).
+
 ### `allowList`
 
 Type: `string[]`  
