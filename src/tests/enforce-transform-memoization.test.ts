@@ -224,6 +224,144 @@ ruleTesterTs.run('enforce-transform-memoization', enforceTransformMemoization, {
         );
       }
     `,
+    // Valid: module scope — no enclosing function, so useMemo is impossible
+    `
+      const Switch = () => null;
+      export const ADAPTED = adaptValue(
+        { valueKey: 'checked', onChangeKey: 'onChange', transformValue: (v) => Boolean(v) },
+        Switch,
+      );
+    `,
+    // Valid: plain non-component, non-hook function — hooks are illegal here
+    `
+      const Switch = () => null;
+      export function buildAdapted() {
+        return adaptValue(
+          { valueKey: 'checked', onChangeKey: 'onChange', transformOnChange: (e) => e.target.checked },
+          Switch,
+        );
+      }
+    `,
+    // Valid: Jest test body — useMemo here is "Invalid hook call"
+    `
+      const Switch = () => null;
+      it('adapts', () => {
+        const Adapted = adaptValue(
+          { valueKey: 'checked', onChangeKey: 'onChange', transformValue: (v) => Boolean(v) },
+          Switch,
+        );
+        expect(Adapted).toBeDefined();
+      });
+    `,
+    // Valid: lowercase arrow const is a plain helper, not a component
+    `
+      const Switch = () => null;
+      const buildAdapted = () =>
+        adaptValue(
+          { valueKey: 'checked', onChangeKey: 'onChange', transformValue: (v) => Boolean(v) },
+          Switch,
+        );
+    `,
+    // Valid: describe body — no render path, so no hook may be called
+    `
+      const Switch = () => null;
+      describe('adaptValue', () => {
+        const Adapted = adaptValue(
+          { valueKey: 'checked', onChangeKey: 'onChange', transformOnChange: (e) => e.target.checked },
+          Switch,
+        );
+        expect(Adapted).toBeDefined();
+      });
+    `,
+    // Valid: beforeEach body
+    `
+      const Switch = () => null;
+      let Adapted;
+      beforeEach(() => {
+        Adapted = adaptValue(
+          { valueKey: 'checked', onChangeKey: 'onChange', transformValue: (v) => Boolean(v) },
+          Switch,
+        );
+      });
+    `,
+    // Valid: useCorrectHook outside a component — swapping to useMemo is still
+    // an illegal hook call in a plain helper
+    `
+      import { useCallback } from 'react';
+      const Switch = () => null;
+      function buildAdapted() {
+        return adaptValue(
+          {
+            valueKey: 'checked',
+            onChangeKey: 'onChange',
+            transformValue: useCallback((value) => Boolean(value), []),
+          },
+          Switch,
+        );
+      }
+    `,
+    // Valid: missingDependencies outside a component — the hook itself is
+    // already illegal there, so demanding a dependency array is moot
+    `
+      import { useMemo } from 'react';
+      const Switch = () => null;
+      const buildAdapted = () =>
+        adaptValue(
+          {
+            valueKey: 'checked',
+            onChangeKey: 'onChange',
+            transformValue: useMemo(() => (value) => Boolean(value)),
+          },
+          Switch,
+        );
+    `,
+    // Valid: missingDependencies at module scope
+    `
+      import { useCallback } from 'react';
+      const Switch = () => null;
+      export const ADAPTED = adaptValue(
+        {
+          valueKey: 'checked',
+          onChangeKey: 'onChange',
+          transformOnChange: useCallback((event) => event.target.checked),
+        },
+        Switch,
+      );
+    `,
+    // Valid: class component render — hooks are illegal in a class, so the
+    // prescribed remediation cannot be applied
+    `
+      const Switch = () => null;
+      class MyForm extends React.Component {
+        render() {
+          return adaptValue(
+            { valueKey: 'checked', onChangeKey: 'onChange', transformValue: (v) => Boolean(v) },
+            Switch,
+          );
+        }
+      }
+    `,
+    // Valid: anonymous module-scope IIFE returns no JSX, so it is not a component
+    `
+      const Switch = () => null;
+      const ADAPTED = (() =>
+        adaptValue(
+          { valueKey: 'checked', onChangeKey: 'onChange', transformValue: (v) => Boolean(v) },
+          Switch,
+        ))();
+    `,
+    // Valid: callback nested inside a plain helper stays outside the render path
+    `
+      const Switch = () => null;
+      function buildAll(keys: string[]) {
+        return keys.map((key) =>
+          adaptValue(
+            { valueKey: key, onChangeKey: 'onChange', transformValue: (v) => Boolean(v) },
+            Switch,
+          ),
+        );
+      }
+    `,
   ],
   invalid: [
     {
@@ -456,6 +594,171 @@ ruleTesterTs.run('enforce-transform-memoization', enforceTransformMemoization, {
         }
       `,
       errors: [{ messageId: 'memoizeTransformValue' }],
+    },
+    {
+      code: `
+      const Switch = () => null;
+      export function MyForm() {
+        return adaptValue(
+          { valueKey: 'checked', onChangeKey: 'onChange', transformValue: (v) => Boolean(v) },
+          Switch,
+        );
+      }
+      `,
+      errors: [{ messageId: 'memoizeTransformValue' }],
+    },
+    {
+      code: `
+      const Switch = () => null;
+      export function useAdapted() {
+        return adaptValue(
+          { valueKey: 'checked', onChangeKey: 'onChange', transformOnChange: (e) => e.target.checked },
+          Switch,
+        );
+      }
+      `,
+      errors: [{ messageId: 'memoizeTransformOnChange' }],
+    },
+    // Arrow component: PascalCase const is a component even without JSX in view
+    {
+      code: `
+        const Switch = () => null;
+        const MyForm = () =>
+          adaptValue(
+            { valueKey: 'checked', onChangeKey: 'onChange', transformValue: (v) => Boolean(v) },
+            Switch,
+          );
+      `,
+      errors: [{ messageId: 'memoizeTransformValue' }],
+    },
+    // Arrow hook
+    {
+      code: `
+        const Switch = () => null;
+        const useAdaptedSwitch = () =>
+          adaptValue(
+            { valueKey: 'checked', onChangeKey: 'onChange', transformOnChange: (e) => e.target.checked },
+            Switch,
+          );
+      `,
+      errors: [{ messageId: 'memoizeTransformOnChange' }],
+    },
+    // A plain helper nested inside a component is still on the render path
+    {
+      code: `
+        const Switch = () => null;
+        function MyForm() {
+          const build = () =>
+            adaptValue(
+              { valueKey: 'checked', onChangeKey: 'onChange', transformValue: (v) => Boolean(v) },
+              Switch,
+            );
+          return build();
+        }
+      `,
+      errors: [{ messageId: 'memoizeTransformValue' }],
+    },
+    // A map callback inside a component is a render path
+    {
+      code: `
+        const Switch = () => null;
+        function MyForm({ keys }) {
+          return keys.map((key) =>
+            adaptValue(
+              { valueKey: key, onChangeKey: 'onChange', transformOnChange: (e) => e.target.checked },
+              Switch,
+            ),
+          );
+        }
+      `,
+      errors: [{ messageId: 'memoizeTransformOnChange' }],
+    },
+    // forwardRef-wrapped anonymous arrow named through its declarator
+    {
+      code: `
+        import { forwardRef } from 'react';
+        const Switch = () => null;
+        const MyInput = forwardRef((props, ref) =>
+          adaptValue(
+            { valueKey: 'value', onChangeKey: 'onChange', transformValue: (v) => String(v) },
+            Switch,
+          ),
+        );
+      `,
+      errors: [{ messageId: 'memoizeTransformValue' }],
+    },
+    // useCorrectHook inside a component still reports: useMemo is legal here
+    {
+      code: `
+        import { useCallback } from 'react';
+        const Switch = () => null;
+        const MyForm = () =>
+          adaptValue(
+            {
+              valueKey: 'checked',
+              onChangeKey: 'onChange',
+              transformValue: useCallback((value) => Boolean(value), []),
+            },
+            Switch,
+          );
+      `,
+      errors: [{ messageId: 'useCorrectHook' }],
+    },
+    // useCorrectHook inside a custom hook
+    {
+      code: `
+        import { useMemo } from 'react';
+        const Switch = () => null;
+        export function useAdaptedSwitch() {
+          return adaptValue(
+            {
+              valueKey: 'checked',
+              onChangeKey: 'onChange',
+              transformOnChange: useMemo((event) => event.target.checked, []),
+            },
+            Switch,
+          );
+        }
+      `,
+      errors: [{ messageId: 'useCorrectHook' }],
+    },
+    // missingDependencies inside a component
+    {
+      code: `
+        import { useMemo } from 'react';
+        const Switch = () => null;
+        const MyForm = () =>
+          adaptValue(
+            {
+              valueKey: 'checked',
+              onChangeKey: 'onChange',
+              transformValue: useMemo(() => (value) => Boolean(value)),
+            },
+            Switch,
+          );
+      `,
+      errors: [{ messageId: 'missingDependencies' }],
+    },
+    // missingDependencies inside a custom hook
+    {
+      code: `
+        import { useCallback } from 'react';
+        const Switch = () => null;
+        export function useAdaptedSwitch(dependency) {
+          return adaptValue(
+            {
+              valueKey: 'value',
+              onChangeKey: 'onChange',
+              transformOnChange: useCallback(
+                (event) => dependency(event.target.value),
+                [],
+              ),
+            },
+            Switch,
+          );
+        }
+      `,
+      errors: [{ messageId: 'missingDependencies' }],
     },
   ],
 });

@@ -17,16 +17,37 @@ This rule enforces:
 
 `transformValue` represents a derived or computed value that should be stabilized to avoid expensive recomputations (hence `useMemo`), while `transformOnChange` is an event callback whose identity must be stable to prevent unnecessary re-renders or effect triggers in the adapted component (hence `useCallback`).
 
-Examples of **incorrect** code for this rule:
+### Examples of incorrect code
 
 ```js
-adaptValue({
-  valueKey: 'checked',
-  onChangeKey: 'onChange',
-  // ❌ Inline transforms recreate on every render
-  transformValue: (value) => Boolean(value),
-  transformOnChange: (event) => event.target.checked,
-}, Switch);
+// Mock component for demonstration
+const Switch = () => null;
+
+function Component() {
+  return adaptValue({
+    valueKey: 'checked',
+    onChangeKey: 'onChange',
+    // ❌ Inline transforms recreate on every render
+    transformValue: (value) => Boolean(value),
+    transformOnChange: (event) => event.target.checked,
+  }, Switch);
+}
+```
+
+```js
+// Mock component for demonstration
+const Switch = () => null;
+
+function MyForm({ keys }) {
+  // ❌ A callback nested in a component is still a render path
+  return keys.map((key) =>
+    adaptValue({
+      valueKey: key,
+      onChangeKey: 'onChange',
+      transformValue: (value) => Boolean(value),
+    }, Switch),
+  );
+}
 ```
 
 ```js
@@ -45,7 +66,7 @@ function Component({ formatter }) {
 }
 ```
 
-Examples of **correct** code for this rule:
+### Examples of correct code
 
 ```js
 import { useMemo, useCallback } from 'react';
@@ -101,6 +122,52 @@ function Component() {
     transformValue,
   }, TextInput);
 }
+```
+
+## Scope: only inside React components and hooks
+
+Every remediation this rule prescribes is a hook call (`useMemo` or `useCallback`), and the Rules of Hooks allow those only inside a function component or another hook. So the rule reports an `adaptValue` call only when a component or hook appears somewhere in its enclosing-function ancestry.
+
+An `adaptValue` call at module scope, inside a plain (camelCase) helper, inside a class component's `render`, or inside a test body is skipped: nothing there is "recreated on every render" — there is no render — and wrapping the transform would throw `Invalid hook call. Hooks can only be called inside of the body of a function component`.
+
+Classification is name-based, matching React's own convention: a PascalCase-initial name is a component, a `use`-prefixed name is a hook, and anything else is a plain helper. A nested callback still counts as a render path when any enclosing function is a component or hook, so a `.map()` callback inside a component remains reportable.
+
+### Examples of correct code outside a component or hook
+
+```js
+// Mock component for demonstration
+const Switch = () => null;
+
+// ✅ Module scope: evaluated once at load, and no hook may be called here
+export const ADAPTED = adaptValue({
+  valueKey: 'checked',
+  onChangeKey: 'onChange',
+  transformValue: (value) => Boolean(value),
+}, Switch);
+
+// ✅ A plain camelCase helper is not a component, so hooks are illegal in it
+function buildAdapted() {
+  return adaptValue({
+    valueKey: 'checked',
+    onChangeKey: 'onChange',
+    transformOnChange: (event) => event.target.checked,
+  }, Switch);
+}
+```
+
+```js
+// Mock component for demonstration
+const Switch = () => null;
+
+// ✅ Test bodies are outside every render path
+it('adapts the value', () => {
+  const Adapted = adaptValue({
+    valueKey: 'checked',
+    onChangeKey: 'onChange',
+    transformValue: (value) => Boolean(value),
+  }, Switch);
+  expect(Adapted).toBeDefined();
+});
 ```
 
 ## When Not To Use It

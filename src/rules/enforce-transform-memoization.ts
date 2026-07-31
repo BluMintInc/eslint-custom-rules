@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds =
   | 'memoizeTransformValue'
@@ -545,6 +546,15 @@ export const enforceTransformMemoization = createRule<[], MessageIds>({
           node.callee.type !== AST_NODE_TYPES.Identifier ||
           !adaptValueNames.has(node.callee.name)
         ) {
+          return;
+        }
+
+        // Every message this rule emits prescribes useMemo/useCallback, and a
+        // hook call is legal only inside a component or another hook. An
+        // adaptValue call at module scope, in a plain helper, or in a test body
+        // is not on a render path: nothing is "recreated on every render"
+        // there, and the prescribed fix would throw "Invalid hook call".
+        if (!ASTHelpers.isInsideComponentOrHook(node, context)) {
           return;
         }
 
