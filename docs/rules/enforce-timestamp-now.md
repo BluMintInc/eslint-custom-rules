@@ -17,6 +17,7 @@ Firestore timestamps should originate from the Firestore SDK instead of the loca
   - A use that leaves the declaration — passed as an argument, returned, compared, interpolated, reassigned, read through a computed member access — does not qualify either, because the type it flows into is invisible to a rule that does not use type information. Converting a `Date` argument to a `Timestamp` one produces TS2345, and converting an annotated return produces TS2322.
   - Declining is silent rather than a report without a fix. The variable-name heuristic cannot tell a stored Firestore field from an age calculation or a formatted label, so a report on those is a plain false positive, and the message's only remedy is the very rewrite that was just ruled unsafe.
 - A bare `new Date()` is only reported when a Firestore `Timestamp` import (static or dynamic, under either `firebase-admin/firestore` or `firebase/firestore`) is in scope at that point. The rewrite names an identifier the source never mentions, so without a binding it would emit an unbound `Timestamp`; a file with no Firestore import is also unlikely to be building a Firestore document at all. `Timestamp.fromDate(...)` and `Timestamp.fromMillis(...)` are unaffected by this gate because they rewrite an identifier the source already binds.
+  - The import has to bind `Timestamp` as a **value**. A type-only binding — `import type { Timestamp } from 'firebase-admin/firestore'` or the inline `import { type Timestamp }` — is erased before emit, so a rewrite naming it produces TS1361 (`'Timestamp' cannot be used as a value because it was imported using 'import type'`). Only the type-only specifier is disqualified: `import { type DocumentData, Timestamp }` still authorizes the rewrite.
 
 ### Examples of **incorrect** code for this rule:
 ```ts
@@ -67,6 +68,18 @@ A file with no Firestore `Timestamp` import keeps its plain `Date` usage too: re
 export function label() {
   const now = new Date();
   return now.toLocaleDateString();
+}
+```
+
+A file whose only `Timestamp` import is type-only is treated the same way, because the name it binds exists solely in type space and cannot be the receiver of a `now()` call.
+
+```ts
+// File: functions/src/util/date/Dates.ts
+import type { Timestamp } from 'firebase-admin/firestore';
+
+export function isExpired(deadline: Timestamp) {
+  const now = new Date();
+  return deadline.toMillis() < now.getTime();
 }
 ```
 
