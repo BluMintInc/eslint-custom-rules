@@ -231,6 +231,22 @@ export const enforcePropsNamingConsistency = createRule<Options, MessageIds>({
         | TSESTree.ArrowFunctionExpression
         | TSESTree.TSMethodSignature,
     ): void {
+      // A constructor is a `MethodDefinition` wrapping a `FunctionExpression`,
+      // so both this visitor and `checkClassConstructor` would otherwise fire on
+      // the same parameter and emit two identical reports — each carrying a fix
+      // over the same range, which ESLint deduplicates by discarding one, so a
+      // single `--fix` pass could not converge (Issue #1514). The constructor
+      // handler owns the case because it is a strict superset: it also reports
+      // parameter properties, counts them toward the multi-Props deferral, and
+      // gates the rename on `this.<name>` safety.
+      if (
+        node.type === AST_NODE_TYPES.FunctionExpression &&
+        node.parent?.type === AST_NODE_TYPES.MethodDefinition &&
+        node.parent.kind === 'constructor'
+      ) {
+        return;
+      }
+
       // Skip functions with multiple parameters that have Props types
       const propsTypeParams = node.params.filter((param) => {
         if (param.type !== AST_NODE_TYPES.Identifier) return false;
