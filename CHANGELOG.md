@@ -1,3 +1,11 @@
+## [1.20.48](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.47...v1.20.48) (2026-07-31)
+
+
+### Bug Fixes
+
+* **enforce-props-naming-consistency:** stop reporting constructor parameters twice (closes [#1514](https://github.com/BluMintInc/eslint-custom-rules/issues/1514)) ([ff4e84c](https://github.com/BluMintInc/eslint-custom-rules/commit/ff4e84c3d59fb73d99e5f989c5a9932427a12b91))
+* **prefer-nullish-coalescing-boolean-props:** degrade instead of throwing under a non-TypeScript parser (closes [#1513](https://github.com/BluMintInc/eslint-custom-rules/issues/1513)) ([5f9f915](https://github.com/BluMintInc/eslint-custom-rules/commit/5f9f9156da594120cc9d506e5d5827321ea2f7ce))
+
 ## [1.20.47](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.46...v1.20.47) (2026-07-31)
 
 

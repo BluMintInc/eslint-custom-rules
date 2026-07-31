@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.20.48",
+    "date": "2026-07-31T09:14:53.303Z",
+    "rules": [
+      {
+        "name": "enforce-props-naming-consistency",
+        "changeType": "fix",
+        "issues": [
+          1514
+        ],
+        "summary": "stop reporting constructor parameters twice (closes #1514)"
+      },
+      {
+        "name": "prefer-nullish-coalescing-boolean-props",
+        "changeType": "fix",
+        "issues": [
+          1513
+        ],
+        "summary": "degrade instead of throwing under a non-TypeScript parser (closes #1513)"
+      }
+    ]
+  },
+  {
     "version": "1.20.47",
     "date": "2026-07-31T08:38:59.580Z",
     "rules": [
