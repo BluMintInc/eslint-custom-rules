@@ -1,3 +1,11 @@
+## [1.20.44](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.43...v1.20.44) (2026-07-31)
+
+
+### Bug Fixes
+
+* **enforce-firestore-doc-ref-generic:** honor a typed collection bound to a const (closes [#1498](https://github.com/BluMintInc/eslint-custom-rules/issues/1498)) ([1f292c7](https://github.com/BluMintInc/eslint-custom-rules/commit/1f292c7923d2e04a59283ada30d5b8fa6c80dce8)), closes [#1499](https://github.com/BluMintInc/eslint-custom-rules/issues/1499)
+* **enforce-transform-memoization:** only report inside a component or hook (closes [#1497](https://github.com/BluMintInc/eslint-custom-rules/issues/1497)) ([e91155e](https://github.com/BluMintInc/eslint-custom-rules/commit/e91155e05e28ce38a5ef5cf0934a652d14e59a6e)), closes [#1243](https://github.com/BluMintInc/eslint-custom-rules/issues/1243) [#1292](https://github.com/BluMintInc/eslint-custom-rules/issues/1292) [#1347](https://github.com/BluMintInc/eslint-custom-rules/issues/1347) [#1496](https://github.com/BluMintInc/eslint-custom-rules/issues/1496)
+
 ## [1.20.43](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.42...v1.20.43) (2026-07-31)
 
 

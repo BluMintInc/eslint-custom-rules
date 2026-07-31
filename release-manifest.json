@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.20.44",
+    "date": "2026-07-31T05:47:19.150Z",
+    "rules": [
+      {
+        "name": "enforce-firestore-doc-ref-generic",
+        "changeType": "fix",
+        "issues": [
+          1498
+        ],
+        "summary": "honor a typed collection bound to a const (closes #1498)"
+      },
+      {
+        "name": "enforce-transform-memoization",
+        "changeType": "fix",
+        "issues": [
+          1497
+        ],
+        "summary": "only report inside a component or hook (closes #1497)"
+      }
+    ]
+  },
+  {
     "version": "1.20.43",
     "date": "2026-07-31T04:38:54.532Z",
     "rules": [
