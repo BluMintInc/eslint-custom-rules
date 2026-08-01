@@ -870,9 +870,72 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
           return tracesToRulesUnitTesting(node.expression, visited);
         case AST_NODE_TYPES.Identifier:
           return identifierTracesToRulesUnitTesting(node, visited);
+        case AST_NODE_TYPES.ArrowFunctionExpression:
+        case AST_NODE_TYPES.FunctionExpression:
+        case AST_NODE_TYPES.FunctionDeclaration:
+          return functionReturnTracesToRulesUnitTesting(node, visited);
         default:
           return false;
       }
+    }
+
+    /**
+     * Reached when a receiver is the result of calling a local helper, so what
+     * the helper hands back decides the surface. Only top-level returns are
+     * read; a return nested inside another function belongs to that one.
+     */
+    function functionReturnTracesToRulesUnitTesting(
+      node:
+        | TSESTree.ArrowFunctionExpression
+        | TSESTree.FunctionExpression
+        | TSESTree.FunctionDeclaration,
+      visited: Set<TSESTree.Node>,
+    ): boolean {
+      if (node.body.type !== AST_NODE_TYPES.BlockStatement) {
+        return tracesToRulesUnitTesting(node.body, visited);
+      }
+
+      return node.body.body.some(
+        (statement) =>
+          statement.type === AST_NODE_TYPES.ReturnStatement &&
+          tracesToRulesUnitTesting(statement.argument, visited),
+      );
+    }
+
+    /**
+     * `withSecurityRulesDisabled` is the one API here that delivers a context
+     * through a callback rather than a return value, and the documented spelling
+     * leaves the parameter unannotated, so the call it belongs to is the only
+     * evidence of the surface.
+     */
+    const CONTEXT_CALLBACK_METHOD = 'withSecurityRulesDisabled';
+
+    function parameterTracesToRulesUnitTesting(
+      name: TSESTree.BindingName,
+      owner: TSESTree.Node,
+      visited: Set<TSESTree.Node>,
+    ): boolean {
+      if (
+        name.type === AST_NODE_TYPES.Identifier &&
+        name.typeAnnotation &&
+        isRulesUnitTestingType(name.typeAnnotation.typeAnnotation)
+      ) {
+        return true;
+      }
+
+      const call = owner.parent;
+      if (
+        !call ||
+        call.type !== AST_NODE_TYPES.CallExpression ||
+        !(call.arguments as TSESTree.Node[]).includes(owner) ||
+        call.callee.type !== AST_NODE_TYPES.MemberExpression ||
+        call.callee.property.type !== AST_NODE_TYPES.Identifier ||
+        call.callee.property.name !== CONTEXT_CALLBACK_METHOD
+      ) {
+        return false;
+      }
+
+      return tracesToRulesUnitTesting(call.callee.object, visited);
     }
 
     function identifierTracesToRulesUnitTesting(
@@ -894,31 +957,46 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
         );
       }
 
-      // Covers the `withSecurityRulesDisabled(async (ctx: RulesTestContext) =>
-      // ...)` callback, where the compat handle never appears as an initializer.
       if (def.type === 'Parameter') {
-        const annotation = def.name.typeAnnotation;
-        return (
-          !!annotation && isRulesUnitTestingType(annotation.typeAnnotation)
-        );
+        return parameterTracesToRulesUnitTesting(def.name, def.node, visited);
+      }
+
+      // A hoisted declaration binds the helper the same way a `const` arrow
+      // does; an ambient `declare function` has no body and falls through.
+      if (def.type === 'FunctionName') {
+        return tracesToRulesUnitTesting(def.node, visited);
       }
 
       if (
         def.type !== 'Variable' ||
-        def.node.type !== AST_NODE_TYPES.VariableDeclarator ||
-        def.parent?.type !== AST_NODE_TYPES.VariableDeclaration ||
-        def.parent.kind !== 'const'
+        def.node.type !== AST_NODE_TYPES.VariableDeclarator
       ) {
         return false;
       }
 
       const declarator = def.node;
+
+      // An annotation constrains every assignment rather than just the
+      // initializer, so unlike an initializer it survives a `let`. The
+      // environment handle is created in `beforeAll` and so cannot be `const`;
+      // `let testEnv: RulesTestEnvironment` is the documented spelling, and
+      // TypeScript refuses to put another surface in it.
       if (
         declarator.id.type === AST_NODE_TYPES.Identifier &&
         declarator.id.typeAnnotation &&
         isRulesUnitTestingType(declarator.id.typeAnnotation.typeAnnotation)
       ) {
         return true;
+      }
+
+      // Without that guarantee only a `const` initializer is followed, mirroring
+      // `isTypedCollectionBinding`: an unannotated reassignable binding can hold
+      // an Admin SDK handle by the time it reaches `.doc()`.
+      if (
+        def.parent?.type !== AST_NODE_TYPES.VariableDeclaration ||
+        def.parent.kind !== 'const'
+      ) {
+        return false;
       }
 
       return tracesToRulesUnitTesting(declarator.init, visited);
