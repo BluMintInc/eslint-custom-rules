@@ -20,6 +20,8 @@ The rule reports when all of these are true:
 - The awaited calls do not invoke methods on the **same receiver identifier** (e.g. `ref.set(...)` then `ref.get()`), which can carry a read-after-write / write-after-write ordering dependency on that shared object.
 - No later discarded-result await reads as a **state refetch/refresh** (`refresh*`, `reload*`, `refetch*`, `revalidate*`, `resync*`, `sync*`), which re-observes state a preceding await may have mutated.
 - None of the awaits performs a **route transition** (`push*`, `replace*`, `navigate*`, `redirect*`, `reroute*`, `goto*`, or any method on a `router`/`history`/`navigation`/`nav` receiver), which sequences the surrounding awaits by UI lifetime.
+- No later await names a promise that an earlier **awaited aggregate** (`Promise.all`, `allSettled`, `any`, `race`) is still producing — neither the aggregated array's own `const` binding nor any element written as a bare identifier.
+- None of the awaited expressions contains an **`await` of its own** outside a nested function, because the rewrite would splice that expression into a `Promise.all([...])` array literal and suspend it mid-literal.
 - The awaits are not inside try blocks or loops, which signal intentional ordering or per-call error handling.
 - The calls do not match a small list of side-effect-heavy patterns (e.g., `updatecounter`, `commit`, `flush`, `saveall`) that should stay ordered.
 
@@ -111,6 +113,36 @@ Navigation is detected two ways, both case-insensitive:
 
 - The callee's own method name **starts with** a navigation verb: `push`, `replace`, `navigate`, `redirect`, `reroute`, `goto`. Suffixed forms like `navigateTo()` or `redirectToLogin()` match; a name that merely contains one (`getPushToken()`, `fetchRedirectRules()`) does not.
 - The callee's receiver is exactly `router`, `history`, `navigation`, or `nav`, which makes every method on it navigation (`router.back()`, `history.go(-1)`). Keying on the receiver avoids matching the remaining history verbs bare, since `back`, `forward`, and `go` are too generic. The match is exact, so `navigator.getBattery()` and `historyLog.append(entry)` are still flagged.
+
+### ✅ Correct (aggregated-element dependency)
+
+Awaiting `Promise.all(ops)` does not consume the promises inside `ops` — they stay reachable by name. A later await that reads one of them is therefore waiting on a value the aggregate is still producing, even though the two awaits share no identifier at all (`Promise`/`all`/`ops` on one side, `release`/`dropped` on the other). `Promise.all([...])` around the pair would start the consumer concurrently with the very operation whose result it reads.
+
+```typescript
+async function assignToTeam(dropped: Promise<DropResult>) {
+  const ops = [dropped, assignSlot()];
+  await Promise.all(ops);
+  // `dropped` is ops[0]: the release cannot start any earlier.
+  await releaseSlots({ results: [await dropped] });
+}
+```
+
+The aggregate is expanded to the array's own binding plus every element written as a bare identifier (or a spread of one), so `await report(ops[0])` and `await drainQueue(extras)` after `await Promise.all([...extras])` are recognized too. Elements that are freshly-constructed promises (`assignSlot()`) bind no name and are omitted, so an aggregate of anonymous calls followed by unrelated work is still flagged. Only a `const` array is followed: a `let`/`var` binding can be reassigned between the declaration and the aggregate, so its literal elements would not describe what the aggregate actually received.
+
+### ✅ Correct (nested await)
+
+The fix splices each awaited expression into a `Promise.all([...])` **array literal**, and array elements evaluate left to right. An element that contains an `await` of its own suspends the enclosing function mid-literal — after the earlier elements' promises have been constructed, but before `Promise.all` has been called to attach handlers to them. If one of those already-running promises rejects during the suspension, the function throws at the inner `await` and the rejected promise is orphaned into an `unhandledRejection`, which the Cloud Functions runtime answers by killing the instance, so the caller receives an opaque crash instead of the real error.
+
+```typescript
+async function readBoth(url1: string, url2: string) {
+  // Hoisting these would suspend the array literal at `await fetch(url1)`,
+  // and buy no parallelism: fetch(url2) still cannot start until it resolves.
+  await (await fetch(url1)).json();
+  await (await fetch(url2)).json();
+}
+```
+
+The scan stops at every function boundary, because an `await` inside a callback belongs to that callback and runs only when it is invoked. `await Promise.all(items.map(async (item) => await store(item)))` evaluates straight through to a promise without suspending anything, so it remains parallelizable.
 
 ### ✅ Correct (test files are exempt)
 

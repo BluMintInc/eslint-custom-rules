@@ -1016,6 +1016,141 @@ it('shows the message', async () => {
       code: CUSTOM_SIDE_EFFECT_CODE,
       options: [{ sideEffectPatterns: ['archiveEntry'] }],
     },
+    // A nested `await` inside a call argument is a data dependency: `dropped` is
+    // an element of the very array the preceding `Promise.all` aggregates, so the
+    // release cannot start any earlier. Folding these into one aggregate orphans
+    // the aggregate's rejection. (array-element aliasing + argument-nested await)
+    {
+      filename: 'functions/src/util/tournament/team/TeamAssigner.ts',
+      code: `
+        const drop = async () => 'dropped';
+        const assign = async () => undefined;
+        const release = async (args: { results: string[] }) => args;
+
+        async function assignToTeam() {
+          const dropped = drop();
+          const ops: Promise<unknown>[] = [dropped, assign()];
+          await Promise.all(ops);
+          await release({ results: [await dropped] });
+        }
+      `,
+    },
+    // Same dependency reached through an inline array literal, with no
+    // intermediate `ops` variable. Isolates the argument-nested-await channel
+    // from the array-variable-aliasing channel.
+    {
+      filename: 'functions/src/util/tournament/team/TeamAssigner.ts',
+      code: `
+        const drop = async () => 'dropped';
+        const assign = async () => undefined;
+        const release = async (args: { results: string[] }) => args;
+
+        async function assignToTeam() {
+          const dropped = drop();
+          await Promise.all([dropped, assign()]);
+          await release({ results: [await dropped] });
+        }
+      `,
+    },
+    // Conservative fallback case: even with NO data dependency, hoisting a
+    // trailing statement that contains an `await` into a Promise.all([...])
+    // array literal orphans element 0's promise when it rejects. The fixer is
+    // unsound here, so the rule must not report.
+    {
+      filename: 'functions/src/util/tournament/team/TeamAssigner.ts',
+      code: `
+        const drop = async () => 'dropped';
+        const assign = async () => undefined;
+        const release = async (args: { results: string[] }) => args;
+
+        async function assignToTeam() {
+          const other = drop();
+          const ops: Promise<unknown>[] = [drop(), assign()];
+          await Promise.all(ops);
+          await release({ results: [await other] });
+        }
+      `,
+    },
+    // The dependency survives without any nested await: `dropped` is an element
+    // of the array `Promise.all` aggregates, so the aggregate is still producing
+    // the value the second await reads. Proves the aliasing barrier stands on
+    // its own rather than riding on the nested-await guard. (#1541)
+    `
+    async function aggregateThenConsumeElement() {
+      const dropped = drop();
+      const ops = [dropped, assign()];
+      await Promise.all(ops);
+      const result = await dropped;
+      return result;
+    }
+    `,
+    // Same aliasing through an inline array literal. (#1541)
+    `
+    async function inlineAggregateThenConsumeElement() {
+      const dropped = drop();
+      await Promise.all([dropped, assign()]);
+      const result = await dropped;
+      return result;
+    }
+    `,
+    // Reaching the aggregated promise by index rather than by its own binding
+    // is the same dependency, expressed through the array's name. (#1541)
+    `
+    async function aggregateThenIndexElement() {
+      const ops = [drop(), assign()];
+      await Promise.all(ops);
+      await report(ops[0]);
+    }
+    `,
+    // A spread element carries its source array's promises into the aggregate,
+    // so the source name identifies them afterwards. (#1541)
+    `
+    async function spreadAggregateThenDrain(extras) {
+      await Promise.all([...extras]);
+      await drainQueue(extras);
+    }
+    `,
+    // Every array-taking Promise combinator leaves its members reachable by
+    // name, so the aliasing barrier is not specific to Promise.all. (#1541)
+    `
+    async function allSettledThenConsumeElement() {
+      const dropped = drop();
+      const ops = [dropped, assign()];
+      await Promise.allSettled(ops);
+      const outcome = await dropped;
+      return outcome;
+    }
+    `,
+    // A nested await in RECEIVER position is unsound to hoist for exactly the
+    // reason an argument-nested one is: the array literal suspends at `await
+    // fetch(url1)` while the earlier element's promise is already running with
+    // no handler attached. The rewrite is also a latency no-op, since
+    // `fetch(url2)` cannot start until `fetch(url1)` resolves. (#1541)
+    `
+    async function complexExpressionAwaits() {
+      await (await fetch(url1)).json();
+      await (await fetch(url2)).json();
+      return true;
+    }
+    `,
+    // The same shape with the first result captured. (#1541)
+    `
+    async function complexExpressions() {
+      const data = await (await fetch(url1)).json();
+      await (await fetch(url2)).json();
+      return data;
+    }
+    `,
+    // A nested await inside a captured trailing await is equally unsound: it
+    // suspends the array literal after the leading element's promise exists.
+    // (#1541)
+    `
+    async function capturedNestedAwait() {
+      await sendPing();
+      const payload = await wrap(await load());
+      return payload;
+    }
+    `,
   ],
   invalid: [
     // Control: different receivers, genuinely independent -> still flagged.
@@ -1248,27 +1383,6 @@ it('shows the message', async () => {
       `,
     },
 
-    // Sequential awaits with complex expressions
-    {
-      code: `
-      async function complexExpressionAwaits() {
-        await (await fetch(url1)).json();
-        await (await fetch(url2)).json();
-        return true;
-      }
-      `,
-      errors: [error(2)],
-      output: `
-      async function complexExpressionAwaits() {
-        await Promise.all([
-  (await fetch(url1)).json(),
-  (await fetch(url2)).json()
-]);
-        return true;
-      }
-      `,
-    },
-
     // Sequential awaits with function calls
     {
       code: `
@@ -1404,27 +1518,6 @@ it('shows the message', async () => {
 ]);
         }
         return true;
-      }
-      `,
-    },
-
-    // Complex expressions without dependencies
-    {
-      code: `
-      async function complexExpressions() {
-        const data = await (await fetch(url1)).json();
-        await (await fetch(url2)).json();
-        return data;
-      }
-      `,
-      errors: [error(2)],
-      output: `
-      async function complexExpressions() {
-        const [data, ] = await Promise.all([
-  (await fetch(url1)).json(),
-  (await fetch(url2)).json()
-]);
-        return data;
       }
       `,
     },
@@ -2065,6 +2158,87 @@ it('shows the message', async () => {
       code: CUSTOM_SIDE_EFFECT_CODE,
       errors: [error(2)],
       output: CUSTOM_SIDE_EFFECT_FIXED,
+    },
+
+    // Control for the aggregate-element aliasing barrier: the trailing await
+    // shares no name with anything the aggregate holds, so the pair stays
+    // parallelizable. Proves expanding `Promise.all(ops)` to `ops` and its
+    // elements does not suppress unrelated work. (#1541)
+    {
+      code: `
+      async function aggregateThenUnrelated(ops, payload) {
+        await Promise.all(ops);
+        await recordMetrics(payload);
+      }
+      `,
+      errors: [error(2)],
+      output: `
+      async function aggregateThenUnrelated(ops, payload) {
+        await Promise.all([
+  Promise.all(ops),
+  recordMetrics(payload)
+]);
+      }
+      `,
+    },
+    // An inline aggregate whose elements are all freshly-constructed promises
+    // binds no name a later await could reference. (#1541)
+    {
+      code: `
+      async function inlineAggregateThenUnrelated() {
+        await Promise.all([dropA(), dropB()]);
+        await recordMetrics();
+      }
+      `,
+      errors: [error(2)],
+      output: `
+      async function inlineAggregateThenUnrelated() {
+        await Promise.all([
+  Promise.all([dropA(), dropB()]),
+  recordMetrics()
+]);
+      }
+      `,
+    },
+    // `Promise.resolve` wraps a single value rather than aggregating an array,
+    // so its argument is not an aggregated element and the run stays
+    // parallelizable. Proves the combinator pattern is exact. (#1541)
+    {
+      code: `
+      async function promiseResolveIsNotAnAggregate(marker) {
+        await Promise.resolve(marker);
+        await recordMetrics(marker);
+      }
+      `,
+      errors: [error(2)],
+      output: `
+      async function promiseResolveIsNotAnAggregate(marker) {
+        await Promise.all([
+  Promise.resolve(marker),
+  recordMetrics(marker)
+]);
+      }
+      `,
+    },
+    // Control for the nested-await hoist barrier: an `await` inside a callback
+    // belongs to that callback, so the outer expression evaluates straight
+    // through to a promise and hoisting it suspends nothing. (#1541)
+    {
+      code: `
+      async function callbackAwaitsStillParallelize(items, others) {
+        await Promise.all(items.map(async (item) => await store(item)));
+        await recordCompletion(others);
+      }
+      `,
+      errors: [error(2)],
+      output: `
+      async function callbackAwaitsStillParallelize(items, others) {
+        await Promise.all([
+  Promise.all(items.map(async (item) => await store(item))),
+  recordCompletion(others)
+]);
+      }
+      `,
     },
   ],
 });
