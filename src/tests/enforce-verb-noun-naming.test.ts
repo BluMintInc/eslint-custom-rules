@@ -314,6 +314,86 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
     // (domain allowlist matches on leading word, so mainProcess starts with "main")
     `function mainProcess() {}`,
     `const mainHandler = () => {}`,
+
+    // Issue #1555: externally specified export names (registry keys, CLI verbs,
+    // artifact paths) are noun phrases by contract.
+    {
+      name: 'a noun-phrase export whose name is an external registry key',
+      code: 'export const axisProfile = (raster, params) => { return null; };',
+      options: [{ externallyNamedExports: ['**/ops/*.mjs'] }],
+      filename: 'scripts/design/proxy/ops/axisProfile.mjs',
+    },
+    {
+      name: 'an absolute filename matches the same leading-** glob',
+      code: 'export const axisProfile = (raster, params) => { return null; };',
+      options: [{ externallyNamedExports: ['**/ops/*.mjs'] }],
+      filename: '/repo/scripts/design/proxy/ops/axisProfile.mjs',
+    },
+    {
+      name: 'any pattern in the list may match',
+      code: 'export const rasterHistogram = () => { return null; };',
+      options: [
+        { externallyNamedExports: ['**/predicates/*.mjs', '**/ops/*.mjs'] },
+      ],
+      filename: 'scripts/design/proxy/ops/rasterHistogram.mjs',
+    },
+    {
+      name: 'an exported function declaration is exempt in a matching file',
+      code: 'export function glyphPopulation() { return null; }',
+      options: [{ externallyNamedExports: ['**/ops/*.mjs'] }],
+      filename: 'scripts/design/proxy/ops/glyphPopulation.mjs',
+    },
+    {
+      name: 'a default-exported function declaration is exempt',
+      code: 'export default function contourDelta() { return null; }',
+      options: [{ externallyNamedExports: ['**/ops/*.mjs'] }],
+      filename: 'scripts/design/proxy/ops/contourDelta.mjs',
+    },
+    {
+      name: 'a deferred export specifier exempts the local binding',
+      code: `const axisProfile = () => { return null; };
+export { axisProfile };`,
+      options: [{ externallyNamedExports: ['**/ops/*.mjs'] }],
+      filename: 'scripts/design/proxy/ops/axisProfile.mjs',
+    },
+    {
+      name: 'a renamed export specifier exempts the local name',
+      code: `const axisProfile = () => { return null; };
+export { axisProfile as ops_axisProfile };`,
+      options: [{ externallyNamedExports: ['**/ops/*.mjs'] }],
+      filename: 'scripts/design/proxy/ops/axisProfile.mjs',
+    },
+    {
+      name: 'a deferred default export exempts the local binding',
+      code: `const axisProfile = () => { return null; };
+export default axisProfile;`,
+      options: [{ externallyNamedExports: ['**/ops/*.mjs'] }],
+      filename: 'scripts/design/proxy/ops/axisProfile.mjs',
+    },
+    {
+      name: 'a deferred export of a function declaration is exempt',
+      code: `function glyphPopulation() { return null; }
+export { glyphPopulation };`,
+      options: [{ externallyNamedExports: ['**/ops/*.mjs'] }],
+      filename: 'scripts/design/proxy/ops/glyphPopulation.mjs',
+    },
+    {
+      name: 'an exported function expression is exempt',
+      code: 'export const axisProfile = function (raster) { return null; };',
+      options: [{ externallyNamedExports: ['**/ops/*.mjs'] }],
+      filename: 'scripts/design/proxy/ops/axisProfile.mjs',
+    },
+    {
+      name: 'a verb-named export in a matching file stays clean',
+      code: 'export const computeProfile = (raster) => { return null; };',
+      options: [{ externallyNamedExports: ['**/ops/*.mjs'] }],
+      filename: 'scripts/design/proxy/ops/computeProfile.mjs',
+    },
+    {
+      name: 'a verb-named export needs no option to stay clean',
+      code: 'export const buildAxisProfile = (raster) => { return null; };',
+      filename: 'scripts/design/proxy/ops/buildAxisProfile.mjs',
+    },
   ],
   invalid: [
     {
@@ -395,6 +475,85 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
         }
       }`,
       errors: [verbNounError('StatusData')],
+    },
+
+    // Issue #1555 controls — the exemption is opt-in, file-scoped, and
+    // export-scoped; everything outside those bounds still reports.
+    {
+      name: 'without options the noun-phrase export still reports',
+      code: 'export const axisProfile = (raster, params) => { return null; };',
+      filename: 'scripts/design/proxy/ops/axisProfile.mjs',
+      errors: [verbNounError('axisProfile')],
+    },
+    {
+      name: 'an empty pattern list exempts nothing',
+      code: 'export const axisProfile = (raster, params) => { return null; };',
+      options: [{ externallyNamedExports: [] }],
+      filename: 'scripts/design/proxy/ops/axisProfile.mjs',
+      errors: [verbNounError('axisProfile')],
+    },
+    {
+      name: 'a non-matching pattern leaves the file checked',
+      code: 'export const axisProfile = (raster, params) => { return null; };',
+      options: [{ externallyNamedExports: ['**/predicates/*.mjs'] }],
+      filename: 'scripts/design/proxy/ops/axisProfile.mjs',
+      errors: [verbNounError('axisProfile')],
+    },
+    {
+      name: 'a non-exported binding in a matching file still reports',
+      code: 'const axisProfile = (raster, params) => { return null; };',
+      options: [{ externallyNamedExports: ['**/ops/*.mjs'] }],
+      filename: 'scripts/design/proxy/ops/index.mjs',
+      errors: [verbNounError('axisProfile')],
+    },
+    {
+      name: 'a non-exported function declaration in a matching file still reports',
+      code: `function glyphPopulation() { return null; }
+export const computeProfile = () => glyphPopulation();`,
+      options: [{ externallyNamedExports: ['**/ops/*.mjs'] }],
+      filename: 'scripts/design/proxy/ops/computeProfile.mjs',
+      errors: [verbNounError('glyphPopulation')],
+    },
+    {
+      name: 'a nested function inside an exported function still reports',
+      code: `export const computeProfile = () => {
+  function axisProfile() { return null; }
+  return axisProfile;
+};`,
+      options: [{ externallyNamedExports: ['**/ops/*.mjs'] }],
+      filename: 'scripts/design/proxy/ops/computeProfile.mjs',
+      errors: [verbNounError('axisProfile')],
+    },
+    {
+      name: 'a re-export carrying a source does not exempt a same-named local',
+      code: `const axisProfile = () => { return null; };
+export { axisProfile } from './registry.mjs';`,
+      options: [{ externallyNamedExports: ['**/ops/*.mjs'] }],
+      filename: 'scripts/design/proxy/ops/index.mjs',
+      errors: [verbNounError('axisProfile')],
+    },
+    {
+      name: 'a method on an exported class is a local API choice, not a registry key',
+      code: `export class OpRunner {
+  axisProfile() { return null; }
+}`,
+      options: [{ externallyNamedExports: ['**/ops/*.mjs'] }],
+      filename: 'scripts/design/proxy/ops/OpRunner.mjs',
+      errors: [verbNounError('axisProfile')],
+    },
+    {
+      name: 'malformed glob patterns match nothing and do not crash',
+      code: 'const axisProfile = (raster, params) => { return null; };',
+      options: [{ externallyNamedExports: ['[', '(foo'] }],
+      filename: 'scripts/design/proxy/ops/axisProfile.mjs',
+      errors: [verbNounError('axisProfile')],
+    },
+    {
+      name: 'malformed glob patterns do not exempt exports either',
+      code: 'export const axisProfile = (raster, params) => { return null; };',
+      options: [{ externallyNamedExports: ['[', '(foo'] }],
+      filename: 'scripts/design/proxy/ops/axisProfile.mjs',
+      errors: [verbNounError('axisProfile')],
     },
   ],
 });

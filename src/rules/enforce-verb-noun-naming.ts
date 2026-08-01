@@ -1,9 +1,16 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { minimatch } from 'minimatch';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
 import nlp from 'compromise';
 
 type MessageIds = 'functionVerbPhrase';
+
+type Options = [
+  {
+    readonly externallyNamedExports?: readonly string[];
+  },
+];
 
 const PREPOSITIONS = new Set(['to', 'from', 'with', 'by', 'at', 'of']);
 
@@ -3765,7 +3772,7 @@ const ALLOWLIST = {
   ]),
 };
 
-export const enforceVerbNounNaming = createRule<[], MessageIds>({
+export const enforceVerbNounNaming = createRule<Options, MessageIds>({
   name: 'enforce-verb-noun-naming',
   meta: {
     type: 'suggestion',
@@ -3775,14 +3782,112 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
       requiresTypeChecking: false,
       extendsBaseRule: false,
     },
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: {
+          externallyNamedExports: {
+            type: 'array',
+            items: { type: 'string' },
+          },
+        },
+        additionalProperties: false,
+      },
+    ],
     messages: {
       functionVerbPhrase:
         'Function "{{name}}" should start with an action verb followed by the thing it acts on. Verb-first names tell readers this symbol performs work instead of representing data, which keeps APIs predictable and prevents accidental misuse. Rename "{{name}}" to a verb-noun phrase such as "fetchUsers" or "processRequest".',
     },
   },
-  defaultOptions: [],
-  create(context) {
+  defaultOptions: [{}],
+  create(context, [options]) {
+    const externallyNamedExports = options?.externallyNamedExports ?? [];
+    const rawFilename =
+      (context as { filename?: string }).filename ?? context.getFilename();
+    const normalizedFilename = rawFilename.replace(/\\/g, '/');
+
+    // A leading `**` consumes the extra leading segments of an absolute path,
+    // so one match handles both repo-relative and absolute filenames. Malformed
+    // globs are treated as non-matching by minimatch rather than throwing, which
+    // keeps a bad pattern from aborting the whole lint run.
+    const hasExternallyNamedExports = externallyNamedExports.some((glob) =>
+      minimatch(normalizedFilename, glob, { dot: true, matchBase: true }),
+    );
+
+    // `export { local as exported }` and `export default local` name the module
+    // binding from a distance, so the local name still belongs to the external
+    // specification. Collected once per file, and only when a glob matched.
+    let deferredExportedNames: Set<string> | undefined;
+
+    function getDeferredExportedNames(): Set<string> {
+      if (deferredExportedNames) {
+        return deferredExportedNames;
+      }
+
+      const names = new Set<string>();
+      for (const statement of context.sourceCode.ast.body) {
+        if (
+          statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
+          !statement.source
+        ) {
+          for (const specifier of statement.specifiers) {
+            const local: TSESTree.Node = specifier.local;
+            if (local.type === AST_NODE_TYPES.Identifier) {
+              names.add(local.name);
+            }
+          }
+        } else if (
+          statement.type === AST_NODE_TYPES.ExportDefaultDeclaration &&
+          statement.declaration.type === AST_NODE_TYPES.Identifier
+        ) {
+          names.add(statement.declaration.name);
+        }
+      }
+
+      deferredExportedNames = names;
+      return names;
+    }
+
+    /**
+     * Exported symbols in a file whose names are specified elsewhere (a runtime
+     * registry key, a CLI verb, an artifact path) cannot be renamed without
+     * desynchronizing them from that specification. Non-exported symbols in the
+     * same file are ordinary local code and stay checked.
+     */
+    function isExternallyNamedExport(
+      node: TSESTree.FunctionDeclaration | TSESTree.VariableDeclarator,
+      name: string,
+    ): boolean {
+      if (!hasExternallyNamedExports) {
+        return false;
+      }
+
+      if (node.type === AST_NODE_TYPES.FunctionDeclaration) {
+        const parent = node.parent;
+        if (
+          parent?.type === AST_NODE_TYPES.ExportNamedDeclaration ||
+          parent?.type === AST_NODE_TYPES.ExportDefaultDeclaration
+        ) {
+          return true;
+        }
+        // Only a module-level binding can be the target of a deferred export.
+        return (
+          parent?.type === AST_NODE_TYPES.Program &&
+          getDeferredExportedNames().has(name)
+        );
+      }
+
+      const declaration = node.parent;
+      const declarationParent = declaration?.parent;
+      if (declarationParent?.type === AST_NODE_TYPES.ExportNamedDeclaration) {
+        return true;
+      }
+      return (
+        declarationParent?.type === AST_NODE_TYPES.Program &&
+        getDeferredExportedNames().has(name)
+      );
+    }
+
     function extractFirstWord(name: string) {
       const firstChar = name.charAt(0);
       const rest = name.slice(1);
@@ -3981,6 +4086,10 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
           return;
         }
 
+        if (isExternallyNamedExport(node, node.id.name)) {
+          return;
+        }
+
         if (!isVerbPhrase(node.id.name)) {
           context.report({
             node: node.id,
@@ -3999,6 +4108,10 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
           node.init?.type === AST_NODE_TYPES.FunctionExpression
         ) {
           if (isReactComponent(node.init)) {
+            return;
+          }
+
+          if (isExternallyNamedExport(node, node.id.name)) {
             return;
           }
 
