@@ -186,6 +186,185 @@ ruleTesterTs.run('enforce-memoize-getters', enforceMemoizeGetters, {
         }
       `,
     },
+    // ------------------------------------------------------------------
+    // Issue #1561: a getter that samples live external state must not be
+    // reported — @Memoize() would pin the first observation for the life of
+    // the instance, and the fix lands unattended under `eslint --fix`.
+    // ------------------------------------------------------------------
+    {
+      name: 'a getter calling a Node I/O import directly is exempt',
+      code: `
+        import { execFileSync } from 'node:child_process';
+        class PageProbe {
+          private get snapshot() {
+            return execFileSync('agent-browser', ['snapshot'], { encoding: 'utf8' });
+          }
+        }
+      `,
+    },
+    {
+      name: 'I/O one hop away behind a sibling private method is exempt',
+      code: `
+        import { execFileSync } from 'node:child_process';
+        class PageProbe {
+          private run(args: readonly string[]) {
+            return execFileSync('agent-browser', [...args], { encoding: 'utf8' });
+          }
+          private get organizationOptions() {
+            const snapshot = this.run(['snapshot', '-i']);
+            return [...snapshot.matchAll(/button "([^"]+)"[^\\n]*\\[ref=(e\\d+)]/g)].flatMap((entry) => {
+              const [, label, ref] = entry;
+              return label !== undefined && ref !== undefined ? [{ label, ref }] : [];
+            });
+          }
+        }
+      `,
+    },
+    {
+      name: 'a non-deterministic builtin makes the getter exempt',
+      code: `
+        class Example {
+          private get startedAt() { return Date.now(); }
+        }
+      `,
+    },
+    {
+      name: 'a multi-hop this-chain propagates impurity to the getter',
+      code: `
+        import { readFileSync } from 'node:fs';
+        class Example {
+          private readRaw() { return readFileSync('/etc/hostname', 'utf8'); }
+          private normalize() { return this.readRaw().trim(); }
+          private get hostname() { return this.normalize(); }
+        }
+      `,
+    },
+    {
+      name: 'a chain that reaches I/O only at its far end is exempt',
+      code: `
+        import { execFileSync } from 'node:child_process';
+        class Example {
+          private get screen() { return this.a(); }
+          private a() { return this.b(); }
+          private b() { return this.c(); }
+          private c() { return execFileSync('agent-browser', ['snapshot']); }
+        }
+      `,
+    },
+    {
+      name: 'reading an impure sibling getter propagates impurity',
+      code: `
+        class Example {
+          private get now() { return Date.now(); }
+          private get elapsed() { return this.now - this.started; }
+        }
+      `,
+    },
+    {
+      name: 'a process.env read makes the getter exempt',
+      code: `
+        class Example {
+          private get endpoint() { return process.env.API_URL; }
+        }
+      `,
+    },
+    {
+      name: 'a computed process.env read makes the getter exempt',
+      code: `
+        class Example {
+          private get endpoint() { return process.env['API_URL']; }
+        }
+      `,
+    },
+    {
+      name: 'Math.random makes the getter exempt',
+      code: `
+        class Example {
+          private get jitter() { return Math.random() * 1000; }
+        }
+      `,
+    },
+    {
+      name: 'a bare new Date() makes the getter exempt',
+      code: `
+        class Example {
+          private get clock() { return new Date(); }
+        }
+      `,
+    },
+    {
+      name: 'performance.now makes the getter exempt',
+      code: `
+        class Example {
+          private get mark() { return performance.now(); }
+        }
+      `,
+    },
+    {
+      name: 'crypto.randomUUID makes the getter exempt',
+      code: `
+        class Example {
+          private get id() { return crypto.randomUUID(); }
+        }
+      `,
+    },
+    {
+      name: 'process.hrtime.bigint makes the getter exempt',
+      code: `
+        class Example {
+          private get tick() { return process.hrtime.bigint(); }
+        }
+      `,
+    },
+    {
+      name: 'a namespace import of a Node I/O module is exempt',
+      code: `
+        import * as fs from 'node:fs';
+        class Example {
+          private get config() { return fs.readFileSync('config.json', 'utf8'); }
+        }
+      `,
+    },
+    {
+      name: 'an unprefixed Node I/O module specifier is exempt',
+      code: `
+        import { execFileSync } from 'child_process';
+        class Example {
+          private get snapshot() { return execFileSync('agent-browser', ['snapshot']); }
+        }
+      `,
+    },
+    {
+      name: 'a field-held arrow method carrying the I/O propagates impurity',
+      code: `
+        import { execFileSync } from 'node:child_process';
+        class Example {
+          private run = (args: readonly string[]) => execFileSync('agent-browser', [...args]);
+          private get snapshot() { return this.run(['snapshot']); }
+        }
+      `,
+    },
+    {
+      name: 'a private-name sibling method propagates impurity',
+      code: `
+        import { execFileSync } from 'node:child_process';
+        class Example {
+          #run() { return execFileSync('agent-browser', ['snapshot']); }
+          private get snapshot() { return this.#run(); }
+        }
+      `,
+    },
+    {
+      name: 'I/O inside a nested callback in the getter is exempt',
+      code: `
+        import { readFileSync } from 'node:fs';
+        class Example {
+          private get contents() {
+            return ['a', 'b'].map((name) => readFileSync(name, 'utf8'));
+          }
+        }
+      `,
+    },
   ],
   invalid: [
     // Basic: add import and decorator
@@ -966,6 +1145,143 @@ ruleTesterTs.run('enforce-memoize-getters', enforceMemoizeGetters, {
           private get fetcher() { return 1; }
         }
         import { Memoize } from '@blumintinc/typescript-memoize';
+      `,
+    },
+    // ------------------------------------------------------------------
+    // Issue #1561: the impurity exemption must stay narrow. A lazy factory,
+    // a plain options object, and a pure sibling call are the shapes the rule
+    // exists for, and they remain reported and fixed.
+    // ------------------------------------------------------------------
+    {
+      name: 'a lazy factory getter is still reported',
+      code: `
+        class Example {
+          private get fetcher() { return new FirestoreFetcher(this.ref); }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Example {
+          @Memoize()
+          private get fetcher() { return new FirestoreFetcher(this.ref); }
+        }
+      `,
+    },
+    {
+      name: 'an options object built from fields is still reported',
+      code: `
+        class Example {
+          private get options() { return { retries: this.retries, timeout: this.timeout }; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Example {
+          @Memoize()
+          private get options() { return { retries: this.retries, timeout: this.timeout }; }
+        }
+      `,
+    },
+    {
+      name: 'a getter calling a pure sibling method is still reported',
+      code: `
+        class Example {
+          private helper() { return this.base * 2; }
+          private get scaled() { return this.helper(); }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Example {
+          private helper() { return this.base * 2; }
+          @Memoize()
+          private get scaled() { return this.helper(); }
+        }
+      `,
+    },
+    {
+      name: 'new Date with an argument is a pure conversion and is still reported',
+      code: `
+        class Example {
+          private get createdAt() { return new Date(this.timestamp); }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Example {
+          @Memoize()
+          private get createdAt() { return new Date(this.timestamp); }
+        }
+      `,
+    },
+    {
+      name: 'a call into a non-I/O import is still reported',
+      code: `
+        import { cloneDeep } from 'lodash';
+        class Example {
+          private get snapshot() { return cloneDeep(this.state); }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        import { cloneDeep } from 'lodash';
+        class Example {
+          @Memoize()
+          private get snapshot() { return cloneDeep(this.state); }
+        }
+      `,
+    },
+    {
+      name: 'a pure getter beside an impure one is reported and carries the import',
+      code: `
+        import { execFileSync } from 'node:child_process';
+        class Example {
+          private get snapshot() { return execFileSync('agent-browser', ['snapshot']); }
+          private get fetcher() { return new FirestoreFetcher(this.ref); }
+        }
+      `,
+      errors: [
+        { messageId: 'requireMemoizeGetter', data: { name: 'fetcher' } },
+      ],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        import { execFileSync } from 'node:child_process';
+        class Example {
+          private get snapshot() { return execFileSync('agent-browser', ['snapshot']); }
+          @Memoize()
+          private get fetcher() { return new FirestoreFetcher(this.ref); }
+        }
+      `,
+    },
+    {
+      name: 'an impure getter in a sibling class does not exempt another class',
+      code: `
+        import { execFileSync } from 'node:child_process';
+        class Probe {
+          private get snapshot() { return execFileSync('agent-browser', ['snapshot']); }
+        }
+        class Service {
+          private get snapshot() { return new FirestoreFetcher(this.ref); }
+        }
+      `,
+      errors: [
+        { messageId: 'requireMemoizeGetter', data: { name: 'snapshot' } },
+      ],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        import { execFileSync } from 'node:child_process';
+        class Probe {
+          private get snapshot() { return execFileSync('agent-browser', ['snapshot']); }
+        }
+        class Service {
+          @Memoize()
+          private get snapshot() { return new FirestoreFetcher(this.ref); }
+        }
       `,
     },
   ],

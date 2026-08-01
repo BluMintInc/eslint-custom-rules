@@ -1,4 +1,5 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import { visitorKeys } from '@typescript-eslint/visitor-keys';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
 import { createSuppressionChecker } from '../utils/disableDirectives';
@@ -86,6 +87,287 @@ function isMemoizeDecorator(
     return expression.property.name === alias;
   }
   return false;
+}
+
+/**
+ * Node modules whose exports observe or drive the world outside the process.
+ * A getter that reaches one of them yields a fresh observation per access, and
+ * `@Memoize()` would pin the first observation for the life of the instance —
+ * a behaviour change, not an optimization.
+ */
+const IO_MODULES = new Set([
+  'child_process',
+  'node:child_process',
+  'fs',
+  'node:fs',
+  'fs/promises',
+  'node:fs/promises',
+  'net',
+  'node:net',
+  'http',
+  'node:http',
+  'https',
+  'node:https',
+  'dns',
+  'node:dns',
+]);
+
+/**
+ * Builtins whose result differs between two otherwise identical accesses, so
+ * the cached first value stops tracking whatever the getter samples.
+ */
+const NON_DETERMINISTIC_CALLS = new Set([
+  'Date.now',
+  'Math.random',
+  'performance.now',
+  'crypto.randomUUID',
+  'crypto.getRandomValues',
+  'process.hrtime',
+  'process.hrtime.bigint',
+]);
+
+/**
+ * The dotted path of a chain of plain identifiers (`process.hrtime.bigint`), or
+ * `null` once any link is computed or is not an identifier. Keying on the
+ * spelled path keeps the analysis syntactic, which is all this rule has: it
+ * runs without `parserOptions.project`, so no type information is available.
+ */
+function staticMemberPath(node: TSESTree.Node): string | null {
+  if (node.type === AST_NODE_TYPES.Identifier) {
+    return node.name;
+  }
+  if (
+    node.type === AST_NODE_TYPES.MemberExpression &&
+    !node.computed &&
+    node.property.type === AST_NODE_TYPES.Identifier
+  ) {
+    const objectPath = staticMemberPath(node.object);
+    return objectPath === null ? null : `${objectPath}.${node.property.name}`;
+  }
+  return null;
+}
+
+/**
+ * The member name a key spells, covering the forms `this.<name>` can reach:
+ * plain identifiers, string-literal keys, and private names.
+ */
+function keyName(key: TSESTree.Node): string | null {
+  if (key.type === AST_NODE_TYPES.Identifier) {
+    return key.name;
+  }
+  if (key.type === AST_NODE_TYPES.PrivateIdentifier) {
+    return `#${key.name}`;
+  }
+  if (key.type === AST_NODE_TYPES.Literal && typeof key.value === 'string') {
+    return key.value;
+  }
+  return null;
+}
+
+/** The member name of a `this.<name>` access, or `null` for anything else. */
+function thisMemberName(node: TSESTree.Node): string | null {
+  if (
+    node.type !== AST_NODE_TYPES.MemberExpression ||
+    node.object.type !== AST_NODE_TYPES.ThisExpression
+  ) {
+    return null;
+  }
+  return keyName(node.property);
+}
+
+function forEachDescendant(
+  root: TSESTree.Node,
+  visit: (node: TSESTree.Node) => void,
+): void {
+  const stack: TSESTree.Node[] = [root];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) {
+      break;
+    }
+    visit(current);
+    const keys = visitorKeys[current.type] ?? [];
+    for (const key of keys) {
+      const value = (current as unknown as Record<string, unknown>)[key];
+      if (Array.isArray(value)) {
+        for (const element of value) {
+          if (ASTHelpers.isNode(element)) {
+            stack.push(element);
+          }
+        }
+      } else if (ASTHelpers.isNode(value)) {
+        stack.push(value);
+      }
+    }
+  }
+}
+
+/**
+ * Local names bound by an import of a Node I/O module, covering named, default
+ * and namespace specifiers alike: a call through any of them — `execFileSync()`
+ * or `fs.readFileSync()` — reaches the same I/O.
+ */
+function collectIoBindings(program: TSESTree.Program): Set<string> {
+  const bindings = new Set<string>();
+  for (const statement of program.body) {
+    if (
+      statement.type !== AST_NODE_TYPES.ImportDeclaration ||
+      statement.importKind === 'type' ||
+      !IO_MODULES.has(String(statement.source.value))
+    ) {
+      continue;
+    }
+    for (const specifier of statement.specifiers) {
+      if (
+        specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+        specifier.importKind === 'type'
+      ) {
+        continue;
+      }
+      bindings.add(specifier.local.name);
+    }
+  }
+  return bindings;
+}
+
+/**
+ * Whether a single node is one of the seed impurities: a call reaching a Node
+ * I/O binding, a non-deterministic builtin, or a read of `process.env`.
+ */
+function isImpureSeed(
+  node: TSESTree.Node,
+  ioBindings: ReadonlySet<string>,
+): boolean {
+  // `new Date()` samples the wall clock; `new Date(value)` is a pure conversion.
+  if (node.type === AST_NODE_TYPES.NewExpression) {
+    return (
+      node.callee.type === AST_NODE_TYPES.Identifier &&
+      node.callee.name === 'Date' &&
+      node.arguments.length === 0
+    );
+  }
+  // Every `process.env.X` / `process.env['X']` read contains this subexpression.
+  if (node.type === AST_NODE_TYPES.MemberExpression) {
+    return staticMemberPath(node) === 'process.env';
+  }
+  if (node.type !== AST_NODE_TYPES.CallExpression) {
+    return false;
+  }
+  const calleePath = staticMemberPath(node.callee);
+  if (calleePath === null) {
+    return false;
+  }
+  return (
+    NON_DETERMINISTIC_CALLS.has(calleePath) ||
+    ioBindings.has(calleePath.split('.')[0])
+  );
+}
+
+type MemberAnalysis = {
+  element: TSESTree.Node;
+  dependencies: Set<string>;
+  impure: boolean;
+};
+
+/**
+ * The function a class element carries and the name `this.<name>` reaches it
+ * by, for the element kinds a getter can delegate to: methods, accessors, and
+ * fields holding a function. Anything else (a static block, a plain field) is
+ * not a delegation target.
+ */
+function describeMember(
+  element: TSESTree.ClassElement,
+): { fn: TSESTree.Node; name: string | null } | undefined {
+  if (
+    element.type === AST_NODE_TYPES.MethodDefinition ||
+    element.type === AST_NODE_TYPES.TSAbstractMethodDefinition
+  ) {
+    return { fn: element.value, name: keyName(element.key) };
+  }
+  if (
+    element.type === AST_NODE_TYPES.PropertyDefinition &&
+    (element.value?.type === AST_NODE_TYPES.FunctionExpression ||
+      element.value?.type === AST_NODE_TYPES.ArrowFunctionExpression)
+  ) {
+    return { fn: element.value, name: keyName(element.key) };
+  }
+  return undefined;
+}
+
+/**
+ * The class elements whose value depends on live external state, as a
+ * class-local fixpoint: seed the members that reach I/O or a non-deterministic
+ * builtin directly, then keep marking any member that touches an already-impure
+ * `this.<member>` until nothing changes.
+ *
+ * The iteration — rather than a single direct-callee check — is what covers the
+ * production shape that motivates the exemption: a getter delegating to a
+ * sibling private method that itself delegates further before reaching the I/O
+ * call.
+ */
+function analyzeClassImpurity(
+  classBody: TSESTree.ClassBody,
+  ioBindings: ReadonlySet<string>,
+): Set<TSESTree.Node> {
+  const analyses: MemberAnalysis[] = [];
+  const byName = new Map<string, MemberAnalysis[]>();
+
+  for (const element of classBody.body) {
+    const member = describeMember(element);
+    if (!member) {
+      continue;
+    }
+    const analysis: MemberAnalysis = {
+      element,
+      dependencies: new Set<string>(),
+      impure: false,
+    };
+    forEachDescendant(member.fn, (node) => {
+      if (isImpureSeed(node, ioBindings)) {
+        analysis.impure = true;
+        return;
+      }
+      // A bare read of `this.<member>` counts alongside a call: reading an
+      // impure getter is exactly the propagation path this analysis exists for.
+      const dependency = thisMemberName(node);
+      if (dependency !== null) {
+        analysis.dependencies.add(dependency);
+      }
+    });
+    analyses.push(analysis);
+
+    if (member.name !== null) {
+      const siblings = byName.get(member.name);
+      if (siblings) {
+        siblings.push(analysis);
+      } else {
+        byName.set(member.name, [analysis]);
+      }
+    }
+  }
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const analysis of analyses) {
+      if (analysis.impure) {
+        continue;
+      }
+      const reachesImpure = [...analysis.dependencies].some((dependency) =>
+        (byName.get(dependency) ?? []).some((target) => target.impure),
+      );
+      if (reachesImpure) {
+        analysis.impure = true;
+        changed = true;
+      }
+    }
+  }
+
+  return new Set(
+    analyses
+      .filter((analysis) => analysis.impure)
+      .map(({ element }) => element),
+  );
 }
 
 export const enforceMemoizeGetters = createRule<Options, MessageIds>({
@@ -178,6 +460,26 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
       return memoizeImportCache;
     };
 
+    let ioBindingCache: Set<string> | null = null;
+    const ioBindings = () => {
+      if (!ioBindingCache) {
+        ioBindingCache = collectIoBindings(sourceCode.ast);
+      }
+      return ioBindingCache;
+    };
+
+    // One fixpoint per class serves every getter it declares.
+    const impurityCache = new Map<TSESTree.ClassBody, Set<TSESTree.Node>>();
+    const impureMembersOf = (classBody: TSESTree.ClassBody) => {
+      const cached = impurityCache.get(classBody);
+      if (cached) {
+        return cached;
+      }
+      const analyzed = analyzeClassImpurity(classBody, ioBindings());
+      impurityCache.set(classBody, analyzed);
+      return analyzed;
+    };
+
     return {
       MethodDefinition(node: TSESTree.MethodDefinition) {
         // Target: instance private getters
@@ -186,6 +488,17 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
         if (node.static) return;
         // enforce only "private" accessibility (undefined => public)
         if (node.accessibility !== 'private') return;
+
+        // A getter whose value is a fresh read of live external state is not a
+        // lazy factory: memoizing it pins the first observation forever, so the
+        // report is dropped along with its unattended `--fix` edit.
+        const classBody = node.parent;
+        if (
+          classBody?.type === AST_NODE_TYPES.ClassBody &&
+          impureMembersOf(classBody).has(node)
+        ) {
+          return;
+        }
 
         const {
           hasMemoizeImport,
