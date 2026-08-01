@@ -28,9 +28,9 @@ async function submit() {
 const ORDER_DEPENDENT_AWAITS_FIXED = `
 async function submit() {
   await Promise.all([
-  userEvent.click(screen.getByText('go')),
-  waitFor(() => { expect(screen.getByText('done')).toBeInTheDocument(); })
-]);
+    userEvent.click(screen.getByText('go')),
+    waitFor(() => { expect(screen.getByText('done')).toBeInTheDocument(); })
+  ]);
 }
 `;
 
@@ -59,9 +59,9 @@ async function persist(entry) {
 const BUILT_IN_SIDE_EFFECT_FIXED = `
 async function persist(entry) {
   await Promise.all([
-  writeEntry(entry),
-  flush()
-]);
+    writeEntry(entry),
+    flush()
+  ]);
 }
 `;
 
@@ -79,9 +79,9 @@ async function sync(a, b) {
 const CUSTOM_SIDE_EFFECT_FIXED = `
 async function sync(a, b) {
   await Promise.all([
-  uploadAvatar(a),
-  archiveEntry(b)
-]);
+    uploadAvatar(a),
+    archiveEntry(b)
+  ]);
 }
 `;
 
@@ -1174,9 +1174,9 @@ it('shows the message', async () => {
           const refA = makeRef();
           const refB = makeRef();
           const [a, b] = await Promise.all([
-  refA.get(),
-  refB.get()
-]);
+            refA.get(),
+            refB.get()
+          ]);
           return { a, b };
         };
       `,
@@ -1195,9 +1195,9 @@ it('shows the message', async () => {
       output: `
       async function cleanUpReferences(params, ref) {
         await Promise.all([
-  realtimeDb.ref(buildPath(params)).remove(),
-  realtimeDb.ref(ref).remove()
-]);
+          realtimeDb.ref(buildPath(params)).remove(),
+          realtimeDb.ref(ref).remove()
+        ]);
 
         return true;
       }
@@ -1217,9 +1217,9 @@ it('shows the message', async () => {
       output: `
       async function methodChaining() {
         await Promise.all([
-  db.collection('users').doc(id1).delete(),
-  db.collection('profiles').doc(id2).delete()
-]);
+          db.collection('users').doc(id1).delete(),
+          db.collection('profiles').doc(id2).delete()
+        ]);
         return true;
       }
       `,
@@ -1241,9 +1241,9 @@ it('shows the message', async () => {
       async function withComments() {
         // First operation
         await Promise.all([
-  operation1(),
-  operation2()
-]);
+          operation1(),
+          operation2()
+        ]);
         return true;
       }
       `,
@@ -1263,10 +1263,10 @@ it('shows the message', async () => {
       output: `
       async function threeSequentialAwaits() {
         await Promise.all([
-  operation1(),
-  operation2(),
-  operation3()
-]);
+          operation1(),
+          operation2(),
+          operation3()
+        ]);
         return true;
       }
       `,
@@ -1285,9 +1285,9 @@ it('shows the message', async () => {
       output: `
       async function mixedAwaitStyles() {
         const [, result] = await Promise.all([
-  operation1(),
-  operation2()
-]);
+          operation1(),
+          operation2()
+        ]);
         return result;
       }
       `,
@@ -1306,9 +1306,9 @@ it('shows the message', async () => {
       output: `
       const arrowFunction = async () => {
         await Promise.all([
-  operation1(),
-  operation2()
-]);
+          operation1(),
+          operation2()
+        ]);
         return true;
       };
       `,
@@ -1330,9 +1330,9 @@ it('shows the message', async () => {
       class MyClass {
         async classMethod() {
           await Promise.all([
-  operation1(),
-  operation2()
-]);
+            operation1(),
+            operation2()
+          ]);
           return true;
         }
       }
@@ -1353,10 +1353,10 @@ it('shows the message', async () => {
       output: `
       async function simpleSequentialAwaits() {
         await Promise.all([
-  fetchData1(),
-  fetchData2(),
-  fetchData3()
-]);
+          fetchData1(),
+          fetchData2(),
+          fetchData3()
+        ]);
         return 'done';
       }
       `,
@@ -1375,9 +1375,9 @@ it('shows the message', async () => {
       output: `
       async function independentVariableAssignments() {
         const [data1, data2] = await Promise.all([
-  fetchData1(),
-  fetchData2()
-]);
+          fetchData1(),
+          fetchData2()
+        ]);
         return { data1, data2 };
       }
       `,
@@ -1397,10 +1397,10 @@ it('shows the message', async () => {
       output: `
       async function functionCallAwaits() {
         await Promise.all([
-  processFile(file1),
-  processFile(file2),
-  processFile(file3)
-]);
+          processFile(file1),
+          processFile(file2),
+          processFile(file3)
+        ]);
         return 'processed';
       }
       `,
@@ -1420,10 +1420,10 @@ it('shows the message', async () => {
       output: `
       async function mixedCallTypes() {
         await Promise.all([
-  api.method1(),
-  standaloneFunction(),
-  obj.method2()
-]);
+          api.method1(),
+          standaloneFunction(),
+          obj.method2()
+        ]);
         return 'mixed';
       }
       `,
@@ -1443,9 +1443,9 @@ it('shows the message', async () => {
       async function awaitsAtEnd() {
         const setup = doSomeSetup();
         await Promise.all([
-  operation1(),
-  operation2()
-]);
+          operation1(),
+          operation2()
+        ]);
       }
       `,
     },
@@ -1467,9 +1467,9 @@ it('shows the message', async () => {
       async function withWhitespace() {
 
         await Promise.all([
-  operation1(),
-  operation2()
-]);
+          operation1(),
+          operation2()
+        ]);
 
         return true;
       }
@@ -1489,9 +1489,9 @@ it('shows the message', async () => {
       output: `
       async function withTemplateLiterals() {
         await Promise.all([
-  fetch(\`/api/\${endpoint1}\`),
-  fetch(\`/api/\${endpoint2}\`)
-]);
+          fetch(\`/api/\${endpoint1}\`),
+          fetch(\`/api/\${endpoint2}\`)
+        ]);
         return 'fetched';
       }
       `,
@@ -1513,9 +1513,9 @@ it('shows the message', async () => {
       async function nestedBlock() {
         if (condition) {
           await Promise.all([
-  operation1(),
-  operation2()
-]);
+            operation1(),
+            operation2()
+          ]);
         }
         return true;
       }
@@ -1537,11 +1537,11 @@ it('shows the message', async () => {
       output: `
       async function fourSequentialAwaits() {
         await Promise.all([
-  operation1(),
-  operation2(),
-  operation3(),
-  operation4()
-]);
+          operation1(),
+          operation2(),
+          operation3(),
+          operation4()
+        ]);
         return true;
       }
       `,
@@ -1561,10 +1561,10 @@ it('shows the message', async () => {
       output: `
       async function independentAssignments() {
         const [a, b, c] = await Promise.all([
-  fetchA(),
-  fetchB(),
-  fetchC()
-]);
+          fetchA(),
+          fetchB(),
+          fetchC()
+        ]);
         return { a, b, c };
       }
       `,
@@ -1584,10 +1584,10 @@ it('shows the message', async () => {
       output: `
       async function mixedStyles() {
         const [, data, ] = await Promise.all([
-  sendNotification(),
-  fetchData(),
-  logActivity()
-]);
+          sendNotification(),
+          fetchData(),
+          logActivity()
+        ]);
         return data;
       }
       `,
@@ -1607,10 +1607,10 @@ it('shows the message', async () => {
       output: `
       async function objectMethodCalls() {
         await Promise.all([
-  cache.clear(),
-  database.connect(),
-  logger.initialize()
-]);
+          cache.clear(),
+          database.connect(),
+          logger.initialize()
+        ]);
         return 'initialized';
       }
       `,
@@ -1630,10 +1630,10 @@ it('shows the message', async () => {
       output: `
       async function chainedMethodCalls() {
         await Promise.all([
-  api.users.getAll(),
-  api.posts.getRecent(),
-  api.comments.getLatest()
-]);
+          api.users.getAll(),
+          api.posts.getRecent(),
+          api.comments.getLatest()
+        ]);
         return 'fetched';
       }
       `,
@@ -1652,9 +1652,9 @@ it('shows the message', async () => {
       output: `
       async function functionExpressions() {
         await Promise.all([
-  (async () => { return 'first'; })(),
-  (async () => { return 'second'; })()
-]);
+          (async () => { return 'first'; })(),
+          (async () => { return 'second'; })()
+        ]);
         return 'done';
       }
       `,
@@ -1673,9 +1673,9 @@ it('shows the message', async () => {
       output: `
       async function conditionalExpressions() {
         await Promise.all([
-  condition ? fetchA() : fetchB(),
-  otherCondition ? fetchC() : fetchD()
-]);
+          condition ? fetchA() : fetchB(),
+          otherCondition ? fetchC() : fetchD()
+        ]);
         return 'fetched';
       }
       `,
@@ -1694,9 +1694,9 @@ it('shows the message', async () => {
       output: `
       async function logicalExpressions() {
         await Promise.all([
-  shouldFetch && fetchData(),
-  shouldProcess || processData()
-]);
+          shouldFetch && fetchData(),
+          shouldProcess || processData()
+        ]);
         return 'processed';
       }
       `,
@@ -1715,9 +1715,9 @@ it('shows the message', async () => {
       output: `
       async function newExpressions() {
         await Promise.all([
-  new Promise(resolve => setTimeout(resolve, 100)),
-  new Promise(resolve => setTimeout(resolve, 200))
-]);
+          new Promise(resolve => setTimeout(resolve, 100)),
+          new Promise(resolve => setTimeout(resolve, 200))
+        ]);
         return 'delayed';
       }
       `,
@@ -1736,9 +1736,9 @@ it('shows the message', async () => {
       output: `
       async function taggedTemplateLiterals() {
         await Promise.all([
-  sql\`SELECT * FROM users\`,
-  sql\`SELECT * FROM posts\`
-]);
+          sql\`SELECT * FROM users\`,
+          sql\`SELECT * FROM posts\`
+        ]);
         return 'queried';
       }
       `,
@@ -1758,10 +1758,10 @@ it('shows the message', async () => {
       output: `
       async function arrayAccess() {
         await Promise.all([
-  operations[0](),
-  operations[1](),
-  operations[2]()
-]);
+          operations[0](),
+          operations[1](),
+          operations[2]()
+        ]);
         return 'executed';
       }
       `,
@@ -1784,10 +1784,10 @@ it('shows the message', async () => {
       class AsyncClass {
         async sequentialMethods() {
           await Promise.all([
-  this.method1(),
-  this.method2(),
-  this.method3()
-]);
+            this.method1(),
+            this.method2(),
+            this.method3()
+          ]);
           return 'completed';
         }
       }
@@ -1810,9 +1810,9 @@ it('shows the message', async () => {
       class ChildClass extends ParentClass {
         async sequentialSuper() {
           await Promise.all([
-  super.method1(),
-  super.method2()
-]);
+            super.method1(),
+            super.method2()
+          ]);
           return 'completed';
         }
       }
@@ -1832,9 +1832,9 @@ it('shows the message', async () => {
       output: `
       async function* asyncGenerator() {
         await Promise.all([
-  operation1(),
-  operation2()
-]);
+          operation1(),
+          operation2()
+        ]);
         yield 'done';
       }
       `,
@@ -1854,10 +1854,10 @@ it('shows the message', async () => {
       output: `
       async function assignmentPatterns() {
         const [x, y, z] = await Promise.all([
-  getValue1(),
-  getValue2(),
-  getValue3()
-]);
+          getValue1(),
+          getValue2(),
+          getValue3()
+        ]);
         return x + y + z;
       }
       `,
@@ -1876,9 +1876,9 @@ it('shows the message', async () => {
       output: `
       async function unaryExpressions() {
         await Promise.all([
-  +getValue1(),
-  -getValue2()
-]);
+          +getValue1(),
+          -getValue2()
+        ]);
         return 'calculated';
       }
       `,
@@ -1899,9 +1899,9 @@ it('shows the message', async () => {
       output: `
       async function independentReads() {
         const [a, b] = await Promise.all([
-  fetchA(),
-  fetchB()
-]);
+          fetchA(),
+          fetchB()
+        ]);
         return { a, b };
       }
       `,
@@ -1921,9 +1921,9 @@ it('shows the message', async () => {
       output: `
       async function independentSideEffects() {
         await Promise.all([
-  logEvent(x),
-  sendEmail(y)
-]);
+          logEvent(x),
+          sendEmail(y)
+        ]);
         return true;
       }
       `,
@@ -1945,9 +1945,9 @@ it('shows the message', async () => {
       output: `
       async function assignedGuardStillFlagged() {
         const [ok, other] = await Promise.all([
-  validateThing(x),
-  fetchOther()
-]);
+          validateThing(x),
+          fetchOther()
+        ]);
         return { ok, other };
       }
       `,
@@ -1969,9 +1969,9 @@ it('shows the message', async () => {
       output: `
       async function independentFetches() {
         await Promise.all([
-  fetchUser(),
-  fetchSettings()
-]);
+          fetchUser(),
+          fetchSettings()
+        ]);
         return true;
       }
       `,
@@ -1992,9 +1992,9 @@ it('shows the message', async () => {
       output: `
       async function refreshTokenNotLeadingVerb() {
         await Promise.all([
-  getRefreshToken(),
-  getSettings()
-]);
+          getRefreshToken(),
+          getSettings()
+        ]);
         return true;
       }
       `,
@@ -2016,9 +2016,9 @@ it('shows the message', async () => {
       output: `
       async function refreshFirstThenIndependentRead() {
         await Promise.all([
-  refreshUser(),
-  fetchSettings()
-]);
+          refreshUser(),
+          fetchSettings()
+        ]);
         return true;
       }
       `,
@@ -2038,9 +2038,9 @@ it('shows the message', async () => {
       output: `
       async function pushNotLeadingVerb() {
         await Promise.all([
-  getPushToken(),
-  getSettings()
-]);
+          getPushToken(),
+          getSettings()
+        ]);
       }
       `,
     },
@@ -2058,9 +2058,9 @@ it('shows the message', async () => {
       output: `
       async function redirectNotLeadingVerb() {
         await Promise.all([
-  fetchRedirectRules(),
-  fetchFeatureFlags()
-]);
+          fetchRedirectRules(),
+          fetchFeatureFlags()
+        ]);
       }
       `,
     },
@@ -2078,9 +2078,9 @@ it('shows the message', async () => {
       output: `
       async function routerLikeReceiverNames() {
         await Promise.all([
-  navigator.getBattery(),
-  historyLog.append(entry)
-]);
+          navigator.getBattery(),
+          historyLog.append(entry)
+        ]);
       }
       `,
     },
@@ -2175,9 +2175,9 @@ it('shows the message', async () => {
       output: `
       async function aggregateThenUnrelated(ops, payload) {
         await Promise.all([
-  Promise.all(ops),
-  recordMetrics(payload)
-]);
+          Promise.all(ops),
+          recordMetrics(payload)
+        ]);
       }
       `,
     },
@@ -2194,9 +2194,9 @@ it('shows the message', async () => {
       output: `
       async function inlineAggregateThenUnrelated() {
         await Promise.all([
-  Promise.all([dropA(), dropB()]),
-  recordMetrics()
-]);
+          Promise.all([dropA(), dropB()]),
+          recordMetrics()
+        ]);
       }
       `,
     },
@@ -2214,9 +2214,9 @@ it('shows the message', async () => {
       output: `
       async function promiseResolveIsNotAnAggregate(marker) {
         await Promise.all([
-  Promise.resolve(marker),
-  recordMetrics(marker)
-]);
+          Promise.resolve(marker),
+          recordMetrics(marker)
+        ]);
       }
       `,
     },
@@ -2234,11 +2234,115 @@ it('shows the message', async () => {
       output: `
       async function callbackAwaitsStillParallelize(items, others) {
         await Promise.all([
-  Promise.all(items.map(async (item) => await store(item))),
-  recordCompletion(others)
-]);
+          Promise.all(items.map(async (item) => await store(item))),
+          recordCompletion(others)
+        ]);
       }
       `,
+    },
+    // The replacement range starts at the first await's offset, so only that
+    // line inherits the surrounding indentation. These cases pin the generated
+    // continuation lines at three different nesting depths; before the fix the
+    // elements landed at column 2 and the closing bracket at column 0 no matter
+    // how deep the original awaits sat. (#1557)
+    {
+      code: `
+async function topLevelDepth() {
+  await alpha();
+  await beta();
+}
+`,
+      errors: [error(2)],
+      output: `
+async function topLevelDepth() {
+  await Promise.all([
+    alpha(),
+    beta()
+  ]);
+}
+`,
+    },
+    // Deeper: a callback inside an arrow function.
+    {
+      code: `
+const registerHandlers = () => {
+  onReady(async () => {
+    await alpha();
+    await beta();
+  });
+};
+`,
+      errors: [error(2)],
+      output: `
+const registerHandlers = () => {
+  onReady(async () => {
+    await Promise.all([
+      alpha(),
+      beta()
+    ]);
+  });
+};
+`,
+    },
+    // The variable-declaration branch builds its replacement separately from
+    // the bare-expression branch, so it needs its own depth assertion. (#1557)
+    {
+      code: `
+const buildLoader = () => {
+  const load = async () => {
+    const alpha = await loadAlpha();
+    const beta = await loadBeta();
+    return { alpha, beta };
+  };
+};
+`,
+      errors: [error(2)],
+      output: `
+const buildLoader = () => {
+  const load = async () => {
+    const [alpha, beta] = await Promise.all([
+      loadAlpha(),
+      loadBeta()
+    ]);
+    return { alpha, beta };
+  };
+};
+`,
+    },
+    // A multi-line argument is spliced in verbatim: the interior lines of this
+    // template literal are the string's own contents, so re-indenting them
+    // would change the query the code sends. Only the separators and the
+    // closing bracket are indented. (#1557)
+    {
+      code: `
+async function multiLineTemplateArgument() {
+  await runQuery(\`
+SELECT *
+  FROM users
+\`);
+  await recordMetrics();
+}
+`,
+      errors: [error(2)],
+      output: `
+async function multiLineTemplateArgument() {
+  await Promise.all([
+    runQuery(\`
+SELECT *
+  FROM users
+\`),
+    recordMetrics()
+  ]);
+}
+`,
+    },
+    // A tab-indented file gets tabs for the generated level, so the fixer never
+    // mixes indentation characters into a file that uses neither. (#1557)
+    {
+      code: 'async function tabIndented() {\n\tawait alpha();\n\tawait beta();\n}\n',
+      errors: [error(2)],
+      output:
+        'async function tabIndented() {\n\tawait Promise.all([\n\t\talpha(),\n\t\tbeta()\n\t]);\n}\n',
     },
   ],
 });

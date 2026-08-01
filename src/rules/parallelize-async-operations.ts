@@ -907,6 +907,19 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     }
 
     /**
+     * Returns the leading whitespace of the source line a node starts on.
+     *
+     * A statement that shares its line with earlier code yields that line's
+     * indentation rather than the node's own column, which keeps the generated
+     * block aligned with the enclosing statement instead of with an arbitrary
+     * mid-line offset.
+     */
+    function getIndentationOf(node: TSESTree.Node): string {
+      const line = sourceCode.lines[node.loc.start.line - 1] ?? '';
+      return /^[ \t]*/.exec(line)?.[0] ?? '';
+    }
+
+    /**
      * Generates a fix for sequential awaits
      *
      * Returns null when the sequential awaits cannot be safely rewritten as a Promise.all.
@@ -947,6 +960,25 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
         }
       }
 
+      // The replacement range starts at the first await's own start offset, so
+      // ESLint leaves that line's leading whitespace in place and only the
+      // FIRST line inherits the surrounding indentation. Every continuation
+      // line the fixer emits has to carry that indentation itself, otherwise
+      // the array elements and closing bracket land at column 2 and column 0
+      // no matter how deeply the original awaits were nested.
+      const baseIndent = getIndentationOf(awaitNodes[0]);
+      // Match the file's own indentation character instead of assuming spaces,
+      // so a tab-indented file does not end up with mixed tabs and spaces. The
+      // space fallback is two wide to match the repo's prettier config.
+      const indentUnit = baseIndent.includes('\t') ? '\t' : '  ';
+      const elementIndent = `${baseIndent}${indentUnit}`;
+      // Arguments are spliced in verbatim: an argument spanning multiple lines
+      // keeps its original interior indentation because that interior can be
+      // the contents of a template literal, where whitespace is significant
+      // data rather than formatting and re-indenting would silently change the
+      // produced string.
+      const elementsText = awaitArguments.join(`,\n${elementIndent}`);
+
       let promiseAllText: string;
 
       if (hasVariableDeclarations) {
@@ -960,14 +992,10 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
 
         const destructuringPattern = idsText.join(', ');
         const declKind = Array.from(declKinds)[0];
-        promiseAllText = `${declKind} [${destructuringPattern}] = await Promise.all([\n  ${awaitArguments.join(
-          ',\n  ',
-        )}\n]);`;
+        promiseAllText = `${declKind} [${destructuringPattern}] = await Promise.all([\n${elementIndent}${elementsText}\n${baseIndent}]);`;
       } else {
         // Simple Promise.all without variable assignments
-        promiseAllText = `await Promise.all([\n  ${awaitArguments.join(
-          ',\n  ',
-        )}\n]);`;
+        promiseAllText = `await Promise.all([\n${elementIndent}${elementsText}\n${baseIndent}]);`;
       }
 
       const startPos = awaitNodes[0].range[0];
