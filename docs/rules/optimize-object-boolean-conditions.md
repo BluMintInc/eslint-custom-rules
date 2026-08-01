@@ -22,6 +22,8 @@ The rule inspects dependency arrays of `useEffect`, `useCallback`, and `useMemo`
 - **Object key count checks**: `Object.keys(obj).length === 0`, `Object.keys(obj).length > 0`, etc.
 - **Combined boolean expressions**: `!obj || Object.keys(obj).length === 0`
 
+A negated identifier only qualifies when it can actually hold an object. Negating a primitive produces a stable boolean already, so `!isCollapsed` and `!count` carry none of the cost this rule removes — see [Dependencies the rule leaves alone](#dependencies-the-rule-leaves-alone).
+
 ### Examples
 
 #### ❌ Incorrect
@@ -95,6 +97,37 @@ const callback = useCallback(() => {
   return hasItems ? 'not empty' : 'empty';
 }, [hasItems]);
 ```
+
+Negating a primitive is already stable, so booleans, numbers and strings stay inline:
+
+```tsx
+type PanelProps = { isCollapsed: boolean; itemCount: number };
+
+const PanelUnmemoized = ({ isCollapsed, itemCount }: PanelProps) => {
+  useEffect(() => {
+    syncPanel();
+  }, [!isCollapsed, !itemCount]);
+  return null;
+};
+```
+
+```tsx
+const [query, setQuery] = useState('');
+const results = useMemo(() => {
+  return query ? search(query) : [];
+}, [!query]);
+```
+
+### Dependencies the rule leaves alone
+
+A dependency is skipped when its identifier cannot be an object:
+
+- **Approved boolean prefixes.** Names carrying a prefix from [`enforce-boolean-naming-prefixes`](./enforce-boolean-naming-prefixes.md) (`is`, `has`, `can`, `should`, `will`, `was`, `does`, `did`, `must`, and the rest of that list) are booleans by convention. That rule *requires* those prefixes, so flagging `!isCollapsed` here would leave no name that satisfies both rules.
+- **Same-file primitive evidence.** A `boolean` / `number` / `string` / `bigint` annotation on the binding — including one inherited from a destructured prop's object type, a local `type` alias, or a local `interface` — plus primitive literal initializers (`= true`, `= 0`, `` = `x` ``) and `useState` calls seeded with a primitive (`useState('')`, `useState<boolean>()`).
+
+### Known limitation
+
+Detection is syntactic. An identifier whose type lives in another module (an import, or a value returned by an imported hook) cannot be resolved without type information, so a negated primitive from such a binding still reports. Extract the condition into a prefixed boolean — which the codebase wants anyway — or suppress that line with `eslint-disable-next-line`.
 
 ### How to fix when you see the lint message
 
