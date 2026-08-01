@@ -944,6 +944,83 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
         sourceCode.getText(expr.argument),
       );
 
+      const startPos = awaitNodes[0].range[0];
+      const endPos = awaitNodes[awaitNodes.length - 1].range[1];
+
+      // The replacement text is rebuilt from the awaited expressions alone, so
+      // a comment inside the replaced span has no representation in it and
+      // would be silently deleted. Deleting an eslint-disable-next-line
+      // directive re-enables the suppressed rule on the code that survives
+      // inside the Promise.all (#1589). Each span comment is therefore either
+      // re-hosted directly above the array element built from the statement it
+      // annotates, or the fix is declined so no comment is ever destroyed. The
+      // report fires either way.
+      const spanComments = sourceCode
+        .getAllComments()
+        .filter(
+          (comment) =>
+            comment.range[0] >= startPos && comment.range[1] <= endPos,
+        );
+
+      const hostedComments: TSESTree.Comment[][] = awaitNodes.map(() => []);
+
+      if (spanComments.length > 0) {
+        // Re-hosting maps the comments preceding statement i onto element i,
+        // which requires the element list to line up 1:1 with the statement
+        // list.
+        if (awaitExpressions.length !== awaitNodes.length) {
+          return null;
+        }
+
+        for (const comment of spanComments) {
+          const hostIndex = awaitNodes.findIndex(
+            (node, index) =>
+              index > 0 &&
+              comment.range[0] >= awaitNodes[index - 1].range[1] &&
+              comment.range[1] <= node.range[0],
+          );
+
+          if (hostIndex === -1) {
+            // The comment sits inside one of the merged statements. A comment
+            // within the awaited expression itself travels verbatim with
+            // getText; anywhere else (between `await` and its operand, or
+            // around a declarator's `=`) has no slot in the rebuilt text.
+            const isInsideArgument = awaitExpressions.some(
+              (expr) =>
+                comment.range[0] >= expr.argument.range[0] &&
+                comment.range[1] <= expr.argument.range[1],
+            );
+            if (!isInsideArgument) {
+              return null;
+            }
+            continue;
+          }
+
+          // A comment that shares the previous statement's last line is a
+          // trailing comment (e.g. an eslint-disable-line directive) governing
+          // THAT line; moving it above the next element would change which
+          // line it applies to.
+          if (
+            comment.loc.start.line <= awaitNodes[hostIndex - 1].loc.end.line
+          ) {
+            return null;
+          }
+
+          // A directive above `const x = await f();` may target the
+          // declaration's identifier, which the rewrite moves into the
+          // destructuring pattern on the Promise.all line — away from every
+          // line the re-hosted directive could govern.
+          if (
+            /^\s*eslint-/u.test(comment.value) &&
+            awaitNodes[hostIndex].type === AST_NODE_TYPES.VariableDeclaration
+          ) {
+            return null;
+          }
+
+          hostedComments[hostIndex].push(comment);
+        }
+      }
+
       const idsText: string[] = [];
       const declKinds = new Set<TSESTree.VariableDeclaration['kind']>();
       let hasVariableDeclarations = false;
@@ -977,7 +1054,19 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
       // the contents of a template literal, where whitespace is significant
       // data rather than formatting and re-indenting would silently change the
       // produced string.
-      const elementsText = awaitArguments.join(`,\n${elementIndent}`);
+      const elementsText = awaitArguments
+        .map((argumentText, index) => {
+          // Each re-hosted comment lands on its own line directly above the
+          // element, which is the only placement where a disable-next-line
+          // directive keeps suppressing it.
+          const leadingText = (hostedComments[index] ?? [])
+            .map(
+              (comment) => `${sourceCode.getText(comment)}\n${elementIndent}`,
+            )
+            .join('');
+          return `${leadingText}${argumentText}`;
+        })
+        .join(`,\n${elementIndent}`);
 
       let promiseAllText: string;
 
@@ -997,10 +1086,6 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
         // Simple Promise.all without variable assignments
         promiseAllText = `await Promise.all([\n${elementIndent}${elementsText}\n${baseIndent}]);`;
       }
-
-      const startPos = awaitNodes[0].range[0];
-
-      const endPos = awaitNodes[awaitNodes.length - 1].range[1];
 
       return fixer.replaceTextRange([startPos, endPos], promiseAllText);
     }
