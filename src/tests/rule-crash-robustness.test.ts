@@ -246,6 +246,167 @@ ts(
   'declare const o: Record<string, number>;\nexport const e = Object.entries(o).map(([k, v]) => `${k}${v}`);\nexport const f = Object.freeze({ a: 1 } as const);',
 );
 
+/**
+ * Absent-child shapes: nodes whose child slot is legitimately absent — `null`
+ * (array holes, a valueless JSX attribute, a missing `catch` clause), missing
+ * from an argument list, or an empty collection. Rules reach these slots through
+ * indexed access (`arguments[0]`, `elements[0]`) or through fields the AST types
+ * declare as always present, so the type checker never forces a guard and the
+ * dereference throws — aborting the whole lint run instead of producing a
+ * diagnostic. Three real crashes came out of this family, each reachable only
+ * through a shape the rest of the corpus lacks: a zero-argument
+ * `JSON.stringify()`, a zero-argument `.map()` inside `useMemo`, and a leading
+ * array hole handed to `fixer.insertTextBefore`.
+ */
+
+// Zero-argument calls. React hooks are the highest-value case because so many
+// rules destructure the deps argument, which is optional at every call site.
+tsx(
+  'zero-arg-hooks',
+  'import { useState, useEffect, useMemo, useCallback, useLayoutEffect } from "react";\ndeclare const fn: any;\nexport const C = () => {\n  const [s] = useState();\n  const m = useMemo(fn);\n  const cb = useCallback(fn);\n  useEffect(fn);\n  useLayoutEffect(fn);\n  return <div onClick={cb}>{String(s)}{m}</div>;\n};',
+);
+tsx(
+  'zero-arg-memo-forwardref',
+  'import { memo, forwardRef } from "react";\nexport const A = memo();\nexport const B = forwardRef();\nexport const D = memo(forwardRef());\nexport const E = () => <A />;',
+);
+// Both a component and a `use`-prefixed hook, because a rule gated on being
+// inside a custom hook never sees the component form — which is exactly how the
+// zero-argument `.map()` inside `useMemo` stayed hidden.
+tsx(
+  'zero-arg-map-in-usememo',
+  'import { useMemo } from "react";\ndeclare const registry: any;\nexport const useItems = () => {\n  const memoized = useMemo(() => registry.map(), []);\n  return useMemo(() => registry.map(), [memoized]);\n};\nexport function useMoreItems() {\n  return useMemo(() => registry.map(), []);\n}\nexport const useNested = () => {\n  return useMemo(function () { return registry.map(); }, []);\n};\nexport const C = () => {\n  const items = useMemo(() => registry.map(), []);\n  return <div>{items}</div>;\n};',
+);
+tsx(
+  'zero-arg-hooks-in-custom-hook',
+  'import { useState, useEffect, useMemo, useCallback } from "react";\ndeclare const fn: any;\ndeclare const registry: any;\nexport const useThing = () => {\n  const [s] = useState();\n  const [, setS] = useState();\n  const m = useMemo(fn);\n  const cb = useCallback(fn);\n  useEffect(fn);\n  return { s, setS, m, cb, items: useMemo(() => registry.map(), []) };\n};\nexport function useOther() {\n  useEffect(fn);\n  return useMemo(...(fn as any));\n}',
+);
+ts(
+  'zero-arg-json-stringify',
+  'declare const next: any;\nexport function f() {\n  if (JSON.stringify() === JSON.stringify(next)) return 1;\n  if (JSON.stringify(next) !== JSON.stringify()) return 2;\n  return JSON.parse();\n}',
+);
+ts(
+  'zero-arg-methods',
+  'declare const registry: any;\ndeclare const xs: any[];\nexport const a = registry.map();\nexport const b = xs.filter().reduce();\nexport const c = Object.keys();\nexport const d = Object.entries().map();\nexport const e = Promise.all();\nexport const g = xs.forEach();\nexport const h = Array.from();\nexport const i = xs.sort().join();',
+);
+ts(
+  'zero-arg-standalone',
+  'declare function fn(...args: any[]): any;\ndeclare const o: any;\nexport const a = fn();\nexport const b = new Set();\nexport const c = o?.();\nexport const d = o?.m?.();\nexport const e = (0, fn)();\nexport const g = fn()();\nexport const h = (async () => {})();',
+);
+
+// Leading array hole: `elements[0] === null` is a distinct shape from a hole in
+// the middle, because it is the slot an insertion anchors on.
+ts(
+  'array-hole-leading',
+  'declare const xs: any[];\nexport const a = [, 1];\nexport const b = [,];\nexport const c = [, , 3];\nexport const d = [, ...xs];\nexport const [, second] = xs;\nexport const [, , third = 3] = xs;\nexport function f([, first]: any[]) { return first; }',
+);
+tsx(
+  'array-hole-hook-destructure',
+  'import { useState } from "react";\nexport const C = () => {\n  const [, setS] = useState(0);\n  return <button onClick={() => setS(1)}>go</button>;\n};',
+);
+// Regression for the leading-hole crash in prefer-sx-prop-over-system-props:
+// the fixer anchored on `elements[0]`, which a hole leaves null. Carries a
+// system prop so the rule reports and the fixer actually runs.
+tsx(
+  'sx-array-leading-hole',
+  'declare const Box: any;\ndeclare const isActive: boolean;\ndeclare const activeStyles: any;\nexport const A = () => <Box pt={2} sx={[, isActive && activeStyles]} />;\nexport const B = () => <Box mt={1} sx={[,]} />;\nexport const D = () => <Box display="flex" sx={[, , activeStyles]} />;\nexport const E = () => <Box mt={1} sx />;\nexport const F = () => <Box mt={1} sx={[]} />;\nexport const G = () => <Box mt={1} sx={{}} />;',
+);
+
+// Bare `return;` / `yield;` — an absent `argument`.
+ts(
+  'bare-return-yield',
+  'declare const cond: boolean;\nexport function f() { if (cond) return; return; }\nexport const g = () => { return; };\nexport function* h() { yield; yield* h(); return; }\nexport async function* i() { yield; }\nexport class A { m() { return; } get v() { return; } }',
+);
+
+// A `try` missing either the handler or the finalizer, rather than all three
+// clauses at once.
+ts(
+  'try-finally-only',
+  'export function f() { try { void 0; } finally { void 0; } }\nexport function g() { try {} finally {} }',
+);
+ts(
+  'try-catch-only',
+  'export function f() { try { void 0; } catch {} }\nexport function g() { try { void 0; } catch (e) { void e; } }\nexport function h() { try {} catch ({ message }: any) { void message; } }',
+);
+
+// An absent init/test/update in a `for` header.
+ts(
+  'for-empty-header',
+  'declare const cond: boolean;\nexport function f() {\n  for (;;) { break; }\n  for (let i = 0; ; i++) { break; }\n  for (; cond; ) { break; }\n  for (let j = 0; cond; ) { void j; break; }\n}',
+);
+
+// A bare boolean JSX attribute has `value === null`.
+tsx(
+  'jsx-valueless-attrs',
+  'declare const D: any;\nexport const C = () => <D disabled hidden open required data-flag aria-hidden />;\nexport const E = () => <input type="text" readOnly disabled />;',
+);
+
+// `arguments[0]` exists but is a SpreadElement, so every field a rule expects
+// on the real first argument is absent.
+ts(
+  'spread-only-args',
+  'declare function fn(...args: any[]): any;\ndeclare const args: any[];\ndeclare const K: any;\nexport const a = fn(...args);\nexport const b = Math.max(...args);\nexport const c = new K(...args);\nexport const d = fn(...args, 1);\nexport const e = console.log(...args);',
+);
+tsx(
+  'spread-only-hook-args',
+  'import { useEffect, useMemo } from "react";\ndeclare const args: any;\nexport const C = () => {\n  const m = useMemo(...args);\n  useEffect(...args);\n  return <div>{m}</div>;\n};',
+);
+
+// Empty collections and empty binding patterns.
+ts(
+  'empty-literals-and-patterns',
+  'declare const src: any;\nexport const o = {};\nexport const a: any[] = [];\nexport const spread = { ...src };\nexport const nested = { ...src, ...{} };\nexport function f() { const {} = src; const [] = src; }\nexport function g({}: any, []: any[], { ...rest }: any) { return rest; }',
+);
+ts(
+  'empty-declarations',
+  'export interface I {}\nexport enum E {}\nexport type T = {};\nexport type U = [];\nexport function f() {}\nexport const g = () => {};\nexport const h = function () {};\nexport namespace N {}\nexport abstract class A {}',
+);
+ts(
+  'empty-import-export',
+  'import {} from "./m";\nimport "./side";\nexport {};\nexport {} from "./n";',
+);
+ts(
+  'empty-statements',
+  'declare const cond: any;\nexport function f() {\n  ;\n  if (cond);\n  if (cond); else;\n  while (cond) ;\n  for (const a of []) ;\n  do ; while (cond);\n  switch (cond) {}\n  loop: ;\n  {}\n}',
+);
+
+// A class property with neither a value nor a type annotation.
+ts(
+  'class-bare-members',
+  'export class A { x; static y; protected p; #priv; ["computed"]; }\nexport class B { constructor() {} }\nexport class C {}\nexport class D extends B {}',
+);
+
+// TSEmptyBodyFunctionExpression: `value.body` is null on overload signatures and
+// on every member of a `declare class`.
+ts(
+  'declare-class-empty-bodies',
+  'declare class D {\n  constructor(a: string);\n  m(): void;\n  static s(): void;\n  p: string;\n  private q;\n}\nexport type DT = D;',
+);
+ts(
+  'class-method-overloads',
+  'export class A {\n  m(a: string): void;\n  m(a: number): void;\n  m(a: any): void { void a; }\n  static s(): void;\n  static s(a?: any): void { void a; }\n}',
+);
+
+// Params with no type annotation, and optional params with no default.
+ts(
+  'untyped-optional-params',
+  'export function f(a, b?, ...rest) { return [a, b, rest]; }\nexport const g = (a, b = 1, { c } = {} as any) => [a, b, c];\nexport class A { constructor(a) { void a; } m(a, b?) { return [a, b]; } }\nexport const h = function (a, b?) { return [a, b]; };\nexport declare function i(a?, b?): void;',
+);
+
+// Remaining absent-child odds and ends.
+ts('export-default-literal', 'export default 1;');
+ts(
+  'tagged-template-no-subs',
+  'declare const tag: any;\nexport const a = tag`plain`;\nexport const b = tag``;\nexport const c = String.raw`x`;\nexport const d = ``;',
+);
+ts(
+  'new-without-parens',
+  'declare const K: any;\nexport const a = new K;\nexport const b = new K.D;\nexport const c = new (class {});\nexport const d = new Map;',
+);
+tsx(
+  'jsx-empty-children',
+  'export const A = () => <div></div>;\nexport const B = () => <></>;\nexport const D = () => <div>{}</div>;\nexport const E = () => <span></span>;',
+);
+
 // scale
 ts(
   'deep-nesting',
@@ -289,7 +450,28 @@ const PATH_CONTEXTS = [
   'mod.dynamic',
 ];
 
+/**
+ * A dozen rules gate on a `.tsx` filename, so a shape carried by a non-JSX
+ * snippet never reaches them under the matrix above — the same structural
+ * blindness as running each rule only against its own fixtures. Mirroring the
+ * non-JSX corpus into a single `.tsx` path closes that without multiplying the
+ * whole matrix.
+ */
+const TSX_MIRROR = 'src/components/MirroredMod';
+
 const RULE_NAMES = Object.keys(rules);
+
+type Target = { file: string; jsx: boolean };
+
+const targetsFor = (snippet: Snippet): Target[] => {
+  const targets = PATH_CONTEXTS.map((base) => ({
+    file: `${base}${snippet.jsx ? '.tsx' : '.ts'}`,
+    jsx: Boolean(snippet.jsx),
+  }));
+  return snippet.jsx
+    ? targets
+    : [...targets, { file: `${TSX_MIRROR}.tsx`, jsx: true }];
+};
 
 type Crash = { rule: string; snippet: string; file: string; message: string };
 
@@ -298,6 +480,21 @@ const parserOptionsFor = (jsx?: boolean) => ({
   sourceType: 'module' as const,
   ecmaFeatures: jsx ? { jsx: true } : {},
 });
+
+/**
+ * ESLint decorates a rule's throw with the AST node it was visiting, so letting
+ * the error object itself reach jest surfaces as
+ * `TypeError: Converting circular structure to JSON` — noise that names neither
+ * the rule nor the shape. Everything the report needs is flattened to a string
+ * here, at the catch site, while the rule and snippet are still in scope.
+ */
+const describeThrow = (error: unknown): string => {
+  if (!(error instanceof Error)) {
+    return `threw a non-Error value: ${String(error)}`;
+  }
+  const head = error.message.split('\n').slice(0, 3).join(' | ');
+  return `${error.name}: ${head}`;
+};
 
 const buildLinter = (counter?: Map<string, number>) => {
   const linter = new Linter();
@@ -391,6 +588,24 @@ for (const [id, code] of [
     'static-block',
     'declare const o: any;\nexport class A { static { void o.length; } }',
   ],
+  // Absent-child shapes. This rule only runs with options, so the main corpus
+  // never reaches it and these have to be restated here.
+  [
+    'zero-arg-call',
+    'declare const o: any;\nexport const a = o.length();\nexport const b = o();\nexport const c = o.length.toString();',
+  ],
+  [
+    'array-hole',
+    'declare const o: any;\nexport const xs = [, o.length];\nexport const [, second] = [o.length, o.length];',
+  ],
+  [
+    'spread-only-args',
+    'declare const o: any;\ndeclare function fn(...args: any[]): any;\nexport const a = fn(...o.length);',
+  ],
+  [
+    'bare-class-member',
+    'export class A { length; static length2; }\nexport const empty = {};',
+  ],
 ] as const) {
   SPECIAL_CASES.push({
     rule: 'no-restricted-properties-fix',
@@ -431,6 +646,8 @@ for (const [id, code] of [
   ],
   ['empty-version', '{ "dependencies": { "a": "" } }'],
   ['top-level-array', '[1, 2, 3]'],
+  ['empty-deps-object', '{ "dependencies": {}, "devDependencies": {} }'],
+  ['empty-array-deps', '{ "dependencies": [] }'],
 ] as const) {
   SPECIAL_CASES.push({
     rule: 'no-unpinned-dependencies',
@@ -464,6 +681,14 @@ for (const [id, code] of [
   });
 }
 
+/**
+ * Rules the sweep cannot reach even with the path matrix and the special cases —
+ * enumerated rather than absorbed into a numeric margin, so that a rule the
+ * corpus stops reaching is named instead of hiding inside slack. Empty, because
+ * the corpus reaches every rule the plugin exports.
+ */
+const KNOWN_UNREACHABLE = new Set<string>([]);
+
 describe('rule crash robustness', () => {
   const visitorCounts = new Map<string, number>();
   const linter = buildLinter(visitorCounts);
@@ -472,11 +697,10 @@ describe('rule crash robustness', () => {
 
   beforeAll(() => {
     for (const snippet of SNIPPETS) {
-      for (const base of PATH_CONTEXTS) {
-        const file = `${base}${snippet.jsx ? '.tsx' : '.ts'}`;
+      for (const { file, jsx } of targetsFor(snippet)) {
         const config = {
           parser: 'ts',
-          parserOptions: parserOptionsFor(snippet.jsx),
+          parserOptions: parserOptionsFor(jsx),
           rules: allRulesConfig,
         } as any;
         try {
@@ -489,9 +713,10 @@ describe('rule crash robustness', () => {
               message: fatal.message,
             });
           }
-        } catch {
+        } catch (batchError) {
           // Running every rule at once means one throw hides the rest, so the
           // culprit is identified by replaying this snippet rule-by-rule.
+          let attributed = false;
           for (const name of RULE_NAMES) {
             const single = buildLinter();
             try {
@@ -499,22 +724,31 @@ describe('rule crash robustness', () => {
                 snippet.code,
                 {
                   parser: 'ts',
-                  parserOptions: parserOptionsFor(snippet.jsx),
+                  parserOptions: parserOptionsFor(jsx),
                   rules: { [`${PLUGIN}/${name}`]: 'error' },
                 } as any,
                 file,
               );
             } catch (e) {
+              attributed = true;
               crashes.push({
                 rule: name,
                 snippet: snippet.id,
                 file,
-                message: (e as Error).message
-                  .split('\n')
-                  .slice(0, 3)
-                  .join(' | '),
+                message: describeThrow(e),
               });
             }
+          }
+          // A throw that only reproduces with the whole config enabled has no
+          // single culprit to name. Recording it anyway keeps the batch failure
+          // from vanishing just because the replay could not reproduce it.
+          if (!attributed) {
+            crashes.push({
+              rule: '(no single rule reproduced it; only the full config throws)',
+              snippet: snippet.id,
+              file,
+              message: describeThrow(batchError),
+            });
           }
         }
       }
@@ -548,7 +782,7 @@ describe('rule crash robustness', () => {
           rule: special.rule,
           snippet: special.id,
           file: special.file,
-          message: (e as Error).message.split('\n').slice(0, 3).join(' | '),
+          message: describeThrow(e),
         });
       }
     }
@@ -583,23 +817,36 @@ describe('rule crash robustness', () => {
     expect(parserFatals.length === 0 ? '' : `\n${detail}`).toBe('');
   });
 
-  it('actually executes the rules it claims to cover', () => {
+  it('actually executes every rule it claims to cover', () => {
     // Guards against a vacuous pass: if the harness stopped wiring rules up, the
-    // sweep would report zero crashes while testing nothing. The corpus, path
-    // matrix and special cases together execute all of them, so the margin here
-    // is headroom for new rules with narrow triggers rather than slack for
-    // rules already known to be unreachable — a harness regression drops
-    // coverage far below it. A new rule landing inside the margin should get a
-    // corpus snippet rather than a wider margin.
+    // sweep would report zero crashes while testing nothing. A numeric margin
+    // here would be a coverage floor, and a floor hides gaps — it lets a rule
+    // the sweep never reaches pass anonymously. Every exported rule executes, so
+    // unreached rules are enumerated by name instead: a new rule with a trigger
+    // this corpus does not contain fails here until it gets a snippet (or a path
+    // context, or a SPECIAL_CASES entry), which is the point.
     const silent = RULE_NAMES.filter((n) => (visitorCounts.get(n) ?? 0) === 0);
-    const executed = RULE_NAMES.length - silent.length;
-    expect(
-      executed >= RULE_NAMES.length - 4
+    const unexpected = silent.filter((n) => !KNOWN_UNREACHABLE.has(n));
+    // A name that stops being unreachable must leave the list, or the list
+    // quietly becomes a place for real gaps to hide.
+    const stale = [...KNOWN_UNREACHABLE].filter((n) => !silent.includes(n));
+    const detail = [
+      unexpected.length === 0
         ? ''
-        : `only ${executed}/${
+        : `${unexpected.length}/${
             RULE_NAMES.length
-          } rules executed; silent: ${silent.join(', ')}`,
-    ).toBe('');
+          } rules never executed a visitor: ${unexpected.join(
+            ', ',
+          )} — add a corpus snippet (or PATH_CONTEXTS/SPECIAL_CASES entry) that reaches them`,
+      stale.length === 0
+        ? ''
+        : `KNOWN_UNREACHABLE is stale; these do execute now and should be removed from it: ${stale.join(
+            ', ',
+          )}`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+    expect(detail).toBe('');
   });
 
   it('detects a rule that throws (positive control)', () => {
