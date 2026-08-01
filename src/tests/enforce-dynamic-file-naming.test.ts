@@ -1,20 +1,21 @@
-import { ESLintUtils } from '@typescript-eslint/utils';
 import { Linter } from 'eslint';
+import { ruleTesterTs, withParserOptions } from '../utils/ruleTester';
 import rule, {
   RULE_NAME,
   DYNAMIC_RULES_LABEL,
 } from '../rules/enforce-dynamic-file-naming';
 
-// Create a custom rule tester that doesn't require the actual enforce-dynamic-imports rule
-const ruleTester = new ESLintUtils.RuleTester({
-  parser: '@typescript-eslint/parser',
-  parserOptions: {
-    ecmaVersion: 2020,
-    sourceType: 'module',
-  },
-});
+// Module scope analysis is not the shared tester's default, and every snippet
+// here is an ES module, so the cases carry it themselves.
+const parserOptions = {
+  ecmaVersion: 2020,
+  sourceType: 'module',
+} as const;
 
-const linter = (ruleTester as unknown as { linter: Linter }).linter;
+// The rule reads eslint-disable directives naming sibling rules; stubbing them
+// on the tester's linter keeps this suite from depending on their real
+// implementations.
+const linter = (ruleTesterTs as unknown as { linter: Linter }).linter;
 
 linter.defineRule('@blumintinc/blumint/enforce-dynamic-imports', {
   meta: {
@@ -34,8 +35,8 @@ linter.defineRule('@blumintinc/blumint/require-dynamic-firebase-imports', {
   create: () => ({}),
 });
 
-ruleTester.run(RULE_NAME, rule, {
-  valid: [
+ruleTesterTs.run(RULE_NAME, rule, {
+  valid: withParserOptions(parserOptions, [
     // Regular TypeScript file without disable directive
     {
       code: `import React from 'react';`,
@@ -115,8 +116,8 @@ const value = 1;`,
 import SomeModule from './SomeModule';`,
       filename: 'uppercase.ts',
     },
-  ],
-  invalid: [
+  ]),
+  invalid: withParserOptions(parserOptions, [
     // File without .dynamic.ts extension but with enforce-dynamic-imports disable directive
     {
       code: `// ednl @blumintinc/blumint/enforce-dynamic-imports
@@ -331,5 +332,5 @@ import SomeModule from './SomeModule';`,
         },
       ],
     },
-  ],
+  ]),
 });

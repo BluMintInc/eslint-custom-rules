@@ -1,17 +1,15 @@
-import { ESLintUtils, TSESLint } from '@typescript-eslint/utils';
+import { TSESLint } from '@typescript-eslint/utils';
 import { Linter, Rule } from 'eslint';
+import { ruleTesterJsx, withParserOptions } from '../utils/ruleTester';
 import { noSeparateLoadingState } from '../rules/no-separate-loading-state';
 
-const ruleTester = new ESLintUtils.RuleTester({
-  parser: '@typescript-eslint/parser',
-  parserOptions: {
-    ecmaVersion: 2020,
-    sourceType: 'module',
-    ecmaFeatures: {
-      jsx: true,
-    },
-  },
-});
+// The shared JSX tester supplies the parser and `ecmaFeatures.jsx`; module
+// scope analysis is not its default, and this rule resolves setter references
+// at Program:exit, so every snippet declares it.
+const parserOptions = {
+  ecmaVersion: 2020,
+  sourceType: 'module',
+} as const;
 
 const loadingMessage = (stateName: string) =>
   `Loading flag "${stateName}" splits the source of truth for data fetching. Boolean toggles drift from the actual data and add extra renders. Encode the loading phase inside the primary state instead (use a "loading" sentinel or discriminated union) so components read a single authoritative value.`;
@@ -51,8 +49,8 @@ async function loadUsers() {
 
 const FETCHING_PATTERNS = ['^fetching'];
 
-ruleTester.run('no-separate-loading-state', noSeparateLoadingState, {
-  valid: [
+ruleTesterJsx.run('no-separate-loading-state', noSeparateLoadingState, {
+  valid: withParserOptions(parserOptions, [
     // Valid: Using sentinel value instead of separate loading state
     {
       code: `
@@ -165,9 +163,9 @@ ruleTester.run('no-separate-loading-state', noSeparateLoadingState, {
     {
       code: CUSTOM_MATCHED_STATE,
     },
-  ],
+  ]),
 
-  invalid: [
+  invalid: withParserOptions(parserOptions, [
     // Invalid: Classic isXLoading pattern
     {
       code: `
@@ -248,7 +246,7 @@ ruleTester.run('no-separate-loading-state', noSeparateLoadingState, {
       options: [{ patterns: FETCHING_PATTERNS }],
       errors: [errorWithMessage('fetchingUsers')],
     },
-  ],
+  ]),
 });
 
 // Issue #1535: `patterns` entries are compiled with `new RegExp` inside

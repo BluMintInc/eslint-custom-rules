@@ -1,26 +1,23 @@
-import { ESLintUtils } from '@typescript-eslint/utils';
 import { Linter, Rule } from 'eslint';
+import { ruleTesterJsx, withParserOptions } from '../utils/ruleTester';
 import { preferUseCallbackOverUseMemoForFunctions } from '../rules/prefer-usecallback-over-usememo-for-functions';
 
-const ruleTester = new ESLintUtils.RuleTester({
-  parser: '@typescript-eslint/parser',
-  parserOptions: {
-    ecmaVersion: 2018,
-    sourceType: 'module',
-    ecmaFeatures: {
-      jsx: true,
-    },
-  },
-});
+// The shared JSX tester supplies the parser and `ecmaFeatures.jsx`; module
+// scope analysis is not its default, and this rule discriminates `useCallback`
+// by the module it is imported from, so every snippet declares it.
+const parserOptions = {
+  ecmaVersion: 2018,
+  sourceType: 'module',
+} as const;
 
 const callbackDescription = (callbackName: string) =>
   `the callback "${callbackName}"`;
 
-ruleTester.run(
+ruleTesterJsx.run(
   'prefer-usecallback-over-usememo-for-functions',
   preferUseCallbackOverUseMemoForFunctions,
   {
-    valid: [
+    valid: withParserOptions(parserOptions, [
       // Valid case: using useCallback for function memoization
       {
         code: `
@@ -173,8 +170,8 @@ const C = () => { const cb = memoize(() => () => {}, []); return cb; };`,
         code: `import * as hooks from '../hooks';
 const C = () => { const cb = hooks.useMemo(() => () => {}, []); return cb; };`,
       },
-    ],
-    invalid: [
+    ]),
+    invalid: withParserOptions(parserOptions, [
       // ------------------------------------------------------------------
       // Issue #1440: `useMemo` here is bound by nothing this rule can vouch
       // for, so every one of these violations is reported without a fix.
@@ -1371,7 +1368,7 @@ const C = () => { const cb = useMemo(() => () => {}); return cb; };`,
         output: `import { useCallback } from 'react';
 const C = () => { const cb = useCallback(() => {}, []); return cb; };`,
       },
-    ],
+    ]),
   },
 );
 
