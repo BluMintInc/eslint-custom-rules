@@ -7,6 +7,9 @@ type MessageIds =
   | 'requireMemoizedRenderHits'
   | 'noDirectComponentInRender';
 
+const LATEST_CALLBACK_MODULE = 'use-latest-callback';
+const LATEST_CALLBACK_HOOK = 'useLatestCallback';
+
 export const enforceRenderHitsMemoization = createRule<[], MessageIds>({
   name: 'enforce-render-hits-memoization',
   meta: {
@@ -19,16 +22,42 @@ export const enforceRenderHitsMemoization = createRule<[], MessageIds>({
     schema: [],
     messages: {
       requireMemoizedTransformBefore:
-        'transformBefore prop must be memoized using useCallback',
-      requireMemoizedRender: 'render prop must be memoized using useCallback',
+        'transformBefore is recreated on every render, so useRenderHits sees a new transform identity each pass and re-derives (and re-renders) the whole hit list even when the hits did not change. Memoize it with useCallback, useMemo, or useLatestCallback so the reference stays stable across renders.',
+      requireMemoizedRender:
+        'render is recreated on every render, so useRenderHits sees a new render identity each pass and re-renders every hit even when the hits did not change. Memoize it with useCallback, useMemo, or useLatestCallback so the reference stays stable across renders.',
       requireMemoizedRenderHits:
-        'renderHits must be used inside useMemo or useCallback',
+        'renderHits builds a fresh element for every hit, so calling it outside a memoization boundary re-creates the entire list on each render. Wrap the call in useCallback, useMemo, or useLatestCallback so the elements are rebuilt only when the hits they came from change.',
       noDirectComponentInRender:
         'Do not pass React components directly to render prop, use a memoized arrow function instead',
     },
   },
   defaultOptions: [],
   create(context) {
+    // Every callee this rule accepts as a memoization boundary. `useCallback`
+    // and `useMemo` are seeded bare because the rule never resolves React's
+    // import either; local names bound from `use-latest-callback` are added as
+    // its imports are visited.
+    //
+    // `useLatestCallback` belongs in the same set rather than a separate one:
+    // nothing here inspects a dependency array, so the hook taking none (it
+    // keeps the latest callback behind a ref that is stable for the component's
+    // whole life) costs the rule no precision. It has to be here because
+    // `use-latest-callback` — 'error' in the same recommended config, and
+    // fixable — rewrites every `useCallback` into it, and ESLint re-lints until
+    // the output settles, so one `eslint --fix` run does both steps. Without
+    // this entry correctly memoized code goes in and a demand to memoize it
+    // comes out, and the demand names the very hook the sibling fixer just
+    // removed, so following it loops forever (issue #1585).
+    const memoizationCallees = new Set([
+      'useCallback',
+      'useMemo',
+      LATEST_CALLBACK_HOOK,
+    ]);
+
+    const isMemoizationCallee = (node: TSESTree.Node): boolean =>
+      node.type === AST_NODE_TYPES.Identifier &&
+      memoizationCallees.has(node.name);
+
     const isReactComponent = (node: TSESTree.Node): boolean => {
       if (node.type !== AST_NODE_TYPES.Identifier) return false;
       return /^[A-Z]/.test(node.name);
@@ -36,11 +65,22 @@ export const enforceRenderHitsMemoization = createRule<[], MessageIds>({
 
     const isMemoizedCall = (node: TSESTree.Node): boolean => {
       if (node.type !== AST_NODE_TYPES.CallExpression) return false;
-      if (!node.callee || node.callee.type !== AST_NODE_TYPES.Identifier)
-        return false;
-      return (
-        node.callee.name === 'useCallback' || node.callee.name === 'useMemo'
-      );
+      if (!node.callee) return false;
+      return isMemoizationCallee(node.callee);
+    };
+
+    const isWithinMemoizationCall = (node: TSESTree.Node): boolean => {
+      let current: TSESTree.Node | undefined = node;
+      while (current?.parent) {
+        if (
+          current.parent.type === AST_NODE_TYPES.CallExpression &&
+          isMemoizationCallee(current.parent.callee)
+        ) {
+          return true;
+        }
+        current = current.parent;
+      }
+      return false;
     };
 
     const isMemoizedVariable = (node: TSESTree.Node): boolean => {
@@ -77,19 +117,7 @@ export const enforceRenderHitsMemoization = createRule<[], MessageIds>({
       if (isMemoizedVariable(node)) return true;
 
       // Check if the node is inside a memoization hook call
-      let current: TSESTree.Node | undefined = node;
-      while (current?.parent) {
-        if (current.parent.type === AST_NODE_TYPES.CallExpression) {
-          const callee = current.parent.callee;
-          if (
-            callee.type === AST_NODE_TYPES.Identifier &&
-            (callee.name === 'useCallback' || callee.name === 'useMemo')
-          ) {
-            return true;
-          }
-        }
-        current = current.parent;
-      }
+      if (isWithinMemoizationCall(node)) return true;
 
       // Check if the node is a reference to a memoized value
       const scope = context.getScope();
@@ -108,33 +136,16 @@ export const enforceRenderHitsMemoization = createRule<[], MessageIds>({
         const parent = def.node.parent;
         if (
           parent?.type === AST_NODE_TYPES.VariableDeclarator &&
-          parent.init?.type === AST_NODE_TYPES.CallExpression
+          parent.init?.type === AST_NODE_TYPES.CallExpression &&
+          isMemoizationCallee(parent.init.callee)
         ) {
-          const callee = parent.init.callee;
-          if (
-            callee.type === AST_NODE_TYPES.Identifier &&
-            (callee.name === 'useCallback' || callee.name === 'useMemo')
-          ) {
-            return true;
-          }
+          return true;
         }
       }
 
       // Check if any reference is inside a memoized call
       for (const ref of variable.references) {
-        let current: TSESTree.Node | undefined = ref.identifier;
-        while (current?.parent) {
-          if (current.parent.type === AST_NODE_TYPES.CallExpression) {
-            const callee = current.parent.callee;
-            if (
-              callee.type === AST_NODE_TYPES.Identifier &&
-              (callee.name === 'useCallback' || callee.name === 'useMemo')
-            ) {
-              return true;
-            }
-          }
-          current = current.parent;
-        }
+        if (isWithinMemoizationCall(ref.identifier)) return true;
       }
 
       // Check if the node is a property of an object that is memoized
@@ -143,20 +154,7 @@ export const enforceRenderHitsMemoization = createRule<[], MessageIds>({
         parent?.type === AST_NODE_TYPES.Property &&
         parent.parent?.type === AST_NODE_TYPES.ObjectExpression
       ) {
-        const objectExpression = parent.parent;
-        let current: TSESTree.Node | undefined = objectExpression;
-        while (current?.parent) {
-          if (current.parent.type === AST_NODE_TYPES.CallExpression) {
-            const callee = current.parent.callee;
-            if (
-              callee.type === AST_NODE_TYPES.Identifier &&
-              (callee.name === 'useCallback' || callee.name === 'useMemo')
-            ) {
-              return true;
-            }
-          }
-          current = current.parent;
-        }
+        if (isWithinMemoizationCall(parent.parent)) return true;
       }
 
       return false;
@@ -167,6 +165,28 @@ export const enforceRenderHitsMemoization = createRule<[], MessageIds>({
 
     return {
       ImportDeclaration(node) {
+        // The module's sole export is the hook, so its DEFAULT specifier binds
+        // it under whatever local name the file chose — a shape a set of bare
+        // hook names cannot see. `use-latest-callback`'s own fixer picks that
+        // name, falling back to `useLatestCallback2` when `useLatestCallback`
+        // is already taken in the file, so the alias is not hypothetical.
+        if (
+          node.source.value === LATEST_CALLBACK_MODULE &&
+          (!node.importKind || node.importKind === 'value')
+        ) {
+          for (const specifier of node.specifiers) {
+            if (
+              specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
+              (specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+                specifier.importKind !== 'type' &&
+                specifier.imported.type === AST_NODE_TYPES.Identifier &&
+                specifier.imported.name === LATEST_CALLBACK_HOOK)
+            ) {
+              memoizationCallees.add(specifier.local.name);
+            }
+          }
+        }
+
         if (node.source.value.endsWith('useRenderHits')) {
           for (const specifier of node.specifiers) {
             if (
@@ -268,19 +288,7 @@ export const enforceRenderHitsMemoization = createRule<[], MessageIds>({
           node.callee.type === AST_NODE_TYPES.Identifier &&
           node.callee.name === renderHitsName
         ) {
-          let current: TSESTree.Node | undefined = node;
-          while (current?.parent) {
-            if (current.parent.type === AST_NODE_TYPES.CallExpression) {
-              const callee = current.parent.callee;
-              if (
-                callee.type === AST_NODE_TYPES.Identifier &&
-                (callee.name === 'useCallback' || callee.name === 'useMemo')
-              ) {
-                return;
-              }
-            }
-            current = current.parent;
-          }
+          if (isWithinMemoizationCall(node)) return;
 
           context.report({
             node,

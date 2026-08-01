@@ -1,5 +1,7 @@
+import { Linter, Rule } from 'eslint';
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { enforceRenderHitsMemoization } from '../rules/enforce-render-hits-memoization';
+import { useLatestCallback } from '../rules/use-latest-callback';
 
 ruleTesterJsx.run(
   'enforce-render-hits-memoization',
@@ -131,6 +133,117 @@ ruleTesterJsx.run(
 
           return <>{renderFirst}{renderSecond()}</>;
         };
+      `,
+      },
+      // Valid: the react import spells out the shape a composition sweep needs.
+      // Fixtures that write a bare `useCallback(...)` never trigger
+      // use-latest-callback's fixer, so the chain that produces issue #1585
+      // rewrites nothing and the sweep reports a vacuous clean.
+      {
+        code: `
+        import { useCallback } from 'react';
+
+        const HitsList = ({ hits }) => {
+          const renderResults = useCallback(
+            () => renderHits(hits, (hit) => <HitComponent hit={hit} />),
+            [hits],
+          );
+          return <div>{renderResults()}</div>;
+        };
+      `,
+      },
+      // Valid: useLatestCallback is a memoization boundary. It is also exactly
+      // what use-latest-callback's fixer leaves behind when it rewrites the
+      // useCallback above, so rejecting it would make the recommended config
+      // manufacture a report against its own output (issue #1585).
+      {
+        code: `
+        import useLatestCallback from 'use-latest-callback';
+
+        const HitsList = ({ hits }) => {
+          const renderResults = useLatestCallback(() =>
+            renderHits(hits, (hit) => <HitComponent hit={hit} />),
+          );
+          return <div>{renderResults()}</div>;
+        };
+      `,
+      },
+      // Valid: the sibling fixer falls back to a numeric suffix when
+      // 'useLatestCallback' is already bound in the file, so the hook reaches
+      // this rule under a name only the import can reveal.
+      {
+        code: `
+        import useLatestCallback2 from 'use-latest-callback';
+        const useLatestCallback = 'not the hook';
+
+        const HitsList = ({ hits }) => {
+          const renderResults = useLatestCallback2(() =>
+            renderHits(hits, (hit) => <HitComponent hit={hit} />),
+          );
+          return <div>{useLatestCallback}{renderResults()}</div>;
+        };
+      `,
+      },
+      // Valid: named-specifier form of the same module
+      {
+        code: `
+        import { useLatestCallback } from 'use-latest-callback';
+
+        const result = useLatestCallback(() =>
+          renderHits(hits, (hit) => <HitComponent hit={hit} />),
+        );
+      `,
+      },
+      // Valid: inline useLatestCallback props on useRenderHits
+      {
+        code: `
+        import useLatestCallback from 'use-latest-callback';
+
+        useRenderHits({
+          hits,
+          transformBefore: useLatestCallback((hits) => hits.filter(h => h.isActive)),
+          render: useLatestCallback((hit) => <HitComponent hit={hit} />),
+        });
+      `,
+      },
+      // Valid: shorthand props whose consts are memoized with useLatestCallback
+      {
+        code: `
+        import useLatestCallback from 'use-latest-callback';
+
+        const Component = ({ hits }) => {
+          const transformBefore = useLatestCallback((hits) => hits.filter(h => h.isActive));
+          const render = useLatestCallback((hit) => <HitComponent hit={hit} />);
+          useRenderHits({ hits, transformBefore, render });
+        };
+      `,
+      },
+      // Valid: non-shorthand props pointing at useLatestCallback consts
+      {
+        code: `
+        import useLatestCallback from 'use-latest-callback';
+
+        const Component = ({ hits }) => {
+          const transform = useLatestCallback((hits) => hits.filter(h => h.isActive));
+          const renderHit = useLatestCallback((hit) => <HitComponent hit={hit} />);
+          useRenderHits({ hits, transformBefore: transform, render: renderHit });
+        };
+      `,
+      },
+      // Valid: a useRenderHits call nested inside a useLatestCallback, matching
+      // the leniency the rule already grants inside useMemo/useCallback
+      {
+        code: `
+        import useLatestCallback from 'use-latest-callback';
+
+        const Component = ({ hits }) =>
+          useLatestCallback(() =>
+            useRenderHits({
+              hits,
+              transformBefore: (hits) => hits,
+              render: (hit) => <HitComponent hit={hit} />,
+            }),
+          );
       `,
       },
     ],
@@ -277,6 +390,174 @@ ruleTesterJsx.run(
       `,
         errors: [{ messageId: 'requireMemoizedRenderHits' }],
       },
+      // Invalid: importing useLatestCallback is not a file-wide amnesty — an
+      // unwrapped renderHits in the same file still reports
+      {
+        code: `
+        import useLatestCallback from 'use-latest-callback';
+
+        const memoized = useLatestCallback(() => renderHits(hits, hit => <Hit hit={hit} />));
+        const stray = renderHits(hits, hit => <Hit hit={hit} />);
+      `,
+        errors: [{ messageId: 'requireMemoizedRenderHits' }],
+      },
+      // Invalid: an arbitrary wrapper from another module stabilizes nothing
+      {
+        code: `
+        import wrap from './wrap';
+
+        const result = wrap(() => renderHits(hits, hit => <Hit hit={hit} />));
+      `,
+        errors: [{ messageId: 'requireMemoizedRenderHits' }],
+      },
+      // Invalid: a type-only import binds no value, so its local name is not a
+      // callable memoization boundary
+      {
+        code: `
+        import type ULC from 'use-latest-callback';
+
+        const result = ULC(() => renderHits(hits, hit => <Hit hit={hit} />));
+      `,
+        errors: [{ messageId: 'requireMemoizedRenderHits' }],
+      },
+      // Invalid: useLatestCallback on render does not excuse an unmemoized
+      // transformBefore beside it
+      {
+        code: `
+        import useLatestCallback from 'use-latest-callback';
+
+        useRenderHits({
+          hits,
+          transformBefore: (hits) => hits.filter(Boolean),
+          render: useLatestCallback((hit) => <Hit hit={hit} />),
+        });
+      `,
+        errors: [{ messageId: 'requireMemoizedTransformBefore' }],
+      },
     ],
   },
 );
+
+// use-latest-callback rewrites every useCallback into useLatestCallback and
+// drops the dependency array. Both rules ship as 'error' in the recommended
+// config, use-latest-callback is fixable, and ESLint re-lints until the output
+// settles — so ONE `eslint --fix` invocation does both steps. If this rule
+// cannot see the hook the fix lands on, correctly memoized code goes in and a
+// demand to memoize it comes out, naming the very hook the sibling just
+// removed: the config manufacturing an unfixable violation (issue #1585).
+describe('enforce-render-hits-memoization vs use-latest-callback --fix', () => {
+  const fixThenLint = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      'test/enforce-render-hits-memoization',
+      enforceRenderHitsMemoization as unknown as Rule.RuleModule,
+    );
+    linter.defineRule(
+      'test/use-latest-callback',
+      useLatestCallback as unknown as Rule.RuleModule,
+    );
+    const config = {
+      parser: '@typescript-eslint/parser',
+      parserOptions: {
+        ecmaVersion: 2020 as const,
+        sourceType: 'module' as const,
+        ecmaFeatures: { jsx: true },
+      },
+      rules: {
+        'test/enforce-render-hits-memoization': 'error' as const,
+        'test/use-latest-callback': 'error' as const,
+      },
+    };
+    const { output } = linter.verifyAndFix(code, config, 'HitsList.tsx');
+    return {
+      output,
+      messages: linter.verify(
+        output,
+        {
+          ...config,
+          rules: { 'test/enforce-render-hits-memoization': 'error' as const },
+        },
+        'HitsList.tsx',
+      ),
+    };
+  };
+
+  it('stays silent on a renderHits call the sibling fixer rewrites', () => {
+    const { output, messages } = fixThenLint(
+      `import { useCallback } from 'react';
+
+function HitsList({ hits }) {
+  const renderResults = useCallback(() => renderHits(hits, (hit) => <Hit hit={hit} />), [hits]);
+  return <div>{renderResults()}</div>;
+}`,
+    );
+
+    // Without this the test passes vacuously: an unrun sibling fixer leaves the
+    // original useCallback, which this rule always accepted.
+    expect(output).toContain('useLatestCallback');
+    expect(output).not.toContain('useCallback(');
+    expect(messages).toEqual([]);
+  });
+
+  it('stays silent on useRenderHits props the sibling fixer rewrites', () => {
+    const { output, messages } = fixThenLint(
+      `import { useCallback } from 'react';
+import { useRenderHits } from '@/hooks/algolia/useRenderHits';
+
+function HitsList({ hits }) {
+  useRenderHits({
+    hits,
+    transformBefore: useCallback((items) => items.filter((h) => h.isActive), []),
+    render: useCallback((hit) => <Hit hit={hit} />, []),
+  });
+  return null;
+}`,
+    );
+
+    // The render prop returns JSX, which use-latest-callback leaves alone, so
+    // only transformBefore crosses over — exactly the mixed state a real file
+    // lands in after one --fix.
+    expect(output).toContain('useLatestCallback(');
+    expect(messages).toEqual([]);
+  });
+
+  it('stays silent under the suffixed name the sibling fixer falls back to', () => {
+    const { output, messages } = fixThenLint(
+      `import { useCallback } from 'react';
+const useLatestCallback = 'taken';
+
+function HitsList({ hits }) {
+  const Row = useCallback((hit) => <Hit hit={hit} />, []);
+  const renderResults = useCallback(() => renderHits(hits, Row), [hits, Row]);
+  return <div>{useLatestCallback}{renderResults()}</div>;
+}`,
+    );
+
+    // A name-only check would miss this: the hook arrives as useLatestCallback2
+    // because the plain name is already bound in the file.
+    expect(output).toContain('useLatestCallback2');
+    expect(messages).toEqual([]);
+  });
+
+  it('still reports an unmemoized renderHits in the same fixed file', () => {
+    const { output, messages } = fixThenLint(
+      `import { useCallback } from 'react';
+
+function HitsList({ hits }) {
+  const renderResults = useCallback(() => renderHits(hits, (hit) => <Hit hit={hit} />), [hits]);
+  const stray = renderHits(hits, (hit) => <Hit hit={hit} />);
+  return <div>{renderResults()}{stray}</div>;
+}`,
+    );
+
+    expect(output).toContain('useLatestCallback');
+    expect(messages.map((message) => message.messageId)).toEqual([
+      'requireMemoizedRenderHits',
+    ]);
+  });
+});
