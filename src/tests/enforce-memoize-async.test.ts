@@ -197,6 +197,123 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
         }
       `,
     },
+    // ------------------------------------------------------------------
+    // Issue #1548: a method declared to produce no value has no result to
+    // cache, so the decorator buys nothing while changing behaviour — the
+    // side effects run once per instance and every later call no-ops.
+    // ------------------------------------------------------------------
+    {
+      name: 'a Promise<void> method is exempt (issue #1548 reproduction)',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class OutboxWriter {
+          public async flushPendingWrites(): Promise<void> {
+            await this.batch.commit();
+          }
+        }
+      `,
+    },
+    {
+      name: 'a Promise<void> method with one parameter is exempt',
+      code: `
+        class Staging {
+          private async cleanStagingTable(tableId: string): Promise<void> {
+            await this.bq.dataset(tableId).delete();
+          }
+        }
+      `,
+    },
+    {
+      name: 'a void-annotated async method is exempt',
+      code: `
+        class Pinger {
+          public async ping(): void {
+            this.socket.send('ping');
+          }
+        }
+      `,
+    },
+    {
+      name: 'Promise<void> with odd internal whitespace is exempt',
+      code: `
+        class OutboxWriter {
+          public async flush():   Promise  <  void  > {
+            await this.batch.commit();
+          }
+        }
+      `,
+    },
+    {
+      name: 'Promise<void> split across newlines is exempt',
+      code: `
+        class OutboxWriter {
+          public async flush(): Promise<
+            void
+          > {
+            await this.batch.commit();
+          }
+        }
+      `,
+    },
+    {
+      name: 'a Promise<void> method carrying another decorator is exempt',
+      code: `
+        function Log(): MethodDecorator { return () => {}; }
+        class OutboxWriter {
+          @Log()
+          public async flush(): Promise<void> {
+            await this.batch.commit();
+          }
+        }
+      `,
+    },
+    {
+      // No violation survives, so no import carrier exists either: the file
+      // must not gain `import { Memoize }` for a method it never decorates.
+      name: 'a class of only Promise<void> methods pulls in no import',
+      code: `
+        export class OutboxWriter {
+          public async flush(): Promise<void> {
+            await this.batch.commit();
+          }
+          private async retry(id: string): Promise<void> {
+            await this.queue.push(id);
+          }
+        }
+      `,
+    },
+    {
+      name: 'a static Promise<void> method is exempt for both reasons',
+      code: `
+        class OutboxWriter {
+          static async flush(): Promise<void> {
+            await commit();
+          }
+        }
+      `,
+    },
+    {
+      name: 'a two-parameter Promise<void> method is exempt for both reasons',
+      code: `
+        class OutboxWriter {
+          public async write(id: string, body: Buffer): Promise<void> {
+            await this.batch.set(id, body);
+          }
+        }
+      `,
+    },
+    {
+      name: 'an already-decorated Promise<void> method is still accepted',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class OutboxWriter {
+          @Memoize()
+          public async flush(): Promise<void> {
+            await this.batch.commit();
+          }
+        }
+      `,
+    },
     // Issue #1404: every violation suppressed inline leaves the file untouched
     {
       name: 'all violations disabled inline report nothing',
@@ -482,6 +599,164 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
           @Memoize()
           private async applyUpdates(updates: Partial<any>[]) {
             return;
+          }
+        }
+      `,
+    },
+    // ------------------------------------------------------------------
+    // Issue #1548: the exemption is keyed to a declared plain `void` /
+    // `Promise<void>`. Every annotation that can carry a value, and every
+    // method that declares nothing at all, still reports and still fixes.
+    // ------------------------------------------------------------------
+    {
+      name: 'a value-returning Promise<T> method still gets @Memoize() and the import',
+      code: `
+        export class UserRepo {
+          public async fetchUser(id: string): Promise<User> {
+            return this.db.get(id);
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        export class UserRepo {
+          @Memoize()
+          public async fetchUser(id: string): Promise<User> {
+            return this.db.get(id);
+          }
+        }
+      `,
+    },
+    {
+      name: 'a Promise<void | undefined> union still reports',
+      code: `
+        class Example {
+          public async maybe(): Promise<void | undefined> { return undefined; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Example {
+          @Memoize()
+          public async maybe(): Promise<void | undefined> { return undefined; }
+        }
+      `,
+    },
+    {
+      // The exemption reads the annotation, not the body: an unannotated
+      // method declares no intent to produce nothing, and inferring it would
+      // silently drop a whole population the author never marked.
+      name: 'an unannotated method whose body only does return; still reports',
+      code: `
+        class Example {
+          public async apply() {
+            return;
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Example {
+          @Memoize()
+          public async apply() {
+            return;
+          }
+        }
+      `,
+    },
+    {
+      name: 'a generic Promise<T> still reports',
+      code: `
+        class Example<T> {
+          public async load(): Promise<T> { return this.value; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Example<T> {
+          @Memoize()
+          public async load(): Promise<T> { return this.value; }
+        }
+      `,
+    },
+    {
+      name: 'a bare Promise annotation with no type argument still reports',
+      code: `
+        class Example {
+          public async load(): Promise { return 1; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Example {
+          @Memoize()
+          public async load(): Promise { return 1; }
+        }
+      `,
+    },
+    {
+      name: 'a Promise<undefined> annotation still reports',
+      code: `
+        class Example {
+          public async load(): Promise<undefined> { return undefined; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Example {
+          @Memoize()
+          public async load(): Promise<undefined> { return undefined; }
+        }
+      `,
+    },
+    {
+      // Only `Promise` is exempted by name: a look-alike wrapper resolves to
+      // something the rule cannot vouch for, so it keeps reporting.
+      name: 'a non-Promise wrapper of void still reports',
+      code: `
+        class Example {
+          public async load(): Task<void> { return this.task; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Example {
+          @Memoize()
+          public async load(): Task<void> { return this.task; }
+        }
+      `,
+    },
+    {
+      // The exempt method is skipped outright, so the import must ride on the
+      // value-returning sibling instead of being stranded.
+      name: 'a Promise<void> sibling is skipped while the value-returning one carries the import',
+      code: `
+        export class OutboxWriter {
+          public async flush(): Promise<void> {
+            await this.batch.commit();
+          }
+          public async pending(): Promise<number> {
+            return this.batch.size;
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        export class OutboxWriter {
+          public async flush(): Promise<void> {
+            await this.batch.commit();
+          }
+          @Memoize()
+          public async pending(): Promise<number> {
+            return this.batch.size;
           }
         }
       `,
@@ -1318,5 +1593,78 @@ export function build(Memoize) {
 
     expect(topScopeMemoizeDeclarations(output)).toBe(1);
     expect(output.match(/@Memoize\(\)/g)).toHaveLength(1);
+  });
+});
+
+// Issue #1548: `--fix` re-lints until the output settles, so the guarantee that
+// matters is that a value-less method survives the whole run undecorated. A
+// memoized `Promise<void>` method commits its side effects once per instance
+// and silently no-ops thereafter — a behaviour change applied unattended.
+describe('enforce-memoize-async: methods declared to produce no value (issue #1548)', () => {
+  it('leaves a Promise<void> method untouched across every pass', () => {
+    const code = `export class OutboxWriter {
+  public async flushPendingWrites(): Promise<void> {
+    await this.batch.commit();
+  }
+}
+`;
+
+    expect(lint(code)).toBe(code);
+    expect(lint(code)).not.toContain('Memoize');
+  });
+
+  it('reports nothing on a Promise<void> method', () => {
+    expect(
+      lintMessages(`export class OutboxWriter {
+  public async flushPendingWrites(): Promise<void> {
+    await this.batch.commit();
+  }
+}
+`),
+    ).toHaveLength(0);
+  });
+
+  it('leaves a void-annotated method untouched', () => {
+    const code = `export class Pinger {
+  public async ping(): void {
+    this.socket.send('ping');
+  }
+}
+`;
+
+    expect(lint(code)).toBe(code);
+  });
+
+  it('still decorates a value-returning sibling and imports once', () => {
+    const output = lint(`export class OutboxWriter {
+  public async flush(): Promise<void> {
+    await this.batch.commit();
+  }
+
+  public async pending(): Promise<number> {
+    return this.batch.size;
+  }
+}
+`);
+
+    expect(output.match(/@Memoize\(\)/g)).toHaveLength(1);
+    expect(
+      output.match(
+        /import \{ Memoize \} from '@blumintinc\/typescript-memoize';/g,
+      ),
+    ).toHaveLength(1);
+    expect(output).toContain(`  public async flush(): Promise<void> {`);
+  });
+
+  it('still reports a Promise<void | undefined> union', () => {
+    const messages = lintMessages(`export class Example {
+  public async maybe(): Promise<void | undefined> {
+    return undefined;
+  }
+}
+`);
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].ruleId).toBe(RULE_ID);
   });
 });

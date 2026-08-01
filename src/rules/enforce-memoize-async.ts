@@ -55,6 +55,46 @@ function bindsMemoize(variable: TSESLint.Scope.Variable): boolean {
 }
 
 /**
+ * Whether a declared return type annotation promises no value: `void` or
+ * `Promise<void>`.
+ *
+ * Memoizing such a method caches nothing — there is no result to hand back —
+ * while changing runtime behaviour: the side effects run once per instance and
+ * every later call silently no-ops. Because the decision comes from the
+ * annotation node, spacing and line breaks inside the type are irrelevant.
+ *
+ * The check stays keyed to a plain `void`: a union (`Promise<void | undefined>`)
+ * or a type parameter (`Promise<T>`) can resolve to a value, so those still
+ * warrant caching. Absent annotations are likewise not exempt — this rule is
+ * syntactic (no `parserOptions.project`), so an unannotated body carries no
+ * declaration of intent to honour, and exempting inferred void would silently
+ * drop methods the author never marked value-less.
+ */
+function declaresVoidResult(
+  returnType: TSESTree.TSTypeAnnotation | undefined,
+): boolean {
+  const annotation = returnType?.typeAnnotation;
+  if (!annotation) {
+    return false;
+  }
+  if (annotation.type === AST_NODE_TYPES.TSVoidKeyword) {
+    return true;
+  }
+  if (
+    annotation.type !== AST_NODE_TYPES.TSTypeReference ||
+    annotation.typeName.type !== AST_NODE_TYPES.Identifier ||
+    annotation.typeName.name !== 'Promise'
+  ) {
+    return false;
+  }
+  const typeArguments = annotation.typeParameters?.params;
+  return (
+    typeArguments?.length === 1 &&
+    typeArguments[0].type === AST_NODE_TYPES.TSVoidKeyword
+  );
+}
+
+/**
  * Matches a memoize decorator in supported syntaxes:
  * - @Alias()
  * - @Alias
@@ -176,6 +216,14 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
 
         // Skip methods with more than one parameter
         if (node.value.params.length > 1) {
+          return;
+        }
+
+        // A method declared to produce no value has no result to cache, so the
+        // decorator's benefit is unobtainable while its cost is real: the
+        // fixer would convert a repeatable side effect into a
+        // once-per-instance one, unattended, under `--fix`.
+        if (declaresVoidResult(node.value.returnType)) {
           return;
         }
 
