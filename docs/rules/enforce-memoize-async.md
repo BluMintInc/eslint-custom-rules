@@ -20,6 +20,8 @@ The rule skips:
 - Methods with two or more parameters (caching would be ambiguous).
 - Static methods.
 - Methods already decorated with `@Memoize()` or a namespaced equivalent (e.g., `@memo.Memoize()`).
+- Methods whose **declared** return type is `void` or `Promise<void>` (see
+  [Methods declared to produce no value](#methods-declared-to-produce-no-value)).
 
 ### Examples of **incorrect** code for this rule:
 
@@ -41,6 +43,66 @@ class UserRepo {
 
   @Memoize()
   async currentUser() { return api.getCurrent(); }
+
+  // Declared to produce no value, so there is nothing to cache
+  async invalidate(): Promise<void> { await api.purge(); }
+}
+```
+
+### Methods declared to produce no value
+
+A method annotated `void` or `Promise<void>` is exempt. Memoizing one is not an
+optimisation, it is a behaviour change:
+
+- **There is nothing to cache.** The rule's stated benefit — returning a stored
+  result to the next caller — is unobtainable when the method promises no
+  result.
+- **The side effect stops repeating.** `@Memoize()` caches the promise, so the
+  body runs once per instance and every later call resolves the stored promise
+  without doing the work. A flush, a commit, a retry, or a token re-mint
+  silently becomes a no-op after its first invocation.
+
+Because this rule is fixable, `--fix` would apply that change unattended, so the
+exemption keeps the fixer away from these methods entirely:
+
+```ts
+class OutboxWriter {
+  // ✅ not reported: each call must actually commit
+  public async flushPendingWrites(): Promise<void> {
+    await this.batch.commit();
+  }
+
+  // ✅ not reported
+  private async cleanStagingTable(tableId: string): Promise<void> {
+    await this.bq.dataset(tableId).delete();
+  }
+
+  // ❌ still reported: it returns a value worth caching
+  public async pendingCount(): Promise<number> {
+    return this.batch.size;
+  }
+}
+```
+
+The exemption reads the **declared annotation** from the AST — this rule is
+syntactic and does not require `parserOptions.project`, so it cannot consult
+inferred types. Two consequences:
+
+- Whitespace and line breaks inside the annotation are irrelevant, since the
+  decision comes from the type node rather than its text.
+- A method that merely lacks a `return <expr>` in its body is **not** exempt.
+  Without an annotation there is no declaration of intent to honour, and
+  inferring one would silently drop methods the author never marked value-less.
+
+Anything that can carry a value keeps reporting, including `Promise<void | undefined>`,
+`Promise<undefined>`, a bare `Promise`, a type parameter such as `Promise<T>`, and
+any wrapper other than `Promise`. To exempt one of those, annotate the method
+`Promise<void>` or suppress the report deliberately:
+
+```ts
+class TokenClient {
+  // eslint-disable-next-line @blumintinc/blumint/enforce-memoize-async -- the 401 path must re-mint on every 401
+  public async mintToken(): Promise<string> { return api.mint(); }
 }
 ```
 
