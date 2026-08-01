@@ -3,6 +3,24 @@ import { noJsxInHooks } from '../rules/no-jsx-in-hooks';
 
 ruleTesterJsx.run('no-jsx-in-hooks', noJsxInHooks, {
   valid: [
+    // A zero-argument .map() used to abort the whole lint run: the indexed
+    // `arguments[0]` read is typed non-optional (issue #1572).
+    {
+      code: `
+        const useItems = () => {
+          return useMemo(() => registry.map(), []);
+        };
+      `,
+    },
+    {
+      code: `
+        function useItems() {
+          return useMemo(function () {
+            return registry.map();
+          }, []);
+        }
+      `,
+    },
     // Valid hook that returns a non-JSX value
     {
       code: `

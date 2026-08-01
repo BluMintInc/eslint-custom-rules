@@ -151,8 +151,11 @@ const containsJsxInUseMemo = (node: TSESTree.CallExpression): boolean => {
         body.callee.property.type === AST_NODE_TYPES.Identifier &&
         body.callee.property.name === 'map'
       ) {
+        // A zero-argument .map() leaves this undefined. The indexed read is
+        // typed non-optional, so nothing forces the check.
         const mapCallback = body.arguments[0];
         if (
+          mapCallback &&
           (mapCallback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
             mapCallback.type === AST_NODE_TYPES.FunctionExpression) &&
           isJsxElement(mapCallback.body)
