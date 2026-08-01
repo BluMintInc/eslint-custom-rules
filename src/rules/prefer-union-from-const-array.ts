@@ -1,4 +1,9 @@
-import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  AST_TOKEN_TYPES,
+  TSESLint,
+  TSESTree,
+} from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'preferDerivedUnion';
@@ -71,17 +76,30 @@ function isNameInScope(
  * between consecutive lines. Reading it from the source keeps emitted code in
  * the author's units instead of assuming a two-space, space-indented file.
  */
-function indentUnitOf(text: string): string {
+function indentUnitOf(sourceCode: TSESLint.SourceCode): string {
+  const text = sourceCode.getText();
+  const blockComments = sourceCode
+    .getAllComments()
+    .filter((comment) => comment.type === AST_TOKEN_TYPES.Block)
+    .map((comment) => comment.range);
+  // A block comment's interior lines carry whatever alignment the comment uses
+  // — the `*` one column in from its own indentation, or, for commented-out
+  // code, the original code's depths. Neither is a nesting step of the file, and
+  // counting them makes a JSDoc-heavy file look 1-space indented. Keying on the
+  // comment's range rather than a leading `*` also covers a body without them.
+  const continuesBlockComment = (offset: number) =>
+    blockComments.some(([start, end]) => start < offset && offset < end);
+
   const frequencies = new Map<string, number>();
   let previous = '';
+  let offset = 0;
   for (const line of text.split('\n')) {
+    const lineStart = offset;
+    offset += line.length + 1;
     if (line.trim() === '') {
       continue;
     }
-    // A block comment's continuation lines align on the `*` one column in from
-    // the comment's own indentation. That is comment alignment, not a nesting
-    // step, and counting it makes any JSDoc-heavy file look 1-space indented.
-    if (line.trimStart().startsWith('*')) {
+    if (continuesBlockComment(lineStart)) {
       continue;
     }
     const match = /^[ \t]*/.exec(line);
@@ -145,7 +163,7 @@ export const preferUnionFromConstArray = createRule<Options, MessageIds>({
     let indentUnit: string | null = null;
     const fileIndentUnit = () => {
       if (indentUnit === null) {
-        indentUnit = indentUnitOf(sourceCode.getText());
+        indentUnit = indentUnitOf(sourceCode);
       }
       return indentUnit;
     };

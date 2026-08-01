@@ -274,6 +274,36 @@ type Boundary = (typeof BOUNDARY_VALUES)[number];`,
 }`,
       errors: [{ messageId: 'preferDerivedUnion' }],
     },
+    // A block comment whose body carries no leading asterisks — commented-out
+    // code — must not contribute its indentation to the census (issue #1577).
+    // The old leading-`*` heuristic read a 3-space step out of this body.
+    {
+      code: `/*
+const legacy = () => {
+   one();
+      two();
+};
+*/
+function outer() {
+  type Palette = 'primaryFill' | 'secondaryFill' | 'tertiaryFill' | 'quaternaryFill';
+}`,
+      output: `/*
+const legacy = () => {
+   one();
+      two();
+};
+*/
+function outer() {
+  const PALETTE_VALUES = [
+    'primaryFill',
+    'secondaryFill',
+    'tertiaryFill',
+    'quaternaryFill',
+  ] as const;
+  type Palette = (typeof PALETTE_VALUES)[number];
+}`,
+      errors: [{ messageId: 'preferDerivedUnion' }],
+    },
     // Tab-indented file: the wrap uses a tab as its nesting step.
     {
       code: `function outer() {
