@@ -38,11 +38,60 @@ class Example {
 - Ignores static getters.
 - Recognizes `@Memoize`, `@Memoize()`, and namespaced forms like `@ns.Memoize()`.
 - Auto-fix adds `@Memoize()` and imports `Memoize` from `@blumintinc/typescript-memoize` if missing, without duplicating existing imports or aliases.
-- For ephemeral getters by design, use a targeted disable comment on the getter.
+- Getters that sample live external state are exempt automatically (see below).
+
+### Getters that read live external state
+
+Memoizing a getter whose value is a fresh observation of the outside world is
+not an optimization — it pins the first observation for the life of the
+instance, and every later access reads a value that stopped tracking reality:
+
+```ts
+let externalState = 'screen A';
+class Probe {
+  @Memoize()
+  private get screen() { return externalState; }
+}
+```
+
+Because the fix lands unattended under `eslint --fix`, the rule declines to
+report a getter whose body reaches:
+
+- a call through a binding imported from a Node I/O module — `child_process`,
+  `fs`, `fs/promises`, `net`, `http`, `https`, `dns`, with or without the
+  `node:` prefix;
+- a non-deterministic builtin: `Date.now()`, a bare `new Date()`,
+  `Math.random()`, `performance.now()`, `crypto.randomUUID()`,
+  `crypto.getRandomValues()`, or `process.hrtime()`;
+- a read of `process.env`.
+
+The analysis is class-local and transitive: a getter that delegates to a sibling
+member which itself delegates further is exempt too, however long the chain.
+
+```ts
+import { execFileSync } from 'node:child_process';
+
+class PageProbe {
+  private run(args: readonly string[]) {
+    return execFileSync('agent-browser', [...args], { encoding: 'utf8' });
+  }
+
+  // exempt: `this.run` shells out, so each access must take a fresh snapshot
+  private get snapshot() { return this.run(['snapshot', '-i']); }
+
+  // still reported: a lazy factory with a stable result
+  private get fetcher() { return new FirestoreFetcher(this.ref); }
+}
+```
+
+The exemption is deliberately narrow and purely syntactic — the rule runs
+without type information. A getter that reaches live state by some other route
+(a global mutable module, an injected clock) is still reported; suppress it with
+a targeted disable comment on the getter:
 
 ```ts
 // eslint-disable-next-line @blumintinc/blumint/enforce-memoize-getters -- ephemeral by design
-private get timestamp() { return Date.now(); }
+private get screen() { return externalState; }
 ```
 
 ### Interaction with inline disable comments
@@ -56,7 +105,7 @@ their import:
 ```ts
 class Example {
   // eslint-disable-next-line @blumintinc/blumint/enforce-memoize-getters
-  private get timestamp() { return Date.now(); }  // left alone
+  private get screen() { return externalState; }  // left alone
 
   private get fetcher() { return createFetcher(); }  // fixed, and carries the import
 }
