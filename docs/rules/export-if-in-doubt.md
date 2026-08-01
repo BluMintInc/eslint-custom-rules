@@ -14,7 +14,7 @@ This rule checks for unexported top-level const, function, and type-alias declar
 - Hidden top-level code makes intent unclear—callers cannot tell whether the symbol is private or simply forgotten.
 - Exporting or moving the code into a narrower scope clarifies ownership and prevents dead code from drifting through the codebase.
 
-To satisfy the rule, either export the declaration (for example, `export const foo = ...`) or relocate it inside a function/inner block when it should remain private.
+To satisfy the rule, either prepend the `export` keyword to the declaration exactly as it stands (for example, `export const foo = …;`) or relocate it inside a function/inner block when it should remain private.
 
 ### Examples of incorrect code for this rule:
 
@@ -69,4 +69,16 @@ const handleRequest = async () => {
 export default withLogging(handleRequest);
 ```
 
-Export it as well (`export const handleRequest = ...`) if callers need it.
+Export it as well (`export const handleRequest = …;`) if callers need it.
+
+### Reading the example in the error message
+
+The message quotes the shape of the export you should end up with, using `…` for the code you already wrote:
+
+```text
+export <kind> <name> = …;
+export function <name>(…) { … }
+export type <name> = …;
+```
+
+The `…` marks elision, never something to type. The whole fix is to add the `export` keyword in front of the existing declaration: its initializer, parameters, body, and aliased type must survive untouched. Rewriting `const config = { retries: 3 }` as `export const config = undefined` "satisfies" the rule while deleting the value it declares.

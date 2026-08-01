@@ -78,7 +78,7 @@ ruleTesterTs.run('export-if-in-doubt', exportIfInDoubt, {
           data: {
             name: 'myConst',
             kind: 'const',
-            exportExample: 'export const myConst = undefined;',
+            exportExample: 'export const myConst = …;',
           },
         },
       ],
@@ -91,7 +91,7 @@ ruleTesterTs.run('export-if-in-doubt', exportIfInDoubt, {
           data: {
             name: 'myFunction',
             kind: 'function',
-            exportExample: 'export function myFunction() {}',
+            exportExample: 'export function myFunction(…) { … }',
           },
         },
       ],
@@ -104,8 +104,86 @@ ruleTesterTs.run('export-if-in-doubt', exportIfInDoubt, {
           data: {
             name: 'MyType',
             kind: 'type',
-            exportExample: 'export type MyType = unknown;',
+            exportExample: 'export type MyType = …;',
           },
+        },
+      ],
+    },
+    // The suggested example must stay a placeholder: pasting it verbatim may
+    // never replace the initializer, the parameters/body, or the aliased type.
+    {
+      code: 'const config = { retries: 3, timeout: 5000 };',
+      errors: [
+        {
+          messageId: 'exportIfInDoubt',
+          data: {
+            name: 'config',
+            kind: 'const',
+            exportExample: 'export const config = …;',
+          },
+        },
+      ],
+    },
+    {
+      code: 'let counter = 0;',
+      errors: [
+        {
+          messageId: 'exportIfInDoubt',
+          data: {
+            name: 'counter',
+            kind: 'let',
+            exportExample: 'export let counter = …;',
+          },
+        },
+      ],
+    },
+    {
+      code: 'var legacyFlag = true;',
+      errors: [
+        {
+          messageId: 'exportIfInDoubt',
+          data: {
+            name: 'legacyFlag',
+            kind: 'var',
+            exportExample: 'export var legacyFlag = …;',
+          },
+        },
+      ],
+    },
+    {
+      code: 'function computeTotal(a: number, b: number) { return a + b; }',
+      errors: [
+        {
+          messageId: 'exportIfInDoubt',
+          data: {
+            name: 'computeTotal',
+            kind: 'function',
+            exportExample: 'export function computeTotal(…) { … }',
+          },
+        },
+      ],
+    },
+    {
+      code: 'type UserRecord = { id: string; name: string };',
+      errors: [
+        {
+          messageId: 'exportIfInDoubt',
+          data: {
+            name: 'UserRecord',
+            kind: 'type',
+            exportExample: 'export type UserRecord = …;',
+          },
+        },
+      ],
+    },
+    // Pinning the fully rendered message guards the template itself: a future
+    // edit that fabricates a concrete value inside it fails here too.
+    {
+      code: 'const config = { retries: 3 };',
+      errors: [
+        {
+          message:
+            'What\'s wrong: Top-level const "config" is not exported. Why it matters: Top-level declarations define your module\'s public API; leaving this unexported makes it unusable from other files and hides reusable utilities (often resulting in dead code or duplicated implementations). How to fix: Export it (for example: export const config = …;) or move it into a narrower scope if it is intentionally private.',
         },
       ],
     },
@@ -119,7 +197,7 @@ ruleTesterTs.run('export-if-in-doubt', exportIfInDoubt, {
           data: {
             name: 'myConst',
             kind: 'const',
-            exportExample: 'export const myConst = undefined;',
+            exportExample: 'export const myConst = …;',
           },
         },
       ],
@@ -132,7 +210,7 @@ ruleTesterTs.run('export-if-in-doubt', exportIfInDoubt, {
           data: {
             name: 'myConst',
             kind: 'const',
-            exportExample: 'export const myConst = undefined;',
+            exportExample: 'export const myConst = …;',
           },
         },
       ],
@@ -145,7 +223,7 @@ ruleTesterTs.run('export-if-in-doubt', exportIfInDoubt, {
           data: {
             name: 'myConst',
             kind: 'const',
-            exportExample: 'export const myConst = undefined;',
+            exportExample: 'export const myConst = …;',
           },
         },
       ],
@@ -159,7 +237,7 @@ ruleTesterTs.run('export-if-in-doubt', exportIfInDoubt, {
           data: {
             name: 'unexported',
             kind: 'const',
-            exportExample: 'export const unexported = undefined;',
+            exportExample: 'export const unexported = …;',
           },
         },
       ],
@@ -202,7 +280,7 @@ ruleTesterTs.run('export-if-in-doubt', exportIfInDoubt, {
           data: {
             name: 'ListAssetsImxPayload',
             kind: 'type',
-            exportExample: 'export type ListAssetsImxPayload = unknown;',
+            exportExample: 'export type ListAssetsImxPayload = …;',
           },
         },
       ],
