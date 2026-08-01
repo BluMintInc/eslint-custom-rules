@@ -13,6 +13,7 @@ type Options = [
     allowAbstractMethodSignatures?: boolean;
     allowDtsFiles?: boolean;
     allowFirestoreFunctionFiles?: boolean;
+    allowVoidReturnTypes?: boolean;
   },
 ];
 
@@ -23,6 +24,7 @@ const defaultOptions: Options[0] = {
   allowAbstractMethodSignatures: true,
   allowDtsFiles: true,
   allowFirestoreFunctionFiles: true,
+  allowVoidReturnTypes: true,
 };
 
 function getNameFromIdentifierOrLiteral(
@@ -812,6 +814,53 @@ function isReadonlyWideningReturnType(
   return false;
 }
 
+/**
+ * Returns true when the annotation declares that the function produces no
+ * value: a bare `void`, or `Promise<void>` with exactly one type argument.
+ *
+ * The rule's case against an explicit return type is that it restates what the
+ * implementation already returns and "can drift from what the implementation
+ * actually returns, hiding bugs behind a stale type". That case does not reach
+ * `void`/`Promise<void>`. Such an annotation is not a restatement of a result,
+ * it is a declaration that there is no result, and TypeScript enforces it:
+ * adding `return <expr>` to a function annotated `Promise<void>` is a compile
+ * error. It cannot drift into a lie, so removing it destroys information rather
+ * than removing redundancy.
+ *
+ * That information is load-bearing for other rules: `enforce-memoize-async`
+ * reads exactly this declaration of intent and skips a method declared
+ * `Promise<void>`, because caching a call that yields nothing turns a repeatable
+ * side effect into a once-per-instance one. Stripping the annotation happens
+ * unattended — `eslint --fix` re-lints until the output settles, so the strip
+ * and the memoization that follows it land in the same run.
+ *
+ * The shape match stays deliberately exact, mirroring the check
+ * `enforce-memoize-async` performs. A union (`Promise<void | string>`), a nested
+ * wrapper (`Promise<Awaited<void>>`) or any other arity can resolve to a value,
+ * so those annotations remain redundant restatements and stay reportable.
+ */
+function declaresVoidResult(returnType: TSESTree.TSTypeAnnotation): boolean {
+  const annotation = returnType.typeAnnotation;
+
+  if (annotation.type === AST_NODE_TYPES.TSVoidKeyword) {
+    return true;
+  }
+
+  if (
+    annotation.type !== AST_NODE_TYPES.TSTypeReference ||
+    annotation.typeName.type !== AST_NODE_TYPES.Identifier ||
+    annotation.typeName.name !== 'Promise'
+  ) {
+    return false;
+  }
+
+  const typeArguments = annotation.typeParameters?.params;
+  return (
+    typeArguments?.length === 1 &&
+    typeArguments[0].type === AST_NODE_TYPES.TSVoidKeyword
+  );
+}
+
 export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
   createRule<Options, MessageIds>({
     name: 'no-explicit-return-type',
@@ -835,6 +884,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
             allowAbstractMethodSignatures: { type: 'boolean' },
             allowDtsFiles: { type: 'boolean' },
             allowFirestoreFunctionFiles: { type: 'boolean' },
+            allowVoidReturnTypes: { type: 'boolean' },
           },
           additionalProperties: false,
         },
@@ -906,6 +956,23 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
         return {};
       }
 
+      /**
+       * Applied at the implementation sites this rule's fixer can rewrite —
+       * functions, arrows and class methods. Signature-only declarations
+       * (interface methods, abstract methods, `declare function`) are outside
+       * the exemption: they have no body to infer from, so their annotation is
+       * mandatory rather than redundant, they are reported only when the
+       * matching `allow*` option is turned off, and no fixer ever strips them.
+       */
+      function isAllowedVoidReturnType(
+        returnType: TSESTree.TSTypeAnnotation,
+      ): boolean {
+        return (
+          Boolean(mergedOptions.allowVoidReturnTypes) &&
+          declaresVoidResult(returnType)
+        );
+      }
+
       type FixableNode =
         | TSESTree.FunctionDeclaration
         | TSESTree.FunctionExpression
@@ -936,6 +1003,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
           if (
             isTypeGuardFunction(node) ||
             isReadonlyWideningReturnType(returnType) ||
+            isAllowedVoidReturnType(returnType) ||
             (mergedOptions.allowRecursiveFunctions &&
               isRecursiveFunction(node)) ||
             isReturnTypeRequiredByRecursion(node)
@@ -968,6 +1036,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
           if (
             isTypeGuardFunction(node) ||
             isReadonlyWideningReturnType(returnType) ||
+            isAllowedVoidReturnType(returnType) ||
             (mergedOptions.allowRecursiveFunctions &&
               isRecursiveFunction(node)) ||
             isReturnTypeRequiredByRecursion(node)
@@ -990,6 +1059,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
           if (
             isTypeGuardFunction(node) ||
             isReadonlyWideningReturnType(returnType) ||
+            isAllowedVoidReturnType(returnType) ||
             isReturnTypeRequiredByRecursion(node)
           ) {
             return;
@@ -1032,6 +1102,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
           if (
             isTypeGuardFunction(node.value) ||
             isReadonlyWideningReturnType(returnType) ||
+            isAllowedVoidReturnType(returnType) ||
             (mergedOptions.allowAbstractMethodSignatures &&
               isInterfaceOrAbstractMethodSignature(node)) ||
             isReturnTypeRequiredByRecursion(node)
