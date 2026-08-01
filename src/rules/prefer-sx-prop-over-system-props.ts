@@ -1,4 +1,9 @@
-import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  AST_TOKEN_TYPES,
+  TSESLint,
+  TSESTree,
+} from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'preferSxProp';
@@ -7,8 +12,16 @@ type Options = [
   {
     components?: string[];
     allowedProps?: string[];
+    printWidth?: number;
   },
 ];
+
+/**
+ * Matches Prettier's own default. The autofix rewrites JSX that a formatter
+ * owns, so a line it emits past this width is rewritten on the next
+ * `prettier --write` — and fails `prettier --check` in the meantime.
+ */
+const DEFAULT_PRINT_WIDTH = 80;
 
 /**
  * The canonical set of MUI system props that are deprecated in favor of `sx`.
@@ -255,6 +268,584 @@ function attrValueToSxValue(
   return sourceCode.getText(value);
 }
 
+/** The whitespace that indents the line containing `offset`. */
+const indentationAt = (
+  sourceCode: TSESLint.SourceCode,
+  offset: number,
+): string => {
+  const text = sourceCode.getText();
+  const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+  const match = /^[ \t]*/.exec(text.slice(lineStart, offset));
+  return match ? match[0] : '';
+};
+
+/**
+ * Ranges whose interior line breaks carry string data rather than formatting.
+ * A multi-line template literal (or a string spliced together with line
+ * continuations) evaluates to the whitespace written inside it, so shifting
+ * those lines would silently change the value the code produces — the same
+ * carve-out `use-latest-callback` makes for a relocated callback body.
+ */
+const stringDataRangesOf = (
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.Node,
+): TSESTree.Range[] =>
+  sourceCode
+    .getTokens(node)
+    .filter(
+      (token) =>
+        (token.type === AST_TOKEN_TYPES.Template ||
+          token.type === AST_TOKEN_TYPES.String) &&
+        token.loc.start.line !== token.loc.end.line,
+    )
+    .map((token) => token.range);
+
+/**
+ * A per-line transform moving text written at `fromIndent` to `toIndent`, or
+ * null when neither indentation is a prefix of the other (tabs against spaces),
+ * where no delta can be applied without corrupting the layout.
+ */
+const lineShifterBetween = (
+  fromIndent: string,
+  toIndent: string,
+): ((line: string) => string) | null => {
+  if (fromIndent === toIndent) {
+    return (line) => line;
+  }
+  if (fromIndent.startsWith(toIndent)) {
+    const removed = fromIndent.slice(toIndent.length);
+    return (line) =>
+      line.startsWith(removed) ? line.slice(removed.length) : line;
+  }
+  if (toIndent.startsWith(fromIndent)) {
+    const added = toIndent.slice(fromIndent.length);
+    return (line) => `${added}${line}`;
+  }
+  return null;
+};
+
+/**
+ * A node's text with its continuation lines moved from the depth it was
+ * written at to `toIndent`. Null when the move is not expressible, which asks
+ * the caller to leave the source as the author wrote it.
+ */
+const reindentedText = (
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.Node,
+  fromIndent: string,
+  toIndent: string,
+): string | null => {
+  const text = sourceCode.getText(node);
+  if (!text.includes('\n')) {
+    return text;
+  }
+
+  const shiftLine = lineShifterBetween(fromIndent, toIndent);
+  if (!shiftLine) {
+    return null;
+  }
+
+  const stringData = stringDataRangesOf(sourceCode, node);
+  const carriesStringData = (offset: number) =>
+    stringData.some(([start, end]) => start < offset && offset < end);
+
+  let offset = node.range[0];
+  return text
+    .split('\n')
+    .map((line, index) => {
+      const lineStart = offset;
+      offset += line.length + 1;
+      // The first line is spliced in after the property key, so it has no
+      // indentation of its own left to adjust.
+      if (index === 0 || line.trim() === '' || carriesStringData(lineStart)) {
+        return line;
+      }
+      return shiftLine(line);
+    })
+    .join('\n');
+};
+
+/**
+ * The file's own nesting step, taken as the most common indentation increase
+ * between consecutive lines. Reading it from the source keeps emitted code in
+ * the author's units instead of assuming a two-space, space-indented file.
+ */
+const indentUnitOf = (text: string): string => {
+  const frequencies = new Map<string, number>();
+  let previous = '';
+  for (const line of text.split('\n')) {
+    if (line.trim() === '') continue;
+    const match = /^[ \t]*/.exec(line);
+    const indent = match ? match[0] : '';
+    if (indent.length > previous.length && indent.startsWith(previous)) {
+      const delta = indent.slice(previous.length);
+      frequencies.set(delta, (frequencies.get(delta) ?? 0) + 1);
+    }
+    previous = indent;
+  }
+
+  let unit = '  ';
+  let best = 0;
+  for (const [delta, count] of frequencies) {
+    if (count > best) {
+      unit = delta;
+      best = count;
+    }
+  }
+  return unit;
+};
+
+type PlannedEdit = { range: TSESTree.Range; text: string };
+
+/** The source with every planned edit applied, used to measure emitted lines. */
+const applyEdits = (text: string, edits: PlannedEdit[]): string => {
+  const ordered = [...edits].sort((a, b) => b.range[0] - a.range[0]);
+  let result = text;
+  for (const edit of ordered) {
+    result = `${result.slice(0, edit.range[0])}${edit.text}${result.slice(
+      edit.range[1],
+    )}`;
+  }
+  return result;
+};
+
+/** The shape of the `sx` value the system props have to be merged into. */
+type SxSlot =
+  | { kind: 'new' }
+  | { kind: 'object'; object: TSESTree.ObjectExpression }
+  | { kind: 'array'; array: TSESTree.ArrayExpression }
+  | { kind: 'spread'; expression: TSESTree.Node }
+  | { kind: 'unsupported' };
+
+const sxSlotOf = (sxAttr: TSESTree.JSXAttribute | null): SxSlot => {
+  if (sxAttr === null) {
+    return { kind: 'new' };
+  }
+  const { value } = sxAttr;
+  if (value === null) {
+    // `<Box sx />` — there is no value to merge into.
+    return { kind: 'unsupported' };
+  }
+  if (value.type === AST_NODE_TYPES.JSXExpressionContainer) {
+    const { expression } = value;
+    if (expression.type === AST_NODE_TYPES.ObjectExpression) {
+      return { kind: 'object', object: expression };
+    }
+    if (expression.type === AST_NODE_TYPES.ArrayExpression) {
+      return { kind: 'array', array: expression };
+    }
+    return { kind: 'spread', expression };
+  }
+  return { kind: 'spread', expression: value };
+};
+
+/**
+ * Plans every edit the autofix makes for one JSX element.
+ *
+ * Prettier keeps an author's decision to break an object literal across lines
+ * but rewrites any line past the print width, so under-wrapping is the only
+ * defect that matters here: every branch below emits the compact single-line
+ * form and only adds line breaks when that form would overflow, or when the
+ * object being merged into is already expanded.
+ */
+function planSxEdits(
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.JSXOpeningElement,
+  systemPropAttrs: TSESTree.JSXAttribute[],
+  sxAttr: TSESTree.JSXAttribute | null,
+  printWidth: number,
+): PlannedEdit[] {
+  const source = sourceCode.getText();
+  const slot = sxSlotOf(sxAttr);
+  if (slot.kind === 'unsupported') {
+    return [];
+  }
+
+  const anchor = systemPropAttrs[0];
+  const sxSlotNode: TSESTree.Node = sxAttr ?? anchor;
+  const indentUnit = indentUnitOf(source);
+  const systemPropSet = new Set<TSESTree.Node>(systemPropAttrs);
+
+  /**
+   * The `key: value` pairs for the moved props. `targetIndent` is the depth the
+   * pairs are emitted at, which only matters for a value spanning several lines
+   * (a nested object, a template literal): its continuation lines have to move
+   * with it. Null asks for the value verbatim, as the single-line form leaves
+   * every pair on the line it already occupies.
+   */
+  const renderEntries = (targetIndent: string | null): string[] | null => {
+    const entries: string[] = [];
+    for (const attr of systemPropAttrs) {
+      const key =
+        attr.name.type === AST_NODE_TYPES.JSXIdentifier
+          ? attr.name.name
+          : sourceCode.getText(attr.name);
+      const rawValue = attrValueToSxValue(attr, sourceCode);
+      if (targetIndent === null || !rawValue.includes('\n')) {
+        entries.push(`${key}: ${rawValue}`);
+        continue;
+      }
+      // Only an expression container's text comes straight from the source, so
+      // it is the only multi-line value whose lines can be located and moved.
+      const value = attr.value;
+      if (
+        !value ||
+        value.type !== AST_NODE_TYPES.JSXExpressionContainer ||
+        value.expression.type === AST_NODE_TYPES.JSXEmptyExpression
+      ) {
+        return null;
+      }
+      const moved = reindentedText(
+        sourceCode,
+        value.expression,
+        indentationAt(sourceCode, attr.range[0]),
+        targetIndent,
+      );
+      if (moved === null) {
+        return null;
+      }
+      entries.push(`${key}: ${moved}`);
+    }
+    return entries;
+  };
+
+  const inlineEntries = renderEntries(null) ?? [];
+  const joinedEntries = inlineEntries.join(', ');
+
+  /** Deleting the whitespace ahead of a prop keeps attributes from drifting apart. */
+  const removalOf = (attr: TSESTree.JSXAttribute): PlannedEdit => {
+    let start = attr.range[0];
+    while (start > 0 && /\s/.test(source[start - 1])) {
+      start--;
+    }
+    return { range: [start, attr.range[1]], text: '' };
+  };
+
+  // The first system prop is reused as the insertion point when the element has
+  // no `sx` yet, so it is replaced rather than removed.
+  const removals = (
+    sxAttr === null ? systemPropAttrs.slice(1) : systemPropAttrs
+  ).map(removalOf);
+
+  const emptyRangeAt = (offset: number): TSESTree.Range => [offset, offset];
+
+  const inlineEditFor = (): PlannedEdit | null => {
+    switch (slot.kind) {
+      case 'new':
+        return { range: anchor.range, text: `sx={{ ${joinedEntries} }}` };
+      case 'object': {
+        const first = slot.object.properties[0];
+        return first
+          ? {
+              range: emptyRangeAt(first.range[0]),
+              text: `${joinedEntries}, `,
+            }
+          : { range: slot.object.range, text: `{ ${joinedEntries} }` };
+      }
+      case 'array': {
+        const first = slot.array.elements[0];
+        if (slot.array.elements.length === 0) {
+          return { range: slot.array.range, text: `[{ ${joinedEntries} }]` };
+        }
+        // A hole (`sx={[, base]}`) has no node to anchor an insertion on.
+        return first
+          ? {
+              range: emptyRangeAt(first.range[0]),
+              text: `{ ${joinedEntries} }, `,
+            }
+          : null;
+      }
+      case 'spread':
+        return sxAttr
+          ? {
+              range: sxAttr.range,
+              text: `sx={{ ${joinedEntries}, ...${sourceCode.getText(
+                slot.expression,
+              )} }}`,
+            }
+          : null;
+    }
+  };
+
+  const inlineEdit = inlineEditFor();
+  if (inlineEdit === null) {
+    return [];
+  }
+  const inlineEdits = [inlineEdit, ...removals];
+
+  /** The indentation of a node that starts its own line, else null. */
+  const ownLineIndentOf = (offset: number): string | null => {
+    const lineStart = source.lastIndexOf('\n', offset - 1) + 1;
+    const lead = source.slice(lineStart, offset);
+    return lead.trim() === '' ? lead : null;
+  };
+
+  /**
+   * Whether the author already broke a literal open, which Prettier preserves.
+   * Merging into it has to follow that shape at any width; splicing onto the
+   * first member's line leaves the literal formatted two ways at once.
+   */
+  const firstMemberOnOwnLine = (
+    literal: TSESTree.Node,
+    first: TSESTree.Node,
+  ): string | null => {
+    if (!source.slice(literal.range[0] + 1, first.range[0]).includes('\n')) {
+      return null;
+    }
+    return ownLineIndentOf(first.range[0]);
+  };
+
+  const objectText = (parts: string[], indent: string, expand: boolean) =>
+    expand
+      ? `{\n${parts
+          .map((part) => `${indent}${indentUnit}${part},`)
+          .join('\n')}\n${indent}}`
+      : `{ ${parts.join(', ')} }`;
+
+  /** Existing members reproduced verbatim, or null when any spans lines. */
+  const verbatimTextsOf = (
+    nodes: (TSESTree.Node | null)[],
+  ): string[] | null => {
+    const texts: string[] = [];
+    for (const member of nodes) {
+      if (!member) {
+        return null;
+      }
+      const text = sourceCode.getText(member);
+      if (text.includes('\n')) {
+        return null;
+      }
+      texts.push(text);
+    }
+    return texts;
+  };
+
+  /** The object literal for the moved props, expanded only when it must be. */
+  const objectAt = (indent: string): string | null => {
+    const inline = `{ ${joinedEntries} }`;
+    if (!inline.includes('\n') && indent.length + inline.length <= printWidth) {
+      return inline;
+    }
+    const parts = renderEntries(`${indent}${indentUnit}`);
+    return parts === null ? null : objectText(parts, indent, true);
+  };
+
+  /**
+   * The whole rewritten `sx={...}` attribute rendered at `indent`, breaking the
+   * literal open only when the compact form would overflow the print width.
+   */
+  const sxAttributeText = (indent: string): string | null => {
+    if (slot.kind === 'array') {
+      const existing = verbatimTextsOf(slot.array.elements);
+      if (existing === null) {
+        return null;
+      }
+      const inline = `sx={[${[`{ ${joinedEntries} }`, ...existing].join(
+        ', ',
+      )}]}`;
+      if (
+        !inline.includes('\n') &&
+        indent.length + inline.length <= printWidth
+      ) {
+        return inline;
+      }
+      const elementIndent = `${indent}${indentUnit}`;
+      const object = objectAt(elementIndent);
+      if (object === null) {
+        return null;
+      }
+      const elements = [object, ...existing]
+        .map((element) => `${elementIndent}${element},`)
+        .join('\n');
+      return `sx={[\n${elements}\n${indent}]}`;
+    }
+
+    const trailing =
+      slot.kind === 'object'
+        ? verbatimTextsOf(slot.object.properties)
+        : slot.kind === 'spread'
+        ? [`...${sourceCode.getText(slot.expression)}`]
+        : [];
+    if (trailing === null || trailing.some((text) => text.includes('\n'))) {
+      return null;
+    }
+
+    const inline = `sx={${objectText(
+      [...inlineEntries, ...trailing],
+      indent,
+      false,
+    )}}`;
+    if (!inline.includes('\n') && indent.length + inline.length <= printWidth) {
+      return inline;
+    }
+    const parts = renderEntries(`${indent}${indentUnit}`);
+    if (parts === null) {
+      return null;
+    }
+    return `sx={${objectText([...parts, ...trailing], indent, true)}}`;
+  };
+
+  /**
+   * Merging into a literal the author already expanded: one new member per
+   * line, at the indentation the existing members sit at.
+   */
+  const expandedMergeEdits = (): PlannedEdit[] | null => {
+    if (slot.kind === 'object') {
+      const first = slot.object.properties[0];
+      if (!first) {
+        return null;
+      }
+      const indent = firstMemberOnOwnLine(slot.object, first);
+      if (indent === null) {
+        return null;
+      }
+      const parts = renderEntries(indent);
+      if (parts === null) {
+        return null;
+      }
+      return [
+        {
+          range: emptyRangeAt(first.range[0]),
+          text: parts.map((part) => `${part},\n${indent}`).join(''),
+        },
+        ...removals,
+      ];
+    }
+    if (slot.kind === 'array') {
+      const first = slot.array.elements[0];
+      if (!first) {
+        return null;
+      }
+      const indent = firstMemberOnOwnLine(slot.array, first);
+      if (indent === null) {
+        return null;
+      }
+      const object = objectAt(indent);
+      if (object === null) {
+        return null;
+      }
+      return [
+        {
+          range: emptyRangeAt(first.range[0]),
+          text: `${object},\n${indent}`,
+        },
+        ...removals,
+      ];
+    }
+    return null;
+  };
+
+  const expandedMerge = expandedMergeEdits();
+  if (expandedMerge) {
+    return expandedMerge;
+  }
+
+  // Measure the line the compact form actually lands on, with every removal
+  // already applied, rather than guessing at the element's final shape.
+  const simulated = applyEdits(source, inlineEdits);
+  const shiftBefore = (offset: number) =>
+    inlineEdits
+      .filter((edit) => edit.range[1] <= offset)
+      .reduce(
+        (total, edit) =>
+          total + edit.text.length - (edit.range[1] - edit.range[0]),
+        0,
+      );
+  const slotStart = sxSlotNode.range[0] + shiftBefore(sxSlotNode.range[0]);
+  const slotEnd = sxSlotNode.range[1] + shiftBefore(sxSlotNode.range[1]);
+  const lineStart = simulated.lastIndexOf('\n', slotStart - 1) + 1;
+  const lineBreak = simulated.indexOf('\n', slotStart);
+  const lineEnd = lineBreak === -1 ? simulated.length : lineBreak;
+
+  // A prop whose value already spans lines cannot sit in a one-line object: the
+  // literal would open on one line and close on another with its remaining
+  // entries crammed against the value. Width says nothing here, because the
+  // measured line stops at the value's first break.
+  const hasMultilineEntry = inlineEntries.some((entry) => entry.includes('\n'));
+
+  if (!hasMultilineEntry && lineEnd - lineStart <= printWidth) {
+    return inlineEdits;
+  }
+
+  // The attribute may end several lines below where it starts once a multi-line
+  // value is folded in, so ownership is judged against the line it ends on.
+  const slotLineBreak = simulated.indexOf('\n', slotEnd);
+  const slotLineEnd = slotLineBreak === -1 ? simulated.length : slotLineBreak;
+  const attributeOwnsLine =
+    simulated.slice(lineStart, slotStart).trim() === '' &&
+    simulated.slice(slotEnd, slotLineEnd).trim() === '';
+
+  if (attributeOwnsLine) {
+    const rewritten = sxAttributeText(simulated.slice(lineStart, slotStart));
+    if (rewritten !== null) {
+      return [{ range: sxSlotNode.range, text: rewritten }, ...removals];
+    }
+  }
+
+  /**
+   * An element whose attributes all share one line has no room left for the
+   * merged `sx`; Prettier's answer is to give every attribute its own line,
+   * which is reproduced here so the emitted element is already in the shape the
+   * formatter would put it in.
+   */
+  const restructuredElement = (): string | null => {
+    if (node.loc.start.line !== node.loc.end.line) {
+      return null;
+    }
+    // Rebuilding from the attribute list would drop anything the list does not
+    // cover, and would leave a trailing fragment of an unrelated statement.
+    if (sourceCode.getCommentsInside(node).length > 0) {
+      return null;
+    }
+    const elementIndent = ownLineIndentOf(node.range[0]);
+    if (elementIndent === null) {
+      return null;
+    }
+    const tailBreak = source.indexOf('\n', node.range[1]);
+    const tail = source.slice(
+      node.range[1],
+      tailBreak === -1 ? source.length : tailBreak,
+    );
+    if (tail.trim() !== '') {
+      return null;
+    }
+
+    const first = node.attributes[0];
+    if (!first) {
+      return null;
+    }
+    const attributeIndent = `${elementIndent}${indentUnit}`;
+    const attributes: string[] = [];
+    for (const attr of node.attributes) {
+      if (attr === sxSlotNode) {
+        const rewritten = sxAttributeText(attributeIndent);
+        if (rewritten === null) {
+          return null;
+        }
+        attributes.push(rewritten);
+        continue;
+      }
+      if (systemPropSet.has(attr)) {
+        continue;
+      }
+      attributes.push(sourceCode.getText(attr));
+    }
+
+    const head = source.slice(node.range[0], first.range[0]).trimEnd();
+    const body = attributes
+      .map((attribute) => `${attributeIndent}${attribute}`)
+      .join('\n');
+    return `${head}\n${body}\n${elementIndent}${node.selfClosing ? '/>' : '>'}`;
+  };
+
+  const restructured = restructuredElement();
+  if (restructured !== null) {
+    return [{ range: node.range, text: restructured }];
+  }
+
+  return inlineEdits;
+}
+
 export const preferSxPropOverSystemProps = createRule<Options, MessageIds>({
   name: 'prefer-sx-prop-over-system-props',
   meta: {
@@ -277,6 +868,10 @@ export const preferSxPropOverSystemProps = createRule<Options, MessageIds>({
             type: 'array',
             items: { type: 'string' },
           },
+          printWidth: {
+            type: 'number',
+            minimum: 1,
+          },
         },
         additionalProperties: false,
       },
@@ -295,6 +890,11 @@ export const preferSxPropOverSystemProps = createRule<Options, MessageIds>({
     const extraAllowed = options.allowedProps
       ? new Set(options.allowedProps)
       : new Set<string>();
+
+    const printWidth =
+      typeof options.printWidth === 'number' && options.printWidth > 0
+        ? options.printWidth
+        : DEFAULT_PRINT_WIDTH;
 
     function isAllowedProp(name: string): boolean {
       if (DEFAULT_ALLOWED_PROPS.has(name)) return true;
@@ -340,25 +940,6 @@ export const preferSxPropOverSystemProps = createRule<Options, MessageIds>({
         if (systemPropAttrs.length === 0) return;
 
         const sourceCode = context.getSourceCode();
-        const fullSource = sourceCode.getText();
-
-        /**
-         * Remove an attribute AND the whitespace that precedes it so the
-         * output does not accumulate extra spaces between attributes.
-         */
-        function removeAttrWithLeadingSpace(
-          fixer: TSESLint.RuleFixer,
-          attr: TSESTree.JSXAttribute,
-        ) {
-          const range = attr.range ?? [0, 0];
-          const [start, end] = range;
-          // Walk backwards from the attribute start to consume any whitespace
-          let wsStart = start;
-          while (wsStart > 0 && /\s/.test(fullSource[wsStart - 1])) {
-            wsStart--;
-          }
-          return fixer.removeRange([wsStart, end]);
-        }
 
         // Report each system prop. Only the first carries the fixer to avoid
         // overlapping fix ranges on the same element.
@@ -374,106 +955,16 @@ export const preferSxPropOverSystemProps = createRule<Options, MessageIds>({
             data: { prop: propName },
             fix:
               index === 0
-                ? (fixer) => {
-                    const sc = sourceCode;
-                    const newEntries = systemPropAttrs
-                      .map((a) => {
-                        const key =
-                          a.name.type === AST_NODE_TYPES.JSXIdentifier
-                            ? a.name.name
-                            : sc.getText(a.name);
-                        const val = attrValueToSxValue(a, sc);
-                        return `${key}: ${val}`;
-                      })
-                      .join(', ');
-
-                    const fixes: TSESLint.RuleFix[] = [];
-
-                    if (sxAttr === null) {
-                      // No existing sx — replace the first system prop with sx={{...}}
-                      // and delete the rest (including their leading whitespace).
-                      fixes.push(
-                        fixer.replaceText(
-                          systemPropAttrs[0],
-                          `sx={{ ${newEntries} }}`,
-                        ),
-                      );
-                      for (let i = 1; i < systemPropAttrs.length; i++) {
-                        fixes.push(
-                          removeAttrWithLeadingSpace(fixer, systemPropAttrs[i]),
-                        );
-                      }
-                    } else if (
-                      sxAttr.value?.type ===
-                        AST_NODE_TYPES.JSXExpressionContainer &&
-                      sxAttr.value.expression.type ===
-                        AST_NODE_TYPES.ObjectExpression
-                    ) {
-                      // Existing sx={{ ... }} — merge system props at the front.
-                      const existingObj = sxAttr.value.expression;
-                      const existingProps = existingObj.properties;
-
-                      if (existingProps.length === 0) {
-                        fixes.push(
-                          fixer.replaceText(existingObj, `{ ${newEntries} }`),
-                        );
-                      } else {
-                        fixes.push(
-                          fixer.insertTextBefore(
-                            existingProps[0],
-                            `${newEntries}, `,
-                          ),
-                        );
-                      }
-                      for (const a of systemPropAttrs) {
-                        fixes.push(removeAttrWithLeadingSpace(fixer, a));
-                      }
-                    } else if (
-                      sxAttr.value?.type ===
-                        AST_NODE_TYPES.JSXExpressionContainer &&
-                      sxAttr.value.expression.type ===
-                        AST_NODE_TYPES.ArrayExpression
-                    ) {
-                      // sx={[...]} — prepend a new object as the first array element.
-                      const arr = sxAttr.value.expression;
-                      if (arr.elements.length === 0) {
-                        fixes.push(
-                          fixer.replaceText(arr, `[{ ${newEntries} }]`),
-                        );
-                      } else {
-                        fixes.push(
-                          fixer.insertTextBefore(
-                            arr.elements[0] as TSESTree.Node,
-                            `{ ${newEntries} }, `,
-                          ),
-                        );
-                      }
-                      for (const a of systemPropAttrs) {
-                        fixes.push(removeAttrWithLeadingSpace(fixer, a));
-                      }
-                    } else if (sxAttr.value !== null) {
-                      // sx is a variable/expression — spread it: sx={{ entries, ...expr }}
-                      const innerExpr =
-                        sxAttr.value.type ===
-                        AST_NODE_TYPES.JSXExpressionContainer
-                          ? sc.getText(
-                              (sxAttr.value as TSESTree.JSXExpressionContainer)
-                                .expression,
-                            )
-                          : sc.getText(sxAttr.value);
-                      fixes.push(
-                        fixer.replaceText(
-                          sxAttr,
-                          `sx={{ ${newEntries}, ...${innerExpr} }}`,
-                        ),
-                      );
-                      for (const a of systemPropAttrs) {
-                        fixes.push(removeAttrWithLeadingSpace(fixer, a));
-                      }
-                    }
-
-                    return fixes;
-                  }
+                ? (fixer) =>
+                    planSxEdits(
+                      sourceCode,
+                      node,
+                      systemPropAttrs,
+                      sxAttr,
+                      printWidth,
+                    ).map((edit) =>
+                      fixer.replaceTextRange(edit.range, edit.text),
+                    )
                 : null,
           });
         });
