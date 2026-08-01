@@ -1,5 +1,7 @@
+import { Linter, Rule } from 'eslint';
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { optimizeObjectBooleanConditions } from '../rules/optimize-object-boolean-conditions';
+import { enforceBooleanNamingPrefixes } from '../rules/enforce-boolean-naming-prefixes';
 
 const buildMessage = (
   expression: string,
@@ -19,6 +21,72 @@ const buildError = (
     suggestedName,
     objectName,
   },
+});
+
+// enforce-boolean-naming-prefixes *requires* booleans to be named is*/has*/can*
+// /should*, so a name it mandates must never be reported as an object here.
+// Both rules ship as 'error' in the recommended config, which makes any overlap
+// an unresolvable conflict for consumers (issue #1569).
+describe('optimize-object-boolean-conditions vs enforce-boolean-naming-prefixes', () => {
+  const lintWithBothRules = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      'test/optimize-object-boolean-conditions',
+      optimizeObjectBooleanConditions as unknown as Rule.RuleModule,
+    );
+    linter.defineRule(
+      'test/enforce-boolean-naming-prefixes',
+      enforceBooleanNamingPrefixes as unknown as Rule.RuleModule,
+    );
+
+    return linter.verify(
+      code,
+      {
+        parser: '@typescript-eslint/parser',
+        parserOptions: {
+          ecmaVersion: 2020 as const,
+          sourceType: 'module' as const,
+          ecmaFeatures: { jsx: true },
+        },
+        rules: {
+          'test/optimize-object-boolean-conditions': 'error' as const,
+          'test/enforce-boolean-naming-prefixes': 'error' as const,
+        },
+      },
+      'Panel.tsx',
+    );
+  };
+
+  it('leaves a mandated boolean prop name clean under both rules', () => {
+    const messages = lintWithBothRules(
+      `type PanelProps = { isCollapsed: boolean; onToggle: () => void };
+const PanelUnmemoized = ({ isCollapsed, onToggle }: PanelProps) => {
+  useEffect(() => {
+    onToggle();
+  }, [!isCollapsed, onToggle]);
+  return null;
+};`,
+    );
+
+    expect(messages).toEqual([]);
+  });
+
+  it('still reports the object dependency it was written for', () => {
+    const messages = lintWithBothRules(
+      `useEffect(() => {
+  hydrate(roundPreviews);
+}, [!roundPreviews]);`,
+    );
+
+    expect(messages.map((message) => message.ruleId)).toEqual([
+      'test/optimize-object-boolean-conditions',
+    ]);
+  });
 });
 
 describe('optimize-object-boolean-conditions messages', () => {
@@ -893,6 +961,234 @@ ruleTesterJsx.run(
         }, [screen]);
       `,
       },
+      // Issue #1569 repro: a boolean-annotated destructured prop is a
+      // primitive, so negating it cannot churn an object reference.
+      {
+        code: `
+        const PanelUnmemoized = ({ isCollapsed }: { isCollapsed: boolean }) => {
+          useEffect(() => {
+            onToggle(!isCollapsed);
+          }, [!isCollapsed, onToggle]);
+          return null;
+        };
+      `,
+      },
+
+      // === ISSUE #1569: NEGATED BOOLEANS AND PRIMITIVES ARE NOT OBJECTS ===
+
+      // Approved boolean prefixes from enforce-boolean-naming-prefixes
+      {
+        code: `
+        const result = useMemo(() => {
+          return isVisible ? 'shown' : 'hidden';
+        }, [!isVisible]);
+      `,
+      },
+      {
+        code: `
+        const result = useMemo(() => {
+          return hasAccess ? 'allowed' : 'denied';
+        }, [!hasAccess]);
+      `,
+      },
+      {
+        code: `
+        const result = useMemo(() => {
+          return canEdit ? 'editable' : 'readonly';
+        }, [!canEdit]);
+      `,
+      },
+      {
+        code: `
+        const result = useMemo(() => {
+          return shouldRefresh ? refresh() : null;
+        }, [!shouldRefresh]);
+      `,
+      },
+      {
+        code: `
+        useEffect(() => {
+          if (willExpire) scheduleRenewal();
+        }, [!willExpire]);
+      `,
+      },
+      {
+        code: `
+        const result = useMemo(() => {
+          return wasLoaded ? 'ready' : 'pending';
+        }, [!wasLoaded]);
+      `,
+      },
+      // Remaining approved prefixes, including the plural forms
+      {
+        code: `
+        const result = useMemo(() => {
+          return compute();
+        }, [
+          !doesMatch,
+          !didRender,
+          !hadErrors,
+          !wouldOverflow,
+          !mustConfirm,
+          !allowsRetry,
+          !supportsWebgl,
+          !needsUpgrade,
+          !assertsOwnership,
+          !includesTax,
+          !areTabsReady,
+          !haveUsersVoted,
+          !wereTracksLoaded,
+        ]);
+      `,
+      },
+      // Underscore-prefixed private boolean
+      {
+        code: `
+        const result = useMemo(() => {
+          return _isMounted ? 'mounted' : 'unmounted';
+        }, [!_isMounted]);
+      `,
+      },
+      // SCREAMING_SNAKE_CASE boolean constant
+      {
+        code: `
+        const result = useMemo(() => {
+          return IS_ENABLED ? 'on' : 'off';
+        }, [!IS_ENABLED]);
+      `,
+      },
+      // number-annotated destructured prop
+      {
+        code: `
+        const ListUnmemoized = ({ count }: { count: number }) => {
+          const label = useMemo(() => {
+            return count === 0 ? 'empty' : 'filled';
+          }, [!count]);
+          return label;
+        };
+      `,
+      },
+      // Destructured prop typed through a same-file type alias
+      {
+        code: `
+        type PanelProps = { collapsed: boolean; onToggle: () => void };
+        const PanelUnmemoized = ({ collapsed, onToggle }: PanelProps) => {
+          useEffect(() => {
+            onToggle();
+          }, [!collapsed, onToggle]);
+          return null;
+        };
+      `,
+      },
+      // Destructured prop typed through a same-file interface
+      {
+        code: `
+        interface CounterProps { total: number }
+        const CounterUnmemoized = ({ total }: CounterProps) => {
+          const label = useMemo(() => {
+            return String(total);
+          }, [!total]);
+          return label;
+        };
+      `,
+      },
+      // Renamed destructured prop keeps the annotation of its source key
+      {
+        code: `
+        const PanelUnmemoized = ({ collapsed: panelState }: { collapsed: boolean }) => {
+          useEffect(() => {
+            render(panelState);
+          }, [!panelState]);
+          return null;
+        };
+      `,
+      },
+      // Optional destructured prop with a default value
+      {
+        code: `
+        const ListUnmemoized = ({ count = 0 }: { count?: number }) => {
+          const label = useMemo(() => {
+            return String(count);
+          }, [!count]);
+          return label;
+        };
+      `,
+      },
+      // Optional primitive union annotation
+      {
+        code: `
+        const HeaderUnmemoized = ({ title }: { title: string | undefined }) => {
+          const label = useMemo(() => {
+            return title ?? 'Untitled';
+          }, [!title]);
+          return label;
+        };
+      `,
+      },
+      // Annotated local variable
+      {
+        code: `
+        const label: string = resolveLabel();
+        const result = useMemo(() => {
+          return label;
+        }, [!label]);
+      `,
+      },
+      // useState with a primitive literal initializer
+      {
+        code: `
+        const [name, setName] = useState('');
+        const result = useMemo(() => {
+          return name;
+        }, [!name]);
+      `,
+      },
+      // useState with an explicit primitive type argument
+      {
+        code: `
+        const [expanded, setExpanded] = React.useState<boolean>();
+        const result = useMemo(() => {
+          return expanded;
+        }, [!expanded]);
+      `,
+      },
+      // Primitive literal initializers
+      {
+        code: `
+        let loading = true;
+        const result = useMemo(() => {
+          return loading;
+        }, [!loading]);
+      `,
+      },
+      {
+        code: `
+        const total = 0;
+        const result = useMemo(() => {
+          return total;
+        }, [!total]);
+      `,
+      },
+      // Comparison initializers always produce primitives
+      {
+        code: `
+        const overflow = width > maxWidth;
+        const result = useMemo(() => {
+          return overflow;
+        }, [!overflow]);
+      `,
+      },
+      // A primitive negation inside a larger expression is not an object condition
+      {
+        code: `
+        const ListUnmemoized = ({ count }: { count: number }) => {
+          const result = useMemo(() => {
+            return count === 0 ? 'empty' : mode;
+          }, [!count || mode === 'grid']);
+          return result;
+        };
+      `,
+      },
     ],
     invalid: [
       // Object existence check in useMemo
@@ -1538,6 +1834,116 @@ ruleTesterJsx.run(
             'Object.keys(veryLongVariableNameForConfig).length > 0',
             'veryLongVariableNameForConfig',
             'hasVeryLongVariableNameForConfig',
+          ),
+        ],
+      },
+
+      // === ISSUE #1569 GUARDS: REAL OBJECTS MUST STILL REPORT ===
+
+      // Object literal binding in the same file
+      {
+        code: `
+        const user = { id: 1, name: 'Ada' };
+        useEffect(() => {
+          if (!user) return;
+          updateProfile();
+        }, [!user]);
+      `,
+        errors: [buildError('!user', 'user', 'isUserMissing')],
+      },
+      // Object type annotation on a destructured prop
+      {
+        code: `
+        const ProfileUnmemoized = ({ user }: { user: User }) => {
+          useEffect(() => {
+            render(user);
+          }, [!user]);
+          return null;
+        };
+      `,
+        errors: [buildError('!user', 'user', 'isUserMissing')],
+      },
+      // Type alias resolving to an object type
+      {
+        code: `
+        type ProfileProps = { profile: { name: string } };
+        const ProfileUnmemoized = ({ profile }: ProfileProps) => {
+          useEffect(() => {
+            render(profile);
+          }, [!profile]);
+          return null;
+        };
+      `,
+        errors: [buildError('!profile', 'profile', 'isProfileMissing')],
+      },
+      // useState holding an object
+      {
+        code: `
+        const [settings, setSettings] = useState({});
+        useEffect(() => {
+          load(settings);
+        }, [!settings]);
+      `,
+        errors: [buildError('!settings', 'settings', 'isSettingsMissing')],
+      },
+      // Imported bindings stay unresolved, so they keep reporting
+      {
+        code: `
+        import { globalConfig } from './config';
+        useEffect(() => {
+          apply(globalConfig);
+        }, [!globalConfig]);
+      `,
+        errors: [
+          buildError('!globalConfig', 'globalConfig', 'isGlobalConfigMissing'),
+        ],
+      },
+      // Names that merely start with the letters of a boolean prefix are not
+      // boolean-prefixed: the prefix must end on a word boundary.
+      {
+        code: `
+        useEffect(() => {
+          setup(isolatedConfig);
+        }, [!isolatedConfig]);
+      `,
+        errors: [
+          buildError(
+            '!isolatedConfig',
+            'isolatedConfig',
+            'isIsolatedConfigMissing',
+          ),
+        ],
+      },
+      {
+        code: `
+        useEffect(() => {
+          draw(canvasContext);
+        }, [!canvasContext]);
+      `,
+        errors: [
+          buildError(
+            '!canvasContext',
+            'canvasContext',
+            'isCanvasContextMissing',
+          ),
+        ],
+      },
+      // A primitive negation next to a real object check reports the object,
+      // never the primitive.
+      {
+        code: `
+        const ListUnmemoized = ({ count }: { count: number }) => {
+          const result = useMemo(() => {
+            return count === 0 ? [] : processData();
+          }, [!count || Object.keys(data).length === 0]);
+          return result;
+        };
+      `,
+        errors: [
+          buildError(
+            '!count || Object.keys(data).length === 0',
+            'data',
+            'hasData',
           ),
         ],
       },
