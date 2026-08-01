@@ -191,6 +191,10 @@ tsx(
   'jsx-spread',
   'declare const p: any;\nexport const C = () => <div {...p} key="k">{...[1, 2]}</div>;',
 );
+tsx(
+  'jsx-react-fragment-forms',
+  'declare const React: any;\ndeclare const p: any;\ndeclare const xs: any[];\nexport const C = () => <React.Fragment><React.Fragment />{xs.map((x) => <React.Fragment key={x}><b /></React.Fragment>)}<React.Fragment {...p}><i /></React.Fragment></React.Fragment>;',
+);
 tsx('jsx-generic-arrow', 'export const id = <T,>(v: T): T => v;');
 tsx(
   'jsx-expr-children',

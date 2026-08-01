@@ -7,6 +7,11 @@ export const preferFragmentShorthand = createRule<[], 'preferShorthand'>({
     return {
       JSXElement(node: TSESTree.JSXElement) {
         const openingElement = node.openingElement;
+        // The <> shorthand cannot carry attributes, so an attributed fragment
+        // (key, spread, ...) has no valid rewrite and must not be reported.
+        if (openingElement.attributes.length > 0) {
+          return;
+        }
         if (
           openingElement.name.type === 'JSXMemberExpression' &&
           openingElement.name.object.type === 'JSXIdentifier' &&
@@ -18,11 +23,18 @@ export const preferFragmentShorthand = createRule<[], 'preferShorthand'>({
             node,
             messageId: 'preferShorthand',
             data: { fragmentName: 'React.Fragment' },
-            fix: (fixer) => [
-              fixer.replaceTextRange(openingElement.range, '<>'),
-              // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-              fixer.replaceTextRange(node.closingElement!.range, '</>'),
-            ],
+            fix: (fixer) => {
+              const { closingElement } = node;
+              // A self-closing <React.Fragment /> has no children and no
+              // closing element; <></> is its equivalent shorthand.
+              if (!closingElement) {
+                return fixer.replaceText(node, '<></>');
+              }
+              return [
+                fixer.replaceTextRange(openingElement.range, '<>'),
+                fixer.replaceTextRange(closingElement.range, '</>'),
+              ];
+            },
           });
         }
       },
