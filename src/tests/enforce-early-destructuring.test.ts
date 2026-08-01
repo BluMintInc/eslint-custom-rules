@@ -175,7 +175,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
           const MyComponent = () => {
             const audioPlayback = useAudioPlayback();
 
-            const { canPlayAudio, startAudio } = (audioPlayback) ?? {};
+            const { canPlayAudio, startAudio } = audioPlayback ?? {};
             useEffect(() => {
               if (!canPlayAudio) return;
               startAudio();
@@ -195,7 +195,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ value }) => {
-            const { current } = (value) ?? {};
+            const { current } = value ?? {};
             useLayoutEffect(() => {
               doSomething(current);
             }, [current]);
@@ -214,7 +214,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ response }) => {
-            const { data: responseData } = (response) ?? {};
+            const { data: responseData } = response ?? {};
             useMemo(() => {
               return responseData ? responseData.items : [];
             }, [responseData]);
@@ -233,7 +233,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ config }) => {
-            const { timeout = 1000 } = (config) ?? {};
+            const { timeout = 1000 } = config ?? {};
             useCallback(() => {
               startTimer(timeout);
             }, [timeout]);
@@ -253,7 +253,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ user }) => {
-            const { name, age } = (user) ?? {};
+            const { name, age } = user ?? {};
             useEffect(() => {
               doSomething(name, age);
             }, [name, age]);
@@ -272,7 +272,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ user }) => {
-            const { profile: { name, age } } = (user) ?? {};
+            const { profile: { name, age } } = user ?? {};
             useEffect(() => {
               renderProfile(name, age);
             }, [name, age]);
@@ -295,7 +295,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const Profile = ({ user }: { user: User }) => {
-            const { profile: { name, age } } = (user) ?? {};
+            const { profile: { name, age } } = user ?? {};
             useEffect(() => {
               renderProfile(name, age);
             }, [name, age]);
@@ -315,7 +315,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ user }) => {
-            const { id, profile: { name } } = (user) ?? {};
+            const { id, profile: { name } } = user ?? {};
             useEffect(() => {
               render(id, name);
             }, [id, name]);
@@ -334,7 +334,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ user }) => {
-            const { profile: { address: { city } } } = (user) ?? {};
+            const { profile: { address: { city } } } = user ?? {};
             useEffect(() => {
               render(city);
             }, [city]);
@@ -355,7 +355,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ user }) => {
-            const { profile: { name = 'Anonymous', age } } = (user) ?? {};
+            const { profile: { name = 'Anonymous', age } } = user ?? {};
             useEffect(() => {
               renderProfile(name, age);
             }, [name, age]);
@@ -376,7 +376,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ response }) => {
-            const { items: [{ id }] = [] } = (response) ?? {};
+            const { items: [{ id }] = [] } = response ?? {};
             useEffect(() => {
               consume(id);
             }, [id]);
@@ -397,7 +397,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ user }: { user?: User }) => {
-            const { profile: { name } } = (user!) ?? {};
+            const { profile: { name } } = user! ?? {};
             useEffect(() => {
               renderProfile(name);
             }, [name]);
@@ -416,7 +416,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ props }) => {
-            const { canPlayAudio } = (props.audioPlayback) ?? {};
+            const { canPlayAudio } = props.audioPlayback ?? {};
             useEffect(() => {
               return canPlayAudio;
             }, [canPlayAudio]);
@@ -435,7 +435,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ response }) => {
-            const { items: [first, second] = [] } = (response) ?? {};
+            const { items: [first, second] = [] } = response ?? {};
             useEffect(() => {
               consume(first, second);
             }, [first, second]);
@@ -454,7 +454,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ response }) => {
-            const { items } = (response?.data) ?? {};
+            const { items } = response?.data ?? {};
             useEffect(() => {
               doSomething(items);
             }, [items]);
@@ -473,7 +473,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ config, offset }) => {
-            const { value } = (config) ?? {};
+            const { value } = config ?? {};
             useEffect(() => {
               doSomething(value + offset);
             }, [offset, value]);
@@ -494,7 +494,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
       output: `
           const MyComponent = ({ user, extra }) => {
             const deps = useDeps();
-            const { name } = (user) ?? {};
+            const { name } = user ?? {};
             useEffect(() => {
               doSomething(name, extra);
             }, [...deps, extra, name]);
@@ -513,7 +513,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ user }) => {
-            const { name = 'Anonymous', age: userAge } = (user) ?? {};
+            const { name = 'Anonymous', age: userAge } = user ?? {};
             useCallback(() => {
               logUser(name, userAge);
             }, [name, userAge]);
@@ -536,11 +536,11 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ user }) => {
-            const { name } = (user) ?? {};
+            const { name } = user ?? {};
             useEffect(() => {
               logUser(name);
             }, [name]);
-            const { address } = (user) ?? {};
+            const { address } = user ?? {};
             useEffect(() => {
               logAddress(address);
             }, [address]);
@@ -564,7 +564,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ user }) => {
-            const { name } = (user) ?? {};
+            const { name } = user ?? {};
             useEffect(() => {
               if (!user) return;
               logUser(name);
@@ -589,6 +589,48 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
             useEffect(() => {
               logUser(name);
             }, [name]);
+          };
+        `,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    // The hoisted initializer parenthesizes its source only when `??` needs it.
+    // A plain identifier does not, and the stray pair Prettier then strips broke
+    // `prettier --check` on autofixed consumer code (issue #1580).
+    {
+      code: `
+          const MyComponent = ({ props }) => {
+            useMemo(() => {
+              const { sx } = props;
+              return sx;
+            }, [props]);
+          };
+        `,
+      output: `
+          const MyComponent = ({ props }) => {
+            const { sx } = props ?? {};
+            useMemo(() => {
+              return sx;
+            }, [sx]);
+          };
+        `,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    // A member expression binds tighter than `??` too, so it also loses the pair.
+    {
+      code: `
+          const MyComponent = ({ props }) => {
+            useMemo(() => {
+              const { canPlay } = props.audio;
+              return canPlay;
+            }, [props.audio]);
+          };
+        `,
+      output: `
+          const MyComponent = ({ props }) => {
+            const { canPlay } = props.audio ?? {};
+            useMemo(() => {
+              return canPlay;
+            }, [canPlay]);
           };
         `,
       errors: [{ messageId: 'hoistDestructuring' }],
@@ -619,7 +661,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ user }) => {
-            const { name } = (user) ?? {};
+            const { name } = user ?? {};
             useEffect(() => { const extra = 1; log(name, extra); }, [name]);
           };
         `,
@@ -653,7 +695,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ user }) => {
-            const { name } = (user) ?? {};
+            const { name } = user ?? {};
             useEffect(() => {
               logUser(name);
             }, [name]);
@@ -698,7 +740,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ response }) => {
-            const { data } = (response) ?? {};
+            const { data } = response ?? {};
             const stuff = {
               computed: useMemo(() => {
                 return data;
@@ -777,7 +819,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
               log(name);
             }, [user]);
 
-            const { name } = (user) ?? {};
+            const { name } = user ?? {};
             useEffect(() => {
               audit(name);
             }, [name]);
@@ -800,7 +842,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ user }) => {
-            const { name } = (user) ?? {};
+            const { name } = user ?? {};
             useEffect(() => {
               const obj = { user: 123 };
               log(obj, name);
@@ -821,7 +863,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ user }) => {
-            const { name } = (user) ?? {};
+            const { name } = user ?? {};
             useEffect(() => {
               const obj = { user };
               log(obj, name);
@@ -868,7 +910,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ user }) => {
-            const { profile: { name }, profile: { age } } = (user) ?? {};
+            const { profile: { name }, profile: { age } } = user ?? {};
             useEffect(() => {
               doSomething(name, age);
             }, [name, age]);
@@ -977,7 +1019,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
               const { name }: Named = user;
               logUser(name);
             }, [user]);
-            const { address } = (user) ?? {};
+            const { address } = user ?? {};
             useEffect(() => {
               logAddress(address);
             }, [address]);
@@ -1000,7 +1042,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ response }) => {
-            const { data } = (response) ?? {};
+            const { data } = response ?? {};
             useEffect(() => {
               doSomething(data);
             }, [data]);
