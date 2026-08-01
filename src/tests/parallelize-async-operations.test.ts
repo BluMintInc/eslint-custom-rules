@@ -1225,7 +1225,9 @@ it('shows the message', async () => {
       `,
     },
 
-    // Sequential awaits with comments
+    // Sequential awaits with comments: a comment between the merged awaits is
+    // re-hosted above the element built from the statement it annotated
+    // instead of being deleted with the replaced span. (#1589)
     {
       code: `
       async function withComments() {
@@ -1242,11 +1244,182 @@ it('shows the message', async () => {
         // First operation
         await Promise.all([
           operation1(),
+          // Second operation
           operation2()
         ]);
         return true;
       }
       `,
+    },
+
+    // An eslint-disable-next-line directive between the merged awaits must be
+    // re-hosted directly above the array element it annotates; dropping it
+    // silently re-enables the suppressed rule on the surviving code. (#1589)
+    {
+      code: `
+async function saveAll(a, b) {
+  await writeProfile(a);
+  // eslint-disable-next-line no-console
+  await logResult(b);
+  return true;
+}
+`,
+      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      output: `
+async function saveAll(a, b) {
+  await Promise.all([
+    writeProfile(a),
+    // eslint-disable-next-line no-console
+    logResult(b)
+  ]);
+  return true;
+}
+`,
+    },
+
+    // A trailing comment sharing the previous await's line (the natural home
+    // of an eslint-disable-line directive) governs THAT line, so it cannot be
+    // re-hosted above the next element without changing which line it applies
+    // to. The fix is declined; the report still fires. (#1589)
+    {
+      code: `
+async function saveAll(a, b) {
+  await writeProfile(a); // eslint-disable-line no-console
+  await logResult(b);
+  return true;
+}
+`,
+      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      output: null,
+    },
+
+    // A comment between `await` and its operand has no slot in the rebuilt
+    // Promise.all text, so the fix is declined rather than deleting it. (#1589)
+    {
+      code: `
+async function saveAll(a, b) {
+  await writeProfile(a);
+  await /* audit: intentional */ logResult(b);
+  return true;
+}
+`,
+      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      output: null,
+    },
+
+    // A directive above a variable-declaration await may target the declared
+    // identifier, which the rewrite moves into the destructuring pattern on
+    // the Promise.all line — no re-hosted placement can keep governing it, so
+    // the fix is declined. (#1589)
+    {
+      code: `
+async function loadBoth() {
+  const first = await fetchFirst();
+  // eslint-disable-next-line camelcase
+  const second_raw = await fetchSecond();
+  return [first, second_raw];
+}
+`,
+      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      output: null,
+    },
+
+    // A plain (non-directive) comment above a variable-declaration await only
+    // describes the awaited operation, so it is re-hosted above the element
+    // like in the expression-statement case. (#1589)
+    {
+      code: `
+async function loadBoth() {
+  const first = await fetchFirst();
+  // second fetch is independent of the first
+  const second = await fetchSecond();
+  return [first, second];
+}
+`,
+      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      output: `
+async function loadBoth() {
+  const [first, second] = await Promise.all([
+    fetchFirst(),
+    // second fetch is independent of the first
+    fetchSecond()
+  ]);
+  return [first, second];
+}
+`,
+    },
+
+    // A directive above an expression-statement await stays hostable even when
+    // the merge contains a variable declaration elsewhere: the annotated code
+    // lands wholly on its element line. (#1589)
+    {
+      code: `
+async function loadAndLog(b) {
+  const first = await fetchFirst();
+  // eslint-disable-next-line no-console
+  await logResult(b);
+  return first;
+}
+`,
+      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      output: `
+async function loadAndLog(b) {
+  const [first, ] = await Promise.all([
+    fetchFirst(),
+    // eslint-disable-next-line no-console
+    logResult(b)
+  ]);
+  return first;
+}
+`,
+    },
+
+    // A comment inside the awaited expression itself travels verbatim with the
+    // element text and never blocks the fix. (#1589)
+    {
+      code: `
+async function saveAll(a, b) {
+  await writeProfile(/* keep: primary */ a);
+  await logResult(b);
+  return true;
+}
+`,
+      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      output: `
+async function saveAll(a, b) {
+  await Promise.all([
+    writeProfile(/* keep: primary */ a),
+    logResult(b)
+  ]);
+  return true;
+}
+`,
+    },
+
+    // Stacked comments above one await each keep their own line, with the
+    // directive remaining directly above the element it suppresses. (#1589)
+    {
+      code: `
+async function saveAll(a, b) {
+  await writeProfile(a);
+  // logging is temporary until the migration completes
+  // eslint-disable-next-line no-console
+  await logResult(b);
+  return true;
+}
+`,
+      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      output: `
+async function saveAll(a, b) {
+  await Promise.all([
+    writeProfile(a),
+    // logging is temporary until the migration completes
+    // eslint-disable-next-line no-console
+    logResult(b)
+  ]);
+  return true;
+}
+`,
     },
 
     // Three sequential awaits - this should be invalid

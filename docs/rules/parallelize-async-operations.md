@@ -181,6 +181,10 @@ for (const r of results) {
 }
 ```
 
+### Autofix and comments
+
+A comment between the merged awaits is re-hosted on its own line directly above the `Promise.all` element built from the statement it annotated, so an `eslint-disable-next-line` directive keeps suppressing the code that survives inside the array. When no placement can preserve what a comment governs — a trailing comment on a merged statement's own line (e.g. `// eslint-disable-line`), a comment between `await` and its operand, or a directive above a `const x = await ...` whose identifier moves into the destructuring pattern — the fix is declined and only the report is emitted, so no comment is ever silently deleted.
+
 ## How to fix a violation
 
 - Wrap the independent await targets in a single `Promise.all([...])`.
