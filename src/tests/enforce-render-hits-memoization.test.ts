@@ -9,12 +9,27 @@ ruleTesterJsx.run(
   enforceRenderHitsMemoization,
   {
     valid: [
-      // Basic valid useRenderHits usage with memoized props
+      // Basic valid useRenderHits usage with memoized shorthand props. The
+      // consts live INSIDE the component on purpose: at module scope they would
+      // be accepted by the module-scope carve-out whatever the callee set said,
+      // so the fixture would stop proving that useCallback is a boundary.
       {
         code: `
-        const transformBefore = useCallback((hits) => hits.filter(h => h.isActive), []);
-        const render = useCallback((hit) => <HitComponent hit={hit} />, []);
-        useRenderHits({ hits, transformBefore, render });
+        const Component = ({ hits }) => {
+          const transformBefore = useCallback((hits) => hits.filter(h => h.isActive), []);
+          const render = useCallback((hit) => <HitComponent hit={hit} />, []);
+          useRenderHits({ hits, transformBefore, render });
+        };
+      `,
+      },
+      // The same props written out, so neither spelling is the only one covered
+      {
+        code: `
+        const Component = ({ hits }) => {
+          const transform = useCallback((hits) => hits.filter(h => h.isActive), []);
+          const renderHit = useCallback((hit) => <HitComponent hit={hit} />, []);
+          useRenderHits({ hits, transformBefore: transform, render: renderHit });
+        };
       `,
       },
       // Valid renderHits usage inside useMemo
@@ -35,11 +50,13 @@ ruleTesterJsx.run(
         import { useRenderHits as customHook } from '@/hooks/algolia/useRenderHits';
         import { renderHits as customRender } from '@/hooks/algolia/renderHits';
 
-        const transformBefore = useCallback((hits) => hits.filter(h => h.isActive), []);
-        const render = useCallback((hit) => <HitComponent hit={hit} />, []);
-        customHook({ hits, transformBefore, render });
+        const Component = ({ hits }) => {
+          const transformBefore = useCallback((hits) => hits.filter(h => h.isActive), []);
+          const render = useCallback((hit) => <HitComponent hit={hit} />, []);
+          customHook({ hits, transformBefore, render });
 
-        const result = useMemo(() => customRender(hits, render), [hits, render]);
+          return useMemo(() => customRender(hits, render), [hits, render]);
+        };
       `,
       },
       // Valid with complex nested structures
@@ -74,13 +91,13 @@ ruleTesterJsx.run(
       // Valid with unusual whitespace and comments
       {
         code: `
-        const transformBefore=useCallback(
+        const Component=({hits})=>{const transformBefore=useCallback(
           // Filter active hits
           (hits)=>hits.filter(h=>h.isActive)
           /* No dependencies needed */
           ,[]
         );const render=useCallback((hit)=><HitComponent hit={hit}/>,[]
-        );useRenderHits({hits,transformBefore,render});
+        );useRenderHits({hits,transformBefore,render});};
       `,
       },
       // Valid with different hook dependency patterns
@@ -111,11 +128,15 @@ ruleTesterJsx.run(
       {
         code: `
         const MemoizedHitComponent = memo(HitComponent);
-        const render = useCallback(
-          (hit) => <MemoizedHitComponent hit={hit} />,
-          []
-        );
-        useRenderHits({ hits, transformBefore, render });
+
+        const Component = ({ hits }) => {
+          const transformBefore = useCallback((hits) => hits.filter(h => h.isActive), []);
+          const render = useCallback(
+            (hit) => <MemoizedHitComponent hit={hit} />,
+            []
+          );
+          useRenderHits({ hits, transformBefore, render });
+        };
       `,
       },
       // Valid with multiple renderHits calls in different memoization contexts
@@ -338,6 +359,95 @@ ruleTesterJsx.run(
             });
           };
           return <Inner />;
+        };
+      `,
+      },
+      // Valid: shorthand props pointing at module-scope declarations. The
+      // carve-out keys on where the declaration lives, so it has to survive the
+      // spelling `object-shorthand` rewrites props into (issue #1588).
+      {
+        code: `
+        const transformBefore = (hits) => hits.filter(h => h.isActive);
+        function render(hit) {
+          return <HitComponent hit={hit} />;
+        }
+
+        const Component = ({ hits }) => {
+          useRenderHits({ hits, transformBefore, render });
+        };
+      `,
+      },
+      // Valid: shorthand props bound by imports — module-stable for the same
+      // reason, and the names an import gives are exactly the names shorthand
+      // needs
+      {
+        code: `
+        import { transformBefore } from './transformBefore';
+        import render from './render';
+
+        const Component = ({ hits }) => {
+          useRenderHits({ hits, transformBefore, render });
+        };
+      `,
+      },
+      // Valid: shorthand prop memoized with useMemo
+      {
+        code: `
+        const Component = ({ hits, sortKey }) => {
+          const render = useMemo(() => (hit) => <HitComponent hit={hit} />, [sortKey]);
+          useRenderHits({ hits, render });
+        };
+      `,
+      },
+      // Valid: shorthand prop bound to the suffixed name the use-latest-callback
+      // fixer falls back to, reached through the import rather than by name
+      {
+        code: `
+        import useLatestCallback2 from 'use-latest-callback';
+        const useLatestCallback = 'not the hook';
+
+        const Component = ({ hits }) => {
+          const render = useLatestCallback2((hit) => <HitComponent hit={hit} />);
+          useRenderHits({ hits, render });
+          return useLatestCallback;
+        };
+      `,
+      },
+      // Valid: the memoized declaration sits in an ENCLOSING scope. Resolving
+      // only the innermost scope's own variables would miss it and demand a
+      // useCallback around a value that already has one.
+      {
+        code: `
+        const Component = ({ hits }) => {
+          const render = useCallback((hit) => <HitComponent hit={hit} />, []);
+          const Inner = () => {
+            useRenderHits({ hits, render });
+          };
+          return <Inner />;
+        };
+      `,
+      },
+      // Valid: the same resolution question one block deep instead of one
+      // function deep
+      {
+        code: `
+        const Component = ({ hits, enabled }) => {
+          const transformBefore = useCallback((hits) => hits.filter(h => h.isActive), []);
+          if (enabled) {
+            useRenderHits({ hits, transformBefore });
+          }
+        };
+      `,
+      },
+      // Valid: the written-out spelling of the same enclosing-scope resolution,
+      // which reports before the lookup walks the scope chain
+      {
+        code: `
+        const Component = ({ hits, enabled }) => {
+          const transform = useCallback((hits) => hits.filter(h => h.isActive), []);
+          if (enabled) {
+            useRenderHits({ hits, transformBefore: transform });
+          }
         };
       `,
       },
@@ -640,6 +750,106 @@ ruleTesterJsx.run(
       `,
         errors: [{ messageId: 'requireMemoizedTransformBefore' }],
       },
+      // Invalid: shorthand props are the spelling idiomatic code reaches for
+      // first — a variable named after the prop it fills — and both of these are
+      // rebuilt on every render. Exempting the shorthand form left the rule's
+      // central case unreportable (issue #1588).
+      {
+        code: `
+        const Component = ({ hits }) => {
+          const transformBefore = (hits) => hits.filter(h => h.isActive);
+          const render = (hit) => <HitComponent hit={hit} />;
+          useRenderHits({ hits, transformBefore, render });
+        };
+      `,
+        errors: [
+          { messageId: 'requireMemoizedTransformBefore' },
+          { messageId: 'requireMemoizedRender' },
+        ],
+      },
+      // Invalid: the two spellings mix freely inside one call, so neither can be
+      // the only one the rule reads
+      {
+        code: `
+        const Component = ({ hits }) => {
+          const transformBefore = (hits) => hits.filter(Boolean);
+          useRenderHits({
+            hits,
+            transformBefore,
+            render: useCallback((hit) => <HitComponent hit={hit} />, []),
+          });
+        };
+      `,
+        errors: [{ messageId: 'requireMemoizedTransformBefore' }],
+      },
+      // Invalid: a component-scope function declaration is re-created on every
+      // render exactly like an arrow, and shorthand hides nothing
+      {
+        code: `
+        const Component = ({ hits }) => {
+          function render(hit) {
+            return <HitComponent hit={hit} />;
+          }
+          useRenderHits({ hits, render });
+        };
+      `,
+        errors: [{ messageId: 'requireMemoizedRender' }],
+      },
+      // Invalid: a shorthand prop filled by a component parameter forwards a
+      // value whose identity the caller decides, which is per-render data here —
+      // the same verdict the written-out spelling already gets
+      {
+        code: `
+        const Component = ({ hits, transformBefore, render }) => {
+          useRenderHits({ hits, transformBefore, render });
+        };
+      `,
+        errors: [
+          { messageId: 'requireMemoizedTransformBefore' },
+          { messageId: 'requireMemoizedRender' },
+        ],
+      },
+      // Invalid: a top-level `let` can be reassigned between renders, so the
+      // shorthand spelling of it is no more stable than the written-out one
+      {
+        code: `
+        let render = (hit) => <HitComponent hit={hit} />;
+
+        const Component = ({ hits }) => {
+          useRenderHits({ hits, render });
+        };
+      `,
+        errors: [{ messageId: 'requireMemoizedRender' }],
+      },
+      // Invalid: a const declared in a nested block is re-created every time the
+      // block runs, whichever spelling passes it on
+      {
+        code: `
+        const Component = ({ hits, enabled }) => {
+          if (enabled) {
+            const transformBefore = (hits) => hits.filter(h => h.isActive);
+            useRenderHits({ hits, transformBefore });
+          }
+        };
+      `,
+        errors: [{ messageId: 'requireMemoizedTransformBefore' }],
+      },
+      // Invalid: an aliased useRenderHits import reads shorthand props too
+      {
+        code: `
+        import { useRenderHits as customHook } from '@/hooks/algolia/useRenderHits';
+
+        const Component = ({ hits }) => {
+          const transformBefore = (hits) => hits;
+          const render = (hit) => <Hit hit={hit} />;
+          customHook({ hits, transformBefore, render });
+        };
+      `,
+        errors: [
+          { messageId: 'requireMemoizedTransformBefore' },
+          { messageId: 'requireMemoizedRender' },
+        ],
+      },
     ],
   },
 );
@@ -765,6 +975,85 @@ function HitsList({ hits }) {
     expect(messages.map((message) => message.messageId)).toEqual([
       'requireMemoizedRenderHits',
     ]);
+  });
+});
+
+// `object-shorthand: ['error', 'always']` is a core, fixable rule that consumers
+// enable alongside this one. It rewrites `{ transformBefore: transformBefore }`
+// into `{ transformBefore }`, so a rule that reads only the written-out spelling
+// loses every report about a prop whose variable is named after it — the shape
+// idiomatic code reaches for first — after a single `eslint --fix` (issue #1588).
+describe('enforce-render-hits-memoization vs object-shorthand --fix', () => {
+  const fixThenLint = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      'test/enforce-render-hits-memoization',
+      enforceRenderHitsMemoization as unknown as Rule.RuleModule,
+    );
+    const config = {
+      parser: '@typescript-eslint/parser',
+      parserOptions: {
+        ecmaVersion: 2020 as const,
+        sourceType: 'module' as const,
+        ecmaFeatures: { jsx: true },
+      },
+      rules: {
+        'test/enforce-render-hits-memoization': 'error' as const,
+        'object-shorthand': ['error', 'always'] as ['error', 'always'],
+      },
+    };
+    const { output } = linter.verifyAndFix(code, config, 'HitsList.tsx');
+    return {
+      output,
+      messages: linter.verify(
+        output,
+        {
+          ...config,
+          rules: { 'test/enforce-render-hits-memoization': 'error' as const },
+        },
+        'HitsList.tsx',
+      ),
+    };
+  };
+
+  it('keeps reporting unmemoized props after they are rewritten to shorthand', () => {
+    const { output, messages } = fixThenLint(
+      `function HitsList({ hits }) {
+  const transformBefore = (items) => items.filter((h) => h.isActive);
+  const render = (hit) => <Hit hit={hit} />;
+  useRenderHits({ hits, transformBefore: transformBefore, render: render });
+  return null;
+}`,
+    );
+
+    // Without this the test passes vacuously: an unrun sibling fixer leaves the
+    // written-out spelling, which the rule always read.
+    expect(output).toContain('{ hits, transformBefore, render }');
+    expect(messages.map((message) => message.messageId)).toEqual([
+      'requireMemoizedTransformBefore',
+      'requireMemoizedRender',
+    ]);
+  });
+
+  it('stays silent on memoized props the same rewrite touches', () => {
+    const { output, messages } = fixThenLint(
+      `import { useCallback } from 'react';
+
+function HitsList({ hits }) {
+  const transformBefore = useCallback((items) => items.filter((h) => h.isActive), []);
+  const render = useCallback((hit) => <Hit hit={hit} />, []);
+  useRenderHits({ hits, transformBefore: transformBefore, render: render });
+  return null;
+}`,
+    );
+
+    expect(output).toContain('{ hits, transformBefore, render }');
+    expect(messages).toEqual([]);
   });
 });
 

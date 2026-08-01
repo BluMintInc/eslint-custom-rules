@@ -23,6 +23,26 @@ default import, falling back to `useLatestCallback2` when the plain name is
 already taken. A type-only import binds no callable value, so its local name is
 not accepted.
 
+### Shorthand and written-out props are read identically
+
+`useRenderHits({ hits, render })` and `useRenderHits({ hits, render: render })`
+pass the same value, so both are checked. There is no shorthand exemption, and
+there cannot be one: the core `object-shorthand` rule — `['error', 'always']` in
+consuming configs, and fixable — rewrites the second spelling into the first, so
+exempting shorthand would let a single `eslint --fix` erase every report about a
+prop whose variable is named after it. That is the spelling idiomatic code
+reaches for first (`const render = ...; useRenderHits({ hits, render })`), so the
+exemption would have swallowed the rule's central case.
+
+A memoized declaration is recognised wherever it sits on the scope chain, not
+only in the scope that encloses the `useRenderHits` call. A call nested in a
+block or in an inner component still sees the `useCallback` its component
+declared.
+
+`noDirectComponentInRender` is unreachable through a shorthand prop by
+construction: shorthand requires the variable's name to equal the prop's name,
+and `render` is lowercase, so the value can never look like a component.
+
 ### Module scope is already a memoization boundary
 
 A `transformBefore` or `render` prop that points at a declaration outside every
@@ -80,9 +100,23 @@ import wrap from './wrap';
 const wrapped = wrap(() => renderHits(hits, (hit) => <HitComponent hit={hit} />));
 
 // ❌ Declared inside the component, so it is re-created every render
+const render = (hit) => <HitComponent hit={hit} />;
 const Component = ({ hits }) => {
   const transform = (hits) => hits.filter(h => h.isActive);
   useRenderHits({ hits, transformBefore: transform, render });
+};
+
+// ❌ The same thing in shorthand — the spelling changes nothing
+const HitsList = ({ hits }) => {
+  const transformBefore = (hits) => hits.filter(h => h.isActive);
+  const render = (hit) => <HitComponent hit={hit} />;
+  useRenderHits({ hits, transformBefore, render });
+};
+
+// ❌ A shorthand prop filled by a component parameter forwards a value whose
+// identity the caller decides, so memoize it where it is created
+const Forwarder = ({ hits, transformBefore, render }) => {
+  useRenderHits({ hits, transformBefore, render });
 };
 ```
 
@@ -122,6 +156,13 @@ function renderRow(hit) {
 }
 const HitsList = ({ hits }) => {
   useRenderHits({ hits, transformBefore: transformActive, render: renderRow });
+};
+
+// ✅ Shorthand props pointing at memoized declarations
+const HitsSection = ({ hits }) => {
+  const transformBefore = useCallback((hits) => hits.filter(h => h.isActive), []);
+  const render = useCallback((hit) => <HitComponent hit={hit} />, []);
+  useRenderHits({ hits, transformBefore, render });
 };
 ```
 
