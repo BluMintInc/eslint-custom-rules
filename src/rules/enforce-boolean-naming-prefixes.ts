@@ -1661,49 +1661,12 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     }
 
     /**
-     * Check class property definitions for boolean values
-     */
-    function checkClassProperty(node: any) {
-      if (node.key.type !== AST_NODE_TYPES.Identifier) return;
-
-      const propertyName = node.key.name;
-
-      // Check if it's a boolean property
-      let isBooleanProperty = false;
-
-      // Check if it has a boolean type annotation
-      if (
-        node.typeAnnotation?.typeAnnotation &&
-        node.typeAnnotation.typeAnnotation.type ===
-          (AST_NODE_TYPES.TSBooleanKeyword as any)
-      ) {
-        isBooleanProperty = true;
-      }
-
-      // Check if it's initialized with a boolean value
-      if (
-        node.value?.type === AST_NODE_TYPES.Literal &&
-        typeof node.value.value === 'boolean'
-      ) {
-        isBooleanProperty = true;
-      }
-
-      if (isBooleanProperty && !hasApprovedPrefix(propertyName)) {
-        context.report({
-          node: node.key,
-          messageId: 'missingBooleanPrefix',
-          data: {
-            type: 'property',
-            name: propertyName,
-            capitalizedName: capitalizeFirst(propertyName),
-            prefixes: formatPrefixes(),
-          },
-        });
-      }
-    }
-
-    /**
-     * Check class property declarations for boolean values
+     * Check class property declarations for boolean values.
+     *
+     * Handles both concrete (`PropertyDefinition`) and abstract
+     * (`TSAbstractPropertyDefinition`) fields: an abstract field is a
+     * declaration the author owns and every implementer inherits the name from,
+     * so it carries the same naming obligation as a concrete one.
      */
     function checkClassPropertyDeclaration(node: any) {
       if (node.key.type !== AST_NODE_TYPES.Identifier) return;
@@ -1862,6 +1825,52 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       }
     }
 
+    /**
+     * Check constructor parameter properties (`constructor(private enabled: boolean) {}`)
+     * for boolean values.
+     *
+     * An access modifier turns a constructor parameter into a declared class
+     * field, so it is reported as a `property` rather than a `parameter`. The
+     * generic parameter visitor never sees these names — `TSParameterProperty`
+     * wraps the identifier — so this is the single report site for them.
+     */
+    function checkParameterProperty(node: TSESTree.TSParameterProperty) {
+      // A default value wraps the identifier again: `private enabled = true`
+      // parses as an AssignmentPattern whose left holds the name and annotation.
+      const { parameter } = node;
+      const isDefaulted = parameter.type === AST_NODE_TYPES.AssignmentPattern;
+      const target = isDefaulted ? parameter.left : parameter;
+
+      if (target.type !== AST_NODE_TYPES.Identifier) return;
+
+      const propertyName = target.name;
+
+      const hasBooleanAnnotation =
+        target.typeAnnotation?.typeAnnotation.type ===
+        AST_NODE_TYPES.TSBooleanKeyword;
+
+      const initializer = isDefaulted ? parameter.right : undefined;
+      const hasBooleanInitializer =
+        initializer?.type === AST_NODE_TYPES.Literal &&
+        typeof initializer.value === 'boolean';
+
+      if (
+        (hasBooleanAnnotation || hasBooleanInitializer) &&
+        !hasApprovedPrefix(propertyName)
+      ) {
+        context.report({
+          node: target,
+          messageId: 'missingBooleanPrefix',
+          data: {
+            type: 'property',
+            name: propertyName,
+            capitalizedName: capitalizeFirst(propertyName),
+            prefixes: formatPrefixes(),
+          },
+        });
+      }
+    }
+
     return {
       VariableDeclarator: checkVariableDeclaration,
       FunctionDeclaration: checkFunctionDeclaration,
@@ -1877,8 +1886,9 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       },
       MethodDefinition: checkMethodDefinition,
       TSAbstractMethodDefinition: checkMethodDefinition,
-      ClassProperty: checkClassProperty,
       PropertyDefinition: checkClassPropertyDeclaration, // For TypeScript class properties
+      TSAbstractPropertyDefinition: checkClassPropertyDeclaration,
+      TSParameterProperty: checkParameterProperty,
       TSPropertySignature: checkPropertySignature,
       Identifier(node: TSESTree.Identifier) {
         // Check parameter names in function declarations
