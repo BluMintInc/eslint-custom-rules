@@ -54,6 +54,71 @@ const b = objB[safeKey];
 const c = objC[safeKey];
 ```
 
+### Numeric keys and array-like objects are exempt
+
+`assertSafe()` exists to reject dangerous **property names** — `__proto__`,
+`constructor`, `prototype`. None of those is ever the string form of a number,
+so prototype pollution is unreachable through a numeric index: validating one
+guards nothing, while costing a coercion on every element of a hot loop (and,
+in a module with no other imports, an inserted `import` statement that breaks
+sources evaluated as raw text).
+
+The rule therefore skips a computed access when either half of it rules out a
+property name:
+
+- **The object reads as a sequence.** A name matching `array`, `arr`, `items`,
+  `elements`, `list`, `collection` or `data` (singular or plural) is treated as
+  a collection indexed by position. A collection reached as a field is judged by
+  the field name, so `raster.data[i]`, `this.items[i]` and `state.buffer.list[i]`
+  all qualify. A computed object (`grid[0][key]`) contributes no name.
+- **The key is statically a number.** The key expression itself proves it —
+  numeric literals, `i++`, `-x`, `~x`, arithmetic and bitwise operators
+  (`-`, `*`, `/`, `%`, `**`, `<<`, `>>`, `>>>`, `&`, `|`, `^`), `Number(...)`,
+  `parseInt(...)`, `parseFloat(...)`, any `Math.*` call, `.length`, and `+` when
+  **both** sides are themselves numeric. An identifier qualifies when the
+  binding it resolves to proves it: a `: number` parameter, or a variable whose
+  every write keeps it numeric.
+
+```js
+// ✅ Exempt: the key cannot name a property.
+const sampleRaster = (raster, index) => raster.data[index];
+
+const sum = (values) => {
+  let total = 0;
+  for (let i = 0; i < values.length; i += 1) {
+    total += values[i];
+  }
+  return total;
+};
+
+const blend = (pixels, width, height) => {
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      pixels[y * width + x] *= 2;
+    }
+  }
+};
+
+const sample = (palette, t) => palette[Math.floor(t * 255)];
+const at = (buffer, index: number) => buffer[index];
+```
+
+The analysis is syntactic and proof-based: a key it cannot prove numeric is
+still reported, so nothing is exempted on a guess.
+
+```js
+// ❌ Still reported: none of these keys is proven to be a number.
+let k;
+obj[k]; // holds undefined, never written
+
+let n = 0;
+n = userInput; // a write that does not keep it numeric
+obj[n];
+
+obj[a + b]; // `+` over unknown operands may concatenate strings
+obj[String(index)]; // an explicit string conversion is a string
+```
+
 ### Interaction with inline disable comments
 
 The `import { assertSafe } from '...';` statement is added once per file,
