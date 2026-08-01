@@ -1,3 +1,10 @@
+## [1.20.60](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.59...v1.20.60) (2026-08-01)
+
+
+### Bug Fixes
+
+* **enforce-singular-type-names:** keep the container exemption when nullable (closes [#1550](https://github.com/BluMintInc/eslint-custom-rules/issues/1550)) ([697bed7](https://github.com/BluMintInc/eslint-custom-rules/commit/697bed7e4cd8953bb5ee19f7f34c73e1b0857f9d)), closes [#1551](https://github.com/BluMintInc/eslint-custom-rules/issues/1551)
+
 ## [1.20.59](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.58...v1.20.59) (2026-08-01)
 
 
