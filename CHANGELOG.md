@@ -1,3 +1,13 @@
+## [1.20.70](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.69...v1.20.70) (2026-08-01)
+
+
+### Bug Fixes
+
+* **class-methods-read-top-to-bottom:** preserve the whitespace separating reordered class members (closes [#1592](https://github.com/BluMintInc/eslint-custom-rules/issues/1592)) ([fdb332d](https://github.com/BluMintInc/eslint-custom-rules/commit/fdb332d099007923b2d503176a7132fd980b3346))
+* **no-useless-usememo-primitives:** decline the autofix when inlining would strand a comment (closes [#1591](https://github.com/BluMintInc/eslint-custom-rules/issues/1591)) ([c4a985b](https://github.com/BluMintInc/eslint-custom-rules/commit/c4a985b64d739b965df0c69153644cb233b2cc02))
+* **parallelize-async-operations:** preserve comments between merged awaits (closes [#1589](https://github.com/BluMintInc/eslint-custom-rules/issues/1589)) ([685465e](https://github.com/BluMintInc/eslint-custom-rules/commit/685465e676d96a76f7c7bde29c3e0990a9b04ab0))
+* **prefer-map-over-conditional-dispatch:** preserve branch comments in the generated map (closes [#1590](https://github.com/BluMintInc/eslint-custom-rules/issues/1590)) ([2d7089f](https://github.com/BluMintInc/eslint-custom-rules/commit/2d7089f6eb802ce617da2729b34a733cda33f84a))
+
 ## [1.20.69](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.68...v1.20.69) (2026-08-01)
 
 

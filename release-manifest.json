@@ -1,5 +1,43 @@
 [
   {
+    "version": "1.20.70",
+    "date": "2026-08-01T23:31:02.214Z",
+    "rules": [
+      {
+        "name": "class-methods-read-top-to-bottom",
+        "changeType": "fix",
+        "issues": [
+          1592
+        ],
+        "summary": "preserve the whitespace separating reordered class members (closes #1592)"
+      },
+      {
+        "name": "no-useless-usememo-primitives",
+        "changeType": "fix",
+        "issues": [
+          1591
+        ],
+        "summary": "decline the autofix when inlining would strand a comment (closes #1591)"
+      },
+      {
+        "name": "parallelize-async-operations",
+        "changeType": "fix",
+        "issues": [
+          1589
+        ],
+        "summary": "preserve comments between merged awaits (closes #1589)"
+      },
+      {
+        "name": "prefer-map-over-conditional-dispatch",
+        "changeType": "fix",
+        "issues": [
+          1590
+        ],
+        "summary": "preserve branch comments in the generated map (closes #1590)"
+      }
+    ]
+  },
+  {
     "version": "1.20.69",
     "date": "2026-08-01T20:48:40.484Z",
     "rules": [
