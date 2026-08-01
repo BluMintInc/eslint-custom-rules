@@ -129,6 +129,23 @@ class MatchPreviewer {
 
 ```ts
 class Counter {
+  private count = 0;
+
+  getNextId() {
+    return ++this.count;
+  }
+}
+```
+
+`getNextId` reads like a computed value but mutates state, so the rule reports it and withholds the fix: as a getter, every `instance.nextId` read would silently increment the counter. Renaming it to something more imperative (`incrementId`) does not clear the report — the rule keys on the mutations in the body, not on how action-like the name sounds. Two remedies clear it:
+
+- The side effect is unintentional: remove it and convert the method to `get nextId()`. (Removing it alone leaves the method reported under `preferGetter`, which asks for the getter conversion.)
+- The side effect is intentional: declare it with an `@sideEffect` (or `@mutates`) tag inside a `/** */` JSDoc block placed immediately above the method, with no blank line in between. The tag warns callers that this value performs work, and `respectJsDocSideEffects` (default `true`) exempts the method:
+
+```ts
+class Counter {
+  private count = 0;
+
   /**
    * @sideEffect increments internal counter
    */
@@ -137,8 +154,6 @@ class Counter {
   }
 }
 ```
-
-This looks like a getter but mutates state. Remove the side effect or keep it as a method intentionally.
 
 ```ts
 export class OverlayAlertComposer {

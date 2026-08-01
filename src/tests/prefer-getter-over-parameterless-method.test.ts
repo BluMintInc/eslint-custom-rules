@@ -127,6 +127,32 @@ ruleTesterTs.run(
       }
       `,
 
+      // The remedy `preferGetterSideEffect` prescribes must actually clear the
+      // report (#1568): the message previously advised "keep it as a method",
+      // which is the code as written, so a developer following it kept the
+      // error. These two pair byte-for-byte with the `getNextId` invalid case
+      // below — the only difference is the JSDoc tag the message names.
+      `
+      class Counter {
+        /**
+         * @sideEffect increments internal counter
+         */
+        getNextId() {
+          return ++this.count;
+        }
+      }
+      `,
+      `
+      class Counter {
+        /**
+         * @mutates this.count
+         */
+        getNextId() {
+          return ++this.count;
+        }
+      }
+      `,
+
       // Optional methods cannot become getters
       `
       class Maybe {
