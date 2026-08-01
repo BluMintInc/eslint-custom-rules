@@ -2,6 +2,7 @@ import { Linter, Rule } from 'eslint';
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { optimizeObjectBooleanConditions } from '../rules/optimize-object-boolean-conditions';
 import { enforceBooleanNamingPrefixes } from '../rules/enforce-boolean-naming-prefixes';
+import globalConstStyle from '../rules/global-const-style';
 
 const buildMessage = (
   expression: string,
@@ -83,6 +84,82 @@ const PanelUnmemoized = ({ isCollapsed, onToggle }: PanelProps) => {
 }, [!roundPreviews]);`,
     );
 
+    expect(messages.map((message) => message.ruleId)).toEqual([
+      'test/optimize-object-boolean-conditions',
+    ]);
+  });
+});
+
+// global-const-style rewrites a bare global constant into the `as const` form.
+// Both rules ship as 'error' in the recommended config, so if this rule cannot
+// see through that assertion, `eslint --fix` turns a clean file into a reported
+// one — the config manufacturing its own violation (issue #1581).
+describe('optimize-object-boolean-conditions vs global-const-style --fix', () => {
+  const fixThenLint = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      'test/optimize-object-boolean-conditions',
+      optimizeObjectBooleanConditions as unknown as Rule.RuleModule,
+    );
+    linter.defineRule(
+      'test/global-const-style',
+      globalConstStyle as unknown as Rule.RuleModule,
+    );
+    const config = {
+      parser: '@typescript-eslint/parser',
+      parserOptions: {
+        ecmaVersion: 2020 as const,
+        sourceType: 'module' as const,
+        ecmaFeatures: { jsx: true },
+      },
+      rules: {
+        'test/optimize-object-boolean-conditions': 'error' as const,
+        'test/global-const-style': 'error' as const,
+      },
+    };
+    const { output } = linter.verifyAndFix(code, config, 'Panel.tsx');
+    return {
+      output,
+      messages: linter.verify(
+        output,
+        {
+          ...config,
+          rules: {
+            'test/optimize-object-boolean-conditions': 'error' as const,
+          },
+        },
+        'Panel.tsx',
+      ),
+    };
+  };
+
+  it('stays silent on a primitive constant after the sibling fixer adds `as const`', () => {
+    const { output, messages } = fixThenLint(
+      `const total = 0;
+const result = useMemo(() => {
+  return total;
+}, [!total]);`,
+    );
+
+    // The fixer must actually have produced the assertion, or this proves nothing.
+    expect(output).toContain('as const');
+    expect(messages).toEqual([]);
+  });
+
+  it('still reports an object constant the sibling fixer has asserted', () => {
+    const { output, messages } = fixThenLint(
+      `const data = { a: 1 };
+const result = useMemo(() => {
+  return data;
+}, [!data]);`,
+    );
+
+    expect(output).toContain('as const');
     expect(messages.map((message) => message.ruleId)).toEqual([
       'test/optimize-object-boolean-conditions',
     ]);
@@ -1169,6 +1246,43 @@ ruleTesterJsx.run(
         }, [!total]);
       `,
       },
+      // `as const` narrows a primitive without making it an object. This is the
+      // form global-const-style and enforce-object-literal-as-const rewrite bare
+      // constants into, so missing it let the plugin's own --fix manufacture the
+      // report (issue #1581).
+      {
+        code: `
+        const TOTAL = 0 as const;
+        const result = useMemo(() => {
+          return TOTAL;
+        }, [!TOTAL]);
+      `,
+      },
+      {
+        code: `
+        const NAME = 'grid' as const;
+        const result = useMemo(() => {
+          return NAME;
+        }, [!NAME]);
+      `,
+      },
+      {
+        code: `
+        const ENABLED = true as const;
+        const result = useMemo(() => {
+          return ENABLED;
+        }, [!ENABLED]);
+      `,
+      },
+      // `satisfies` only checks the value, so it cannot change primitiveness.
+      {
+        code: `
+        const LIMIT = 10 satisfies number;
+        const result = useMemo(() => {
+          return LIMIT;
+        }, [!LIMIT]);
+      `,
+      },
       // Comparison initializers always produce primitives
       {
         code: `
@@ -1885,6 +1999,26 @@ ruleTesterJsx.run(
         }, [!settings]);
       `,
         errors: [buildError('!settings', 'settings', 'isSettingsMissing')],
+      },
+      // `as const` on an object or array narrows it but leaves it an object, so
+      // the carve-out for `as const` primitives must not reach these (#1581).
+      {
+        code: `
+        const data = { a: 1 } as const;
+        useEffect(() => {
+          load(data);
+        }, [!data]);
+      `,
+        errors: [buildError('!data', 'data', 'isDataMissing')],
+      },
+      {
+        code: `
+        const list = [1, 2] as const;
+        useEffect(() => {
+          load(list);
+        }, [!list]);
+      `,
+        errors: [buildError('!list', 'list', 'isListMissing')],
       },
       // Imported bindings stay unresolved, so they keep reporting
       {
