@@ -1,3 +1,10 @@
+## [1.20.63](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.62...v1.20.63) (2026-08-01)
+
+
+### Bug Fixes
+
+* **parallelize-async-operations:** indent Promise.all output relative to the replaced statements (closes [#1557](https://github.com/BluMintInc/eslint-custom-rules/issues/1557)) ([5969407](https://github.com/BluMintInc/eslint-custom-rules/commit/5969407315dce3a83b61fe4ba368de9ac520517e))
+
 ## [1.20.62](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.61...v1.20.62) (2026-08-01)
 
 

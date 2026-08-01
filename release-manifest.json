@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.63",
+    "date": "2026-08-01T09:37:04.617Z",
+    "rules": [
+      {
+        "name": "parallelize-async-operations",
+        "changeType": "fix",
+        "issues": [
+          1557
+        ],
+        "summary": "indent Promise.all output relative to the replaced statements (closes #1557)"
+      }
+    ]
+  },
+  {
     "version": "1.20.62",
     "date": "2026-08-01T09:01:13.989Z",
     "rules": [
