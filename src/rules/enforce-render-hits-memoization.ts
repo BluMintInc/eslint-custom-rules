@@ -117,10 +117,12 @@ export const enforceRenderHitsMemoization = createRule<[], MessageIds>({
     const isMemoizedVariable = (node: TSESTree.Node): boolean => {
       if (node.type !== AST_NODE_TYPES.Identifier) return false;
 
-      // Get the variable declaration for this identifier
-      const variable = context
-        .getScope()
-        .variables.find((v) => v.name === (node as TSESTree.Identifier).name);
+      // The whole scope chain has to be searched rather than the current
+      // scope's own variable list: a useRenderHits call sitting inside a nested
+      // block or a nested component reaches its memoized declaration through an
+      // enclosing scope, and reading one scope's `variables` would miss it and
+      // demand a useCallback around a value that already has one.
+      const variable = ASTUtils.findVariable(context.getScope(), node);
       if (!variable) return false;
 
       // Check if the variable is initialized with a memoized call
@@ -298,55 +300,25 @@ export const enforceRenderHitsMemoization = createRule<[], MessageIds>({
           const options = node.arguments[0];
           if (options.type !== AST_NODE_TYPES.ObjectExpression) return;
 
-          // Variable to track if we need to check properties (check both by default)
-          const checkProps = {
-            transformBefore: true,
-            render: true,
-          };
-
-          // First pass: Check if transformBefore or render properties exist as shorthand
+          // Shorthand props are checked exactly like written-out ones. `{ render }`
+          // and `render: render` describe the same value, and the config's own
+          // fixable `object-shorthand: ['error', 'always']` rewrites the second
+          // into the first, so exempting the shorthand form would let a single
+          // `eslint --fix` erase every report this rule makes about a prop whose
+          // variable happens to share the API's name — the shape idiomatic code
+          // reaches for first (issue #1588).
           for (const prop of options.properties) {
             if (prop.type !== AST_NODE_TYPES.Property) continue;
             if (prop.key.type !== AST_NODE_TYPES.Identifier) continue;
 
-            // If it's shorthand property syntax like { transformBefore } and already a memoized variable
-            if (
-              prop.key.name === 'transformBefore' &&
-              prop.shorthand &&
-              prop.key.type === AST_NODE_TYPES.Identifier
-            ) {
-              checkProps.transformBefore = !isMemoizedVariable(prop.key);
-            } else if (
-              prop.key.name === 'render' &&
-              prop.shorthand &&
-              prop.key.type === AST_NODE_TYPES.Identifier
-            ) {
-              checkProps.render = !isMemoizedVariable(prop.key);
-            }
-          }
-
-          // Second pass: Check non-shorthand properties
-          for (const prop of options.properties) {
-            if (prop.type !== AST_NODE_TYPES.Property) continue;
-            if (prop.key.type !== AST_NODE_TYPES.Identifier) continue;
-
-            // Skip shorthand properties that we already checked
-            if (prop.shorthand) continue;
-
-            if (
-              prop.key.name === 'transformBefore' &&
-              checkProps.transformBefore
-            ) {
-              // Skip if the value is already a memoized call
-              if (isMemoizedCall(prop.value)) continue;
-
+            if (prop.key.name === 'transformBefore') {
               if (!isInsideMemoizedCall(prop.value)) {
                 context.report({
                   node: prop.value,
                   messageId: 'requireMemoizedTransformBefore',
                 });
               }
-            } else if (prop.key.name === 'render' && checkProps.render) {
+            } else if (prop.key.name === 'render') {
               if (isReactComponent(prop.value)) {
                 context.report({
                   node: prop.value,
