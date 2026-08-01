@@ -967,6 +967,198 @@ ruleTesterTs.run(
         const userDoc = usersCollection.doc('123');
       `,
       },
+      // Compat Firestore from @firebase/rules-unit-testing accepts NO type argument
+      // on .doc()/.collection() — TS2558 — so the generic is impossible to supply.
+      {
+        code: `
+    import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+
+    const run = async () => {
+      const testEnv = await initializeTestEnvironment({ projectId: 'demo-x' });
+      const db = testEnv.authenticatedContext('owner-uid').firestore();
+      return db.doc('User/uid/OverlaySettings/uid').get();
+    };
+  `,
+      },
+      // The compat handle used inline, with no intermediate variable
+      {
+        code: `
+        import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+        const run = async () => {
+          const testEnv = await initializeTestEnvironment({ projectId: 'demo-x' });
+          const ref = testEnv.authenticatedContext('u').firestore().doc('User/uid');
+          return ref.get();
+        };
+      `,
+      },
+      // Unauthenticated rules-test context yields the same compat Firestore
+      {
+        code: `
+        import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+        const run = async () => {
+          const testEnv = await initializeTestEnvironment({ projectId: 'demo-x' });
+          const db = testEnv.unauthenticatedContext().firestore();
+          return db.doc('User/uid').get();
+        };
+      `,
+      },
+      // Seed callback whose parameter is annotated with the module's context type
+      {
+        code: `
+        import { initializeTestEnvironment, RulesTestContext } from '@firebase/rules-unit-testing';
+        const run = async () => {
+          const testEnv = await initializeTestEnvironment({ projectId: 'demo-x' });
+          await testEnv.withSecurityRulesDisabled(async (ctx: RulesTestContext) => {
+            await ctx.firestore().doc('User/uid').set({ hidden: true });
+          });
+        };
+      `,
+      },
+      // Type-only import of the context type still identifies the compat surface
+      {
+        code: `
+        import type { RulesTestContext } from '@firebase/rules-unit-testing';
+        export const seed = (ctx: RulesTestContext) => ctx.firestore().doc('User/uid');
+      `,
+      },
+      // Inline type specifier is equivalent to a type-only import declaration
+      {
+        code: `
+        import { initializeTestEnvironment, type RulesTestContext } from '@firebase/rules-unit-testing';
+        export const seed = (ctx: RulesTestContext) => ctx.firestore().doc('User/uid');
+        export const init = initializeTestEnvironment;
+      `,
+      },
+      // .collection() on a compat Firestore is equally impossible to parameterize
+      {
+        code: `
+        import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+        const run = async () => {
+          const testEnv = await initializeTestEnvironment({ projectId: 'demo-x' });
+          const db = testEnv.authenticatedContext('u').firestore();
+          const users = db.collection('User');
+          return users.get();
+        };
+      `,
+      },
+      // .collectionGroup() on a compat Firestore
+      {
+        code: `
+        import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+        const run = async () => {
+          const testEnv = await initializeTestEnvironment({ projectId: 'demo-x' });
+          const db = testEnv.authenticatedContext('u').firestore();
+          const settings = db.collectionGroup('OverlaySettings');
+          return settings.get();
+        };
+      `,
+      },
+      // Aliased named import
+      {
+        code: `
+        import { initializeTestEnvironment as initTestEnv } from '@firebase/rules-unit-testing';
+        const run = async () => {
+          const testEnv = await initTestEnv({ projectId: 'demo-x' });
+          const db = testEnv.authenticatedContext('u').firestore();
+          return db.doc('User/uid').get();
+        };
+      `,
+      },
+      // Namespace import
+      {
+        code: `
+        import * as rut from '@firebase/rules-unit-testing';
+        const run = async () => {
+          const testEnv = await rut.initializeTestEnvironment({ projectId: 'demo-x' });
+          const db = testEnv.authenticatedContext('u').firestore();
+          return db.doc('User/uid').get();
+        };
+      `,
+      },
+      // Namespace-qualified parameter annotation
+      {
+        code: `
+        import * as rut from '@firebase/rules-unit-testing';
+        export const seed = (ctx: rut.RulesTestContext) => ctx.firestore().doc('User/uid');
+      `,
+      },
+      // Default import
+      {
+        code: `
+        import rulesUnitTesting from '@firebase/rules-unit-testing';
+        const run = async () => {
+          const testEnv = await rulesUnitTesting.initializeTestEnvironment({ projectId: 'demo-x' });
+          const db = testEnv.authenticatedContext('u').firestore();
+          return db.doc('User/uid').get();
+        };
+      `,
+      },
+      // Multi-hop const chain from the test environment to the compat Firestore
+      {
+        code: `
+        import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+        const run = async () => {
+          const testEnv = await initializeTestEnvironment({ projectId: 'demo-x' });
+          const ctx = testEnv.authenticatedContext('u');
+          const db = ctx.firestore();
+          return db.doc('User/uid').get();
+        };
+      `,
+      },
+      // The receiver reached through an `as` assertion still traces
+      {
+        code: `
+        import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+        const run = async () => {
+          const testEnv = await initializeTestEnvironment({ projectId: 'demo-x' });
+          const db = testEnv.authenticatedContext('u').firestore() as CompatFirestore;
+          return db.doc('User/uid').get();
+        };
+      `,
+      },
+      // Non-null assertion between the context and the compat Firestore
+      {
+        code: `
+        import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+        const run = async () => {
+          const testEnv = await initializeTestEnvironment({ projectId: 'demo-x' });
+          const db = testEnv.authenticatedContext('u').firestore()!;
+          return db.doc('User/uid').get();
+        };
+      `,
+      },
+      // Optional chaining between the context and the compat Firestore
+      {
+        code: `
+        import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+        const run = async () => {
+          const testEnv = await initializeTestEnvironment({ projectId: 'demo-x' });
+          const db = testEnv.authenticatedContext('u')?.firestore();
+          return db?.doc('User/uid').get();
+        };
+      `,
+      },
+      // The reported shape from the issue: the reference nested inside assertSucceeds
+      {
+        code: `
+        import { assertSucceeds, initializeTestEnvironment } from '@firebase/rules-unit-testing';
+        const run = async () => {
+          const testEnv = await initializeTestEnvironment({ projectId: 'demo-x' });
+          const db = testEnv.authenticatedContext('owner-uid').firestore();
+          await assertSucceeds(db.doc('User/uid/OverlaySettings/uid').get());
+        };
+      `,
+      },
+      // A compat Firestore declared with the module's own Firestore type
+      {
+        code: `
+        import type { RulesTestContext } from '@firebase/rules-unit-testing';
+        const seed = (ctx: RulesTestContext) => {
+          const db = ctx.firestore();
+          return db.collection('User').doc('uid').set({ hidden: true });
+        };
+      `,
+      },
     ],
     invalid: [
       // Missing generic type - DocumentReference
@@ -1350,6 +1542,141 @@ ruleTesterTs.run(
         const userDoc = usersCollection.doc<any>('123');
       `,
         errors: [invalidGenericError('DocumentReference')],
+      },
+      // The Admin SDK supports the generic, so the same shape keeps reporting
+      {
+        code: `
+        import { getFirestore } from 'firebase-admin/firestore';
+        const run = async () => {
+          const db = getFirestore();
+          return db.doc('User/uid').get();
+        };
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // The exemption keys on the module specifier, not on the call shape
+      {
+        code: `
+        import { initializeTestEnvironment } from 'firebase/firestore';
+        const run = async () => {
+          const testEnv = await initializeTestEnvironment({ projectId: 'demo-x' });
+          const db = testEnv.authenticatedContext('u').firestore();
+          return db.doc('User/uid').get();
+        };
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // Without the import there is nothing to trace the receiver back to
+      {
+        code: `
+        const run = async () => {
+          const testEnv = await initializeTestEnvironment({ projectId: 'demo-x' });
+          const db = testEnv.authenticatedContext('u').firestore();
+          return db.doc('User/uid').get();
+        };
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // A mutable receiver can be reassigned to an Admin SDK handle, so it is refused
+      {
+        code: `
+        import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+        const run = async () => {
+          const testEnv = await initializeTestEnvironment({ projectId: 'demo-x' });
+          let db = testEnv.authenticatedContext('u').firestore();
+          return db.doc('User/uid').get();
+        };
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // A mutable binding anywhere along the chain breaks the trace
+      {
+        code: `
+        import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+        const run = async () => {
+          let testEnv = await initializeTestEnvironment({ projectId: 'demo-x' });
+          const db = testEnv.authenticatedContext('u').firestore();
+          return db.doc('User/uid').get();
+        };
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // The gate is the receiver, not the file: an Admin handle in a rules test reports
+      {
+        code: `
+        import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+        import { getFirestore } from 'firebase-admin/firestore';
+        const run = async () => {
+          const testEnv = await initializeTestEnvironment({ projectId: 'demo-x' });
+          const compatDb = testEnv.authenticatedContext('u').firestore();
+          const adminDb = getFirestore();
+          await compatDb.doc('User/uid').get();
+          return adminDb.doc('User/uid').get();
+        };
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // The same receiver gate applies to .collection() and .collectionGroup()
+      {
+        code: `
+        import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+        import { getFirestore } from 'firebase-admin/firestore';
+        const adminDb = getFirestore();
+        const users = adminDb.collection('User');
+        const settings = adminDb.collectionGroup('OverlaySettings');
+        export const env = initializeTestEnvironment;
+      `,
+        errors: [
+          missingGenericError('CollectionReference'),
+          missingGenericError('CollectionGroup'),
+        ],
+      },
+      // The modular doc() function does accept the generic, so it keeps reporting
+      {
+        code: `
+        import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+        import { doc, getFirestore } from 'firebase/firestore';
+        const db = getFirestore();
+        const ref = doc(db, 'User/uid');
+        export const env = initializeTestEnvironment;
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // An explicit DocumentReference annotation still needs its generic
+      {
+        code: `
+        import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+        const run = async () => {
+          const testEnv = await initializeTestEnvironment({ projectId: 'demo-x' });
+          const db = testEnv.authenticatedContext('u').firestore();
+          const ref: DocumentReference = db.doc('User/uid');
+          return ref.get();
+        };
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // An untyped callback parameter carries no evidence of the compat surface
+      {
+        code: `
+        import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+        const run = async () => {
+          const testEnv = await initializeTestEnvironment({ projectId: 'demo-x' });
+          await testEnv.withSecurityRulesDisabled(async (ctx) => {
+            await ctx.firestore().doc('User/uid').set({ hidden: true });
+          });
+        };
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // A parameter annotated with an unrelated type is not exempt
+      {
+        code: `
+        import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+        import type { Firestore } from 'firebase-admin/firestore';
+        export const seed = (db: Firestore) => db.doc('User/uid');
+        export const env = initializeTestEnvironment;
+      `,
+        errors: [missingGenericError('DocumentReference')],
       },
     ],
   },

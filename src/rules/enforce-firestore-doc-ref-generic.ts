@@ -762,6 +762,168 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
       return false;
     }
 
+    /**
+     * `@firebase/rules-unit-testing` hands back the compat (v8) Firestore, whose
+     * `.doc()`, `.collection()` and `.collectionGroup()` declare zero type
+     * parameters. Asking for a schema generic there produces
+     * `TS2558: Expected 0 type arguments, but got 1`, so every remediation this
+     * rule suggests is uncompilable on that surface and the receiver must be
+     * exempt.
+     */
+    const RULES_UNIT_TESTING_MODULE = '@firebase/rules-unit-testing';
+
+    let rulesUnitTestingLocals: Set<string> | undefined;
+
+    /**
+     * Scanned lazily rather than from an `ImportDeclaration` visitor so that
+     * traversal order can never decide whether the exemption applies. Type-only
+     * specifiers count because a callback parameter annotated `RulesTestContext`
+     * is the other way a compat handle reaches a `.doc()` receiver.
+     */
+    function getRulesUnitTestingLocals(): Set<string> {
+      if (rulesUnitTestingLocals) {
+        return rulesUnitTestingLocals;
+      }
+
+      const locals = new Set<string>();
+      for (const statement of context.sourceCode.ast.body) {
+        if (
+          statement.type === AST_NODE_TYPES.ImportDeclaration &&
+          statement.source.value === RULES_UNIT_TESTING_MODULE
+        ) {
+          for (const specifier of statement.specifiers) {
+            locals.add(specifier.local.name);
+          }
+        }
+      }
+
+      rulesUnitTestingLocals = locals;
+      return locals;
+    }
+
+    /**
+     * A qualified annotation such as `rut.RulesTestContext` is rooted at the
+     * namespace binding, which is the name the import declaration provides.
+     */
+    function rootTypeNameOf(typeNode: TSESTree.TypeNode): string | undefined {
+      if (typeNode.type !== AST_NODE_TYPES.TSTypeReference) {
+        return undefined;
+      }
+
+      let entity: TSESTree.EntityName = typeNode.typeName;
+      while (entity.type === AST_NODE_TYPES.TSQualifiedName) {
+        entity = entity.left;
+      }
+
+      return entity.type === AST_NODE_TYPES.Identifier
+        ? entity.name
+        : undefined;
+    }
+
+    function isRulesUnitTestingType(typeNode: TSESTree.TypeNode): boolean {
+      if (
+        typeNode.type === AST_NODE_TYPES.TSUnionType ||
+        typeNode.type === AST_NODE_TYPES.TSIntersectionType
+      ) {
+        return typeNode.types.some(isRulesUnitTestingType);
+      }
+
+      const rootName = rootTypeNameOf(typeNode);
+      return !!rootName && getRulesUnitTestingLocals().has(rootName);
+    }
+
+    /**
+     * Walks an expression toward its syntactic root and reports whether that
+     * root is a value supplied by `@firebase/rules-unit-testing`.
+     *
+     * Only `const` bindings are followed, mirroring `isTypedCollectionBinding`:
+     * a `let`/`var` receiver can be reassigned to an Admin SDK handle, where the
+     * generic is both supportable and valuable, so exempting it would silently
+     * drop enforcement.
+     */
+    function tracesToRulesUnitTesting(
+      node: TSESTree.Node | null | undefined,
+      visited: Set<TSESTree.Node> = new Set(),
+    ): boolean {
+      if (!node || getRulesUnitTestingLocals().size === 0) {
+        return false;
+      }
+      // Guards against a self-referential declaration such as `const a = a.b;`.
+      if (visited.has(node)) {
+        return false;
+      }
+      visited.add(node);
+
+      switch (node.type) {
+        case AST_NODE_TYPES.AwaitExpression:
+          return tracesToRulesUnitTesting(node.argument, visited);
+        case AST_NODE_TYPES.CallExpression:
+          return tracesToRulesUnitTesting(node.callee, visited);
+        case AST_NODE_TYPES.MemberExpression:
+          return tracesToRulesUnitTesting(node.object, visited);
+        case AST_NODE_TYPES.ChainExpression:
+          return tracesToRulesUnitTesting(node.expression, visited);
+        case AST_NODE_TYPES.TSNonNullExpression:
+        case AST_NODE_TYPES.TSAsExpression:
+        case AST_NODE_TYPES.TSSatisfiesExpression:
+        case AST_NODE_TYPES.TSTypeAssertion:
+          return tracesToRulesUnitTesting(node.expression, visited);
+        case AST_NODE_TYPES.Identifier:
+          return identifierTracesToRulesUnitTesting(node, visited);
+        default:
+          return false;
+      }
+    }
+
+    function identifierTracesToRulesUnitTesting(
+      node: TSESTree.Identifier,
+      visited: Set<TSESTree.Node>,
+    ): boolean {
+      const scope = ASTHelpers.getScope(context, node);
+      const variable = ASTHelpers.findVariableInScope(scope, node.name);
+      if (!variable || variable.defs.length !== 1) {
+        return false;
+      }
+
+      const def = variable.defs[0];
+
+      if (def.type === 'ImportBinding') {
+        return (
+          def.parent?.type === AST_NODE_TYPES.ImportDeclaration &&
+          def.parent.source.value === RULES_UNIT_TESTING_MODULE
+        );
+      }
+
+      // Covers the `withSecurityRulesDisabled(async (ctx: RulesTestContext) =>
+      // ...)` callback, where the compat handle never appears as an initializer.
+      if (def.type === 'Parameter') {
+        const annotation = def.name.typeAnnotation;
+        return (
+          !!annotation && isRulesUnitTestingType(annotation.typeAnnotation)
+        );
+      }
+
+      if (
+        def.type !== 'Variable' ||
+        def.node.type !== AST_NODE_TYPES.VariableDeclarator ||
+        def.parent?.type !== AST_NODE_TYPES.VariableDeclaration ||
+        def.parent.kind !== 'const'
+      ) {
+        return false;
+      }
+
+      const declarator = def.node;
+      if (
+        declarator.id.type === AST_NODE_TYPES.Identifier &&
+        declarator.id.typeAnnotation &&
+        isRulesUnitTestingType(declarator.id.typeAnnotation.typeAnnotation)
+      ) {
+        return true;
+      }
+
+      return tracesToRulesUnitTesting(declarator.init, visited);
+    }
+
     return {
       TSTypeReference(node: TSESTree.TSTypeReference): void {
         if (
@@ -804,6 +966,10 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
           node.callee.property.type === AST_NODE_TYPES.Identifier &&
           node.callee.property.name === 'doc'
         ) {
+          if (tracesToRulesUnitTesting(node.callee.object)) {
+            return;
+          }
+
           const typeAnnotation = node.typeParameters;
           const isOnTypedCollection = isTypedCollectionReference(
             node.callee.object,
@@ -864,6 +1030,10 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
           node.callee.property.name === 'collection' &&
           !isPartOfMethodChain(node)
         ) {
+          if (tracesToRulesUnitTesting(node.callee.object)) {
+            return;
+          }
+
           const typeAnnotation = node.typeParameters;
           if (!typeAnnotation) {
             context.report({
@@ -885,6 +1055,10 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
           node.callee.property.type === AST_NODE_TYPES.Identifier &&
           node.callee.property.name === 'collectionGroup'
         ) {
+          if (tracesToRulesUnitTesting(node.callee.object)) {
+            return;
+          }
+
           const typeAnnotation = node.typeParameters;
           if (!typeAnnotation) {
             context.report({
