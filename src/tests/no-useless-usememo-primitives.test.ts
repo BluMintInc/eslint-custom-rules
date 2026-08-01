@@ -619,5 +619,79 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
         const choose = (flag ? 'yes' : 1);
       `,
     },
+    // Issue #1591: inlining would destroy the eslint-disable-next-line
+    // directive inside the callback, silently re-enabling the suppressed rule
+    // on the surviving ternary. The report still fires but the autofix must
+    // decline because the inlined expression lands mid-line, where a
+    // -next-line directive cannot be hosted.
+    {
+      code: `
+function useJoinLabel(isPendingToJoinTeam: boolean) {
+  const label = useMemo(() => {
+    // eslint-disable-next-line no-restricted-syntax
+    return isPendingToJoinTeam ? 'Pending Response' : 'Request to Join';
+  }, [isPendingToJoinTeam]);
+  return label;
+}
+`,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: null,
+    },
+    // A non-directive block comment before the return would also be
+    // destroyed by inlining, so the autofix declines.
+    {
+      code: `
+        const total = useMemo(() => {
+          /* documents why the offset applies */
+          return 2 + 1;
+        }, []);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: null,
+    },
+    // A comment between the arrow and an expression body sits outside the
+    // returned expression's range, so inlining would drop it.
+    {
+      code: `
+        const answer = useMemo(() => /* keep this rationale */ 42, []);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: null,
+    },
+    // A comment inside the dependency array would be destroyed alongside it.
+    {
+      code: `
+        const doubled = useMemo(() => 2 * 2, [/* deliberately empty */]);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: null,
+    },
+    // A comment after the return statement would be destroyed by inlining.
+    {
+      code: `
+        const flagged = useMemo(() => {
+          return !value; // trailing note
+        }, [value]);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: null,
+    },
+    // Comments inside the returned expression itself survive verbatim in the
+    // replacement text, so the autofix still applies.
+    {
+      code: `
+        const label = useMemo(() => (flag ? /* fallback */ 'yes' : 'no'), [flag]);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+        const label = (flag ? /* fallback */ 'yes' : 'no');
+      `,
+    },
   ],
 });

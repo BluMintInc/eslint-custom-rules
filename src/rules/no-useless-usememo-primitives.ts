@@ -462,6 +462,25 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
             valueKind,
           },
           fix(fixer) {
+            // Inlining replaces the entire useMemo(...) call with the returned
+            // expression's text, so any comment inside the call but outside
+            // that expression — an eslint-disable-next-line directive on the
+            // return statement among them — has no representation in the
+            // replacement and would be silently destroyed, changing which
+            // rules report on the file (#1591). The inlined expression lands
+            // mid-line (e.g. `const label = <expr>;`), where a -next-line
+            // directive cannot be hosted, so the autofix declines and leaves
+            // the report for a manual fix.
+            const strandedComments = sourceCode
+              .getCommentsInside(node)
+              .filter(
+                (comment) =>
+                  comment.range[0] < returnedExpression.range[0] ||
+                  comment.range[1] > returnedExpression.range[1],
+              );
+            if (strandedComments.length > 0) {
+              return null;
+            }
             const replacement = `(${sourceCode.getText(returnedExpression)})`;
             return fixer.replaceText(node, replacement);
           },
