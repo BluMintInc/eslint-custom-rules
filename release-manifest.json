@@ -1,5 +1,76 @@
 [
   {
+    "version": "1.20.67",
+    "date": "2026-08-01T17:17:30.817Z",
+    "rules": [
+      {
+        "name": "enforce-microdiff",
+        "changeType": "fix",
+        "issues": [
+          1571
+        ],
+        "summary": "guard the zero-argument JSON.stringify comparison (closes #1571)"
+      },
+      {
+        "name": "memo-nested-react-components",
+        "changeType": "fix",
+        "issues": [
+          1567
+        ],
+        "summary": "exempt lowercase-initial render-prop callbacks (closes #1567)"
+      },
+      {
+        "name": "no-compositing-layer-props",
+        "changeType": "fix",
+        "issues": [
+          1570
+        ],
+        "summary": "exempt mix-blend-mode's non-promoting values (closes #1570)"
+      },
+      {
+        "name": "no-jsx-in-hooks",
+        "changeType": "fix",
+        "issues": [
+          1572
+        ],
+        "summary": "guard the zero-argument .map() inside useMemo (closes #1572)"
+      },
+      {
+        "name": "optimize-object-boolean-conditions",
+        "changeType": "fix",
+        "issues": [
+          1569
+        ],
+        "summary": "stop calling boolean-prefixed and primitive identifiers objects (closes #1569)"
+      },
+      {
+        "name": "prefer-getter-over-parameterless-method",
+        "changeType": "fix",
+        "issues": [
+          1568
+        ],
+        "summary": "prescribe a remedy that clears preferGetterSideEffect (closes #1568)"
+      },
+      {
+        "name": "prefer-sx-prop-over-system-props",
+        "changeType": "fix",
+        "issues": [
+          1565,
+          1574
+        ],
+        "summary": "ignore block-comment lines when inferring the indent unit (closes #1574); wrap emitted sx object when it overflows the print width (closes #1565)"
+      },
+      {
+        "name": "prefer-union-from-const-array",
+        "changeType": "fix",
+        "issues": [
+          1566
+        ],
+        "summary": "wrap the authored as-const array when it exceeds the print width (closes #1566)"
+      }
+    ]
+  },
+  {
     "version": "1.20.66",
     "date": "2026-08-01T13:53:31.680Z",
     "rules": [

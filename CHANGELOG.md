@@ -1,3 +1,18 @@
+## [1.20.67](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.66...v1.20.67) (2026-08-01)
+
+
+### Bug Fixes
+
+* **enforce-microdiff:** guard the zero-argument JSON.stringify comparison (closes [#1571](https://github.com/BluMintInc/eslint-custom-rules/issues/1571)) ([42358c8](https://github.com/BluMintInc/eslint-custom-rules/commit/42358c8e01c0eef5d0218378b036c48c3544963f))
+* **memo-nested-react-components:** exempt lowercase-initial render-prop callbacks (closes [#1567](https://github.com/BluMintInc/eslint-custom-rules/issues/1567)) ([8db3a23](https://github.com/BluMintInc/eslint-custom-rules/commit/8db3a2375b2b6c266d0c7887f045a334c12e7e39))
+* **no-compositing-layer-props:** exempt mix-blend-mode's non-promoting values (closes [#1570](https://github.com/BluMintInc/eslint-custom-rules/issues/1570)) ([373ecc9](https://github.com/BluMintInc/eslint-custom-rules/commit/373ecc9ce048deaa520e730a06b81894f55519ad))
+* **no-jsx-in-hooks:** guard the zero-argument .map() inside useMemo (closes [#1572](https://github.com/BluMintInc/eslint-custom-rules/issues/1572)) ([831f186](https://github.com/BluMintInc/eslint-custom-rules/commit/831f186e18899ebe17abd66420b234285b3836ad))
+* **optimize-object-boolean-conditions:** stop calling boolean-prefixed and primitive identifiers objects (closes [#1569](https://github.com/BluMintInc/eslint-custom-rules/issues/1569)) ([37e6f17](https://github.com/BluMintInc/eslint-custom-rules/commit/37e6f175ed281dbb09aefe675f6f56495a6c46d0))
+* **prefer-getter-over-parameterless-method:** prescribe a remedy that clears preferGetterSideEffect (closes [#1568](https://github.com/BluMintInc/eslint-custom-rules/issues/1568)) ([4feefed](https://github.com/BluMintInc/eslint-custom-rules/commit/4feefed8c320cee2c3c9424a0a5ca26ec703f03b))
+* **prefer-sx-prop-over-system-props:** ignore block-comment lines when inferring the indent unit (closes [#1574](https://github.com/BluMintInc/eslint-custom-rules/issues/1574)) ([618a386](https://github.com/BluMintInc/eslint-custom-rules/commit/618a386d7796323d78fdf945ef3cc3808fe3ac3a)), closes [#1565](https://github.com/BluMintInc/eslint-custom-rules/issues/1565)
+* **prefer-sx-prop-over-system-props:** wrap emitted sx object when it overflows the print width (closes [#1565](https://github.com/BluMintInc/eslint-custom-rules/issues/1565)) ([722bdf8](https://github.com/BluMintInc/eslint-custom-rules/commit/722bdf87b34664d91f15d5c4c8dde79e2311c829))
+* **prefer-union-from-const-array:** wrap the authored as-const array when it exceeds the print width (closes [#1566](https://github.com/BluMintInc/eslint-custom-rules/issues/1566)) ([81b6a76](https://github.com/BluMintInc/eslint-custom-rules/commit/81b6a761620ea0a043cf2059780bbec6919315c0))
+
 ## [1.20.66](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.65...v1.20.66) (2026-08-01)
 
 
