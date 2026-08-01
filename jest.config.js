@@ -60,6 +60,14 @@ module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   testMatch: ['<rootDir>/**/*.test.ts'],
+  // Scratch roots hold transient *.test.ts fixtures that rules analyse on disk
+  // (test-file-location-enforcement writes into .cursor/tmp). Discovery would
+  // otherwise race their cleanup and fail the run on files that no longer exist.
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '<rootDir>/.cursor/tmp/',
+    '<rootDir>/.claude/tmp/',
+  ],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
   transform: {
     // Transpile-only (no per-file type-checking), matching agora's babel-based
