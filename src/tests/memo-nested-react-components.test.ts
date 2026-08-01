@@ -497,6 +497,75 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
         };
       `,
     },
+    {
+      // #1567: a `render`-prefixed prop is a render callback, not a
+      // component-type prop, even when its name happens to end in one of the
+      // component-prop suffixes.
+      name: 'renderHeader/renderFooter render-prop callbacks are not component props',
+      code: `
+        const Scoreboard = ({ rows, columns }) => {
+          return (
+            <DataGrid
+              rows={rows}
+              columns={columns}
+              renderHeader={() => <Box>Score</Box>}
+              renderFooter={() => <Box>Total</Box>}
+            />
+          );
+        };
+      `,
+    },
+    {
+      // #1567: the plain render-prop forms the docs call out explicitly.
+      name: 'render/renderItem inline callbacks are not component props',
+      code: `
+        const List = ({ items }) => {
+          return (
+            <Virtuoso
+              render={() => <Row />}
+              renderItem={(item) => <Row {...item} />}
+            />
+          );
+        };
+      `,
+    },
+    {
+      // #1567: each component-prop suffix, reached through a render- prefix.
+      name: 'renderTemplate/renderWrapper/renderSectionHeader are render callbacks',
+      code: `
+        const Page = () => {
+          return (
+            <Layout
+              renderTemplate={() => <Template />}
+              renderWrapper={(props) => <div {...props} />}
+              renderSectionHeader={() => <h2 />}
+              renderComponent={() => <span />}
+            />
+          );
+        };
+      `,
+    },
+    {
+      // #1567: the inline half of the consistency pair below. The named-binding
+      // form was already silent (non-PascalCase binding carve-out), so the
+      // inline form must be silent too.
+      name: 'inline renderHeader agrees with the named-binding form',
+      code: `
+        const Page = () => {
+          return <Foo renderHeader={() => <div />} />;
+        };
+      `,
+    },
+    {
+      // #1567: the named-binding half of the same pair.
+      name: 'named renderHeader binding passed to renderHeader prop stays silent',
+      code: `
+        const Page = () => {
+          const renderHeader = () => <div />;
+          return <Foo renderHeader={renderHeader} />;
+        };
+      `,
+    },
   ],
   invalid: [
     // The test-runner exemption reads only the NEAREST enclosing function, so a
@@ -963,6 +1032,128 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
           data: {
             componentName: 'InnerUnmemoized',
             locationDescription: 'a render body',
+          },
+        },
+      ],
+    },
+    // #1567 guard: the render-callback carve-out keys on the prop's initial
+    // letter only, so every uppercase-initial component-prop suffix must keep
+    // reporting. Without these the carve-out could silently widen into an
+    // amnesty for the whole JSXAttribute branch.
+    {
+      name: 'uppercase-initial FooWrapper prop still reports',
+      code: `
+        const Page = () => {
+          return <Layout FooWrapper={(props) => <div {...props} />} />;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'FooWrapper',
+            locationDescription: 'the "FooWrapper" prop',
+          },
+        },
+      ],
+    },
+    {
+      name: 'uppercase-initial FooComponent prop still reports',
+      code: `
+        const Page = () => {
+          return <Layout FooComponent={() => <div />} />;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'FooComponent',
+            locationDescription: 'the "FooComponent" prop',
+          },
+        },
+      ],
+    },
+    {
+      name: 'uppercase-initial FooTemplate prop still reports',
+      code: `
+        const Page = () => {
+          return <Layout FooTemplate={() => <div />} />;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'FooTemplate',
+            locationDescription: 'the "FooTemplate" prop',
+          },
+        },
+      ],
+    },
+    {
+      name: 'uppercase-initial FooHeader prop still reports',
+      code: `
+        const Page = () => {
+          return <Layout FooHeader={() => <header />} />;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'FooHeader',
+            locationDescription: 'the "FooHeader" prop',
+          },
+        },
+      ],
+    },
+    {
+      name: 'uppercase-initial FooFooter prop still reports',
+      code: `
+        const Page = () => {
+          return <Layout FooFooter={() => <footer />} />;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'FooFooter',
+            locationDescription: 'the "FooFooter" prop',
+          },
+        },
+      ],
+    },
+    {
+      // #1567: the other direction of the consistency pair — a PascalCase
+      // component prop reports through BOTH the inline and the named-binding
+      // path, so the carve-out did not blunt component-type props.
+      name: 'PascalCase HeaderComponent reports for both inline and named binding',
+      code: `
+        const Page = () => {
+          const HeaderComponent = () => <header />;
+          return (
+            <>
+              <Layout HeaderComponent={HeaderComponent} />
+              <Layout HeaderComponent={() => <header />} />
+            </>
+          );
+        };
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'HeaderComponent',
+            locationDescription: 'a render body',
+          },
+        },
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'HeaderComponent',
+            locationDescription: 'the "HeaderComponent" prop',
           },
         },
       ],
