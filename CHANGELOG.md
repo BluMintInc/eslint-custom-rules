@@ -1,3 +1,10 @@
+## [1.20.57](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.56...v1.20.57) (2026-08-01)
+
+
+### Bug Fixes
+
+* **no-entire-object-hook-deps:** never prune deps from a hand-maintained dependency array (closes [#1547](https://github.com/BluMintInc/eslint-custom-rules/issues/1547)) ([4e71111](https://github.com/BluMintInc/eslint-custom-rules/commit/4e71111b584f3916864f9ee35e5b2c57a606d2c3)), closes [#1546](https://github.com/BluMintInc/eslint-custom-rules/issues/1546)
+
 ## [1.20.56](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.55...v1.20.56) (2026-08-01)
 
 

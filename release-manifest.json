@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.57",
+    "date": "2026-08-01T03:42:42.343Z",
+    "rules": [
+      {
+        "name": "no-entire-object-hook-deps",
+        "changeType": "fix",
+        "issues": [
+          1547
+        ],
+        "summary": "never prune deps from a hand-maintained dependency array (closes #1547)"
+      }
+    ]
+  },
+  {
     "version": "1.20.56",
     "date": "2026-08-01T03:08:15.343Z",
     "rules": [
