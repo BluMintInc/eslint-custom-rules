@@ -170,6 +170,45 @@ read from the AST when the fix is built rather than from traversal order, a key
 access that appears _before_ the import declaration does not add a duplicate
 either.
 
+### The injected import's file extension
+
+Node's ESM resolver takes a specifier literally: an extensionless one throws
+`ERR_MODULE_NOT_FOUND` before the module ever runs. The fixer therefore appends
+`.js` to the specifier it inserts **only** when the file being fixed is native
+ESM:
+
+```js
+// scripts/design/count-voice.mjs — native ESM
+import { assertSafe } from '../../functions/src/util/assertSafe.js';
+
+const RESULTS = {};
+for (const [name, dirs] of Object.entries(SOURCES)) {
+  RESULTS[assertSafe(name)] = dirs.length;
+}
+```
+
+The extension is `.js` rather than `.ts` because the helper is authored as
+TypeScript and runs as its compiled output; TypeScript resolves a `.js`
+specifier back to the `.ts` source under `nodenext`, so the one spelling is
+correct for both.
+
+A file's module system is read the way node reads it:
+
+- `.mjs` is native ESM; `.cjs` is CommonJS — the extension decides, whatever any
+  manifest says.
+- `.ts`, `.tsx`, `.mts` and `.cts` are compiled before they run, and both the
+  TypeScript compiler and every bundler resolve an extensionless specifier, so
+  these keep the bare form. TypeScript and bundler consumers see a
+  byte-identical fix.
+- `.js` defers to the **nearest** `package.json` at or above the file: the first
+  manifest found decides, and one without a `type` field is CommonJS. A manifest
+  that cannot be read or parsed declines the extension, emitting the bare
+  specifier rather than guessing.
+
+An existing helper import is matched with its extension stripped, so a file that
+already has `import { assertSafe } from '../util/assertSafe.js';` reuses it and
+never gains a second import.
+
 ## Options
 
 - `assertSafeImportPath` (string, default: `functions/src/util/assertSafe`): the location of the `assertSafe` helper, given as a path anchored at the repo root (relative to the working directory eslint runs from). The fixer derives a specifier relative to the file being fixed from this value rather than emitting it verbatim, so the inserted import resolves from any nesting depth. Set this to your helper's repo-root-relative path when consuming the plugin outside BluMint.
