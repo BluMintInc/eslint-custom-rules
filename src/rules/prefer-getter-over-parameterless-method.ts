@@ -263,7 +263,7 @@ export const preferGetterOverParameterlessMethod = createRule<
       preferGetter:
         'Problem: Method "{{name}}" is a parameterless synchronous method that returns a value. → Impact: Calling it with parentheses disguises that it behaves like a computed property, increasing the chance callers omit parentheses or treat it like an action. → Solution: Convert it to a getter: "get {{suggestedName}}()" to signal property semantics and remove call-site parentheses.',
       preferGetterSideEffect:
-        'Problem: Method "{{name}}" looks like a computed value. → Impact: However, {{reason}}, so converting it to a getter would execute side effects on every property access and violate the principle of least surprise. → Solution: Keep it as a method to indicate it performs work, or remove the side effects before converting to "get {{suggestedName}}()".',
+        'Problem: Method "{{name}}" looks like a computed value. → Impact: However, {{reason}}, so converting it to a getter would execute side effects on every property access and violate the principle of least surprise. → Solution: If the side effects are intentional, declare them with an "@sideEffect" (or "@mutates") tag inside a /** */ JSDoc block placed immediately above "{{name}}" with no blank line between: the tag warns callers that reading this value performs work, and the rule honors it (option "respectJsDocSideEffects", enabled by default) and stops reporting the method. If the side effects are not intentional, remove them and convert the method to "get {{suggestedName}}()".',
     },
   },
   defaultOptions: [DEFAULT_OPTIONS],
