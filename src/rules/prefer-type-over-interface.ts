@@ -59,6 +59,45 @@ function isInsideModuleAugmentation(node: TSESTree.Node): boolean {
   return false;
 }
 
+/**
+ * Declaration merging is what `interface` can do and `type` cannot, so a name
+ * carrying more than one declaration is not a stylistic choice: rewriting one
+ * of the halves emits two declarations of the same name (TS2300) and silently
+ * splits the merged shape, so members that used to coexist no longer do.
+ *
+ * The check keys on the **declaring scope**, not on a count of the name across
+ * the file, because merging is a property of the declaration space. Two
+ * same-named interfaces in different function bodies or blocks are distinct
+ * types that never merge, and each of those still converts cleanly.
+ *
+ * Any second definition counts, not only another interface. `class A {}` and
+ * `enum A {}` occupy the same type-space slot a type alias would claim, so
+ * those conversions break the build too; `function A() {}` and
+ * `namespace A {}` are value-space only and would survive the rewrite, but
+ * they are rare enough that treating every co-declaration as merged costs
+ * almost nothing and keeps the rule from having to model TypeScript's merging
+ * table.
+ */
+function isMergedDeclaration(
+  context: Readonly<TSESLint.RuleContext<'preferType', never[]>>,
+  node: TSESTree.TSInterfaceDeclaration,
+): boolean {
+  // The variable is located by the definition that points back at *this*
+  // declaration rather than by taking the first entry, so a parser that also
+  // surfaces the type parameters here cannot make the count read off the
+  // wrong name.
+  const declared = context
+    .getDeclaredVariables(node)
+    .find((variable) =>
+      variable.defs.some((definition) => definition.node === node),
+    );
+
+  // A scope manager that never registered the name tells us nothing about
+  // merging; falling through preserves the report rather than exempting on a
+  // missing signal.
+  return declared !== undefined && declared.defs.length > 1;
+}
+
 export const preferTypeOverInterface: TSESLint.RuleModule<
   'preferType',
   never[]
@@ -85,6 +124,13 @@ export const preferTypeOverInterface: TSESLint.RuleModule<
     return {
       TSInterfaceDeclaration(node: TSESTree.TSInterfaceDeclaration) {
         if (isInsideModuleAugmentation(node)) {
+          return;
+        }
+
+        // Reporting without a fix would be unactionable here — the author
+        // cannot honour it without collapsing the merge by hand — and an
+        // unactionable report is what manufactures `eslint-disable` (#1568).
+        if (isMergedDeclaration(context, node)) {
           return;
         }
 

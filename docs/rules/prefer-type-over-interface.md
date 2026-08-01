@@ -12,7 +12,7 @@ Interfaces can merge across files and dependencies, which means a shape may chan
 
 ## Rule Details
 
-The rule reports every `interface` declaration and offers an autofix that rewrites it to a `type` alias. When an interface extends other interfaces, the fix converts the whole heritage list to an intersection so the composed shape stays explicit, including when several interfaces are extended at once:
+The rule reports each `interface` declaration that a `type` alias can replace, and offers an autofix that rewrites it. When an interface extends other interfaces, the fix converts the whole heritage list to an intersection so the composed shape stays explicit, including when several interfaces are extended at once:
 
 ```typescript
 // before
@@ -76,6 +76,54 @@ namespace Internal {
 }
 ```
 
+### Exemption: merged declarations
+
+A name that carries more than one declaration in the same scope is **not** reported, because merging is precisely the thing a `type` alias cannot express. Rewriting one half of a merge emits two declarations of the same name (`TS2300: Duplicate identifier`) and splits the shape, so members that used to coexist no longer do:
+
+```typescript
+// allowed: one merged type, not two declarations to convert
+interface QueryLike {
+  limit: (count: number) => void;
+}
+interface QueryLike {
+  orderBy: (field: string) => void;
+}
+```
+
+Converting either half above yields `type QueryLike = ...` twice, which does not compile, and `q.limit` and `q.orderBy` stop being properties of the same type. There is no fix a developer could apply by hand either, so the declaration is exempted outright rather than reported without a fix — an unactionable report only produces an `eslint-disable`.
+
+The same applies to an interface merged into a class, since `class` already owns the type-space slot the alias would claim:
+
+```typescript
+// allowed: `label` merges onto Widget's instance type
+class Widget {
+  id = '';
+}
+interface Widget {
+  label: string;
+}
+```
+
+The check is keyed on the **declaring scope**, not on a count of the name across the file, because merging is a property of the declaration space. Two same-named interfaces in different function bodies, blocks or namespaces are distinct types that never merge, and each is still reported and autofixed:
+
+```typescript
+// reported and autofixed: these two never merge
+function one() {
+  interface Config {
+    a: string;
+  }
+  return null as unknown as Config;
+}
+function two() {
+  interface Config {
+    b: string;
+  }
+  return null as unknown as Config;
+}
+```
+
+The exemption is per name, so an unmerged interface sharing a file with a merged pair is still reported. It is also deliberately broader than TypeScript's merging table: a same-named *value* such as `function Adapter() {}` alongside `interface Adapter` would in fact survive the rewrite, but it is exempted anyway. Modelling every merging combination would risk a fix that breaks the build, and this rule prefers a missed report to that.
+
 ### Examples of **incorrect** code for this rule:
 
 The following interface declarations are reported and autofixed:
@@ -110,4 +158,4 @@ type TeamMember = UserProfile & {
 - Keep composition explicit with intersections so consumers see the full contract in one place.
 - Align with intersection-heavy patterns where property order and exact shape predictability matter.
 
-Merging is exactly what a module augmentation asks for, which is why those blocks are exempt: there the merge is the deliberate, declared intent rather than an accident of an open shape.
+Merging is exactly what a module augmentation asks for, which is why those blocks are exempt: there the merge is the deliberate, declared intent rather than an accident of an open shape. The same reasoning exempts a name already declared more than once in one scope — the merge has already happened, and no `type` alias can reproduce it.

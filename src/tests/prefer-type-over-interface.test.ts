@@ -183,6 +183,77 @@ declare global {
     }
   }
 }`,
+    // Issue #1583: two interfaces of the same name in one scope are a single
+    // merged type. Rewriting either half emits two declarations of the same
+    // name (TS2300) and splits the shape, so `limit` and `orderBy` stop
+    // coexisting. Merging is the one thing `type` cannot express, which makes
+    // the report unactionable rather than stylistic.
+    `interface QueryLike {
+  limit: (count: number) => void;
+}
+interface QueryLike {
+  orderBy: (field: string) => void;
+}
+export const q: QueryLike = null as any;`,
+    // The exemption is not pairwise: every member of a three-way merge is
+    // exempt, including the middle one.
+    `interface Chain {
+  first: string;
+}
+interface Chain {
+  second: string;
+}
+interface Chain {
+  third: string;
+}
+export const chain: Chain = null as any;`,
+    // Exported halves merge exactly the same way.
+    `export interface Options {
+  retries: number;
+}
+export interface Options {
+  timeout: number;
+}`,
+    // An interface merges into a class declaration too, and `class A` already
+    // owns the type-space slot a `type A` would claim.
+    `class Widget {
+  id = '';
+}
+interface Widget {
+  label: string;
+}
+export const widget: Widget = null as any;`,
+    // A plain namespace declares its own scope, so a merge inside it is a
+    // merge in that scope even though the block augments nothing.
+    `namespace Internal {
+  interface Helper {
+    a: string;
+  }
+  interface Helper {
+    b: string;
+  }
+}`,
+    // A same-named *value* occupies a different declaration space, so this one
+    // would in fact survive the rewrite. It is exempted anyway: the check asks
+    // whether the name carries more than one declaration rather than modelling
+    // TypeScript's merging table, and the resulting miss is a false negative,
+    // which this rule prefers to a build-breaking fix.
+    `function Adapter() {}
+interface Adapter {
+  id: string;
+}`,
+    // Merging inside `declare global` is doubly exempt: the augmentation guard
+    // already covers it, and this pins that the merge case does not somehow
+    // re-enable the rewrite there.
+    `export {};
+declare global {
+  interface Window {
+    blumintFlag: string;
+  }
+  interface Window {
+    blumintTheme: string;
+  }
+}`,
   ],
   invalid: [
     {
@@ -580,6 +651,85 @@ interface LocalOnly { id: string }`,
 }
 type LocalOnly = { id: string }`),
     },
+    // Issue #1583 counter-cases: merging is a property of the declaration
+    // space, so the exemption keys on the declaring scope and not on a count
+    // of the name across the file. Two same-named interfaces in different
+    // function bodies are distinct types that never merge, and each converts
+    // cleanly.
+    {
+      code: `function one() {
+  interface Config { a: string }
+  return null as unknown as Config;
+}
+function two() {
+  interface Config { b: string }
+  return null as unknown as Config;
+}`,
+      errors: [
+        { messageId: 'preferType', data: { interfaceName: 'Config' } },
+        { messageId: 'preferType', data: { interfaceName: 'Config' } },
+      ],
+      output: asParseable(`function one() {
+  type Config = { a: string }
+  return null as unknown as Config;
+}
+function two() {
+  type Config = { b: string }
+  return null as unknown as Config;
+}`),
+    },
+    // The same for two sibling block statements.
+    {
+      code: `{
+  interface Local { a: string }
+}
+{
+  interface Local { b: string }
+}`,
+      errors: [
+        { messageId: 'preferType', data: { interfaceName: 'Local' } },
+        { messageId: 'preferType', data: { interfaceName: 'Local' } },
+      ],
+      output: asParseable(`{
+  type Local = { a: string }
+}
+{
+  type Local = { b: string }
+}`),
+    },
+    // ...and for two sibling namespaces, whose bodies are separate scopes.
+    {
+      code: `namespace First { interface Shared { a: string } }
+namespace Second { interface Shared { b: string } }`,
+      errors: [
+        { messageId: 'preferType', data: { interfaceName: 'Shared' } },
+        { messageId: 'preferType', data: { interfaceName: 'Shared' } },
+      ],
+      output: asParseable(`namespace First { type Shared = { a: string } }
+namespace Second { type Shared = { b: string } }`),
+    },
+    // The exemption is per-name: an unmerged interface sharing a file with a
+    // merged pair still reports, and the merged pair is left intact.
+    {
+      code: `interface Merged { a: string }
+interface Merged { b: string }
+interface Solo { c: string }`,
+      errors: [{ messageId: 'preferType', data: { interfaceName: 'Solo' } }],
+      output: asParseable(`interface Merged { a: string }
+interface Merged { b: string }
+type Solo = { c: string }`),
+    },
+    // A co-declaration under a *different* name exempts nothing: the check is
+    // per-name, not "this scope contains more than one declaration".
+    {
+      code: `function handler() {}
+interface Standalone { id: string }`,
+      errors: [
+        { messageId: 'preferType', data: { interfaceName: 'Standalone' } },
+      ],
+      output: asParseable(`function handler() {}
+type Standalone = { id: string }`),
+    },
   ],
 });
 
@@ -659,12 +809,79 @@ declare global {
     expect(reportCount(MUI_AUGMENTATION)).toBe(0);
   });
 
+  const MERGED_INTERFACES = `interface QueryLike {
+  limit: (count: number) => void;
+}
+interface QueryLike {
+  orderBy: (field: string) => void;
+}
+export const q: QueryLike = null as any;
+`;
+
+  const MERGED_THREE_WAY = `interface Chain {
+  first: string;
+}
+interface Chain {
+  second: string;
+}
+interface Chain {
+  third: string;
+}
+export const chain: Chain = null as any;
+`;
+
+  const MERGED_INTO_CLASS = `class Widget {
+  id = '';
+}
+interface Widget {
+  label: string;
+}
+export const widget: Widget = null as any;
+`;
+
   it.each([
     ['declare global', GLOBAL_AUGMENTATION],
     ['@mui/material/styles augmentation', MUI_AUGMENTATION],
+    // Issue #1583: the fix loop is where the damage happened — each half of a
+    // merge was rewritten independently into `type QueryLike = ...` twice.
+    ['a two-way interface merge', MERGED_INTERFACES],
+    ['a three-way interface merge', MERGED_THREE_WAY],
+    ['an interface merged into a class', MERGED_INTO_CLASS],
   ])('leaves %s byte-identical and free of `type `', (_label, code) => {
     const output = fix(code);
     expect(output).toBe(code);
     expect(output).not.toContain('type ');
+  });
+
+  it.each([
+    ['a two-way interface merge', MERGED_INTERFACES],
+    ['a three-way interface merge', MERGED_THREE_WAY],
+    ['an interface merged into a class', MERGED_INTO_CLASS],
+  ])('reports nothing for %s', (_label, code) => {
+    expect(reportCount(code)).toBe(0);
+  });
+
+  // Same-named interfaces in sibling scopes never merge, so the exemption must
+  // not reach them. Without this the fix above could be "no reports anywhere".
+  it('still rewrites same-named interfaces in sibling function scopes', () => {
+    const code = `function one() {
+  interface Config { a: string }
+  return null as unknown as Config;
+}
+function two() {
+  interface Config { b: string }
+  return null as unknown as Config;
+}
+`;
+    expect(reportCount(code)).toBe(2);
+    expect(fix(code)).toBe(`function one() {
+  type Config = { a: string }
+  return null as unknown as Config;
+}
+function two() {
+  type Config = { b: string }
+  return null as unknown as Config;
+}
+`);
   });
 });
