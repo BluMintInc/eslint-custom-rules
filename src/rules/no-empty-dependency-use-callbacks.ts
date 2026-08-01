@@ -1,4 +1,9 @@
-import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  AST_TOKEN_TYPES,
+  TSESLint,
+  TSESTree,
+} from '@typescript-eslint/utils';
 import { minimatch } from 'minimatch';
 import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
@@ -530,6 +535,102 @@ function getModuleScopeValueBindings(program: TSESTree.Program): Set<string> {
   return names;
 }
 
+/** The leading whitespace of the line the offset sits on. */
+function indentationAt(
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  offset: number,
+): string {
+  const text = sourceCode.getText();
+  const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+  const match = /^[ \t]*/.exec(text.slice(lineStart, offset));
+  return match ? match[0] : '';
+}
+
+/**
+ * Ranges whose interior line breaks carry string data rather than formatting.
+ * A multi-line template literal (or a string spliced together with line
+ * continuations) evaluates to the whitespace written inside it, so shifting
+ * those lines would silently change the value the code produces.
+ */
+function stringDataRangesOf(
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  node: TSESTree.Node,
+): TSESTree.Range[] {
+  return sourceCode
+    .getTokens(node)
+    .filter(
+      (token) =>
+        (token.type === AST_TOKEN_TYPES.Template ||
+          token.type === AST_TOKEN_TYPES.String) &&
+        token.loc.start.line !== token.loc.end.line,
+    )
+    .map((token) => token.range);
+}
+
+/**
+ * The callback's text re-indented for the module scope it is hoisted into.
+ *
+ * Module scope sits at least one nesting level shallower than the component
+ * body the callback is lifted out of, so splicing the text verbatim leaves
+ * every interior line — and the closing brace — indented for a level the
+ * declaration no longer occupies (issue #1560). Each line therefore moves by
+ * the difference between the callback's original indentation and the
+ * indentation of the statement the declaration is inserted before. The
+ * callback's own line is the reference rather than the declaration's, so a
+ * callback broken onto its own argument line sheds that extra level too.
+ */
+function dedentedCallbackText(
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  callback: TSESTree.Node,
+  hoistTarget: TSESTree.Node,
+): string {
+  const text = sourceCode.getText(callback);
+  const targetIndent = indentationAt(sourceCode, hoistTarget.range[0]);
+  const callbackIndent = indentationAt(sourceCode, callback.range[0]);
+
+  if (targetIndent === callbackIndent) {
+    return text;
+  }
+
+  const shiftLine = ((): ((line: string) => string) | null => {
+    if (callbackIndent.startsWith(targetIndent)) {
+      const removed = callbackIndent.slice(targetIndent.length);
+      return (line) =>
+        line.startsWith(removed) ? line.slice(removed.length) : line;
+    }
+    if (targetIndent.startsWith(callbackIndent)) {
+      const added = targetIndent.slice(callbackIndent.length);
+      return (line) => `${added}${line}`;
+    }
+    // Indent characters that disagree give no delta that can be applied
+    // without corrupting the layout, so the text is left as the author wrote it.
+    return null;
+  })();
+
+  if (!shiftLine) {
+    return text;
+  }
+
+  const stringData = stringDataRangesOf(sourceCode, callback);
+  const carriesStringData = (offset: number) =>
+    stringData.some(([start, end]) => start < offset && offset < end);
+
+  let offset = callback.range[0];
+  return text
+    .split('\n')
+    .map((line, index) => {
+      const lineStart = offset;
+      offset += line.length + 1;
+      // The first line is spliced in after the hoisted declaration's `=`, so it
+      // has no indentation of its own left to adjust.
+      if (index === 0 || line.trim() === '' || carriesStringData(lineStart)) {
+        return line;
+      }
+      return shiftLine(line);
+    })
+    .join('\n');
+}
+
 function buildHoistFixes(
   context: Readonly<TSESLint.RuleContext<MessageIds, Options>>,
   callExpression: TSESTree.CallExpression,
@@ -602,7 +703,7 @@ function buildHoistFixes(
   const identifierText = sourceCode
     .getText()
     .slice(declarator.id.range[0], idRangeEnd);
-  const functionText = sourceCode.getText(callback);
+  const functionText = dedentedCallbackText(sourceCode, callback, hoistTarget);
   const hoisted = `const ${identifierText} = ${functionText};\n`;
   const fileText = sourceCode.getText();
   let removeStart = varDecl.range[0];
