@@ -22,6 +22,8 @@ The rule skips:
 - Methods already decorated with `@Memoize()` or a namespaced equivalent (e.g., `@memo.Memoize()`).
 - Methods whose **declared** return type is `void` or `Promise<void>` (see
   [Methods declared to produce no value](#methods-declared-to-produce-no-value)).
+- Methods whose sole parameter is **annotated as a function type** (see
+  [Methods keyed only by a callback](#methods-keyed-only-by-a-callback)).
 
 ### Examples of **incorrect** code for this rule:
 
@@ -46,6 +48,11 @@ class UserRepo {
 
   // Declared to produce no value, so there is nothing to cache
   async invalidate(): Promise<void> { await api.purge(); }
+
+  // Keyed only by a callback, which cannot serve as a cache key
+  async authorize(presentUrl: (url: string) => Promise<void>) {
+    return api.authorize(presentUrl);
+  }
 }
 ```
 
@@ -105,6 +112,58 @@ class TokenClient {
   public async mintToken(): Promise<string> { return api.mint(); }
 }
 ```
+
+### Methods keyed only by a callback
+
+A method whose sole parameter is annotated as a function type — a callback, a
+continuation, a visitor — is exempt. `@Memoize()` keys the cache on the argument
+value, compared against the stored entries by deep equality, and a function
+argument answers that comparison in exactly two ways. Both defeat the decorator:
+
+| the caller passes | what happens |
+|---|---|
+| a **stable** reference (a module-level function, a bound method, `this.handler`) | the second call returns the first call's result and the method body never runs again |
+| a **fresh arrow per call** — the common shape | every lookup misses, the map accumulates one dead closure per call, and each later call pays a longer deep-equal scan |
+
+Neither is an optimisation, and `--fix` would apply it unattended. The failure is
+silent and can be severe: a method that mints a credential per account, driven by
+one shared presenter callback, hands every account the first account's
+credential.
+
+```ts
+class IsolatedLogin {
+  // ✅ not reported: each call mints a credential for a different account
+  public async run(presentAuthorizeUrl: (url: string) => Promise<void>) {
+    await presentAuthorizeUrl(this.authorizeUrl);
+    return this.readCredential();
+  }
+
+  // ❌ still reported: an account id is a usable cache key
+  public async credential(accountId: string) {
+    return this.store.get(accountId);
+  }
+}
+```
+
+The parameter's wrapper shape does not matter — an optional parameter
+(`onUrl?: (u: string) => void`), a default value
+(`onUrl: (u: string) => void = () => {}`), and a rest element are each read
+through to the same annotation.
+
+Like the return-type exemption, this reads the **declared annotation**: the rule
+is syntactic and cannot resolve a name to the type behind it. So the carve-out is
+deliberately limited to an annotation written as a function type, and everything
+else keeps reporting:
+
+- A callback behind a **type alias** (`onUrl: UrlPresenter`) is
+  indistinguishable from any other type reference.
+- A **union** (`cb: string | (() => void)`) is not categorically a function — the
+  caller may pass the string, which keys a cache fine.
+- A **constructor type** (`ctor: new () => Thing`), an **array** of callbacks,
+  and an **unannotated** parameter likewise declare nothing the rule can honour.
+
+To exempt one of those, annotate the parameter with the function type itself or
+suppress the report deliberately.
 
 ### Interaction with inline disable comments
 

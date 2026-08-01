@@ -359,6 +359,112 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
         }
       `,
     },
+    // ------------------------------------------------------------------
+    // Issue #1563: a function-typed sole parameter cannot key a cache:
+    // @Memoize() compares arguments with a deep-equal scan, so a stable
+    // callback replays the first result forever while a fresh arrow per call
+    // never hits and accumulates a dead entry each time. Neither outcome is
+    // ever intended, so the rule must not demand the decorator here.
+    // ------------------------------------------------------------------
+    {
+      code: `
+        class IsolatedLogin {
+          public async run(presentAuthorizeUrl: (url: string) => Promise<void>) {
+            await presentAuthorizeUrl('https://example.com/authorize');
+            return 'credential';
+          }
+        }
+      `,
+    },
+    {
+      code: `
+        class Traverser {
+          public async each(visit: (node: string) => void) {
+            return visit('root');
+          }
+        }
+      `,
+    },
+    {
+      name: 'an optional function parameter is exempt',
+      code: `
+        class Authorizer {
+          public async open(onUrl?: (u: string) => void) {
+            return this.token;
+          }
+        }
+      `,
+    },
+    {
+      name: 'a defaulted function parameter is exempt',
+      code: `
+        class Authorizer {
+          public async open(onUrl: (u: string) => void = () => {}) {
+            return this.token;
+          }
+        }
+      `,
+    },
+    {
+      name: 'a rest function parameter is exempt',
+      code: `
+        class Authorizer {
+          public async open(...onUrl: (u: string) => void) {
+            return this.token;
+          }
+        }
+      `,
+    },
+    {
+      name: 'a zero-argument function type is exempt',
+      code: `
+        class Runner {
+          public async start(run: () => void) {
+            return run();
+          }
+        }
+      `,
+    },
+    {
+      // Parentheses around the annotation are not represented in the AST, so
+      // the decision comes from the same node either way.
+      name: 'a parenthesised function type is exempt',
+      code: `
+        class Runner {
+          public async start(run: ((n: number) => string)) {
+            return run(1);
+          }
+        }
+      `,
+    },
+    {
+      // Neither reason to skip depends on the other: the callback carve-out
+      // holds for a method that also declares a value-returning type.
+      name: 'a function parameter on an annotated method is exempt',
+      code: `
+        class IsolatedLogin {
+          public async run(present: (url: string) => Promise<void>): Promise<string> {
+            await present('https://example.com');
+            return 'credential';
+          }
+        }
+      `,
+    },
+    {
+      // The carve-out drops the method entirely, so a class of only callback
+      // methods must not gain `import { Memoize }` either.
+      name: 'a class of only callback methods pulls in no import',
+      code: `
+        export class Presenter {
+          public async run(present: (url: string) => Promise<void>) {
+            return present('https://example.com');
+          }
+          private async retry(onFail: (e: Error) => void) {
+            return onFail(new Error('nope'));
+          }
+        }
+      `,
+    },
   ],
   invalid: [
     // Missing decorator on async method with no parameters
@@ -1316,6 +1422,215 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
         import { Memoize } from '@blumintinc/typescript-memoize';
       `,
     },
+    // ------------------------------------------------------------------
+    // Issue #1563: the callback carve-out is keyed to a parameter annotated
+    // as a function type. Every other annotation, and no annotation at all,
+    // keeps reporting and keeps fixing.
+    // ------------------------------------------------------------------
+    {
+      // An UNANNOTATED parameter declares no intent, mirroring the return-type
+      // posture from #1548: it keeps reporting.
+      name: 'an unannotated parameter still reports',
+      code: `
+        class Fetcher {
+          public async load(id) {
+            return this.db.get(id);
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Fetcher {
+          @Memoize()
+          public async load(id) {
+            return this.db.get(id);
+          }
+        }
+      `,
+    },
+    {
+      name: 'a primitive-annotated parameter is unaffected',
+      code: `
+        class Fetcher {
+          public async load(id: string) {
+            return this.db.get(id);
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Fetcher {
+          @Memoize()
+          public async load(id: string) {
+            return this.db.get(id);
+          }
+        }
+      `,
+    },
+    {
+      // The scope fence: this rule is syntactic and cannot resolve an alias to
+      // the function type behind it, so a callback declared this way is
+      // indistinguishable from any other type reference.
+      name: 'a callback behind a type alias still reports',
+      code: `
+        type UrlPresenter = (url: string) => Promise<void>;
+        class IsolatedLogin {
+          public async run(onUrl: UrlPresenter) {
+            return onUrl('https://example.com');
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        type UrlPresenter = (url: string) => Promise<void>;
+        class IsolatedLogin {
+          @Memoize()
+          public async run(onUrl: UrlPresenter) {
+            return onUrl('https://example.com');
+          }
+        }
+      `,
+    },
+    {
+      name: 'an object-typed parameter still reports',
+      code: `
+        class Fetcher {
+          public async load(opts: { a: string }) {
+            return this.db.get(opts.a);
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Fetcher {
+          @Memoize()
+          public async load(opts: { a: string }) {
+            return this.db.get(opts.a);
+          }
+        }
+      `,
+    },
+    {
+      name: 'a zero-parameter async method still reports',
+      code: `
+        class Fetcher {
+          public async loadAll() {
+            return this.db.all();
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Fetcher {
+          @Memoize()
+          public async loadAll() {
+            return this.db.all();
+          }
+        }
+      `,
+    },
+    {
+      // A union is not categorically a function — the caller may well pass the
+      // string — so the argument can key a cache and the report stands. The
+      // carve-out errs toward reporting wherever the annotation leaves room.
+      name: 'a union containing a function type still reports',
+      code: `
+        class Fetcher {
+          public async load(cb: string | (() => void)) {
+            return this.db.get(cb);
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Fetcher {
+          @Memoize()
+          public async load(cb: string | (() => void)) {
+            return this.db.get(cb);
+          }
+        }
+      `,
+    },
+    {
+      // An array of callbacks is a distinct annotation shape; only a bare
+      // function type is exempt.
+      name: 'an array of function types still reports',
+      code: `
+        class Fetcher {
+          public async load(cbs: ((n: number) => void)[]) {
+            return cbs.length;
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Fetcher {
+          @Memoize()
+          public async load(cbs: ((n: number) => void)[]) {
+            return cbs.length;
+          }
+        }
+      `,
+    },
+    {
+      // The fence holds on the annotation side too: a constructor type is not
+      // exempted, only TSFunctionType is.
+      name: 'a constructor-typed parameter still reports',
+      code: `
+        class Factory {
+          public async build(ctor: new () => Thing) {
+            return new ctor();
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Factory {
+          @Memoize()
+          public async build(ctor: new () => Thing) {
+            return new ctor();
+          }
+        }
+      `,
+    },
+    {
+      // The carve-out skips only the callback method; a value-keyed sibling in
+      // the same class still reports and still carries the import.
+      name: 'a callback method does not suppress its value-keyed sibling',
+      code: `
+        export class IsolatedLogin {
+          public async run(present: (url: string) => Promise<void>) {
+            return present('https://example.com');
+          }
+
+          public async credential(id: string) {
+            return this.store.get(id);
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        export class IsolatedLogin {
+          public async run(present: (url: string) => Promise<void>) {
+            return present('https://example.com');
+          }
+
+          @Memoize()
+          public async credential(id: string) {
+            return this.store.get(id);
+          }
+        }
+      `,
+    },
   ],
 });
 
@@ -1735,5 +2050,72 @@ describe('enforce-memoize-async: the Promise<void> exemption survives recommende
 
     expect(output.match(/@Memoize\(\)/g)).toHaveLength(1);
     expect(output).toContain('public async token()');
+  });
+});
+
+// Issue #1563: RuleTester applies one fix pass, while `eslint --fix` re-lints
+// until the output settles. The guarantee that matters is that a method keyed
+// only by a callback survives the whole run undecorated: memoizing it either
+// replays a stale result or leaks a dead closure per call.
+describe('enforce-memoize-async: callback-keyed methods (issue #1563)', () => {
+  it('leaves a callback-only method untouched across every pass', () => {
+    const code = `export class IsolatedLogin {
+  public async run(presentAuthorizeUrl: (url: string) => Promise<void>) {
+    await presentAuthorizeUrl('https://example.com/authorize');
+    return 'credential';
+  }
+}
+`;
+
+    expect(lint(code)).toBe(code);
+    expect(lint(code)).not.toContain('Memoize');
+  });
+
+  it('reports nothing on a callback-only method', () => {
+    expect(
+      lintMessages(`export class Traverser {
+  public async each(visit: (node: string) => void) {
+    return visit('root');
+  }
+}
+`),
+    ).toHaveLength(0);
+  });
+
+  it('still decorates a value-keyed sibling and imports once', () => {
+    const output = lint(`export class IsolatedLogin {
+  public async run(present: (url: string) => Promise<void>) {
+    return present('https://example.com');
+  }
+
+  public async credential(id: string) {
+    return this.store.get(id);
+  }
+}
+`);
+
+    expect(output.match(/@Memoize\(\)/g)).toHaveLength(1);
+    expect(
+      output.match(
+        /import \{ Memoize \} from '@blumintinc\/typescript-memoize';/g,
+      ),
+    ).toHaveLength(1);
+    expect(output).toContain(
+      `  public async run(present: (url: string) => Promise<void>) {`,
+    );
+  });
+
+  it('still reports a callback declared through a type alias', () => {
+    const messages =
+      lintMessages(`type UrlPresenter = (url: string) => Promise<void>;
+export class IsolatedLogin {
+  public async run(onUrl: UrlPresenter) {
+    return onUrl('https://example.com');
+  }
+}
+`);
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].ruleId).toBe(RULE_ID);
   });
 });

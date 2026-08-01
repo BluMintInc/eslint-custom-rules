@@ -95,6 +95,61 @@ function declaresVoidResult(
 }
 
 /**
+ * The type annotation a parameter declares, reached through the wrapper shapes
+ * a parameter can take. A default value (`cb = noop`) holds the annotated
+ * binding in `left`, while a rest element carries the annotation on itself and
+ * keeps only the binding name in `argument`.
+ */
+function parameterAnnotation(param: TSESTree.Parameter) {
+  if (param.type === AST_NODE_TYPES.Identifier) {
+    return param.typeAnnotation?.typeAnnotation;
+  }
+  if (param.type === AST_NODE_TYPES.AssignmentPattern) {
+    return param.left.typeAnnotation?.typeAnnotation;
+  }
+  if (param.type === AST_NODE_TYPES.RestElement) {
+    return (
+      param.typeAnnotation?.typeAnnotation ??
+      (param.argument.type === AST_NODE_TYPES.Identifier
+        ? param.argument.typeAnnotation?.typeAnnotation
+        : undefined)
+    );
+  }
+  return undefined;
+}
+
+/**
+ * Whether the method's sole parameter is annotated as a function.
+ *
+ * `@Memoize()` keys its cache on the argument value, compared against stored
+ * entries by deep equality. A function argument satisfies that comparison in
+ * exactly two ways and both defeat the decorator: a stable reference (a
+ * module-level function, a bound method, `this.handler`) matches the first
+ * entry, so every later call replays the first result and the body never runs
+ * again; a fresh arrow per call — the common shape — matches nothing, so every
+ * lookup misses while the map accumulates one dead closure per call and each
+ * later call pays a longer scan. Neither is an optimisation, and the fixer
+ * would apply it unattended, so such a method is skipped.
+ *
+ * The `params.length > 1` gate already encodes that the decorator keys on a
+ * single argument; this asks the remaining question, whether that argument is
+ * keyable at all.
+ *
+ * Detection is syntactic, mirroring the return-type exemption: only an
+ * annotation written as a function type declares the intent to honour. A
+ * callback reached through a type alias (`onUrl: UrlPresenter`) or hidden in a
+ * union (`cb: string | (() => void)`) is not categorically a function without a
+ * type checker this rule deliberately does not require, and an unannotated
+ * parameter declares nothing at all, so all of those keep reporting.
+ */
+function declaresFunctionParameter(params: TSESTree.Parameter[]): boolean {
+  if (params.length !== 1) {
+    return false;
+  }
+  return parameterAnnotation(params[0])?.type === AST_NODE_TYPES.TSFunctionType;
+}
+
+/**
  * Matches a memoize decorator in supported syntaxes:
  * - @Alias()
  * - @Alias
@@ -216,6 +271,12 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
 
         // Skip methods with more than one parameter
         if (node.value.params.length > 1) {
+          return;
+        }
+
+        // A callback argument cannot serve as a cache key, so the decorator
+        // either replays a stale result or never hits while leaking entries.
+        if (declaresFunctionParameter(node.value.params)) {
           return;
         }
 
