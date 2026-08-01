@@ -1,3 +1,10 @@
+## [1.20.55](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.54...v1.20.55) (2026-08-01)
+
+
+### Bug Fixes
+
+* **enforce-boolean-naming-prefixes:** check abstract properties and constructor parameter properties (closes [#1545](https://github.com/BluMintInc/eslint-custom-rules/issues/1545)) ([c6e13f8](https://github.com/BluMintInc/eslint-custom-rules/commit/c6e13f85b59fa695bae67ce72ad6b83293b645c1))
+
 ## [1.20.54](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.53...v1.20.54) (2026-08-01)
 
 
