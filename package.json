@@ -73,6 +73,7 @@
     "@types/eslint": "8.37.0",
     "@types/jest": "29.5.14",
     "@types/node": "22.20.0",
+    "@types/semver": "7.5.8",
     "@typescript-eslint/eslint-plugin": "5.34.0",
     "@typescript-eslint/parser": "5.48.0",
     "chai": "4.5.0",
@@ -103,13 +104,14 @@
     "remark-lint": "9.1.1",
     "remark-preset-lint-recommended": "6.1.2",
     "semantic-release": "25.0.2",
+    "semver": "7.7.1",
     "ts-jest": "29.2.6",
     "ts-node": "10.9.1",
     "tsx": "4.19.4",
     "typescript": "5.0.3"
   },
   "peerDependencies": {
-    "eslint": ">=7"
+    "eslint": ">=7 <9"
   },
   "engines": {
     "node": ">=22.0.0"
