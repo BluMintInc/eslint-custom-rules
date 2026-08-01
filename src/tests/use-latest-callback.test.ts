@@ -1778,6 +1778,462 @@ const A = ({ height }) => {
 };`,
       errors: errors(),
     },
+
+    // -----------------------------------------------------------------------
+    // The collapsed call is only emitted while it fits the print width; past it
+    // the broken-open call form is preserved (issue #1579). Every `output` below
+    // is a fixed point of Prettier at width 80 unless the case says otherwise.
+    // -----------------------------------------------------------------------
+    // The issue's own reproduction: 106 columns when collapsed.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useVisibilityObserver = (onChange: (i: number) => void) => {
+  const updateIntersectionState = useCallback(
+    (index: number, entry: IntersectionObserverEntry) => {
+      onChange(index);
+      return entry.isIntersecting;
+    },
+    [onChange],
+  );
+  return updateIntersectionState;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useVisibilityObserver = (onChange: (i: number) => void) => {
+  const updateIntersectionState = useLatestCallback(
+    (index: number, entry: IntersectionObserverEntry) => {
+      onChange(index);
+      return entry.isIntersecting;
+    },
+  );
+  return updateIntersectionState;
+};`,
+      errors: errors(),
+    },
+    // One column under the width: still collapsed (79 columns).
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (onChange: (i: number) => void) => {
+  const update = useCallback(
+    (ppppppppppppppppppppppppppppp: number) => {
+      onChange(ppppppppppppppppppppppppppppp);
+    },
+    [onChange],
+  );
+  return update;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (onChange: (i: number) => void) => {
+  const update = useLatestCallback((ppppppppppppppppppppppppppppp: number) => {
+    onChange(ppppppppppppppppppppppppppppp);
+  });
+  return update;
+};`,
+      errors: errors(),
+    },
+    // Exactly at the width: still collapsed (80 columns).
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (onChange: (i: number) => void) => {
+  const update = useCallback(
+    (pppppppppppppppppppppppppppppp: number) => {
+      onChange(pppppppppppppppppppppppppppppp);
+    },
+    [onChange],
+  );
+  return update;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (onChange: (i: number) => void) => {
+  const update = useLatestCallback((pppppppppppppppppppppppppppppp: number) => {
+    onChange(pppppppppppppppppppppppppppppp);
+  });
+  return update;
+};`,
+      errors: errors(),
+    },
+    // One column over the width: broken open (81 columns collapsed).
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (onChange: (i: number) => void) => {
+  const update = useCallback(
+    (ppppppppppppppppppppppppppppppp: number) => {
+      onChange(ppppppppppppppppppppppppppppppp);
+    },
+    [onChange],
+  );
+  return update;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (onChange: (i: number) => void) => {
+  const update = useLatestCallback(
+    (ppppppppppppppppppppppppppppppp: number) => {
+      onChange(ppppppppppppppppppppppppppppppp);
+    },
+  );
+  return update;
+};`,
+      errors: errors(),
+    },
+    // A raised printWidth keeps a 103-column call collapsed.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (onChange: (i: number) => void) => {
+  const updateIntersectionState = useCallback(
+    (index: number, entry: IntersectionObserverEntry) => {
+      onChange(index);
+    },
+    [onChange],
+  );
+  return updateIntersectionState;
+};`,
+      options: [{ printWidth: 120 }],
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (onChange: (i: number) => void) => {
+  const updateIntersectionState = useLatestCallback((index: number, entry: IntersectionObserverEntry) => {
+    onChange(index);
+  });
+  return updateIntersectionState;
+};`,
+      errors: errors(),
+    },
+    // A lowered printWidth breaks open a call that fits comfortably at 80.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (go: () => void) => {
+  const onPress = useCallback(() => {
+    go();
+  }, []);
+  return onPress;
+};`,
+      options: [{ printWidth: 40 }],
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (go: () => void) => {
+  const onPress = useLatestCallback(
+    () => {
+      go();
+    },
+  );
+  return onPress;
+};`,
+      errors: errors(),
+    },
+    // A hugged call that only overruns the width because the hook's name is six
+    // characters longer than useCallback's. The template literal's interior
+    // lines are string DATA, so they must not move with the body around them.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (name: string) => {
+  const buildTheLocalizedGreetingMessage = useCallback((title: string) => {
+    const message = \`
+      Hello \${name}
+        \${title}
+\`;
+    return message;
+  }, [name]);
+  return buildTheLocalizedGreetingMessage;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (name: string) => {
+  const buildTheLocalizedGreetingMessage = useLatestCallback(
+    (title: string) => {
+      const message = \`
+      Hello \${name}
+        \${title}
+\`;
+      return message;
+    },
+  );
+  return buildTheLocalizedGreetingMessage;
+};`,
+      errors: errors(),
+    },
+    // The same guard in the other direction: a call already broken open at the
+    // target depth is reproduced byte for byte, template included.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (name: string) => {
+  const buildTheLocalizedGreetingMessage = useCallback(
+    (title: string, subtitle: string) => {
+      const message = \`
+      Hello \${name}
+        \${title}
+\`;
+      return message;
+    },
+    [name],
+  );
+  return buildTheLocalizedGreetingMessage;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (name: string) => {
+  const buildTheLocalizedGreetingMessage = useLatestCallback(
+    (title: string, subtitle: string) => {
+      const message = \`
+      Hello \${name}
+        \${title}
+\`;
+      return message;
+    },
+  );
+  return buildTheLocalizedGreetingMessage;
+};`,
+      errors: errors(),
+    },
+    // Type parameters ride the callee's line, as Prettier puts them.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (onChange: (i: number) => void) => {
+  const update = useCallback<(index: number, entry: Entry) => void>(
+    (index: number, entry: Entry) => {
+      onChange(index);
+    },
+    [onChange],
+  );
+  return update;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (onChange: (i: number) => void) => {
+  const update = useLatestCallback<(index: number, entry: Entry) => void>(
+    (index: number, entry: Entry) => {
+      onChange(index);
+    },
+  );
+  return update;
+};`,
+      errors: errors(),
+    },
+    // A source written without a trailing comma keeps that style: the emitted
+    // list follows the formatter setting the rewritten call already showed.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (onChange: (i: number) => void) => {
+  const updateIntersectionState = useCallback(
+    (index: number, entry: IntersectionObserverEntry) => {
+      onChange(index);
+    },
+    [onChange]
+  );
+  return updateIntersectionState;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (onChange: (i: number) => void) => {
+  const updateIntersectionState = useLatestCallback(
+    (index: number, entry: IntersectionObserverEntry) => {
+      onChange(index);
+    }
+  );
+  return updateIntersectionState;
+};`,
+      errors: errors(),
+    },
+    // A function expression WITH parameters stays collapsed: Prettier answers an
+    // over-long call there by hugging the function and breaking its parameter
+    // list, so the collapsed form is the one that keeps Prettier's first line.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (onChange: (i: number) => void) => {
+  const updateIntersectionState = useCallback(
+    function (index: number, entry: IntersectionObserverEntry) {
+      onChange(index);
+    },
+    [onChange],
+  );
+  return updateIntersectionState;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (onChange: (i: number) => void) => {
+  const updateIntersectionState = useLatestCallback(function (index: number, entry: IntersectionObserverEntry) {
+    onChange(index);
+  });
+  return updateIntersectionState;
+};`,
+      errors: errors(),
+    },
+    // A parameter-less function expression has no parameter list to break, so
+    // Prettier breaks the call open and so does the fix.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useSomethingWithAnExtremelyDescriptiveName = (go: () => void) => {
+  const handleTheDeferredNavigationRequest = useCallback(
+    function performNavigation() {
+      go();
+    },
+    [go],
+  );
+  return handleTheDeferredNavigationRequest;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useSomethingWithAnExtremelyDescriptiveName = (go: () => void) => {
+  const handleTheDeferredNavigationRequest = useLatestCallback(
+    function performNavigation() {
+      go();
+    },
+  );
+  return handleTheDeferredNavigationRequest;
+};`,
+      errors: errors(),
+    },
+    // Four levels of nesting: the closing paren lands at the statement's own
+    // indentation, not at a fixed column.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useDeep = (onChange: (i: number) => void, enabled: boolean) => {
+  if (enabled) {
+    if (onChange) {
+      const update = useCallback(
+        (index: number, entry: IntersectionObserverEntry) => {
+          onChange(index);
+        },
+        [onChange],
+      );
+      return update;
+    }
+  }
+  return undefined;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useDeep = (onChange: (i: number) => void, enabled: boolean) => {
+  if (enabled) {
+    if (onChange) {
+      const update = useLatestCallback(
+        (index: number, entry: IntersectionObserverEntry) => {
+          onChange(index);
+        },
+      );
+      return update;
+    }
+  }
+  return undefined;
+};`,
+      errors: errors(),
+    },
+    // A tab-indented file breaks open with a tab step, taken from the file.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (onChange: (i: number) => void) => {
+\tconst updateIntersectionState = useCallback(
+\t\t(index: number, entry: IntersectionObserverEntry) => {
+\t\t\tonChange(index);
+\t\t},
+\t\t[onChange],
+\t);
+\treturn updateIntersectionState;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (onChange: (i: number) => void) => {
+\tconst updateIntersectionState = useLatestCallback(
+\t\t(index: number, entry: IntersectionObserverEntry) => {
+\t\t\tonChange(index);
+\t\t},
+\t);
+\treturn updateIntersectionState;
+};`,
+      errors: errors(),
+    },
+    // Indent characters that disagree give no delta that can be applied without
+    // corrupting the layout, so the call falls back to the collapsed form with
+    // the callback reproduced exactly as the author wrote it.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (onChange: (i: number) => void) => {
+\t const updateIntersectionState = useCallback(
+        (index: number, entry: IntersectionObserverEntry) => {
+          onChange(index);
+        },
+        [onChange],
+      );
+  return updateIntersectionState;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (onChange: (i: number) => void) => {
+\t const updateIntersectionState = useLatestCallback((index: number, entry: IntersectionObserverEntry) => {
+          onChange(index);
+        });
+  return updateIntersectionState;
+};`,
+      errors: errors(),
+    },
+    // A realistic hook: two calls in one atomic fix, one past the width and one
+    // comfortably under it, each getting the shape Prettier would give it.
+    {
+      code: `import { useCallback, useState } from 'react';
+
+export const useBatch = (onFlush: (rows: readonly string[]) => void) => {
+  const [rows, setRows] = useState([] as readonly string[]);
+
+  const appendRow = useCallback(
+    (row: string, options: { deduplicate: boolean }) => {
+      setRows((previous) => {
+        return options.deduplicate && previous.includes(row)
+          ? previous
+          : [...previous, row];
+      });
+    },
+    [],
+  );
+
+  const flush = useCallback(() => {
+    onFlush(rows);
+    setRows([]);
+  }, [onFlush, rows]);
+
+  return { appendRow, flush };
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { useState } from 'react';
+
+export const useBatch = (onFlush: (rows: readonly string[]) => void) => {
+  const [rows, setRows] = useState([] as readonly string[]);
+
+  const appendRow = useLatestCallback(
+    (row: string, options: { deduplicate: boolean }) => {
+      setRows((previous) => {
+        return options.deduplicate && previous.includes(row)
+          ? previous
+          : [...previous, row];
+      });
+    },
+  );
+
+  const flush = useLatestCallback(() => {
+    onFlush(rows);
+    setRows([]);
+  });
+
+  return { appendRow, flush };
+};`,
+      errors: errors('useCallback', 'useLatestCallback', 3),
+    },
   ],
 });
 

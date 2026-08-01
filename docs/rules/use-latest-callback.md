@@ -19,7 +19,66 @@ This rule:
 - Removes the `useCallback` specifier from the `react` import only when every reference to it is converted. If a JSX-returning call — or any other use of the binding, such as `const cb = useCallback` — survives, the `react` import is kept untouched and the `use-latest-callback` import is added alongside it.
 - Splices only the `useCallback` specifier and its separating comma out of the `react` import, so the rest of the declaration — its layout, its quote style, and every comment in it — is preserved. A comment that belongs to the removed specifier is left behind rather than deleted, because a trailing comment can be an eslint directive that governs the **next** line and dropping it would change which rules report on the file. The whole declaration is replaced only when `useCallback` is its sole specifier, in which case no comment inside it can govern anything that remains.
 - Emits the import rewrite and every call-site conversion as **one atomic fix** on a single report. When another rule's fix conflicts with any part of it in the same `--fix` pass, ESLint defers the whole conversion to the next pass instead of applying half of it, so the `useCallback` import can never be removed while a `useCallback(...)` call remains.
+- Keeps the rewritten call on one line only while that line fits the print width, and breaks the argument list open past it — see [Print width](#print-width).
 - Skips files in `node_modules` for performance so third-party code is untouched.
+
+### Print width
+
+Dropping the dependency array lets the call collapse onto one line, so the fix
+decides a line break a formatter owns. Prettier hugs a lone function argument
+onto the call's line while it fits and breaks the argument list open past the
+print width, and it converts either shape into the other — so wrapping
+everything is no safer than wrapping nothing. The fix therefore **measures** the
+line the collapsed call actually lands on, against the source with every
+conversion in the file already applied, and only breaks open when that line
+overruns the [`printWidth` option](#options):
+
+```ts
+// Before — 106 columns once collapsed
+const updateIntersectionState = useCallback(
+  (index: number, entry: IntersectionObserverEntry) => {
+    onChange(index);
+  },
+  [onChange],
+);
+
+// After --fix
+const updateIntersectionState = useLatestCallback(
+  (index: number, entry: IntersectionObserverEntry) => {
+    onChange(index);
+  },
+);
+```
+
+The broken-open form puts the callee on its own line, the callback one nesting
+step in, and the closing paren back at the statement's indentation. The step is
+the file's own — read as the most common indentation increase between
+consecutive lines, ignoring block-comment interiors — so a tab-indented file
+sheds and gains tabs. A callback the author already broke onto its own line
+keeps the exact indentation it was written at, so that layout survives byte for
+byte. The trailing comma follows the formatter's `trailingComma` setting, read
+off the call being rewritten whenever it was already broken open.
+
+Width is not the only trigger. An **arrow whose parameter list is itself broken
+across lines** is never hugged onto the call's line — that would leave the
+call's open paren and the arrow's dangling at the end of one line — so such a
+call is broken open however short the collapsed line measures.
+
+Two cases deliberately stay collapsed even past the width:
+
+- A **function expression with parameters**. Prettier answers an over-long call
+  there by hugging the function and breaking its *parameter list* instead, a
+  shape this fix cannot author; collapsed at least keeps the first line Prettier
+  keeps. A parameter-less function expression has no such list and does break
+  open.
+- **Ambiguous indentation** — a callback indented with characters that are
+  neither a prefix of the call's indentation nor extended by it (tabs against
+  spaces). No delta can be applied without corrupting the layout, so the
+  callback is reproduced exactly as the author wrote it.
+
+Whitespace inside a multi-line template literal or string is the value the
+program produces, not formatting, so those lines are never shifted in either
+direction.
 
 ### Mixed files
 
@@ -124,6 +183,18 @@ function MyComponent({ onAction }) {
   });
 
   return <button onClick={handleClick}>Click Me</button>;
+}
+```
+
+## Options
+
+| Option | Type | Default | Description |
+| :-- | :-- | :-- | :-- |
+| `printWidth` | `number` | `80` | The column the rewritten call must fit within before its argument list is broken open. Set it to your formatter's own `printWidth`. See [Print width](#print-width). |
+
+```json
+{
+  "@blumintinc/blumint/use-latest-callback": ["error", { "printWidth": 100 }]
 }
 ```
 

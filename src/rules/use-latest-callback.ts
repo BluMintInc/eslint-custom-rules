@@ -9,6 +9,20 @@ import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds = 'useLatestCallback';
 
+type Options = [
+  {
+    printWidth?: number;
+  },
+];
+
+/**
+ * Matches Prettier's own default. Dropping the dependency array lets the call
+ * collapse onto one line, so the fixer decides a line break a formatter owns: a
+ * line it emits past this width is rewritten on the next `prettier --write`, and
+ * fails `prettier --check` in the meantime.
+ */
+const DEFAULT_PRINT_WIDTH = 80;
+
 type Conversion = {
   node: TSESTree.CallExpression;
   currentHook: string;
@@ -74,6 +88,11 @@ const findLatestCallbackImport = (
   return null;
 };
 
+const isComma = (
+  token: TSESTree.Token | TSESTree.Comment | null,
+): token is TSESTree.Token =>
+  !!token && token.type === AST_TOKEN_TYPES.Punctuator && token.value === ',';
+
 /** The leading whitespace of the line the offset sits on. */
 const indentationAt = (
   sourceCode: TSESLint.SourceCode,
@@ -83,6 +102,89 @@ const indentationAt = (
   const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
   const match = /^[ \t]*/.exec(text.slice(lineStart, offset));
   return match ? match[0] : '';
+};
+
+/** The indentation of an offset that starts its own line, else null. */
+const ownLineIndentAt = (
+  sourceCode: TSESLint.SourceCode,
+  offset: number,
+): string | null => {
+  const text = sourceCode.getText();
+  const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+  const lead = text.slice(lineStart, offset);
+  return lead.trim() === '' ? lead : null;
+};
+
+/**
+ * The file's own nesting step, taken as the most common indentation increase
+ * between consecutive lines. Reading it from the source keeps emitted code in
+ * the author's units instead of assuming a two-space, space-indented file.
+ */
+const indentUnitOf = (sourceCode: TSESLint.SourceCode): string => {
+  const text = sourceCode.getText();
+  const blockComments = sourceCode
+    .getAllComments()
+    .filter((comment) => comment.type === AST_TOKEN_TYPES.Block)
+    .map((comment) => comment.range);
+  // A block comment's interior lines carry whatever alignment the comment uses
+  // — the `*` one column in from its own indentation, or, for commented-out
+  // code, the original code's depths. Neither is a nesting step of the file, and
+  // counting them makes a JSDoc-heavy file look 1-space indented. Keying on the
+  // comment's range rather than a leading `*` also covers a body without them.
+  const continuesBlockComment = (offset: number) =>
+    blockComments.some(([start, end]) => start < offset && offset < end);
+
+  const frequencies = new Map<string, number>();
+  let previous = '';
+  let offset = 0;
+  for (const line of text.split('\n')) {
+    const lineStart = offset;
+    offset += line.length + 1;
+    if (line.trim() === '') {
+      continue;
+    }
+    if (continuesBlockComment(lineStart)) {
+      continue;
+    }
+    const match = /^[ \t]*/.exec(line);
+    const indent = match ? match[0] : '';
+    if (indent.length > previous.length && indent.startsWith(previous)) {
+      const delta = indent.slice(previous.length);
+      frequencies.set(delta, (frequencies.get(delta) ?? 0) + 1);
+    }
+    previous = indent;
+  }
+
+  let unit = '  ';
+  let best = 0;
+  for (const [delta, count] of frequencies) {
+    if (count > best) {
+      unit = delta;
+      best = count;
+    }
+  }
+  return unit;
+};
+
+type PlannedEdit = { range: TSESTree.Range; text: string };
+
+/** The source with every planned edit applied, used to measure emitted lines. */
+const applyEdits = (text: string, edits: PlannedEdit[]): string => {
+  const ordered = [...edits].sort((a, b) => b.range[0] - a.range[0]);
+  let result = text;
+  for (const edit of ordered) {
+    result = `${result.slice(0, edit.range[0])}${edit.text}${result.slice(
+      edit.range[1],
+    )}`;
+  }
+  return result;
+};
+
+/** The length of the line `offset` sits on. */
+const lineLengthAt = (text: string, offset: number): number => {
+  const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+  const lineBreak = text.indexOf('\n', offset);
+  return (lineBreak === -1 ? text.length : lineBreak) - lineStart;
 };
 
 /**
@@ -107,50 +209,53 @@ const stringDataRangesOf = (
     .map((token) => token.range);
 
 /**
- * The callback's text re-indented for the line the rewritten call puts it on.
- *
- * Dropping the dependency array lets the call collapse onto one line, and when
- * the original spelled the callback on a line of its own that collapse removes
- * exactly one nesting level. Emitting the callback verbatim would leave every
- * interior line indented for the level it no longer occupies (issue #1559), so
- * each line moves by the difference between the callback's original indentation
- * and the indentation of the line the call starts on. Preserving the original
- * multi-line layout instead is not an option: a lone function argument is
- * hugged onto the call line by the formatter, so the broken-out form would be
- * reformatted away on the next write.
+ * A per-line transform moving text written at `fromIndent` to `toIndent`, or
+ * null when neither indentation is a prefix of the other (tabs against spaces),
+ * where no delta can be applied without corrupting the layout.
  */
-const reindentedCallbackText = (
-  sourceCode: TSESLint.SourceCode,
-  call: TSESTree.CallExpression,
-  callback: TSESTree.Node,
-): string => {
-  const text = sourceCode.getText(callback);
-  const callIndent = indentationAt(sourceCode, call.range[0]);
-  const callbackIndent = indentationAt(sourceCode, callback.range[0]);
+const lineShifterBetween = (
+  fromIndent: string,
+  toIndent: string,
+): ((line: string) => string) | null => {
+  if (fromIndent === toIndent) {
+    return (line) => line;
+  }
+  if (fromIndent.startsWith(toIndent)) {
+    const removed = fromIndent.slice(toIndent.length);
+    return (line) =>
+      line.startsWith(removed) ? line.slice(removed.length) : line;
+  }
+  if (toIndent.startsWith(fromIndent)) {
+    const added = toIndent.slice(fromIndent.length);
+    return (line) => `${added}${line}`;
+  }
+  return null;
+};
 
-  // A callback already on the call's line loses no nesting level, so its body
-  // must be reproduced byte for byte.
-  if (callIndent === callbackIndent) {
+/**
+ * The callback's text with its continuation lines moved from the depth it was
+ * written at to `toIndent`, or null when that move is not expressible.
+ *
+ * Dropping the dependency array changes the nesting level the callback sits at,
+ * so emitting it verbatim would leave every interior line indented for a level
+ * it no longer occupies (issue #1559). The first line is excluded because it is
+ * spliced in directly after the call's open paren (or after a fresh indent when
+ * the call is broken open), so it has no indentation of its own left to adjust.
+ */
+const reindentedText = (
+  sourceCode: TSESLint.SourceCode,
+  callback: TSESTree.Node,
+  fromIndent: string,
+  toIndent: string,
+): string | null => {
+  const text = sourceCode.getText(callback);
+  if (!text.includes('\n')) {
     return text;
   }
 
-  const shiftLine = ((): ((line: string) => string) | null => {
-    if (callbackIndent.startsWith(callIndent)) {
-      const removed = callbackIndent.slice(callIndent.length);
-      return (line) =>
-        line.startsWith(removed) ? line.slice(removed.length) : line;
-    }
-    if (callIndent.startsWith(callbackIndent)) {
-      const added = callIndent.slice(callbackIndent.length);
-      return (line) => `${added}${line}`;
-    }
-    // Indent characters that disagree give no delta that can be applied
-    // without corrupting the layout, so the text is left as the author wrote it.
-    return null;
-  })();
-
+  const shiftLine = lineShifterBetween(fromIndent, toIndent);
   if (!shiftLine) {
-    return text;
+    return null;
   }
 
   const stringData = stringDataRangesOf(sourceCode, callback);
@@ -163,8 +268,6 @@ const reindentedCallbackText = (
     .map((line, index) => {
       const lineStart = offset;
       offset += line.length + 1;
-      // The first line is spliced in after the call's open paren, so it has no
-      // indentation of its own left to adjust.
       if (index === 0 || line.trim() === '' || carriesStringData(lineStart)) {
         return line;
       }
@@ -173,7 +276,113 @@ const reindentedCallbackText = (
     .join('\n');
 };
 
-export const useLatestCallback = createRule<[], MessageIds>({
+/**
+ * The callback's text for the collapsed, single-line call form. An indentation
+ * delta that cannot be applied leaves the text as the author wrote it, which is
+ * still valid code at the depth the formatter will correct it from.
+ */
+const collapsedCallbackText = (
+  sourceCode: TSESLint.SourceCode,
+  call: TSESTree.CallExpression,
+  callback: TSESTree.Node,
+): string =>
+  reindentedText(
+    sourceCode,
+    callback,
+    indentationAt(sourceCode, callback.range[0]),
+    indentationAt(sourceCode, call.range[0]),
+  ) ?? sourceCode.getText(callback);
+
+/**
+ * Whether Prettier answers an over-long call by breaking the argument list
+ * open. It does for an arrow, and for a parameter-less function expression —
+ * but a function expression WITH parameters is instead hugged onto the call
+ * line with its parameter list broken, a shape this fixer cannot author. Left
+ * collapsed, such a call at least keeps the first line Prettier keeps.
+ */
+const breaksOpenWhenLong = (callback: TSESTree.Node): boolean =>
+  callback.type !== AST_NODE_TYPES.FunctionExpression ||
+  callback.params.length === 0;
+
+/**
+ * Whether the callback's own head — its parameter list, up to where its body
+ * begins — is spelled across several lines. An arrow written that way is never
+ * hugged onto the call's line, because that would leave the call's open paren
+ * and the arrow's dangling at the end of one line; Prettier breaks the argument
+ * list open instead however short the collapsed line measures. A function
+ * expression is the exception handled above: its broken parameter list IS hugged.
+ */
+const headSpansLines = (
+  sourceCode: TSESLint.SourceCode,
+  callback: TSESTree.Node,
+): boolean =>
+  callback.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+  sourceCode
+    .getText()
+    .slice(callback.range[0], callback.body.range[0])
+    .includes('\n');
+
+/**
+ * Whether the rewritten call should end its argument list with a comma. The
+ * answer is the formatter's `trailingComma` setting, which is read off the call
+ * being rewritten whenever it was already broken open — that is exactly the
+ * shape the setting governs. A call the author kept on one line says nothing
+ * about it, so the modern default (and Prettier's own, from v3) is assumed.
+ */
+const wantsTrailingComma = (
+  sourceCode: TSESLint.SourceCode,
+  call: TSESTree.CallExpression,
+): boolean => {
+  const lastArgument = call.arguments[call.arguments.length - 1];
+  const closeParen = sourceCode.getLastToken(call);
+  if (!lastArgument || !closeParen) {
+    return true;
+  }
+  if (isComma(sourceCode.getTokenBefore(closeParen))) {
+    return true;
+  }
+  return closeParen.loc.start.line === lastArgument.loc.end.line;
+};
+
+/**
+ * The rewritten call with its argument list broken open — the callee on its own
+ * line, the callback one nesting step in, and the closing paren back at the
+ * statement's indentation. Null when the callback's lines cannot be moved to
+ * that depth, which asks the caller to keep the collapsed form.
+ */
+const brokenOpenCallText = (
+  sourceCode: TSESLint.SourceCode,
+  call: TSESTree.CallExpression,
+  callback: TSESTree.Node,
+  head: string,
+  indentUnit: string,
+): string | null => {
+  const callIndent = indentationAt(sourceCode, call.range[0]);
+  // A callback the author already broke onto its own line keeps the exact
+  // indentation it was written at, so that layout survives byte for byte.
+  const ownLineIndent = ownLineIndentAt(sourceCode, callback.range[0]);
+  const calleeIndent =
+    ownLineIndent !== null &&
+    ownLineIndent.length > callIndent.length &&
+    ownLineIndent.startsWith(callIndent)
+      ? ownLineIndent
+      : `${callIndent}${indentUnit}`;
+
+  const moved = reindentedText(
+    sourceCode,
+    callback,
+    indentationAt(sourceCode, callback.range[0]),
+    calleeIndent,
+  );
+  if (moved === null) {
+    return null;
+  }
+
+  const comma = wantsTrailingComma(sourceCode, call) ? ',' : '';
+  return `${head}(\n${calleeIndent}${moved}${comma}\n${callIndent})`;
+};
+
+export const useLatestCallback = createRule<Options, MessageIds>({
   name: 'use-latest-callback',
   meta: {
     type: 'suggestion',
@@ -183,14 +392,30 @@ export const useLatestCallback = createRule<[], MessageIds>({
       recommended: 'error',
     },
     fixable: 'code',
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: {
+          printWidth: {
+            type: 'number',
+            minimum: 1,
+          },
+        },
+        additionalProperties: false,
+      },
+    ],
     messages: {
       useLatestCallback:
         'Replace {{currentHook}} with {{recommendedHook}} from "use-latest-callback" so the callback keeps a stable reference while still reading the latest props/state. useCallback recreates functions whenever dependencies change, which can trigger needless renders and stale closures. Drop the dependency array when switching to {{recommendedHook}}.',
     },
   },
-  defaultOptions: [],
-  create(context) {
+  defaultOptions: [{}],
+  create(context, [options]) {
+    const printWidth =
+      typeof options.printWidth === 'number' && options.printWidth > 0
+        ? options.printWidth
+        : DEFAULT_PRINT_WIDTH;
+
     const filename = context.getFilename();
     if (filename.includes('/node_modules/')) {
       return {};
@@ -527,13 +752,6 @@ export const useLatestCallback = createRule<[], MessageIds>({
         const touchesImport =
           specifiers.length > 0 || hasReactMemberUseCallback;
 
-        const isComma = (
-          token: TSESTree.Token | TSESTree.Comment | null,
-        ): token is TSESTree.Token =>
-          !!token &&
-          token.type === AST_TOKEN_TYPES.Punctuator &&
-          token.value === ',';
-
         /**
          * Splices out one named specifier and the comma that separates it from
          * the list, touching nothing else. Re-emitting the surviving specifiers
@@ -685,24 +903,72 @@ export const useLatestCallback = createRule<[], MessageIds>({
           return fixes;
         };
 
-        const conversionFix = (
-          fixer: TSESLint.RuleFixer,
-          conversion: Conversion,
-        ): TSESLint.RuleFix => {
-          const callbackText = reindentedCallbackText(
-            sourceCode,
-            conversion.node,
-            conversion.node.arguments[0],
-          );
-          const typeParams = conversion.node.typeParameters
-            ? sourceCode.getText(conversion.node.typeParameters)
-            : '';
+        /**
+         * The replacement text for every batched call, collapsed onto one line
+         * except where that line would overrun the print width.
+         *
+         * Prettier hugs a lone function argument onto the call line while it
+         * fits, so collapsing is the shape that survives the next write — and
+         * over-wrapping is not the safe direction, since a broken-open call
+         * short enough to fit is collapsed straight back. Past the width the
+         * two swap places, so the emitted line is MEASURED against the source
+         * with every collapse already applied, rather than predicted from the
+         * call's parts (issue #1579).
+         */
+        const conversionTexts = (): Map<TSESTree.CallExpression, string> => {
+          const headOf = (call: TSESTree.CallExpression) =>
+            `${recommendedHook}${
+              call.typeParameters ? sourceCode.getText(call.typeParameters) : ''
+            }`;
 
-          // Replace useCallback with useLatestCallback and remove the dependency array
-          return fixer.replaceText(
-            conversion.node,
-            `${recommendedHook}${typeParams}(${callbackText})`,
+          const collapsed = batchedConversions.map((conversion) => ({
+            conversion,
+            edit: {
+              range: conversion.node.range,
+              text: `${headOf(conversion.node)}(${collapsedCallbackText(
+                sourceCode,
+                conversion.node,
+                conversion.node.arguments[0],
+              )})`,
+            } as PlannedEdit,
+          }));
+
+          const source = sourceCode.getText();
+          const simulated = applyEdits(
+            source,
+            collapsed.map(({ edit }) => edit),
           );
+          const shiftBefore = (offset: number) =>
+            collapsed
+              .filter(({ edit }) => edit.range[1] <= offset)
+              .reduce(
+                (total, { edit }) =>
+                  total + edit.text.length - (edit.range[1] - edit.range[0]),
+                0,
+              );
+
+          const indentUnit = indentUnitOf(sourceCode);
+          const texts = new Map<TSESTree.CallExpression, string>();
+          for (const { conversion, edit } of collapsed) {
+            const { node } = conversion;
+            const start = node.range[0] + shiftBefore(node.range[0]);
+            const callback = node.arguments[0];
+            const overflows =
+              lineLengthAt(simulated, start) > printWidth ||
+              headSpansLines(sourceCode, callback);
+            const broken =
+              overflows && breaksOpenWhenLong(callback)
+                ? brokenOpenCallText(
+                    sourceCode,
+                    node,
+                    callback,
+                    headOf(node),
+                    indentUnit,
+                  )
+                : null;
+            texts.set(node, broken ?? edit.text);
+          }
+          return texts;
         };
 
         // Every call-site conversion and the import rewrite ride on ONE fix
@@ -731,9 +997,13 @@ export const useLatestCallback = createRule<[], MessageIds>({
               return null;
             }
 
+            const texts = conversionTexts();
             return [
               ...batchedConversions.map((conversion) =>
-                conversionFix(fixer, conversion),
+                fixer.replaceText(
+                  conversion.node,
+                  texts.get(conversion.node) as string,
+                ),
               ),
               ...importFixes(fixer),
             ];
