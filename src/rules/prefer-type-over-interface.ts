@@ -1,5 +1,63 @@
 import { createRule } from '../utils/createRule';
-import { TSESLint, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+
+/**
+ * A module augmentation targets either an external module
+ * (`declare module 'pkg'`, whose id is a string literal) or the global scope
+ * (`declare global`). Declaration merging is the whole point of such a block
+ * and only `interface` can merge, so the `type` rewrite does not merely change
+ * style: it drops the augmentation and collides with the original declaration
+ * (TS2300 "Duplicate identifier").
+ *
+ * A plain `namespace X` — including the ambient `declare namespace X`, whose
+ * id is an identifier — augments nothing, so interfaces inside it stay
+ * reportable and a type alias works there.
+ */
+function isModuleAugmentation(node: TSESTree.TSModuleDeclaration): boolean {
+  if (
+    node.id.type === AST_NODE_TYPES.Literal &&
+    typeof node.id.value === 'string'
+  ) {
+    return true;
+  }
+
+  // `declare global` carries a dedicated flag, which also covers the bare
+  // `global { ... }` form nested inside an ambient module (that form has no
+  // `declare` of its own).
+  if (node.global === true) {
+    return true;
+  }
+
+  // Parser versions that predate the `global` flag spell the same block as an
+  // ambient module whose id is the `global` keyword. Requiring `declare` keeps
+  // an ordinary `namespace global { ... }` reportable.
+  return (
+    node.declare === true &&
+    node.id.type === AST_NODE_TYPES.Identifier &&
+    node.id.name === 'global'
+  );
+}
+
+/**
+ * The interface need not be a direct child of the augmentation block; it can
+ * sit inside a nested namespace or any other container within it, so the whole
+ * ancestor chain is inspected.
+ */
+function isInsideModuleAugmentation(node: TSESTree.Node): boolean {
+  for (
+    let ancestor: TSESTree.Node | undefined = node.parent;
+    ancestor;
+    ancestor = ancestor.parent
+  ) {
+    if (
+      ancestor.type === AST_NODE_TYPES.TSModuleDeclaration &&
+      isModuleAugmentation(ancestor)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
 
 export const preferTypeOverInterface: TSESLint.RuleModule<
   'preferType',
@@ -26,6 +84,10 @@ export const preferTypeOverInterface: TSESLint.RuleModule<
   create(context) {
     return {
       TSInterfaceDeclaration(node: TSESTree.TSInterfaceDeclaration) {
+        if (isInsideModuleAugmentation(node)) {
+          return;
+        }
+
         context.report({
           node,
           messageId: 'preferType',

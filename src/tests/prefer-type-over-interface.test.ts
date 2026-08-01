@@ -1,3 +1,5 @@
+import { Linter, Rule } from 'eslint';
+import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { parse } from '@typescript-eslint/parser';
 import { preferTypeOverInterface } from '../rules/prefer-type-over-interface';
 import { ruleTesterTs } from '../utils/ruleTester';
@@ -53,12 +55,134 @@ describe('prefer-type-over-interface fixed-output parse guard', () => {
   });
 });
 
+/**
+ * Issue #1549: the augmentation exemption keys off the AST spelling of the
+ * enclosing `TSModuleDeclaration`, so these assertions pin the shape the
+ * pinned parser actually produces. If a parser bump changes the spelling, this
+ * fails loudly instead of silently re-enabling the breaking autofix.
+ */
+describe('prefer-type-over-interface augmentation AST shape', () => {
+  const moduleDeclarationOf = (code: string) => {
+    const found: TSESTree.TSModuleDeclaration[] = [];
+    const walk = (node: TSESTree.Node) => {
+      if (node.type === AST_NODE_TYPES.TSModuleDeclaration) {
+        found.push(node);
+      }
+      for (const value of Object.values(node)) {
+        if (Array.isArray(value)) {
+          value.forEach(
+            (child) =>
+              child &&
+              typeof child.type === 'string' &&
+              walk(child as TSESTree.Node),
+          );
+        } else if (value && typeof (value as TSESTree.Node).type === 'string') {
+          walk(value as TSESTree.Node);
+        }
+      }
+    };
+    walk(parse(code, PARSE_OPTIONS) as unknown as TSESTree.Node);
+    return found[0];
+  };
+
+  it('spells `declare global` with the `global` flag and a `global` identifier id', () => {
+    const declaration = moduleDeclarationOf(
+      'declare global { interface W {} }',
+    );
+    expect(declaration.global).toBe(true);
+    expect(declaration.declare).toBe(true);
+    expect(declaration.id.type).toBe(AST_NODE_TYPES.Identifier);
+    expect((declaration.id as TSESTree.Identifier).name).toBe('global');
+  });
+
+  it('spells an external-module augmentation with a string Literal id', () => {
+    const declaration = moduleDeclarationOf(
+      "declare module '@mui/material/styles' { interface Theme {} }",
+    );
+    expect(declaration.id.type).toBe(AST_NODE_TYPES.Literal);
+    expect((declaration.id as TSESTree.StringLiteral).value).toBe(
+      '@mui/material/styles',
+    );
+    expect(declaration.global).toBeUndefined();
+  });
+
+  it('spells a plain namespace with an Identifier id and no `global` flag', () => {
+    const declaration = moduleDeclarationOf(
+      'declare namespace Internal { interface Helper {} }',
+    );
+    expect(declaration.id.type).toBe(AST_NODE_TYPES.Identifier);
+    expect(declaration.global).toBeUndefined();
+  });
+});
+
 ruleTesterTs.run('prefer-type-over-interface', preferTypeOverInterface, {
   valid: [
     'type SomeType = { field: string; };',
     'type AnotherType = SomeType & { otherField: number; };',
     'type GenericType<T> = { value: T; };',
     'type ConstrainedType<T extends string> = { value: T; };',
+    // Issue #1549: an interface inside a module augmentation exists to merge
+    // with a declaration owned by another file. A type alias cannot merge, so
+    // the rewrite drops the augmentation and collides with the original
+    // (TS2300), which makes the report unactionable rather than stylistic.
+    `export {};
+declare global {
+  interface Window {
+    blumintFlag: string;
+  }
+}`,
+    `declare module '@mui/material/styles' {
+  interface Theme {
+    border: string;
+  }
+}`,
+    // Double quotes and no `declare` prefix are the same augmentation shape.
+    `module "@mui/material/styles" {
+  interface Theme {
+    border: string;
+  }
+}`,
+    // Every interface in an augmentation is exempt, not just the first.
+    `declare module '@mui/material/styles' {
+  interface Theme {
+    border: string;
+  }
+  interface ThemeOptions {
+    border?: string;
+  }
+  interface Palette {
+    dynamic: string;
+  }
+}`,
+    // The interface need not be a direct child of the augmentation block.
+    `declare module '@mui/material/styles' {
+  namespace Nested {
+    interface Deep {
+      id: string;
+    }
+  }
+}`,
+    `export {};
+declare global {
+  namespace NodeJS {
+    interface ProcessEnv {
+      BLUMINT_ENV: string;
+    }
+  }
+}`,
+    // Empty body plus a heritage clause is the canonical MUI merge idiom.
+    `declare module '@mui/material/styles' {
+  interface Palette extends PaletteDynamic {}
+}`,
+    // The bare `global` block inside an ambient module carries the `global`
+    // flag without a `declare` of its own.
+    `declare module 'some-pkg' {
+  global {
+    interface Window {
+      blumintFlag: string;
+    }
+  }
+}`,
   ],
   invalid: [
     {
@@ -369,5 +493,178 @@ type A = B & C & {
       ],
       output: null,
     },
+    // Issue #1549 counter-cases: the augmentation exemption must stay narrow.
+    // A plain top-level interface merges with nothing, so it still reports.
+    {
+      code: 'interface User { id: string; }',
+      errors: [
+        {
+          messageId: 'preferType',
+          data: { interfaceName: 'User' },
+        },
+      ],
+      output: asParseable('type User = { id: string; }'),
+    },
+    // A plain namespace augments nothing — it declares its own scope — so a
+    // type alias is a working replacement and the report stands.
+    {
+      code: 'namespace Internal { interface Helper { id: string } }',
+      errors: [
+        {
+          messageId: 'preferType',
+          data: { interfaceName: 'Helper' },
+        },
+      ],
+      output: asParseable(
+        'namespace Internal { type Helper = { id: string } }',
+      ),
+    },
+    // `declare namespace Internal` reports for the same reason: `declare` only
+    // marks the body as ambient (no emit), it does not target another module.
+    // The id is an Identifier, not a string module specifier, so the block
+    // declares the `Internal` namespace rather than augmenting one somebody
+    // else owns, and merging is not what the interface is there for.
+    {
+      code: 'declare namespace Internal { interface Helper { id: string } }',
+      errors: [
+        {
+          messageId: 'preferType',
+          data: { interfaceName: 'Helper' },
+        },
+      ],
+      output: asParseable(
+        'declare namespace Internal { type Helper = { id: string } }',
+      ),
+    },
+    // `declare module Foo` (identifier id) is the legacy spelling of
+    // `declare namespace Foo`, not an external-module augmentation.
+    {
+      code: 'declare module Foo { interface Helper { id: string } }',
+      errors: [
+        {
+          messageId: 'preferType',
+          data: { interfaceName: 'Helper' },
+        },
+      ],
+      output: asParseable(
+        'declare module Foo { type Helper = { id: string } }',
+      ),
+    },
+    // A namespace merely *named* `global` is not the global augmentation
+    // block: it lacks both the `global` flag and `declare`.
+    {
+      code: 'namespace global { interface Helper { id: string } }',
+      errors: [
+        {
+          messageId: 'preferType',
+          data: { interfaceName: 'Helper' },
+        },
+      ],
+      output: asParseable('namespace global { type Helper = { id: string } }'),
+    },
+    // The exemption is scoped to the block: a sibling interface outside the
+    // augmentation still reports, and the augmented one is left alone.
+    {
+      code: `declare module '@mui/material/styles' {
+  interface Theme { border: string }
+}
+interface LocalOnly { id: string }`,
+      errors: [
+        {
+          messageId: 'preferType',
+          data: { interfaceName: 'LocalOnly' },
+        },
+      ],
+      output: asParseable(`declare module '@mui/material/styles' {
+  interface Theme { border: string }
+}
+type LocalOnly = { id: string }`),
+    },
   ],
+});
+
+/**
+ * Issue #1549: RuleTester applies a single fix pass, so it cannot prove the
+ * declaration survives the multi-pass `eslint --fix` a developer actually
+ * runs. These cases drive the real fixer to a fixpoint and assert the
+ * augmentation file comes back byte-identical.
+ */
+describe('prefer-type-over-interface leaves module augmentations untouched under --fix', () => {
+  const RULE_ID = '@blumintinc/blumint/prefer-type-over-interface';
+
+  const makeLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      preferTypeOverInterface as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const CONFIG = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2020 as const,
+      sourceType: 'module' as const,
+    },
+    rules: { [RULE_ID]: 'error' as const },
+  };
+
+  const fix = (code: string) =>
+    makeLinter().verifyAndFix(code, CONFIG, 'declarations.d.ts').output;
+
+  const reportCount = (code: string) =>
+    makeLinter()
+      .verify(code, CONFIG, 'declarations.d.ts')
+      .filter((message) => message.ruleId === RULE_ID).length;
+
+  const GLOBAL_AUGMENTATION = `export {};
+declare global {
+  interface Window {
+    blumintFlag: string;
+  }
+}
+`;
+
+  const MUI_AUGMENTATION = `declare module '@mui/material/styles' {
+  interface Theme {
+    border: string;
+  }
+  interface ThemeOptions {
+    border?: string;
+  }
+  interface Palette extends PaletteDynamic {}
+}
+`;
+
+  // Without a control the byte-identical assertions below would also pass if
+  // the linter were misconfigured and the rule never ran at all.
+  it('control: an ordinary interface is still rewritten to a type alias', () => {
+    expect(reportCount('interface User { id: string }')).toBe(1);
+    expect(fix('interface User { id: string }')).toBe(
+      'type User = { id: string }',
+    );
+  });
+
+  it('reports nothing inside `declare global`', () => {
+    expect(reportCount(GLOBAL_AUGMENTATION)).toBe(0);
+  });
+
+  it('reports nothing inside an external-module augmentation', () => {
+    expect(reportCount(MUI_AUGMENTATION)).toBe(0);
+  });
+
+  it.each([
+    ['declare global', GLOBAL_AUGMENTATION],
+    ['@mui/material/styles augmentation', MUI_AUGMENTATION],
+  ])('leaves %s byte-identical and free of `type `', (_label, code) => {
+    const output = fix(code);
+    expect(output).toBe(code);
+    expect(output).not.toContain('type ');
+  });
 });
