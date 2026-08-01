@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.58",
+    "date": "2026-08-01T04:26:49.434Z",
+    "rules": [
+      {
+        "name": "enforce-memoize-async",
+        "changeType": "fix",
+        "issues": [
+          1548
+        ],
+        "summary": "skip methods declared Promise<void> (closes #1548)"
+      }
+    ]
+  },
+  {
     "version": "1.20.57",
     "date": "2026-08-01T03:42:42.343Z",
     "rules": [

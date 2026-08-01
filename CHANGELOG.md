@@ -1,3 +1,10 @@
+## [1.20.58](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.57...v1.20.58) (2026-08-01)
+
+
+### Bug Fixes
+
+* **enforce-memoize-async:** skip methods declared Promise<void> (closes [#1548](https://github.com/BluMintInc/eslint-custom-rules/issues/1548)) ([7dc5dd5](https://github.com/BluMintInc/eslint-custom-rules/commit/7dc5dd5c94602111928f29eb26f7d1c3e5e108fa))
+
 ## [1.20.57](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.56...v1.20.57) (2026-08-01)
 
 
