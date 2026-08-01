@@ -64,6 +64,33 @@ React components are allowed:
 const UserCard = ({ user }: { user: User }) => <Card>{user.name}</Card>;
 ```
 
+## Options
+
+### `externallyNamedExports`
+
+An array of glob patterns matched against the linted file's path. In a file that matches, **exported** symbols are exempt from the verb-phrase requirement.
+
+Some symbol names are not a naming choice: they are specified outside the module and the module merely has to agree with them. A runtime registry key (`OP_REGISTRY.axisProfile`), a CLI verb (`describe-op --op axisProfile`), or an artifact path (`measures/axisProfile__<hash>.json`) are noun-phrase quantities by contract, and renaming the symbol to `computeAxisProfile` desynchronizes it from the specification that names it.
+
+```json
+{
+  "rules": {
+    "@blumintinc/blumint/enforce-verb-noun-naming": [
+      "error",
+      { "externallyNamedExports": ["scripts/design/proxy/ops/*.mjs"] }
+    ]
+  }
+}
+```
+
+Semantics:
+
+- **File-scoped.** A pattern is matched against the file path with `matchBase` and `dot` enabled, so a leading `**` matches both repo-relative and absolute paths. A file matching no pattern is checked exactly as before, and the default (`[]`) exempts nothing.
+- **Export-scoped.** Only exported symbols are exempt. Inline exports (`export const axisProfile = …`, `export function glyphPopulation() {}`), default exports (`export default function contourDelta() {}`), and deferred exports (`export { axisProfile }`, `export { axisProfile as ops_axisProfile }`, `export default axisProfile`) all qualify; for a renamed export the **local** name is the one that is exempt, since that is the binding the module publishes. Local helpers and nested functions in the same file stay under the rule.
+- **Methods stay checked.** A method name inside an exported class is a local API choice rather than an externally specified identifier, so `MethodDefinition` is unaffected by this option.
+
+For a whole tree that should not be checked at all — not just its exported names — a directory-scoped `off` in an `.eslintrc` `overrides` entry remains the right tool; this option is for the narrower case where the file's *exported* names are dictated elsewhere while its internal code should still follow the convention.
+
 ## When not to use it
 
 - If your project intentionally names command functions with nouns or uses a different naming convention for functions and methods.
