@@ -404,8 +404,6 @@ export const FIX_INDUCED_BASELINE: Record<string, string> = {
     'wrapping the component in memo() makes memo-compare-deeply-complex-props demand a custom comparator for its complex props',
   'prefer-usecallback-over-usememo-for-functions -> no-empty-dependency-use-callbacks':
     'useMemo(() => fn, []) becomes useCallback(fn, []), and an empty dependency array is what no-empty-dependency-use-callbacks rejects',
-  'no-array-length-in-deps -> no-entire-object-hook-deps':
-    'the stableHash dependency the fix emits is by design never read in the hook body, which is what no-entire-object-hook-deps reports',
   'enforce-early-destructuring -> react-memoize-literals':
     'the hoisted destructuring introduces an object literal recreated on every render',
   'require-hooks-default-params -> react-memoize-literals':

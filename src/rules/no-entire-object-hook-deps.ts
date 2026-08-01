@@ -7,11 +7,33 @@ type MessageIds = 'avoidEntireObject' | 'removeUnusedDependency';
 
 const HOOK_NAMES = new Set(['useEffect', 'useCallback', 'useMemo']);
 
+/**
+ * Hooks that run for their side effects rather than producing a value. An
+ * unread dependency means something different here than in useMemo/useCallback
+ * — see `callsCorrespondingSetter`.
+ */
+const EFFECT_HOOK_NAMES = new Set(['useEffect']);
+
 function isHookCall(node: TSESTree.CallExpression): boolean {
   const callee = node.callee;
   return (
     callee.type === AST_NODE_TYPES.Identifier && HOOK_NAMES.has(callee.name)
   );
+}
+
+function isEffectHookCall(node: TSESTree.CallExpression): boolean {
+  const callee = node.callee;
+  return (
+    callee.type === AST_NODE_TYPES.Identifier &&
+    EFFECT_HOOK_NAMES.has(callee.name)
+  );
+}
+
+/** `channelGroupActive` -> `setChannelGroupActive`, `a` -> `setA`. */
+function toSetterName(dependencyName: string): string {
+  return `set${dependencyName.charAt(0).toUpperCase()}${dependencyName.slice(
+    1,
+  )}`;
 }
 
 function isArrayOrPrimitive(
@@ -112,6 +134,62 @@ function unwrapExpression(expr: TSESTree.Node): TSESTree.Node {
     current = current.expression;
   }
   return current;
+}
+
+/**
+ * Whether the hook body anywhere calls the state setter that corresponds to
+ * `dependencyName` (dep `count` -> `setCount(...)`).
+ *
+ * why: for an effect, an unread dependency is React's reset-on-scope-change
+ * idiom — a deliberate re-run trigger. The one shape where an unread dependency
+ * is genuinely wrong is the circular dependency, where the effect writes the
+ * very value it depends on and so re-triggers itself. The setter call is that
+ * signature. It can sit arbitrarily deep (inside an inner async function, a
+ * `startTransition` callback, a `.then()`), so the whole body is searched.
+ */
+function callsCorrespondingSetter(
+  hookBody: TSESTree.Node,
+  dependencyName: string,
+): boolean {
+  const setterName = toSetterName(dependencyName);
+  const visited = new Set<TSESTree.Node>();
+
+  function visit(node: TSESTree.Node): boolean {
+    if (!node || visited.has(node)) return false;
+    visited.add(node);
+
+    if (node.type === AST_NODE_TYPES.CallExpression) {
+      const callee = unwrapExpression(node.callee);
+      if (
+        callee.type === AST_NODE_TYPES.Identifier &&
+        callee.name === setterName
+      ) {
+        return true;
+      }
+    }
+
+    for (const key in node) {
+      if (key === 'parent') continue; // Skip parent references to avoid cycles
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const child = (node as any)[key];
+      if (!child || typeof child !== 'object') continue;
+
+      if (Array.isArray(child)) {
+        for (const item of child) {
+          if (item && typeof item === 'object' && 'type' in item) {
+            if (visit(item)) return true;
+          }
+        }
+      } else if ('type' in child) {
+        if (visit(child)) return true;
+      }
+    }
+
+    return false;
+  }
+
+  return visit(hookBody);
 }
 
 function getObjectUsagesInHook(
@@ -696,6 +774,13 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
           return;
         }
 
+        const callbackBody = (
+          callbackArg as
+            | TSESTree.ArrowFunctionExpression
+            | TSESTree.FunctionExpression
+        ).body;
+        const isEffect = isEffectHookCall(node);
+
         // Check each dependency in the array
         depsArg.elements.forEach((element) => {
           const unwrappedElement = element ? unwrapExpression(element) : null;
@@ -716,17 +801,24 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
             }
             // For testing without TypeScript services, we'll assume all identifiers are objects
 
-            const result = getObjectUsagesInHook(
-              (
-                callbackArg as
-                  | TSESTree.ArrowFunctionExpression
-                  | TSESTree.FunctionExpression
-              ).body,
-              objectName,
-            );
+            const result = getObjectUsagesInHook(callbackBody, objectName);
 
             // If the object is not used at all, suggest removing it
             if (result.notUsed) {
+              // why: an effect reruns for its side effects, so a dependency the
+              // body never reads is normally a deliberate re-run trigger
+              // (React's reset-on-scope-change idiom) — deleting it silently
+              // stops the effect from rerunning. Only when the body also writes
+              // that value (setX for dep x) is the dependency a circular one
+              // worth removing. Value-producing hooks (useMemo/useCallback)
+              // gain nothing from an unread dependency, so they still report.
+              if (
+                isEffect &&
+                !callsCorrespondingSetter(callbackBody, objectName)
+              ) {
+                return;
+              }
+
               context.report({
                 node: element as TSESTree.Node,
                 messageId: 'removeUnusedDependency',

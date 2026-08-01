@@ -934,6 +934,100 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
+    // Reset-on-scope-change (issue #1546): `status` and `filter` are deliberate
+    // re-run TRIGGERS for the effect, not values its body reads. The effect
+    // never calls setStatus/setFilter, so there is no circular dependency and
+    // deleting the triggers would silently stop the reset from happening.
+    {
+      code: `
+        const useResettingPagination = (status, filter, isPaginated) => {
+          const [pageSize, setPageSize] = useState(10);
+          useEffect(() => {
+            if (!isPaginated) {
+              return;
+            }
+            setPageSize(10);
+          }, [isPaginated, status, filter]);
+          return { pageSize };
+        };
+      `,
+    },
+    // Several unread triggers at once, none of them written by the body.
+    {
+      code: `
+        const useResetOnScope = (status, filter, negativeFilter) => {
+          const [page, setPage] = useState(0);
+          useEffect(() => {
+            setPage(0);
+          }, [status, filter, negativeFilter]);
+          return page;
+        };
+      `,
+    },
+    // Trigger alongside a dependency the body genuinely reads.
+    {
+      code: `
+        const useResetOnScopeChange = (status, logger) => {
+          const [page, setPage] = useState(0);
+          useEffect(() => {
+            logger(page);
+            setPage(0);
+          }, [logger, status]);
+          return page;
+        };
+      `,
+    },
+    // The effect calls a setter, but for an unrelated value: `status` is still
+    // a trigger, not something the effect writes.
+    {
+      code: `
+        const useResetSelection = (status) => {
+          const [selected, setSelected] = useState();
+          useEffect(() => {
+            setSelected(undefined);
+          }, [status]);
+          return selected;
+        };
+      `,
+    },
+    // Near-miss setter name: `setPageSize` does not correspond to dep `status`,
+    // so the dep remains a trigger rather than a circular dependency.
+    {
+      code: `
+        const useNearMissSetter = (status) => {
+          const [pageSize, setPageSize] = useState(10);
+          useEffect(() => {
+            setPageSize(10);
+          }, [status]);
+          return pageSize;
+        };
+      `,
+    },
+    // Setter for the dep's own value is absent even though the body nests
+    // callbacks: `startTransition` wraps an unrelated setter.
+    {
+      code: `
+        const useTransitionReset = (status, filter) => {
+          const [pageSize, setPageSize] = useState(10);
+          useEffect(() => {
+            startTransition(() => {
+              setPageSize(10);
+            });
+          }, [status, filter]);
+          return pageSize;
+        };
+      `,
+    },
+    // An effect that only fires an imperative side effect keeps its triggers.
+    {
+      code: `
+        const useTrackScopeChange = (status, filter) => {
+          useEffect(() => {
+            analytics.track('scope-changed');
+          }, [status, filter]);
+        };
+      `,
+    },
   ],
   invalid: [
     ...optionalComputedFixCases,
@@ -1889,6 +1983,105 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           useCallback(() => {
             console.log(userData.name);
           }, [userData.name]);
+        };
+      `,
+    },
+    // Circular dependency (issue #1546): the effect writes the very value it
+    // depends on, and the setter call is buried inside a nested async function.
+    // Unlike a reset trigger, this dependency re-triggers the effect itself.
+    {
+      code: `
+        const MyComponent = ({ count, threshold }) => {
+          useEffect(() => {
+            const sync = async () => {
+              const next = await fetchNext(threshold);
+              if (next) {
+                setCount(0);
+              }
+            };
+            sync();
+          }, [threshold, count]);
+          return null;
+        };
+      `,
+      errors: [removeUnused('count')],
+      output: `
+        const MyComponent = ({ count, threshold }) => {
+          useEffect(() => {
+            const sync = async () => {
+              const next = await fetchNext(threshold);
+              if (next) {
+                setCount(0);
+              }
+            };
+            sync();
+          }, [threshold]);
+          return null;
+        };
+      `,
+    },
+    // Circular dependency whose setter sits inside a startTransition callback.
+    {
+      code: `
+        const MyComponent = ({ pageSize, status }) => {
+          useEffect(() => {
+            startTransition(() => {
+              setPageSize(10);
+            });
+          }, [status, pageSize]);
+          return null;
+        };
+      `,
+      errors: [removeUnused('pageSize')],
+      output: `
+        const MyComponent = ({ pageSize, status }) => {
+          useEffect(() => {
+            startTransition(() => {
+              setPageSize(10);
+            });
+          }, [status]);
+          return null;
+        };
+      `,
+    },
+    // Single-character dependency: dep `a` corresponds to setter `setA`.
+    {
+      code: `
+        const MyComponent = ({ a }) => {
+          useEffect(() => {
+            setA(undefined);
+          }, [a]);
+          return null;
+        };
+      `,
+      errors: [removeUnused('a')],
+      output: `
+        const MyComponent = ({ a }) => {
+          useEffect(() => {
+            setA(undefined);
+          }, []);
+          return null;
+        };
+      `,
+    },
+    // Value-producing hooks are unaffected: an unread dependency in a
+    // useCallback is dead weight regardless of any setter call.
+    {
+      code: `
+        const MyComponent = ({ status, onDone }) => {
+          const handleClick = useCallback(() => {
+            onDone();
+          }, [onDone, status]);
+          return <button onClick={handleClick}>Go</button>;
+        };
+      `,
+      errors: [removeUnused('status')],
+      output: `
+        const MyComponent = ({ status, onDone }) => {
+          const handleClick = useCallback(() => {
+            onDone();
+          }, [onDone]);
+          return <button onClick={handleClick}>Go</button>;
         };
       `,
     },
