@@ -118,6 +118,61 @@ ruleTesterTs.run('no-compositing-layer-props', noCompositingLayerProps, {
         };
       `,
     },
+    // mix-blend-mode's initial value creates no stacking context (issue #1570)
+    {
+      code: `
+        const style = {
+          mixBlendMode: 'normal',
+        };
+      `,
+    },
+    // mix-blend-mode is not inherited, so these all resolve to `normal`
+    {
+      code: `
+        const style = {
+          mixBlendMode: 'initial',
+        };
+      `,
+    },
+    {
+      code: `
+        const style = {
+          mixBlendMode: 'unset',
+        };
+      `,
+    },
+    {
+      code: `
+        const style = {
+          mixBlendMode: 'revert',
+        };
+      `,
+    },
+    {
+      code: `
+        const Component = () => <Box sx={{ mixBlendMode: 'normal' }} />;
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+    // Casing and !important are normalized before the lookup
+    {
+      code: `
+        const style = {
+          mixBlendMode: 'NORMAL',
+        };
+      `,
+    },
+    {
+      code: `
+        const style = {
+          mixBlendMode: 'normal !important',
+        };
+      `,
+    },
     // will-change opt-out keywords are non-promoting (issue #1228)
     {
       code: `
@@ -291,6 +346,24 @@ ruleTesterTs.run('no-compositing-layer-props', noCompositingLayerProps, {
       code: `
         const style = {
           mixBlendMode: 'multiply',
+        };
+      `,
+      errors: [error('mixBlendMode')],
+    },
+    {
+      code: `
+        const style = {
+          mixBlendMode: 'screen',
+        };
+      `,
+      errors: [error('mixBlendMode')],
+    },
+    // `inherit` can resolve to a blending value set higher up, so it is not an
+    // opt-out the way the other global keywords are (issue #1570)
+    {
+      code: `
+        const style = {
+          mixBlendMode: 'inherit',
         };
       `,
       errors: [error('mixBlendMode')],

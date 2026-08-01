@@ -28,6 +28,14 @@ GPU layers (including `translate3d`, `scale3d`, `translateZ`, and `transparent`)
   exemption is scoped to descendants of the `@keyframes` value object, so a
   static compositing prop sitting as a *sibling* of the `@keyframes` key is
   still flagged.
+- Exempts the reset/identity value of each compositing property, which provably
+  promotes nothing: `none` for `transform`, `filter`, `backdrop-filter`,
+  `contain` and `perspective`; `auto`/`unset`/`initial`/`inherit`/`revert` for
+  `will-change`; `visible` for `backface-visibility`; and `normal` for
+  `mix-blend-mode`. Since `mix-blend-mode` is not inherited,
+  `initial`/`unset`/`revert` resolve to `normal` and are exempt too, but
+  `inherit` is still flagged because it can resolve to a blending value set
+  higher up.
 
 ### Examples of **incorrect** code for this rule:
 
@@ -59,6 +67,13 @@ const config = {
 };
 
 <div sx={{ opacity: 1, marginTop: 8 }} />;
+
+// Reset/identity values promote nothing, so they are not flagged.
+const reset = {
+  transform: 'none',
+  willChange: 'auto',
+  mixBlendMode: 'normal',
+};
 
 // Animating transform/opacity inside @keyframes is the recommended pattern.
 <Box
