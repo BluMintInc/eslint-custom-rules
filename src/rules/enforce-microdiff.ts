@@ -692,6 +692,12 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
             const leftArg = node.left.arguments[0];
             const rightArg = node.right.arguments[0];
 
+            // A zero-argument JSON.stringify() leaves these undefined. The
+            // indexed read is typed non-optional, so nothing forces the check.
+            if (!leftArg || !rightArg) {
+              return;
+            }
+
             if (isObjectOrArrayType(leftArg) && isObjectOrArrayType(rightArg)) {
               reportedNodes.add(node);
               const isEqual = node.operator === '===';
