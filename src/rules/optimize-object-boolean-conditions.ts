@@ -119,6 +119,15 @@ function isPrimitiveTypeNode(node: TSESTree.TypeNode | undefined): boolean {
  * operands: comparisons and arithmetic yield numbers/strings/booleans, and `!`,
  * `typeof` and friends yield booleans/strings/numbers.
  */
+/** `as const` — a type reference whose name is the `const` contextual keyword. */
+function isConstAssertion(typeNode: TSESTree.Node): boolean {
+  return (
+    typeNode.type === AST_NODE_TYPES.TSTypeReference &&
+    typeNode.typeName.type === AST_NODE_TYPES.Identifier &&
+    typeNode.typeName.name === 'const'
+  );
+}
+
 function isPrimitiveExpression(node: TSESTree.Node | undefined): boolean {
   if (!node) {
     return false;
@@ -140,7 +149,19 @@ function isPrimitiveExpression(node: TSESTree.Node | undefined): boolean {
     case AST_NODE_TYPES.BinaryExpression:
       return true;
     case AST_NODE_TYPES.TSAsExpression:
-      return isPrimitiveTypeNode(node.typeAnnotation);
+      // `as const` narrows rather than retypes, so the asserted expression
+      // decides. Recursing keeps `{ a: 1 } as const` an object while accepting
+      // `0 as const` — the form global-const-style and
+      // enforce-object-literal-as-const rewrite bare constants into, so without
+      // this the plugin's own fixers manufacture the report (#1581).
+      return isConstAssertion(node.typeAnnotation)
+        ? isPrimitiveExpression(node.expression)
+        : isPrimitiveTypeNode(node.typeAnnotation);
+    // `satisfies` never changes the value, only checks it.
+    case AST_NODE_TYPES.TSSatisfiesExpression:
+      return isPrimitiveExpression(node.expression);
+    case AST_NODE_TYPES.TSNonNullExpression:
+      return isPrimitiveExpression(node.expression);
     default:
       return false;
   }
