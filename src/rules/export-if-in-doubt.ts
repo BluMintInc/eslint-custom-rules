@@ -89,12 +89,17 @@ export const exportIfInDoubt: TSESLint.RuleModule<'exportIfInDoubt', never[]> =
             ) {
               const name = node.id.name;
               const kind = getDeclarationKind(node);
+              // The only remedy is prepending `export` to the declaration that
+              // is already there, so everything past the name is elided with
+              // `…`. A concrete-looking stand-in (`= undefined`, `() {}`,
+              // `= unknown`) reads as code to paste over the declaration and
+              // silently destroys its initializer, parameters, body, or type.
               const exportExample =
                 node.type === 'VariableDeclarator'
-                  ? `export ${kind} ${name} = undefined;`
+                  ? `export ${kind} ${name} = …;`
                   : node.type === 'FunctionDeclaration'
-                  ? `export function ${name}() {}`
-                  : `export type ${name} = unknown;`;
+                  ? `export function ${name}(…) { … }`
+                  : `export type ${name} = …;`;
               context.report({
                 node,
                 messageId: 'exportIfInDoubt',
