@@ -39,6 +39,43 @@ interface TeamMember /* audited quarterly */ extends UserProfile {
 
 Move the comment above the declaration or inside the body to make the declaration autofixable.
 
+### Exemption: module augmentations
+
+Interfaces inside a module augmentation are not reported. Declaration merging is the entire purpose of such a block and only `interface` can merge, so the rewrite is not a style change: the alias stops augmenting anything, collides with the declaration it was meant to extend (`TS2300: Duplicate identifier`), and the added members silently disappear (`TS2339: Property ... does not exist`).
+
+A block is treated as an augmentation when it targets an external module (`declare module 'pkg'`, whose name is a string literal) or the global scope (`declare global`, including the bare `global { ... }` form nested inside an ambient module). The interface may sit anywhere inside the block, not just as a direct child.
+
+```typescript
+// allowed: merges into the DOM's Window
+export {};
+declare global {
+  interface Window {
+    blumintFlag: string;
+  }
+}
+
+// allowed: merges into MUI's own Theme
+declare module '@mui/material/styles' {
+  interface Theme {
+    border: string;
+  }
+  interface Palette extends PaletteDynamic {}
+}
+```
+
+The exemption is deliberately keyed on the augmentation shape rather than on the `.d.ts` file extension, because a declaration file can also hold ordinary interfaces that merge with nothing and should still be reported.
+
+A plain namespace is not an augmentation — it declares its own scope instead of extending one another file owns — so interfaces inside it are still reported, and a type alias is a working replacement there. The same holds for `declare namespace X` and its legacy spelling `declare module X` (an identifier name, not a module specifier), where `declare` only marks the body as ambient:
+
+```typescript
+// reported and autofixed
+namespace Internal {
+  interface Helper {
+    id: string;
+  }
+}
+```
+
 ### Examples of **incorrect** code for this rule:
 
 The following interface declarations are reported and autofixed:
@@ -72,3 +109,5 @@ type TeamMember = UserProfile & {
 - Prevent declaration merging from silently altering an exported shape in another file or dependency.
 - Keep composition explicit with intersections so consumers see the full contract in one place.
 - Align with intersection-heavy patterns where property order and exact shape predictability matter.
+
+Merging is exactly what a module augmentation asks for, which is why those blocks are exempt: there the merge is the deliberate, declared intent rather than an accident of an open shape.
