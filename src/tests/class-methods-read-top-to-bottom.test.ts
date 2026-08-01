@@ -455,17 +455,19 @@ ruleTesterTs.run(
           },
         ],
         output: `
-        class TestClass {field1: string;
-field2: number;
-constructor() {
+        class TestClass {
+          field1: string;
+          field2: number;
+          constructor() {
             this.methodA();
             this.methodC();
           }
-methodA() {
+          methodA() {
             this.methodB();
           }
-methodB() {}
-methodC() {}}`,
+          methodB() {}
+          methodC() {}
+        }`,
       },
       {
         code: `
@@ -489,13 +491,15 @@ methodC() {}}`,
           },
         ],
         output: `
-        const Holder = class Named {constructor() {
+        const Holder = class Named {
+          constructor() {
             this.methodA();
           }
-methodA() {
+          methodA() {
             return this.methodB();
           }
-methodB() {}};`,
+          methodB() {}
+        };`,
       },
       {
         code: `
@@ -524,18 +528,20 @@ methodB() {}};`,
           },
         ],
         output: `
-        class TestClass {field1: string;
-field2: number;
-constructor() {
+        class TestClass {
+            field1: string;
+            field2: number;
+            constructor() {
               this.field1 = this.methodA();
               this.methodB();
             }
-methodA(): string {
+            methodA(): string {
               return "foo";
             }
-methodB() {
+            methodB() {
                 this.field2 = 5;
-            }}`,
+            }
+          }`,
       },
       {
         code: `
@@ -570,16 +576,18 @@ methodB() {
           },
         ],
         output: `
-        class Outer {constructor() {
+        class Outer {
+          constructor() {
             this.caller();
           }
-caller() {
+          caller() {
             class Inner {
               methodInner() {}
               constructor() {}
             }
             return new Inner();
-          }}`,
+          }
+        }`,
       },
       {
         code: `export class TestClass {
@@ -624,14 +632,15 @@ caller() {
             },
           },
         ],
-        output: `export class TestClass {public field1: string;
-public fooBar: string;
-private field2: number;
-constructor() {
+        output: `export class TestClass {
+          public field1: string;
+          public fooBar: string;
+          private field2: number;
+          constructor() {
             this.methodA();
             this.field1 = '';
           }
-//We should test if comments are moved
+          //We should test if comments are moved
           //We should expect to see these two lines kept above methodA
           async methodA() {
             for (let i = 0 ; i < 10; i ++) {
@@ -640,20 +649,21 @@ constructor() {
             // this.fooBar = this.methodD();
             return methods;
           }
-private methodB() {
+          private methodB() {
             return 'Foobar';
           }
-//And this one kept above methodD
+          //And this one kept above methodD
           public methodD() {
             /**
              *
              */
           }
-private methodC() {
+          private methodC() {
             /**
              *
              */
-          }}`,
+          }
+        }`,
       },
       {
         // plain methods + trailing abstract signature: abstract member must be relocated AND preserved
@@ -669,13 +679,17 @@ private methodC() {
   public abstract compute(): number;
 }`,
         errors: [{ messageId: 'classMethodsReadTopToBottom' }],
-        output: `export abstract class Repro {public run() {
+        output: `export abstract class Repro {
+  public run() {
     return this.helper();
   }
-private helper() {
+
+  private helper() {
     return this.compute();
   }
-public abstract compute(): number;}`,
+
+  public abstract compute(): number;
+}`,
       },
       {
         // decorated getter interleaved + trailing abstract signature
@@ -696,14 +710,18 @@ export abstract class Repro {
         errors: [{ messageId: 'classMethodsReadTopToBottom' }],
         output: `import { Memoize } from '@blumintinc/typescript-memoize';
 
-export abstract class Repro {@Memoize()
+export abstract class Repro {
+  @Memoize()
   public get value() {
     return this.helper();
   }
-private helper() {
+
+  private helper() {
     return this.compute();
   }
-public abstract compute(): number;}`,
+
+  public abstract compute(): number;
+}`,
       },
       {
         // Abstract PROPERTY (TSAbstractPropertyDefinition) referenced by a
@@ -720,13 +738,17 @@ public abstract compute(): number;}`,
   protected abstract readonly config: number;
 }`,
         errors: [{ messageId: 'classMethodsReadTopToBottom' }],
-        output: `export abstract class Repro {protected abstract readonly config: number;
-public run() {
+        output: `export abstract class Repro {
+  protected abstract readonly config: number;
+
+  public run() {
     return this.helper();
   }
-private helper() {
+
+  private helper() {
     return this.config;
-  }}`,
+  }
+}`,
       },
       {
         // Mixed abstract method + abstract property, both out of order and both
@@ -745,14 +767,91 @@ private helper() {
   public abstract compute(): number;
 }`,
         errors: [{ messageId: 'classMethodsReadTopToBottom' }],
-        output: `export abstract class Repro {protected abstract readonly config: number;
-public run() {
+        output: `export abstract class Repro {
+  protected abstract readonly config: number;
+
+  public run() {
     return this.helper();
   }
-private helper() {
+
+  private helper() {
     return this.compute() + this.config;
   }
-public abstract compute(): number;}`,
+
+  public abstract compute(): number;
+}`,
+      },
+      {
+        // Issue #1592: the blank lines separating members must survive the
+        // reorder. Prettier preserves existing blank lines but never inserts
+        // new ones, so collapsing them here would be irreversible.
+        code: `
+class Service {
+  private readonly db: string;
+
+  public fetchPage() {
+    return this.buildQuery();
+  }
+
+  constructor(db: string) {
+    this.db = db;
+  }
+
+  private buildQuery() {
+    return this.db;
+  }
+}
+`,
+        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+        output: `
+class Service {
+  private readonly db: string;
+
+  constructor(db: string) {
+    this.db = db;
+  }
+
+  public fetchPage() {
+    return this.buildQuery();
+  }
+
+  private buildQuery() {
+    return this.db;
+  }
+}
+`,
+      },
+      {
+        // Uneven separators are carried positionally, so a deliberately
+        // blank-line-grouped body keeps its shape instead of collapsing into
+        // a dense wall.
+        code: `
+class Grouped {
+  private helper() {
+    return this.seed;
+  }
+
+
+  public run() {
+    return this.helper();
+  }
+  protected readonly seed = 1;
+}
+`,
+        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+        output: `
+class Grouped {
+  protected readonly seed = 1;
+
+
+  public run() {
+    return this.helper();
+  }
+  private helper() {
+    return this.seed;
+  }
+}
+`,
       },
     ],
   },
