@@ -28,10 +28,12 @@ Each example wraps more than one child. A fragment around a single child — `<>
 
 ### When the long form is necessary
 
-Use `<React.Fragment>` when the fragment must carry attributes (most commonly a `key` in a list). The shorthand cannot express those attributes, so avoid applying the auto-fix in these cases.
+Use `<React.Fragment>` when the fragment must carry attributes (most commonly a `key` in a list). The shorthand cannot express those attributes, so the rule does not report an attributed fragment at all and `--fix` leaves it untouched.
 
 ```jsx
 <React.Fragment key={item.id}>
   <ChildComponent />
 </React.Fragment>
 ```
+
+This covers any attribute, including a spread — `<React.Fragment {...props}>` — since a spread may supply a `key` the rule cannot see.
