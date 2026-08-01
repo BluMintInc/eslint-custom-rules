@@ -82,6 +82,26 @@ import type { ChannelType } from 'stream-chat';
 type ChatChannelKind = ChannelType;
 ```
 
+## Options
+
+```js
+'@blumintinc/blumint/prefer-union-from-const-array': ['error', {
+  // Column the autofix wraps the emitted declaration at
+  printWidth: 80,
+}]
+```
+
+### `printWidth`
+
+Type: `number`
+
+Default: `80`
+
+The column the autofix wraps at, matching Prettier's option of the same name.
+Set it to your formatter's `printWidth` so the fixed source is already in the
+shape the formatter would produce; a lint run carrying `--fix` otherwise leaves
+the tree failing `prettier --check`.
+
 ## Autofix
 
 The fixer rewrites the alias to `const {TYPE_NAME}_VALUES = [...] as const;`
@@ -102,6 +122,54 @@ The autofix intentionally produces bare literals inside the array. Naming each
 literal as its own constant (e.g. `START_TOURNAMENT_ACTION = 'start'`) is a good
 next step the report message suggests, but inventing those names requires domain
 judgment beyond a mechanical rule.
+
+### Line width
+
+Both emitted lines stay compact while they fit within [`printWidth`](#printwidth)
+and break open past it, which is what a formatter would do to them anyway. A
+lint run carrying `--fix` therefore leaves the tree `prettier --check` clean
+instead of landing an over-long line for the next `prettier --write` to rewrite.
+
+Wrapping is not the safe default here. Unlike an object literal, an array that a
+formatter judges short enough is collapsed back onto one line, so blanket
+wrapping would trade an over-width line on long unions for a needlessly split one
+on every short union. The fixer measures the exact statement it is about to
+write — the declaration's indentation, the `export ` prefix, the derived name,
+every rendered member and the ` as const;` suffix — and only breaks when that
+measurement overflows.
+
+Past the width, each member gets its own line indented one step in from the
+declaration, with a trailing comma and `] as const;` back at the declaration's
+own indentation. The step is the file's own indent unit, read from the source, so
+a tab-indented or four-space file is not rewritten into two spaces:
+
+```ts
+export const TABS_VARIANT_VALUES = [
+  'tabs',
+  'toggle-button',
+  'chip',
+  'chip-large',
+  'underline',
+] as const;
+export type TabsVariant = (typeof TABS_VARIANT_VALUES)[number];
+```
+
+The derived alias is measured separately, since a long type name can overflow it
+while the array still fits. Its only break point is after the `=`:
+
+```ts
+export const EVENT_IS_LIVE_DIALOG_BODY_VARIANT_VALUES = [
+  'successWithoutBlubot',
+  'successWithBlubot',
+] as const;
+export type EventIsLiveDialogBodyVariant =
+  (typeof EVENT_IS_LIVE_DIALOG_BODY_VARIANT_VALUES)[number];
+```
+
+A member written with a backslash line continuation cannot sit on one line at
+all, so its array always breaks open. That member's raw text is reproduced
+verbatim: the newline it carries — and the column everything after it sits at —
+is string data the fixer never re-indents.
 
 ## When Not To Use It
 

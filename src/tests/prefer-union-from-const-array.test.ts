@@ -103,10 +103,15 @@ type Quoted = (typeof QUOTED_VALUES)[number];`,
 export type PanelVariant = (typeof PANEL_VARIANT_VALUES)[number];`,
       errors: [{ messageId: 'preferDerivedUnion' }],
     },
-    // camelCase literal values, exported (Edge Case 4)
+    // camelCase literal values, exported (Edge Case 4). The compact const would
+    // be 83 columns, so it wraps — a two-member union is not automatically
+    // short enough to stay inline.
     {
       code: `export type StreamSetupStepId = 'enableBluBot' | 'connectObs';`,
-      output: `export const STREAM_SETUP_STEP_ID_VALUES = ['enableBluBot', 'connectObs'] as const;
+      output: `export const STREAM_SETUP_STEP_ID_VALUES = [
+  'enableBluBot',
+  'connectObs',
+] as const;
 export type StreamSetupStepId = (typeof STREAM_SETUP_STEP_ID_VALUES)[number];`,
       errors: [{ messageId: 'preferDerivedUnion' }],
     },
@@ -170,6 +175,301 @@ type Priority = (typeof PRIORITY_VALUES)[number];`,
       code: `type HTTPMethod = 'GET' | 'POST';`,
       output: `const HTTPMETHOD_VALUES = ['GET', 'POST'] as const;
 type HTTPMethod = (typeof HTTPMETHOD_VALUES)[number];`,
+      errors: [{ messageId: 'preferDerivedUnion' }],
+    },
+    // REPRO #1566: the emitted const array must wrap when the single-line form
+    // would overflow the print width.
+    {
+      code: `export type TabsVariant =
+  | 'tabs'
+  | 'toggle-button'
+  | 'chip'
+  | 'chip-large'
+  | 'underline';`,
+      output: `export const TABS_VARIANT_VALUES = [
+  'tabs',
+  'toggle-button',
+  'chip',
+  'chip-large',
+  'underline',
+] as const;
+export type TabsVariant = (typeof TABS_VARIANT_VALUES)[number];`,
+      errors: [{ messageId: 'preferDerivedUnion' }],
+    },
+    // Width boundary — the emitted const is exactly 79 columns, so it stays on
+    // one line.
+    {
+      code: `type Boundary = 'aaaaaaaaaaaaaaaaaaa' | 'bbbbbbbbbbbbbbbbbb';`,
+      output: `const BOUNDARY_VALUES = ['aaaaaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbbbb'] as const;
+type Boundary = (typeof BOUNDARY_VALUES)[number];`,
+      errors: [{ messageId: 'preferDerivedUnion' }],
+    },
+    // Width boundary — exactly 80 columns is still within the print width.
+    {
+      code: `type Boundary = 'aaaaaaaaaaaaaaaaaaa' | 'bbbbbbbbbbbbbbbbbbb';`,
+      output: `const BOUNDARY_VALUES = ['aaaaaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbbbbb'] as const;
+type Boundary = (typeof BOUNDARY_VALUES)[number];`,
+      errors: [{ messageId: 'preferDerivedUnion' }],
+    },
+    // Width boundary — 81 columns overflows by one, so the array breaks open.
+    {
+      code: `type Boundary = 'aaaaaaaaaaaaaaaaaaaa' | 'bbbbbbbbbbbbbbbbbbb';`,
+      output: `const BOUNDARY_VALUES = [
+  'aaaaaaaaaaaaaaaaaaaa',
+  'bbbbbbbbbbbbbbbbbbb',
+] as const;
+type Boundary = (typeof BOUNDARY_VALUES)[number];`,
+      errors: [{ messageId: 'preferDerivedUnion' }],
+    },
+    // Indentation counts toward the width: this const is 78 columns at column
+    // zero but 80 at the declaration's own indent, so it still fits.
+    {
+      code: `namespace Ui {
+  type Boundary = 'aaaaaaaaaaaaaaaaaa' | 'bbbbbbbbbbbbbbbbbb';
+}`,
+      output: `namespace Ui {
+  const BOUNDARY_VALUES = ['aaaaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbbbb'] as const;
+  type Boundary = (typeof BOUNDARY_VALUES)[number];
+}`,
+      errors: [{ messageId: 'preferDerivedUnion' }],
+    },
+    // The same const is 80 columns at column zero — within the width — yet 82
+    // at indent 2, so a nested declaration wraps where a top-level one would
+    // not, and it wraps at its own indentation rather than at column zero.
+    {
+      code: `namespace Ui {
+  type Boundary = 'aaaaaaaaaaaaaaaaaaa' | 'bbbbbbbbbbbbbbbbbbb';
+}`,
+      output: `namespace Ui {
+  const BOUNDARY_VALUES = [
+    'aaaaaaaaaaaaaaaaaaa',
+    'bbbbbbbbbbbbbbbbbbb',
+  ] as const;
+  type Boundary = (typeof BOUNDARY_VALUES)[number];
+}`,
+      errors: [{ messageId: 'preferDerivedUnion' }],
+    },
+    // The emitted lines use the file's own indent unit, not a hardcoded two
+    // spaces.
+    {
+      code: `function outer() {
+    function inner() {
+        return 1;
+    }
+    type Palette = 'primaryFill' | 'secondaryFill' | 'tertiaryFill' | 'quaternaryFill';
+    return inner;
+}`,
+      output: `function outer() {
+    function inner() {
+        return 1;
+    }
+    const PALETTE_VALUES = [
+        'primaryFill',
+        'secondaryFill',
+        'tertiaryFill',
+        'quaternaryFill',
+    ] as const;
+    type Palette = (typeof PALETTE_VALUES)[number];
+    return inner;
+}`,
+      errors: [{ messageId: 'preferDerivedUnion' }],
+    },
+    // Tab-indented file: the wrap uses a tab as its nesting step.
+    {
+      code: `function outer() {
+\tfunction inner() {
+\t\treturn 1;
+\t}
+\ttype Palette = 'primaryFill' | 'secondaryFill' | 'tertiaryFill' | 'quaternaryFill';
+}`,
+      output: `function outer() {
+\tfunction inner() {
+\t\treturn 1;
+\t}
+\tconst PALETTE_VALUES = [
+\t\t'primaryFill',
+\t\t'secondaryFill',
+\t\t'tertiaryFill',
+\t\t'quaternaryFill',
+\t] as const;
+\ttype Palette = (typeof PALETTE_VALUES)[number];
+}`,
+      errors: [{ messageId: 'preferDerivedUnion' }],
+    },
+    // The derived alias overflows on its own when the type name is long, even
+    // though the const array fits; Prettier breaks such an alias after the `=`.
+    {
+      code: `type CreateOffchainTokenLaunchContext = 'a' | 'b';`,
+      output: `const CREATE_OFFCHAIN_TOKEN_LAUNCH_CONTEXT_VALUES = ['a', 'b'] as const;
+type CreateOffchainTokenLaunchContext =
+  (typeof CREATE_OFFCHAIN_TOKEN_LAUNCH_CONTEXT_VALUES)[number];`,
+      errors: [{ messageId: 'preferDerivedUnion' }],
+    },
+    // Real agora shape (EventIsLiveDialogBody.tsx): both emitted lines overflow.
+    {
+      code: `export type EventIsLiveDialogBodyVariant =
+  | 'successWithoutBlubot'
+  | 'successWithBlubot';`,
+      output: `export const EVENT_IS_LIVE_DIALOG_BODY_VARIANT_VALUES = [
+  'successWithoutBlubot',
+  'successWithBlubot',
+] as const;
+export type EventIsLiveDialogBodyVariant =
+  (typeof EVENT_IS_LIVE_DIALOG_BODY_VARIANT_VALUES)[number];`,
+      errors: [{ messageId: 'preferDerivedUnion' }],
+    },
+    // Type parameters survive a wrapped emission
+    {
+      code: `type Wrapper<T> = 'aaaaaaaaaaaaaaaaaaaaaa' | 'bbbbbbbbbbbbbbbbbbbbbb' | 'cc';`,
+      output: `const WRAPPER_VALUES = [
+  'aaaaaaaaaaaaaaaaaaaaaa',
+  'bbbbbbbbbbbbbbbbbbbbbb',
+  'cc',
+] as const;
+type Wrapper<T> = (typeof WRAPPER_VALUES)[number];`,
+      errors: [{ messageId: 'preferDerivedUnion' }],
+    },
+    // A leading JSDoc still sits above the generated const when it wraps
+    {
+      code: `/** Severity tier for auth errors surfaced to the user. */
+export type AuthErrorLevel = 'warningLevelOne' | 'warningLevelTwo' | 'errorLevel';`,
+      output: `/** Severity tier for auth errors surfaced to the user. */
+export const AUTH_ERROR_LEVEL_VALUES = [
+  'warningLevelOne',
+  'warningLevelTwo',
+  'errorLevel',
+] as const;
+export type AuthErrorLevel = (typeof AUTH_ERROR_LEVEL_VALUES)[number];`,
+      errors: [{ messageId: 'preferDerivedUnion' }],
+    },
+    // Double quotes are preserved through a wrap
+    {
+      code: `type Quoted = "aaaaaaaaaaaaaaaaaaaaaaaaa" | "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";`,
+      output: `const QUOTED_VALUES = [
+  "aaaaaaaaaaaaaaaaaaaaaaaaa",
+  "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+] as const;
+type Quoted = (typeof QUOTED_VALUES)[number];`,
+      errors: [{ messageId: 'preferDerivedUnion' }],
+    },
+    // A literal written with a backslash line continuation can never sit on one
+    // line, so the array breaks open regardless of width — and the raw text is
+    // reproduced verbatim, so the newline it carries as string DATA (and the
+    // column the closing quote sits at) is untouched.
+    {
+      code: `type Weird = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\
+' | 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';`,
+      output: `const WEIRD_VALUES = [
+  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\
+',
+  'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+] as const;
+type Weird = (typeof WEIRD_VALUES)[number];`,
+      errors: [{ messageId: 'preferDerivedUnion' }],
+    },
+    // The same, short enough that the compact form would fit: Prettier breaks
+    // any array holding a multi-line literal, so width does not enter into it.
+    {
+      code: `type Weird = 'a\\
+' | 'b';`,
+      output: `const WEIRD_VALUES = [
+  'a\\
+',
+  'b',
+] as const;
+type Weird = (typeof WEIRD_VALUES)[number];`,
+      errors: [{ messageId: 'preferDerivedUnion' }],
+    },
+    // `printWidth` raised: a 105-column const the default would wrap stays on
+    // one line.
+    {
+      code: `export type TabsVariant =
+  | 'tabs'
+  | 'toggle-button'
+  | 'chip'
+  | 'chip-large'
+  | 'underline';`,
+      options: [{ printWidth: 120 }],
+      output: `export const TABS_VARIANT_VALUES = ['tabs', 'toggle-button', 'chip', 'chip-large', 'underline'] as const;
+export type TabsVariant = (typeof TABS_VARIANT_VALUES)[number];`,
+      errors: [{ messageId: 'preferDerivedUnion' }],
+    },
+    // `printWidth` lowered: a 49-column const the default keeps inline wraps.
+    {
+      code: `type Direction = 'asc' | 'desc';`,
+      options: [{ printWidth: 40 }],
+      output: `const DIRECTION_VALUES = [
+  'asc',
+  'desc',
+] as const;
+type Direction =
+  (typeof DIRECTION_VALUES)[number];`,
+      errors: [{ messageId: 'preferDerivedUnion' }],
+    },
+    // Realistically shaped module (agora `src/util/credentialFormatValidation.ts`):
+    // the whole file must come out formatted, not just the snippet.
+    {
+      code: `const passwordWhitelistRegex = /^[A-Za-z0-9]*$/;
+const defaultMinLength = 8;
+
+export function cleanPassword(password: string): string {
+  return password.trim();
+}
+
+export type PasswordFailureReason =
+  | 'needsLowercase'
+  | 'needsUppercase'
+  | 'needsNumber'
+  | 'needsSymbol'
+  | 'tooShort'
+  | 'tooLong'
+  | 'blacklistedChar';
+
+export function getPasswordFailures(
+  password: string,
+  minLength: number = defaultMinLength,
+): PasswordFailureReason[] {
+  const passwordFailures: PasswordFailureReason[] = [];
+  if (!passwordWhitelistRegex.test(password)) {
+    passwordFailures.push('blacklistedChar');
+  }
+  if (password.length < minLength) {
+    passwordFailures.push('tooShort');
+  }
+  return passwordFailures;
+}`,
+      output: `const passwordWhitelistRegex = /^[A-Za-z0-9]*$/;
+const defaultMinLength = 8;
+
+export function cleanPassword(password: string): string {
+  return password.trim();
+}
+
+export const PASSWORD_FAILURE_REASON_VALUES = [
+  'needsLowercase',
+  'needsUppercase',
+  'needsNumber',
+  'needsSymbol',
+  'tooShort',
+  'tooLong',
+  'blacklistedChar',
+] as const;
+export type PasswordFailureReason =
+  (typeof PASSWORD_FAILURE_REASON_VALUES)[number];
+
+export function getPasswordFailures(
+  password: string,
+  minLength: number = defaultMinLength,
+): PasswordFailureReason[] {
+  const passwordFailures: PasswordFailureReason[] = [];
+  if (!passwordWhitelistRegex.test(password)) {
+    passwordFailures.push('blacklistedChar');
+  }
+  if (password.length < minLength) {
+    passwordFailures.push('tooShort');
+  }
+  return passwordFailures;
+}`,
       errors: [{ messageId: 'preferDerivedUnion' }],
     },
     // Duplicate array + union pair: union still flagged, but fix SKIPPED
