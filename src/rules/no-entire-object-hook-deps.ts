@@ -1,4 +1,8 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  AST_TOKEN_TYPES,
+  TSESTree,
+} from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { TypeFlags, isArrayTypeNode, isTupleTypeNode } from 'typescript';
 import type { TypeChecker, Node } from 'typescript';
@@ -27,6 +31,66 @@ function isEffectHookCall(node: TSESTree.CallExpression): boolean {
     callee.type === AST_NODE_TYPES.Identifier &&
     EFFECT_HOOK_NAMES.has(callee.name)
   );
+}
+
+/**
+ * The rule whose suppression marks a dependency array as hand-maintained.
+ */
+const EXHAUSTIVE_DEPS_RULE = 'react-hooks/exhaustive-deps';
+
+/**
+ * Matches the keyword of an `eslint-disable`, `eslint-disable-next-line` or
+ * `eslint-disable-line` directive, leaving the rule list as the remainder. The
+ * lookahead keeps `eslint-disabled-something` (and prose that merely opens with
+ * the same letters) from parsing as a directive.
+ */
+const DISABLE_DIRECTIVE = /^\s*eslint-disable(-next-line|-line)?(?![\w-])/u;
+
+/**
+ * ESLint splits a directive's rule list from its ` -- justification` suffix on
+ * this separator, so the rule list must be read the same way.
+ */
+const JUSTIFICATION_SEPARATOR = /\s-{2,}\s/u;
+
+/**
+ * The line an exhaustive-deps disable comment covers, `'file'` for the
+ * whole-file form, or null when the comment is not such a directive.
+ *
+ * why: `eslint-disable-next-line` covers the line after the comment ends, while
+ * `eslint-disable-line` covers the comment's own line. Only the block form of
+ * the bare `eslint-disable` is a file-level directive to ESLint, so a line
+ * comment starting with it is not treated as one here either. The file form
+ * counts for the whole file rather than from its own position onward: erring
+ * toward exempting a hook keeps a hand-managed array intact, which is the safe
+ * direction for a deleting fixer.
+ */
+function readExhaustiveDepsDisable(
+  comment: TSESTree.Comment,
+): 'file' | number | null {
+  const [directive] = comment.value.split(JUSTIFICATION_SEPARATOR);
+  const match = DISABLE_DIRECTIVE.exec(directive);
+  if (!match) {
+    return null;
+  }
+
+  // why: a bare directive with no rule list says nothing about dependency
+  // management, so only an explicit mention of exhaustive-deps counts.
+  const namesExhaustiveDeps = directive
+    .slice(match[0].length)
+    .split(',')
+    .some((ruleId) => ruleId.trim() === EXHAUSTIVE_DEPS_RULE);
+  if (!namesExhaustiveDeps) {
+    return null;
+  }
+
+  const scope = match[1];
+  if (scope === '-next-line') {
+    return comment.loc.end.line + 1;
+  }
+  if (scope === '-line') {
+    return comment.loc.start.line;
+  }
+  return comment.type === AST_TOKEN_TYPES.Block ? 'file' : null;
 }
 
 /** `channelGroupActive` -> `setChannelGroupActive`, `a` -> `setA`. */
@@ -752,6 +816,63 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
       // throw new Error('You have to enable the `project` setting in parser options to use this rule');
     }
 
+    const sourceCode = context.getSourceCode();
+
+    // why: scanning every comment once per file rather than once per hook call
+    // keeps the check off the hot path of files with many hooks.
+    let manuallyManagedLines: Set<number> | null = null;
+    let disabledForWholeFile = false;
+
+    function collectDisableDirectives(): Set<number> {
+      if (manuallyManagedLines) {
+        return manuallyManagedLines;
+      }
+
+      const lines = new Set<number>();
+      for (const comment of sourceCode.getAllComments()) {
+        const scope = readExhaustiveDepsDisable(comment);
+        if (scope === 'file') {
+          disabledForWholeFile = true;
+        } else if (scope !== null) {
+          lines.add(scope);
+        }
+      }
+
+      manuallyManagedLines = lines;
+      return lines;
+    }
+
+    /**
+     * Whether the author has taken manual control of this hook's dependency
+     * array by suppressing `react-hooks/exhaustive-deps` for it.
+     *
+     * why: exhaustive-deps is the rule that would otherwise force every read
+     * value into the array, so disabling it declares the array hand-maintained.
+     * Entries in such an array are load-bearing by construction — an unread one
+     * is a deliberate recompute trigger (a hydration flag, a change-detecting
+     * hash) whose deletion silently returns a stale value. The comment can sit
+     * above the hook call, above the dependency array, or above the closing
+     * `}, [...])` line, so any directive landing anywhere within the call
+     * counts.
+     */
+    function hasManuallyManagedDeps(node: TSESTree.CallExpression): boolean {
+      const lines = collectDisableDirectives();
+      if (disabledForWholeFile) {
+        return true;
+      }
+
+      for (
+        let line = node.loc.start.line;
+        line <= node.loc.end.line;
+        line += 1
+      ) {
+        if (lines.has(line)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
     return {
       CallExpression(node) {
         if (!isHookCall(node)) {
@@ -780,6 +901,7 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
             | TSESTree.FunctionExpression
         ).body;
         const isEffect = isEffectHookCall(node);
+        const manuallyManagedDeps = hasManuallyManagedDeps(node);
 
         // Check each dependency in the array
         depsArg.elements.forEach((element) => {
@@ -805,6 +927,17 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
 
             // If the object is not used at all, suggest removing it
             if (result.notUsed) {
+              // why: deleting an entry from an array the author maintains by
+              // hand is presumptuous — the suppression is the declaration that
+              // the entries were chosen deliberately, and an unread one is a
+              // recompute trigger whose removal yields a stale value. Narrowing
+              // an entire object (avoidEntireObject) is a different transform
+              // and stays enabled: it preserves the dependency, it does not
+              // drop it.
+              if (manuallyManagedDeps) {
+                return;
+              }
+
               // why: an effect reruns for its side effects, so a dependency the
               // body never reads is normally a deliberate re-run trigger
               // (React's reset-on-scope-change idiom) — deleting it silently

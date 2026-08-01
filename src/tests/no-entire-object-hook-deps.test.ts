@@ -229,6 +229,25 @@ describe('no-entire-object-hook-deps messages', () => {
   });
 });
 
+// why: fixtures for issue #1547 carry real `react-hooks/exhaustive-deps`
+// disable directives, and ESLint reports "Definition for rule ... was not
+// found" for a directive naming a rule its Linter cannot resolve. A no-op stub
+// makes the directive resolvable without suppressing anything: it names a
+// different rule than the one under test.
+ruleTesterJsx.defineRule('react-hooks/exhaustive-deps', {
+  meta: {
+    type: 'problem',
+    docs: {
+      description: 'Stub standing in for the react-hooks plugin rule.',
+      recommended: false,
+    },
+    schema: [],
+    messages: {},
+  },
+  defaultOptions: [],
+  create: () => ({}),
+});
+
 ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
   valid: [
     // Using specific fields
@@ -1025,6 +1044,154 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           useEffect(() => {
             analytics.track('scope-changed');
           }, [status, filter]);
+        };
+      `,
+    },
+    // Issue #1547: agora's EventEndedText.tsx. `hydrated` is an intentional
+    // recompute trigger that forces the single post-mount recompute refreshing
+    // the suppressed SSR value; deleting it leaves a stale timestamp. The
+    // exhaustive-deps disable sits above the hook call and carries a `--`
+    // justification.
+    {
+      code: `
+        const EventEndedText = ({ endDate }) => {
+          const hydrated = useHydrated();
+          // eslint-disable-next-line react-hooks/exhaustive-deps -- hydrated is an intentional recompute trigger (not read in-body)
+          const label = useMemo(() => formatRelative({ date: toValidDate(endDate) }), [endDate, hydrated]);
+          return <span>{label}</span>;
+        };
+      `,
+    },
+    // Issue #1547: agora's useGuards.tsx. The hash is the change detector for a
+    // mutable `hooks` map deliberately kept out of the array, and the disable
+    // comment sits immediately above the closing `}, [...])` line.
+    {
+      code: `
+        const useGuards = (hooks) => {
+          const shouldShowHash = useHashOf(hooks);
+          const guards = useMemo(() => {
+            return Object.entries(hooks).reduce((acc, [key, hook]) => {
+              acc[key] = hook;
+              return acc;
+            }, {});
+            // eslint-disable-next-line react-hooks/exhaustive-deps -- shouldShowHash detects changes to the mutable hooks map
+          }, [shouldShowHash]);
+          return guards;
+        };
+      `,
+    },
+    // Line-comment form with no justification, above the hook call.
+    {
+      code: `
+        const MyComponent = ({ endDate, hydrated }) => {
+          // eslint-disable-next-line react-hooks/exhaustive-deps
+          const label = useMemo(() => {
+            return format(endDate);
+          }, [endDate, hydrated]);
+          return <span>{label}</span>;
+        };
+      `,
+    },
+    // Block-comment form of the next-line directive.
+    {
+      code: `
+        const MyComponent = ({ endDate, hydrated }) => {
+          const label = useMemo(() => {
+            return format(endDate);
+            /* eslint-disable-next-line react-hooks/exhaustive-deps */
+          }, [endDate, hydrated]);
+          return <span>{label}</span>;
+        };
+      `,
+    },
+    // The rule appears among several rules in one directive.
+    {
+      code: `
+        const MyComponent = ({ endDate, hydrated }) => {
+          // eslint-disable-next-line react-hooks/exhaustive-deps, no-console
+          const label = useMemo(() => {
+            return format(endDate);
+          }, [endDate, hydrated]);
+          return <span>{label}</span>;
+        };
+      `,
+    },
+    // The rule listed after another rule, with a justification.
+    {
+      code: `
+        const MyComponent = ({ endDate, hydrated }) => {
+          // eslint-disable-next-line no-console, react-hooks/exhaustive-deps -- hydrated is a recompute trigger
+          const label = useMemo(() => {
+            return format(endDate);
+          }, [endDate, hydrated]);
+          return <span>{label}</span>;
+        };
+      `,
+    },
+    // Directive above the dependency array in a multi-argument layout.
+    {
+      code: `
+        const MyComponent = ({ endDate, hydrated }) => {
+          const label = useMemo(
+            () => format(endDate),
+            // eslint-disable-next-line react-hooks/exhaustive-deps
+            [endDate, hydrated],
+          );
+          return <span>{label}</span>;
+        };
+      `,
+    },
+    // Same-line form on the dependency array line.
+    {
+      code: `
+        const MyComponent = ({ endDate, hydrated }) => {
+          const label = useMemo(() => {
+            return format(endDate);
+          }, [endDate, hydrated]); // eslint-disable-line react-hooks/exhaustive-deps
+          return <span>{label}</span>;
+        };
+      `,
+    },
+    // File-level disable marks every array in the file as manually managed.
+    {
+      code: `
+        /* eslint-disable react-hooks/exhaustive-deps */
+        const MyComponent = ({ endDate, hydrated }) => {
+          const label = useMemo(() => {
+            return format(endDate);
+          }, [endDate, hydrated]);
+          return <span>{label}</span>;
+        };
+      `,
+    },
+    // useCallback arrays are manually managed the same way.
+    {
+      code: `
+        const MyComponent = ({ onDone, status }) => {
+          // eslint-disable-next-line react-hooks/exhaustive-deps -- status deliberately re-creates the handler
+          const handleClick = useCallback(() => {
+            onDone();
+          }, [onDone, status]);
+          return <button onClick={handleClick}>Go</button>;
+        };
+      `,
+    },
+    // Composes with the issue #1546 setter gate: even a circular effect
+    // dependency survives once the author takes manual control of the array.
+    {
+      code: `
+        const MyComponent = ({ count, threshold }) => {
+          // eslint-disable-next-line react-hooks/exhaustive-deps -- the array is managed by hand
+          useEffect(() => {
+            const sync = async () => {
+              const next = await fetchNext(threshold);
+              if (next) {
+                setCount(0);
+              }
+            };
+            sync();
+          }, [threshold, count]);
+          return null;
         };
       `,
     },
@@ -2082,6 +2249,124 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
             onDone();
           }, [onDone]);
           return <button onClick={handleClick}>Go</button>;
+        };
+      `,
+    },
+    // Issue #1547: the agora shape WITHOUT a disable comment still reports and
+    // still autofixes — the exemption is not a blanket off-switch.
+    {
+      code: `
+        const EventEndedText = ({ endDate }) => {
+          const hydrated = useHydrated();
+          const label = useMemo(() => formatRelative({ date: toValidDate(endDate) }), [endDate, hydrated]);
+          return <span>{label}</span>;
+        };
+      `,
+      errors: [removeUnused('hydrated')],
+      output: `
+        const EventEndedText = ({ endDate }) => {
+          const hydrated = useHydrated();
+          const label = useMemo(() => formatRelative({ date: toValidDate(endDate) }), [endDate]);
+          return <span>{label}</span>;
+        };
+      `,
+    },
+    // A disable directive naming a different rule says nothing about the
+    // dependency array.
+    {
+      code: `
+        const MyComponent = ({ value, trigger }) => {
+          // eslint-disable-next-line no-console
+          const result = useMemo(() => {
+            console.log(value.total);
+            return value.total * 2;
+          }, [value.total, trigger]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [removeUnused('trigger')],
+      output: `
+        const MyComponent = ({ value, trigger }) => {
+          // eslint-disable-next-line no-console
+          const result = useMemo(() => {
+            console.log(value.total);
+            return value.total * 2;
+          }, [value.total]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // The exemption is scoped to the hook the directive covers: a neighbouring
+    // hook with its own array is still pruned.
+    {
+      code: `
+        const MyComponent = ({ endDate, hydrated, onDone, status }) => {
+          // eslint-disable-next-line react-hooks/exhaustive-deps -- hydrated is a recompute trigger
+          const label = useMemo(() => {
+            return format(endDate);
+          }, [endDate, hydrated]);
+          const handleClick = useCallback(() => {
+            onDone();
+          }, [onDone, status]);
+          return <button onClick={handleClick}>{label}</button>;
+        };
+      `,
+      errors: [removeUnused('status')],
+      output: `
+        const MyComponent = ({ endDate, hydrated, onDone, status }) => {
+          // eslint-disable-next-line react-hooks/exhaustive-deps -- hydrated is a recompute trigger
+          const label = useMemo(() => {
+            return format(endDate);
+          }, [endDate, hydrated]);
+          const handleClick = useCallback(() => {
+            onDone();
+          }, [onDone]);
+          return <button onClick={handleClick}>{label}</button>;
+        };
+      `,
+    },
+    // Prose that merely mentions the rule name is not a directive.
+    {
+      code: `
+        const MyComponent = ({ value, trigger }) => {
+          // we removed the exhaustive-deps disable that used to live here
+          const result = useMemo(() => {
+            return value * 2;
+          }, [value, trigger]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [removeUnused('trigger')],
+      output: `
+        const MyComponent = ({ value, trigger }) => {
+          // we removed the exhaustive-deps disable that used to live here
+          const result = useMemo(() => {
+            return value * 2;
+          }, [value]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // A manually managed array is still narrowed: taking control of which
+    // dependencies are listed says nothing about depending on an entire object.
+    {
+      code: `
+        const MyComponent = ({ user, trigger }) => {
+          // eslint-disable-next-line react-hooks/exhaustive-deps -- trigger is deliberate
+          const greeting = useMemo(() => {
+            return 'Hello ' + user.name;
+          }, [user, trigger]);
+          return <div>{greeting}</div>;
+        };
+      `,
+      errors: [avoid('user', 'user.name')],
+      output: `
+        const MyComponent = ({ user, trigger }) => {
+          // eslint-disable-next-line react-hooks/exhaustive-deps -- trigger is deliberate
+          const greeting = useMemo(() => {
+            return 'Hello ' + user.name;
+          }, [user.name, trigger]);
+          return <div>{greeting}</div>;
         };
       `,
     },
