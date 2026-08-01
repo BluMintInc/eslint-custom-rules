@@ -1,3 +1,17 @@
+## [1.20.69](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.68...v1.20.69) (2026-08-01)
+
+
+### Bug Fixes
+
+* **enforce-early-destructuring:** stop parenthesizing a source that already binds tighter than ?? (closes [#1580](https://github.com/BluMintInc/eslint-custom-rules/issues/1580)) ([c22d48d](https://github.com/BluMintInc/eslint-custom-rules/commit/c22d48d4d3da2a313a4e6a4d030516b76d0d13f0))
+* **enforce-render-hits-memoization:** accept a module-scope function as already stable (closes [#1586](https://github.com/BluMintInc/eslint-custom-rules/issues/1586)) ([ad746ba](https://github.com/BluMintInc/eslint-custom-rules/commit/ad746baee3f0cf767d800cb98e9ad44654a6562a)), closes [#1578](https://github.com/BluMintInc/eslint-custom-rules/issues/1578) [1584/#1585](https://github.com/BluMintInc/eslint-custom-rules/issues/1585)
+* **enforce-render-hits-memoization:** recognise useLatestCallback as a memoization boundary (closes [#1585](https://github.com/BluMintInc/eslint-custom-rules/issues/1585)) ([5fb93a4](https://github.com/BluMintInc/eslint-custom-rules/commit/5fb93a449f3eeed579ac704901e415ee87d13847)), closes [#1584](https://github.com/BluMintInc/eslint-custom-rules/issues/1584)
+* **enforce-render-hits-memoization:** report shorthand props (closes [#1588](https://github.com/BluMintInc/eslint-custom-rules/issues/1588)) ([8ce4a05](https://github.com/BluMintInc/eslint-custom-rules/commit/8ce4a05748b143a409fd24a97968ca27eb404094)), closes [#1585](https://github.com/BluMintInc/eslint-custom-rules/issues/1585) [#1585](https://github.com/BluMintInc/eslint-custom-rules/issues/1585)
+* **enforce-transform-memoization:** recognise useLatestCallback as a stabilizing wrapper (closes [#1584](https://github.com/BluMintInc/eslint-custom-rules/issues/1584)) ([2a88068](https://github.com/BluMintInc/eslint-custom-rules/commit/2a88068306b6c45d24f6cd5c8afa07da0e8f9466))
+* **optimize-object-boolean-conditions:** see through `as const` when judging a primitive (closes [#1581](https://github.com/BluMintInc/eslint-custom-rules/issues/1581)) ([9ed3999](https://github.com/BluMintInc/eslint-custom-rules/commit/9ed399911bb1a01b8c1fa59600668ecd9e6bbe98)), closes [#1569](https://github.com/BluMintInc/eslint-custom-rules/issues/1569)
+* **prefer-type-over-interface:** exempt merged interface declarations (closes [#1583](https://github.com/BluMintInc/eslint-custom-rules/issues/1583)) ([577a17b](https://github.com/BluMintInc/eslint-custom-rules/commit/577a17b8e63072383b5e4bb8588aba18da840c66)), closes [#1568](https://github.com/BluMintInc/eslint-custom-rules/issues/1568)
+* **use-latest-callback:** keep the call broken open when collapsing overflows the print width (closes [#1579](https://github.com/BluMintInc/eslint-custom-rules/issues/1579)) ([c539f94](https://github.com/BluMintInc/eslint-custom-rules/commit/c539f9465b290124eacb01b12f865cd262c4d3b9))
+
 ## [1.20.68](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.67...v1.20.68) (2026-08-01)
 
 

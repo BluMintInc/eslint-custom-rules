@@ -1,5 +1,61 @@
 [
   {
+    "version": "1.20.69",
+    "date": "2026-08-01T20:48:40.484Z",
+    "rules": [
+      {
+        "name": "enforce-early-destructuring",
+        "changeType": "fix",
+        "issues": [
+          1580
+        ],
+        "summary": "stop parenthesizing a source that already binds tighter than ?? (closes #1580)"
+      },
+      {
+        "name": "enforce-render-hits-memoization",
+        "changeType": "fix",
+        "issues": [
+          1585,
+          1586,
+          1588
+        ],
+        "summary": "report shorthand props (closes #1588); accept a module-scope function as already stable (closes #1586); recognise useLatestCallback as a memoization boundary (closes #1585)"
+      },
+      {
+        "name": "enforce-transform-memoization",
+        "changeType": "fix",
+        "issues": [
+          1584
+        ],
+        "summary": "recognise useLatestCallback as a stabilizing wrapper (closes #1584)"
+      },
+      {
+        "name": "optimize-object-boolean-conditions",
+        "changeType": "fix",
+        "issues": [
+          1581
+        ],
+        "summary": "see through `as const` when judging a primitive (closes #1581)"
+      },
+      {
+        "name": "prefer-type-over-interface",
+        "changeType": "fix",
+        "issues": [
+          1583
+        ],
+        "summary": "exempt merged interface declarations (closes #1583)"
+      },
+      {
+        "name": "use-latest-callback",
+        "changeType": "fix",
+        "issues": [
+          1579
+        ],
+        "summary": "keep the call broken open when collapsing overflows the print width (closes #1579)"
+      }
+    ]
+  },
+  {
     "version": "1.20.68",
     "date": "2026-08-01T18:03:14.950Z",
     "rules": [
