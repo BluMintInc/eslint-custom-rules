@@ -49,6 +49,10 @@ const NON_COMPOSITING_VALUES: Record<string, ReadonlySet<string>> = {
   perspective: new Set(['none']),
   'will-change': new Set(['auto', 'unset', 'initial', 'inherit', 'revert']),
   'backface-visibility': new Set(['visible']),
+  // `normal` is the initial value and creates no stacking context. Because
+  // mix-blend-mode is not inherited, `initial`/`unset`/`revert` all resolve to
+  // it. `inherit` is excluded: it can resolve to a blending value set higher up.
+  'mix-blend-mode': new Set(['normal', 'initial', 'unset', 'revert']),
 };
 
 export const noCompositingLayerProps = createRule<[], MessageIds>({
