@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.65",
+    "date": "2026-08-01T13:35:40.762Z",
+    "rules": [
+      {
+        "name": "enforce-firestore-doc-ref-generic",
+        "changeType": "fix",
+        "issues": [
+          1564
+        ],
+        "summary": "exempt compat Firestore receivers from @firebase/rules-unit-testing (closes #1564)"
+      }
+    ]
+  },
+  {
     "version": "1.20.64",
     "date": "2026-08-01T12:02:23.073Z",
     "rules": [

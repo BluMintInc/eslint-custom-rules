@@ -1,3 +1,10 @@
+## [1.20.65](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.64...v1.20.65) (2026-08-01)
+
+
+### Bug Fixes
+
+* **enforce-firestore-doc-ref-generic:** exempt compat Firestore receivers from @firebase/rules-unit-testing (closes [#1564](https://github.com/BluMintInc/eslint-custom-rules/issues/1564)) ([4a207a4](https://github.com/BluMintInc/eslint-custom-rules/commit/4a207a497927c0f631028b4e0189d0b2d47c7154))
+
 ## [1.20.64](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.63...v1.20.64) (2026-08-01)
 
 
