@@ -1,6 +1,7 @@
 import { Linter, Rule } from 'eslint';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceMemoizeAsync } from '../rules/enforce-memoize-async';
+import { noExplicitReturnType } from '../rules/no-explicit-return-type';
 
 ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
   valid: [
@@ -1666,5 +1667,73 @@ describe('enforce-memoize-async: methods declared to produce no value (issue #15
 
     expect(messages).toHaveLength(1);
     expect(messages[0].ruleId).toBe(RULE_ID);
+  });
+});
+
+// Issue #1562: the exemption above reads an annotation, and `no-explicit-return-type`
+// — enabled alongside this rule in the recommended config, and fixable — used to
+// delete that annotation. Because `eslint --fix` re-lints until the output
+// settles, one run stripped `: Promise<void>` and then memoized the now
+// unannotated method. Linting both rules together is the only way to see it:
+// each rule in isolation behaves exactly as documented.
+describe('enforce-memoize-async: the Promise<void> exemption survives recommended-config --fix', () => {
+  const RETURN_TYPE_RULE_ID = '@blumintinc/blumint/no-explicit-return-type';
+
+  const lintBoth = (code: string) => {
+    const linter = createLinter();
+    linter.defineRule(
+      RETURN_TYPE_RULE_ID,
+      noExplicitReturnType as unknown as Rule.RuleModule,
+    );
+    return linter.verifyAndFix(
+      code,
+      {
+        ...LINT_CONFIG,
+        rules: {
+          ...LINT_CONFIG.rules,
+          [RETURN_TYPE_RULE_ID]: 'error' as const,
+        },
+      },
+      'Authorizer.ts',
+    ).output;
+  };
+
+  it('never memoizes a method the author declared Promise<void>', () => {
+    const output = lintBoth(`export class Authorizer {
+  public async present(url: string): Promise<void> {
+    await this.open(url);
+  }
+}
+`);
+
+    expect(output).not.toContain('@Memoize');
+    expect(output).not.toContain('@blumintinc/typescript-memoize');
+  });
+
+  it('never memoizes a method the author declared void', () => {
+    expect(
+      lintBoth(`export class Pinger {
+  public async ping(): void {
+    this.socket.send('ping');
+  }
+}
+`),
+    ).not.toContain('@Memoize');
+  });
+
+  it('still memoizes a value-returning sibling in the same file', () => {
+    const output = lintBoth(`export class Authorizer {
+  public async present(url: string): Promise<void> {
+    await this.open(url);
+  }
+
+  public async token(): Promise<string> {
+    return 'tok';
+  }
+}
+`);
+
+    expect(output.match(/@Memoize\(\)/g)).toHaveLength(1);
+    expect(output).toContain('public async token()');
   });
 });

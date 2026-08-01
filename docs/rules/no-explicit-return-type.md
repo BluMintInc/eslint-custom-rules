@@ -34,6 +34,16 @@ Deleting the annotation there does not simplify the code — it stops it compili
 
 The search is deliberately restricted to return expressions. A function that calls itself only for side effects (inside a `forEach` callback, say) still has an inferable return type, so its annotation is still reported.
 
+### `void` and `Promise<void>`: the annotation cannot drift
+
+The case against an explicit return type is that it restates what the implementation returns and can drift from it. That case does not reach `void` or `Promise<void>`: such an annotation is not a restatement of a result, it is a declaration that there is **no** result, and TypeScript enforces it — adding `return <expr>` under a `Promise<void>` annotation is a compile error. It cannot drift into a lie, so deleting it destroys information instead of removing redundancy.
+
+That information is also read by other rules. [`enforce-memoize-async`](./enforce-memoize-async.md) skips a method declared `Promise<void>`, because caching a call that yields nothing turns a repeatable side effect into a once-per-instance one. Since `eslint --fix` re-lints until the output settles, stripping the annotation and memoizing the now-unannotated method happen in a single unattended run.
+
+So by default (`allowVoidReturnTypes`) the rule leaves these annotations alone on functions, arrow functions and class methods. The match is exact: a union (`Promise<void | string>`), a wrapper (`Promise<Awaited<void>>`), an array (`void[]`) or any other type-argument arity can carry a value, so those annotations are still reported.
+
+Signature-only declarations are outside this allowance: an interface method, an abstract method or a `declare function` has no body to infer from, so its annotation is mandatory rather than redundant, it is reported only when its own `allow*` option is turned off, and no fixer ever strips it.
+
 Limitations, all of which err toward silence or toward the status quo:
 
 - A self-reference inside a closure in the returned value counts, even though TypeScript can sometimes still break the cycle (it depends on how the returned value is contextually typed, which needs type information this rule does not have).
@@ -69,6 +79,11 @@ const walkTree = (nodes: number[][], depth: number): number => {
   nodes.forEach((child) => walkTree([child], depth + 1));
   return depth;
 };
+
+// A union can carry a value, so it is not covered by `allowVoidReturnTypes`
+async function maybe(): Promise<void | string> {
+  return undefined;
+}
 ```
 
 ### Examples of correct code
@@ -109,6 +124,19 @@ const isEvenNumber = (n: number): boolean =>
   n === 0 ? true : isOddNumber(n - 1);
 const isOddNumber = (n: number): boolean =>
   n === 0 ? false : isEvenNumber(n - 1);
+
+// `Promise<void>` declares the absence of a result: it cannot drift, and
+// `enforce-memoize-async` reads it to leave a side-effecting method uncached
+export class Authorizer {
+  public async present(url: string): Promise<void> {
+    await this.open(url);
+  }
+}
+
+// A bare `void` is kept for the same reason
+const log = (message: string): void => {
+  console.log(message);
+};
 ```
 
 ## Options
@@ -129,6 +157,8 @@ This rule accepts an options object:
   allowDtsFiles?: boolean;
   // Allow explicit return types in .f.ts files (Firestore function files)
   allowFirestoreFunctionFiles?: boolean;
+  // Allow `void` and `Promise<void>` return types
+  allowVoidReturnTypes?: boolean;
 }
 ```
 
@@ -155,3 +185,9 @@ When set to `true` (default), allows explicit return types in `.d.ts` declaratio
 ### `allowFirestoreFunctionFiles`
 
 When set to `true` (default), allows explicit return types in `.f.ts` files, which are typically used for Firestore functions. This can help with documenting Firestore function return types.
+
+### `allowVoidReturnTypes`
+
+When set to `true` (default), allows a `void` or `Promise<void>` return type on a function, arrow function or class method. Such an annotation declares that the function produces no value — TypeScript enforces it, so it cannot drift from the implementation — and other rules read it as a declaration of intent, so removing it destroys information rather than redundancy. See [`void` and `Promise<void>`: the annotation cannot drift](#void-and-promisevoid-the-annotation-cannot-drift) above.
+
+Set it to `false` to report and auto-fix these annotations like any other. Note that doing so lets `--fix` strip the annotation that stops [`enforce-memoize-async`](./enforce-memoize-async.md) memoizing a side-effecting method.

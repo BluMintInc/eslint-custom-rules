@@ -313,6 +313,62 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
       n === 0 ? false : isEvenNumber(n - 1);
     `,
 
+    // Issue #1562: `void` / `Promise<void>` declares the absence of a result
+    // rather than restating one, so it cannot drift from the implementation —
+    // TypeScript rejects a `return <expr>` added under it. Stripping it also
+    // destroys the declaration of intent `enforce-memoize-async` reads, and
+    // `eslint --fix` re-lints until output settles, so the strip and the
+    // resulting memoization of a side-effecting method land in one run.
+
+    // Promise<void> — class method (the shape from the issue)
+    `
+    export class Authorizer {
+      public async present(url: string): Promise<void> {
+        await this.open(url);
+      }
+    }
+    `,
+
+    // void — class method
+    `
+    class Pinger {
+      ping(): void {
+        this.socket.send('ping');
+      }
+    }
+    `,
+
+    // Promise<void> — function declaration
+    'async function flush(): Promise<void> { await commit(); }',
+
+    // void — function declaration
+    'function log(message: string): void { console.log(message); }',
+
+    // Promise<void> — arrow function
+    'const flush = async (): Promise<void> => { await commit(); };',
+
+    // void — arrow function
+    'const log = (message: string): void => { console.log(message); };',
+
+    // Promise<void> — function expression (object method)
+    'const api = { flush: async function (): Promise<void> { await commit(); } };',
+
+    // void — static class method
+    `
+    class Registry {
+      static reset(): void {
+        Registry.entries.clear();
+      }
+    }
+    `,
+
+    // The exemption is explicitly opt-outable, and turning it off restores the
+    // report — see the matching invalid cases below.
+    {
+      code: 'async function flush(): Promise<void> { await commit(); }',
+      options: [{ allowVoidReturnTypes: true }],
+    },
+
     // Firestore function files
     {
       code: `
@@ -769,6 +825,236 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
           }
         }
       `,
+    },
+
+    // Issue #1562: `allowVoidReturnTypes: false` restores the report and the
+    // fix, so the exemption genuinely gates behaviour rather than being inert.
+    {
+      code: `
+        export class Authorizer {
+          public async present(url: string): Promise<void> {
+            await this.open(url);
+          }
+        }
+      `,
+      options: [{ allowVoidReturnTypes: false }],
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'class method "present"' },
+        },
+      ],
+      output: `
+        export class Authorizer {
+          public async present(url: string) {
+            await this.open(url);
+          }
+        }
+      `,
+    },
+    {
+      code: 'async function flush(): Promise<void> { await commit(); }',
+      options: [{ allowVoidReturnTypes: false }],
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "flush"' },
+        },
+      ],
+      output: 'async function flush() { await commit(); }',
+    },
+    {
+      code: 'const log = (message: string): void => { console.log(message); };',
+      options: [{ allowVoidReturnTypes: false }],
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "log"' },
+        },
+      ],
+      output: 'const log = (message: string) => { console.log(message); };',
+    },
+    {
+      code: `
+        class Pinger {
+          ping(): void {
+            this.socket.send('ping');
+          }
+        }
+      `,
+      options: [{ allowVoidReturnTypes: false }],
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'class method "ping"' },
+        },
+      ],
+      output: `
+        class Pinger {
+          ping() {
+            this.socket.send('ping');
+          }
+        }
+      `,
+    },
+
+    // A value-carrying annotation next to the exempt ones is still redundant
+    // under BOTH settings, which is what keeps the carve-out narrow.
+    {
+      code: `
+        export class Authorizer {
+          public async token(): Promise<string> {
+            return 'tok';
+          }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'class method "token"' },
+        },
+      ],
+      output: `
+        export class Authorizer {
+          public async token() {
+            return 'tok';
+          }
+        }
+      `,
+    },
+    {
+      code: `
+        export class Authorizer {
+          public async token(): Promise<string> {
+            return 'tok';
+          }
+        }
+      `,
+      options: [{ allowVoidReturnTypes: false }],
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'class method "token"' },
+        },
+      ],
+      output: `
+        export class Authorizer {
+          public async token() {
+            return 'tok';
+          }
+        }
+      `,
+    },
+    {
+      code: 'const label = (value: number): string => String(value);',
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "label"' },
+        },
+      ],
+      output: 'const label = (value: number) => String(value);',
+    },
+    {
+      code: 'const label = (value: number): string => String(value);',
+      options: [{ allowVoidReturnTypes: false }],
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "label"' },
+        },
+      ],
+      output: 'const label = (value: number) => String(value);',
+    },
+
+    // Shape edge cases: only a bare `void` and a single-argument `Promise<void>`
+    // declare the absence of a result. Anything else can carry a value, so it
+    // stays a redundant restatement even with the exemption at its default.
+    {
+      code: 'async function maybe(): Promise<void | string> { return undefined; }',
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "maybe"' },
+        },
+      ],
+      output: 'async function maybe() { return undefined; }',
+    },
+    {
+      code: 'async function wrapped(): Promise<Awaited<void>> { await commit(); }',
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "wrapped"' },
+        },
+      ],
+      output: 'async function wrapped() { await commit(); }',
+    },
+    {
+      code: 'async function nested(): Promise<Promise<void>> { await commit(); }',
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "nested"' },
+        },
+      ],
+      output: 'async function nested() { await commit(); }',
+    },
+    {
+      code: 'async function arity(): Promise<void, never> { await commit(); }',
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "arity"' },
+        },
+      ],
+      output: 'async function arity() { await commit(); }',
+    },
+    {
+      code: 'function raw(): Promise { return commit(); }',
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "raw"' },
+        },
+      ],
+      output: 'function raw() { return commit(); }',
+    },
+    // `void[]` is an array of values, not the absence of one
+    {
+      code: 'function empties(): void[] { return []; }',
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "empties"' },
+        },
+      ],
+      output: 'function empties() { return []; }',
+    },
+    // A signature-only declaration keeps reporting when its own allowance is
+    // off: it has no body to infer from, so its annotation is mandatory rather
+    // than redundant, and no fixer ever strips it.
+    {
+      code: 'interface Logger { debug(message: string): void; }',
+      options: [{ allowInterfaceMethodSignatures: false }],
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeNonInferable',
+          data: { functionKind: 'interface method "debug"' },
+        },
+      ],
+      output: null,
+    },
+    {
+      code: 'abstract class BaseTask { abstract run(): Promise<void>; }',
+      options: [{ allowAbstractMethodSignatures: false }],
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeNonInferable',
+          data: { functionKind: 'class method "run"' },
+        },
+      ],
+      output: null,
     },
   ],
 });
