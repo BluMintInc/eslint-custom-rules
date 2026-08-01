@@ -1,5 +1,5 @@
 import { createRule } from '../utils/createRule';
-import { AST_NODE_TYPES } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 
 type Options = [];
 type MessageIds = 'enforceIdCapitalization';
@@ -30,6 +30,8 @@ export const enforceIdCapitalization = createRule<Options, MessageIds>({
     // Regular expression to match standalone "id" surrounded by whitespace or punctuation
     // This ensures we only match "id" as a word, not as part of another word
     const idRegex = /(^|\s|[.,;:!?'"()\[\]{}])id(\s|$|[.,;:!?'"()\[\]{}])/g;
+
+    const sourceCode = context.getSourceCode();
 
     // DOM / Testing-Library APIs whose first argument is an attribute NAME
     // (code), not user-facing text. A literal like 'id' passed here is a DOM
@@ -180,6 +182,69 @@ export const enforceIdCapitalization = createRule<Options, MessageIds>({
     }
 
     /**
+     * Escape a string so it can sit inside a literal delimited by `delimiter`.
+     *
+     * JSON escaping already covers backslashes, control characters and every
+     * other sequence a JavaScript string literal needs, but it is hardcoded to
+     * double quotes. For a single-quoted literal the escaping is simply
+     * inverted: the double quotes go bare and the apostrophes carry the
+     * backslash.
+     */
+    function escapeForDelimiter(text: string, delimiter: string): string {
+      const jsonBody = JSON.stringify(text).slice(1, -1);
+      if (delimiter === '"') {
+        return jsonBody;
+      }
+      // Every `"` in a JSON body is escaped and every `\` belongs to an escape
+      // sequence, so unescaping the quotes first cannot corrupt a `\\` pair.
+      return jsonBody.replace(/\\"/g, '"').replace(/'/g, "\\'");
+    }
+
+    /**
+     * Rebuild a string literal around the corrected text, keeping the quote
+     * character the author chose. Rewriting the delimiter is a formatting
+     * regression on every fixed file, so the fix has to reuse it.
+     */
+    function fixStringLiteral(
+      node: TSESTree.Literal,
+      fixedText: string,
+    ): string | null {
+      const raw = sourceCode.getText(node);
+      const delimiter = raw[0];
+      if (delimiter !== "'" && delimiter !== '"') {
+        return null;
+      }
+
+      const rawBody = raw.slice(1, -1);
+      const isJsxAttributeValue =
+        node.parent && node.parent.type === AST_NODE_TYPES.JSXAttribute;
+
+      // Substituting inside the raw source reproduces the file byte for byte,
+      // so take that path whenever the source between the quotes already is the
+      // parsed value. It is also the only safe path for a JSX attribute value,
+      // which the parser does not escape-process: there a backslash is a
+      // literal character (rebuilding would double it) and an entity such as
+      // &quot; decodes to a delimiter that cannot be written back escaped.
+      if (rawBody === node.value || isJsxAttributeValue) {
+        idRegex.lastIndex = 0;
+        const fixedBody = rawBody.replace(
+          idRegex,
+          (_match, prefix, suffix) => `${prefix}ID${suffix}`,
+        );
+        // An entity-bearing JSX value can carry the match only in its decoded
+        // form; report it without a fix rather than emit a no-op replacement.
+        return fixedBody === rawBody
+          ? null
+          : `${delimiter}${fixedBody}${delimiter}`;
+      }
+
+      return `${delimiter}${escapeForDelimiter(
+        fixedText,
+        delimiter,
+      )}${delimiter}`;
+    }
+
+    /**
      * Check if a string contains "id" as a standalone word and report if found
      */
     function checkForIdInString(node: any, value: string) {
@@ -217,14 +282,21 @@ export const enforceIdCapitalization = createRule<Options, MessageIds>({
           node,
           messageId: 'enforceIdCapitalization',
           fix: (fixer) => {
-            if (node.type === AST_NODE_TYPES.Literal) {
-              return fixer.replaceText(node, JSON.stringify(fixedText));
-            } else if (node.type === AST_NODE_TYPES.JSXText) {
-              return fixer.replaceText(node, fixedText);
-            } else if (node.type === AST_NODE_TYPES.TemplateElement) {
+            // JSX text carries no delimiters, so its own text is the content.
+            if (node.type === AST_NODE_TYPES.JSXText) {
               return fixer.replaceText(node, fixedText);
             }
-            return fixer.replaceText(node, JSON.stringify(fixedText));
+            if (node.type === AST_NODE_TYPES.Literal) {
+              const replacement = fixStringLiteral(node, fixedText);
+              return replacement === null
+                ? null
+                : fixer.replaceText(node, replacement);
+            }
+            // Any other node kind (a TemplateElement, say) is a fragment of a
+            // larger construct whose delimiters and `${}` expressions live
+            // outside this node; rebuilding it from the parsed value would
+            // destroy them, so report without a fix.
+            return null;
           },
         });
       }

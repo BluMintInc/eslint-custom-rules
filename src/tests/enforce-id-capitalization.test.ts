@@ -34,6 +34,13 @@ ruleTesterJsx.run('enforce-id-capitalization', enforceIdCapitalization, {
     {
       code: 'const message = `Your ID is ${userId}`;', // Already using "ID"
     },
+    // Template literal quasis are not visited, so a lowercase "id" inside one
+    // goes unreported. The fixer's non-Literal branch is therefore unreachable
+    // and deliberately produces no fix: a quasi's delimiters and ${} sub
+    // expressions live outside the node, so rebuilding one would destroy them.
+    {
+      code: 'const message = `Your id is ${userId}`;',
+    },
     {
       code: 't("user.profile.ID");', // Translation key with correct "ID"
     },
@@ -78,6 +85,19 @@ ruleTesterJsx.run('enforce-id-capitalization', enforceIdCapitalization, {
       code: 'const message = "id:";',
       errors: [{ messageId: 'enforceIdCapitalization' }],
       output: 'const message = "ID:";',
+    },
+    // A single-quoted JSX attribute value keeps its quotes (#1558)
+    {
+      code: `<input placeholder='enter your id' />`,
+      errors: [{ messageId: 'enforceIdCapitalization' }],
+      output: `<input placeholder='enter your ID' />`,
+    },
+    // JSX attribute values are not escape-processed, so a backslash there is a
+    // literal character and must not be doubled by the fix
+    {
+      code: String.raw`<input placeholder="C:\logs your id" />`,
+      errors: [{ messageId: 'enforceIdCapitalization' }],
+      output: String.raw`<input placeholder="C:\logs your ID" />`,
     },
   ],
 });
@@ -161,19 +181,64 @@ ruleTesterTs.run('enforce-id-capitalization', enforceIdCapitalization, {
     {
       code: `t('id');`,
       errors: [{ messageId: 'enforceIdCapitalization' }],
-      output: `t("ID");`,
+      output: `t('ID');`,
     },
     // Only the first (name) argument is exempt; a user-facing string in a later
     // argument position must still be flagged.
     {
       code: `element.setAttribute('data-x', 'enter your id');`,
       errors: [{ messageId: 'enforceIdCapitalization' }],
-      output: `element.setAttribute('data-x', "enter your ID");`,
+      output: `element.setAttribute('data-x', 'enter your ID');`,
     },
     {
       code: 'const message: string = "Please enter your id";',
       errors: [{ messageId: 'enforceIdCapitalization' }],
       output: 'const message: string = "Please enter your ID";',
+    },
+    // Repro from #1558: the fix must correct the capitalization without
+    // rewriting the literal's quote character.
+    {
+      code: `it('forwards the candidate id to the invite button', () => {});`,
+      errors: [{ messageId: 'enforceIdCapitalization' }],
+      output: `it('forwards the candidate ID to the invite button', () => {});`,
+    },
+    // A double-quoted literal is left double-quoted — the fix preserves the
+    // author's delimiter, it does not normalize it in either direction.
+    {
+      code: `it("forwards the candidate id to the invite button", () => {});`,
+      errors: [{ messageId: 'enforceIdCapitalization' }],
+      output: `it("forwards the candidate ID to the invite button", () => {});`,
+    },
+    // An escaped delimiter must round-trip: the apostrophe stays escaped inside
+    // a single-quoted literal
+    {
+      code: String.raw`const message = 'the user id\'s value';`,
+      errors: [{ messageId: 'enforceIdCapitalization' }],
+      output: String.raw`const message = 'the user ID\'s value';`,
+    },
+    // ...and an escaped double quote stays escaped inside a double-quoted one
+    {
+      code: String.raw`const message = "say \"your id\" here";`,
+      errors: [{ messageId: 'enforceIdCapitalization' }],
+      output: String.raw`const message = "say \"your ID\" here";`,
+    },
+    // A quote that needs no escape under the original delimiter stays bare
+    {
+      code: String.raw`const message = 'say "your id" here';`,
+      errors: [{ messageId: 'enforceIdCapitalization' }],
+      output: String.raw`const message = 'say "your ID" here';`,
+    },
+    // Escape sequences survive: a backslash is not doubled...
+    {
+      code: String.raw`const message = 'C:\\logs your id';`,
+      errors: [{ messageId: 'enforceIdCapitalization' }],
+      output: String.raw`const message = 'C:\\logs your ID';`,
+    },
+    // ...and a newline escape is not expanded into a raw line break
+    {
+      code: String.raw`const message = 'enter your id\nhere';`,
+      errors: [{ messageId: 'enforceIdCapitalization' }],
+      output: String.raw`const message = 'enter your ID\nhere';`,
     },
     // Make sure user-facing text in components with destructured parameters is still flagged
     {
