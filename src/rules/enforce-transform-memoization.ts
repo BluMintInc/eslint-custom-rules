@@ -10,6 +10,9 @@ type MessageIds =
 
 type MemoHook = 'useMemo' | 'useCallback';
 
+const LATEST_CALLBACK_MODULE = 'use-latest-callback';
+const LATEST_CALLBACK_HOOK = 'useLatestCallback';
+
 export const enforceTransformMemoization = createRule<[], MessageIds>({
   name: 'enforce-transform-memoization',
   meta: {
@@ -37,7 +40,14 @@ export const enforceTransformMemoization = createRule<[], MessageIds>({
     const scopeManager = sourceCode.scopeManager;
     const adaptValueNames = new Set(['adaptValue']);
     const memoizingHooks = new Set(['useMemo', 'useCallback']);
-    const stabilizingUtilities = new Set(['useEvent']);
+    // Hooks that hand back a reference stable for the component's whole life and
+    // take no dependency array, so there is none to audit. `useLatestCallback`
+    // belongs here because `use-latest-callback` — 'error' in the same
+    // recommended config, and fixable — rewrites every `useCallback` into it and
+    // drops the array. ESLint re-lints until the output settles, so one
+    // `eslint --fix` run does both steps: without this entry, correctly
+    // memoized code goes in and a demand to memoize it comes out (issue #1584).
+    const stabilizingUtilities = new Set(['useEvent', LATEST_CALLBACK_HOOK]);
 
     const getPropertyName = (
       key:
@@ -524,6 +534,29 @@ export const enforceTransformMemoization = createRule<[], MessageIds>({
       ImportDeclaration(node) {
         const sourceValue =
           typeof node.source.value === 'string' ? node.source.value : '';
+
+        // The module's sole export is the hook, so its DEFAULT specifier binds
+        // it under whatever local name the file chose — a shape a set of bare
+        // hook names cannot see. `use-latest-callback`'s own fixer picks that
+        // name, and falls back to `useLatestCallback2` when `useLatestCallback`
+        // is already taken in the file, so the alias is not hypothetical.
+        if (
+          sourceValue === LATEST_CALLBACK_MODULE &&
+          (!node.importKind || node.importKind === 'value')
+        ) {
+          for (const specifier of node.specifiers) {
+            if (
+              specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
+              (specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+                specifier.importKind !== 'type' &&
+                specifier.imported.type === AST_NODE_TYPES.Identifier &&
+                specifier.imported.name === LATEST_CALLBACK_HOOK)
+            ) {
+              stabilizingUtilities.add(specifier.local.name);
+            }
+          }
+        }
+
         for (const specifier of node.specifiers) {
           if (
             specifier.type === AST_NODE_TYPES.ImportSpecifier &&
