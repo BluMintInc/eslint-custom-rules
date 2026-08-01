@@ -1,3 +1,10 @@
+## [1.20.54](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.53...v1.20.54) (2026-08-01)
+
+
+### Bug Fixes
+
+* **export-if-in-doubt:** elide the remedy example instead of fabricating a destructive value (closes [#1543](https://github.com/BluMintInc/eslint-custom-rules/issues/1543)) ([9907087](https://github.com/BluMintInc/eslint-custom-rules/commit/99070871ab4b53f61b177bc1bb85a1059a58bdf4))
+
 ## [1.20.53](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.52...v1.20.53) (2026-08-01)
 
 
