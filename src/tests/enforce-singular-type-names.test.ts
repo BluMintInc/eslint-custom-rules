@@ -40,6 +40,35 @@ ruleTesterTs.run('enforce-singular-type-names', enforceSingularTypeNames, {
     // readonly over a tuple
     'type Coords = readonly [number, number];',
 
+    // Nullable containers: making a container optional does not stop it being a
+    // collection, so `T[]` and `T[] | null` must not disagree.
+    // The agora repro (DropIndicator.tsx)
+    'type AllowedEdges = readonly Edge[] | null;',
+    // Array unioned with undefined
+    'type Edges = Edge[] | undefined;',
+    // Array unioned with both nullish members
+    'type Nodes = Node[] | null | undefined;',
+    // ReadonlyArray<T> in a nullable union
+    'type Entries = ReadonlyArray<Entry> | null;',
+    // Readonly<T[]> in a nullable union
+    'type Rows = Readonly<Row[]> | undefined;',
+    // Array of tuples in a nullable union
+    'type Pairs = [string, number][] | null;',
+    // Bare tuple in a nullable union
+    'type Coords = [number, number] | null;',
+    // Parenthesized container in a nullable union
+    'type Points = (Point[]) | null;',
+    // Parenthesized nullable union whose sole non-nullish member is a container
+    'type Shapes = (Shape[] | null) | undefined;',
+    // readonly type operator applied to a nullable union member
+    'type Segments = readonly Segment[] | null;',
+    // Every non-nullish member is a container, so the alias is still a collection
+    'type Chunks = Chunk[] | readonly Chunk[] | null;',
+    // Nullish member listed first
+    'type Layers = null | Layer[];',
+    // Nested union of containers
+    'type Buffers = (Buffer[] | Uint8Array[]) | undefined;',
+
     // Singular type alias
     'type User = { id: number; name: string; };',
 
@@ -281,6 +310,75 @@ ruleTesterTs.run('enforce-singular-type-names', enforceSingularTypeNames, {
     {
       code: 'type Records = Record<string, number>;',
       errors: [error('Records', 'Record')],
+    },
+
+    // The nullish-stripping union exemption must not widen what counts as a
+    // container: Record stays flagged inside a union too.
+    {
+      code: 'type Maps = Record<string, number> | null;',
+      errors: [error('Maps', 'Map')],
+    },
+
+    // Nullable NON-container: the union carries no collection to justify plural.
+    {
+      code: 'type Edges = Edge | null;',
+      errors: [error('Edges', 'Edge')],
+    },
+
+    // Mixed union — one member is a single value, so the alias is not
+    // unambiguously a collection.
+    {
+      code: 'type Edges = Edge[] | Edge;',
+      errors: [error('Edges', 'Edge')],
+    },
+
+    // Nullable object literal is not a container.
+    {
+      code: 'type Users = { id: string } | null;',
+      errors: [error('Users', 'User')],
+    },
+
+    // A union of only nullish members holds no collection.
+    {
+      code: 'type Things = null | undefined;',
+      errors: [error('Things', 'Thing')],
+    },
+
+    // Union of a container with a non-nullish primitive stays flagged.
+    {
+      code: 'type Items = Item[] | string;',
+      errors: [error('Items', 'Item')],
+    },
+
+    // Nullable Readonly<> over a NON-container is still not a collection.
+    {
+      code: 'type Owners = Readonly<{ id: string }> | undefined;',
+      errors: [error('Owners', 'Owner')],
+    },
+
+    // An intersection is not a container, even when nullable.
+    {
+      code: 'type Handlers = (Handler & Disposable) | null;',
+      errors: [error('Handlers', 'Handler')],
+    },
+
+    // Map and Set are keyed/deduplicated structures, not the array shapes this
+    // rule exempts; a nullish member must not smuggle them into the exemption.
+    {
+      code: 'type Sets = Set<string> | null;',
+      errors: [error('Sets', 'Set')],
+    },
+
+    {
+      code: 'type Maps = Map<string, number> | undefined;',
+      errors: [error('Maps', 'Map')],
+    },
+
+    // Stripping the nullish member does not rescue a union that is otherwise
+    // mixed: `Edge` can still hold one value.
+    {
+      code: 'type Edges = readonly Edge[] | Edge | null;',
+      errors: [error('Edges', 'Edge')],
     },
 
     // Plural interface
