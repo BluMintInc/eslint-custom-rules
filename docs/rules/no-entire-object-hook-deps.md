@@ -28,6 +28,17 @@ An effect runs for its side effects rather than to produce a value, so a depende
 
 The one shape where an unread effect dependency is genuinely wrong is a **circular dependency**: the effect writes the very value it depends on and therefore retriggers itself. The rule recognises this by the corresponding state setter — a dependency named `channelGroupActive` is only reported when the effect body calls `setChannelGroupActive(...)` (dependency `count` pairs with `setCount`, and so on). The setter call may be nested anywhere in the body, including inside an inner `async` function, a `startTransition` callback, or a `.then()`.
 
+### Manually managed dependency arrays
+
+Suppressing `react-hooks/exhaustive-deps` for a hook declares its dependency array **hand-maintained**: you, not the linter, decide what belongs in it. Entries in such an array are load-bearing by construction, so an entry the body never reads is a deliberate **recompute trigger** — a hydration flag that forces the single post-mount recompute, a hash that detects changes to a mutable value kept out of the array — and deleting it leaves the hook returning a stale value. The rule therefore never reports (and `--fix` never removes) an unread dependency of a hook whose array is manually managed:
+
+- The suppression may sit above the hook call, above the dependency array, or above the closing `}, [...])` line.
+- Line (`//`) and block (`/* */`) forms of `eslint-disable-next-line` both count, as does `eslint-disable-line` on the array's own line.
+- The rule may appear anywhere in a multi-rule list, with or without a trailing `-- justification`.
+- A file-level `/* eslint-disable react-hooks/exhaustive-deps */` exempts every hook in the file.
+
+The suppression must name `react-hooks/exhaustive-deps` explicitly; a directive for another rule, a bare `eslint-disable-next-line`, and prose that merely mentions the rule name all leave the check enabled. This applies to `useEffect`, `useMemo`, and `useCallback` alike, and it composes with the circular-dependency check above rather than replacing it. Narrowing an entire object to the fields you read is unaffected — that transform keeps the dependency instead of dropping it.
+
 ## Incorrect
 
 ```typescript
@@ -64,6 +75,18 @@ function Component({ channelGroupIdRouter, channelGroupActive }) {
 Message:
 `What's wrong: Dependency "channelGroupActive" is listed in the array but never read inside the hook body. Why it matters: The hook reruns when "channelGroupActive" changes without affecting the result and can hide the real missing dependency. How to fix: Remove it or add the specific value that actually drives the hook.`
 
+```typescript
+function EventEndedText({ endDate, hydrated }) {
+  // Nothing marks this array as hand-maintained, so hydrated reads as dead
+  // weight and is removed
+  const label = useMemo(() => formatRelative(endDate), [endDate, hydrated]);
+  return <span>{label}</span>;
+}
+```
+
+Message:
+`What's wrong: Dependency "hydrated" is listed in the array but never read inside the hook body. Why it matters: The hook reruns when "hydrated" changes without affecting the result and can hide the real missing dependency. How to fix: Remove it or add the specific value that actually drives the hook.`
+
 ## Correct
 
 ```typescript
@@ -96,11 +119,32 @@ function useResettingPagination(status, filter, isPaginated) {
 }
 ```
 
+Suppressing `react-hooks/exhaustive-deps` marks the array as manually managed, so its unread entries are left in place — here the recompute trigger sits above the hook call, and below it above the closing `}, [...])` line:
+
+```typescript
+function EventEndedText({ endDate, hydrated }) {
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- hydrated is an intentional recompute trigger (not read in-body): it forces the single post-mount recompute that refreshes the suppressed SSR value
+  const label = useMemo(() => formatRelative(endDate), [endDate, hydrated]);
+  return <span>{label}</span>;
+}
+```
+
+```typescript
+function useGuards(hooks) {
+  const shouldShowHash = useHashOf(hooks);
+  return useMemo(() => {
+    return buildGuardMap(hooks);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- shouldShowHash detects changes to the mutable hooks map kept out of the array
+  }, [shouldShowHash]);
+}
+```
+
 ## Auto-fix
 
 - Rewrites your dependency arrays to list the specific fields your hook reads.
 - Removes dependencies you keep in a `useMemo`/`useCallback` array but never use.
 - Removes an unread `useEffect` dependency only when the effect also calls its corresponding setter, so deliberate re-run triggers survive `--fix`.
+- Never removes an entry from an array you manage by hand with a `react-hooks/exhaustive-deps` suppression, on any of the three hooks.
 
 ## When not to use it
 
