@@ -1,5 +1,8 @@
+import { Linter, Rule } from 'eslint';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceTransformMemoization } from '../rules/enforce-transform-memoization';
+import { useLatestCallback } from '../rules/use-latest-callback';
+import { preferUseCallbackOverUseMemoForFunctions } from '../rules/prefer-usecallback-over-usememo-for-functions';
 
 ruleTesterTs.run('enforce-transform-memoization', enforceTransformMemoization, {
   valid: [
@@ -359,6 +362,133 @@ ruleTesterTs.run('enforce-transform-memoization', enforceTransformMemoization, {
             { valueKey: key, onChangeKey: 'onChange', transformValue: (v) => Boolean(v) },
             Switch,
           ),
+        );
+      }
+    `,
+    // Valid: useLatestCallback is a memoization primitive. It is also the exact
+    // shape use-latest-callback's fixer emits from a useMemo/useCallback
+    // transform, so rejecting it would make the recommended config's own --fix
+    // manufacture this rule's violations (issue #1584).
+    `
+      import useLatestCallback from 'use-latest-callback';
+      const Switch = () => null;
+
+      function Component() {
+        return adaptValue(
+          {
+            valueKey: 'checked',
+            onChangeKey: 'onChange',
+            transformValue: useLatestCallback((value) => Boolean(value)),
+            transformOnChange: useLatestCallback((event) => event.target.checked),
+          },
+          Switch,
+        );
+      }
+    `,
+    // Valid: the hook stabilizes a transform that closes over props, and it
+    // takes no dependency array to audit
+    `
+      import useLatestCallback from 'use-latest-callback';
+      const Switch = () => null;
+
+      function Component({ formatter, onChange }) {
+        const transformValue = useLatestCallback((value: string) => formatter(value));
+        const transformOnChange = useLatestCallback((event) =>
+          onChange(event.target.value),
+        );
+
+        return adaptValue(
+          {
+            valueKey: 'value',
+            onChangeKey: 'onChange',
+            transformValue,
+            transformOnChange,
+          },
+          Switch,
+        );
+      }
+    `,
+    // Valid: the fixer's exact output for the issue's repro, reached through a
+    // spread of a local object
+    `
+      import useLatestCallback from 'use-latest-callback';
+      const Switch = () => null;
+
+      function Component() {
+        const base = {
+          transformValue: useLatestCallback((value) => value),
+        };
+        const props = { ...base, valueKey: 'value' };
+
+        return adaptValue(props, Switch);
+      }
+    `,
+    // Valid: the module's sole export is the hook, so a default specifier binds
+    // it under any local name. use-latest-callback's fixer picks exactly this
+    // suffixed name when 'useLatestCallback' is already taken in the file.
+    `
+      import useLatestCallback2 from 'use-latest-callback';
+      const useLatestCallback = 'not the hook';
+      const Switch = () => null;
+
+      function Component() {
+        return adaptValue(
+          {
+            valueKey: 'value',
+            onChangeKey: 'onChange',
+            transformValue: useLatestCallback2((value) => value),
+          },
+          Switch,
+        );
+      }
+    `,
+    // Valid: an arbitrary alias of the default export
+    `
+      import stableTransform from 'use-latest-callback';
+      const Switch = () => null;
+
+      function Component() {
+        return adaptValue(
+          {
+            valueKey: 'value',
+            onChangeKey: 'onChange',
+            transformOnChange: stableTransform((event) => event.target.value),
+          },
+          Switch,
+        );
+      }
+    `,
+    // Valid: the named-specifier form of the same hook
+    `
+      import { useLatestCallback } from 'use-latest-callback';
+      const Switch = () => null;
+
+      function Component() {
+        return adaptValue(
+          {
+            valueKey: 'value',
+            onChangeKey: 'onChange',
+            transformValue: useLatestCallback((value) => value),
+          },
+          Switch,
+        );
+      }
+    `,
+    // Valid: the hook used inside a custom hook rather than a component
+    `
+      import useLatestCallback from 'use-latest-callback';
+      const Switch = () => null;
+
+      export function useAdaptedSwitch(formatter) {
+        return adaptValue(
+          {
+            valueKey: 'value',
+            onChangeKey: 'onChange',
+            transformOnChange: useLatestCallback((event) =>
+              formatter(event.target.value),
+            ),
+          },
+          Switch,
         );
       }
     `,
@@ -760,5 +890,186 @@ ruleTesterTs.run('enforce-transform-memoization', enforceTransformMemoization, {
       `,
       errors: [{ messageId: 'missingDependencies' }],
     },
+    // The useLatestCallback exemption is not a file-wide amnesty: an
+    // unmemoized transform sitting next to a memoized one still reports
+    {
+      code: `
+        import useLatestCallback from 'use-latest-callback';
+        const Switch = () => null;
+        function Component() {
+          return adaptValue(
+            {
+              valueKey: 'checked',
+              onChangeKey: 'onChange',
+              transformValue: (value) => Boolean(value),
+              transformOnChange: useLatestCallback((event) => event.target.checked),
+            },
+            Switch,
+          );
+        }
+      `,
+      errors: [{ messageId: 'memoizeTransformValue' }],
+    },
+    // A default import of the same local name from another module binds some
+    // other function, so it carries no stability guarantee
+    {
+      code: `
+        import stableTransform from './helpers';
+        const Switch = () => null;
+        function Component() {
+          return adaptValue(
+            {
+              valueKey: 'value',
+              onChangeKey: 'onChange',
+              transformValue: stableTransform((value) => value),
+            },
+            Switch,
+          );
+        }
+      `,
+      errors: [{ messageId: 'memoizeTransformValue' }],
+    },
   ],
+});
+
+// use-latest-callback rewrites every useCallback into useLatestCallback and
+// drops the dependency array; prefer-usecallback-over-usememo-for-functions
+// first turns a function-returning useMemo into that useCallback. All three
+// rules ship as 'error' in the recommended config and the first two are
+// fixable, and ESLint re-lints until the output settles — so ONE `eslint --fix`
+// invocation walks the whole chain. If this rule cannot see the hook the chain
+// lands on, correctly memoized code goes in and a demand to memoize it comes
+// out: the config manufacturing its own violation (issue #1584).
+describe('enforce-transform-memoization vs use-latest-callback --fix', () => {
+  const fixThenLint = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      'test/enforce-transform-memoization',
+      enforceTransformMemoization as unknown as Rule.RuleModule,
+    );
+    linter.defineRule(
+      'test/use-latest-callback',
+      useLatestCallback as unknown as Rule.RuleModule,
+    );
+    linter.defineRule(
+      'test/prefer-usecallback-over-usememo-for-functions',
+      preferUseCallbackOverUseMemoForFunctions as unknown as Rule.RuleModule,
+    );
+    const config = {
+      parser: '@typescript-eslint/parser',
+      parserOptions: {
+        ecmaVersion: 2020 as const,
+        sourceType: 'module' as const,
+        ecmaFeatures: { jsx: true },
+      },
+      rules: {
+        'test/enforce-transform-memoization': 'error' as const,
+        'test/use-latest-callback': 'error' as const,
+        'test/prefer-usecallback-over-usememo-for-functions': 'error' as const,
+      },
+    };
+    const { output } = linter.verifyAndFix(code, config, 'Adapted.tsx');
+    return {
+      output,
+      messages: linter.verify(
+        output,
+        {
+          ...config,
+          rules: { 'test/enforce-transform-memoization': 'error' as const },
+        },
+        'Adapted.tsx',
+      ),
+    };
+  };
+
+  it('stays silent on a useCallback transformOnChange the sibling fixer rewrites', () => {
+    const { output, messages } = fixThenLint(
+      `import { useCallback } from 'react';
+const Switch = () => null;
+
+function Component() {
+  return adaptValue(
+    {
+      valueKey: 'checked',
+      onChangeKey: 'onChange',
+      transformOnChange: useCallback((event) => event.target.checked, []),
+    },
+    Switch,
+  );
+}`,
+    );
+
+    // Without this the test passes vacuously: an unrun sibling fixer leaves the
+    // original useCallback, which this rule always accepted.
+    expect(output).toContain('useLatestCallback');
+    expect(messages).toEqual([]);
+  });
+
+  it('stays silent on a useMemo transformValue after the full fixer chain', () => {
+    const { output, messages } = fixThenLint(
+      `import { useMemo } from 'react';
+const Switch = () => null;
+
+function Component() {
+  const base = {
+    transformValue: useMemo(() => (value) => value, []),
+  };
+  const props = { ...base, valueKey: 'value' };
+  return adaptValue(props, Switch);
+}`,
+    );
+
+    expect(output).toContain('useLatestCallback');
+    expect(output).not.toContain('useMemo');
+    expect(messages).toEqual([]);
+  });
+
+  it('stays silent on transforms hoisted into their own consts', () => {
+    const { output, messages } = fixThenLint(
+      `import { useMemo, useCallback } from 'react';
+const Switch = () => null;
+
+function Component({ formatter, onChange }) {
+  const transformValue = useMemo(() => (value: string) => formatter(value), [formatter]);
+  const transformOnChange = useCallback((event) => onChange(event.target.value), [onChange]);
+
+  return adaptValue(
+    { valueKey: 'value', onChangeKey: 'onChange', transformValue, transformOnChange },
+    Switch,
+  );
+}`,
+    );
+
+    expect(output).toContain('useLatestCallback');
+    expect(messages).toEqual([]);
+  });
+
+  it('still reports an unmemoized transform in the same fixed file', () => {
+    const { output, messages } = fixThenLint(
+      `import { useCallback } from 'react';
+const Switch = () => null;
+
+function Component() {
+  return adaptValue(
+    {
+      valueKey: 'checked',
+      onChangeKey: 'onChange',
+      transformValue: (value) => Boolean(value),
+      transformOnChange: useCallback((event) => event.target.checked, []),
+    },
+    Switch,
+  );
+}`,
+    );
+
+    expect(output).toContain('useLatestCallback');
+    expect(messages.map((message) => message.messageId)).toEqual([
+      'memoizeTransformValue',
+    ]);
+  });
 });

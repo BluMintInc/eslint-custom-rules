@@ -14,6 +14,7 @@ This rule enforces:
 1. `transformOnChange` must be memoized with `useCallback` (or a memoized helper).
 1. When `useMemo`/`useCallback` is used, the dependency array must exist and include all outer-scope values referenced by the transform.
 1. Functions defined outside the component are treated as stable and are allowed directly.
+1. `useLatestCallback` (from `use-latest-callback`) and `useEvent` are accepted for either transform. They return a reference stable for the component's whole life and take no dependency array, so there is none to audit.
 
 `transformValue` represents a derived or computed value that should be stabilized to avoid expensive recomputations (hence `useMemo`), while `transformOnChange` is an event callback whose identity must be stable to prevent unnecessary re-renders or effect triggers in the adapted component (hence `useCallback`).
 
@@ -96,6 +97,26 @@ function Component() {
     valueKey: 'checked',
     onChangeKey: 'onChange',
     transformValue: convertToBoolean,
+  }, Switch);
+}
+```
+
+```js
+// ✅ useLatestCallback keeps a stable reference and needs no dependency array.
+// This is also the shape the `use-latest-callback` rule's autofix produces from
+// the `useMemo`/`useCallback` forms above, so the two rules compose: running
+// `eslint --fix` over already-correct code leaves it correct.
+import useLatestCallback from 'use-latest-callback';
+
+// Mock component for demonstration
+const Switch = () => null;
+
+function Component({ formatter }) {
+  return adaptValue({
+    valueKey: 'value',
+    onChangeKey: 'onChange',
+    transformValue: useLatestCallback((value) => formatter(value)),
+    transformOnChange: useLatestCallback((event) => formatter(event.target.value)),
   }, Switch);
 }
 ```
