@@ -1,19 +1,15 @@
-import { ESLintUtils } from '@typescript-eslint/utils';
+import { ruleTesterJsx, withParserOptions } from '../utils/ruleTester';
 import { noUnusedUseState } from '../rules/no-unused-usestate';
 
-const ruleTester = new ESLintUtils.RuleTester({
-  parser: '@typescript-eslint/parser',
-  parserOptions: {
-    ecmaVersion: 2020,
-    sourceType: 'module',
-    ecmaFeatures: {
-      jsx: true,
-    },
-  },
-});
+// The shared JSX tester supplies the parser and `ecmaFeatures.jsx`; module
+// scope analysis is not its default, so every snippet here declares it.
+const parserOptions = {
+  ecmaVersion: 2020,
+  sourceType: 'module',
+} as const;
 
-ruleTester.run('no-unused-usestate', noUnusedUseState, {
-  valid: [
+ruleTesterJsx.run('no-unused-usestate', noUnusedUseState, {
+  valid: withParserOptions(parserOptions, [
     // Valid usage of useState
     {
       code: `
@@ -83,8 +79,8 @@ ruleTester.run('no-unused-usestate', noUnusedUseState, {
         }
       `,
     },
-  ],
-  invalid: [
+  ]),
+  invalid: withParserOptions(parserOptions, [
     {
       // The value is discarded but the setter is live, so the declaration must stay.
       code: `
@@ -431,5 +427,5 @@ export function C() {
         }
       `,
     },
-  ],
+  ]),
 });

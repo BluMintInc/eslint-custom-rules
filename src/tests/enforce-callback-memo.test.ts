@@ -1,19 +1,15 @@
-import { ESLintUtils } from '@typescript-eslint/utils';
+import { ruleTesterJsx, withParserOptions } from '../utils/ruleTester';
 import rule from '../rules/enforce-callback-memo';
 
-const ruleTester = new ESLintUtils.RuleTester({
-  parser: '@typescript-eslint/parser',
-  parserOptions: {
-    ecmaVersion: 2018,
-    sourceType: 'module',
-    ecmaFeatures: {
-      jsx: true,
-    },
-  },
-});
+// The shared JSX tester supplies the parser and `ecmaFeatures.jsx`; module
+// scope analysis is not its default, so every snippet here declares it.
+const parserOptions = {
+  ecmaVersion: 2018,
+  sourceType: 'module',
+} as const;
 
-ruleTester.run('enforce-callback-memo', rule, {
-  valid: [
+ruleTesterJsx.run('enforce-callback-memo', rule, {
+  valid: withParserOptions(parserOptions, [
     // Valid: Function wrapped with useCallback
     {
       code: `
@@ -626,8 +622,8 @@ ruleTester.run('enforce-callback-memo', rule, {
         }
       `,
     },
-  ],
-  invalid: [
+  ]),
+  invalid: withParserOptions(parserOptions, [
     // Invalid: Inline function
     {
       code: `
@@ -1410,5 +1406,5 @@ ruleTester.run('enforce-callback-memo', rule, {
       `,
       errors: [{ messageId: 'enforceCallback' }],
     },
-  ],
+  ]),
 });

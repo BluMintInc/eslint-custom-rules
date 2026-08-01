@@ -1,5 +1,5 @@
 import path from 'path';
-import { ESLintUtils } from '@typescript-eslint/utils';
+import { ruleTesterJsx, withParserOptions } from '../utils/ruleTester';
 import { memoCompareDeeplyComplexProps } from '../rules/memo-compare-deeply-complex-props';
 
 const callSignatureMissingFile = 'src/components/CallSignatureMissing.tsx';
@@ -35,23 +35,21 @@ jest.mock('typescript', () => {
   };
 });
 
-const ruleTester = new ESLintUtils.RuleTester({
-  parser: '@typescript-eslint/parser',
-  parserOptions: {
-    ecmaVersion: 2018,
-    sourceType: 'module',
-    ecmaFeatures: { jsx: true },
-    project: './tsconfig.json',
-    tsconfigRootDir: path.join(__dirname, '..', '..'),
-    createDefaultProgram: true,
-  },
-});
+// This rule is type-aware, so the cases carry the full typed-program parser
+// configuration the shared JSX tester does not declare.
+const parserOptions = {
+  ecmaVersion: 2018,
+  sourceType: 'module',
+  project: './tsconfig.json',
+  tsconfigRootDir: path.join(__dirname, '..', '..'),
+  createDefaultProgram: true,
+} as const;
 
-ruleTester.run(
+ruleTesterJsx.run(
   'memo-compare-deeply-complex-props',
   memoCompareDeeplyComplexProps,
   {
-    valid: [
+    valid: withParserOptions(parserOptions, [
       {
         filename: 'src/components/Primitives.tsx',
         code: `
@@ -393,8 +391,8 @@ const Comp = ({ root, node, id }: Props) => <div>{id}</div>;
 export const Wrapped = memo(Comp);
 `,
       },
-    ],
-    invalid: [
+    ]),
+    invalid: withParserOptions(parserOptions, [
       // Bug #1179 regression: mixed React render types + data objects — only data props flagged.
       {
         filename: 'src/components/MixedReactAndDataInvalid.tsx',
@@ -1201,6 +1199,6 @@ export const Wrapped = memo(Comp, compareDeeply('settings'));
 `,
         errors: [{ messageId: 'useCompareDeeply' }],
       },
-    ],
+    ]),
   },
 );

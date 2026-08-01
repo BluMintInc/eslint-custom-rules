@@ -1,6 +1,6 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
-import { RuleTester } from '@typescript-eslint/utils/dist/ts-eslint';
 import type { TSESLint } from '@typescript-eslint/utils';
+import { ruleTesterJsx, withParserOptions } from '../utils/ruleTester';
 import { extractGlobalConstants } from '../rules/extract-global-constants';
 
 const buildExtractMessage = (name: string) =>
@@ -23,19 +23,17 @@ const buildRequireAsConstError = (value: number): ExtractGlobalConstantsError =>
     message: buildRequireAsConstMessage(value),
   } as unknown as ExtractGlobalConstantsError);
 
-const ruleTester = new RuleTester({
-  parser: require.resolve('@typescript-eslint/parser'),
-  parserOptions: {
-    ecmaVersion: 2018,
-    sourceType: 'module',
-    ecmaFeatures: {
-      jsx: true,
-    },
-  },
-});
+// The shared JSX tester supplies the parser and `ecmaFeatures.jsx`; module
+// scope analysis is not its default, and this rule resolves references to
+// decide whether a declaration is scope-independent, so every snippet declares
+// it.
+const parserOptions = {
+  ecmaVersion: 2018,
+  sourceType: 'module',
+} as const;
 
-ruleTester.run('extract-global-constants', extractGlobalConstants, {
-  valid: [
+ruleTesterJsx.run('extract-global-constants', extractGlobalConstants, {
+  valid: withParserOptions(parserOptions, [
     // Should allow mutable array initialization inside functions
     {
       code: `
@@ -782,8 +780,8 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
         }
       `,
     },
-  ],
-  invalid: [
+  ]),
+  invalid: withParserOptions(parserOptions, [
     // Should flag immutable string constants
     {
       code: `
@@ -949,7 +947,7 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
       `,
       errors: [buildExtractError('CACHE_KEY')],
     },
-  ],
+  ]),
 });
 
 describe('extract-global-constants visitor safety', () => {
