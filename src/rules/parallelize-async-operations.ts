@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds = 'parallelizeAsyncOperations';
 type Options = [
@@ -423,6 +424,173 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     }
 
     /**
+     * Matches the `Promise` combinators that take an array of promises and
+     * return a single promise standing in for the whole group. Awaiting one of
+     * them does not consume the member promises: they stay reachable through
+     * whatever names fed the combinator, so a later await mentioning one of
+     * those names is reading a promise the aggregate already owns. Anchored so
+     * only the combinator itself matches, never a user helper whose name merely
+     * contains the word.
+     */
+    const PROMISE_AGGREGATOR_PATTERN = /^(all|allSettled|any|race)$/;
+
+    /**
+     * Node types that open a new function body. Traversals that ask "does
+     * evaluating this expression suspend the enclosing async function?" must
+     * stop here, because an `await` beyond this boundary belongs to the inner
+     * function and runs only when that function is called.
+     */
+    const FUNCTION_BOUNDARY_TYPES = new Set<string>([
+      AST_NODE_TYPES.FunctionDeclaration,
+      AST_NODE_TYPES.FunctionExpression,
+      AST_NODE_TYPES.ArrowFunctionExpression,
+    ]);
+
+    /**
+     * Reports whether evaluating this expression suspends the enclosing async
+     * function -- i.e. whether it contains an `await` of its own.
+     *
+     * The traversal deliberately stops at every function boundary: the awaits in
+     * `Promise.all(items.map(async (item) => await store(item)))` belong to the
+     * callback, so the outer expression evaluates straight through to a promise
+     * without ever suspending, and hoisting it is safe.
+     */
+    function containsSuspendingAwait(node: TSESTree.Node): boolean {
+      if (isAwaitExpression(node)) {
+        return true;
+      }
+
+      if (FUNCTION_BOUNDARY_TYPES.has(node.type)) {
+        return false;
+      }
+
+      for (const key in node) {
+        if (key === 'parent' || key === 'range' || key === 'loc') continue;
+
+        const child = (node as any)[key];
+        if (!child || typeof child !== 'object') continue;
+
+        if (Array.isArray(child)) {
+          for (const item of child) {
+            if (
+              item &&
+              typeof item === 'object' &&
+              'type' in item &&
+              containsSuspendingAwait(item as TSESTree.Node)
+            ) {
+              return true;
+            }
+          }
+        } else if ('type' in child && containsSuspendingAwait(child)) {
+          return true;
+        }
+      }
+
+      return false;
+    }
+
+    /**
+     * Follows an identifier back to the array literal a `const` binds to it.
+     *
+     * Only `const` qualifies. A `let`/`var` array can be reassigned between the
+     * declaration and the await, so its literal elements are not a sound
+     * description of what the aggregate actually received, and treating them as
+     * such would suppress reports on genuinely independent operations.
+     */
+    function resolveConstArrayLiteral(
+      identifier: TSESTree.Identifier,
+    ): TSESTree.ArrayExpression | null {
+      const variable = ASTHelpers.findVariableInScope(
+        ASTHelpers.getScope(context, identifier),
+        identifier.name,
+      );
+      if (!variable) {
+        return null;
+      }
+
+      for (const definition of variable.defs) {
+        const declarator = definition.node;
+        if (
+          declarator.type === AST_NODE_TYPES.VariableDeclarator &&
+          declarator.parent?.type === AST_NODE_TYPES.VariableDeclaration &&
+          declarator.parent.kind === 'const' &&
+          declarator.init?.type === AST_NODE_TYPES.ArrayExpression
+        ) {
+          return declarator.init;
+        }
+      }
+
+      return null;
+    }
+
+    /**
+     * Expands an awaited promise aggregate (`await Promise.all(ops)`) to the
+     * names through which its member promises remain reachable afterwards: the
+     * array's own binding plus every element that is a bare identifier, or a
+     * spread of one.
+     *
+     * This is the aliasing channel the plain identifier-set comparison cannot
+     * see. In `await Promise.all(ops); await release({ results: [await
+     * dropped] })` the two awaits share no identifier at all -- one holds
+     * `Promise`/`all`/`ops`, the other `release`/`dropped` -- yet `dropped` is
+     * `ops[0]`, so the release genuinely cannot start before the drop settles.
+     * Elements that are freshly-constructed promises (`assign()`) are omitted
+     * because nothing binds them to a name, so no later await can reference
+     * them. (#1541)
+     */
+    function getAggregatedPromiseNames(
+      awaitExpr: TSESTree.AwaitExpression,
+    ): Set<string> {
+      const names = new Set<string>();
+
+      const argument =
+        awaitExpr.argument.type === AST_NODE_TYPES.ChainExpression
+          ? awaitExpr.argument.expression
+          : awaitExpr.argument;
+      if (argument.type !== AST_NODE_TYPES.CallExpression) {
+        return names;
+      }
+
+      const callee = argument.callee;
+      if (
+        callee.type !== AST_NODE_TYPES.MemberExpression ||
+        callee.computed ||
+        callee.object.type !== AST_NODE_TYPES.Identifier ||
+        callee.object.name !== 'Promise' ||
+        callee.property.type !== AST_NODE_TYPES.Identifier ||
+        !PROMISE_AGGREGATOR_PATTERN.test(callee.property.name)
+      ) {
+        return names;
+      }
+
+      const [aggregated] = argument.arguments;
+      if (!aggregated) {
+        return names;
+      }
+
+      let elements: TSESTree.ArrayExpression['elements'] = [];
+      if (aggregated.type === AST_NODE_TYPES.ArrayExpression) {
+        elements = aggregated.elements;
+      } else if (aggregated.type === AST_NODE_TYPES.Identifier) {
+        names.add(aggregated.name);
+        elements = resolveConstArrayLiteral(aggregated)?.elements ?? [];
+      }
+
+      for (const element of elements) {
+        if (!element) continue;
+        const value =
+          element.type === AST_NODE_TYPES.SpreadElement
+            ? element.argument
+            : element;
+        if (value.type === AST_NODE_TYPES.Identifier) {
+          names.add(value.name);
+        }
+      }
+
+      return names;
+    }
+
+    /**
      * Checks if there are dependencies between await expressions
      */
     function hasDependencies(
@@ -586,6 +754,51 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
           if (receiverNames[j] === receiver) {
             return true;
           }
+        }
+      }
+
+      // 8. Aggregate-element aliasing barrier. `await Promise.all(ops)` does not
+      // consume the promises in `ops`; they stay reachable by name, so a later
+      // await that mentions one of them -- `await release({ results: [await
+      // dropped] })`, where `dropped` is `ops[0]` -- reads a value the aggregate
+      // is still producing. The two awaits share no identifier at all
+      // (`Promise`/`all`/`ops` versus `release`/`dropped`), so the direct set
+      // comparison above classifies them independent; expanding the aggregate to
+      // its element names restores the link. Promise.all-ing that pair would
+      // start the consumer concurrently with the very operation whose result it
+      // reads. (#1541)
+      for (let i = 1; i < awaitNodes.length; i++) {
+        const currentIds = allIdentifiers[i];
+        if (currentIds.size === 0) continue;
+        for (let j = 0; j < i; j++) {
+          const priorExpr = getAwaitExpression(awaitNodes[j]);
+          if (!priorExpr) continue;
+          for (const aggregatedName of getAggregatedPromiseNames(priorExpr)) {
+            if (currentIds.has(aggregatedName)) {
+              return true;
+            }
+          }
+        }
+      }
+
+      // 9. Nested-await hoist barrier. The rewrite splices each awaited
+      // expression into a `Promise.all([...])` ARRAY LITERAL, and array elements
+      // evaluate left to right. An element that contains an `await` of its own
+      // suspends the enclosing function mid-literal -- after the earlier
+      // elements' promises have been constructed, but before `Promise.all` has
+      // been called to attach handlers to them. If one of those already-running
+      // promises rejects during the suspension, the function throws at the inner
+      // await and the rejected promise is orphaned into an `unhandledRejection`,
+      // which the Cloud Functions runtime answers by killing the instance, so
+      // the caller receives an opaque crash instead of the real error. A leading
+      // nested await is unsound in a quieter way: it suspends before the later
+      // elements are evaluated, so their operations never start early and the
+      // rewrite buys no parallelism while still reshaping the code. Keep any run
+      // containing such an expression sequential. (#1541)
+      for (const node of awaitNodes) {
+        const awaitExpr = getAwaitExpression(node);
+        if (awaitExpr && containsSuspendingAwait(awaitExpr.argument)) {
+          return true;
         }
       }
 
