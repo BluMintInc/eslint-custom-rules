@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.68",
+    "date": "2026-08-01T18:03:14.950Z",
+    "rules": [
+      {
+        "name": "prefer-union-from-const-array",
+        "changeType": "fix",
+        "issues": [
+          1577
+        ],
+        "summary": "exclude block comments by range when inferring the indent unit (closes #1577)"
+      }
+    ]
+  },
+  {
     "version": "1.20.67",
     "date": "2026-08-01T17:17:30.817Z",
     "rules": [

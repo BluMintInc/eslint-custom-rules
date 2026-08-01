@@ -1,3 +1,10 @@
+## [1.20.68](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.67...v1.20.68) (2026-08-01)
+
+
+### Bug Fixes
+
+* **prefer-union-from-const-array:** exclude block comments by range when inferring the indent unit (closes [#1577](https://github.com/BluMintInc/eslint-custom-rules/issues/1577)) ([2a65a5d](https://github.com/BluMintInc/eslint-custom-rules/commit/2a65a5d96cb9340629b383df652bc09637eeb3d0)), closes [#1574](https://github.com/BluMintInc/eslint-custom-rules/issues/1574)
+
 ## [1.20.67](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.66...v1.20.67) (2026-08-01)
 
 
