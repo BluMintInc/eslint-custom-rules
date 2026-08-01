@@ -14,6 +14,37 @@ This rule requires every Firestore `DocumentReference`, `CollectionReference`, a
 - Calls on an already typed `CollectionReference<T>` may omit the generic on `collectionRef.doc(...)` because the collection supplies the document shape. This holds whether the collection is chained (`db.collection<T>('x').doc('y')`) or first stored in a `const`.
 - Resolving a stored collection is deliberately shallow: only a `const` whose initializer is a `collection<T>(...)` call, whose annotation is `CollectionReference<T>`, or which asserts that type is followed, and only one hop. An alias of an alias, a `let`, a parameter, or an import cannot be proven typed, so `doc(...)` on those still requires its own generic.
 - Generics that use `any` or `{}` erase the schema and disable compile-time checks; nested `any`/`{}` are flagged when the rule can see them inline or via same-file types.
+- Receivers that trace back to `@firebase/rules-unit-testing` are exempt. See [Compat Firestore from `@firebase/rules-unit-testing`](#compat-firestore-from-firebaserules-unit-testing).
+
+## Compat Firestore from `@firebase/rules-unit-testing`
+
+`RulesTestContext.firestore()` returns the compat (v8-style) `Firestore`, whose `doc`, `collection`, and `collectionGroup` declare **zero** type parameters. Supplying a generic there is `error TS2558: Expected 0 type arguments, but got 1`, so on that surface every fix this rule suggests is uncompilable. Security-rules tests therefore get an exemption: a `doc`/`collection`/`collectionGroup` call whose receiver traces syntactically back to a value from `@firebase/rules-unit-testing` is not reported.
+
+The trace follows awaits, calls, member access, optional chaining, and type assertions, and it recognizes every import form (named, aliased, default, namespace, and type-only). A parameter annotated with a type imported from that module — the `withSecurityRulesDisabled(async (ctx: RulesTestContext) => ...)` callback — also counts.
+
+The exemption is deliberately limited:
+
+- **`const` only.** A `let`/`var` binding anywhere along the chain is refused, because a later assignment can swap in an Admin SDK handle where the generic is both supportable and valuable.
+- **The receiver decides, not the file.** An Admin SDK reference in a rules test is still reported.
+- **The modular `doc(db, path)` function is untouched.** It accepts the generic, so it still requires one.
+- **An explicit `DocumentReference` annotation is untouched.** The annotation is written by hand and can carry its generic regardless of the runtime surface.
+
+```ts
+import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+import { getFirestore } from 'firebase-admin/firestore';
+
+const run = async () => {
+  const testEnv = await initializeTestEnvironment({ projectId: 'demo-x' });
+
+  // Correct: the compat surface accepts no type argument.
+  const compatDb = testEnv.authenticatedContext('owner-uid').firestore();
+  await compatDb.doc('User/uid/OverlaySettings/uid').get();
+
+  // Incorrect: the receiver is an Admin SDK Firestore, which does accept one.
+  const adminDb = getFirestore();
+  await adminDb.doc('User/uid').get();
+};
+```
 
 ### Examples of incorrect code
 
