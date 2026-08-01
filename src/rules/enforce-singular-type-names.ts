@@ -19,18 +19,37 @@ const NON_PLURALIZABLE_SUFFIXES = [
 const ARRAY_GENERIC_NAMES = new Set(['Array', 'ReadonlyArray']);
 
 /**
+ * Union members that only express absence. Stripping them keeps a nullable
+ * container recognisable as a container: `T[]` and `T[] | null` describe the
+ * same collection, so they must not disagree about whether a plural name fits.
+ */
+const NULLISH_TYPE_NODES = new Set<string>([
+  AST_NODE_TYPES.TSNullKeyword,
+  AST_NODE_TYPES.TSUndefinedKeyword,
+]);
+
+/**
+ * Shared budget for wrapper peeling and union recursion. Wrapper nesting is
+ * finite in real code; the cap only guards against a pathological cycle. Every
+ * peel and every descent into a union member spends one unit, so the recursion
+ * a union introduces stays bounded by the same constant.
+ */
+const MAX_TYPE_DEPTH = 10;
+
+/**
  * Returns true when the type alias RHS resolves to a container shape — a
  * `TSArrayType` (`Foo[]`) or `TSTupleType` (`[A, B]`) — for which a plural name
  * is the correct, self-documenting choice. Sees through identity-ish wrappers
  * over the same shape: the `readonly` type operator, parenthesized types, and
  * the `Readonly<T>` utility type; `Array<T>`/`ReadonlyArray<T>` are containers
- * outright.
+ * outright. A union whose non-nullish members are all containers counts too.
+ *
+ * @param depth Budget already spent by an enclosing wrapper or union member.
  */
-function resolvesToContainerType(node: TSESTree.TypeNode): boolean {
+function resolvesToContainerType(node: TSESTree.TypeNode, depth = 0): boolean {
   let current: TSESTree.TypeNode = node;
   // Fixpoint loop: peel identity wrappers until a concrete shape is reached.
-  // Wrappers are finite; the cap only guards against a pathological cycle.
-  for (let i = 0; i < 10; i++) {
+  for (let i = depth; i < MAX_TYPE_DEPTH; i++) {
     switch (current.type) {
       case AST_NODE_TYPES.TSArrayType:
       case AST_NODE_TYPES.TSTupleType:
@@ -42,6 +61,21 @@ function resolvesToContainerType(node: TSESTree.TypeNode): boolean {
         }
         current = operator.typeAnnotation;
         continue;
+      }
+      case AST_NODE_TYPES.TSUnionType: {
+        const union = current as TSESTree.TSUnionType;
+        const substantive = union.types.filter(
+          (member) => !NULLISH_TYPE_NODES.has(member.type),
+        );
+        // `null | undefined` holds no collection at all.
+        if (substantive.length === 0) return false;
+        // Requiring EVERY remaining member to be a container keeps the
+        // exemption conservative: a mixed union such as `Edge[] | Edge` can hold
+        // a single value, so a plural name there still misleads. Members recurse
+        // with the spent budget so nesting cannot escape the cap.
+        return substantive.every((member) =>
+          resolvesToContainerType(member, i + 1),
+        );
       }
       case AST_NODE_TYPES.TSTypeReference: {
         const ref = current as TSESTree.TSTypeReference;
