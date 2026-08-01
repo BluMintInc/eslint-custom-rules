@@ -890,6 +890,199 @@ export const Panel = () => (
 `,
       },
 
+      // --- A JSDoc-heavy file still emits the two-space step it is written in.
+      // A block comment's ` * ` continuation lines sit one column in from the
+      // comment's own indentation, and counting those as nesting steps would
+      // make the whole file look one-space indented. ---
+      {
+        code: `
+/**
+ * Steps the wallet wizard walks a user through.
+ *
+ * @remarks
+ *   Ordered; the index doubles as the progress value.
+ */
+export const WIZARD_STEPS = ['connect', 'verify', 'fund'] as const;
+
+/**
+ * Copy shown beneath the wizard header.
+ *
+ * @example
+ *   HEADER_COPY.connect === 'Connect a wallet'
+ */
+export const HEADER_COPY = { connect: 'Connect a wallet' };
+
+/**
+ * Whether the wizard may advance past its current step.
+ *
+ * @param step - the step the user is on
+ */
+export const canAdvance = (step: string) => step !== 'fund';
+
+/**
+ * The wizard shell.
+ *
+ * @remarks
+ *   Layout only; each step renders its own content.
+ */
+export const WalletWizard = () => (
+  <Stack
+    alignItems="center"
+    justifyContent="space-between"
+    bgcolor="background.paper"
+    onClick={handleClick}
+  />
+);
+`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'alignItems' } },
+          { messageId: 'preferSxProp', data: { prop: 'justifyContent' } },
+          { messageId: 'preferSxProp', data: { prop: 'bgcolor' } },
+        ],
+        output: `
+/**
+ * Steps the wallet wizard walks a user through.
+ *
+ * @remarks
+ *   Ordered; the index doubles as the progress value.
+ */
+export const WIZARD_STEPS = ['connect', 'verify', 'fund'] as const;
+
+/**
+ * Copy shown beneath the wizard header.
+ *
+ * @example
+ *   HEADER_COPY.connect === 'Connect a wallet'
+ */
+export const HEADER_COPY = { connect: 'Connect a wallet' };
+
+/**
+ * Whether the wizard may advance past its current step.
+ *
+ * @param step - the step the user is on
+ */
+export const canAdvance = (step: string) => step !== 'fund';
+
+/**
+ * The wizard shell.
+ *
+ * @remarks
+ *   Layout only; each step renders its own content.
+ */
+export const WalletWizard = () => (
+  <Stack
+    sx={{
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      bgcolor: 'background.paper',
+    }}
+    onClick={handleClick}
+  />
+);
+`,
+      },
+
+      // --- A genuinely four-space file gets four-space output, so skipping
+      // comment lines cannot degrade into a hard-coded two. ---
+      {
+        code: `
+export const Panel = () => (
+    <Stack
+        alignItems="center"
+        justifyContent="space-between"
+        bgcolor="background.paper"
+        onClick={handleClick}
+    />
+);
+`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'alignItems' } },
+          { messageId: 'preferSxProp', data: { prop: 'justifyContent' } },
+          { messageId: 'preferSxProp', data: { prop: 'bgcolor' } },
+        ],
+        output: `
+export const Panel = () => (
+    <Stack
+        sx={{
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            bgcolor: 'background.paper',
+        }}
+        onClick={handleClick}
+    />
+);
+`,
+      },
+
+      // --- Tabs survive JSDoc too: the space-aligned comment lines outnumber
+      // the tab steps here, so a census that counted them would emit spaces
+      // into a tab-indented file. ---
+      {
+        code: `
+/**
+ * The panel shell.
+ *
+ * @remarks
+ *   Layout only.
+ */
+export const PANEL_ID = 'panel';
+
+/**
+ * Whether the panel is dismissible.
+ */
+export const IS_DISMISSIBLE = true;
+
+/**
+ * Renders the panel.
+ *
+ * @param props - the panel props
+ */
+export const Panel = () => (
+\t<Stack
+\t\talignItems="center"
+\t\tjustifyContent="space-between"
+\t\tbgcolor="background.paper"
+\t\tonClick={handleClick}
+\t/>
+);
+`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'alignItems' } },
+          { messageId: 'preferSxProp', data: { prop: 'justifyContent' } },
+          { messageId: 'preferSxProp', data: { prop: 'bgcolor' } },
+        ],
+        output: `
+/**
+ * The panel shell.
+ *
+ * @remarks
+ *   Layout only.
+ */
+export const PANEL_ID = 'panel';
+
+/**
+ * Whether the panel is dismissible.
+ */
+export const IS_DISMISSIBLE = true;
+
+/**
+ * Renders the panel.
+ *
+ * @param props - the panel props
+ */
+export const Panel = () => (
+\t<Stack
+\t\tsx={{
+\t\t\talignItems: 'center',
+\t\t\tjustifyContent: 'space-between',
+\t\t\tbgcolor: 'background.paper',
+\t\t}}
+\t\tonClick={handleClick}
+\t/>
+);
+`,
+      },
+
       // --- Tabs against spaces give no delta that can be applied to the moved
       // value's interior lines, so the fix falls back to the compact splice
       // rather than guessing. A wrong guess would corrupt the layout. ---
