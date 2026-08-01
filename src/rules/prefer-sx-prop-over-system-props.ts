@@ -366,15 +366,40 @@ const reindentedText = (
 };
 
 /**
+ * Ranges of the file's block comments. Their interior lines are excluded from
+ * the indentation census below, so only a comment's opening line — which does
+ * sit at the surrounding code's depth — is ever measured.
+ */
+const blockCommentRangesOf = (
+  sourceCode: TSESLint.SourceCode,
+): TSESTree.Range[] =>
+  sourceCode
+    .getAllComments()
+    .filter((comment) => comment.type === AST_TOKEN_TYPES.Block)
+    .map((comment) => comment.range);
+
+/**
  * The file's own nesting step, taken as the most common indentation increase
  * between consecutive lines. Reading it from the source keeps emitted code in
  * the author's units instead of assuming a two-space, space-indented file.
  */
-const indentUnitOf = (text: string): string => {
+const indentUnitOf = (sourceCode: TSESLint.SourceCode): string => {
+  const text = sourceCode.getText();
+  const blockComments = blockCommentRangesOf(sourceCode);
+  // A block comment's continuation lines align on the `*` one column in from
+  // the comment's own indentation. That is comment alignment, not a nesting
+  // step, and counting it makes any JSDoc-heavy file look 1-space indented.
+  const continuesBlockComment = (offset: number) =>
+    blockComments.some(([start, end]) => start < offset && offset < end);
+
   const frequencies = new Map<string, number>();
   let previous = '';
+  let offset = 0;
   for (const line of text.split('\n')) {
+    const lineStart = offset;
+    offset += line.length + 1;
     if (line.trim() === '') continue;
+    if (continuesBlockComment(lineStart)) continue;
     const match = /^[ \t]*/.exec(line);
     const indent = match ? match[0] : '';
     if (indent.length > previous.length && indent.startsWith(previous)) {
@@ -463,7 +488,7 @@ function planSxEdits(
 
   const anchor = systemPropAttrs[0];
   const sxSlotNode: TSESTree.Node = sxAttr ?? anchor;
-  const indentUnit = indentUnitOf(source);
+  const indentUnit = indentUnitOf(sourceCode);
   const systemPropSet = new Set<TSESTree.Node>(systemPropAttrs);
 
   /**

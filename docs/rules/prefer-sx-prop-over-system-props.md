@@ -168,6 +168,8 @@ An `sx` object (or array) the author already broke open keeps that shape at any 
 
 When every attribute shares one line and the merged element no longer fits, each attribute moves to a line of its own — the same change a formatter makes.
 
+The nesting step used for those emitted lines is read from the file itself — the most common indentation increase between consecutive lines — so a four-space or tab-indented file gets four-space or tab-indented output rather than an assumed two spaces. Lines that continue a block comment are excluded from that measurement: a JSDoc block's ` * ` lines sit one column in from the comment's own indentation, which is comment alignment rather than a nesting step, and counting them makes a doc-heavy file look one-space indented.
+
 Two situations leave the compact form in place on purpose:
 
 - **Ambiguous indentation.** Moving a prop whose value spans lines (a nested object, a template literal) requires re-indenting that value's continuation lines. Where the source mixes tabs and spaces such that neither indentation is a prefix of the other, there is no delta to apply and a guess would corrupt the layout, so the fix falls back to the single-line splice. The interior lines of a **multi-line template literal or string are never moved** in any case: that whitespace is part of the value, not the layout.
