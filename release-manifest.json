@@ -1,5 +1,59 @@
 [
   {
+    "version": "1.20.64",
+    "date": "2026-08-01T12:02:23.073Z",
+    "rules": [
+      {
+        "name": "enforce-id-capitalization",
+        "changeType": "fix",
+        "issues": [
+          1558
+        ],
+        "summary": "preserve the original quote delimiter when rewriting a literal (closes #1558)"
+      },
+      {
+        "name": "enforce-memoize-async",
+        "changeType": "fix",
+        "issues": [
+          1563
+        ],
+        "summary": "skip methods whose sole parameter is a callback (closes #1563)"
+      },
+      {
+        "name": "enforce-memoize-getters",
+        "changeType": "fix",
+        "issues": [
+          1561
+        ],
+        "summary": "exempt getters that read live external state (closes #1561)"
+      },
+      {
+        "name": "no-empty-dependency-use-callbacks",
+        "changeType": "fix",
+        "issues": [
+          1560
+        ],
+        "summary": "dedent the callback when hoisting it to module scope (closes #1560)"
+      },
+      {
+        "name": "no-explicit-return-type",
+        "changeType": "fix",
+        "issues": [
+          1562
+        ],
+        "summary": "keep void and Promise<void> annotations under allowVoidReturnTypes (closes #1562)"
+      },
+      {
+        "name": "use-latest-callback",
+        "changeType": "fix",
+        "issues": [
+          1559
+        ],
+        "summary": "re-indent the callback body when collapsing a multi-line useCallback (closes #1559)"
+      }
+    ]
+  },
+  {
     "version": "1.20.63",
     "date": "2026-08-01T09:37:04.617Z",
     "rules": [

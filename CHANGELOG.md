@@ -1,3 +1,15 @@
+## [1.20.64](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.63...v1.20.64) (2026-08-01)
+
+
+### Bug Fixes
+
+* **enforce-id-capitalization:** preserve the original quote delimiter when rewriting a literal (closes [#1558](https://github.com/BluMintInc/eslint-custom-rules/issues/1558)) ([cbce15d](https://github.com/BluMintInc/eslint-custom-rules/commit/cbce15d4ec10eba1944470e9cb70997ba4c7eba3))
+* **enforce-memoize-async:** skip methods whose sole parameter is a callback (closes [#1563](https://github.com/BluMintInc/eslint-custom-rules/issues/1563)) ([8782e9f](https://github.com/BluMintInc/eslint-custom-rules/commit/8782e9f24bf2164343c9b4dc22c4d9d62bc83250))
+* **enforce-memoize-getters:** exempt getters that read live external state (closes [#1561](https://github.com/BluMintInc/eslint-custom-rules/issues/1561)) ([f70af27](https://github.com/BluMintInc/eslint-custom-rules/commit/f70af27a95cd0cb004f2eaa98dc8af77be8c573a))
+* **no-empty-dependency-use-callbacks:** dedent the callback when hoisting it to module scope (closes [#1560](https://github.com/BluMintInc/eslint-custom-rules/issues/1560)) ([78bf72b](https://github.com/BluMintInc/eslint-custom-rules/commit/78bf72bb19a931e382f2ba559d673d22ffd694f0))
+* **no-explicit-return-type:** keep void and Promise<void> annotations under allowVoidReturnTypes (closes [#1562](https://github.com/BluMintInc/eslint-custom-rules/issues/1562)) ([cf593dd](https://github.com/BluMintInc/eslint-custom-rules/commit/cf593dd5e564763d80ac9fc6629857e81961c06a))
+* **use-latest-callback:** re-indent the callback body when collapsing a multi-line useCallback (closes [#1559](https://github.com/BluMintInc/eslint-custom-rules/issues/1559)) ([5ff3780](https://github.com/BluMintInc/eslint-custom-rules/commit/5ff3780e39e559b0f6e61a16b9afd6b638652a84))
+
 ## [1.20.63](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.62...v1.20.63) (2026-08-01)
 
 
