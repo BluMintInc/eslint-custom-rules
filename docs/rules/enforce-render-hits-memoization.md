@@ -23,6 +23,34 @@ default import, falling back to `useLatestCallback2` when the plain name is
 already taken. A type-only import binds no callable value, so its local name is
 not accepted.
 
+### Module scope is already a memoization boundary
+
+A `transformBefore` or `render` prop that points at a declaration outside every
+component body needs no hook at all: the binding is created once for the
+program's lifetime, so its identity is strictly more stable than anything
+`useCallback` can hand back. These forms are accepted:
+
+| Form | Accepted |
+| --- | --- |
+| `const f = () => {}` at module scope (including `export const`) | ✅ |
+| `function f() {}` at module scope | ✅ |
+| `import { f } from './f'` / `import f from './f'` | ✅ |
+| `let` / `var` at module scope | ❌ — reassignable, so a later render can see a different function |
+| type-only import | ❌ — binds no value |
+| `const f = () => {}` inside a component or any nested block | ❌ — re-created every render |
+
+Both module scope and global scope count, because under
+`sourceType: 'script'` a top-level declaration binds to the *global* scope and
+no module scope exists at all.
+
+This carve-out is what keeps the `recommended` config self-consistent:
+[`no-empty-dependency-use-callbacks`](./no-empty-dependency-use-callbacks.md) is
+`error` in the same config and fixable, and it hoists a dependency-free callback
+to module scope while dropping the hook. A single `eslint --fix` therefore
+rewrites a correctly memoized prop into exactly the module-scope form above, and
+without the carve-out the config would demand the very hook its own fixer just
+removed.
+
 ### Examples of **incorrect** code for this rule:
 
 ```js
@@ -50,6 +78,12 @@ function renderResults(hits) {
 // ❌ An arbitrary wrapper is not a memoization boundary
 import wrap from './wrap';
 const wrapped = wrap(() => renderHits(hits, (hit) => <HitComponent hit={hit} />));
+
+// ❌ Declared inside the component, so it is re-created every render
+const Component = ({ hits }) => {
+  const transform = (hits) => hits.filter(h => h.isActive);
+  useRenderHits({ hits, transformBefore: transform, render });
+};
 ```
 
 ### Examples of **correct** code for this rule:
@@ -80,6 +114,15 @@ const renderLatest = useLatestCallback(() => renderHits(hits, (hit) => <HitCompo
 const transform = useLatestCallback((hits) => hits.filter(h => h.isActive));
 const renderHit = useLatestCallback((hit) => <HitComponent hit={hit} />);
 useRenderHits({ hits, transformBefore: transform, render: renderHit });
+
+// ✅ Module-scope declarations need no hook — they are created once
+const transformActive = (hits) => hits.filter(h => h.isActive);
+function renderRow(hit) {
+  return <HitComponent hit={hit} />;
+}
+const HitsList = ({ hits }) => {
+  useRenderHits({ hits, transformBefore: transformActive, render: renderRow });
+};
 ```
 
 ## When Not To Use It
