@@ -3,6 +3,19 @@ import { createRule } from '../utils/createRule';
 
 type MessageIds = 'preferDerivedUnion';
 
+type Options = [
+  {
+    printWidth?: number;
+  },
+];
+
+/**
+ * Matches Prettier's own default. The autofix authors a whole statement that a
+ * formatter owns, so a line it emits past this width is rewritten on the next
+ * `prettier --write` — and fails `prettier --check` in the meantime.
+ */
+const DEFAULT_PRINT_WIDTH = 80;
+
 /**
  * Mechanically derive an UPPER_SNAKE constant base from a PascalCase/camelCase
  * type name by inserting `_` at every lowercase/digit-to-uppercase boundary and
@@ -53,7 +66,45 @@ function isNameInScope(
   return false;
 }
 
-export const preferUnionFromConstArray = createRule<[], MessageIds>({
+/**
+ * The file's own nesting step, taken as the most common indentation increase
+ * between consecutive lines. Reading it from the source keeps emitted code in
+ * the author's units instead of assuming a two-space, space-indented file.
+ */
+function indentUnitOf(text: string): string {
+  const frequencies = new Map<string, number>();
+  let previous = '';
+  for (const line of text.split('\n')) {
+    if (line.trim() === '') {
+      continue;
+    }
+    // A block comment's continuation lines align on the `*` one column in from
+    // the comment's own indentation. That is comment alignment, not a nesting
+    // step, and counting it makes any JSDoc-heavy file look 1-space indented.
+    if (line.trimStart().startsWith('*')) {
+      continue;
+    }
+    const match = /^[ \t]*/.exec(line);
+    const indent = match ? match[0] : '';
+    if (indent.length > previous.length && indent.startsWith(previous)) {
+      const delta = indent.slice(previous.length);
+      frequencies.set(delta, (frequencies.get(delta) ?? 0) + 1);
+    }
+    previous = indent;
+  }
+
+  let unit = '  ';
+  let best = 0;
+  for (const [delta, count] of frequencies) {
+    if (count > best) {
+      unit = delta;
+      best = count;
+    }
+  }
+  return unit;
+}
+
+export const preferUnionFromConstArray = createRule<Options, MessageIds>({
   name: 'prefer-union-from-const-array',
   meta: {
     type: 'suggestion',
@@ -63,15 +114,41 @@ export const preferUnionFromConstArray = createRule<[], MessageIds>({
       recommended: 'error',
     },
     fixable: 'code',
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: {
+          printWidth: {
+            type: 'number',
+            minimum: 1,
+          },
+        },
+        additionalProperties: false,
+      },
+    ],
     messages: {
       preferDerivedUnion:
         'Derive this union from an `as const` array: `const {{constName}} = [...] as const; type {{typeName}} = (typeof {{constName}})[number];`. This tethers the type to importable runtime values and prevents silent drift. Consider also naming each literal as its own exported constant so call sites never repeat magic strings.',
     },
   },
-  defaultOptions: [],
-  create(context) {
+  defaultOptions: [{}],
+  create(context, [options]) {
     const sourceCode = context.getSourceCode();
+
+    const printWidth =
+      typeof options.printWidth === 'number' && options.printWidth > 0
+        ? options.printWidth
+        : DEFAULT_PRINT_WIDTH;
+
+    // Derived once per file rather than per fix: every fix in a file shares the
+    // author's nesting step.
+    let indentUnit: string | null = null;
+    const fileIndentUnit = () => {
+      if (indentUnit === null) {
+        indentUnit = indentUnitOf(sourceCode.getText());
+      }
+      return indentUnit;
+    };
 
     return {
       TSTypeAliasDeclaration(node) {
@@ -124,12 +201,12 @@ export const preferUnionFromConstArray = createRule<[], MessageIds>({
           messageId: 'preferDerivedUnion',
           data: { constName, typeName },
           fix(fixer) {
-            const literals = (members as TSESTree.TSLiteralType[])
-              .map((member) => {
+            const literals = (members as TSESTree.TSLiteralType[]).map(
+              (member) => {
                 const literal = member.literal as TSESTree.StringLiteral;
                 return literal.raw ?? sourceCode.getText(literal);
-              })
-              .join(', ');
+              },
+            );
 
             const typeParams = node.typeParameters
               ? sourceCode.getText(node.typeParameters)
@@ -149,8 +226,48 @@ export const preferUnionFromConstArray = createRule<[], MessageIds>({
               .match(/^\s*/);
             const indent = indentMatch ? indentMatch[0] : '';
 
-            const constDecl = `${constKeyword} ${constName} = [${literals}] as const;`;
-            const typeDecl = `${typeKeyword} ${typeName}${typeParams} = (typeof ${constName})[number];`;
+            // A line break the fixer does not add is one Prettier adds later,
+            // so the fix must decide the same way Prettier does: keep the
+            // statement on one line while it fits, break it open past the print
+            // width. Over-wrapping is not the safe direction here — unlike an
+            // object literal, an array Prettier considers short enough is
+            // collapsed back onto one line, so a blanket wrap would trade this
+            // defect for its mirror image on every short union.
+            //
+            // The emitted const starts where the replaced node starts, so its
+            // column is the exact prefix length; the derived alias is emitted on
+            // a fresh line at `indent`.
+            const constStartColumn = fixNode.loc.start.column;
+            const inlineConst = `${constKeyword} ${constName} = [${literals.join(
+              ', ',
+            )}] as const;`;
+
+            // A literal whose raw text spans lines (a string written with a
+            // backslash line continuation) cannot sit on one line at all, so
+            // there is no width to compare — such an array always breaks open.
+            // Its raw text is emitted verbatim, leaving the interior line break
+            // and everything after it exactly where the author put it: that
+            // whitespace is string DATA, not layout.
+            const hasMultilineLiteral = literals.some((literal) =>
+              /[\r\n]/.test(literal),
+            );
+
+            const constDecl =
+              !hasMultilineLiteral &&
+              constStartColumn + inlineConst.length <= printWidth
+                ? inlineConst
+                : `${constKeyword} ${constName} = [\n${literals
+                    .map((literal) => `${indent}${fileIndentUnit()}${literal},`)
+                    .join('\n')}\n${indent}] as const;`;
+
+            const inlineType = `${typeKeyword} ${typeName}${typeParams} = (typeof ${constName})[number];`;
+            // Prettier answers an over-long type alias by breaking after the
+            // `=`, the only break point the derived form has.
+            const typeDecl =
+              typeParams.includes('\n') ||
+              indent.length + inlineType.length <= printWidth
+                ? inlineType
+                : `${typeKeyword} ${typeName}${typeParams} =\n${indent}${fileIndentUnit()}(typeof ${constName})[number];`;
 
             return fixer.replaceText(
               fixNode,
