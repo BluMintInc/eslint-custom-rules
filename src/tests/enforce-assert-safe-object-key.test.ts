@@ -1,3 +1,5 @@
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { ESLint, Linter, Rule } from 'eslint';
 import type { TSESLint } from '@typescript-eslint/utils';
@@ -381,6 +383,19 @@ const obj = { alpha: 1, beta: 2 };
 const id = 'alpha';
 // eslint-disable-next-line
 const first = obj[id];
+      `,
+    },
+    {
+      // Issue #1556: a native-ESM file spells the helper import with the
+      // extension node's resolver requires. That spelling still names the
+      // configured helper, so the file needs no second import and no report.
+      name: 'an .mjs file importing the helper with its .js extension is satisfied',
+      filename: path.join(process.cwd(), 'scripts/design/count-voice.mjs'),
+      code: `
+import { assertSafe } from '../../functions/src/util/assertSafe.js';
+const RESULTS = {};
+const name = 'voice';
+RESULTS[assertSafe(name)] = 1;
       `,
     },
   ],
@@ -1458,6 +1473,108 @@ const second = obj[assertSafe(id)];
 const third = obj[assertSafe(id)];
       `,
     },
+    // ------------------------------------------------------------------
+    // Issue #1556: a native-ESM consumer needs the extension on the
+    // injected specifier, or node throws ERR_MODULE_NOT_FOUND at startup.
+    // ------------------------------------------------------------------
+    {
+      name: 'an .mjs file gets a .js extension on the injected specifier',
+      filename: path.join(process.cwd(), 'scripts/design/count-voice.mjs'),
+      code: `
+const SOURCES = { voice: ['a'], text: ['b'] };
+const RESULTS = {};
+for (const [name, dirs] of Object.entries(SOURCES)) {
+  RESULTS[name] = dirs.length;
+}
+      `,
+      errors: [lintError('name')],
+      output: `
+import { assertSafe } from '../../functions/src/util/assertSafe.js';
+const SOURCES = { voice: ['a'], text: ['b'] };
+const RESULTS = {};
+for (const [name, dirs] of Object.entries(SOURCES)) {
+  RESULTS[assertSafe(name)] = dirs.length;
+}
+      `,
+    },
+    {
+      // The extension-carrying spelling already reaches the helper, so the fix
+      // wraps the unguarded key and adds nothing.
+      name: 'an .mjs file already importing the helper gains no second import',
+      filename: path.join(process.cwd(), 'scripts/design/count-voice.mjs'),
+      code: `
+import { assertSafe } from '../../functions/src/util/assertSafe.js';
+const RESULTS = {};
+const first = 'voice';
+const second = 'text';
+RESULTS[assertSafe(first)] = 1;
+RESULTS[second] = 2;
+      `,
+      errors: [lintError('second')],
+      output: `
+import { assertSafe } from '../../functions/src/util/assertSafe.js';
+const RESULTS = {};
+const first = 'voice';
+const second = 'text';
+RESULTS[assertSafe(first)] = 1;
+RESULTS[assertSafe(second)] = 2;
+      `,
+    },
+    {
+      // `.cjs` is CommonJS whatever the nearest manifest says, and CommonJS
+      // resolves an extensionless specifier.
+      name: 'a .cjs file keeps the extensionless specifier',
+      filename: path.join(process.cwd(), 'scripts/design/count-voice.cjs'),
+      code: `
+const RESULTS = {};
+const name = 'voice';
+RESULTS[name] = 1;
+      `,
+      errors: [lintError('name')],
+      output: `
+import { assertSafe } from '../../functions/src/util/assertSafe';
+const RESULTS = {};
+const name = 'voice';
+RESULTS[assertSafe(name)] = 1;
+      `,
+    },
+    {
+      // `.mts` is ESM, but it is TypeScript: the compiler resolves the
+      // extensionless specifier, so the emitted import is left alone.
+      name: 'an .mts file keeps the extensionless specifier',
+      filename: path.join(process.cwd(), 'scripts/design/count-voice.mts'),
+      code: `
+const RESULTS: Record<string, number> = {};
+const name = 'voice';
+RESULTS[name] = 1;
+      `,
+      errors: [lintError('name')],
+      output: `
+import { assertSafe } from '../../functions/src/util/assertSafe';
+const RESULTS: Record<string, number> = {};
+const name = 'voice';
+RESULTS[assertSafe(name)] = 1;
+      `,
+    },
+    {
+      // A `.js` file defers to the nearest package.json. This repo's manifest
+      // declares no `type`, which is CommonJS, so the specifier stays bare —
+      // the same walk the temp-tree cases below exercise against both answers.
+      name: 'a .js file under a manifest without a type field keeps the extensionless specifier',
+      filename: path.join(process.cwd(), 'scripts/design/count-voice.js'),
+      code: `
+const RESULTS = {};
+const name = 'voice';
+RESULTS[name] = 1;
+      `,
+      errors: [lintError('name')],
+      output: `
+import { assertSafe } from '../../functions/src/util/assertSafe';
+const RESULTS = {};
+const name = 'voice';
+RESULTS[assertSafe(name)] = 1;
+      `,
+    },
   ],
 });
 
@@ -1802,5 +1919,124 @@ export const read = (m: Record<string, number>, id: string) => m[\`\${id}\`];
     expect(output).toBe(`import { assertSafe } from '../../assertSafe';
 export const read = (m: Record<string, number>, id: string) => m[assertSafe(id)];
 `);
+  });
+});
+
+// Issue #1556: node's ESM resolver takes a specifier literally, so an
+// extensionless injected import turns a working native-ESM file into one that
+// throws ERR_MODULE_NOT_FOUND at startup. Whether a `.js` file is native ESM is
+// decided by the nearest package.json on disk, which RuleTester cannot express:
+// these cases build real manifests in a temp tree and lint files inside it.
+describe('enforce-assert-safe-object-key: the nearest manifest decides the extension (issue #1556)', () => {
+  const RULE_ID = '@blumintinc/blumint/enforce-assert-safe-object-key';
+
+  const plugin = {
+    rules: {
+      'enforce-assert-safe-object-key': enforceAssertSafeObjectKey,
+    },
+  };
+
+  let projectRoot: string;
+
+  const writeFixture = (relativePath: string, contents: string) => {
+    const target = path.join(projectRoot, relativePath);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, contents);
+  };
+
+  beforeAll(() => {
+    projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'assert-safe-esm-'));
+    writeFixture('esm-pkg/package.json', '{"type":"module"}');
+    writeFixture('cjs-pkg/package.json', '{"type":"commonjs"}');
+    // A nested manifest without a `type` field: node reads the nearest one and
+    // stops, so this shadows the ESM manifest above it.
+    writeFixture('esm-pkg/sub/package.json', '{}');
+    writeFixture('malformed-pkg/package.json', '{oops');
+    fs.mkdirSync(path.join(projectRoot, 'no-pkg'), { recursive: true });
+  });
+
+  afterAll(() => {
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+  });
+
+  const lintAt = async (relativePath: string, code: string) => {
+    const eslint = new ESLint({
+      cwd: projectRoot,
+      useEslintrc: false,
+      fix: true,
+      plugins: { '@blumintinc/blumint': plugin as never },
+      overrideConfig: {
+        parser: require.resolve('@typescript-eslint/parser'),
+        parserOptions: {
+          ecmaVersion: 2022 as const,
+          sourceType: 'module' as const,
+        },
+        plugins: ['@blumintinc/blumint'],
+        rules: { [RULE_ID]: 'error' as const },
+      },
+    });
+    const [result] = await eslint.lintText(code, {
+      filePath: path.join(projectRoot, relativePath),
+    });
+    return result.output ?? code;
+  };
+
+  const specifiersOf = (output: string) =>
+    [...output.matchAll(/import \{ assertSafe \} from '([^']+)';/g)].map(
+      (match) => match[1],
+    );
+
+  const SOURCE = 'export const read = (m, id) => m[`${id}`];\n';
+
+  it('appends .js for a .js file under a "type": "module" manifest', async () => {
+    const output = await lintAt('esm-pkg/app.js', SOURCE);
+
+    expect(specifiersOf(output)).toEqual([
+      '../functions/src/util/assertSafe.js',
+    ]);
+    expect(output).toContain('m[assertSafe(id)]');
+  });
+
+  it('leaves a .js file under a "type": "commonjs" manifest extensionless', async () => {
+    const output = await lintAt('cjs-pkg/app.js', SOURCE);
+
+    expect(specifiersOf(output)).toEqual(['../functions/src/util/assertSafe']);
+  });
+
+  it('leaves a .js file with no manifest above it extensionless', async () => {
+    const output = await lintAt('no-pkg/app.js', SOURCE);
+
+    expect(specifiersOf(output)).toEqual(['../functions/src/util/assertSafe']);
+  });
+
+  it('stops at the nearest manifest, so a typeless one shadows an ESM parent', async () => {
+    const output = await lintAt('esm-pkg/sub/app.js', SOURCE);
+
+    expect(specifiersOf(output)).toEqual([
+      '../../functions/src/util/assertSafe',
+    ]);
+  });
+
+  it('declines the extension on an unparseable manifest without throwing', async () => {
+    const output = await lintAt('malformed-pkg/app.js', SOURCE);
+
+    expect(specifiersOf(output)).toEqual(['../functions/src/util/assertSafe']);
+  });
+
+  it('appends .js for a .mjs file even under a CommonJS manifest', async () => {
+    const output = await lintAt('cjs-pkg/app.mjs', SOURCE);
+
+    expect(specifiersOf(output)).toEqual([
+      '../functions/src/util/assertSafe.js',
+    ]);
+  });
+
+  it('leaves a .ts file under an ESM manifest extensionless', async () => {
+    const output = await lintAt(
+      'esm-pkg/app.ts',
+      'export const read = (m: Record<string, number>, id: string) => m[`${id}`];\n',
+    );
+
+    expect(specifiersOf(output)).toEqual(['../functions/src/util/assertSafe']);
   });
 });

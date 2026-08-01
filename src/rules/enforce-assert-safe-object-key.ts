@@ -1,3 +1,4 @@
+import fs from 'fs';
 import path from 'path';
 import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
@@ -37,6 +38,54 @@ function isAssertSafeSpecifier(
  */
 function normalizeModulePath(value: string): string {
   return value.replace(/\\/g, '/').replace(/\.(tsx?|jsx?|mts|cts)$/i, '');
+}
+
+/**
+ * Extensions whose module system the file name settles on its own, ahead of any
+ * package manifest: `.mjs` is ESM and `.cjs` is CommonJS by definition, while a
+ * TypeScript source — `.mts` included — is compiled before it runs and its
+ * specifiers are resolved by the compiler, which accepts the extensionless
+ * form. Only `.js` is ambiguous and has to ask the nearest manifest.
+ */
+const NATIVE_ESM_EXTENSION = /\.mjs$/i;
+const NON_NATIVE_ESM_EXTENSION = /\.(cjs|tsx?|mts|cts)$/i;
+const AMBIGUOUS_JS_EXTENSION = /\.js$/i;
+
+/**
+ * Whether the nearest `package.json` at or above `startDir` declares
+ * `"type": "module"`, which is what makes a `.js` file native ESM. Node consults
+ * only the first manifest found, and treats a missing `type` field as
+ * CommonJS — so the walk stops at the first manifest it can read, not at the
+ * first one that declares a type.
+ *
+ * Every filesystem touch is optional: a manifest that cannot be read is
+ * indistinguishable from an absent one and the walk continues, while a manifest
+ * that cannot be parsed declines the extension rather than guessing. Declining
+ * yields the bare specifier, which every non-ESM consumer resolves — the safer
+ * answer when the tree cannot say which kind of consumer this is.
+ */
+function nearestManifestDeclaresModule(startDir: string): boolean {
+  let dir = startDir;
+  for (;;) {
+    let manifest: string;
+    try {
+      manifest = fs.readFileSync(path.join(dir, 'package.json'), 'utf8');
+    } catch {
+      const parent = path.dirname(dir);
+      if (parent === dir) {
+        return false;
+      }
+      dir = parent;
+      continue;
+    }
+    try {
+      return (
+        (JSON.parse(manifest) as { type?: unknown } | null)?.type === 'module'
+      );
+    } catch {
+      return false;
+    }
+  }
 }
 
 /** Names that read as a positional sequence rather than a keyed record. */
@@ -209,6 +258,31 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
     };
 
     /**
+     * Whether the file being fixed runs as native ESM, where node's resolver
+     * takes a specifier literally and an extensionless one throws
+     * ERR_MODULE_NOT_FOUND at startup. TypeScript and bundler consumers resolve
+     * extensionless specifiers themselves, so they keep the bare form.
+     *
+     * The walk for an ambiguous `.js` file runs only while a fix is being built,
+     * costs a handful of stat-sized reads, and needs an absolute name to have a
+     * directory to start from.
+     */
+    const isNativeEsmFile = (): boolean => {
+      const filename = context.getFilename().replace(/\\/g, '/');
+      if (NATIVE_ESM_EXTENSION.test(filename)) {
+        return true;
+      }
+      if (
+        NON_NATIVE_ESM_EXTENSION.test(filename) ||
+        !AMBIGUOUS_JS_EXTENSION.test(filename) ||
+        !path.isAbsolute(filename)
+      ) {
+        return false;
+      }
+      return nearestManifestDeclaresModule(path.dirname(filename));
+    };
+
+    /**
      * Computes the module specifier for the injected assertSafe import.
      *
      * `importPath` is anchored at the repo root — the directory ESLint runs
@@ -221,17 +295,22 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
      * emitted import resolves from that file's location.
      */
     const computeImportSpecifier = (): string => {
+      // The helper is authored as TypeScript and runs as its compiled output, so
+      // a native-ESM importer names the emitted `.js` file. TS resolves a `.js`
+      // specifier back to the `.ts` source under nodenext, which keeps the one
+      // spelling correct for both.
+      const extension = isNativeEsmFile() ? '.js' : '';
       const fileDir = fileDirFromRoot();
       // Emitting the configured path verbatim preserves the option's literal
       // value for non-file lints.
       if (fileDir === null) {
-        return importPath;
+        return `${importPath}${extension}`;
       }
       let specifier = path.posix.relative(fileDir, assertSafeTarget);
       if (!specifier.startsWith('.')) {
         specifier = `./${specifier}`;
       }
-      return specifier;
+      return `${specifier}${extension}`;
     };
 
     /**
