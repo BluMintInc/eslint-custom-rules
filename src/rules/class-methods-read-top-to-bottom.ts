@@ -102,38 +102,60 @@ export const classMethodsReadTopToBottom: TSESLint.RuleModule<
           if (actualMember !== expectedMember) {
             const classNameReport = className || 'this class';
             const sourceCode = context.getSourceCode();
-            const newClassBody = sortedOrder
-              .map((n) => {
-                // Fetch the actual AST node corresponding to the name
-                const memberNode = node.body.find(
-                  (member) => getMemberName(member) === n,
-                );
-                if (!memberNode) {
-                  return '';
-                }
-                const comments = sourceCode.getCommentsBefore(memberNode) || [];
-                const nodeRange = memberNode.range;
-                const newRange: [number, number] =
-                  comments.length > 0
-                    ? [
-                        Math.min(
-                          nodeRange[0],
-                          Math.min(
-                            ...comments.map((comment) => comment.range[0]),
-                          ),
-                        ),
-                        Math.max(
-                          nodeRange[1],
-                          Math.max(
-                            ...comments.map((comment) => comment.range[1]),
-                          ),
-                        ),
-                      ]
-                    : nodeRange;
-                return sourceCode.getText({ ...memberNode, range: newRange });
-              })
-              .filter(Boolean)
-              .join('\n');
+            const sourceText = sourceCode.getText();
+
+            // A member's block spans its leading comments through its own end,
+            // so documentation travels with the member it describes. Because
+            // every comment in the body is thereby absorbed into some block,
+            // the text between two adjacent blocks is pure whitespace.
+            const memberBlocks = node.body.map((member) => {
+              const comments = sourceCode.getCommentsBefore(member) || [];
+              const start = Math.min(
+                member.range[0],
+                ...comments.map((comment) => comment.range[0]),
+              );
+              return {
+                name: getMemberName(member),
+                text: sourceText.slice(start, member.range[1]),
+                start,
+                end: member.range[1],
+              };
+            });
+
+            // Reuse those whitespace runs positionally instead of joining with
+            // a bare '\n'. The blank lines between members are the part that
+            // matters: prettier preserves existing blank lines but never
+            // inserts new ones, so collapsing them is irreversible (#1592).
+            // Carrying the runs verbatim also reproduces the newline and
+            // indentation after `{` and the newline before `}` for free, since
+            // every member sits at the same depth.
+            const separators = memberBlocks
+              .slice(1)
+              .map((block, index) =>
+                sourceText.slice(memberBlocks[index].end, block.start),
+              );
+            const prefix = sourceText.slice(
+              node.range[0] + 1,
+              memberBlocks[0].start,
+            );
+            const suffix = sourceText.slice(
+              memberBlocks[memberBlocks.length - 1].end,
+              node.range[1] - 1,
+            );
+
+            const newClassBody =
+              prefix +
+              sortedOrder
+                .map((n) => {
+                  const block = memberBlocks.find(({ name }) => name === n);
+                  return block ? block.text : '';
+                })
+                .map((text, index) =>
+                  index === 0 ? text : separators[index - 1] + text,
+                )
+                .join('') +
+              suffix;
+
             return context.report({
               node,
               messageId: 'classMethodsReadTopToBottom',

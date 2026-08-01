@@ -63,3 +63,7 @@ Abstract member signatures—abstract methods (`protected abstract foo(): number
 ## Non-destructive autofix
 
 The autofix rewrites the class body from the members the rule tracks. To guarantee it never removes source it does not track, it bails when the class contains a member it cannot safely relocate—such as a `static {}` initialization block or a computed-key method—leaving the class untouched instead of emitting a body that would omit that member.
+
+The rewrite also preserves the class body's existing whitespace: the newline and indentation after `{`, the blank lines separating members, and the newline before `}` are all carried over verbatim rather than collapsed. Each member keeps its own leading comments, so documentation travels with the member it describes.
+
+Blank lines are preserved positionally—the gap between the first and second member stays between the first and second member, whatever ends up in those slots. This keeps a body's visual rhythm and its total blank-line count intact. Preserving them matters because Prettier keeps existing blank lines but never inserts new ones, so a blank line the autofix deleted could not be restored by reformatting.
