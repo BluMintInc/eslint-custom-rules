@@ -625,6 +625,247 @@ function Component() {
 }
     `,
   },
+  // A multi-line callback loses one nesting level when it is hoisted to module
+  // scope, so its body has to be dedented by that level.
+  {
+    code: `
+import { useCallback } from 'react';
+export const ElectronCloseButton = () => {
+  const closeWindow = useCallback(() => {
+    if (IS_ELECTRON) {
+      closeWindowNative();
+    }
+  }, []);
+  return <button onClick={closeWindow} />;
+};
+    `,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+import { useCallback } from 'react';
+const closeWindow = () => {
+  if (IS_ELECTRON) {
+    closeWindowNative();
+  }
+};
+export const ElectronCloseButton = () => {
+  return <button onClick={closeWindow} />;
+};
+    `,
+  },
+  // Two levels deep: the dedent follows the declaration's own indentation
+  // rather than assuming a single component-body level.
+  {
+    code: `
+import { useCallback } from 'react';
+function Component() {
+  if (SHOW_TRACKING) {
+    const handleClick = useCallback(() => {
+      track({
+        name: 'click',
+      });
+    }, []);
+    return <button onClick={handleClick} />;
+  }
+  return null;
+}
+    `,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+import { useCallback } from 'react';
+const handleClick = () => {
+  track({
+    name: 'click',
+  });
+};
+function Component() {
+  if (SHOW_TRACKING) {
+    return <button onClick={handleClick} />;
+  }
+  return null;
+}
+    `,
+  },
+  // The interior of a multi-line template literal is string data, so it must
+  // survive the hoist byte for byte even though the code around it shifts.
+  {
+    code: `
+import { useCallback } from 'react';
+const QueryPanel = () => {
+  const buildQuery = useCallback(() => {
+    return \`
+      SELECT *
+      FROM users
+    \`;
+  }, []);
+  return <div>{buildQuery()}</div>;
+};
+    `,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+import { useCallback } from 'react';
+const buildQuery = () => {
+  return \`
+      SELECT *
+      FROM users
+    \`;
+};
+const QueryPanel = () => {
+  return <div>{buildQuery()}</div>;
+};
+    `,
+  },
+  // A tab-indented file shifts by one tab, not by a space count.
+  {
+    code: `
+import { useCallback } from 'react';
+function TabbedComponent() {
+\tconst formatLabel = useCallback((value) => {
+\t\treturn value.trim();
+\t}, []);
+\treturn <span>{formatLabel(' x ')}</span>;
+}
+    `,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+import { useCallback } from 'react';
+const formatLabel = (value) => {
+\treturn value.trim();
+};
+function TabbedComponent() {
+\treturn <span>{formatLabel(' x ')}</span>;
+}
+    `,
+  },
+  // A callback broken onto its own argument line sits one level deeper than the
+  // declaration, so the shift is measured from the callback rather than from
+  // the statement that holds it.
+  {
+    code: `
+import { useCallback } from 'react';
+const Component = () => {
+  const parseAmount = useCallback(
+    (raw: string) => {
+      return Number.parseFloat(raw);
+    },
+    [],
+  );
+  return <div>{parseAmount('1.5')}</div>;
+};
+    `,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+import { useCallback } from 'react';
+const parseAmount = (raw: string) => {
+  return Number.parseFloat(raw);
+};
+const Component = () => {
+  return <div>{parseAmount('1.5')}</div>;
+};
+    `,
+  },
+  // A blank line has no indentation to shed, and a line indented less than the
+  // shift cannot give up characters it does not have, so both are left alone
+  // instead of losing code to the dedent.
+  {
+    code: `
+import { useCallback } from 'react';
+const Component = () => {
+  const describe = useCallback(() => {
+    const parts = [
+'first',
+      'second',
+    ];
+
+    return parts.join(',');
+  }, []);
+  return <div>{describe()}</div>;
+};
+    `,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+import { useCallback } from 'react';
+const describe = () => {
+  const parts = [
+'first',
+    'second',
+  ];
+
+  return parts.join(',');
+};
+const Component = () => {
+  return <div>{describe()}</div>;
+};
+    `,
+  },
+  // A callback already written at the depth it is hoisted to sheds no level, so
+  // its body is reproduced byte for byte.
+  {
+    code: `
+import { useCallback } from 'react';
+function Component() {
+const handler = useCallback(() => {
+  return 1;
+}, []);
+return <div>{handler()}</div>;
+}
+    `,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+import { useCallback } from 'react';
+const handler = () => {
+  return 1;
+};
+function Component() {
+return <div>{handler()}</div>;
+}
+    `,
+  },
+  // The hoisted declaration lands at the indentation of the statement it is
+  // inserted before, so a body shallower than that gains the difference.
+  {
+    code: `
+import { useCallback } from 'react';
+  function IndentedDeclaration() {
+const buildLabel = useCallback(() => {
+return 'label';
+}, []);
+return <div>{buildLabel()}</div>;
+}
+    `,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+import { useCallback } from 'react';
+  const buildLabel = () => {
+  return 'label';
+  };
+function IndentedDeclaration() {
+return <div>{buildLabel()}</div>;
+}
+    `,
+  },
+  // Indent characters that disagree give no delta that can be applied without
+  // corrupting the layout, so the body is reproduced as the author wrote it.
+  {
+    code: `
+import { useCallback } from 'react';
+\tfunction MixedIndent() {
+  const toKey = useCallback((value) => {
+    return String(value);
+  }, []);
+  return <div>{toKey(1)}</div>;
+}
+    `,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+import { useCallback } from 'react';
+\tconst toKey = (value) => {
+    return String(value);
+  };
+function MixedIndent() {
+  return <div>{toKey(1)}</div>;
+}
+    `,
+  },
   // Twin of the valid ignoreTestFiles case: same fixture, same test filename,
   // only the option flips, so the rule stops skipping the file.
   {
