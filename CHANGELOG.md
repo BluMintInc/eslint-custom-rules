@@ -1,3 +1,10 @@
+## [1.20.59](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.58...v1.20.59) (2026-08-01)
+
+
+### Bug Fixes
+
+* **prefer-type-over-interface:** exempt module augmentations (closes [#1549](https://github.com/BluMintInc/eslint-custom-rules/issues/1549)) ([faa8a29](https://github.com/BluMintInc/eslint-custom-rules/commit/faa8a29aa363d0df0cc564c377c258a65d295183))
+
 ## [1.20.58](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.57...v1.20.58) (2026-08-01)
 
 

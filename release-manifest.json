@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.59",
+    "date": "2026-08-01T04:43:54.837Z",
+    "rules": [
+      {
+        "name": "prefer-type-over-interface",
+        "changeType": "fix",
+        "issues": [
+          1549
+        ],
+        "summary": "exempt module augmentations (closes #1549)"
+      }
+    ]
+  },
+  {
     "version": "1.20.58",
     "date": "2026-08-01T04:26:49.434Z",
     "rules": [
