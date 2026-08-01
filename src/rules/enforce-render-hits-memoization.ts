@@ -1,4 +1,9 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  ASTUtils,
+  TSESLint,
+  TSESTree,
+} from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds =
@@ -9,6 +14,32 @@ type MessageIds =
 
 const LATEST_CALLBACK_MODULE = 'use-latest-callback';
 const LATEST_CALLBACK_HOOK = 'useLatestCallback';
+
+/**
+ * Declaration forms whose binding is created once for the program's lifetime.
+ *
+ * `let` and `var` are deliberately excluded: a reassignable binding can hand
+ * `useRenderHits` a different function on a later render, which is precisely
+ * the instability this rule exists to catch.
+ */
+function isStableDeclaration(def: TSESLint.Scope.Definition): boolean {
+  switch (def.type) {
+    case TSESLint.Scope.DefinitionType.FunctionName:
+      return true;
+    case TSESLint.Scope.DefinitionType.ImportBinding:
+      // A type-only import binds no value, so its local name names nothing
+      // callable — the same reason the memoization-callee set rejects one.
+      return (
+        def.parent.importKind !== 'type' &&
+        (def.node.type !== AST_NODE_TYPES.ImportSpecifier ||
+          def.node.importKind !== 'type')
+      );
+    case TSESLint.Scope.DefinitionType.Variable:
+      return def.parent.kind === 'const';
+    default:
+      return false;
+  }
+}
 
 export const enforceRenderHitsMemoization = createRule<[], MessageIds>({
   name: 'enforce-render-hits-memoization',
@@ -109,12 +140,59 @@ export const enforceRenderHitsMemoization = createRule<[], MessageIds>({
       return false;
     };
 
+    /**
+     * A prop pointing at a declaration that lives outside every component body.
+     *
+     * Module scope creates the binding once for the program's lifetime, so its
+     * identity is strictly more stable than anything a hook can hand back:
+     * demanding a `useCallback` wrapper around it asks for work that can only
+     * make the reference less stable, never more.
+     *
+     * Both `module` and `global` count. Under `sourceType: 'script'` — the
+     * parser default, and what a consumer's config may well leave in place — a
+     * top-level declaration binds to the *global* scope and no module scope
+     * exists at all (issue #1578), so keying on `module` alone would silently
+     * drop the carve-out for exactly the consumers who never opted into module
+     * parsing.
+     *
+     * The shape is not hypothetical:
+     * `no-empty-dependency-use-callbacks` — 'error' in the same recommended
+     * config, and fixable — hoists a dependency-free callback to module scope
+     * and drops the hook, so one `eslint --fix` run rewrites memoized code into
+     * exactly this form. Without the carve-out the config demands the very hook
+     * its own fixer just removed (issue #1586).
+     */
+    const isStableOuterScopeBinding = (node: TSESTree.Node): boolean => {
+      if (node.type !== AST_NODE_TYPES.Identifier) return false;
+
+      // The scope chain has to be walked rather than a single scope's variable
+      // list read: the useRenderHits call sits inside the component, so a
+      // module-scope declaration is never among the current scope's own
+      // variables.
+      const variable = ASTUtils.findVariable(context.getScope(), node);
+      if (!variable) return false;
+
+      const scopeType = variable.scope.type;
+      if (
+        scopeType !== TSESLint.Scope.ScopeType.module &&
+        scopeType !== TSESLint.Scope.ScopeType.global
+      ) {
+        return false;
+      }
+
+      return variable.defs.some(isStableDeclaration);
+    };
+
     const isInsideMemoizedCall = (node: TSESTree.Node): boolean => {
       // Handle the case when node is already a memoized call
       if (isMemoizedCall(node)) return true;
 
       // Check if the node is a reference to a memoized variable
       if (isMemoizedVariable(node)) return true;
+
+      // A declaration outside every component body needs no memoization: it is
+      // already as stable as a reference can be.
+      if (isStableOuterScopeBinding(node)) return true;
 
       // Check if the node is inside a memoization hook call
       if (isWithinMemoizationCall(node)) return true;
