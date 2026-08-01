@@ -1159,6 +1159,96 @@ ruleTesterTs.run(
         };
       `,
       },
+      // The environment handle is created in beforeAll, so it cannot be a const.
+      // Its annotation binds every assignment, which a plain initializer cannot.
+      {
+        code: `
+        import { initializeTestEnvironment, RulesTestEnvironment } from '@firebase/rules-unit-testing';
+        let testEnv: RulesTestEnvironment;
+        beforeAll(async () => {
+          testEnv = await initializeTestEnvironment({ projectId: 'demo-x' });
+        });
+        it('reads', async () => {
+          const db = testEnv.authenticatedContext('owner-uid').firestore();
+          await db.doc('User/uid/OverlaySettings/uid').get();
+        });
+      `,
+      },
+      // The same annotated let reaching collection and collectionGroup
+      {
+        code: `
+        import { RulesTestEnvironment } from '@firebase/rules-unit-testing';
+        let testEnv: RulesTestEnvironment;
+        export const read = async () => {
+          const db = testEnv.unauthenticatedContext().firestore();
+          await db.collection('User').get();
+          await db.collectionGroup('OverlaySettings').get();
+        };
+      `,
+      },
+      // A namespace-qualified annotation roots at the namespace binding
+      {
+        code: `
+        import * as rut from '@firebase/rules-unit-testing';
+        let testEnv: rut.RulesTestEnvironment;
+        export const read = async () => {
+          const db = testEnv.authenticatedContext('u').firestore();
+          await db.doc('User/uid').get();
+        };
+      `,
+      },
+      // The documented withSecurityRulesDisabled spelling leaves the parameter
+      // unannotated, so the call it belongs to is the only evidence of surface
+      {
+        code: `
+        import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+        const run = async () => {
+          const testEnv = await initializeTestEnvironment({ projectId: 'demo-x' });
+          await testEnv.withSecurityRulesDisabled(async (ctx) => {
+            await ctx.firestore().doc('User/uid').set({ hidden: true });
+          });
+        };
+      `,
+      },
+      // The unannotated callback parameter reached through an annotated let
+      {
+        code: `
+        import { RulesTestEnvironment } from '@firebase/rules-unit-testing';
+        let testEnv: RulesTestEnvironment;
+        beforeEach(async () => {
+          await testEnv.withSecurityRulesDisabled(async (context) => {
+            const seed = context.firestore();
+            await seed.doc('User/owner-uid').set({ username: 'owner' });
+            await seed.collection('User').doc('other-uid').set({ username: 'x' });
+          });
+        });
+      `,
+      },
+      // A helper hop: what the helper returns decides the surface
+      {
+        code: `
+        import { RulesTestEnvironment } from '@firebase/rules-unit-testing';
+        let testEnv: RulesTestEnvironment;
+        const getDb = () => testEnv.authenticatedContext('u').firestore();
+        export const read = async () => {
+          const db = getDb();
+          await db.doc('User/uid').get();
+        };
+      `,
+      },
+      // The same helper written with a block body and an explicit return
+      {
+        code: `
+        import { RulesTestEnvironment } from '@firebase/rules-unit-testing';
+        let testEnv: RulesTestEnvironment;
+        function getDb() {
+          return testEnv.unauthenticatedContext().firestore();
+        }
+        export const read = async () => {
+          await getDb().doc('User/uid').get();
+        };
+      `,
+      },
     ],
     invalid: [
       // Missing generic type - DocumentReference
@@ -1655,15 +1745,87 @@ ruleTesterTs.run(
       `,
         errors: [missingGenericError('DocumentReference')],
       },
-      // An untyped callback parameter carries no evidence of the compat surface
+      // withSecurityRulesDisabled on a receiver unrelated to the module
+      {
+        code: `
+        import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+        const harness = {
+          withSecurityRulesDisabled: (fn: (ctx: any) => void) => fn(null),
+        };
+        export const seed = () => {
+          harness.withSecurityRulesDisabled((ctx) => {
+            ctx.firestore().doc('User/uid').set({ hidden: true });
+          });
+        };
+        export const env = initializeTestEnvironment;
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // A different callback method on a traced environment is not the context API
       {
         code: `
         import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
         const run = async () => {
           const testEnv = await initializeTestEnvironment({ projectId: 'demo-x' });
-          await testEnv.withSecurityRulesDisabled(async (ctx) => {
+          await (testEnv as any).withSomeOtherCallback(async (ctx) => {
             await ctx.firestore().doc('User/uid').set({ hidden: true });
           });
+        };
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // An annotated let whose type is an Admin SDK surface is not exempt
+      {
+        code: `
+        import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+        import type { Firestore } from 'firebase-admin/firestore';
+        let adminDb: Firestore;
+        export const read = async () => {
+          await adminDb.doc('User/uid').get();
+        };
+        export const env = initializeTestEnvironment;
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // A helper returning an Admin SDK handle is not exempt
+      {
+        code: `
+        import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+        import { getFirestore } from 'firebase-admin/firestore';
+        const getAdminDb = () => getFirestore();
+        export const read = async () => {
+          const db = getAdminDb();
+          await db.doc('User/uid').get();
+        };
+        export const env = initializeTestEnvironment;
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // A helper whose block body returns an Admin SDK handle is not exempt
+      {
+        code: `
+        import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+        import { getFirestore } from 'firebase-admin/firestore';
+        const getAdminDb = () => {
+          return getFirestore();
+        };
+        export const read = async () => {
+          const db = getAdminDb();
+          await db.doc('User/uid').get();
+        };
+        export const env = initializeTestEnvironment;
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // An unannotated let assigned from the environment stays reportable,
+      // because nothing constrains a later assignment to the same surface
+      {
+        code: `
+        import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+        const run = async () => {
+          const testEnv = await initializeTestEnvironment({ projectId: 'demo-x' });
+          let db = testEnv.authenticatedContext('u').firestore();
+          await db.doc('User/uid').get();
         };
       `,
         errors: [missingGenericError('DocumentReference')],

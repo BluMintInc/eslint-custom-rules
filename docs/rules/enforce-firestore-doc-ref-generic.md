@@ -20,22 +20,40 @@ This rule requires every Firestore `DocumentReference`, `CollectionReference`, a
 
 `RulesTestContext.firestore()` returns the compat (v8-style) `Firestore`, whose `doc`, `collection`, and `collectionGroup` declare **zero** type parameters. Supplying a generic there is `error TS2558: Expected 0 type arguments, but got 1`, so on that surface every fix this rule suggests is uncompilable. Security-rules tests therefore get an exemption: a `doc`/`collection`/`collectionGroup` call whose receiver traces syntactically back to a value from `@firebase/rules-unit-testing` is not reported.
 
-The trace follows awaits, calls, member access, optional chaining, and type assertions, and it recognizes every import form (named, aliased, default, namespace, and type-only). A parameter annotated with a type imported from that module — the `withSecurityRulesDisabled(async (ctx: RulesTestContext) => ...)` callback — also counts.
+The trace follows awaits, calls, member access, optional chaining, and type assertions, and it recognizes every import form (named, aliased, default, namespace, and type-only). It also follows two indirections the documented test layout depends on:
+
+- **A local helper**, through what it returns — `const getDb = () => testEnv.authenticatedContext('u').firestore()`, whether written as an arrow, an expression body, or a hoisted `function`.
+- **The `withSecurityRulesDisabled` callback parameter**, annotated or not. The seeding block in the Firebase docs writes `async (context) => ...` with no annotation, so the call the callback belongs to is the only evidence of the surface.
 
 The exemption is deliberately limited:
 
-- **`const` only.** A `let`/`var` binding anywhere along the chain is refused, because a later assignment can swap in an Admin SDK handle where the generic is both supportable and valuable.
+- **An unannotated `let`/`var` initializer is refused**, because a later assignment can swap in an Admin SDK handle where the generic is both supportable and valuable. A **declared type is honoured on any binding kind**, including `let`: the environment handle is created in `beforeAll` and so cannot be `const`, and `let testEnv: RulesTestEnvironment` constrains every assignment in a way an initializer alone does not.
 - **The receiver decides, not the file.** An Admin SDK reference in a rules test is still reported.
 - **The modular `doc(db, path)` function is untouched.** It accepts the generic, so it still requires one.
 - **An explicit `DocumentReference` annotation is untouched.** The annotation is written by hand and can carry its generic regardless of the runtime surface.
 
 ```ts
-import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+import {
+  initializeTestEnvironment,
+  RulesTestEnvironment,
+} from '@firebase/rules-unit-testing';
 import { getFirestore } from 'firebase-admin/firestore';
 
-const run = async () => {
-  const testEnv = await initializeTestEnvironment({ projectId: 'demo-x' });
+// Declared, not initialized: the annotation is what proves the surface.
+let testEnv: RulesTestEnvironment;
 
+beforeAll(async () => {
+  testEnv = await initializeTestEnvironment({ projectId: 'demo-x' });
+});
+
+beforeEach(async () => {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    // Correct: the callback parameter needs no annotation to be recognized.
+    await context.firestore().doc('User/owner-uid').set({ username: 'owner' });
+  });
+});
+
+it('reads', async () => {
   // Correct: the compat surface accepts no type argument.
   const compatDb = testEnv.authenticatedContext('owner-uid').firestore();
   await compatDb.doc('User/uid/OverlaySettings/uid').get();
@@ -43,7 +61,7 @@ const run = async () => {
   // Incorrect: the receiver is an Admin SDK Firestore, which does accept one.
   const adminDb = getFirestore();
   await adminDb.doc('User/uid').get();
-};
+});
 ```
 
 ### Examples of incorrect code
