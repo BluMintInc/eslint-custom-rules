@@ -252,6 +252,55 @@ ruleTesterTs.run(
       `,
       'const IS_READY = true;',
       'const is_ready = true;',
+
+      // Abstract class properties with approved prefixes
+      'abstract class Feature { abstract isEnabled: boolean; }',
+      'abstract class Feature { abstract readonly hasAccess: boolean; }',
+      'abstract class Feature { protected abstract isVisible: boolean; }',
+      'abstract class Feature { public abstract readonly canEdit: boolean; }',
+      'abstract class Feature { abstract isEnabled?: boolean; }',
+
+      // Abstract class properties that are not boolean
+      'abstract class Feature { abstract count: number; }',
+      'abstract class Feature { abstract label: string; }',
+      'abstract class Feature { abstract config: { enabled: boolean }; }',
+
+      // Underscore-prefixed abstract property is treated as internal
+      'abstract class Feature { protected abstract _enabled: boolean; }',
+
+      // Non-Identifier (computed) abstract property keys are skipped, exactly as
+      // they are for concrete properties
+      `
+    abstract class Feature {
+      abstract ['enabled']: boolean;
+    }
+    `,
+
+      // Constructor parameter properties with approved prefixes
+      'class Feature { constructor(private isEnabled: boolean) {} }',
+      'class Feature { constructor(public readonly hasAccess: boolean) {} }',
+      'class Feature { constructor(protected canEdit: boolean) {} }',
+      'class Feature { constructor(private readonly isVisible?: boolean) {} }',
+      'class Feature { constructor(private isEnabled: boolean = true) {} }',
+      'class Feature { constructor(private isEnabled = true) {} }',
+
+      // Constructor parameter properties that are not boolean
+      'class Feature { constructor(private name: string) {} }',
+      'class Feature { constructor(public readonly count: number) {} }',
+      'class Feature { constructor(private config: { enabled: boolean }) {} }',
+
+      // Underscore-prefixed parameter property is treated as internal
+      'class Feature { constructor(private _enabled: boolean) {} }',
+
+      // Abstract properties honor custom prefixes
+      {
+        code: 'abstract class Feature { abstract hasAccess: boolean; }',
+        options: [{ prefixes: ['has'] }],
+      },
+      {
+        code: 'class Feature { constructor(private hasAccess: boolean) {} }',
+        options: [{ prefixes: ['has'] }],
+      },
     ],
     invalid: [
       // Variables without proper boolean prefixes
@@ -668,6 +717,241 @@ ruleTesterTs.run(
             name: 'isActive',
             capitalizedName: 'IsActive',
             prefixes: 'has, can',
+          }),
+        ],
+      },
+
+      // Abstract class properties are the author's own declarations, so they are
+      // enforced exactly like concrete class properties.
+      {
+        code: 'abstract class Feature { abstract enabled: boolean; }',
+        errors: [
+          buildError({
+            type: 'property',
+            name: 'enabled',
+            capitalizedName: 'Enabled',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+      {
+        code: 'abstract class Feature { abstract readonly visible: boolean; }',
+        errors: [
+          buildError({
+            type: 'property',
+            name: 'visible',
+            capitalizedName: 'Visible',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+      {
+        code: 'abstract class Feature { abstract enabled?: boolean; }',
+        errors: [
+          buildError({
+            type: 'property',
+            name: 'enabled',
+            capitalizedName: 'Enabled',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+      {
+        code: 'abstract class Feature { protected abstract visible: boolean; }',
+        errors: [
+          buildError({
+            type: 'property',
+            name: 'visible',
+            capitalizedName: 'Visible',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+      {
+        code: 'abstract class Feature { public abstract readonly locked: boolean; }',
+        errors: [
+          buildError({
+            type: 'property',
+            name: 'locked',
+            capitalizedName: 'Locked',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+      // Abstract properties are enforced independently of the interface-only
+      // property-signature opt-in.
+      {
+        code: 'abstract class Feature { abstract enabled: boolean; }',
+        options: [{ enforceForPropertySignatures: false }],
+        errors: [
+          buildError({
+            type: 'property',
+            name: 'enabled',
+            capitalizedName: 'Enabled',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+      {
+        code: 'abstract class Feature { abstract isEnabled: boolean; }',
+        options: [{ prefixes: ['has', 'can'] }],
+        errors: [
+          buildError({
+            type: 'property',
+            name: 'isEnabled',
+            capitalizedName: 'IsEnabled',
+            prefixes: 'has, can',
+          }),
+        ],
+      },
+
+      // Abstract and concrete members are reported side by side
+      {
+        code: `
+      abstract class Feature {
+        enabled = false;
+        abstract visible: boolean;
+        abstract isReady: boolean;
+        abstract count: number;
+      }
+      `,
+        errors: [
+          buildError({
+            type: 'property',
+            name: 'enabled',
+            capitalizedName: 'Enabled',
+            prefixes: defaultPrefixes,
+          }),
+          buildError({
+            type: 'property',
+            name: 'visible',
+            capitalizedName: 'Visible',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+
+      // Constructor parameter properties declare class fields, so they are
+      // reported as properties (exactly once, not also as a parameter).
+      {
+        code: 'class Feature { constructor(private enabled: boolean) {} }',
+        errors: [
+          buildError({
+            type: 'property',
+            name: 'enabled',
+            capitalizedName: 'Enabled',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+      {
+        code: 'class Feature { constructor(public readonly visible: boolean) {} }',
+        errors: [
+          buildError({
+            type: 'property',
+            name: 'visible',
+            capitalizedName: 'Visible',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+      {
+        code: 'class Feature { constructor(protected locked: boolean) {} }',
+        errors: [
+          buildError({
+            type: 'property',
+            name: 'locked',
+            capitalizedName: 'Locked',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+      {
+        code: 'class Feature { constructor(private readonly enabled?: boolean) {} }',
+        errors: [
+          buildError({
+            type: 'property',
+            name: 'enabled',
+            capitalizedName: 'Enabled',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+      {
+        code: 'class Feature { constructor(private enabled: boolean = true) {} }',
+        errors: [
+          buildError({
+            type: 'property',
+            name: 'enabled',
+            capitalizedName: 'Enabled',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+      {
+        code: 'class Feature { constructor(private enabled = true) {} }',
+        errors: [
+          buildError({
+            type: 'property',
+            name: 'enabled',
+            capitalizedName: 'Enabled',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+      {
+        code: 'class Feature { constructor(private isEnabled: boolean) {} }',
+        options: [{ prefixes: ['has', 'can'] }],
+        errors: [
+          buildError({
+            type: 'property',
+            name: 'isEnabled',
+            capitalizedName: 'IsEnabled',
+            prefixes: 'has, can',
+          }),
+        ],
+      },
+
+      // Parameter properties and plain parameters coexist in one constructor
+      {
+        code: 'class Feature { constructor(private enabled: boolean, active: boolean) {} }',
+        errors: [
+          buildError({
+            type: 'property',
+            name: 'enabled',
+            capitalizedName: 'Enabled',
+            prefixes: defaultPrefixes,
+          }),
+          buildError({
+            type: 'parameter',
+            name: 'active',
+            capitalizedName: 'Active',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+
+      // Abstract properties and parameter properties in the same class
+      {
+        code: `
+      abstract class Feature {
+        abstract visible: boolean;
+
+        constructor(private enabled: boolean) {}
+      }
+      `,
+        errors: [
+          buildError({
+            type: 'property',
+            name: 'visible',
+            capitalizedName: 'Visible',
+            prefixes: defaultPrefixes,
+          }),
+          buildError({
+            type: 'property',
+            name: 'enabled',
+            capitalizedName: 'Enabled',
+            prefixes: defaultPrefixes,
           }),
         ],
       },

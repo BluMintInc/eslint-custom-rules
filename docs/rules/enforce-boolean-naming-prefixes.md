@@ -21,7 +21,7 @@ This rule requires your boolean-typed or boolean-valued identifiers to start wit
 - Your variable declarations typed or inferred as boolean (including arrow functions returning boolean).
 - Your functions and methods that return boolean values.
 - Your function parameters typed as boolean and boolean properties inside parameter object type literals.
-- Your class properties with boolean types or values.
+- Your class properties with boolean types or values, including `abstract` properties (`abstract enabled: boolean`) and constructor parameter properties (`constructor(private enabled: boolean) {}`). Both declare a field you own, so they carry the same naming obligation as a concrete property; a parameter property is reported once, as a property rather than as a parameter.
 - Boolean property signatures in interfaces and type aliases **only when you opt in** via [`enforceForPropertySignatures`](#enforceforpropertysignatures). They are skipped by default because their names are frequently dictated by contracts you cannot rename (external API shapes, third-party interfaces, persisted data-model schemas such as Firestore fields).
 - The rule excludes type predicates and identifiers starting with `_`, which are treated as internal state.
 
@@ -65,6 +65,17 @@ class UserAccount {
   accountLocked(): boolean {
     return this.failedAttempts > 3;
   }
+}
+
+// Abstract properties every implementer inherits the name from
+abstract class BaseFeature {
+  abstract enabled: boolean;
+  abstract readonly visible: boolean;
+}
+
+// Constructor parameter properties declare class fields
+class FeatureToggle {
+  constructor(private enabled: boolean, public readonly visible: boolean) {}
 }
 
 function authorized(): boolean { return checkAuth(); }
@@ -119,6 +130,15 @@ class UserAccount {
   isAccountLocked(): boolean {
     return this.failedAttempts > 3;
   }
+}
+
+abstract class BaseFeature {
+  abstract isEnabled: boolean;
+  abstract readonly hasVisibility: boolean;
+}
+
+class FeatureToggle {
+  constructor(private isEnabled: boolean, public readonly canEdit: boolean) {}
 }
 
 interface UserState {
@@ -239,6 +259,29 @@ interface Tournament {
 ```
 
 Set [`enforceForPropertySignatures`](#enforceforpropertysignatures) to `true` for codebases that fully control their type definitions and want prefixes enforced on them.
+
+#### Abstract properties and constructor parameter properties
+
+Unlike interface property signatures, `abstract` class properties and constructor parameter properties are declarations you write and can rename, so they are checked **by default** exactly like concrete class properties — [`enforceForPropertySignatures`](#enforceforpropertysignatures) does not gate them.
+
+```ts
+abstract class BaseFeature {
+  abstract enabled: boolean;          // Flagged — rename to isEnabled
+  abstract readonly visible: boolean; // Flagged — rename to isVisible
+  abstract count: number;             // Not flagged — not a boolean
+  protected abstract _ready: boolean; // Not flagged — underscore-prefixed internal state
+}
+
+class FeatureToggle {
+  // Flagged as a property (not a parameter), once per declaration
+  constructor(
+    private enabled: boolean,
+    public readonly visible: boolean = true,
+  ) {}
+}
+```
+
+An access modifier on a constructor parameter turns it into a class field, so it is reported with `property` wording rather than `parameter` wording, and reported exactly once. Plain constructor parameters without a modifier stay parameters and are reported as such.
 
 ## Options
 
