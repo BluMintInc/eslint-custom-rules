@@ -3,6 +3,29 @@ import { enforceMicrodiff } from '../rules/enforce-microdiff';
 
 ruleTesterTs.run('enforce-microdiff', enforceMicrodiff, {
   valid: [
+    // A zero-argument JSON.stringify() used to abort the whole lint run: the
+    // indexed `arguments[0]` read is typed non-optional (issue #1571).
+    {
+      code: `export function isSameConfig(
+  JSON: { stringify: (value?: unknown) => string },
+  next: unknown,
+): boolean {
+  return JSON.stringify() === JSON.stringify(next);
+}`,
+    },
+    // The right operand is reached whenever the left one is an object literal.
+    {
+      code: `declare const JSON: { stringify: (value?: unknown) => string };
+const same = JSON.stringify({ a: 1 }) === JSON.stringify();`,
+    },
+    {
+      code: `declare const JSON: { stringify: (value?: unknown) => string };
+const same = JSON.stringify() === JSON.stringify({ a: 1 });`,
+    },
+    {
+      code: `declare const JSON: { stringify: (value?: unknown) => string };
+const differs = JSON.stringify() !== JSON.stringify();`,
+    },
     // Using microdiff correctly
     {
       code: `import { diff } from 'microdiff';
