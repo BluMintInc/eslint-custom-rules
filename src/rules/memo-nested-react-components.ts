@@ -964,8 +964,14 @@ See: https://react.dev/learn/your-first-component#nesting-and-organizing-compone
         if (node.name.type !== AST_NODE_TYPES.JSXIdentifier) return;
         const attrName = node.name.name;
 
-        // Check if it's a component-type prop
-        if (!/(Wrapper|Component|Template|Header|Footer)$/.test(attrName)) {
+        // Check if it's a component-type prop. A non-PascalCase prop (e.g.
+        // renderHeader) is a render callback used with a render={...} prop, not
+        // a component—skip it, mirroring the binding-side carve-out above. The
+        // suffix alone is not enough: it matches the tail of renderHeader.
+        if (
+          !isPascalCaseName(attrName) ||
+          !/(Wrapper|Component|Template|Header|Footer)$/.test(attrName)
+        ) {
           return;
         }
 

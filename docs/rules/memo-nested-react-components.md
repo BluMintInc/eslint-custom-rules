@@ -104,7 +104,7 @@ const MyPage = () => {
 
 ## Edge Cases
 
-- **Render-prop callbacks** (e.g., `render={...}`) are fine; this rule targets component-type props only.
+- **Render-prop callbacks** (e.g., `render={...}`) are fine; this rule targets component-type props only. A prop counts as component-type only when its name is uppercase-initial **and** ends in `Wrapper`, `Component`, `Template`, `Header`, or `Footer`. A lowercase-initial prop is a render callback even when its tail matches a suffix, so `renderHeader={...}`, `renderFooter={...}`, and `renderTemplate={...}` are not flagged, while `HeaderComponent={...}` and `CatalogWrapper={...}` are. This matches how the rule treats bindings: a non-PascalCase name such as `renderHit` is a render callback, not a component.
 - **JSX elements** passed directly to props are fine (e.g., `header={<TitleSelect />}`).
 
 ## Version
