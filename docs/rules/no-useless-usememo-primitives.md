@@ -18,7 +18,7 @@
   - Respects async callbacks—they return Promises, so inlining a primitive from an async function would change the value type.
   - Respects generator callbacks—they always return iterators, so inlining yielded primitives would change the return type and behavior.
   - Does not apply when the callback includes function calls if `ignoreCallExpressions` is enabled (default) to avoid flagging intentionally expensive computations.
-- **Auto-fix**: Replaces `useMemo(() => EXPR, [deps])` with `EXPR` and removes the dependency array.
+- **Auto-fix**: Replaces `useMemo(() => EXPR, [deps])` with `EXPR` and removes the dependency array. The fix is declined (the rule still reports) when the `useMemo` call contains a comment outside the returned expression — such as an `eslint-disable-next-line` directive on the return statement — because inlining would destroy the comment and could silently re-enable a suppressed rule. Resolve those cases manually so the comment lands where it still applies.
 
 ### Examples
 
