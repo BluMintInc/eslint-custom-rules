@@ -1,3 +1,12 @@
+## [1.20.62](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.61...v1.20.62) (2026-08-01)
+
+
+### Bug Fixes
+
+* **enforce-assert-safe-object-key:** append .js to the injected specifier for native-ESM consumers (closes [#1556](https://github.com/BluMintInc/eslint-custom-rules/issues/1556)) ([7372713](https://github.com/BluMintInc/eslint-custom-rules/commit/737271340ccdf4d93f7b25012c86a9ba0b769037))
+* **enforce-assert-safe-object-key:** exempt statically numeric keys and array-ish member objects (closes [#1554](https://github.com/BluMintInc/eslint-custom-rules/issues/1554)) ([035a933](https://github.com/BluMintInc/eslint-custom-rules/commit/035a933e73dc3e8613f900540171b0294c05c521))
+* **enforce-verb-noun-naming:** add externallyNamedExports glob option for externally-specified names (closes [#1555](https://github.com/BluMintInc/eslint-custom-rules/issues/1555)) ([8fe90be](https://github.com/BluMintInc/eslint-custom-rules/commit/8fe90be4ef6566fc93f04a1c2c8ff762cd6d3d8a))
+
 ## [1.20.61](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.60...v1.20.61) (2026-08-01)
 
 
