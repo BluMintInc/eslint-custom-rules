@@ -1,4 +1,9 @@
-import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  AST_TOKEN_TYPES,
+  TSESLint,
+  TSESTree,
+} from '@typescript-eslint/utils';
 import * as ts from 'typescript';
 import { createRule } from '../utils/createRule';
 
@@ -6,11 +11,19 @@ type MessageIds = 'preferMap' | 'preferMapManual';
 
 /**
  * A single value produced by a branch: either `return <expr>;` or
- * `<target> = <expr>;`. Ternary branches carry only an expression.
+ * `<target> = <expr>;`. Ternary branches carry only an expression. `stmt` is
+ * the producing statement itself — the anchor comments hosted by the fix are
+ * attributed against (parent pointers are not yet populated when the
+ * enclosing construct's visitor runs, so the statement is captured here).
  */
 type BranchValue =
-  | { kind: 'return'; expr: TSESTree.Expression }
-  | { kind: 'assign'; target: TSESTree.Node; expr: TSESTree.Expression };
+  | { kind: 'return'; expr: TSESTree.Expression; stmt: TSESTree.Statement }
+  | {
+      kind: 'assign';
+      target: TSESTree.Node;
+      expr: TSESTree.Expression;
+      stmt: TSESTree.Statement;
+    };
 
 /** Literal key resolved from a case test / equality test. */
 type LiteralKey = { value: string | number; kind: 'string' | 'number' };
@@ -53,6 +66,44 @@ function parenthesizeForUnion(text: string): string {
   const needsParens =
     text.includes('=>') || /^new\b/.test(text) || /\bextends\b/.test(text);
   return needsParens ? `(${text})` : text;
+}
+
+/**
+ * How position-sensitive a comment is when the fix relocates it onto the
+ * generated Record:
+ *
+ * - `next-line`: suppresses exactly the following line
+ *   (`eslint-disable-next-line`, `@ts-expect-error`, `@ts-ignore`) — hosting
+ *   it anywhere but directly above the line it suppressed silently changes
+ *   which rules report.
+ * - `own-line`: suppresses its own line (`eslint-disable-line`) — must stay on
+ *   the same line as the value it annotates.
+ * - `range`: opens/closes a suppression region or configures the linter
+ *   (`eslint-disable`, `eslint-enable`, `eslint-env`, `eslint`, `global`,
+ *   `exported`) — ESLint honors these only in block-comment form, and
+ *   relocation can move the region boundary across reported lines, so the fix
+ *   is never attempted around one.
+ * - `none`: prose; content preservation suffices.
+ */
+function directiveKindOf(
+  comment: TSESTree.Comment,
+): 'next-line' | 'own-line' | 'range' | 'none' {
+  const text = comment.value.trim();
+  if (/^(eslint-disable-next-line|@ts-expect-error|@ts-ignore)\b/.test(text)) {
+    return 'next-line';
+  }
+  if (/^eslint-disable-line\b/.test(text)) {
+    return 'own-line';
+  }
+  if (
+    comment.type === AST_TOKEN_TYPES.Block &&
+    /^(eslint-disable|eslint-enable|eslint-env|eslint\b|globals?\b|exported\b)/.test(
+      text,
+    )
+  ) {
+    return 'range';
+  }
+  return 'none';
 }
 
 export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
@@ -402,7 +453,7 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       }
       const stmt = stmts[0];
       if (stmt.type === AST_NODE_TYPES.ReturnStatement && stmt.argument) {
-        return { kind: 'return', expr: stmt.argument };
+        return { kind: 'return', expr: stmt.argument, stmt };
       }
       if (
         stmt.type === AST_NODE_TYPES.ExpressionStatement &&
@@ -413,6 +464,7 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
           kind: 'assign',
           target: stmt.expression.left,
           expr: stmt.expression.right,
+          stmt,
         };
       }
       return null;
@@ -563,12 +615,22 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       name: string,
       dText: string,
       vText: string,
-      entries: { key: LiteralKey; valueText: string }[],
+      entries: Entry[],
       baseIndent: string,
     ): string {
-      const lines = entries.map(
-        (e) => `${baseIndent}  ${formatKey(e.key)}: ${e.valueText},`,
-      );
+      const lines = entries.flatMap((e) => {
+        const hosted = (e.leadingComments ?? []).map(
+          (comment) => `${baseIndent}  ${comment}`,
+        );
+        const trailing =
+          e.trailingComments && e.trailingComments.length > 0
+            ? ` ${e.trailingComments.join(' ')}`
+            : '';
+        hosted.push(
+          `${baseIndent}  ${formatKey(e.key)}: ${e.valueText},${trailing}`,
+        );
+        return hosted;
+      });
       return [
         `const ${name}: Record<${dText}, ${vText}> = {`,
         ...lines,
@@ -576,9 +638,124 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       ].join('\n');
     }
 
+    // ---- Comment hosting ----------------------------------------------------
+
+    /**
+     * A branch's value statement (or ternary value expression), used to decide
+     * which generated map entry hosts the comments attributed to that branch.
+     * `entryCount > 1` marks a grouped-case branch that expands into several
+     * entries — a line-targeted directive cannot cover all of them at once.
+     */
+    type CommentAnchor = {
+      range: TSESTree.Range;
+      startLine: number;
+      endLine: number;
+      entryIndex: number;
+      entryCount: number;
+    };
+
+    /**
+     * Decides where every comment inside the replaced construct lands on the
+     * generated Record, mutating `entries` with the hosted text. Comments
+     * inside a carried span (a branch value expression, the discriminant, the
+     * assignment target) survive verbatim inside the copied text; comments
+     * inside a dropped span (an unreachable default/tail) die together with
+     * the code they annotate, which is not an orphaning. Every other comment
+     * must be hosted onto a map entry — leading comments go on the line(s)
+     * directly above the entry, same-line trailing comments append after it.
+     * Returns false when a comment cannot be hosted without changing what it
+     * annotates or suppresses; the caller then withholds the autofix so a
+     * directive is never silently deleted or retargeted.
+     */
+    function planCommentHosting(args: {
+      container: TSESTree.Node;
+      carriedSpans: TSESTree.Range[];
+      droppedSpans: TSESTree.Range[];
+      anchors: CommentAnchor[];
+      entries: Entry[];
+    }): boolean {
+      const { container, carriedSpans, droppedSpans, anchors, entries } = args;
+      const ordered = [...anchors].sort((a, b) => a.range[0] - b.range[0]);
+      const hostLeading = (entry: Entry, text: string): void => {
+        entry.leadingComments = [...(entry.leadingComments ?? []), text];
+      };
+      const hostTrailing = (entry: Entry, text: string): void => {
+        entry.trailingComments = [...(entry.trailingComments ?? []), text];
+      };
+
+      for (const comment of sourceCode.getCommentsInside(container)) {
+        const [cStart, cEnd] = comment.range;
+        const within = (spans: TSESTree.Range[]): boolean =>
+          spans.some(([start, end]) => cStart >= start && cEnd <= end);
+        if (within(carriedSpans) || within(droppedSpans)) {
+          continue;
+        }
+        const kind = directiveKindOf(comment);
+        if (kind === 'range') {
+          return false;
+        }
+        const text = sourceCode.getText(comment);
+
+        // Same-line trailing (`doThing(); // note`): append to the entry line
+        // so an `eslint-disable-line` keeps suppressing the line its value
+        // lands on. The last matching anchor wins so a comment trailing two
+        // same-line statements attaches to the nearer one.
+        const trailingCandidates = ordered.filter(
+          (anchor) =>
+            anchor.endLine === comment.loc.start.line &&
+            cStart >= anchor.range[1],
+        );
+        const trailingAnchor =
+          trailingCandidates[trailingCandidates.length - 1];
+        if (trailingAnchor) {
+          if (kind === 'next-line') {
+            // A trailing disable-next-line targets whatever follows the
+            // statement; the generated map has no equivalent following line.
+            return false;
+          }
+          if (kind === 'own-line' && trailingAnchor.entryCount > 1) {
+            return false;
+          }
+          hostTrailing(entries[trailingAnchor.entryIndex], text);
+          continue;
+        }
+
+        // A comment inside the value statement but outside the copied
+        // expression (`return /* why */ value;`) belongs to that branch.
+        const containingAnchor = ordered.find(
+          (anchor) => cStart >= anchor.range[0] && cEnd <= anchor.range[1],
+        );
+        const leadingAnchor =
+          containingAnchor ?? ordered.find((anchor) => anchor.range[0] >= cEnd);
+        if (!leadingAnchor) {
+          return false;
+        }
+        if (kind === 'next-line') {
+          // Host a line-targeted directive only when it provably targeted the
+          // branch's value line, so relocation preserves — never widens or
+          // drops — the suppression.
+          if (
+            leadingAnchor.entryCount > 1 ||
+            leadingAnchor.startLine !== comment.loc.end.line + 1
+          ) {
+            return false;
+          }
+        }
+        hostLeading(entries[leadingAnchor.entryIndex], text);
+      }
+      return true;
+    }
+
     // ---- Core analysis result ----------------------------------------------
 
-    type Entry = { key: LiteralKey; valueText: string };
+    type Entry = {
+      key: LiteralKey;
+      valueText: string;
+      /** Comments emitted on their own line(s) directly above the entry. */
+      leadingComments?: string[];
+      /** Comments appended after the entry's trailing comma. */
+      trailingComments?: string[];
+    };
 
     type Analysis = {
       // Ordered Record entries (only meaningful when autofixable).
@@ -594,6 +771,10 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       // False when the fix cannot be safely placed (ternary inside an
       // expression-bodied function) — forces the report-only path.
       canPlaceFix: boolean;
+      // True when a comment inside the construct cannot be hosted on the
+      // generated Record without changing what it annotates or suppresses —
+      // forces the report-only path rather than destroying the comment.
+      commentBlocked: boolean;
     };
 
     /**
@@ -654,6 +835,7 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       hasNullish: boolean;
       eagerSafe: boolean;
       canPlaceFix: boolean;
+      commentSafe: boolean;
     }): string {
       if (flags.hasNullish) {
         return 'the union includes undefined/null, which cannot be a Record key — use Partial<Record<D, V>> with a ?? fallback';
@@ -666,6 +848,9 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       }
       if (!flags.canPlaceFix) {
         return 'the dispatch sits inside an expression-bodied function; extract the Record manually so it stays in scope';
+      }
+      if (!flags.commentSafe) {
+        return 'a comment inside the dispatch cannot be carried onto the generated Record without changing what it annotates or suppresses — relocate the comment, then convert';
       }
       return 'a collision-free lookup name could not be derived from the discriminant';
     }
@@ -680,6 +865,7 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
         fullCoverage,
         hasNullish,
         canPlaceFix,
+        commentBlocked,
       } = analysis;
 
       const eagerSafe = contributingValues.every(
@@ -688,7 +874,13 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
 
       let name: string | null = null;
       // Name derivation is only needed for the autofix path.
-      if (fullCoverage && !hasNullish && eagerSafe && canPlaceFix) {
+      if (
+        fullCoverage &&
+        !hasNullish &&
+        eagerSafe &&
+        canPlaceFix &&
+        !commentBlocked
+      ) {
         name = deriveLookupName(discriminantOf(node));
       }
 
@@ -697,6 +889,7 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
         !hasNullish &&
         eagerSafe &&
         canPlaceFix &&
+        !commentBlocked &&
         name !== null;
 
       if (!autofixable) {
@@ -709,6 +902,7 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
               hasNullish,
               eagerSafe,
               canPlaceFix,
+              commentSafe: !commentBlocked,
             }),
           },
         });
@@ -853,6 +1047,9 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       type ParsedBranch = {
         tests: (TSESTree.Node | null)[];
         value: BranchValue | null;
+        // The case clause holding the consequent — the source region a
+        // dropped default's comments legitimately die with.
+        caseNode: TSESTree.SwitchCase;
       };
       const parsed: ParsedBranch[] = [];
       let pending: (TSESTree.Node | null)[] = [];
@@ -862,7 +1059,7 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
           continue;
         }
         const value = extractBranchValue(c.consequent);
-        parsed.push({ tests: [...pending, c.test], value });
+        parsed.push({ tests: [...pending, c.test], value, caseNode: c });
         pending = [];
       }
       if (pending.length > 0) {
@@ -877,6 +1074,7 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       const explicit: { keys: LiteralKey[]; value: BranchValue }[] = [];
       let defaultValue: BranchValue | null | undefined;
       let hasDefault = false;
+      let defaultCaseNode: TSESTree.SwitchCase | null = null;
       for (const branch of parsed) {
         const literalTests = branch.tests.filter(
           (t): t is TSESTree.Node => t !== null,
@@ -889,6 +1087,7 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
           }
           hasDefault = true;
           defaultValue = branch.value;
+          defaultCaseNode = branch.caseNode;
           continue;
         }
         if (!branch.value) {
@@ -982,6 +1181,58 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
         return;
       }
 
+      // Comment hosting only gates the autofix path (partial coverage is
+      // already report-only), so it is planned for full coverage alone.
+      let commentBlocked = false;
+      if (coverage.fullCoverage) {
+        const tailUsed = coverage.remainingCount === 1 && defaultVal !== null;
+        const carriedSpans: TSESTree.Range[] = [node.discriminant.range];
+        const droppedSpans: TSESTree.Range[] = [];
+        const anchors: CommentAnchor[] = [];
+        let entryIndex = 0;
+        for (const branch of explicit) {
+          carriedSpans.push(branch.value.expr.range);
+          anchors.push({
+            range: branch.value.stmt.range,
+            startLine: branch.value.stmt.loc.start.line,
+            endLine: branch.value.stmt.loc.end.line,
+            entryIndex,
+            entryCount: branch.keys.length,
+          });
+          entryIndex += branch.keys.length;
+        }
+        if (kind === 'assign' && explicit[0].value.kind === 'assign') {
+          carriedSpans.push(explicit[0].value.target.range);
+        }
+        if (tailUsed && defaultVal) {
+          carriedSpans.push(defaultVal.expr.range);
+          anchors.push({
+            range: defaultVal.stmt.range,
+            startLine: defaultVal.stmt.loc.start.line,
+            endLine: defaultVal.stmt.loc.end.line,
+            entryIndex: coverage.entries.length - 1,
+            entryCount: 1,
+          });
+        } else if (defaultCaseNode) {
+          // The unreachable default is deleted wholesale; its comments —
+          // including any directly above the `default:` label — annotate
+          // deleted code and die with it.
+          const caseIndex = node.cases.indexOf(defaultCaseNode);
+          const droppedStart =
+            caseIndex > 0
+              ? node.cases[caseIndex - 1].range[1]
+              : node.discriminant.range[1];
+          droppedSpans.push([droppedStart, defaultCaseNode.range[1]]);
+        }
+        commentBlocked = !planCommentHosting({
+          container: node,
+          carriedSpans,
+          droppedSpans,
+          anchors,
+          entries: coverage.entries,
+        });
+      }
+
       report(node, {
         entries: coverage.entries,
         contributingValues,
@@ -991,6 +1242,7 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
         fullCoverage: coverage.fullCoverage,
         hasNullish,
         canPlaceFix: true,
+        commentBlocked,
       });
     }
 
@@ -1108,6 +1360,47 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
         }
       }
 
+      let commentBlocked = false;
+      if (coverage.fullCoverage) {
+        const tailUsed = coverage.remainingCount === 1;
+        const carriedSpans: TSESTree.Range[] = [
+          head.discNode.range,
+          ...links.map((l) => l.expr.range),
+        ];
+        const droppedSpans: TSESTree.Range[] = [];
+        const anchors: CommentAnchor[] = links.map((l, i) => ({
+          range: l.expr.range,
+          startLine: l.expr.loc.start.line,
+          endLine: l.expr.loc.end.line,
+          entryIndex: i,
+          entryCount: 1,
+        }));
+        if (tailUsed) {
+          carriedSpans.push(tailExpr.range);
+          anchors.push({
+            range: tailExpr.range,
+            startLine: tailExpr.loc.start.line,
+            endLine: tailExpr.loc.end.line,
+            entryIndex: coverage.entries.length - 1,
+            entryCount: 1,
+          });
+        } else {
+          // The unreachable tail is deleted; comments between the last kept
+          // consequent and the tail's end annotate deleted code.
+          droppedSpans.push([
+            links[links.length - 1].expr.range[1],
+            tailExpr.range[1],
+          ]);
+        }
+        commentBlocked = !planCommentHosting({
+          container: node,
+          carriedSpans,
+          droppedSpans,
+          anchors,
+          entries: coverage.entries,
+        });
+      }
+
       discriminantMap.set(node, head.discNode);
       report(node, {
         entries: coverage.entries,
@@ -1117,6 +1410,7 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
         fullCoverage: coverage.fullCoverage,
         hasNullish,
         canPlaceFix: !crossesFunction,
+        commentBlocked,
       });
     }
 
@@ -1145,6 +1439,10 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
 
       const links: { keyNode: TSESTree.Node; value: BranchValue }[] = [];
       let tail: BranchValue | null = null;
+      // The final else statement/block and the end of the consequent before
+      // it — the source region a dropped tail's comments die with.
+      let tailNode: TSESTree.Statement | null = null;
+      let tailPrevEnd = 0;
       let cur: TSESTree.IfStatement | null = node;
       while (cur) {
         const link = equalityDiscriminant(cur.test);
@@ -1170,6 +1468,8 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
           return;
         }
         tail = tailValue;
+        tailNode = alt;
+        tailPrevEnd = cur.consequent.range[1];
         cur = null;
       }
 
@@ -1239,6 +1539,48 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
         return;
       }
 
+      let commentBlocked = false;
+      if (coverage.fullCoverage) {
+        const tailUsed = coverage.remainingCount === 1 && tail !== null;
+        const carriedSpans: TSESTree.Range[] = [head.discNode.range];
+        const droppedSpans: TSESTree.Range[] = [];
+        const anchors: CommentAnchor[] = [];
+        links.forEach((link, i) => {
+          carriedSpans.push(link.value.expr.range);
+          anchors.push({
+            range: link.value.stmt.range,
+            startLine: link.value.stmt.loc.start.line,
+            endLine: link.value.stmt.loc.end.line,
+            entryIndex: i,
+            entryCount: 1,
+          });
+        });
+        if (kind === 'assign' && links[0].value.kind === 'assign') {
+          carriedSpans.push(links[0].value.target.range);
+        }
+        if (tailUsed && tail) {
+          carriedSpans.push(tail.expr.range);
+          anchors.push({
+            range: tail.stmt.range,
+            startLine: tail.stmt.loc.start.line,
+            endLine: tail.stmt.loc.end.line,
+            entryIndex: coverage.entries.length - 1,
+            entryCount: 1,
+          });
+        } else if (tailNode) {
+          // The unreachable else is deleted; comments from the last kept
+          // consequent through the else's end annotate deleted code.
+          droppedSpans.push([tailPrevEnd, tailNode.range[1]]);
+        }
+        commentBlocked = !planCommentHosting({
+          container: node,
+          carriedSpans,
+          droppedSpans,
+          anchors,
+          entries: coverage.entries,
+        });
+      }
+
       discriminantMap.set(node, head.discNode);
       report(node, {
         entries: coverage.entries,
@@ -1249,6 +1591,7 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
         fullCoverage: coverage.fullCoverage,
         hasNullish,
         canPlaceFix: true,
+        commentBlocked,
       });
     }
 

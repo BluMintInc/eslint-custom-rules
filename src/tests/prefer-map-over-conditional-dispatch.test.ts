@@ -1036,6 +1036,456 @@ function f() {
       output: null,
       errors: [{ messageId: 'preferMapManual' }],
     },
+    // #1590: an eslint-disable-next-line directive inside a converted branch
+    // must survive the fix directly above the map entry it annotates, or the
+    // suppressed rule silently re-reports after --fix.
+    {
+      code: `
+function pickEncoder(standard: 'native' | 'erc20' | 'offchain') {
+  switch (standard) {
+    case 'native':
+      // eslint-disable-next-line no-restricted-syntax
+      return NativeEncoder;
+    case 'erc20':
+      return Erc20Encoder;
+    case 'offchain':
+      return OffchainEncoder;
+    default:
+      throw new Error('unsupported');
+  }
+}
+`,
+      output: `
+function pickEncoder(standard: 'native' | 'erc20' | 'offchain') {
+  const RESULT_BY_STANDARD: Record<"native" | "erc20" | "offchain", any> = {
+    // eslint-disable-next-line no-restricted-syntax
+    native: NativeEncoder,
+    erc20: Erc20Encoder,
+    offchain: OffchainEncoder,
+  };
+  return RESULT_BY_STANDARD[standard];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1590: the issue's real-world shape — declared classes, typeof union
+    // annotation, fail-loud default — with a suppression on one branch.
+    {
+      code: `
+type TokenStandard = 'native' | 'ERC20' | 'offchain';
+class NativeTokenEncoder {}
+class Erc20TokenEncoder {}
+class OffchainTokenEncoder {}
+declare const token: { standard: TokenStandard };
+function deduceConstructor() {
+  switch (token.standard) {
+    case 'native':
+      // eslint-disable-next-line no-restricted-syntax
+      return NativeTokenEncoder;
+    case 'ERC20':
+      return Erc20TokenEncoder;
+    case 'offchain':
+      return OffchainTokenEncoder;
+    default:
+      throw new Error('nope');
+  }
+}
+`,
+      output: `
+type TokenStandard = 'native' | 'ERC20' | 'offchain';
+class NativeTokenEncoder {}
+class Erc20TokenEncoder {}
+class OffchainTokenEncoder {}
+declare const token: { standard: TokenStandard };
+function deduceConstructor() {
+  const RESULT_BY_STANDARD: Record<TokenStandard, typeof NativeTokenEncoder | typeof Erc20TokenEncoder | typeof OffchainTokenEncoder> = {
+    // eslint-disable-next-line no-restricted-syntax
+    native: NativeTokenEncoder,
+    ERC20: Erc20TokenEncoder,
+    offchain: OffchainTokenEncoder,
+  };
+  return RESULT_BY_STANDARD[token.standard];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1590: a same-line eslint-disable-line stays on the entry line whose
+    // value it suppressed.
+    {
+      code: `
+type K = 'a' | 'b';
+declare const k: K;
+function f() {
+  switch (k) {
+    case 'a':
+      return 1; // eslint-disable-line no-restricted-syntax
+    case 'b':
+      return 2;
+  }
+}
+`,
+      output: `
+type K = 'a' | 'b';
+declare const k: K;
+function f() {
+  const RESULT_BY_K: Record<K, number> = {
+    a: 1, // eslint-disable-line no-restricted-syntax
+    b: 2,
+  };
+  return RESULT_BY_K[k];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1590: a prose comment above a case label lands above that entry.
+    {
+      code: `
+type K = 'a' | 'b';
+declare const k: K;
+function f() {
+  switch (k) {
+    // legacy naming kept for API compatibility
+    case 'a':
+      return 1;
+    case 'b':
+      return 2;
+  }
+}
+`,
+      output: `
+type K = 'a' | 'b';
+declare const k: K;
+function f() {
+  const RESULT_BY_K: Record<K, number> = {
+    // legacy naming kept for API compatibility
+    a: 1,
+    b: 2,
+  };
+  return RESULT_BY_K[k];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1590: a prose comment on a grouped branch lands above the group's
+    // first entry.
+    {
+      code: `
+type Raw = 'a' | 'b' | 'c';
+declare const raw: Raw;
+function normalize() {
+  switch (raw) {
+    case 'a':
+      return 'x';
+    case 'b':
+    case 'c':
+      // shared label for the merged branches
+      return 'y';
+  }
+}
+`,
+      output: `
+type Raw = 'a' | 'b' | 'c';
+declare const raw: Raw;
+function normalize() {
+  const RESULT_BY_RAW: Record<Raw, string> = {
+    a: 'x',
+    // shared label for the merged branches
+    b: 'y',
+    c: 'y',
+  };
+  return RESULT_BY_RAW[raw];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1590: a line-targeted directive on a grouped branch cannot cover the
+    // several entries the group expands into — fix withheld, report kept.
+    {
+      code: `
+type Raw = 'a' | 'b' | 'c';
+declare const raw: Raw;
+function normalize() {
+  switch (raw) {
+    case 'a':
+      return 'x';
+    case 'b':
+    case 'c':
+      // eslint-disable-next-line no-restricted-syntax
+      return 'y';
+  }
+}
+`,
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // #1590: a comment inside the dropped unreachable default dies with the
+    // code it annotates — the fix still applies.
+    {
+      code: `
+type K = 'a' | 'b';
+declare const k: K;
+function f() {
+  switch (k) {
+    case 'a':
+      return 1;
+    case 'b':
+      return 2;
+    default:
+      // unreachable: all members covered above
+      throw new Error('unexpected');
+  }
+}
+`,
+      output: `
+type K = 'a' | 'b';
+declare const k: K;
+function f() {
+  const RESULT_BY_K: Record<K, number> = {
+    a: 1,
+    b: 2,
+  };
+  return RESULT_BY_K[k];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1590: a comment after the last branch has no entry to host it — fix
+    // withheld, report kept.
+    {
+      code: `
+type K = 'a' | 'b';
+declare const k: K;
+function f() {
+  switch (k) {
+    case 'a':
+      return 1;
+    case 'b':
+      return 2;
+    // end of dispatch
+  }
+}
+`,
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // #1590: a region directive opens a suppression range whose boundary the
+    // rewrite would move — fix withheld, report kept.
+    {
+      code: `
+type K = 'a' | 'b';
+declare const k: K;
+function f() {
+  switch (k) {
+    case 'a':
+      /* eslint-disable no-restricted-syntax */
+      return 1;
+    case 'b':
+      return 2;
+  }
+}
+`,
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // #1590: a disable-next-line separated from the value by a blank line
+    // suppresses the blank line, not the value; hosting it above the entry
+    // would BEGIN suppressing — fix withheld, report kept.
+    {
+      code: `
+type K = 'a' | 'b';
+declare const k: K;
+function f() {
+  switch (k) {
+    case 'a':
+      // eslint-disable-next-line no-restricted-syntax
+
+      return 1;
+    case 'b':
+      return 2;
+  }
+}
+`,
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // #1590: if/else-if form carries a branch directive onto its entry.
+    {
+      code: `
+type K = 'a' | 'b';
+declare const k: K;
+function f() {
+  if (k === 'a') {
+    // eslint-disable-next-line no-restricted-syntax
+    return 1;
+  } else if (k === 'b') {
+    return 2;
+  }
+}
+`,
+      output: `
+type K = 'a' | 'b';
+declare const k: K;
+function f() {
+  const RESULT_BY_K: Record<K, number> = {
+    // eslint-disable-next-line no-restricted-syntax
+    a: 1,
+    b: 2,
+  };
+  return RESULT_BY_K[k];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1590: ternary form carries a directive that targets the consequent's
+    // line onto its entry.
+    {
+      code: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+function getLabel() {
+  const label =
+    side === 'buy'
+      ? // eslint-disable-next-line no-restricted-syntax
+        'Buy now'
+      : 'Sell now';
+  return label;
+}
+`,
+      output: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+function getLabel() {
+  const RESULT_BY_SIDE: Record<Side, string> = {
+    // eslint-disable-next-line no-restricted-syntax
+    buy: 'Buy now',
+    sell: 'Sell now',
+  };
+  const label =
+    RESULT_BY_SIDE[side];
+  return label;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1590: assignment form carries a branch directive onto its entry.
+    {
+      code: `
+type Mode = 'on' | 'off';
+declare const mode: Mode;
+function setup() {
+  let label = '';
+  switch (mode) {
+    case 'on':
+      // eslint-disable-next-line no-restricted-syntax
+      label = 'Enabled';
+      break;
+    case 'off':
+      label = 'Disabled';
+      break;
+  }
+  return label;
+}
+`,
+      output: `
+type Mode = 'on' | 'off';
+declare const mode: Mode;
+function setup() {
+  let label = '';
+  const RESULT_BY_MODE: Record<Mode, string> = {
+    // eslint-disable-next-line no-restricted-syntax
+    on: 'Enabled',
+    off: 'Disabled',
+  };
+  label = RESULT_BY_MODE[mode];
+  return label;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1590: a comment inside the statement but outside the copied value
+    // (\`return /* c */ 1;\`) is hosted above the branch's own entry.
+    {
+      code: `
+type K = 'a' | 'b';
+declare const k: K;
+function f() {
+  switch (k) {
+    case 'a':
+      return /* legacy value */ 1;
+    case 'b':
+      return 2;
+  }
+}
+`,
+      output: `
+type K = 'a' | 'b';
+declare const k: K;
+function f() {
+  const RESULT_BY_K: Record<K, number> = {
+    /* legacy value */
+    a: 1,
+    b: 2,
+  };
+  return RESULT_BY_K[k];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1590: a comment inside the value expression itself travels verbatim
+    // inside the copied text.
+    {
+      code: `
+type K = 'a' | 'b';
+declare const k: K;
+declare const fallback: string | undefined;
+function f() {
+  switch (k) {
+    case 'a':
+      return fallback ?? /* default label */ 'x';
+    case 'b':
+      return 'y';
+  }
+}
+`,
+      output: `
+type K = 'a' | 'b';
+declare const k: K;
+declare const fallback: string | undefined;
+function f() {
+  const RESULT_BY_K: Record<K, string> = {
+    a: fallback ?? /* default label */ 'x',
+    b: 'y',
+  };
+  return RESULT_BY_K[k];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1590: a comment inside a ternary's unreachable tail dies with the
+    // dropped tail — the fix still applies.
+    {
+      code: `
+type T = 'a' | 'b';
+declare const t: T;
+function f() {
+  const r = t === 'a' ? 1 : t === 'b' ? 2 : /* unreachable */ 0;
+  return r;
+}
+`,
+      output: `
+type T = 'a' | 'b';
+declare const t: T;
+function f() {
+  const RESULT_BY_T: Record<T, number> = {
+    a: 1,
+    b: 2,
+  };
+  const r = RESULT_BY_T[t];
+  return r;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
   ],
 };
 

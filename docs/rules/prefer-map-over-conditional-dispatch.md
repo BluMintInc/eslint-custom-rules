@@ -148,6 +148,19 @@ report-only message (`preferMapManual`) explaining why and suggesting the shape:
   checker prints a symbol's bare name with no regard for imports — an
   unimported helper type prints the same as an imported one), the fix is
   skipped — import the type or write the `Record` manually.
+- **Hostable comments.** Comments inside the converted construct are carried
+  onto the generated `Record`: a branch's leading comments (including
+  `eslint-disable-next-line` and `@ts-expect-error` directives that target the
+  branch's value line) land directly above the map entry that hosts the value
+  they annotated, a same-line trailing comment (including
+  `eslint-disable-line`) stays on its entry's line, comments inside a copied
+  value expression travel verbatim, and comments inside a dropped unreachable
+  `default`/`else`/tail die with the code they annotate. If a comment cannot
+  be hosted without changing what it annotates or suppresses — a directive on
+  a grouped case that expands into several entries, a directive separated from
+  its value by a blank line, a region directive (`/* eslint-disable */`), or a
+  comment after the last branch — the fix is skipped so the comment is never
+  destroyed or silently retargeted.
 
 The autofix constructs the `Record` **inline at the site** with an explicit
 `Record<D, V>` annotation (never `satisfies`, which Next.js 12's SWC cannot
