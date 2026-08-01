@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.66",
+    "date": "2026-08-01T13:53:31.680Z",
+    "rules": [
+      {
+        "name": "enforce-firestore-doc-ref-generic",
+        "changeType": "fix",
+        "issues": [
+          1564
+        ],
+        "summary": "trace compat receivers through annotated lets and seeding callbacks (closes #1564)"
+      }
+    ]
+  },
+  {
     "version": "1.20.65",
     "date": "2026-08-01T13:35:40.762Z",
     "rules": [

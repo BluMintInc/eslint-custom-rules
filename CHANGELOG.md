@@ -1,3 +1,10 @@
+## [1.20.66](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.65...v1.20.66) (2026-08-01)
+
+
+### Bug Fixes
+
+* **enforce-firestore-doc-ref-generic:** trace compat receivers through annotated lets and seeding callbacks (closes [#1564](https://github.com/BluMintInc/eslint-custom-rules/issues/1564)) ([5e28652](https://github.com/BluMintInc/eslint-custom-rules/commit/5e286521ed9ea7d1c40cbcceddf399954f418566))
+
 ## [1.20.65](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.64...v1.20.65) (2026-08-01)
 
 
