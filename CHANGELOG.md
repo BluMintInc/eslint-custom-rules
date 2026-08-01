@@ -1,3 +1,11 @@
+## [1.20.53](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.52...v1.20.53) (2026-08-01)
+
+
+### Bug Fixes
+
+* **deps:** bound eslint peer range below 9 (closes [#1540](https://github.com/BluMintInc/eslint-custom-rules/issues/1540)) ([944dd20](https://github.com/BluMintInc/eslint-custom-rules/commit/944dd208842fcab8aca9ed216ef00b26e4befe43))
+* **parallelize-async-operations:** stop hoisting dependent and await-containing operations (closes [#1541](https://github.com/BluMintInc/eslint-custom-rules/issues/1541)) ([0e39081](https://github.com/BluMintInc/eslint-custom-rules/commit/0e39081baa5633daff2c0d01bbcc0ee3f173ba9b))
+
 ## [1.20.52](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.51...v1.20.52) (2026-07-31)
 
 

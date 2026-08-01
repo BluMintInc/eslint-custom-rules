@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.53",
+    "date": "2026-08-01T00:55:57.763Z",
+    "rules": [
+      {
+        "name": "parallelize-async-operations",
+        "changeType": "fix",
+        "issues": [
+          1541
+        ],
+        "summary": "stop hoisting dependent and await-containing operations (closes #1541)"
+      }
+    ]
+  },
+  {
     "version": "1.20.52",
     "date": "2026-07-31T19:23:46.059Z",
     "rules": [
