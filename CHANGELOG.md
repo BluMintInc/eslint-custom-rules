@@ -1,3 +1,10 @@
+## [1.20.61](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.60...v1.20.61) (2026-08-01)
+
+
+### Bug Fixes
+
+* **prefer-fragment-shorthand:** don't report attributed fragments (closes [#1552](https://github.com/BluMintInc/eslint-custom-rules/issues/1552)) ([339152e](https://github.com/BluMintInc/eslint-custom-rules/commit/339152e43e050b2ee33a566090991ee57e948c22))
+
 ## [1.20.60](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.59...v1.20.60) (2026-08-01)
 
 

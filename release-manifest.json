@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.61",
+    "date": "2026-08-01T06:30:50.860Z",
+    "rules": [
+      {
+        "name": "prefer-fragment-shorthand",
+        "changeType": "fix",
+        "issues": [
+          1552
+        ],
+        "summary": "don't report attributed fragments (closes #1552)"
+      }
+    ]
+  },
+  {
     "version": "1.20.60",
     "date": "2026-08-01T05:06:58.616Z",
     "rules": [
