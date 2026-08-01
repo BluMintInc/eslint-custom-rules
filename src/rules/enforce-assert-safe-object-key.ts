@@ -39,6 +39,107 @@ function normalizeModulePath(value: string): string {
   return value.replace(/\\/g, '/').replace(/\.(tsx?|jsx?|mts|cts)$/i, '');
 }
 
+/** Names that read as a positional sequence rather than a keyed record. */
+const ARRAY_LIKE_NAME = /^(array|arr|items|elements|list|collection|data)s?$/i;
+
+/**
+ * The name an indexed object is judged by. A collection reached as a field —
+ * `raster.data[i]`, `this.items[i]`, `a.b.list[i]` — carries its signal on the
+ * property rather than on the root object, so the property name is what the
+ * array-ish test sees there.
+ */
+function indexedObjectName(node: TSESTree.Node): string {
+  if (node.type === AST_NODE_TYPES.Identifier) {
+    return node.name;
+  }
+  if (
+    node.type === AST_NODE_TYPES.MemberExpression &&
+    !node.computed &&
+    node.property.type === AST_NODE_TYPES.Identifier
+  ) {
+    return node.property.name;
+  }
+  return '';
+}
+
+/**
+ * Operators that coerce both operands with ToNumeric before operating, so the
+ * result is a number (or bigint) whatever the operands hold. `+` is absent: it
+ * keeps string concatenation, so it is judged from its operands instead.
+ */
+const NUMERIC_BINARY_OPERATORS = new Set([
+  '-',
+  '*',
+  '/',
+  '%',
+  '**',
+  '<<',
+  '>>',
+  '>>>',
+  '&',
+  '|',
+  '^',
+]);
+
+/** The compound assignments of NUMERIC_BINARY_OPERATORS, `+=` excluded. */
+const NUMERIC_ASSIGNMENT_OPERATORS = new Set([
+  '-=',
+  '*=',
+  '/=',
+  '%=',
+  '**=',
+  '<<=',
+  '>>=',
+  '>>>=',
+  '&=',
+  '|=',
+  '^=',
+]);
+
+/** Global conversions whose result is a number regardless of the argument. */
+const NUMERIC_CALLEE_NAMES = new Set(['Number', 'parseInt', 'parseFloat']);
+
+/**
+ * Whether the call is guaranteed to produce a number. Every `Math` member
+ * returns one, so the namespace is accepted wholesale rather than enumerated.
+ */
+function isNumericCall(node: TSESTree.CallExpression): boolean {
+  const { callee } = node;
+  if (callee.type === AST_NODE_TYPES.Identifier) {
+    return NUMERIC_CALLEE_NAMES.has(callee.name);
+  }
+  return (
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    !callee.computed &&
+    callee.object.type === AST_NODE_TYPES.Identifier &&
+    callee.object.name === 'Math'
+  );
+}
+
+/**
+ * A `: number` annotation on a binding name. Only parameters and variable
+ * declarators carry one, and a declarator is judged from its writes, so this
+ * effectively identifies a numeric parameter.
+ */
+function isNumberAnnotated(node: TSESTree.Node): boolean {
+  return (
+    node.type === AST_NODE_TYPES.Identifier &&
+    node.typeAnnotation?.typeAnnotation.type === AST_NODE_TYPES.TSNumberKeyword
+  );
+}
+
+/**
+ * Whether the definition can hold a number: a declarator (whose value is proven
+ * by its writes) or a parameter annotated `: number`. Anything else — an
+ * import, a function or class name, a catch binding — is not.
+ */
+function definesNumericBinding(def: TSESLint.Scope.Definition): boolean {
+  return (
+    def.node.type === AST_NODE_TYPES.VariableDeclarator ||
+    isNumberAnnotated(def.name)
+  );
+}
+
 export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
   name: 'enforce-assert-safe-object-key',
   meta: {
@@ -299,6 +400,114 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       });
     };
 
+    /**
+     * Whether the syntax alone proves the key is a number. `__proto__`,
+     * `constructor` and `prototype` are never the string form of a number, so a
+     * numeric key cannot reach the prototype surface assertSafe exists to
+     * guard: the call would be dead weight, and in an index-heavy loop a
+     * per-iteration coercion. The judgement stays syntactic — a key the syntax
+     * does not prove numeric keeps being reported.
+     */
+    const isStaticallyNumeric = (
+      node: TSESTree.Node,
+      seen: Set<TSESLint.Scope.Variable> = new Set(),
+    ): boolean => {
+      switch (node.type) {
+        case AST_NODE_TYPES.Literal:
+          return typeof node.value === 'number';
+        case AST_NODE_TYPES.UpdateExpression:
+          return true;
+        case AST_NODE_TYPES.UnaryExpression:
+          return (
+            node.operator === '-' ||
+            node.operator === '+' ||
+            node.operator === '~'
+          );
+        case AST_NODE_TYPES.BinaryExpression:
+          if (NUMERIC_BINARY_OPERATORS.has(node.operator)) {
+            return true;
+          }
+          return (
+            node.operator === '+' &&
+            isStaticallyNumeric(node.left, seen) &&
+            isStaticallyNumeric(node.right, seen)
+          );
+        case AST_NODE_TYPES.CallExpression:
+          return isNumericCall(node);
+        case AST_NODE_TYPES.MemberExpression:
+          // `.length` is a number on arrays, typed arrays and strings alike.
+          return (
+            !node.computed &&
+            node.property.type === AST_NODE_TYPES.Identifier &&
+            node.property.name === 'length'
+          );
+        case AST_NODE_TYPES.TSAsExpression:
+        case AST_NODE_TYPES.TSNonNullExpression:
+          return isStaticallyNumeric(node.expression, seen);
+        case AST_NODE_TYPES.Identifier:
+          return isNumericIdentifier(node, seen);
+        default:
+          return false;
+      }
+    };
+
+    /**
+     * Whether every declaration and every write of the resolved binding keeps it
+     * numeric. `seen` is copied per resolution step so a cycle
+     * (`let a = b; let b = a;`) terminates without a sibling occurrence of one
+     * variable (`arr[i + i]`) being mistaken for that cycle.
+     */
+    const isNumericIdentifier = (
+      node: TSESTree.Identifier,
+      seen: Set<TSESLint.Scope.Variable>,
+    ): boolean => {
+      const variable = ASTHelpers.findVariableInScope(
+        ASTHelpers.getScope(context, node),
+        node.name,
+      );
+      if (!variable || seen.has(variable)) {
+        return false;
+      }
+      const nextSeen = new Set(seen).add(variable);
+
+      if (
+        variable.defs.length === 0 ||
+        !variable.defs.every(definesNumericBinding)
+      ) {
+        return false;
+      }
+
+      const writes = variable.references.filter((reference) =>
+        reference.isWrite(),
+      );
+      const staysNumeric = writes.every((reference) => {
+        const { writeExpr } = reference;
+        // `i++`/`--i` write a number back with no expression to inspect.
+        if (!writeExpr) {
+          return true;
+        }
+        const assignment = writeExpr.parent;
+        if (
+          assignment?.type === AST_NODE_TYPES.AssignmentExpression &&
+          NUMERIC_ASSIGNMENT_OPERATORS.has(assignment.operator)
+        ) {
+          return true;
+        }
+        return isStaticallyNumeric(writeExpr, nextSeen);
+      });
+      if (!staysNumeric) {
+        return false;
+      }
+
+      // A `: number` parameter is numeric from its declaration; a declarator is
+      // only proven by a write, and its initializer is one — so `let k;` with no
+      // write anywhere holds undefined and stays unproven.
+      return (
+        writes.length > 0 ||
+        variable.defs.every((def) => isNumberAnnotated(def.name))
+      );
+    };
+
     return {
       // Handle computed property in object destructuring
       Property(node: TSESTree.Property) {
@@ -375,17 +584,9 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
           }
 
           // Try to determine if this is likely an array or dictionary
-          const objectNode = node.object;
-          let objectName = '';
-          let isLikelyArray = false;
-
-          if (objectNode.type === AST_NODE_TYPES.Identifier) {
-            objectName = objectNode.name.toLowerCase();
-            isLikelyArray =
-              /^(array|arr|items|elements|list|collection|data)s?$/i.test(
-                objectName,
-              );
-          }
+          const isLikelyArray = ARRAY_LIKE_NAME.test(
+            indexedObjectName(node.object),
+          );
 
           // Check for string literals - allow them for dictionaries but not for regular objects
           if (
@@ -402,6 +603,13 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             typeof property.value === 'number'
           ) {
             // Numeric literals are fine, no need for assertSafe
+            return;
+          }
+
+          // A key the syntax proves numeric — a loop counter, an offset
+          // computation, Math.floor(...) — cannot name a prototype field, so
+          // validating it guards nothing.
+          if (isStaticallyNumeric(property)) {
             return;
           }
 

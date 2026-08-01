@@ -149,6 +149,198 @@ const { [safeKey]: value } = obj;
       `,
     },
     // ------------------------------------------------------------------
+    // Issue #1554: prototype pollution is unreachable through a numeric
+    // index, so neither an array-ish object nor a statically numeric key
+    // needs assertSafe. Reported verbatim from the issue.
+    // ------------------------------------------------------------------
+    {
+      name: 'typed-array field read through a member-expression object (issue #1554)',
+      code: `
+const sampleRaster = (raster, index) => {
+  return raster.data[index];
+};
+      `,
+    },
+    {
+      name: 'loop counter indexing an array (issue #1554)',
+      code: `
+const sum = (values) => {
+  let total = 0;
+  for (let i = 0; i < values.length; i += 1) {
+    total += values[i];
+  }
+  return total;
+};
+      `,
+    },
+    {
+      name: 'an array-ish field on this reads as a collection',
+      code: `
+class Sprite {
+  constructor() {
+    this.items = [];
+  }
+
+  at(index) {
+    return this.items[index];
+  }
+}
+      `,
+    },
+    {
+      name: 'an array-ish field two levels deep reads as a collection',
+      code: `
+const at = (state, index) => state.buffer.list[index];
+      `,
+    },
+    {
+      name: 'an array-ish field named data reads as a collection',
+      code: `
+const readByte = (image, offset) => image.raw.data[offset];
+      `,
+    },
+    {
+      name: 'a post-increment loop counter is numeric',
+      code: `
+const totalOf = (bytes) => {
+  let sum = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    sum += bytes[i];
+  }
+  return sum;
+};
+      `,
+    },
+    {
+      name: 'a row-major offset built from two loop counters is numeric',
+      code: `
+const brighten = (pixels, width, height) => {
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      pixels[y * width + x] += 1;
+    }
+  }
+};
+      `,
+    },
+    {
+      name: 'an RGBA channel offset is numeric',
+      code: `
+const fillAlpha = (out) => {
+  for (let i = 0; i < 16; i += 1) {
+    out[i * 4 + 3] = 255;
+  }
+};
+      `,
+    },
+    {
+      name: 'a Math.floor key is numeric',
+      code: `
+const sample = (palette, t) => palette[Math.floor(t * 255)];
+      `,
+    },
+    {
+      name: 'Number, parseInt and parseFloat keys are numeric',
+      code: `
+const readAll = (buffer, raw) => [
+  buffer[Number(raw)],
+  buffer[parseInt(raw, 10)],
+  buffer[parseFloat(raw)],
+];
+      `,
+    },
+    {
+      name: 'a .length key is numeric',
+      code: `
+const peek = (queue, stack) => queue[stack.length];
+      `,
+    },
+    {
+      name: 'a `: number` parameter is numeric on its annotation alone',
+      code: `
+const at = (buffer, index: number) => buffer[index];
+      `,
+    },
+    {
+      name: 'a number assertion inside an offset is unwrapped',
+      code: `
+const next = (buffer, index: number) => buffer[(index as number) + 1];
+      `,
+    },
+    {
+      name: 'a non-null assertion inside an offset is unwrapped',
+      code: `
+const next = (buffer, index?: number) => buffer[index! + 1];
+      `,
+    },
+    {
+      name: 'a counter advanced by ++ stays numeric',
+      code: `
+const drain = (buffer) => {
+  let cursor = 0;
+  cursor++;
+  return buffer[cursor];
+};
+      `,
+    },
+    {
+      name: 'an in-place increment is numeric',
+      code: `
+const shift = (buffer) => {
+  let cursor = 0;
+  return buffer[cursor++];
+};
+      `,
+    },
+    {
+      name: 'bitwise and unary keys are numeric whatever the operands hold',
+      code: `
+const probe = (bucket, hash, mask, offset) => [
+  bucket[hash & mask],
+  bucket[-offset],
+  bucket[~offset],
+  bucket[offset >>> 1],
+];
+      `,
+    },
+    {
+      name: 'a compound numeric assignment keeps the counter numeric',
+      code: `
+const walk = (xs, step) => {
+  let i = xs.length;
+  const first = xs[i];
+  i -= step;
+  return first;
+};
+      `,
+    },
+    {
+      name: 'one counter used twice in a single key stays numeric',
+      code: `
+const mirror = (xs) => {
+  let i = 0;
+  return xs[i + i];
+};
+      `,
+    },
+    {
+      name: 'a numeric const key on a plain object is numeric',
+      code: `
+const codes = { 0: 'a', 1: 'b' };
+const idx = 1;
+console.log(codes[idx]);
+      `,
+    },
+    {
+      name: 'a counter seeded from another numeric binding is numeric',
+      code: `
+const base = 2;
+const frames = { 2: 'a' };
+let cursor = base;
+console.log(frames[cursor]);
+      `,
+    },
+    // ------------------------------------------------------------------
     // Issue #1408: inline disables. Every violation suppressed must leave
     // the file untouched — no wraps, and above all no orphan import.
     // ------------------------------------------------------------------
@@ -666,6 +858,181 @@ import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 console.log(obj[assertSafe(id)]);
+      `,
+    },
+    // ------------------------------------------------------------------
+    // Issue #1554: the numeric carve-out is proof-based. A key the syntax
+    // leaves unproven — an unwritten binding, a value from outside, a `+`
+    // that may concatenate — still names a property and still reports.
+    // ------------------------------------------------------------------
+    {
+      name: 'an uninitialised binding is not numeric',
+      code: `
+const obj = { key1: 'value1' };
+let k;
+console.log(obj[k]);
+      `,
+      errors: [lintError('k')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { key1: 'value1' };
+let k;
+console.log(obj[assertSafe(k)]);
+      `,
+    },
+    {
+      name: 'a counter reassigned from outside input is not numeric',
+      code: `
+const obj = { key1: 'value1' };
+let n = 0;
+n = userInput;
+console.log(obj[n]);
+      `,
+      errors: [lintError('n')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { key1: 'value1' };
+let n = 0;
+n = userInput;
+console.log(obj[assertSafe(n)]);
+      `,
+    },
+    {
+      name: 'a `+` over unknown operands may concatenate strings',
+      code: `
+const obj = { ab: 'value1' };
+console.log(obj[a + b]);
+      `,
+      errors: [lintError('a + b')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { ab: 'value1' };
+console.log(obj[assertSafe(a + b)]);
+      `,
+    },
+    {
+      name: 'a boolean-initialised binding is not numeric',
+      code: `
+const obj = { true: 'value1', false: 'value2' };
+const flag = false;
+console.log(obj[flag]);
+      `,
+      errors: [lintError('flag')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { true: 'value1', false: 'value2' };
+const flag = false;
+console.log(obj[assertSafe(flag)]);
+      `,
+    },
+    {
+      name: 'a string-initialised binding is not numeric',
+      code: `
+const obj = { key1: 'value1' };
+const name = 'key1';
+console.log(obj[name]);
+      `,
+      errors: [lintError('name')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { key1: 'value1' };
+const name = 'key1';
+console.log(obj[assertSafe(name)]);
+      `,
+    },
+    {
+      name: 'String(...) is reported even when its argument is numeric',
+      code: `
+const obj = { 0: 'value1' };
+const idx = 0;
+console.log(obj[String(idx)]);
+      `,
+      errors: [lintError('idx')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { 0: 'value1' };
+const idx = 0;
+console.log(obj[assertSafe(idx)]);
+      `,
+    },
+    {
+      name: 'mutually referring bindings terminate without proving numeric',
+      code: `
+const obj = { key1: 'value1' };
+let a = b;
+let b = a;
+console.log(obj[a]);
+      `,
+      errors: [lintError('a')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { key1: 'value1' };
+let a = b;
+let b = a;
+console.log(obj[assertSafe(a)]);
+      `,
+    },
+    {
+      name: 'an unannotated parameter key is still reported',
+      code: `
+const read = (map, index) => map[index];
+      `,
+      errors: [lintError('index')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (map, index) => map[assertSafe(index)];
+      `,
+    },
+    {
+      name: 'a `: string` parameter key is still reported',
+      code: `
+const read = (map, key: string) => map[key];
+      `,
+      errors: [lintError('key')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (map, key: string) => map[assertSafe(key)];
+      `,
+    },
+    {
+      name: 'an array-ish field still reports a String(...) key',
+      code: `
+class DataStore {
+  getValue(id) {
+    return this.data[String(id)];
+  }
+}
+      `,
+      errors: [lintError('id')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+class DataStore {
+  getValue(id) {
+    return this.data[assertSafe(id)];
+  }
+}
+      `,
+    },
+    {
+      name: 'a computed member object gains no array-ish name',
+      code: `
+const readCell = (grid, key) => grid[0][key];
+      `,
+      errors: [lintError('key')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const readCell = (grid, key) => grid[0][assertSafe(key)];
+      `,
+    },
+    {
+      name: 'a field whose name is not array-ish is still a record',
+      code: `
+const read = (table, key) => table.rows[key];
+      `,
+      errors: [lintError('key')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (table, key) => table.rows[assertSafe(key)];
       `,
     },
     // ------------------------------------------------------------------
