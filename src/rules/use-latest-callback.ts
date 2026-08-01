@@ -74,6 +74,105 @@ const findLatestCallbackImport = (
   return null;
 };
 
+/** The leading whitespace of the line the offset sits on. */
+const indentationAt = (
+  sourceCode: TSESLint.SourceCode,
+  offset: number,
+): string => {
+  const text = sourceCode.getText();
+  const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+  const match = /^[ \t]*/.exec(text.slice(lineStart, offset));
+  return match ? match[0] : '';
+};
+
+/**
+ * Ranges whose interior line breaks carry string data rather than formatting.
+ * A multi-line template literal (or a string spliced together with line
+ * continuations) evaluates to the whitespace written inside it, so shifting
+ * those lines would silently change the value the code produces — the same
+ * carve-out `parallelize-async-operations` makes for spliced-in arguments.
+ */
+const stringDataRangesOf = (
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.Node,
+): TSESTree.Range[] =>
+  sourceCode
+    .getTokens(node)
+    .filter(
+      (token) =>
+        (token.type === AST_TOKEN_TYPES.Template ||
+          token.type === AST_TOKEN_TYPES.String) &&
+        token.loc.start.line !== token.loc.end.line,
+    )
+    .map((token) => token.range);
+
+/**
+ * The callback's text re-indented for the line the rewritten call puts it on.
+ *
+ * Dropping the dependency array lets the call collapse onto one line, and when
+ * the original spelled the callback on a line of its own that collapse removes
+ * exactly one nesting level. Emitting the callback verbatim would leave every
+ * interior line indented for the level it no longer occupies (issue #1559), so
+ * each line moves by the difference between the callback's original indentation
+ * and the indentation of the line the call starts on. Preserving the original
+ * multi-line layout instead is not an option: a lone function argument is
+ * hugged onto the call line by the formatter, so the broken-out form would be
+ * reformatted away on the next write.
+ */
+const reindentedCallbackText = (
+  sourceCode: TSESLint.SourceCode,
+  call: TSESTree.CallExpression,
+  callback: TSESTree.Node,
+): string => {
+  const text = sourceCode.getText(callback);
+  const callIndent = indentationAt(sourceCode, call.range[0]);
+  const callbackIndent = indentationAt(sourceCode, callback.range[0]);
+
+  // A callback already on the call's line loses no nesting level, so its body
+  // must be reproduced byte for byte.
+  if (callIndent === callbackIndent) {
+    return text;
+  }
+
+  const shiftLine = ((): ((line: string) => string) | null => {
+    if (callbackIndent.startsWith(callIndent)) {
+      const removed = callbackIndent.slice(callIndent.length);
+      return (line) =>
+        line.startsWith(removed) ? line.slice(removed.length) : line;
+    }
+    if (callIndent.startsWith(callbackIndent)) {
+      const added = callIndent.slice(callbackIndent.length);
+      return (line) => `${added}${line}`;
+    }
+    // Indent characters that disagree give no delta that can be applied
+    // without corrupting the layout, so the text is left as the author wrote it.
+    return null;
+  })();
+
+  if (!shiftLine) {
+    return text;
+  }
+
+  const stringData = stringDataRangesOf(sourceCode, callback);
+  const carriesStringData = (offset: number) =>
+    stringData.some(([start, end]) => start < offset && offset < end);
+
+  let offset = callback.range[0];
+  return text
+    .split('\n')
+    .map((line, index) => {
+      const lineStart = offset;
+      offset += line.length + 1;
+      // The first line is spliced in after the call's open paren, so it has no
+      // indentation of its own left to adjust.
+      if (index === 0 || line.trim() === '' || carriesStringData(lineStart)) {
+        return line;
+      }
+      return shiftLine(line);
+    })
+    .join('\n');
+};
+
 export const useLatestCallback = createRule<[], MessageIds>({
   name: 'use-latest-callback',
   meta: {
@@ -590,7 +689,11 @@ export const useLatestCallback = createRule<[], MessageIds>({
           fixer: TSESLint.RuleFixer,
           conversion: Conversion,
         ): TSESLint.RuleFix => {
-          const callbackText = sourceCode.getText(conversion.node.arguments[0]);
+          const callbackText = reindentedCallbackText(
+            sourceCode,
+            conversion.node,
+            conversion.node.arguments[0],
+          );
           const typeParams = conversion.node.typeParameters
             ? sourceCode.getText(conversion.node.typeParameters)
             : '';

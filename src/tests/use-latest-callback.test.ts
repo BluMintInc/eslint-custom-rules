@@ -1632,6 +1632,152 @@ const A = () => {
 };`,
       errors: errors(),
     },
+    // Collapsing the multi-line call form removes one nesting level, so the
+    // callback body has to shed that level too or it ends up over-indented.
+    {
+      code: `import { useCallback } from 'react';
+const A = ({ height }) => {
+  const dimension = useCallback(
+    ({ width }) => {
+      if (width > 0) {
+        return height;
+      }
+      return 0;
+    },
+    [height],
+  );
+  return <div>{dimension}</div>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+const A = ({ height }) => {
+  const dimension = useLatestCallback(({ width }) => {
+    if (width > 0) {
+      return height;
+    }
+    return 0;
+  });
+  return <div>{dimension}</div>;
+};`,
+      errors: errors(),
+    },
+    // The same collapse at a deeper nesting depth: the shift is relative to the
+    // call's own line, not to a fixed column.
+    {
+      code: `import { useCallback } from 'react';
+const A = ({ items }) => {
+  if (items) {
+    const map = useCallback(
+      (item) => {
+        return items.map((i) => {
+          return i + item;
+        });
+      },
+      [items],
+    );
+    return <div>{map}</div>;
+  }
+  return null;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+const A = ({ items }) => {
+  if (items) {
+    const map = useLatestCallback((item) => {
+      return items.map((i) => {
+        return i + item;
+      });
+    });
+    return <div>{map}</div>;
+  }
+  return null;
+};`,
+      errors: errors(),
+    },
+    // A callback that already starts on the call's line loses no nesting level,
+    // so its body must be reproduced verbatim.
+    {
+      code: `import { useCallback } from 'react';
+const A = ({ items }) => {
+  if (items) {
+    const map = useCallback((item) => {
+      return items.map((i) => {
+        return i + item;
+      });
+    }, [items]);
+    return <div>{map}</div>;
+  }
+  return null;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+const A = ({ items }) => {
+  if (items) {
+    const map = useLatestCallback((item) => {
+      return items.map((i) => {
+        return i + item;
+      });
+    });
+    return <div>{map}</div>;
+  }
+  return null;
+};`,
+      errors: errors(),
+    },
+    // Whitespace inside a template literal is string data, not formatting, so
+    // the collapse must leave every line of it byte-identical.
+    {
+      code: `import { useCallback } from 'react';
+const A = ({ name }) => {
+  const build = useCallback(
+    (title) => {
+      const message = \`
+      Hello \${name}
+        \${title}
+\`;
+      return message;
+    },
+    [name],
+  );
+  return <div>{build}</div>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+const A = ({ name }) => {
+  const build = useLatestCallback((title) => {
+    const message = \`
+      Hello \${name}
+        \${title}
+\`;
+    return message;
+  });
+  return <div>{build}</div>;
+};`,
+      errors: errors(),
+    },
+    // A tab-indented file sheds one tab, not two spaces.
+    {
+      code: `import { useCallback } from 'react';
+const A = ({ height }) => {
+\tconst dimension = useCallback(
+\t\t({ width }) => {
+\t\t\tif (width > 0) {
+\t\t\t\treturn height;
+\t\t\t}
+\t\t\treturn 0;
+\t\t},
+\t\t[height],
+\t);
+\treturn <div>{dimension}</div>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+const A = ({ height }) => {
+\tconst dimension = useLatestCallback(({ width }) => {
+\t\tif (width > 0) {
+\t\t\treturn height;
+\t\t}
+\t\treturn 0;
+\t});
+\treturn <div>{dimension}</div>;
+};`,
+      errors: errors(),
+    },
   ],
 });
 
