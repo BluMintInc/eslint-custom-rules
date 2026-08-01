@@ -22,6 +22,31 @@ type DestructuringGroup = {
   hasTypeAnnotation: boolean;
 };
 
+/**
+ * Source forms that already bind tighter than `??`, so wrapping them in the
+ * hoisted `(obj) ?? {}` initializer adds parentheses a formatter then strips.
+ *
+ * The set is deliberately limited to what this rule can actually emit: only an
+ * identifier-rooted source is ever hoisted, so a call, conditional or logical
+ * source never reaches here. Anything absent keeps its parentheses, which is the
+ * safe direction — a stray pair is cosmetic, a missing pair changes what the
+ * initializer evaluates. `as` and `satisfies` are excluded on purpose: TypeScript
+ * rejects them beside `??` unparenthesized.
+ */
+const TIGHTER_THAN_NULLISH = new Set<string>([
+  AST_NODE_TYPES.Identifier,
+  AST_NODE_TYPES.ThisExpression,
+  AST_NODE_TYPES.MemberExpression,
+  AST_NODE_TYPES.ChainExpression,
+  AST_NODE_TYPES.TSNonNullExpression,
+]);
+
+const nullishSourceText = (
+  objectText: string,
+  init: TSESTree.Expression | undefined,
+): string =>
+  init && TIGHTER_THAN_NULLISH.has(init.type) ? objectText : `(${objectText})`;
+
 const HOOK_NAMES = new Set([
   'useEffect',
   'useMemo',
@@ -1311,7 +1336,10 @@ function generateHoistingFixes(
     );
     const pattern = `{ ${sortedProps.map((p) => p.text).join(', ')} }`;
     hoistedLines.push(
-      `${indent}const ${pattern} = (${group.objectText}) ?? {};`,
+      `${indent}const ${pattern} = ${nullishSourceText(
+        group.objectText,
+        group.inits[0],
+      )} ?? {};`,
     );
   }
 
