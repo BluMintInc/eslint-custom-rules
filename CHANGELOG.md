@@ -1,3 +1,10 @@
+## [1.20.56](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.55...v1.20.56) (2026-08-01)
+
+
+### Bug Fixes
+
+* **no-entire-object-hook-deps:** treat unread useEffect deps as re-run triggers unless the effect sets them (closes [#1546](https://github.com/BluMintInc/eslint-custom-rules/issues/1546)) ([a9c0f85](https://github.com/BluMintInc/eslint-custom-rules/commit/a9c0f85b0357cb28e32cbc1a4bd58a6d7dd004c6))
+
 ## [1.20.55](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.54...v1.20.55) (2026-08-01)
 
 
