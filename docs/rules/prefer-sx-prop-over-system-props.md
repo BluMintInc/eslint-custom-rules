@@ -76,6 +76,8 @@ Merged correctly into an existing `sx` object:
   components: ['Box', 'Stack', 'Typography', 'Grid', 'Paper', 'Container'],
   // Additional props to never flag (merged with the built-in allowlist)
   allowedProps: [],
+  // Column the autofix wraps the emitted sx object at
+  printWidth: 80,
 }]
 ```
 
@@ -95,6 +97,14 @@ Default: `[]`
 
 Additional prop names to never flag, merged with the built-in allowlist. Use this if a prop in the system-prop set is a legitimate API prop in your component.
 
+### `printWidth`
+
+Type: `number`
+
+Default: `80`
+
+The column the autofix wraps at, matching Prettier's option of the same name. Set it to your formatter's `printWidth` so the fixed source is already in the shape the formatter would produce; a lint run carrying `--fix` otherwise leaves the tree failing `prettier --check`.
+
 ## Autofix behavior
 
 The autofix moves all detected system props into `sx`:
@@ -105,6 +115,63 @@ The autofix moves all detected system props into `sx`:
 4. **Existing `sx={expr}` (variable/expression)** — wraps it: `sx={{ ...systemProps, ...expr }}`.
 
 When the rule cannot safely determine the shape of `sx`, it still reports the violation but skips the autofix to prevent incorrect merges.
+
+### Formatting of the emitted `sx`
+
+The merged `sx` stays on one line whenever it fits within [`printWidth`](#printwidth). Past that, the object is broken open with one property per line, indented relative to the JSX attribute:
+
+```tsx
+// Before
+<Stack
+  alignItems="center"
+  justifyContent="center"
+  width="100%"
+  bgcolor="red"
+  padding={4}
+/>
+
+// After
+<Stack
+  sx={{
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    bgcolor: 'red',
+  }}
+  padding={4}
+/>
+```
+
+An `sx` object (or array) the author already broke open keeps that shape at any width — each moved prop gets its own line at the existing members' indentation, never spliced onto the first member's line:
+
+```tsx
+// Before
+<Stack
+  sx={{
+    borderRadius: 2,
+    p: 4,
+  }}
+  height="100%"
+  width="100%"
+/>
+
+// After
+<Stack
+  sx={{
+    height: '100%',
+    width: '100%',
+    borderRadius: 2,
+    p: 4,
+  }}
+/>
+```
+
+When every attribute shares one line and the merged element no longer fits, each attribute moves to a line of its own — the same change a formatter makes.
+
+Two situations leave the compact form in place on purpose:
+
+- **Ambiguous indentation.** Moving a prop whose value spans lines (a nested object, a template literal) requires re-indenting that value's continuation lines. Where the source mixes tabs and spaces such that neither indentation is a prefix of the other, there is no delta to apply and a guess would corrupt the layout, so the fix falls back to the single-line splice. The interior lines of a **multi-line template literal or string are never moved** in any case: that whitespace is part of the value, not the layout.
+- **Children on the opening element's line.** A formatter answers an over-long `<Typography sx={...}>text</Typography>` by moving the children, not the attributes; the rule does not rewrite children, so it leaves the element alone.
 
 ## When to disable
 
