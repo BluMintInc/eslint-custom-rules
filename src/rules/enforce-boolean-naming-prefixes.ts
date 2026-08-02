@@ -2,6 +2,7 @@ import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import type { TSESLint } from '@typescript-eslint/utils';
 import pluralize from 'pluralize';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds = 'missingBooleanPrefix';
 type Options = [
@@ -291,6 +292,37 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     }
 
     /**
+     * Recognize `Boolean(x)` — the explicit spelling of `!!x` — as producing a
+     * primitive boolean.
+     *
+     * The callee name alone cannot decide this. A local binding, a parameter or
+     * an import named `Boolean` shadows the global and may return anything, so
+     * the identifier is resolved through the scope chain at the call site: only
+     * an unresolved reference, or one reaching a definition-less global, is the
+     * built-in. `new Boolean(x)` is deliberately not covered here — a
+     * `NewExpression` builds a Boolean wrapper *object*, which is always truthy
+     * and never a primitive boolean.
+     */
+    function isGlobalBooleanCall(
+      callExpression: TSESTree.CallExpression,
+    ): boolean {
+      const { callee } = callExpression;
+      if (
+        callee.type !== AST_NODE_TYPES.Identifier ||
+        callee.name !== 'Boolean'
+      ) {
+        return false;
+      }
+
+      const variable = ASTHelpers.findVariableInScope(
+        ASTHelpers.getScope(context, callee),
+        'Boolean',
+      );
+
+      return !variable || variable.defs.length === 0;
+    }
+
+    /**
      * Check if a node is initialized with a boolean value
      */
     function hasInitialBooleanValue(node: TSESTree.Node): boolean {
@@ -409,6 +441,13 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           node.init.type === AST_NODE_TYPES.CallExpression &&
           node.init.callee.type === AST_NODE_TYPES.Identifier
         ) {
+          // A coercion through the global `Boolean` is as definitive as `!!x`,
+          // and its callee carries no approved prefix for the name heuristic
+          // below to recognize.
+          if (isGlobalBooleanCall(node.init)) {
+            return true;
+          }
+
           const calleeName = node.init.callee.name;
           const lowerCallee = calleeName.toLowerCase();
 
