@@ -20,6 +20,51 @@ ruleTesterTs.run('prefer-destructuring-no-class', preferDestructuringNoClass, {
       }
       const value = Example.value;
     `,
+    // A parameter typed with a same-file class is a class instance even though
+    // no NewExpression is in sight (#1619).
+    `
+      class User {
+        name: string;
+      }
+      function greet(user: User) {
+        const name = user.name;
+        return name;
+      }
+    `,
+    // An annotated variable is a class instance regardless of its initializer.
+    `
+      class User {
+        name: string;
+      }
+      declare function getUser(): User;
+      const user: User = getUser();
+      const name = user.name;
+    `,
+    // Member chain rooted at a class-typed parameter stays exempt through the
+    // recursive member-expression walk.
+    `
+      class Customer {
+        name: string;
+      }
+      class Order {
+        customer: Customer;
+      }
+      function process(order: Order) {
+        const name = order.customer.name;
+        return name;
+      }
+    `,
+    // A class declared AFTER its use site still exempts — recognition indexes
+    // the whole file, not just declarations above the report.
+    `
+      function greet(user: User) {
+        const name = user.name;
+        return name;
+      }
+      class User {
+        name: string;
+      }
+    `,
     // Already using destructuring
     `
       const obj = { foo: 123 };
@@ -127,6 +172,45 @@ ruleTesterTs.run('prefer-destructuring-no-class', preferDestructuringNoClass, {
     `,
   ],
   invalid: [
+    // A parameter typed with a TYPE ALIAS is plain data, not a class instance —
+    // pins that the #1619 exemption keys on class declarations only.
+    {
+      code: `
+        type UserLike = { name: string };
+        function greet(user: UserLike) {
+          const name = user.name;
+          return name;
+        }
+      `,
+      output: `
+        type UserLike = { name: string };
+        function greet(user: UserLike) {
+          const { name } = user;
+          return name;
+        }
+      `,
+      errors: [{ messageId: 'preferDestructuring' }],
+    },
+    // A parameter typed with an IMPORTED class still reports: a syntactic rule
+    // cannot resolve the import, and the docs scope the exemption to same-file
+    // declarations (#1619).
+    {
+      code: `
+        import { User } from './user';
+        function greet(user: User) {
+          const name = user.name;
+          return name;
+        }
+      `,
+      output: `
+        import { User } from './user';
+        function greet(user: User) {
+          const { name } = user;
+          return name;
+        }
+      `,
+      errors: [{ messageId: 'preferDestructuring' }],
+    },
     // Basic object property access
     {
       code: `

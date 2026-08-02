@@ -16,6 +16,70 @@ const defaultOptions: [Options[0]] = [
   },
 ];
 
+/**
+ * Names of every class declared anywhere in the file. A purely syntactic rule
+ * cannot see an imported class, so same-file declarations are the entire
+ * population a type annotation can be resolved against (#1619).
+ */
+function collectClassNames(sourceCode: TSESLint.SourceCode): Set<string> {
+  const names = new Set<string>();
+  const stack: TSESTree.Node[] = [sourceCode.ast];
+  while (stack.length > 0) {
+    const current = stack.pop() as TSESTree.Node;
+    if (
+      (current.type === AST_NODE_TYPES.ClassDeclaration ||
+        current.type === AST_NODE_TYPES.ClassExpression) &&
+      current.id
+    ) {
+      names.add(current.id.name);
+    }
+    for (const key of sourceCode.visitorKeys[current.type] ?? []) {
+      const value = (current as unknown as Record<string, unknown>)[key];
+      const children = Array.isArray(value) ? value : [value];
+      for (const child of children) {
+        if (child && typeof child === 'object' && 'type' in child) {
+          stack.push(child as TSESTree.Node);
+        }
+      }
+    }
+  }
+  return names;
+}
+
+/**
+ * Reports whether an identifier's declared type names a class declared in this
+ * file — the annotation-carried form of a class instance (`user: User` as a
+ * parameter or an annotated variable), which the docs promise the same
+ * exemption as a `new User()` initializer (#1619).
+ */
+function annotationNamesFileClass(
+  identifier: TSESTree.Node | undefined,
+  classNames: Set<string>,
+): boolean {
+  if (!identifier || identifier.type !== AST_NODE_TYPES.Identifier) {
+    return false;
+  }
+  const annotation = identifier.typeAnnotation?.typeAnnotation;
+  return (
+    annotation?.type === AST_NODE_TYPES.TSTypeReference &&
+    annotation.typeName.type === AST_NODE_TYPES.Identifier &&
+    classNames.has(annotation.typeName.name)
+  );
+}
+
+const fileClassNames = new WeakMap<TSESTree.Program, Set<string>>();
+
+function classNamesFor(context: any): Set<string> {
+  const sourceCode = context.getSourceCode() as TSESLint.SourceCode;
+  const cached = fileClassNames.get(sourceCode.ast);
+  if (cached) {
+    return cached;
+  }
+  const names = collectClassNames(sourceCode);
+  fileClassNames.set(sourceCode.ast, names);
+  return names;
+}
+
 function isClassInstance(node: TSESTree.Node, context: any): boolean {
   // Check if node is a MemberExpression
   if (node.type === AST_NODE_TYPES.MemberExpression) {
@@ -33,18 +97,29 @@ function isClassInstance(node: TSESTree.Node, context: any): boolean {
       const ref = scope.references.find(
         (ref: any) => ref.identifier.name === variable,
       );
+      const def = ref?.resolved?.defs[0];
 
+      if (def?.node.type === AST_NODE_TYPES.VariableDeclarator) {
+        const init = def.node.init;
+        return (
+          init?.type === AST_NODE_TYPES.NewExpression ||
+          // `const user: User = getUser();` — the annotation, not the
+          // initializer, is what marks the value as a class instance.
+          annotationNamesFileClass(def.node.id, classNamesFor(context))
+        );
+      }
+
+      // `function greet(user: User)` — a parameter typed with a same-file
+      // class is a class instance the initializer-based check cannot see.
       if (
-        ref?.resolved?.defs[0]?.node.type === AST_NODE_TYPES.VariableDeclarator
+        def?.type === 'Parameter' &&
+        annotationNamesFileClass(def.name, classNamesFor(context))
       ) {
-        const init = ref.resolved.defs[0].node.init;
-        return init?.type === AST_NODE_TYPES.NewExpression;
+        return true;
       }
 
       // Check if the identifier refers to a class (not an instance)
-      if (
-        ref?.resolved?.defs[0]?.node.type === AST_NODE_TYPES.ClassDeclaration
-      ) {
+      if (def?.node.type === AST_NODE_TYPES.ClassDeclaration) {
         return false;
       }
     }

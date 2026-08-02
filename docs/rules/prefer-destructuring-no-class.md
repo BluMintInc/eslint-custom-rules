@@ -10,7 +10,7 @@
 
 - For plain objects, dot assignments scatter property reads and hide the dependency between a variable and its source object. Destructuring declares the dependency once and keeps aliases aligned when object shapes change.
 - Destructuring avoids duplicating property names and makes renames explicit, which reduces drift when refactoring.
-- Class instances are exempt because destructuring methods or fields can unbind `this` or copy mutable instance state in ways that diverge from the class semantics.
+- Class instances are exempt because destructuring methods or fields can unbind `this` or copy mutable instance state in ways that diverge from the class semantics. An instance is recognized syntactically: a `new X()` initializer in the same file, or an identifier whose type annotation (parameter or variable) names a class **declared in the same file**. An identifier typed with an imported class cannot be resolved without type information and is still reported — rephrase with destructuring or use an inline `eslint-disable-next-line` with the class named in the justification.
 
 ## Options
 
