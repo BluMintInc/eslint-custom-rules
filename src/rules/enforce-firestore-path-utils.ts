@@ -17,12 +17,17 @@ export const enforceFirestorePathUtils = createRule<[], MessageIds>({
     schema: [],
     messages: {
       requirePathUtil:
-        'Use a utility function for Firestore paths to ensure type safety and maintainability. Instead of `doc("users/" + userId)`, create and use a utility function: `const toUserPath = (id: string) => `users/${id}`; doc(toUserPath(userId))`.',
+        'Use a utility function for Firestore paths to ensure type safety and maintainability. Instead of `db.doc("users/" + userId)`, create and use a utility function: `const toUserPath = (id: string) => `users/${id}`; db.doc(toUserPath(userId))`.',
     },
   },
   defaultOptions: [],
   create(context) {
     function isFirestoreCall(node: TSESTree.CallExpression): boolean {
+      // Requiring an explicit receiver keeps unrelated `doc(...)`/`collection(...)`
+      // calls out of scope, at the cost of not covering the modular SDK, whose
+      // path sits in the second argument. The requirePathUtil example is written
+      // with a receiver for the same reason: a bare call is never reportable, so
+      // an example without one points at code this rule does not govern.
       if (node.callee.type !== AST_NODE_TYPES.MemberExpression) {
         return false;
       }

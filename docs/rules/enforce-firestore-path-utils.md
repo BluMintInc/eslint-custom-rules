@@ -19,6 +19,7 @@ The rule allows:
 - Calls whose path argument is already produced by a helper named like `toUserPath(...)`.
 - Path expressions that hide construction behind a name (variables, function calls, or other expressions) because those are likely already indirection helpers.
 - Concatenations of opaque operands only (for example `basePath + userId`), since no path fragment is written inline.
+- Bare calls with no receiver. The `doc`/`collection` callee must be an explicit member access, so `db.doc('users/1')` is reported while a bare `doc(db, 'users/1')` is not. This keeps unrelated functions named `doc` or `collection` out of scope, and means the modular SDK (whose path is the second argument) is not covered.
 
 ### Examples of **incorrect** code for this rule:
 
