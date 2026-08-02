@@ -1,3 +1,10 @@
+## [1.20.76](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.75...v1.20.76) (2026-08-02)
+
+
+### Bug Fixes
+
+* **no-type-assertion-returns:** report a chained assertion once, on the outermost link (closes [#1609](https://github.com/BluMintInc/eslint-custom-rules/issues/1609)) ([464d8dc](https://github.com/BluMintInc/eslint-custom-rules/commit/464d8dc683611606e00b08350064c8e0c759f62e))
+
 ## [1.20.75](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.74...v1.20.75) (2026-08-02)
 
 

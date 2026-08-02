@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.76",
+    "date": "2026-08-02T07:09:34.794Z",
+    "rules": [
+      {
+        "name": "no-type-assertion-returns",
+        "changeType": "fix",
+        "issues": [
+          1609
+        ],
+        "summary": "report a chained assertion once, on the outermost link (closes #1609)"
+      }
+    ]
+  },
+  {
     "version": "1.20.75",
     "date": "2026-08-02T06:40:23.306Z",
     "rules": [
