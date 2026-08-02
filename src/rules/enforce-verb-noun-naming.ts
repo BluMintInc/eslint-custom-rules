@@ -3772,6 +3772,187 @@ const ALLOWLIST = {
   ]),
 };
 
+/** Higher-order components that only ever wrap another component. */
+const COMPONENT_WRAPPERS = new Set(['memo', 'forwardRef']);
+
+/** Element factories a component uses when it renders without JSX syntax. */
+const ELEMENT_FACTORIES = new Set(['createElement', 'cloneElement']);
+
+/** A hook call is named `useX`; a PascalCase caller of one is a component. */
+const HOOK_CALL = /^use[A-Z]/;
+
+type FunctionNode =
+  | TSESTree.FunctionDeclaration
+  | TSESTree.ArrowFunctionExpression
+  | TSESTree.FunctionExpression;
+
+/**
+ * A nested function owns its own returns and its own hook calls, so evidence
+ * gathered about the enclosing function must stop at its boundary.
+ */
+const FUNCTION_LIKE_TYPES = new Set<string>([
+  AST_NODE_TYPES.FunctionDeclaration,
+  AST_NODE_TYPES.FunctionExpression,
+  AST_NODE_TYPES.ArrowFunctionExpression,
+]);
+
+/**
+ * Visits every descendant of `node` that belongs to the same function scope.
+ * Nested functions are handed to `visit` but not descended into.
+ */
+function forEachNodeInOwnScope(
+  node: TSESTree.Node,
+  visit: (child: TSESTree.Node) => void,
+): void {
+  for (const key of Object.keys(node)) {
+    if (key === 'parent') {
+      continue;
+    }
+    const value = (node as unknown as Record<string, unknown>)[key];
+    const children = Array.isArray(value) ? value : [value];
+    for (const child of children) {
+      if (!ASTHelpers.isNode(child)) {
+        continue;
+      }
+      visit(child);
+      if (!FUNCTION_LIKE_TYPES.has(child.type)) {
+        forEachNodeInOwnScope(child, visit);
+      }
+    }
+  }
+}
+
+/**
+ * The name of a call to `name(...)` or `React.name(...)`. Member calls are
+ * confined to the React namespace so `document.createElement(...)` — an ordinary
+ * DOM call — is not mistaken for a render.
+ */
+function calleeName(callee: TSESTree.Node): string | undefined {
+  if (callee.type === AST_NODE_TYPES.Identifier) {
+    return callee.name;
+  }
+  if (
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    !callee.computed &&
+    callee.object.type === AST_NODE_TYPES.Identifier &&
+    callee.object.name === 'React' &&
+    callee.property.type === AST_NODE_TYPES.Identifier
+  ) {
+    return callee.property.name;
+  }
+  return undefined;
+}
+
+/** A generator yields values rather than rendering, so it is never a component. */
+function isGeneratorFunction(node: FunctionNode): boolean {
+  return node.type !== AST_NODE_TYPES.ArrowFunctionExpression && node.generator;
+}
+
+/**
+ * Whether a returned expression is something React renders. `null`/`undefined`
+ * are the "render nothing" case a component reaches through an early return,
+ * and `createElement` is how a component renders from a file that cannot hold
+ * JSX syntax.
+ */
+function isRenderableValue(value: TSESTree.Node | null | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+
+  switch (value.type) {
+    case AST_NODE_TYPES.Literal:
+      // Matched on `raw` because a regex literal an environment cannot compile
+      // also carries `value === null`.
+      return value.raw === 'null';
+    case AST_NODE_TYPES.Identifier:
+      return value.name === 'undefined';
+    case AST_NODE_TYPES.JSXElement:
+    case AST_NODE_TYPES.JSXFragment:
+      return true;
+    case AST_NODE_TYPES.CallExpression: {
+      const name = calleeName(value.callee);
+      return !!name && ELEMENT_FACTORIES.has(name);
+    }
+    case AST_NODE_TYPES.TSAsExpression:
+    case AST_NODE_TYPES.TSSatisfiesExpression:
+    case AST_NODE_TYPES.TSNonNullExpression:
+    case AST_NODE_TYPES.TSTypeAssertion:
+      return isRenderableValue(value.expression);
+    case AST_NODE_TYPES.ConditionalExpression:
+      // Every branch has to render, otherwise `cond ? value : null` — an
+      // ordinary lookup-with-fallback — would read as a component.
+      return (
+        isRenderableValue(value.consequent) &&
+        isRenderableValue(value.alternate)
+      );
+    default:
+      return false;
+  }
+}
+
+/**
+ * Whether every value the function returns is renderable, and it returns at
+ * least once. Demanding *every* return keeps a helper that merely falls back to
+ * `null` on one branch out of the component exemption, and demanding one return
+ * keeps a function that returns nothing at all out of it.
+ */
+function rendersEveryReturn(node: FunctionNode): boolean {
+  if (node.body.type !== AST_NODE_TYPES.BlockStatement) {
+    return isRenderableValue(node.body);
+  }
+
+  const returned: (TSESTree.Expression | null)[] = [];
+  forEachNodeInOwnScope(node.body, (child) => {
+    if (child.type === AST_NODE_TYPES.ReturnStatement) {
+      returned.push(child.argument);
+    }
+  });
+
+  return returned.length > 0 && returned.every(isRenderableValue);
+}
+
+function callsReactHook(node: FunctionNode): boolean {
+  let found = false;
+  forEachNodeInOwnScope(node.body, (child) => {
+    if (found || child.type !== AST_NODE_TYPES.CallExpression) {
+      return;
+    }
+    const name = calleeName(child.callee);
+    found = !!name && HOOK_CALL.test(name);
+  });
+  return found;
+}
+
+/**
+ * Whether a reference to the function names it as a component: rendered as a
+ * JSX element, or handed to a higher-order component.
+ */
+function isComponentReference(identifier: TSESTree.Node): boolean {
+  const parent = identifier.parent;
+  if (!parent) {
+    return false;
+  }
+
+  if (
+    parent.type === AST_NODE_TYPES.JSXOpeningElement ||
+    parent.type === AST_NODE_TYPES.JSXClosingElement ||
+    parent.type === AST_NODE_TYPES.JSXMemberExpression
+  ) {
+    return true;
+  }
+
+  if (parent.type === AST_NODE_TYPES.CallExpression) {
+    const name = calleeName(parent.callee);
+    return (
+      !!name &&
+      COMPONENT_WRAPPERS.has(name) &&
+      parent.arguments.some((argument) => argument === identifier)
+    );
+  }
+
+  return false;
+}
+
 export const enforceVerbNounNaming = createRule<Options, MessageIds>({
   name: 'enforce-verb-noun-naming',
   meta: {
@@ -4038,6 +4219,25 @@ export const enforceVerbNounNaming = createRule<Options, MessageIds>({
       return false;
     }
 
+    /**
+     * Whether the file names the function as a component somewhere other than
+     * its declaration — `<MyComponent />`, `memo(MyComponent)`. Resolved through
+     * scope analysis, which records JSX element names as references.
+     */
+    function isUsedAsReactComponent(
+      node: TSESTree.Node,
+      functionName: string,
+    ): boolean {
+      const scope = ASTHelpers.getScope(context, node);
+      const variable = ASTHelpers.findVariableInScope(scope, functionName);
+      if (!variable) {
+        return false;
+      }
+      return variable.references.some((reference) =>
+        isComponentReference(reference.identifier),
+      );
+    }
+
     function isReactComponent(node: TSESTree.Node): boolean {
       if (
         node.type !== AST_NODE_TYPES.FunctionDeclaration &&
@@ -4066,6 +4266,21 @@ export const enforceVerbNounNaming = createRule<Options, MessageIds>({
         // In .ts files, we require more evidence (returns JSX or React type) to avoid
         // false positives for classes or helper functions that might use PascalCase.
         if (isJsxFile || returnsJsx || hasReactType) {
+          return true;
+        }
+
+        // The annotation cannot be the only evidence a `.ts` file offers, because
+        // `no-explicit-return-type --fix` — shipped in the same recommended config
+        // — deletes it, leaving a component indistinguishable from a helper and
+        // demanding a rename that would break every JSX call site. A component
+        // is therefore also recognised by what it renders, by the hooks it calls,
+        // and by how the rest of the file uses it.
+        if (
+          !isGeneratorFunction(node) &&
+          (rendersEveryReturn(node) ||
+            callsReactHook(node) ||
+            isUsedAsReactComponent(node, functionName))
+        ) {
           return true;
         }
       }
