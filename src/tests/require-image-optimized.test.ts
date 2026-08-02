@@ -52,6 +52,49 @@ import { getImageProps } from 'next/image';
 export const props = getImageProps({ src: '/example.jpg' });
 `,
     },
+    // A type-only import renders nothing, so it bypasses no optimization.
+    {
+      code: `
+import type Image from 'next/image';
+export type T = typeof Image;
+`,
+    },
+    {
+      code: `
+import type { ImageProps } from 'next/image';
+export type Props = ImageProps;
+`,
+    },
+    // A specifier-level type modifier binds no value either.
+    {
+      code: `
+import { type Image as NextImage } from 'next/image';
+export type Props = { render: typeof NextImage };
+`,
+    },
+    {
+      code: `
+import type { default as Picture } from 'next/image';
+export type Props = { render: typeof Picture };
+`,
+    },
+    // A namespace import is deliberately out of scope: it binds the module, not
+    // the component, and is consumed as <NextImage.default />.
+    {
+      code: `
+import * as NextImage from 'next/image';
+export const C = () => <NextImage.default src="/a.jpg" alt="A" />;
+`,
+    },
+    // The component's own module imports next/image by design, however many
+    // specifiers the import carries.
+    {
+      code: `
+import Image, { ImageProps } from 'next/image';
+export const ImageOptimized = (props: ImageProps) => <Image {...props} />;
+`,
+      filename: 'src/components/image/ImageOptimized.tsx',
+    },
     // Only next/image itself is flagged, not any module path ending in image.
     {
       code: `
@@ -221,6 +264,153 @@ function Component() {
   return <NextImage src="/example.jpg" alt="Example" />;
 }
 `,
+    },
+    // The default export IS the component whatever it is bound to locally, so
+    // renaming it away from Image is no escape.
+    {
+      code: `
+import Img from 'next/image';
+export const C = () => <Img src="/a.jpg" alt="A" />;
+`,
+      output: `
+import Img from 'src/components/image/ImageOptimized';
+export const C = () => <Img src="/a.jpg" alt="A" />;
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+    },
+    // The named form of the default export is the same binding.
+    {
+      code: `
+import { default as Picture } from 'next/image';
+export const C = () => <Picture src="/a.jpg" alt="A" />;
+`,
+      output: `
+import Picture from 'src/components/image/ImageOptimized';
+export const C = () => <Picture src="/a.jpg" alt="A" />;
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+    },
+    // Sibling specifiers keep their original source, so the fix strands no
+    // reference.
+    {
+      code: `
+import Image, { ImageProps } from 'next/image';
+type Props = { opts: ImageProps };
+export const C = ({ opts }: Props) => <Image {...opts} src="/a.jpg" alt="A" />;
+`,
+      output: `
+import { ImageProps } from 'next/image';
+import Image from 'src/components/image/ImageOptimized';
+type Props = { opts: ImageProps };
+export const C = ({ opts }: Props) => <Image {...opts} src="/a.jpg" alt="A" />;
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+    },
+    // The split preserves each surviving specifier verbatim, including its
+    // alias and its type modifier.
+    {
+      code: `
+import NextImage, { type ImageProps as Props, getImageProps } from 'next/image';
+export const props: Props = getImageProps({ src: '/a.jpg' }).props;
+export const C = () => <NextImage src="/a.jpg" alt="A" />;
+`,
+      output: `
+import { type ImageProps as Props, getImageProps } from 'next/image';
+import NextImage from 'src/components/image/ImageOptimized';
+export const props: Props = getImageProps({ src: '/a.jpg' }).props;
+export const C = () => <NextImage src="/a.jpg" alt="A" />;
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+    },
+    // The named form of the default export splits the same way.
+    {
+      code: `
+import { default as Picture, ImageProps } from 'next/image';
+export const C = (opts: ImageProps) => <Picture {...opts} />;
+`,
+      output: `
+import { ImageProps } from 'next/image';
+import Picture from 'src/components/image/ImageOptimized';
+export const C = (opts: ImageProps) => <Picture {...opts} />;
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+    },
+    // A namespace alongside the default keeps the namespace on next/image.
+    {
+      code: `
+import Image, * as NextImage from 'next/image';
+export const props = NextImage.getImageProps({ src: '/a.jpg' });
+export const C = () => <Image src="/a.jpg" alt="A" />;
+`,
+      output: `
+import * as NextImage from 'next/image';
+import Image from 'src/components/image/ImageOptimized';
+export const props = NextImage.getImageProps({ src: '/a.jpg' });
+export const C = () => <Image src="/a.jpg" alt="A" />;
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+    },
+    // A type-only sibling of the value default is still a next/image type, so
+    // it stays pointed at next/image.
+    {
+      code: `
+import Image, { type ImageProps } from 'next/image';
+export const C = (opts: ImageProps) => <Image {...opts} />;
+`,
+      output: `
+import { type ImageProps } from 'next/image';
+import Image from 'src/components/image/ImageOptimized';
+export const C = (opts: ImageProps) => <Image {...opts} />;
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+    },
+    // A configured componentPath backs the renamed-default fix too.
+    {
+      code: `
+import Img from 'next/image';
+export const C = () => <Img src="/a.jpg" alt="A" />;
+`,
+      options: [{ componentPath: 'src/components/media/OptimizedPicture' }],
+      errors: [
+        {
+          messageId: 'useImageOptimized',
+          data: {
+            componentPath: 'src/components/media/OptimizedPicture',
+            component: 'next/image',
+          },
+        },
+      ],
+      output: `
+import Img from 'src/components/media/OptimizedPicture';
+export const C = () => <Img src="/a.jpg" alt="A" />;
+`,
+    },
+    // The default binding is the component, so it is the specifier that moves;
+    // a redundant named Image alongside it is resolved by the next pass.
+    {
+      code: `
+import Image, { Image as NextImage } from 'next/image';
+export const C = () => <div><Image src="/a.jpg" alt="A" /><NextImage src="/b.jpg" alt="B" /></div>;
+`,
+      output: `
+import { Image as NextImage } from 'next/image';
+import Image from 'src/components/image/ImageOptimized';
+export const C = () => <div><Image src="/a.jpg" alt="A" /><NextImage src="/b.jpg" alt="B" /></div>;
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+    },
+    // A double-quoted source survives the split verbatim.
+    {
+      code: `
+import Img, { ImageProps } from "next/image";
+export const C = (opts: ImageProps) => <Img {...opts} />;
+`,
+      output: `
+import { ImageProps } from "next/image";
+import Img from 'src/components/image/ImageOptimized';
+export const C = (opts: ImageProps) => <Img {...opts} />;
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
     },
     // Without a binding the swap would strand the name, so the report carries
     // no fix.
