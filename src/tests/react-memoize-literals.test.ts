@@ -1656,11 +1656,13 @@ function UserProfile() {
         },
       ],
     },
-    // Suggestions wrap literals and include dependency placeholder
+    // Suggestions wrap literals and include dependency placeholder. The literal
+    // closes over a prop so a dependency array can actually be filled in; a
+    // literal closing over nothing gets no suggestion at all (see #1600 below).
     {
       code: `
-function Component() {
-  const options = { debounce: 50 };
+function Component({ delay }) {
+  const options = { debounce: delay };
   return <div>{options.debounce}</div>;
 }
       `,
@@ -1678,8 +1680,8 @@ function Component() {
               output:
                 '\n' +
                 "import { useMemo } from 'react';\n" +
-                'function Component() {\n' +
-                '  const options = useMemo(() => ({ debounce: 50 }), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);\n' +
+                'function Component({ delay }) {\n' +
+                '  const options = useMemo(() => ({ debounce: delay }), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);\n' +
                 '  return <div>{options.debounce}</div>;\n' +
                 '}\n' +
                 '      ',
@@ -2798,8 +2800,8 @@ function Component({ onClick }) {
     // No react import, useMemo path.
     {
       code: `
-function Component() {
-  const options = { debounce: 50 };
+function Component({ delay }) {
+  const options = { debounce: delay };
   return <Widget options={options} />;
 }
       `,
@@ -2811,8 +2813,8 @@ function Component() {
               messageId: 'memoizeLiteralSuggestion',
               output: `
 import { useMemo } from 'react';
-function Component() {
-  const options = useMemo(() => ({ debounce: 50 }), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);
+function Component({ delay }) {
+  const options = useMemo(() => ({ debounce: delay }), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);
   return <Widget options={options} />;
 }
       `,
@@ -2914,8 +2916,8 @@ function Component({ onClick }) {
       code: `
 import React, { useState } from 'react';
 
-function Component() {
-  const options = { debounce: 50 };
+function Component({ delay }) {
+  const options = { debounce: delay };
   return <Widget options={options} />;
 }
       `,
@@ -2928,8 +2930,8 @@ function Component() {
               output: `
 import React, { useState, useMemo } from 'react';
 
-function Component() {
-  const options = useMemo(() => ({ debounce: 50 }), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);
+function Component({ delay }) {
+  const options = useMemo(() => ({ debounce: delay }), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);
   return <Widget options={options} />;
 }
       `,
@@ -2975,8 +2977,8 @@ function Component({ onClick }) {
       code: `
 import type { FC } from 'react';
 
-const Component: FC = () => {
-  const options = { debounce: 50 };
+const Component: FC = ({ delay }) => {
+  const options = { debounce: delay };
   return <Widget options={options} />;
 };
       `,
@@ -2990,8 +2992,8 @@ const Component: FC = () => {
 import { useMemo } from 'react';
 import type { FC } from 'react';
 
-const Component: FC = () => {
-  const options = useMemo(() => ({ debounce: 50 }), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);
+const Component: FC = ({ delay }) => {
+  const options = useMemo(() => ({ debounce: delay }), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);
   return <Widget options={options} />;
 };
       `,
@@ -3054,8 +3056,8 @@ function Component({ onClick }) {
       code: `
 import { useMemo as useMemoized } from 'react';
 
-function Component() {
-  const options = { debounce: 50 };
+function Component({ delay }) {
+  const options = { debounce: delay };
   return <Widget options={options} />;
 }
       `,
@@ -3068,8 +3070,8 @@ function Component() {
               output: `
 import { useMemo as useMemoized, useMemo } from 'react';
 
-function Component() {
-  const options = useMemo(() => ({ debounce: 50 }), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);
+function Component({ delay }) {
+  const options = useMemo(() => ({ debounce: delay }), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);
   return <Widget options={options} />;
 }
       `,
@@ -3173,6 +3175,259 @@ function Component({ onClick }) {
 }
       `,
       errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [],
+        },
+      ],
+    },
+  ],
+});
+
+// Unfillable dependency array (#1600): the suggestion always writes
+// `[/* __TODO_MEMOIZATION_DEPENDENCIES__ */]`, a syntactically EMPTY array — the
+// exact shape `enforce-global-constants` forbids, and its report carries no
+// fixer. When the literal closes over a render-scope value the author replaces
+// the placeholder with real deps and the error clears; when it closes over
+// NOTHING there is no dep to write, so the suggestion would leave a permanently
+// non-fixable error. Decline it there and keep the report, whose message already
+// prescribes the other branch: hoist to a module-level constant.
+ruleTesterJsx.run('react-memoize-literals', reactMemoizeLiterals, {
+  valid: [],
+  invalid: [
+    // The issue's reproduction: an object built entirely from constants.
+    {
+      code: `
+import { Widget } from './Widget';
+
+export const Panel = () => {
+  const options = { debounce: 50, retries: 3 };
+  return <Widget options={options} />;
+};
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [],
+        },
+      ],
+    },
+    // Array literal of constants: same unfillable dependency array.
+    {
+      code: `
+function Component() {
+  const columns = ['name', 'email'];
+  return <Table columns={columns} />;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [],
+        },
+      ],
+    },
+    // Only module-scope bindings (an import and a module constant) are read.
+    // Those are evaluated once per module, so neither can be a dependency.
+    {
+      code: `
+import { DEFAULTS } from './defaults';
+
+const LIMIT = 10;
+
+function Component() {
+  const config = { ...DEFAULTS, limit: LIMIT };
+  return <Widget config={config} />;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [],
+        },
+      ],
+    },
+    // Only unresolved globals are read: a global is not a dependency either.
+    {
+      code: `
+function Component() {
+  const meta = { origin: globalThis.location.origin };
+  return <Widget meta={meta} />;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [],
+        },
+      ],
+    },
+    // A name read in TYPE position is erased at compile time, so a component-local
+    // type alias leaves the dependency array just as unfillable.
+    {
+      code: `
+function Component() {
+  type Value = string;
+  const parse = (raw: Value) => raw.trim();
+  return <Widget parse={parse} />;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [],
+        },
+      ],
+    },
+    // Inline function reading only a global: useCallback with an empty dep array
+    // is never anything but a module-level function.
+    {
+      code: `
+function Component() {
+  const handleClick = () => console.log('clicked');
+  return <button onClick={handleClick}>Click</button>;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [],
+        },
+      ],
+    },
+    // Inline function reading only its OWN parameter and local: bindings declared
+    // inside the literal are not closed-over values.
+    {
+      code: `
+function Component() {
+  const format = (value) => {
+    const suffix = '!';
+    return value + suffix;
+  };
+  return <Widget format={format} />;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [],
+        },
+      ],
+    },
+    // REGRESSION — closes over a prop: the dependency array is fillable, so the
+    // suggestion still ships in full.
+    {
+      code: `
+function Component({ debounce }) {
+  const options = { debounce, retries: 3 };
+  return <Widget options={options} />;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [
+            {
+              messageId: 'memoizeLiteralSuggestion',
+              output: `
+import { useMemo } from 'react';
+function Component({ debounce }) {
+  const options = useMemo(() => ({ debounce, retries: 3 }), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);
+  return <Widget options={options} />;
+}
+      `,
+            },
+          ],
+        },
+      ],
+    },
+    // REGRESSION — closes over a hook result held in a component local.
+    {
+      code: `
+import { useState } from 'react';
+
+function Component() {
+  const [count, setCount] = useState(0);
+  const handleClick = () => setCount(count + 1);
+  return <button onClick={handleClick}>{count}</button>;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [
+            {
+              messageId: 'memoizeLiteralSuggestion',
+              output: `
+import { useState, useCallback } from 'react';
+
+function Component() {
+  const [count, setCount] = useState(0);
+  const handleClick = useCallback(() => setCount(count + 1), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);
+  return <button onClick={handleClick}>{count}</button>;
+}
+      `,
+            },
+          ],
+        },
+      ],
+    },
+    // REGRESSION — closes over a destructured local.
+    {
+      code: `
+function Component() {
+  const { color } = useTheme();
+  const palette = { primary: color };
+  return <Widget palette={palette} />;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [
+            {
+              messageId: 'memoizeLiteralSuggestion',
+              output: `
+import { useMemo } from 'react';
+function Component() {
+  const { color } = useTheme();
+  const palette = useMemo(() => ({ primary: color }), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);
+  return <Widget palette={palette} />;
+}
+      `,
+            },
+          ],
+        },
+      ],
+    },
+    // REGRESSION — the closed-over prop is read from a function NESTED inside the
+    // literal, so the scan has to descend through the inner scope.
+    {
+      code: `
+function Component({ ids }) {
+  const loader = { load: () => fetchAll(ids) };
+  return <Widget loader={loader} />;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [
+            {
+              messageId: 'memoizeLiteralSuggestion',
+              output: `
+import { useMemo } from 'react';
+function Component({ ids }) {
+  const loader = useMemo(() => ({ load: () => fetchAll(ids) }), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);
+  return <Widget loader={loader} />;
+}
+      `,
+            },
+          ],
+        },
+        // The nested arrow is reported in its own right and carries no
+        // suggestion: it is not a variable initializer, the only position the
+        // rule considers safe to wrap.
         {
           messageId: 'componentLiteral',
           suggestions: [],

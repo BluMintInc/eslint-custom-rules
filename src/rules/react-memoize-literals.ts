@@ -920,6 +920,103 @@ function buildHookImportFix(
 }
 
 /**
+ * Scope kinds whose bindings are established once per module evaluation:
+ * globals, imports and module-level declarations. Such a value is identical on
+ * every render, so it can never belong in a dependency array.
+ */
+const MODULE_LEVEL_SCOPE_TYPES = new Set<string>(['global', 'module']);
+
+/**
+ * True when `inner` lies entirely inside `outer`'s source range.
+ */
+function isRangeWithin(inner: TSESTree.Range, outer: TSESTree.Range): boolean {
+  return inner[0] >= outer[0] && inner[1] <= outer[1];
+}
+
+/**
+ * True when a reference appears purely in type position (an annotation or a
+ * `satisfies`/`as` target inside the literal). Types erase at compile time, so
+ * such a name never becomes a dependency however it resolves. The flags are read
+ * defensively: an analyzer that omits them leaves the reference classified as a
+ * value, which keeps the suggestion — the conservative direction.
+ */
+function isTypeOnlyReference(reference: TSESLint.Scope.Reference): boolean {
+  const flags = reference as unknown as {
+    isValueReference?: boolean;
+    isTypeReference?: boolean;
+  };
+  return flags.isTypeReference === true && flags.isValueReference === false;
+}
+
+/**
+ * True when a reference names a value that can differ between renders, i.e. one
+ * bound in a scope INSIDE the module and OUTSIDE the literal: a prop, a local, a
+ * destructured value, another hook's result.
+ *
+ * Everything else is unusable as a dependency. An unresolved name is a global.
+ * A module- or global-scoped binding is fixed for the module's lifetime. A
+ * binding whose own scope sits inside the literal — an inline function's
+ * parameters, its locals, its `arguments` — is not closed over at all.
+ */
+function isRenderScopeReference(
+  reference: TSESLint.Scope.Reference,
+  literalRange: TSESTree.Range,
+): boolean {
+  const variable = reference.resolved;
+  if (!variable) {
+    return false;
+  }
+  if (MODULE_LEVEL_SCOPE_TYPES.has(variable.scope.type)) {
+    return false;
+  }
+  return !isRangeWithin(variable.scope.block.range, literalRange);
+}
+
+/**
+ * True when the literal reads at least one value a dependency array could hold.
+ *
+ * Answered from RESOLVED scope references rather than identifier names, so
+ * shadowing, destructuring and imports are all accounted for exactly as the
+ * scope analyzer sees them.
+ *
+ * The walk starts at the literal's own scope and descends into every scope
+ * nested inside it — a callback buried in an object property closes over the
+ * component's scope just as a property value would — while the range filter
+ * keeps the literal's siblings out of the answer.
+ */
+function closesOverRenderScopeValue(
+  node: TSESTree.Node,
+  scope: TSESLint.Scope.Scope,
+): boolean {
+  const literalRange = node.range;
+  const pending: TSESLint.Scope.Scope[] = [scope];
+
+  while (pending.length > 0) {
+    const current = pending.pop() as TSESLint.Scope.Scope;
+
+    for (const reference of current.references) {
+      if (!isRangeWithin(reference.identifier.range, literalRange)) {
+        continue;
+      }
+      if (isTypeOnlyReference(reference)) {
+        continue;
+      }
+      if (isRenderScopeReference(reference, literalRange)) {
+        return true;
+      }
+    }
+
+    for (const child of current.childScopes) {
+      if (isRangeWithin(child.block.range, literalRange)) {
+        pending.push(child);
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
  * Builds memoization suggestions with dependency placeholders for developers.
  * @param node Literal node to wrap.
  * @param descriptor Literal metadata including memo hook.
@@ -951,6 +1048,31 @@ function buildMemoSuggestions(
         memoHook: descriptor.memoHook,
       },
       fix(fixer) {
+        // The wrap writes an EMPTY dependency array for the author to fill in.
+        // A literal that closes over nothing has nothing to fill it with, and
+        // `enforce-global-constants` forbids precisely that shape — a useMemo
+        // over an object literal with empty deps — while offering no fixer of
+        // its own. Accepting the suggestion would therefore trade this report
+        // for a permanent, non-autofixable one. Hoisting is the correct branch
+        // when nothing is closed over, and the report's own message already
+        // prescribes it, so decline rather than emit a state the author cannot
+        // complete (the #1417 principle, applied here as in the shadowed-hook
+        // guard below).
+        if (
+          !closesOverRenderScopeValue(
+            node,
+            ASTHelpers.getScope(
+              context as unknown as TSESLint.RuleContext<
+                string,
+                readonly unknown[]
+              >,
+              node,
+            ),
+          )
+        ) {
+          return null;
+        }
+
         // The wrapper is only correct if the hook name resolves to React's
         // hook. A shadowing local/parameter would silently call that value
         // instead, and an import of the same name from another module would
