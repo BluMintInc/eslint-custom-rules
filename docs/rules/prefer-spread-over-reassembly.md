@@ -31,6 +31,8 @@ The parameter's type annotation is preserved verbatim, so `({ hits, isLoading }:
 
 A parameter with a default value (`({ a, b }: FooProps = {} as FooProps)`) is never reported: spreading over a defaulted destructuring changes which value the default applies to, so the rule leaves that shape alone.
 
+Type-only wrappers on the target — `as const`, `satisfies T`, `as T`, `!`, and chains of them such as `as unknown as T` — are stripped before the target is classified. They compile away entirely, so a wrapped reassembly is the same reassembly; the autofix rewrites the literal in place and leaves the wrapper exactly as written.
+
 ### ❌ Incorrect
 
 ```tsx
@@ -72,6 +74,15 @@ const Bar = ({ a, b }: FooProps) => {
 };
 ```
 
+```ts
+// An `as const` on the reassembled literal changes nothing at runtime.
+const toPreviews = (subgroups) => {
+  return subgroups.map(({ username, id }) => {
+    return { username, id } as const;
+  });
+};
+```
+
 ### ✅ Correct
 
 ```tsx
@@ -97,6 +108,22 @@ const ChannelManagerCatalogWrapperStable = memo(
 // The type annotation survives the autofix.
 const Bar = (props: FooProps) => {
   return <Foo {...props} />;
+};
+```
+
+```ts
+// The wrapper survives the autofix; only the reassembly collapses.
+const toPreviews = (subgroups) => {
+  return subgroups.map((props) => {
+    return { ...props } as const;
+  });
+};
+```
+
+```ts
+// Valid — a narrowing projection drops `c`, so spread would smuggle it back in.
+const pick = ({ a, b, c }) => {
+  return { a, b } as const;
 };
 ```
 

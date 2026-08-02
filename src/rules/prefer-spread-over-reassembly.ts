@@ -195,6 +195,9 @@ function collectObjectForwardedFields(
  * For the object-literal variant we require:
  *   - The body is a block statement with a single return statement returning
  *     an ObjectExpression (or the concise arrow body is an ObjectExpression).
+ *
+ * Either variant may arrive behind type-only wrappers, which are stripped
+ * before the target is classified; see {@link unwrapTransparent}.
  */
 type Target =
   | {
@@ -204,28 +207,70 @@ type Target =
     }
   | { kind: 'object'; expression: TSESTree.ObjectExpression };
 
-function getSingleTarget(
-  fn: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
-): Target | null {
-  const body = fn.body;
+/**
+ * Wrappers that exist only for the type checker: they compile away entirely, so
+ * the value they wrap is the value the function actually produces.
+ */
+const TRANSPARENT_WRAPPERS = new Set<AST_NODE_TYPES>([
+  AST_NODE_TYPES.TSAsExpression,
+  AST_NODE_TYPES.TSSatisfiesExpression,
+  AST_NODE_TYPES.TSNonNullExpression,
+]);
 
-  // Concise arrow: `(props) => <X />`
-  if (body.type === AST_NODE_TYPES.JSXElement) {
+/**
+ * Strips every type-only wrapper (`as T`, `as const`, `satisfies T`, `!`) from
+ * an expression. An assertion removes no reassembly — `{ a, b } as const` is
+ * the very same destructure-then-reassemble as `{ a, b }` — so classifying the
+ * target without stripping first turns an assertion into an accidental
+ * suppression. The loop is what handles chains such as `{...} as unknown as T`,
+ * and `enforce-object-literal-as-const` appends `as const` to exactly this
+ * shape, so wrapped literals are the common case rather than the exotic one.
+ */
+function unwrapTransparent(node: TSESTree.Node): TSESTree.Node {
+  let current = node;
+  while (TRANSPARENT_WRAPPERS.has(current.type)) {
+    current = (
+      current as
+        | TSESTree.TSAsExpression
+        | TSESTree.TSSatisfiesExpression
+        | TSESTree.TSNonNullExpression
+    ).expression;
+  }
+  return current;
+}
+
+/**
+ * Classifies an already-unwrapped expression as a spread target. The fix is
+ * anchored on the node returned here — the JSX opening element or the object
+ * literal's own braces — so any wrapper stripped on the way in keeps its source
+ * text untouched.
+ */
+function classifyTarget(expression: TSESTree.Node): Target | null {
+  if (expression.type === AST_NODE_TYPES.JSXElement) {
     return {
       kind: 'jsx',
-      openingElement: body.openingElement,
-      jsxElement: body,
+      openingElement: expression.openingElement,
+      jsxElement: expression,
     };
   }
 
   // Concise arrow returning object literal: `({ x, y }) => ({ x, y, extra: 1 })`
   // The parser represents the parenthesized object as an ObjectExpression body.
-  if (body.type === AST_NODE_TYPES.ObjectExpression) {
-    return { kind: 'object', expression: body };
+  if (expression.type === AST_NODE_TYPES.ObjectExpression) {
+    return { kind: 'object', expression };
   }
 
+  return null;
+}
+
+function getSingleTarget(
+  fn: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
+): Target | null {
+  const body = fn.body;
+
+  // Concise arrow: `(props) => <X />`, `({ x, y }) => ({ x, y } as const)`.
   if (body.type !== AST_NODE_TYPES.BlockStatement) {
-    return null;
+    return classifyTarget(unwrapTransparent(body));
   }
 
   // Require exactly one statement in the block, which must be a return.
@@ -238,36 +283,7 @@ function getSingleTarget(
     return null;
   }
 
-  const arg = stmt.argument;
-
-  if (arg.type === AST_NODE_TYPES.JSXElement) {
-    return {
-      kind: 'jsx',
-      openingElement: arg.openingElement,
-      jsxElement: arg,
-    };
-  }
-
-  // Parenthesized JSX in arrow: `(props) => (<X />)` — arg may wrap with
-  // TSAsExpression or similar. We unwrap one level of TSAsExpression / TSSatisfiesExpression.
-  if (
-    (arg.type === AST_NODE_TYPES.TSAsExpression ||
-      arg.type === AST_NODE_TYPES.TSSatisfiesExpression) &&
-    arg.expression.type === AST_NODE_TYPES.JSXElement
-  ) {
-    const jsx = arg.expression as TSESTree.JSXElement;
-    return {
-      kind: 'jsx',
-      openingElement: jsx.openingElement,
-      jsxElement: jsx,
-    };
-  }
-
-  if (arg.type === AST_NODE_TYPES.ObjectExpression) {
-    return { kind: 'object', expression: arg };
-  }
-
-  return null;
+  return classifyTarget(unwrapTransparent(stmt.argument));
 }
 
 /**
