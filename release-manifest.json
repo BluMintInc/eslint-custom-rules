@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.20.78",
+    "date": "2026-08-02T08:45:25.049Z",
+    "rules": [
+      {
+        "name": "enforce-firestore-path-utils",
+        "changeType": "fix",
+        "issues": [
+          1611
+        ],
+        "summary": "report concatenated inline paths (closes #1611)"
+      },
+      {
+        "name": "enforce-realtimedb-path-utils",
+        "changeType": "fix",
+        "issues": [
+          1612
+        ],
+        "summary": "report concatenated inline paths (closes #1612)"
+      }
+    ]
+  },
+  {
     "version": "1.20.77",
     "date": "2026-08-02T08:02:01.009Z",
     "rules": [
