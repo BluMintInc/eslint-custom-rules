@@ -9,6 +9,7 @@ Returning a type assertion or relying on an explicit return type for an untyped 
 ## Rule Details
 
 - Flags `as` or angle-bracket assertions in return positions and arrow expression bodies.
+- Reports a chained assertion (`x as unknown as T`) once, on the outermost link, so the message names the type that actually reaches the caller instead of an intermediate `unknown`. The count is the same whether the value is returned from a block body or an arrow expression body.
 - Flags explicit return annotations when the returned expression is untyped (for example, an object literal or function call), because the annotation can mask missing or wrong fields.
 - Allows type predicates and `as const` only when explicitly configured.
 
@@ -25,6 +26,10 @@ Returning a type assertion or relying on an explicit return type for an untyped 
 ```ts
 function getSettings() {
   return { theme: 'dark' } as UserSettings;
+}
+
+function getTournamentRef() {
+  return docRef as unknown as DocumentReference<Tournament>; // one report, naming DocumentReference<Tournament>
 }
 
 const createUser = (): User => ({
