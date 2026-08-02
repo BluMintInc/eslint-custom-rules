@@ -52,6 +52,35 @@ export async function fetchData() {
 const LOCAL_TIMEOUT = 5000; // Not exported, so it is allowed
 ```
 
+## Interaction with `global-const-style`
+
+`global-const-style` renames a module-level `const` into `SCREAMING_SNAKE_CASE`, which is exactly the spelling this rule keys on. So a single `eslint --fix` can move a file from silent to reporting:
+
+```ts
+// file: config.dynamic.ts
+export const apiUrl = 'https://api.example.com';       // silent
+export const API_URL = 'https://api.example.com';      // after --fix: reported
+```
+
+The report is correct, not an artifact. The constant was misplaced before the rename too — the camelCase spelling merely hid it. Renaming it back is not the remedy and does not survive the next `--fix`; moving it out is, and it converges:
+
+```ts
+// file: config.ts
+export const API_URL = 'https://api.example.com';
+
+// file: config.dynamic.ts
+import { API_URL } from './config';
+```
+
+A re-export converges too, and costs no call-site churn since the exported name does not change:
+
+```ts
+// file: config.dynamic.ts
+export { apiUrl } from './config';
+```
+
+Both forms are silent and idempotent under the two rules together.
+
 ## When Not To Use It
 
 Disable this rule if your project does not reserve `.dynamic.ts(x)` files for runtime-only behavior or you intentionally colocate static configuration inside those files.

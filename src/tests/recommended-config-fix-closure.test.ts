@@ -67,6 +67,19 @@ const FILENAME_CANDIDATES = [
   'src/components/Widget.tsx',
 ];
 
+/**
+ * Tried in ADDITION to the first matching candidate above, not as part of that
+ * list. The candidate loop stops at the first filename that produces a fix, so
+ * a `.dynamic` entry appended to it would never be reached for any rule whose
+ * fixer already fires on `src/util/helper.ts` — the corpus would silently never
+ * visit a `.dynamic` file, and every rule gated on that suffix
+ * (`no-static-constants-in-dynamic-files` returns `{}` for any other filename)
+ * would be structurally unreachable. That blind spot is why #1599's
+ * `global-const-style -> no-static-constants-in-dynamic-files` pair reached a
+ * consumer without this guard going red.
+ */
+const DYNAMIC_FILENAME_CANDIDATE = 'src/config/settings.dynamic.ts';
+
 /** Path-segment matching needs a rooted path, not a relative one. */
 const ROOT = '/repo/';
 const anchor = (filePath: string) =>
@@ -301,6 +314,31 @@ function buildCorpus(): CorpusEntry[] {
         });
         break;
       }
+
+      // Always also fix under a `.dynamic` filename, whether or not a candidate
+      // above already matched, so the suffix-gated rules stay reachable.
+      if (!hinted && !jsxish) {
+        const filename = anchor(DYNAMIC_FILENAME_CANDIDATE);
+        try {
+          const result = linter.verifyAndFix(
+            block.code,
+            buildConfig(filename, rules),
+            { filename },
+          );
+          if (result.fixed && result.output !== block.code) {
+            corpus.push({
+              rule,
+              line: block.line,
+              filename,
+              options,
+              before: block.code,
+              after: result.output,
+            });
+          }
+        } catch {
+          // Rule crashes are a separate, already-guarded axis.
+        }
+      }
     }
   }
   return corpus;
@@ -390,6 +428,16 @@ export const FIX_INDUCED_BASELINE: Record<string, string> = {
     'collapsing the rest pattern yields module-scope bindings export-if-in-doubt demands be exported',
   'no-useless-usememo-primitives -> global-const-style':
     'unwrapping the useMemo leaves a camelCase module-scope const, which global-const-style requires be UPPER_SNAKE_CASE',
+
+  // --- Unlike every other entry here, this one is NOT an open question. The
+  // second rule's verdict is correct and its documented remedy converges: move
+  // the constant to a non-dynamic module and import (or re-export) it, which
+  // #1599 verified is silent AND idempotent under both rules. The pair is
+  // recorded because the fix does move a snippet from silent to reporting, not
+  // because anyone is deferring a decision. See the fixed-point test in
+  // src/tests/no-static-constants-in-dynamic-files.test.ts.
+  'prefer-union-from-const-array -> no-static-constants-in-dynamic-files':
+    'the emitted module-scope `export const X = [...] as const` is genuinely static configuration living in a .dynamic file; the rule correctly says to move it out, and that remedy is a stable fixed point (#1599)',
 
   // --- The fix introduces a construct that a second rule then demands MORE of,
   // and the demand is a rename or an extra argument no fixer can supply. Same
