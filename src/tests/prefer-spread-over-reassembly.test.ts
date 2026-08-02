@@ -207,6 +207,74 @@ const Bar = ({ a, b } = {}) => {
   return <Foo a={a} b={b} />;
 };
 `,
+
+    // Regression (#1610): stripping the type-only wrapper must not turn every
+    // wrapped literal into a report. A renamed forward is still a renamed
+    // forward behind `as const` — the wrapper changes nothing either way.
+    `
+const wrap = ({ items, loading }) => {
+  return { data: items, isLoading: loading } as const;
+};
+`,
+
+    // Regression (#1610): a genuinely narrowing projection stays valid. `c` is
+    // dropped, so spreading the parameter would smuggle it back into the result.
+    `
+const pick = ({ a, b, c }) => ({ a, b } as const);
+`,
+
+    // Regression (#1610): the same narrowing behind a block return.
+    `
+const pickBlock = ({ a, b, c }) => {
+  return { a, b } satisfies Pair;
+};
+`,
+
+    // Regression (#1610): a wrapper does not relax the single-statement rule —
+    // a field consumed by a side effect is still consumed.
+    `
+const logged = ({ a, b }) => {
+  console.log(a);
+  return { a, b } as const;
+};
+`,
+
+    // Regression (#1610): a wrapper around something that is neither a JSX
+    // element nor an object literal remains unclassifiable.
+    `
+const computed = ({ a, b }) => compute(a, b) as const;
+`,
+
+    // Regression (#1610): a rest element still opts out, wrapper or not.
+    `
+const withRest = ({ a, b, ...rest }) => ({ a, b, ...rest } as const);
+`,
+
+    // Regression (#1610): a conditional spread consuming a destructured field
+    // is still unsafe behind a wrapper.
+    `
+const conditional = ({ a, b }) => ({ ...(a && { a }), b } as const);
+`,
+
+    // Regression (#1610): one field is below minFields even when wrapped.
+    `
+const single = ({ a }) => ({ a } as const);
+`,
+
+    // Regression (#1610): a lone expression statement is not a return, so there
+    // is no target to unwrap however the literal is wrapped.
+    `
+const send = ({ a, b }) => {
+  post({ a, b } as const);
+};
+`,
+
+    // Regression (#1610): the wrapper's own type references count as uses of
+    // the binding. Replacing the parameter with `props` would strand the
+    // `typeof id` query, so the conservative decline is the correct answer.
+    `
+const keyed = ({ data, id }) => ({ data, id } as Record<typeof id, string>);
+`,
   ],
 
   invalid: [
@@ -930,6 +998,285 @@ const transform = (props) => {
     // eslint-disable-next-line no-console
     label: console.log('x')
   };
+};
+`,
+    },
+
+    // Regression (#1610): a type-only wrapper on the reassembled literal has no
+    // runtime effect and removes no reassembly, so it must not silence the rule.
+    // The fixer edits the literal in place and leaves the wrapper verbatim.
+    {
+      code: `const g = ({ a, b }) => ({ a, b } as const);`,
+      output: `const g = (props) => ({ ...props } as const);`,
+      errors: [{ messageId: 'preferSpread' }],
+    },
+    {
+      code: `const h = (items) => items.map(({ id, name }) => { return { id, name } as const; });`,
+      output: `const h = (items) => items.map((props) => { return { ...props } as const; });`,
+      errors: [{ messageId: 'preferSpread' }],
+    },
+    {
+      code: `const s = ({ a, b }) => { return { a, b } satisfies Pair; };`,
+      output: `const s = (props) => { return { ...props } satisfies Pair; };`,
+      errors: [{ messageId: 'preferSpread' }],
+    },
+
+    // Regression (#1610): block return, one row per wrapper form.
+    {
+      code: `
+const t = ({ a, b }) => {
+  return { a, b } as const;
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const t = (props) => {
+  return { ...props } as const;
+};
+`,
+    },
+    {
+      code: `
+const t = ({ a, b }) => {
+  return { a, b } as Pair;
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const t = (props) => {
+  return { ...props } as Pair;
+};
+`,
+    },
+    {
+      code: `
+const t = ({ a, b }) => {
+  return ({ a, b })!;
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const t = (props) => {
+  return ({ ...props })!;
+};
+`,
+    },
+    // A chain unwinds fully: `as unknown as T` is two wrappers deep.
+    {
+      code: `
+const t = ({ a, b }) => {
+  return { a, b } as unknown as Pair;
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const t = (props) => {
+  return { ...props } as unknown as Pair;
+};
+`,
+    },
+    {
+      code: `
+const t = ({ a, b }) => {
+  return { a, b } satisfies Pair as Pair;
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const t = (props) => {
+  return { ...props } satisfies Pair as Pair;
+};
+`,
+    },
+
+    // Regression (#1610): concise arrow, one row per wrapper form. Before the
+    // fix these reached neither branch of the target classifier, because the
+    // body was not a BlockStatement/ObjectExpression/JSXElement.
+    {
+      code: `const c = ({ x, y }) => ({ x, y } satisfies Point);`,
+      output: `const c = (props) => ({ ...props } satisfies Point);`,
+      errors: [{ messageId: 'preferSpread' }],
+    },
+    {
+      code: `const c = ({ x, y }) => ({ x, y } as Point);`,
+      output: `const c = (props) => ({ ...props } as Point);`,
+      errors: [{ messageId: 'preferSpread' }],
+    },
+    {
+      code: `const c = ({ x, y }) => ({ x, y })!;`,
+      output: `const c = (props) => ({ ...props })!;`,
+      errors: [{ messageId: 'preferSpread' }],
+    },
+    {
+      code: `const c = ({ x, y }) => ({ x, y } as unknown as Point);`,
+      output: `const c = (props) => ({ ...props } as unknown as Point);`,
+      errors: [{ messageId: 'preferSpread' }],
+    },
+
+    // Regression (#1610): a retained property survives the collapse behind a
+    // wrapper exactly as it does without one.
+    {
+      code: `const c = ({ x, y }) => ({ x, y, label: 'Origin' } as const);`,
+      output: `const c = (props) => ({ ...props, label: 'Origin' } as const);`,
+      errors: [{ messageId: 'preferSpread' }],
+    },
+
+    // Regression (#1610): the parameter's type annotation and the return
+    // wrapper coexist; both survive the fix untouched.
+    {
+      code: `
+const transform = ({ a, b, c }: TransformInput) => {
+  return { a, b, c } as const;
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const transform = (props: TransformInput) => {
+  return { ...props } as const;
+};
+`,
+    },
+
+    // Regression (#1610): a directive on a retained property still survives when
+    // the literal is wrapped.
+    {
+      code: `
+const transform = ({ a, b }) => {
+  return {
+    a,
+    b,
+    // eslint-disable-next-line no-console
+    label: console.log('x'),
+  } as const;
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const transform = (props) => {
+  return {
+    ...props,
+    // eslint-disable-next-line no-console
+    label: console.log('x'),
+  } as const;
+};
+`,
+    },
+
+    // Regression (#1610): the live agora shape (useGroupSubgroups.tsx) — a
+    // wrapped reassembly inside a `.map` callback.
+    {
+      code: `
+const toPreviews = (subgroups) => {
+  return subgroups.map(({ username, id }) => {
+    return {
+      username,
+      id,
+    } as const;
+  });
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const toPreviews = (subgroups) => {
+  return subgroups.map((props) => {
+    return { ...props } as const;
+  });
+};
+`,
+    },
+
+    // Regression (#1610): a FunctionExpression body is unwrapped too.
+    {
+      code: `
+const make = memo(function({ a, b }) {
+  return { a, b } as const;
+});
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const make = memo(function(props) {
+  return { ...props } as const;
+});
+`,
+    },
+
+    // Regression (#1610): the minFields option still gates the wrapped shape.
+    {
+      code: `const c = ({ a, b, d }) => ({ a, b, d } as const);`,
+      options: [{ minFields: 3 }],
+      output: `const c = (props) => ({ ...props } as const);`,
+      errors: [{ messageId: 'preferSpread' }],
+    },
+
+    // Control (#1610): the JSX block-return path already unwrapped one level
+    // before the fix. Pinned so the previously-working path cannot regress.
+    {
+      code: `
+const W = ({ a, b }) => {
+  return <X a={a} b={b} /> as const;
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const W = (props) => {
+  return <X {...props} /> as const;
+};
+`,
+    },
+
+    // Regression (#1610): the concise-arrow JSX counterpart, which the
+    // block-only unwrap never reached.
+    {
+      code: `const W = ({ a, b }) => (<X a={a} b={b} /> as const);`,
+      output: `const W = (props) => (<X {...props} /> as const);`,
+      errors: [{ messageId: 'preferSpread' }],
+    },
+    {
+      code: `const W = ({ a, b }) => (<X a={a} b={b} /> satisfies Element);`,
+      output: `const W = (props) => (<X {...props} /> satisfies Element);`,
+      errors: [{ messageId: 'preferSpread' }],
+    },
+
+    // Regression (#1610): a JSX return behind a chain of wrappers.
+    {
+      code: `
+const W = ({ a, b }) => {
+  return <X a={a} b={b} /> as unknown as JSX.Element;
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const W = (props) => {
+  return <X {...props} /> as unknown as JSX.Element;
+};
+`,
+    },
+
+    // Regression (#1610): a retained JSX attribute keeps its position and its
+    // comment behind a wrapper.
+    {
+      code: `
+const W = ({ hits, isLoading }) => {
+  return (
+    <Child
+      hits={hits}
+      isLoading={isLoading}
+      // keep me
+      extra="x"
+    />
+  ) as const;
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const W = (props) => {
+  return (
+    <Child
+      {...props}
+      // keep me
+      extra="x"
+    />
+  ) as const;
 };
 `,
     },
