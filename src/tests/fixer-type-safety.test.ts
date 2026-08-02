@@ -31,6 +31,14 @@ const TESTS_DIR = __dirname;
  * corpus is made of test snippets, which are fragments full of identifiers no
  * program defines. What must hold is that the fixed text carries no diagnostic
  * the input did not already carry.
+ *
+ * A SUGGESTION emits code into the same file under the same compiler, so it can
+ * break the build in exactly the same way; `meta.fixable` alone made every
+ * suggestion-only rule invisible here (#1601). The one difference is how the
+ * text under test is produced: `--fix` never applies a suggestion, so each is
+ * applied ALONE to the untouched snippet rather than run through
+ * `verifyAndFix`. Composing two suggestions from one report would compile a
+ * file no consumer can produce.
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -623,6 +631,42 @@ const fixWith = (ruleId: string, snippet: string) => {
   return null;
 };
 
+const applyEdit = (
+  text: string,
+  fix: { range: readonly number[]; text: string },
+) => text.slice(0, fix.range[0]) + fix.text + text.slice(fix.range[1]);
+
+/**
+ * One output per emitted suggestion, each applied alone to `snippet`.
+ *
+ * Deliberately NOT `verifyAndFix`: that loop never sees a suggestion, and
+ * stacking two of them — or re-running the rule on a suggestion's output —
+ * would compile a state no editor can produce, so a diagnostic found there
+ * would be unactionable.
+ */
+const suggestWith = (ruleId: string, snippet: string) => {
+  for (const filename of FILENAMES) {
+    let messages;
+    try {
+      messages = linter.verify(snippet, configFor(ruleId), { filename });
+    } catch {
+      continue;
+    }
+    if (messages.some((message) => message.fatal)) continue;
+    const outputs: string[] = [];
+    for (const message of messages) {
+      if (message.ruleId !== ruleId) continue;
+      for (const suggestion of message.suggestions || []) {
+        if (!suggestion.fix) continue;
+        const output = applyEdit(snippet, suggestion.fix);
+        if (output !== snippet) outputs.push(output);
+      }
+    }
+    if (outputs.length) return { outputs, filename };
+  }
+  return null;
+};
+
 type Pair = {
   rule: string;
   name: string;
@@ -643,6 +687,8 @@ const CONTROLS: Array<{
   name: string;
   code: string;
   expectFlagged: boolean;
+  /** Which transform channel the control's text comes out of. */
+  kind?: 'fix' | 'suggestion';
   rule: Record<string, any>;
 }> = [
   {
@@ -824,6 +870,73 @@ const CONTROLS: Array<{
       },
     },
   },
+  {
+    name: 'control-suggestion-type-break',
+    /**
+     * The suggestion channel needs its own planted defect: `verifyAndFix`
+     * returns this snippet untouched, so a harness that only knows about fixes
+     * builds an empty suggestion corpus and every per-rule assertion below
+     * degrades to a vacuous pass.
+     */
+    code: 'export const label: string = "hello";\n',
+    expectFlagged: true,
+    kind: 'suggestion',
+    rule: {
+      meta: {
+        type: 'suggestion',
+        hasSuggestions: true,
+        schema: [],
+        messages: { m: 'x', s: 'retype it' },
+      },
+      create(context: any) {
+        return {
+          Literal(node: any) {
+            if (node.value !== 'hello') return;
+            context.report({
+              node,
+              messageId: 'm',
+              suggest: [
+                { messageId: 's', fix: (f: any) => f.replaceText(node, '42') },
+              ],
+            });
+          },
+        };
+      },
+    },
+  },
+  {
+    name: 'control-suggestion-type-safe',
+    // Pins the polarity: a well-typed suggestion must NOT be flagged, or the
+    // suggestion assertions below would fire on everything and mean nothing.
+    code: 'export const label: string = "hello";\n',
+    expectFlagged: false,
+    kind: 'suggestion',
+    rule: {
+      meta: {
+        type: 'suggestion',
+        hasSuggestions: true,
+        schema: [],
+        messages: { m: 'x', s: 'reword it' },
+      },
+      create(context: any) {
+        return {
+          Literal(node: any) {
+            if (node.value !== 'hello') return;
+            context.report({
+              node,
+              messageId: 'm',
+              suggest: [
+                {
+                  messageId: 's',
+                  fix: (f: any) => f.replaceText(node, '"goodbye"'),
+                },
+              ],
+            });
+          },
+        };
+      },
+    },
+  },
 ];
 
 for (const control of CONTROLS) {
@@ -861,6 +974,11 @@ const DECLARES_INTO_SHARED_SCOPE = /\bdeclare\s+(?:global\b|module\s+['"])/;
 
 const fixableRules = Object.entries(plugin.rules)
   .filter(([, rule]) => rule && rule.meta && rule.meta.fixable)
+  .map(([name]) => name)
+  .sort();
+
+const suggestionRules = Object.entries(plugin.rules)
+  .filter(([, rule]) => rule && rule.meta && rule.meta.hasSuggestions)
   .map(([name]) => name)
   .sort();
 
@@ -969,20 +1087,73 @@ for (const rule of fixableRules) {
   }
 }
 
+/**
+ * The suggestion corpus, built from the same harvest under the same cap. Each
+ * emitted suggestion becomes its own pair against the untouched snippet, so a
+ * rule offering three suggestions on one report contributes three independent
+ * compilations rather than one impossible composite.
+ */
+const suggestionPairs: Pair[] = [];
+const suggestionExplanation = new Map<string, string>();
+
+for (const rule of suggestionRules) {
+  const testFile = path.join(TESTS_DIR, `${rule}.test.ts`);
+  if (!fs.existsSync(testFile)) {
+    suggestionExplanation.set(
+      rule,
+      `no ${rule}.test.ts to harvest triggers from`,
+    );
+    continue;
+  }
+  const harvest = harvestSnippets(testFile);
+  const snippets = harvest.snippets.filter(
+    (snippet) => !DECLARES_INTO_SHARED_SCOPE.test(snippet),
+  );
+  let emitted = 0;
+  for (const snippet of snippets) {
+    if (emitted >= MAX_PAIRS_PER_RULE) break;
+    const result = suggestWith(PREFIX + rule, snippet);
+    if (!result) continue;
+    for (const output of result.outputs) {
+      if (emitted >= MAX_PAIRS_PER_RULE) break;
+      suggestionPairs.push({
+        rule,
+        name: `${rule}__s${emitted}.${
+          result.filename.endsWith('.tsx') ? 'tsx' : 'ts'
+        }`,
+        before: snippet,
+        after: output,
+      });
+      emitted++;
+    }
+  }
+  if (!emitted) {
+    suggestionExplanation.set(
+      rule,
+      `${snippets.length} snippets scanned; the rule offered no suggestion ` +
+        `under any probed filename`,
+    );
+  }
+}
+
 const controlPairs: Pair[] = [];
 for (const control of CONTROLS) {
-  const result = fixWith(`control/${control.name}`, control.code);
-  // A control whose fixer never fires would make its assertion vacuous, so it
-  // is carried through as an empty pair and fails loudly below.
+  const id = `control/${control.name}`;
+  const output =
+    control.kind === 'suggestion'
+      ? (suggestWith(id, control.code)?.outputs || [])[0]
+      : fixWith(id, control.code)?.output;
+  // A control whose transform never fires would make its assertion vacuous, so
+  // it is carried through as an empty pair and fails loudly below.
   controlPairs.push({
     rule: control.name,
     name: `${control.name}.ts`,
     before: control.code,
-    after: result ? result.output : control.code,
+    after: output ?? control.code,
   });
 }
 
-const allPairs = [...pairs, ...controlPairs];
+const allPairs = [...pairs, ...suggestionPairs, ...controlPairs];
 const beforeDiagnostics = compileCorpus(
   allPairs.map((p) => ({ name: p.name, text: p.before })),
 );
@@ -1048,6 +1219,38 @@ for (const pair of assertedPairs) {
   if (added.length) findingsByRule.get(pair.rule)!.push({ ...pair, added });
 }
 
+const assertedSuggestionPairs = suggestionPairs.filter(baselineCompiles);
+const assertedSuggestionRules = new Set(
+  assertedSuggestionPairs.map((pair) => pair.rule),
+);
+for (const rule of suggestionRules) {
+  if (assertedSuggestionRules.has(rule) || suggestionExplanation.has(rule)) {
+    continue;
+  }
+  const rulePairs = suggestionPairs.filter((pair) => pair.rule === rule);
+  suggestionExplanation.set(
+    rule,
+    `all ${rulePairs.length} suggestion pairs start from an input that does ` +
+      `not type-check, e.g. ${
+        rulePairs
+          .flatMap((pair) => beforeDiagnostics.get(pair.name) || [])
+          .find((diagnostic) => !missingNameOf(diagnostic)) || 'unknown'
+      }`,
+  );
+}
+
+const suggestionFindingsByRule = new Map<
+  string,
+  Array<Pair & { added: string[] }>
+>();
+for (const rule of suggestionRules) suggestionFindingsByRule.set(rule, []);
+for (const pair of assertedSuggestionPairs) {
+  const added = introducedFor(pair);
+  if (added.length) {
+    suggestionFindingsByRule.get(pair.rule)!.push({ ...pair, added });
+  }
+}
+
 const controlOutcomes = controlPairs.map((pair) => ({
   name: pair.rule,
   fired: pair.after !== pair.before,
@@ -1055,12 +1258,12 @@ const controlOutcomes = controlPairs.map((pair) => ({
   baselineCompiles: baselineCompiles(pair),
 }));
 
-const report = (finding: Pair & { added: string[] }) =>
+const report = (finding: Pair & { added: string[] }, channel = 'after --fix') =>
   [
     `introduced: ${finding.added.join(' | ')}`,
     '--- input (compiles) ---',
     finding.before,
-    '--- after --fix (does not) ---',
+    `--- ${channel} (does not) ---`,
     finding.after,
   ].join('\n');
 
@@ -1106,6 +1309,10 @@ console.log(
     } pair(s) held out for an input that does not type-check, in ${
       heldOutByRule.length
     } covered rule(s) [held/total]: ${heldOutByRule.join(', ') || 'none'}`,
+    `  suggestion channel: asserted ${assertedSuggestionPairs.length} of ${suggestionPairs.length} pairs across ${assertedSuggestionRules.size} of ${suggestionRules.length} suggestion-emitting rules`,
+    ...suggestionRules
+      .filter((rule) => !assertedSuggestionRules.has(rule))
+      .map((rule) => `    ${rule}: ${suggestionExplanation.get(rule)}`),
   ].join('\n'),
 );
 
@@ -1151,8 +1358,53 @@ describe('an autofix must not turn compiling code into non-compiling code', () =
   it.each(fixableRules)('%s', (rule) => {
     const findings = findingsByRule.get(rule)!;
     // A finding means the fix must decline instead; see #1521, #1522, #1523.
-    expect(findings.length === 0 ? '' : findings.map(report).join('\n\n')).toBe(
-      '',
+    expect(
+      findings.length === 0 ? '' : findings.map((f) => report(f)).join('\n\n'),
+    ).toBe('');
+  });
+});
+
+describe('a suggestion must not turn compiling code into non-compiling code', () => {
+  /**
+   * Non-vacuity, per rule. A suggestion the harness never applies compiles
+   * nothing, and a corpus total would let one prolific rule hold the floor up
+   * while another stopped emitting entirely. `control-suggestion-type-break`
+   * above proves the same pipeline flags a planted defect on this channel.
+   */
+  it('compiles at least one suggestion from every suggestion-emitting rule', () => {
+    expect(suggestionRules.length).toBeGreaterThanOrEqual(7);
+    expect(
+      Object.fromEntries(
+        suggestionRules.map((rule) => [
+          rule,
+          suggestionPairs.some((pair) => pair.rule === rule),
+        ]),
+      ),
+    ).toEqual(Object.fromEntries(suggestionRules.map((rule) => [rule, true])));
+    expect(assertedSuggestionPairs.length).toBeGreaterThanOrEqual(120);
+  });
+
+  /**
+   * A rule with no ASSERTED pair is not a failure — every one of its inputs may
+   * be ill-typed to begin with — but it must never be a silent bucket, for the
+   * same reason #1527 gave on the fix channel.
+   */
+  it('accounts for every suggestion-emitting rule, unasserted ones by reason', () => {
+    const unasserted = suggestionRules.filter(
+      (rule) => !assertedSuggestionRules.has(rule),
     );
+    expect(
+      unasserted.filter((rule) => !suggestionExplanation.get(rule)),
+    ).toEqual([]);
+  });
+
+  it.each(suggestionRules)('%s', (rule) => {
+    const findings = suggestionFindingsByRule.get(rule)!;
+    // A finding means the suggestion must decline instead; see #1521.
+    expect(
+      findings.length === 0
+        ? ''
+        : findings.map((f) => report(f, 'after the suggestion')).join('\n\n'),
+    ).toBe('');
   });
 });

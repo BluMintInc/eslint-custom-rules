@@ -31,6 +31,16 @@ const TESTS_DIR = __dirname;
  * unfixable violations alongside fixable ones leaves messages behind with no
  * `fix`, and those are not failures. Output that no longer parses is also a
  * failure — a fix may not corrupt the file it edits.
+ *
+ * A SUGGESTION is the same transform behind a human keystroke, and `meta
+ * .fixable` alone made every suggestion-only rule invisible here (#1601). It is
+ * probed on the same corpus but under a DIFFERENT definition of convergence,
+ * because `--fix` never applies a suggestion: each suggestion is applied ALONE
+ * to the untouched input, never composed with a sibling and never iterated to a
+ * fixed point, since neither is a state a consumer can reach. What must hold is
+ * one step of progress — the rule must not still report that same messageId at
+ * the same count or higher on the output, which is what a suggestion that fails
+ * to clear its own trigger looks like from the editor.
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -215,7 +225,11 @@ const configFor = (rule: string, options?: any[]): Linter.Config =>
   } as Linter.Config);
 
 type Finding = {
-  kind: 'non-convergent' | 'fix-breaks-parse';
+  kind:
+    | 'non-convergent'
+    | 'fix-breaks-parse'
+    | 'suggestion-non-convergent'
+    | 'suggestion-breaks-parse';
   detail: string;
   code: string;
   options?: any[];
@@ -282,6 +296,104 @@ const checkCase = (
   return null;
 };
 
+const applyEdit = (
+  text: string,
+  fix: { range: readonly number[]; text: string },
+) => text.slice(0, fix.range[0]) + fix.text + text.slice(fix.range[1]);
+
+/** A rule reporting without a messageId still needs a stable counting key. */
+const keyOf = (message: Linter.LintMessage) =>
+  message.messageId || message.message;
+
+/**
+ * Convergence for a suggestion, which the fix loop never touches.
+ *
+ * Each suggestion is applied on its own to the ORIGINAL source. Composing two
+ * suggestions from one report, or feeding a suggestion's output back through
+ * the rule, would judge it against a state no editor can produce. One step of
+ * progress is the whole contract: after accepting the suggestion, the rule must
+ * report that messageId strictly fewer times than before. Equal or higher means
+ * the suggestion did not clear the trigger it was offered for, and the human
+ * who accepted it is looking at the same squiggle.
+ */
+const checkSuggestions = (
+  rule: string,
+  testCase: HarvestedCase,
+  filename: string,
+): { applied: number; findings: Finding[] } => {
+  const id = PREFIX + rule;
+  const config = configFor(rule, testCase.options);
+  let before: Linter.LintMessage[];
+  try {
+    before = linter.verify(testCase.code, config, { filename });
+  } catch {
+    return { applied: 0, findings: [] };
+  }
+  // Input that does not parse reports fatally and nothing else.
+  if (before.some((m) => m.fatal)) return { applied: 0, findings: [] };
+
+  const mine = before.filter((m) => m.ruleId === id);
+  const beforeCounts = new Map<string, number>();
+  for (const m of mine) {
+    beforeCounts.set(keyOf(m), (beforeCounts.get(keyOf(m)) || 0) + 1);
+  }
+
+  const findings: Finding[] = [];
+  let applied = 0;
+  for (const message of mine) {
+    for (const suggestion of message.suggestions || []) {
+      if (!suggestion.fix) continue;
+      const output = applyEdit(testCase.code, suggestion.fix);
+      if (output === testCase.code) continue;
+      applied++;
+
+      let after: Linter.LintMessage[];
+      try {
+        after = linter.verify(output, config, { filename });
+      } catch (err) {
+        findings.push({
+          kind: 'suggestion-breaks-parse',
+          detail: `linting the suggested output threw: ${
+            (err as Error).message
+          }`,
+          code: testCase.code,
+          options: testCase.options,
+          output,
+        });
+        continue;
+      }
+
+      const fatal = after.find((m) => m.fatal);
+      if (fatal) {
+        findings.push({
+          kind: 'suggestion-breaks-parse',
+          detail: `"${suggestion.desc}" produced unparseable output: ${fatal.message}`,
+          code: testCase.code,
+          options: testCase.options,
+          output,
+        });
+        continue;
+      }
+
+      const key = keyOf(message);
+      const wasReported = beforeCounts.get(key) || 0;
+      const stillReported = after.filter(
+        (m) => m.ruleId === id && keyOf(m) === key,
+      ).length;
+      if (stillReported >= wasReported) {
+        findings.push({
+          kind: 'suggestion-non-convergent',
+          detail: `"${suggestion.desc}" left ${key} reported ${stillReported} time(s), was ${wasReported}`,
+          code: testCase.code,
+          options: testCase.options,
+          output,
+        });
+      }
+    }
+  }
+  return { applied, findings };
+};
+
 /**
  * A rule that gates on file location needs a filename it accepts; cases that
  * carry their own use it instead.
@@ -294,6 +406,11 @@ const FILENAMES = [
 
 const fixableRules = Object.entries(plugin.rules)
   .filter(([, rule]) => rule && rule.meta && rule.meta.fixable)
+  .map(([name]) => name)
+  .sort();
+
+const suggestionRules = Object.entries(plugin.rules)
+  .filter(([, rule]) => rule && rule.meta && rule.meta.hasSuggestions)
   .map(([name]) => name)
   .sort();
 
@@ -319,6 +436,51 @@ for (const rule of fixableRules) {
 
 const rulesProbed = [...results.values()].filter((r) => r.probed > 0).length;
 
+/**
+ * Kept in its own map rather than merged into `results`: a rule can declare
+ * both, and folding its suggestion findings into its fixer's bucket would let
+ * one dimension's silence read as the other's health.
+ */
+const suggestionResults = new Map<
+  string,
+  { applied: number; findings: Finding[] }
+>();
+
+const probeSuggestions = (rule: string) => {
+  const cases = harvestCases(path.join(TESTS_DIR, `${rule}.test.ts`));
+  const findings: Finding[] = [];
+  let applied = 0;
+  for (const testCase of cases) {
+    for (const filename of testCase.filename
+      ? [testCase.filename]
+      : FILENAMES) {
+      const result = checkSuggestions(rule, testCase, filename);
+      applied += result.applied;
+      findings.push(...result.findings);
+    }
+  }
+  return { applied, findings };
+};
+
+for (const rule of suggestionRules) {
+  suggestionResults.set(rule, probeSuggestions(rule));
+}
+
+const totalSuggestionsApplied = [...suggestionResults.values()].reduce(
+  (total, entry) => total + entry.applied,
+  0,
+);
+
+const reportOf = (findings: Finding[]) =>
+  findings
+    .map(
+      (f) =>
+        `[${f.kind}] ${f.detail}\noptions: ${JSON.stringify(
+          f.options,
+        )}\n--- input ---\n${f.code}\n--- after ---\n${f.output}`,
+    )
+    .join('\n\n');
+
 describe('fixers must converge under the multi-pass fix loop', () => {
   /**
    * Coverage floor. The assertions below pass trivially if harvesting breaks,
@@ -332,15 +494,161 @@ describe('fixers must converge under the multi-pass fix loop', () => {
 
   it.each(fixableRules)('%s', (rule) => {
     const { findings } = results.get(rule)!;
-    const report = findings
-      .map(
-        (f) =>
-          `[${f.kind}] ${f.detail}\noptions: ${JSON.stringify(
-            f.options,
-          )}\n--- input ---\n${f.code}\n--- after --fix ---\n${f.output}`,
-      )
-      .join('\n\n');
     // A finding means the fix must decline instead; see #1461.
-    expect(findings.length === 0 ? '' : report).toBe('');
+    expect(findings.length === 0 ? '' : reportOf(findings)).toBe('');
+  });
+});
+
+/**
+ * Planted suggestion rules, run through the same `checkSuggestions` the real
+ * rules go through. A zero over the real rules means nothing unless a
+ * known-broken suggestion is caught by the same code path, and the convergent
+ * control pins the polarity so a future loosening cannot make the check inert.
+ */
+const CONTROLS: Array<{
+  name: string;
+  code: string;
+  expectFindings: Finding['kind'][];
+  rule: Record<string, any>;
+}> = [
+  {
+    name: 'control-suggestion-nonconvergent',
+    // Edits the initializer but leaves the trigger — the declarator's name —
+    // untouched, so the rule reports the same messageId on its own output.
+    code: 'const bad = 1;\n',
+    expectFindings: ['suggestion-non-convergent'],
+    rule: {
+      meta: {
+        type: 'suggestion',
+        hasSuggestions: true,
+        schema: [],
+        messages: { m: 'x', s: 'bump the initializer' },
+      },
+      create(context: any) {
+        return {
+          VariableDeclarator(node: any) {
+            if (node.id.name !== 'bad') return;
+            context.report({
+              node,
+              messageId: 'm',
+              suggest: [
+                {
+                  messageId: 's',
+                  fix: (f: any) => f.replaceText(node.init, '99'),
+                },
+              ],
+            });
+          },
+        };
+      },
+    },
+  },
+  {
+    name: 'control-suggestion-breaks-parse',
+    code: 'const bad = 1;\n',
+    expectFindings: ['suggestion-breaks-parse'],
+    rule: {
+      meta: {
+        type: 'suggestion',
+        hasSuggestions: true,
+        schema: [],
+        messages: { m: 'x', s: 'corrupt the initializer' },
+      },
+      create(context: any) {
+        return {
+          VariableDeclarator(node: any) {
+            if (node.id.name !== 'bad') return;
+            context.report({
+              node,
+              messageId: 'm',
+              suggest: [
+                {
+                  messageId: 's',
+                  fix: (f: any) => f.replaceText(node.init, '1 +'),
+                },
+              ],
+            });
+          },
+        };
+      },
+    },
+  },
+  {
+    name: 'control-suggestion-convergent',
+    // Renames the trigger, so the report is gone from the output. Must produce
+    // NO finding, or the check would flag every suggestion in the plugin.
+    code: 'const bad = 1;\n',
+    expectFindings: [],
+    rule: {
+      meta: {
+        type: 'suggestion',
+        hasSuggestions: true,
+        schema: [],
+        messages: { m: 'x', s: 'rename the binding' },
+      },
+      create(context: any) {
+        return {
+          VariableDeclarator(node: any) {
+            if (node.id.name !== 'bad') return;
+            context.report({
+              node,
+              messageId: 'm',
+              suggest: [
+                {
+                  messageId: 's',
+                  fix: (f: any) => f.replaceText(node.id, 'good'),
+                },
+              ],
+            });
+          },
+        };
+      },
+    },
+  },
+];
+
+for (const control of CONTROLS) {
+  linter.defineRule(PREFIX + control.name, control.rule as never);
+}
+
+describe('suggestions must clear the trigger they are offered for', () => {
+  it.each(CONTROLS.map((c) => [c.name, c.expectFindings] as const))(
+    'control %s yields %s',
+    (name, expectFindings) => {
+      const control = CONTROLS.find((c) => c.name === name)!;
+      const { applied, findings } = checkSuggestions(
+        name,
+        { code: control.code },
+        '/repo/src/util/helper.ts',
+      );
+      // A control whose suggestion never reached the harness would prove
+      // nothing about either polarity.
+      expect(applied).toBe(1);
+      expect(findings.map((f) => f.kind)).toEqual(expectFindings);
+    },
+  );
+
+  /**
+   * Non-vacuity floor, per rule. A suggestion the harness never applies asserts
+   * nothing, and a total would let one prolific rule hide another that stopped
+   * emitting entirely.
+   */
+  it('applies at least one suggestion from every suggestion-emitting rule', () => {
+    expect(suggestionRules.length).toBeGreaterThanOrEqual(7);
+    expect(
+      Object.fromEntries(
+        suggestionRules.map((rule) => [
+          rule,
+          suggestionResults.get(rule)!.applied > 0,
+        ]),
+      ),
+    ).toEqual(Object.fromEntries(suggestionRules.map((rule) => [rule, true])));
+    expect(totalSuggestionsApplied).toBeGreaterThanOrEqual(500);
+  });
+
+  it.each(suggestionRules)('%s', (rule) => {
+    const { findings } = suggestionResults.get(rule)!;
+    // A finding means the suggestion must clear its own trigger, or decline.
+    expect(findings.length === 0 ? '' : reportOf(findings)).toBe('');
   });
 });
