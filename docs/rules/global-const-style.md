@@ -164,6 +164,17 @@ const fooBar = 42 as const;           const FOO_BAR = 42 as const;
 const OBJ = { fooBar } as const;      const OBJ = { fooBar: FOO_BAR } as const;
 ```
 
+The suggested name splits the identifier on case **boundaries**, so an acronym
+run stays one word and the conversion is idempotent — re-running `--fix` over an
+already-renamed constant never adds another separator:
+
+```ts
+// Before                             // After --fix
+const HTTPServer = 8080 as const;     const HTTP_SERVER = 8080 as const;
+const parseHTMLString = '' as const;  const PARSE_HTML_STRING = '' as const;
+const userID = 1 as const;            const USER_ID = 1 as const;
+```
+
 When a safe rename cannot be guaranteed, the violation is still reported but the
 fix is withheld (report-only) rather than risk changing behavior. That happens
 when the new name would collide with or shadow an existing binding, or when the

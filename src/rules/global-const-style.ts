@@ -4,6 +4,28 @@ import { createRule } from '../utils/createRule';
 const isUpperSnakeCase = (str: string): boolean =>
   /^[A-Z][A-Z0-9_]*$/.test(str);
 
+/**
+ * Converts an identifier to UPPER_SNAKE_CASE by splitting on case *boundaries*.
+ *
+ * Idempotence is a correctness requirement, not a nicety: `--fix` re-lints its
+ * own output up to ten times per file, and a sibling rule can rewrite the same
+ * identifier in between (`enforce-react-type-naming` lowercases it), so a
+ * converter that re-separates what it already separated compounds every pass
+ * and writes an ever-growing, corrupted identifier into source (Issue #1605).
+ * Splitting on boundaries also keeps acronym runs intact, so `HTTPServer` reads
+ * as `HTTP_SERVER` rather than `H_T_T_P_SERVER`.
+ *
+ * The leading underscore is dropped because `_PRIVATE_THING` fails
+ * `isUpperSnakeCase`, which would leave the rule demanding a rename it can
+ * never satisfy.
+ */
+const toUpperSnakeCase = (name: string): string =>
+  name
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+    .toUpperCase()
+    .replace(/^_/, '');
+
 // Jest mock handles produced by an `as` cast to a `jest.Mock*` type are
 // stateful test doubles that are reassigned/mutated through
 // `.mockImplementation()`, `.mockReturnValue()`, etc. They are not immutable
@@ -410,10 +432,7 @@ export default createRule<[], MessageIds>({
           // the `mockedX` idiom is intentional. The exemption gates only this
           // rename check — the `as const` logic above is untouched.
           if (!isUpperSnakeCase(name) && !isJestMockCast(init)) {
-            const newName = name
-              .replace(/([A-Z])/g, '_$1')
-              .toUpperCase()
-              .replace(/^_/, '');
+            const newName = toUpperSnakeCase(name);
 
             const idNode = declaration.id;
 
