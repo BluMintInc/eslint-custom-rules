@@ -1,5 +1,7 @@
+import { Linter, Rule } from 'eslint';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { noExplicitReturnType } from '../rules/no-explicit-return-type';
+import { preferTypeOverInterface } from '../rules/prefer-type-over-interface';
 
 ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
   valid: [
@@ -68,6 +70,64 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
         interface Logger {
           'log'(message: string): void;
           'log'(message: number): void;
+        }
+      `,
+      options: [{ allowInterfaceMethodSignatures: false }],
+    },
+
+    // A type literal declares exactly the same members as an interface body —
+    // `prefer-type-over-interface` rewrites one into the other — so overload
+    // detection must read both containers (issue #1598).
+    {
+      code: `
+        type Logger = {
+          'log'(message: string): void;
+          'log'(message: number): void;
+        };
+      `,
+      options: [{ allowInterfaceMethodSignatures: false }],
+    },
+    {
+      code: 'type StringNumberConverter = { convert(input: string): number; convert(input: number): string; };',
+      options: [
+        {
+          allowInterfaceMethodSignatures: false,
+          allowOverloadedFunctions: true,
+        },
+      ],
+    },
+    // A type literal nested inside an interface is the same container kind
+    {
+      code: `
+        interface Outer {
+          inner: {
+            log(message: string): void;
+            log(message: number): void;
+          };
+        }
+      `,
+      options: [{ allowInterfaceMethodSignatures: false }],
+    },
+    // A type literal nested inside another type literal
+    {
+      code: `
+        type Outer = {
+          inner: {
+            log(message: string): void;
+            log(message: number): void;
+          };
+        };
+      `,
+      options: [{ allowInterfaceMethodSignatures: false }],
+    },
+    // A type literal in a parameter position
+    {
+      code: `
+        function register(handlers: {
+          run(input: string): void;
+          run(input: number): void;
+        }) {
+          return handlers;
         }
       `,
       options: [{ allowInterfaceMethodSignatures: false }],
@@ -565,6 +625,68 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
       output: null,
     },
 
+    // A lone type-literal method signature is not an overload, so widening the
+    // overload allowance to type literals must not silence it (issue #1598).
+    {
+      code: 'type Logger = { log(message: string): void; };',
+      options: [{ allowInterfaceMethodSignatures: false }],
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeNonInferable',
+          data: { functionKind: 'type literal method "log"' },
+        },
+      ],
+      output: null,
+    },
+    // Distinct names in one type literal are not overloads of each other
+    {
+      code: `
+        type Logger = {
+          log(message: string): void;
+          warn(message: number): void;
+        };
+      `,
+      options: [{ allowInterfaceMethodSignatures: false }],
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeNonInferable',
+          data: { functionKind: 'type literal method "log"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeNonInferable',
+          data: { functionKind: 'type literal method "warn"' },
+        },
+      ],
+      output: null,
+    },
+    // Type-literal overloads still report once the overload allowance is off,
+    // exactly as the interface form does
+    {
+      code: `
+        type Logger = {
+          'log'(message: string): void;
+          'log'(message: number): void;
+        };
+      `,
+      options: [
+        {
+          allowInterfaceMethodSignatures: false,
+          allowOverloadedFunctions: false,
+        },
+      ],
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeNonInferable',
+          data: { functionKind: 'type literal method "log"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeNonInferable',
+          data: { functionKind: 'type literal method "log"' },
+        },
+      ],
+      output: null,
+    },
+
     // Abstract methods lack bodies, so no autofix
     {
       code: 'abstract class BaseService { abstract fetchData(): Promise<string>; }',
@@ -1057,4 +1179,108 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
       output: null,
     },
   ],
+});
+
+// Both rules ship in the recommended config and `prefer-type-over-interface` is
+// fixable, so a single `eslint --fix` pass rewrites every interface into a type
+// alias. The members it carries over are unchanged and just as non-inferable, so
+// a declaration this rule was silent on must stay silent afterwards — the remedy
+// would otherwise be unavailable, since restoring the `interface` keyword is
+// undone by the next fix pass and a method signature cannot drop its return type
+// without becoming a different declaration.
+describe('no-explicit-return-type after prefer-type-over-interface --fix', () => {
+  const VICTIM_ID = '@blumintinc/blumint/no-explicit-return-type';
+  const CULPRIT_ID = '@blumintinc/blumint/prefer-type-over-interface';
+  const FILENAME = 'x.ts';
+
+  const OVERLOAD_SOURCE = [
+    'interface Logger {',
+    "  'log'(message: string): void;",
+    "  'log'(message: number): void;",
+    '}',
+    '',
+  ].join('\n');
+
+  const STRIPPABLE_SOURCE = [
+    'interface Logger {',
+    "  'log'(message: string): void;",
+    "  'log'(message: number): void;",
+    '}',
+    '',
+    'export function countLoggers(): number {',
+    '  return 1;',
+    '}',
+    '',
+  ].join('\n');
+
+  const makeLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      VICTIM_ID,
+      noExplicitReturnType as unknown as Rule.RuleModule,
+    );
+    linter.defineRule(
+      CULPRIT_ID,
+      preferTypeOverInterface as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const configFor = (rules: Linter.RulesRecord): Linter.Config => ({
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2022 as const,
+      sourceType: 'module' as const,
+    },
+    rules,
+  });
+
+  // The option is only meaningful when turned off: with the default `true` every
+  // method signature is exempt and the fence would pass vacuously.
+  const VICTIM_RULES: Linter.RulesRecord = {
+    [VICTIM_ID]: ['error', { allowInterfaceMethodSignatures: false }],
+  };
+
+  it('reports nothing before or after the interface becomes a type alias', () => {
+    const linter = makeLinter();
+    expect(
+      linter.verify(OVERLOAD_SOURCE, configFor(VICTIM_RULES), FILENAME),
+    ).toHaveLength(0);
+
+    const fixed = linter.verifyAndFix(
+      OVERLOAD_SOURCE,
+      configFor({ [CULPRIT_ID]: 'error' }),
+      FILENAME,
+    );
+    // Without this assertion the test passes vacuously whenever the culprit
+    // stops rewriting the interface.
+    expect(fixed.output).toContain('type Logger = {');
+    expect(fixed.output).not.toContain('interface Logger');
+    expect(
+      linter.verify(fixed.output, configFor(VICTIM_RULES), FILENAME),
+    ).toHaveLength(0);
+  });
+
+  it('still reports a strippable function annotation through the same pipeline', () => {
+    const linter = makeLinter();
+    const fixed = linter.verifyAndFix(
+      STRIPPABLE_SOURCE,
+      configFor({ [CULPRIT_ID]: 'error' }),
+      FILENAME,
+    );
+    expect(fixed.output).toContain('type Logger = {');
+
+    const messages = linter.verify(
+      fixed.output,
+      configFor(VICTIM_RULES),
+      FILENAME,
+    );
+    expect(messages).toHaveLength(1);
+    expect(messages[0].messageId).toBe('noExplicitReturnTypeInferable');
+  });
 });

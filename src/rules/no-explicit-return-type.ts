@@ -62,6 +62,14 @@ function describeClassMethod(node: ClassMethodDefinition): string {
 }
 
 function describeMethodSignature(node: TSESTree.TSMethodSignature): string {
+  // A method signature is equally non-inferable in either container, but naming
+  // the wrong one sends the reader looking for an `interface` keyword that the
+  // source does not contain.
+  const kind =
+    node.parent?.type === AST_NODE_TYPES.TSTypeLiteral
+      ? 'type literal method'
+      : 'interface method';
+
   if (
     !node.computed &&
     (node.key.type === AST_NODE_TYPES.Identifier ||
@@ -70,11 +78,11 @@ function describeMethodSignature(node: TSESTree.TSMethodSignature): string {
   ) {
     const name = getNameFromIdentifierOrLiteral(node.key);
     if (name) {
-      return `interface method "${name}"`;
+      return `${kind} "${name}"`;
     }
   }
 
-  return 'interface method';
+  return kind;
 }
 
 function describeFunctionDeclaration(
@@ -640,12 +648,34 @@ function participatesInReturnCycle(
   return false;
 }
 
+/**
+ * The sibling members of a method signature's container. An interface body and a
+ * type literal declare exactly the same members — `interface X { f(): void }` and
+ * `type X = { f(): void }` differ only in the keyword that introduces them, and
+ * `prefer-type-over-interface` (also fixable, also in the recommended config)
+ * rewrites the first into the second. A member's inferability cannot depend on
+ * which keyword declared its container, so both are read here.
+ */
+function signatureContainerMembers(
+  container: TSESTree.Node | undefined,
+): TSESTree.TypeElement[] | undefined {
+  if (container?.type === AST_NODE_TYPES.TSInterfaceBody) {
+    return container.body;
+  }
+
+  if (container?.type === AST_NODE_TYPES.TSTypeLiteral) {
+    return container.members;
+  }
+
+  return undefined;
+}
+
 function isOverloadedFunction(node: TSESTree.Node): boolean {
   if (!node.parent) return false;
 
   if (node.type === AST_NODE_TYPES.TSMethodSignature) {
-    const interfaceBody = node.parent;
-    if (interfaceBody.type !== AST_NODE_TYPES.TSInterfaceBody) return false;
+    const members = signatureContainerMembers(node.parent);
+    if (!members) return false;
 
     if (node.computed) return false;
 
@@ -657,7 +687,7 @@ function isOverloadedFunction(node: TSESTree.Node): boolean {
     if (!methodName) return false;
 
     return (
-      interfaceBody.body.filter(
+      members.filter(
         (member) =>
           member.type === AST_NODE_TYPES.TSMethodSignature &&
           !member.computed &&

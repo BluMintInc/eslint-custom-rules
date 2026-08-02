@@ -20,6 +20,12 @@ This rule reports explicit return type annotations on functions that include an 
 - Recursive functions, overloads, interface method signatures, and abstract methods when those allowances are enabled.
 - `.d.ts` declaration files and `.f.ts` Firestore function files when configured to allow them.
 
+### Interfaces and type literals are treated identically
+
+`interface X { f(): void }` and `type X = { f(): void }` declare the same members; only the keyword introducing the container differs. [`prefer-type-over-interface`](./prefer-type-over-interface.md) ships in the same `recommended` config and is fixable, so a single `eslint --fix` pass rewrites every interface into a type alias without touching its members.
+
+A member's inferability cannot depend on which keyword declared its container, so every method-signature allowance applies to both containers — a member of an interface body, of a type literal, and of a type literal nested anywhere (an object property's type, a parameter type, a generic argument) is judged the same way. `allowInterfaceMethodSignatures` governs all of them, and overloads are detected among the siblings of either container. Otherwise the automatic interface-to-type rewrite would turn silent code into a violation whose remedy is unavailable: restoring the `interface` keyword is undone by the next `--fix`, and a method signature cannot drop its return type without becoming a different declaration.
+
 ### Recursion: the annotation is mandatory, not redundant
 
 TypeScript cannot infer the return type of a function that is referenced from inside its own return expression. It gives up and reports:
@@ -105,6 +111,18 @@ interface Logger {
   log(message: string): void;
 }
 
+// The equivalent type literal is treated identically
+type Reporter = {
+  report(message: string): void;
+};
+
+// Overloads are detected in either container, so both of these stay silent
+// even with `allowInterfaceMethodSignatures: false`
+type Converter = {
+  convert(input: string): number;
+  convert(input: number): string;
+};
+
 // Recursion: without the annotation this is TS7023, so it is kept
 const countdown = (n: number): number => {
   if (n <= 0) {
@@ -149,7 +167,8 @@ This rule accepts an options object:
   allowRecursiveFunctions?: boolean;
   // Allow explicit return types on overloaded functions
   allowOverloadedFunctions?: boolean;
-  // Allow explicit return types on interface method signatures
+  // Allow explicit return types on method signatures, in an interface body or
+  // in a type literal
   allowInterfaceMethodSignatures?: boolean;
   // Allow explicit return types on abstract method signatures
   allowAbstractMethodSignatures?: boolean;
@@ -170,9 +189,13 @@ When set to `true` (default), allows explicit return types on recursive function
 
 When set to `true` (default), allows explicit return types on overloaded functions. This is useful for function overloads where the return type might not be obvious from the implementation.
 
+Overloaded method signatures are recognised by their sibling members, in an interface body (`interface X { f(a: string): void; f(a: number): void }`) and in a type literal (`type X = { f(a: string): void; f(a: number): void }`) alike. See [Interfaces and type literals are treated identically](#interfaces-and-type-literals-are-treated-identically).
+
 ### `allowInterfaceMethodSignatures`
 
-When set to `true` (default), allows explicit return types on interface method signatures. This helps with interface documentation and type clarity.
+When set to `true` (default), allows explicit return types on method signatures. This helps with interface documentation and type clarity.
+
+Despite the name, the option is not limited to members of an `interface`: it governs every method signature, including those declared in a type literal (`type X = { f(): void }`) and in type literals nested inside other types. A type literal declares the same members an interface body does — and `prefer-type-over-interface` rewrites the latter into the former automatically — so the two forms behave identically under every setting of this option. The name is kept for backwards compatibility with existing configurations.
 
 ### `allowAbstractMethodSignatures`
 
