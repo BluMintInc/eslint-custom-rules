@@ -1,3 +1,10 @@
+## [1.20.79](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.78...v1.20.79) (2026-08-02)
+
+
+### Bug Fixes
+
+* **enforce-firestore-path-utils:** cite a reportable example in the message (closes [#1613](https://github.com/BluMintInc/eslint-custom-rules/issues/1613)) ([b8335d9](https://github.com/BluMintInc/eslint-custom-rules/commit/b8335d98bc621e823a9423f1d896ace1ed4a1981)), closes [#1612](https://github.com/BluMintInc/eslint-custom-rules/issues/1612)
+
 ## [1.20.78](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.77...v1.20.78) (2026-08-02)
 
 

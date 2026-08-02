@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.79",
+    "date": "2026-08-02T08:54:03.464Z",
+    "rules": [
+      {
+        "name": "enforce-firestore-path-utils",
+        "changeType": "fix",
+        "issues": [
+          1613
+        ],
+        "summary": "cite a reportable example in the message (closes #1613)"
+      }
+    ]
+  },
+  {
     "version": "1.20.78",
     "date": "2026-08-02T08:45:25.049Z",
     "rules": [
