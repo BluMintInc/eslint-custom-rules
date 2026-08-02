@@ -1,3 +1,10 @@
+## [1.20.80](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.79...v1.20.80) (2026-08-02)
+
+
+### Bug Fixes
+
+* **no-harness-coupled-disables:** read the whole contiguous `//` rationale run (closes [#1617](https://github.com/BluMintInc/eslint-custom-rules/issues/1617)) ([ec0b9f1](https://github.com/BluMintInc/eslint-custom-rules/commit/ec0b9f1e88ee00ca5bb3db2b20f2f86f0a642dc8)), closes [#1312](https://github.com/BluMintInc/eslint-custom-rules/issues/1312)
+
 ## [1.20.79](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.78...v1.20.79) (2026-08-02)
 
 

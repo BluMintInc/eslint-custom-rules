@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.80",
+    "date": "2026-08-02T11:35:36.730Z",
+    "rules": [
+      {
+        "name": "no-harness-coupled-disables",
+        "changeType": "fix",
+        "issues": [
+          1617
+        ],
+        "summary": "read the whole contiguous `//` rationale run (closes #1617)"
+      }
+    ]
+  },
+  {
     "version": "1.20.79",
     "date": "2026-08-02T08:54:03.464Z",
     "rules": [
