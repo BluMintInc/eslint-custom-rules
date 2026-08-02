@@ -54,6 +54,7 @@ The rule also accepts additional prefixes such as `are` and `includes` for compa
 const active = true;
 const userLoggedIn = false;
 const completed = isTaskFinished();
+const visible = Boolean(anchorEl);
 
 function toggleFeature(enabled: boolean) { /* ... */ }
 const handleSubmit = (valid: boolean) => { /* ... */ };
@@ -107,6 +108,7 @@ class User {
 const isActive = true;
 const isUserLoggedIn = false;
 const hasCompleted = isTaskFinished();
+const isVisible = Boolean(anchorEl);
 const canEdit = user.permissions.includes("edit");
 const shouldRefresh = needsUpdate();
 const willUpdate = condition;
@@ -191,6 +193,23 @@ const isNumber = (val: any): val is number => typeof val === "number";
 - Boolean inference covers comparison operators including `in` and `instanceof`, so getters like `return 'key' in store` or `return value instanceof Error` are treated as boolean-returning.
 - If inheritance contracts prevent renaming, set `ignoreOverriddenGetters: true` to skip abstract or `override` getters.
 - Accessing underscore-prefixed members (e.g., `this._name`) does not imply a boolean return on its own; those are treated as neutral private fields unless their names match a boolean prefix or suffix.
+
+#### `Boolean(...)` coercion
+
+A direct call to the global `Boolean` produces a boolean, so the name it is
+assigned to needs an approved prefix — `!!x` and `Boolean(x)` are the same
+operation written two ways and the rule treats them alike.
+
+Two lookalikes stay silent. `new Boolean(x)` is a `NewExpression` that builds a
+Boolean **wrapper object**, not a primitive (and is always truthy), so it is not
+a boolean value. And the callee is resolved through the scope chain rather than
+matched by name, so a local, parameter or imported binding called `Boolean` is a
+different function entirely:
+
+```ts
+const Boolean = () => 1;
+const count = Boolean();
+```
 
 #### Calls to boolean-prefixed functions
 
