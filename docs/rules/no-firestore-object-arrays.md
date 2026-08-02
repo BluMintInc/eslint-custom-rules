@@ -9,6 +9,16 @@
 - Flags any Firestore model field under `functions/src/types/firestore` whose type is an array of objects (type literals, interfaces, unions/intersections of objects, mapped types, or indexed access types).
 - Allows arrays of Firestore primitives such as `string`, `number`, `boolean`, `Date`, `Timestamp`, `GeoPoint`, including qualified names such as `firebase.firestore.Timestamp`.
 - Allows map-like structures such as `Record<string, T>` or `{ [key: string]: T }`, which support targeted updates.
+- Allows arrays of a const-array-derived union: `(typeof X)[number]` is treated as the underlying union of `X`'s elements when `X` is a const array declared in the same file whose elements are all primitive literals. This is the shape [`prefer-union-from-const-array`](./prefer-union-from-const-array.md) autofixes toward, so `eslint --fix` cannot turn a passing model type into a violation.
+
+### Limits of the `(typeof X)[number]` exemption
+
+The lookup is syntactic, so the exemption applies only when every part is verifiable in the file being linted. These forms keep the default object-lookup classification:
+
+- `X` is imported or otherwise not declared in the same file.
+- `X` holds anything other than an array literal (for example an object literal).
+- Any element of `X` is an object literal, or any other expression that is not a primitive literal, a nested primitive array, or a spread of another qualifying const array.
+- The index is not `number` (for example `(typeof X)['length']`), or the object side is not a `typeof` query (for example `DataShape['user']`).
 
 ## Why arrays of objects are risky in Firestore
 
@@ -34,10 +44,14 @@ This pattern enables you to:
 
 ```ts
 // File: functions/src/types/firestore/UserProfile.ts
+export const MEMBER_ROLE_VALUES = ['owner', 'admin', 'member'] as const;
+export type MemberRole = (typeof MEMBER_ROLE_VALUES)[number]; // Union of string literals, not an object lookup
+
 export type UserProfile = {
   id: string;
   tags: string[];
   timestamps: Timestamp[];
+  roles: MemberRole[];
   path: [number, number][]; // Tuple of primitives is allowed (array of arrays, not objects)
   friends: Record<string, { id: string; name: string; index: number }>;
   contacts: { [id: string]: { email: string; index: number } };
@@ -48,8 +62,11 @@ export type UserProfile = {
 
 ```ts
 // File: functions/src/types/firestore/UserProfile.ts
+export const FRIEND_VALUES = [{ id: 'a' }, { id: 'b' }] as const;
+
 export type UserProfile = {
   friends: { id: string; name: string }[]; // ❌ Use Record<string, Friend & { index: number }>
+  entries: (typeof FRIEND_VALUES)[number][]; // ❌ A const array of objects is still an object array
 };
 ```
 
