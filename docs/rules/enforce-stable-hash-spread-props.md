@@ -13,13 +13,15 @@
 
 ## Rule Details
 
-This rule looks for rest props extracted in function components and used directly inside dependency arrays of React hooks (`useEffect`, `useLayoutEffect`, `useInsertionEffect`, `useMemo`, `useCallback`). It reports when the raw rest object is used as a dependency and auto-fixes by:
+This rule looks for rest props extracted in function components and used directly inside dependency arrays of the React hooks named by `hookNames`, which defaults to `useEffect`, `useLayoutEffect`, `useInsertionEffect` and `useCallback`. It reports when the raw rest object is used as a dependency and auto-fixes by:
 
 - Wrapping the dependency with `stableHash(...)`.
 - Adding `import { stableHash } from 'functions/src/util/hash/stableHash';` if it is missing.
 - Inserting `// eslint-disable-next-line react-hooks/exhaustive-deps` immediately before the dependency array when needed to avoid secondary violations from `react-hooks/exhaustive-deps`.
 
 Rest objects that are already hashed (e.g., `stableHash(restProps)`) or memoized with a stable dependency helper (e.g., `useDeepCompareMemo`) are ignored.
+
+`useMemo` and `useDeepCompareMemo` are themselves the memoization the rule steers toward, so a rest object in one of their dependency arrays is not the mistake that the same object in an effect's dependencies is. Neither hook is checked by default; name it in `hookNames` to opt in.
 
 ## Options
 
