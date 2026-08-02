@@ -1,5 +1,43 @@
 [
   {
+    "version": "1.20.72",
+    "date": "2026-08-02T03:33:22.821Z",
+    "rules": [
+      {
+        "name": "enforce-firestore-doc-ref-generic",
+        "changeType": "fix",
+        "issues": [
+          1595
+        ],
+        "summary": "infer collection schema from the returned expression, not only the annotation (closes #1595)"
+      },
+      {
+        "name": "enforce-verb-noun-naming",
+        "changeType": "fix",
+        "issues": [
+          1596
+        ],
+        "summary": "recognize a React component without its return annotation (closes #1596)"
+      },
+      {
+        "name": "no-explicit-return-type",
+        "changeType": "fix",
+        "issues": [
+          1598
+        ],
+        "summary": "see overload siblings inside a type literal, not only an interface body (closes #1598)"
+      },
+      {
+        "name": "no-unnecessary-verb-suffix",
+        "changeType": "fix",
+        "issues": [
+          1597
+        ],
+        "summary": "climb through assertion wrappers when seeking a conformance signal (closes #1597)"
+      }
+    ]
+  },
+  {
     "version": "1.20.71",
     "date": "2026-08-02T01:25:22.489Z",
     "rules": [

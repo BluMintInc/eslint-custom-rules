@@ -1,3 +1,13 @@
+## [1.20.72](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.71...v1.20.72) (2026-08-02)
+
+
+### Bug Fixes
+
+* **enforce-firestore-doc-ref-generic:** infer collection schema from the returned expression, not only the annotation (closes [#1595](https://github.com/BluMintInc/eslint-custom-rules/issues/1595)) ([4363827](https://github.com/BluMintInc/eslint-custom-rules/commit/4363827059eec4bf46ae69e11f37f052a98619df))
+* **enforce-verb-noun-naming:** recognize a React component without its return annotation (closes [#1596](https://github.com/BluMintInc/eslint-custom-rules/issues/1596)) ([3fb13b1](https://github.com/BluMintInc/eslint-custom-rules/commit/3fb13b1e58dceb99c8d6af42b8d91283afd58204))
+* **no-explicit-return-type:** see overload siblings inside a type literal, not only an interface body (closes [#1598](https://github.com/BluMintInc/eslint-custom-rules/issues/1598)) ([0133b68](https://github.com/BluMintInc/eslint-custom-rules/commit/0133b68e7a1001cc83eb26da4e6b7d2d06bb5c73))
+* **no-unnecessary-verb-suffix:** climb through assertion wrappers when seeking a conformance signal (closes [#1597](https://github.com/BluMintInc/eslint-custom-rules/issues/1597)) ([f09dc1a](https://github.com/BluMintInc/eslint-custom-rules/commit/f09dc1ac2ccf283a0a69d42a3a2f351d6eda0aa4))
+
 ## [1.20.71](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.70...v1.20.71) (2026-08-02)
 
 
