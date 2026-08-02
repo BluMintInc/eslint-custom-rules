@@ -1,5 +1,7 @@
+import { Linter, Rule } from 'eslint';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { noMisleadingBooleanPrefixes } from '../rules/no-misleading-boolean-prefixes';
+import { enforceObjectLiteralAsConst } from '../rules/enforce-object-literal-as-const';
 
 const defaultPrefixes = 'is, has, should';
 const error = (name: string) => ({
@@ -72,6 +74,35 @@ ruleTesterTs.run(
         code: 'function canRetry(): boolean { return true; }',
         options: [{ prefixes: ['can'] }],
       },
+
+      // Assertion wrappers are transparent, so seeing through them must not turn
+      // a boolean return into a report. An assertion that declares a
+      // boolean-like type states the same contract an explicit return
+      // annotation does, which the rule already trusts.
+      'function isReady(x: unknown) { return x as boolean; }',
+      'function isReady(x: unknown) { return x satisfies boolean; }',
+      'function isReady(x: unknown) { return <boolean>x; }',
+      'function isReady(x: unknown) { return x as boolean | undefined; }',
+      'function hasAccess(x: unknown) { return x as Promise<boolean>; }',
+      'function isUser(u: unknown) { return { id: 1 } as unknown as boolean; }',
+
+      // Unwrapping reaches a boolean value underneath the wrapper.
+      'function isEnabled() { return true as const; }',
+      'const isPositive = (n: number) => (n > 0)!;',
+      'const isTruthy = (x: any) => Boolean(x)!;',
+      'const isEmpty = (arr: any[]) => (!arr.length)!;',
+
+      // Unwrapping must not convert an undeterminable value into a report.
+      'function isCached(x: unknown) { return x!; }',
+      'function isCached(x: unknown) { return x as any; }',
+      'function isLoaded(load: () => unknown) { return load()!; }',
+
+      // The name gate still runs first: an unprefixed function returning an
+      // asserted object stays clean.
+      'function getUser() { return { id: 1 } as const; }',
+
+      // An explicit boolean return annotation still short-circuits the check.
+      'function isReady(): boolean { return {} as unknown as boolean; }',
     ],
     invalid: [
       // Examples from spec
@@ -197,6 +228,141 @@ ruleTesterTs.run(
           },
         ],
       },
+
+      // An assertion wrapper changes no runtime value, so every form of it
+      // leaves the object return — and the misleading prefix — intact (#1606).
+      // `enforce-object-literal-as-const` ships in the same recommended config
+      // and appends `as const` to exactly these literals by `--fix`, so the
+      // first case is reachable from the plain object return above it.
+      {
+        code: 'function isUser() { return { id: 1 } as const; }',
+        errors: [error('isUser')],
+      },
+      {
+        code: 'function isUser() { return { id: 1 } satisfies Record<string, number>; }',
+        errors: [error('isUser')],
+      },
+      {
+        code: 'function hasProfile() { return ({ id: 1 })!; }',
+        errors: [error('hasProfile')],
+      },
+      {
+        code: 'function isConfig() { return <Config>{ id: 1 }; }',
+        errors: [error('isConfig')],
+      },
+      {
+        code: 'function isUser() { return { id: 1 } as any; }',
+        errors: [error('isUser')],
+      },
+
+      // Wrappers nest, so one unwrap is not enough.
+      {
+        code: 'function shouldCache() { return ({ ttl: 1 } as const)!; }',
+        errors: [error('shouldCache')],
+      },
+      {
+        code: 'function isUser() { return { id: 1 } as unknown as Record<string, number>; }',
+        errors: [error('isUser')],
+      },
+      {
+        code: 'function isUser() { return { id: 1 } as const satisfies Record<string, number>; }',
+        errors: [error('isUser')],
+      },
+
+      // Non-object values keep their classification through a wrapper too.
+      {
+        code: 'function isAvailable() { return "yes" as const; }',
+        errors: [error('isAvailable')],
+      },
+      {
+        code: 'function hasItems() { return [] as const; }',
+        errors: [error('hasItems')],
+      },
+      {
+        code: 'function hasName() { return (`name`)!; }',
+        errors: [error('hasName')],
+      },
+      {
+        code: 'function isNow() { return new Date()!; }',
+        errors: [error('isNow')],
+      },
+
+      // The wrapper does not depend on the declaration form.
+      {
+        code: 'const hasData = () => ({ a: 1 } as const);',
+        errors: [error('hasData')],
+      },
+      {
+        code: 'class K { isDone() { return { done: true } as const; } }',
+        errors: [error('isDone')],
+      },
+      {
+        code: 'const obj = { hasUser() { return { id: 1 } as const; } }',
+        errors: [error('hasUser')],
+      },
+      {
+        code: 'const obj2 = { hasUser: () => ({ id: 1 } as const) }',
+        errors: [error('hasUser')],
+      },
     ],
   },
 );
+
+// `enforce-object-literal-as-const` is also 'error' in the recommended config
+// and is fixable, so `eslint --fix` rewrites a reported object return into the
+// asserted form on its own. If this rule cannot see through that assertion, the
+// config silences its own finding without the violation going away (issue
+// #1606).
+describe('no-misleading-boolean-prefixes vs enforce-object-literal-as-const --fix', () => {
+  const fixThenLint = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      'test/no-misleading-boolean-prefixes',
+      noMisleadingBooleanPrefixes as unknown as Rule.RuleModule,
+    );
+    linter.defineRule(
+      'test/enforce-object-literal-as-const',
+      enforceObjectLiteralAsConst as unknown as Rule.RuleModule,
+    );
+    const config = {
+      parser: '@typescript-eslint/parser',
+      parserOptions: {
+        ecmaVersion: 2020 as const,
+        sourceType: 'module' as const,
+      },
+      rules: {
+        'test/no-misleading-boolean-prefixes': 'error' as const,
+        'test/enforce-object-literal-as-const': 'error' as const,
+      },
+    };
+    const { output } = linter.verifyAndFix(code, config, 'user.ts');
+    return {
+      output,
+      messages: linter.verify(
+        output,
+        {
+          ...config,
+          rules: { 'test/no-misleading-boolean-prefixes': 'error' as const },
+        },
+        'user.ts',
+      ),
+    };
+  };
+
+  it('still reports an object return the sibling fixer has asserted', () => {
+    const { output, messages } = fixThenLint(
+      'function isUser() {\n  return { id: 1 };\n}\n',
+    );
+
+    // The fixer must actually have produced the assertion, or this proves nothing.
+    expect(output).toContain('as const');
+    expect(messages.map((message) => message.ruleId)).toEqual([
+      'test/no-misleading-boolean-prefixes',
+    ]);
+  });
+});
