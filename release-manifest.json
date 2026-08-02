@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.20.81",
+    "date": "2026-08-02T12:22:56.245Z",
+    "rules": [
+      {
+        "name": "no-unused-props",
+        "changeType": "fix",
+        "issues": [
+          1620
+        ],
+        "summary": "resolve the props type from an FC-annotated declarator (closes #1620)"
+      },
+      {
+        "name": "prefer-destructuring-no-class",
+        "changeType": "fix",
+        "issues": [
+          1619
+        ],
+        "summary": "recognize annotation-carried class instances (closes #1619)"
+      }
+    ]
+  },
+  {
     "version": "1.20.80",
     "date": "2026-08-02T11:35:36.730Z",
     "rules": [
