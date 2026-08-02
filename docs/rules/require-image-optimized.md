@@ -12,11 +12,17 @@ This rule enforces the use of the `ImageOptimized` component instead of using `n
 
 Use the shared `ImageOptimized` wrapper so every image goes through the same optimization pipeline—responsive sizing, lazy loading, and blur placeholders. Direct `img` tags or `next/image` imports bypass these defaults, making it easy to ship unoptimized assets that inflate payloads and harm Core Web Vitals. The rule is auto-fixable to swap the element or import to `ImageOptimized`.
 
+On the import side the rule matches the *binding*, not the local name: `next/image`'s default export is the `Image` component whatever it is bound to, so `import Img from 'next/image'` and `import { default as Picture } from 'next/image'` are the same violation as `import Image from 'next/image'`. `next/image`'s other exports — `getImageProps`, the prop types — are not the optimization bypass and are left alone.
+
 ### Examples of **incorrect** code for this rule:
 
 ```jsx
 import Image from 'next/image';
 <Image src="/path/to/image.jpg" alt="description" />
+
+// the same binding under another name
+import Img from 'next/image';
+import { default as Picture } from 'next/image';
 
 // or
 <img src="/path/to/image.jpg" alt="description" />
@@ -27,6 +33,12 @@ import Image from 'next/image';
 ```jsx
 import Image from 'src/components/image/ImageOptimized';
 <Image src="/path/to/image.jpg" alt="description" />
+
+// non-component exports of next/image
+import { getImageProps } from 'next/image';
+
+// a type-only binding renders nothing
+import type NextImage from 'next/image';
 ```
 
 ## Exemptions
@@ -42,6 +54,21 @@ not a violation:
   module, matched on the specifier's last segment so relative paths
   (`../image/ImageOptimized`) and `__mocks__` paths both qualify. A factory for
   any other module is still checked.
+
+A type-only import of `next/image`'s component is exempt for a different reason:
+it binds no value, so it renders nothing and routes no asset around the
+pipeline. That covers both the declaration-level modifier and the
+specifier-level one:
+
+```ts
+import type Image from 'next/image';
+import type { default as Picture } from 'next/image';
+import { type Image as NextImage } from 'next/image';
+```
+
+A namespace import (`import * as NextImage from 'next/image'`) is out of scope:
+it binds the module rather than the component, and is consumed through a member
+expression (`<NextImage.default />`) the fix has no shape for.
 
 ## Autofix
 
@@ -77,6 +104,23 @@ function Component() {
 A binding of the same name in a sibling scope does not reach the violation, so
 those fixes still apply, as does reuse of a module-scope binding such as
 `const ImageOptimized = dynamic(() => import('...'))`.
+
+The `next/image` fix repoints only the specifier that binds the component,
+keeping its local name so every usage site stays valid. Sibling specifiers stay
+on `next/image`, because `next/image` is where their bindings come from — the
+wrapper does not re-export them — so the import splits in two rather than being
+rewritten wholesale:
+
+```ts
+import Image, { ImageProps } from 'next/image';
+// becomes
+import { ImageProps } from 'next/image';
+import Image from 'src/components/image/ImageOptimized';
+```
+
+Each surviving specifier is carried over verbatim, alias and `type` modifier
+included. Dropping them would strand references that are still live and break
+the build.
 
 ## Options
 

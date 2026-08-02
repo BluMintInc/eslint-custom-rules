@@ -90,26 +90,93 @@ const isInsideComponentMock = (
   return false;
 };
 
+/**
+ * A type-only specifier binds no value: it renders nothing, so it neither
+ * bypasses the optimization pipeline nor can back a fix. The modifier lives
+ * either on the specifier (`{ type Image }`) or on the whole declaration
+ * (`import type ...`).
+ */
+const isTypeOnlySpecifier = (specifier: TSESTree.ImportClause) => {
+  if (
+    specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+    specifier.importKind === 'type'
+  ) {
+    return true;
+  }
+  return (
+    (specifier.parent as TSESTree.ImportDeclaration | undefined)?.importKind ===
+    'type'
+  );
+};
+
 /** A type-only binding cannot be rendered, so it is no basis for a fix. */
 const isTypeOnlyImport = (definition: TSESLint.Scope.Definition) => {
   const { node } = definition;
-  if (node.type === AST_NODE_TYPES.ImportSpecifier) {
-    return (
-      node.importKind === 'type' ||
-      (node.parent as TSESTree.ImportDeclaration | undefined)?.importKind ===
-        'type'
-    );
-  }
   if (
+    node.type === AST_NODE_TYPES.ImportSpecifier ||
     node.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
     node.type === AST_NODE_TYPES.ImportNamespaceSpecifier
   ) {
-    return (
-      (node.parent as TSESTree.ImportDeclaration | undefined)?.importKind ===
-      'type'
-    );
+    return isTypeOnlySpecifier(node);
   }
   return false;
+};
+
+/**
+ * Whether a specifier binds `next/image`'s Image component. The default export
+ * *is* that component whatever local name it is bound to, so the binding's
+ * identity decides rather than the local name — otherwise `import Img from
+ * 'next/image'` becomes a rename-shaped bypass of the rule. `{ default as X }`
+ * is the same binding written differently. The named `Image` form is matched
+ * too, while every other named export (`getImageProps`, the prop types) is
+ * left alone: those are not the optimization bypass.
+ */
+const bindsImageComponent = (specifier: TSESTree.ImportClause) => {
+  if (isTypeOnlySpecifier(specifier)) {
+    return false;
+  }
+  if (specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
+    return true;
+  }
+  // A namespace binds the module rather than the component, and is consumed
+  // through a member expression the fix has no shape for.
+  if (specifier.type !== AST_NODE_TYPES.ImportSpecifier) {
+    return false;
+  }
+  return (
+    specifier.imported.name === 'default' || specifier.imported.name === 'Image'
+  );
+};
+
+/**
+ * The declaration text that keeps the specifiers the fix does not move pointed
+ * at their original source. Rewriting the whole declaration would drop them
+ * while they are still referenced, and their bindings (`ImageProps`,
+ * `getImageProps`) come from `next/image` alone — the wrapper does not
+ * re-export them.
+ */
+const retainedImportText = (
+  specifiers: TSESTree.ImportClause[],
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  source: TSESTree.StringLiteral,
+) => {
+  const named = specifiers.filter(
+    (specifier) => specifier.type === AST_NODE_TYPES.ImportSpecifier,
+  );
+  const standalone = specifiers.filter(
+    (specifier) => specifier.type !== AST_NODE_TYPES.ImportSpecifier,
+  );
+  const clauses = [
+    ...standalone.map((specifier) => sourceCode.getText(specifier)),
+    ...(named.length > 0
+      ? [
+          `{ ${named
+            .map((specifier) => sourceCode.getText(specifier))
+            .join(', ')} }`,
+        ]
+      : []),
+  ];
+  return `import ${clauses.join(', ')} from ${sourceCode.getText(source)};`;
 };
 
 const isBoundAsValue = (scope: TSESLint.Scope.Scope, name: string) => {
@@ -279,36 +346,42 @@ export = createRule<Options, MessageIds>({
         if (isComponentImplementationFile) {
           return;
         }
-        if (node.source.value === 'next/image' && node.specifiers.length > 0) {
-          const imageSpecifier = node.specifiers.find(
-            (spec) =>
-              (spec.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
-                spec.type === AST_NODE_TYPES.ImportSpecifier) &&
-              (spec.local.name === 'Image' ||
-                (spec.type === AST_NODE_TYPES.ImportSpecifier &&
-                  spec.imported.name === 'Image')),
-          );
-
-          if (imageSpecifier) {
-            const localName = imageSpecifier.local.name;
-
-            // Report the import
-            context.report({
-              node,
-              messageId: 'useImageOptimized',
-              data: {
-                componentPath,
-                component: 'next/image',
-              },
-              fix(fixer) {
-                return fixer.replaceText(
-                  node,
-                  `import ${localName} from '${componentPath}';`,
-                );
-              },
-            });
-          }
+        if (node.source.value !== 'next/image') {
+          return;
         }
+        // A default binding comes first in the specifier list, so this prefers
+        // it over a redundant named `Image` alongside it.
+        const imageSpecifier = node.specifiers.find(bindsImageComponent);
+        if (!imageSpecifier) {
+          return;
+        }
+        const localName = imageSpecifier.local.name;
+        const retained = node.specifiers.filter(
+          (specifier) => specifier !== imageSpecifier,
+        );
+
+        context.report({
+          node,
+          messageId: 'useImageOptimized',
+          data: {
+            componentPath,
+            component: 'next/image',
+          },
+          fix(fixer) {
+            const swapped = `import ${localName} from '${componentPath}';`;
+            if (retained.length === 0) {
+              return fixer.replaceText(node, swapped);
+            }
+            return fixer.replaceText(
+              node,
+              `${retainedImportText(
+                retained,
+                sourceCode,
+                node.source,
+              )}\n${swapped}`,
+            );
+          },
+        });
       },
     };
   },
