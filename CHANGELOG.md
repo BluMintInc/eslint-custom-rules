@@ -1,3 +1,11 @@
+## [1.20.73](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.72...v1.20.73) (2026-08-02)
+
+
+### Bug Fixes
+
+* **enforce-boolean-naming-prefixes:** recognise a direct Boolean(...) initializer (closes [#1602](https://github.com/BluMintInc/eslint-custom-rules/issues/1602)) ([31978ef](https://github.com/BluMintInc/eslint-custom-rules/commit/31978ef84850c8b9f795a14a12a9f15dd5a1384e)), closes [#1601](https://github.com/BluMintInc/eslint-custom-rules/issues/1601)
+* **react-memoize-literals:** decline the memo suggestion when the literal closes over nothing (closes [#1600](https://github.com/BluMintInc/eslint-custom-rules/issues/1600)) ([1dd34b3](https://github.com/BluMintInc/eslint-custom-rules/commit/1dd34b3348177245a8b381619b42ff312b8ac321))
+
 ## [1.20.72](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.71...v1.20.72) (2026-08-02)
 
 
