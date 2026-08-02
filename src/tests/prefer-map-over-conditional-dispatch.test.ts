@@ -50,6 +50,106 @@ function f() {
   }
 }
 `,
+    // Edge 1 (#1626): the narrowed base object is reached through `this` —
+    // rooting the discriminant chain at `this` must not lose the narrowing
+    // exemption, or the fix hoists `this.result.data` out of the narrowing
+    // (TS2339).
+    `
+type Result = { kind: 'success'; data: string } | { kind: 'failure' };
+class Holder {
+  public result!: Result;
+  public describe() {
+    switch (this.result.kind) {
+      case 'success':
+        return this.result.data.length;
+      case 'failure':
+        return 0;
+    }
+  }
+}
+`,
+    // Edge 1 (#1626): deeper this-rooted chain (agora's ReportAlerter shape
+    // without its destructuring).
+    `
+type ReportTarget =
+  | { type: 'profile'; userId: string }
+  | { type: 'tournament'; tournamentId: string };
+class ReportAlerter {
+  private readonly options!: { target: ReportTarget };
+  private get targetReference() {
+    switch (this.options.target.type) {
+      case 'profile':
+        return \`User: \${this.options.target.userId}\`;
+      case 'tournament':
+        return \`Tournament: \${this.options.target.tournamentId}\`;
+    }
+  }
+}
+`,
+    // Edge 1 (#1626): `this` is itself the base object (chain length 1) — the
+    // branches read sibling members off the same receiver, exactly as the
+    // identifier-rooted `switch (o.kind)` form does.
+    `
+class Widget {
+  public readonly kind: 'compact' | 'full' = 'compact';
+  private readonly compactWidth = 120;
+  private readonly fullWidth = 480;
+  public width() {
+    switch (this.kind) {
+      case 'compact':
+        return this.compactWidth;
+      case 'full':
+        return this.fullWidth;
+    }
+  }
+}
+`,
+    // Edge 1 (#1626): mixed branches — the exemption is any-kept-branch, so one
+    // branch reading through `this` exempts the construct, matching how a single
+    // `box`-reading branch exempts the identifier-rooted form.
+    `
+type Payload = { mode: 'inline'; body: string } | { mode: 'empty' };
+class Renderer {
+  private readonly payload!: Payload;
+  public render() {
+    switch (this.payload.mode) {
+      case 'inline':
+        return this.payload.body;
+      case 'empty':
+        return '';
+    }
+  }
+}
+`,
+    // Edge 1 (#1626): an arrow branch value closes over the lexical `this`, so
+    // it reads the narrowed receiver exactly as a closure over an identifier
+    // root reads its binding.
+    `
+type Job = { mode: 'timed'; budgetMs: number } | { mode: 'instant' };
+class Runner {
+  private readonly job!: Job;
+  public schedule() {
+    switch (this.job.mode) {
+      case 'timed':
+        return () => this.job;
+      case 'instant':
+        return () => null;
+    }
+  }
+}
+`,
+    // #1626: the ternary/if forms accept only identifier-rooted discriminants
+    // (`isValidDiscriminant`), so a `this`-rooted equality chain never reaches
+    // the narrowing exemption at all — it is out of scope for those forms.
+    `
+type Slot = { role: 'title'; title: string } | { role: 'spacer' };
+class Panel {
+  private readonly slot!: Slot;
+  public label() {
+    return this.slot.role === 'title' ? this.slot.title : '';
+  }
+}
+`,
     // Edge 4: discriminant statically 'string' (trust-boundary switch).
     `
 declare function split(): string;
@@ -1485,6 +1585,130 @@ function f() {
 }
 `,
       errors: [{ messageId: 'preferMap' }],
+    },
+    // #1626: a `this`-rooted discriminant is only exempt when a kept branch
+    // reads the base object back. A genuine dispatch table whose branches are
+    // constants keeps reporting.
+    {
+      code: `
+type Tier = 'free' | 'pro';
+class Pricing {
+  private readonly tier!: Tier;
+  public monthlyCost() {
+    switch (this.tier) {
+      case 'free':
+        return 0;
+      case 'pro':
+        return 25;
+    }
+  }
+}
+`,
+      output: `
+type Tier = 'free' | 'pro';
+class Pricing {
+  private readonly tier!: Tier;
+  public monthlyCost() {
+    const RESULT_BY_TIER: Record<Tier, number> = {
+      free: 0,
+      pro: 25,
+    };
+    return RESULT_BY_TIER[this.tier];
+  }
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1626: the base object of a `this`-rooted chain is `this.config`; branches
+    // reading an unrelated receiver do not narrow it, so the dispatch reports.
+    {
+      code: `
+type Mode = 'light' | 'dark';
+declare const PALETTE: { light: string; dark: string };
+class Theme {
+  private readonly config!: { mode: Mode };
+  public color() {
+    switch (this.config.mode) {
+      case 'light':
+        return PALETTE.light;
+      case 'dark':
+        return PALETTE.dark;
+    }
+  }
+}
+`,
+      output: `
+type Mode = 'light' | 'dark';
+declare const PALETTE: { light: string; dark: string };
+class Theme {
+  private readonly config!: { mode: Mode };
+  public color() {
+    const RESULT_BY_MODE: Record<Mode, string> = {
+      light: PALETTE.light,
+      dark: PALETTE.dark,
+    };
+    return RESULT_BY_MODE[this.config.mode];
+  }
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1626: a `function` branch value binds its own `this`, so the `this` it
+    // reads is not the receiver the discriminant is rooted at — the construct is
+    // a genuine dispatch table and reports.
+    {
+      code: `
+type Kind = 'alpha' | 'beta';
+type Sized = { size: number };
+class Registry {
+  private readonly kind!: Kind;
+  public handler() {
+    switch (this.kind) {
+      case 'alpha':
+        return function (this: Sized) { return this.size; };
+      case 'beta':
+        return function (this: Sized) { return 0; };
+    }
+  }
+}
+`,
+      output: `
+type Kind = 'alpha' | 'beta';
+type Sized = { size: number };
+class Registry {
+  private readonly kind!: Kind;
+  public handler() {
+    const RESULT_BY_KIND: Record<Kind, (this: Sized) => number> = {
+      alpha: function (this: Sized) { return this.size; },
+      beta: function (this: Sized) { return 0; },
+    };
+    return RESULT_BY_KIND[this.kind];
+  }
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1626: a class body inside a branch value binds its own `this` as well, so
+    // it does not read the receiver the discriminant is rooted at. (The printed
+    // value type names class-expression internals, so this lands on the
+    // report-only path — the point is that it reports at all.)
+    {
+      code: `
+type Kind = 'alpha' | 'beta';
+class Factory {
+  private readonly kind!: Kind;
+  public model() {
+    switch (this.kind) {
+      case 'alpha':
+        return class { size = 1; double() { return this.size * 2; } };
+      case 'beta':
+        return class { size = 2; double() { return this.size * 3; } };
+    }
+  }
+}
+`,
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
     },
   ],
 };

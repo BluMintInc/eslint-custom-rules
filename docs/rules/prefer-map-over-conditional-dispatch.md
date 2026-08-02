@@ -81,6 +81,34 @@ switch (result.kind) {
 }
 ```
 
+The base object may be reached through `this`: a chain rooted at the `this`
+keyword (`this.result.kind`, `this.options.target.type`) narrows exactly as one
+rooted at a binding does, so the rule scans the kept branches for reads of the
+same receiver and exempts the construct on the first one. Hoisting a narrowed
+member read such as `this.result.data` into an eagerly-evaluated `Record` would
+otherwise emit code that does not typecheck.
+
+```ts
+// Never fires — the narrowed base object is reached through `this`
+class Holder {
+  public result!: Result;
+
+  public describe() {
+    switch (this.result.kind) {
+      case 'success':
+        return this.result.data.length;
+      case 'failure':
+        return 0;
+    }
+  }
+}
+```
+
+A `this` inside a nested `function` or class body is a different receiver, so it
+does not count as reading the narrowed object; an arrow function's `this` is the
+lexical one and does count, matching how a closure over an identifier-rooted base
+object counts.
+
 A branch that returns a tag-independent constant (`case 'failure': return 0;`)
 does not by itself disqualify the construct — it is the *sibling* branch's
 `result.data` access that exempts the whole thing. A dropped `default` (see
@@ -101,7 +129,9 @@ a hidden lookup table.
   them into repeated `Record` entries.
 - For the **ternary** and **if/else-if** forms, "same discriminant" means
   token-identical AND restricted to an identifier or a non-optional, call-free
-  member expression. A call-bearing discriminant
+  member expression rooted at an identifier (a `this`-rooted chain such as
+  `this.slot.role === 'title' ? ... : ...` is out of scope for those two forms;
+  the `switch` form accepts it). A call-bearing discriminant
   (`getKind() === 'a' ? ... : getKind() === 'b' ? ...`) does not fire —
   collapsing repeated evaluations into one lookup changes the evaluation count.
 - A lone `x === 'lit' ? a : b` on a 2-member union is a fully-covered chain of
@@ -241,6 +271,18 @@ function describeTarget() {
   switch (target.type) {
     case 'profile': return `p-${target.userId}`;
     case 'tournament': return `t-${target.tournamentId}`;
+  }
+}
+
+// The same narrowing reached through `this` — never fires
+class ReportAlerter {
+  private readonly options!: { target: ReportTarget };
+
+  private get targetReference() {
+    switch (this.options.target.type) {
+      case 'profile': return `User: ${this.options.target.userId}`;
+      case 'tournament': return `Tournament: ${this.options.target.tournamentId}`;
+    }
   }
 }
 
