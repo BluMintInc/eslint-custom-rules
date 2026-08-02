@@ -1,3 +1,4 @@
+import { Linter, Rule } from 'eslint';
 import { ruleTesterTs } from '../utils/ruleTester';
 import rule from '../rules/global-const-style';
 
@@ -28,6 +29,25 @@ ruleTesterTs.run('global-const-style', rule, {
     },
     {
       code: 'const MAX_RETRIES = 3 as const;',
+      filename: 'test.ts',
+    },
+    // Issue #1605: the names the converter produces must themselves be
+    // accepted, otherwise `--fix` feeds the rule its own output pass after pass
+    // and the identifier grows without bound.
+    {
+      code: 'const HTTP_SERVER = { port: 8080 } as const;',
+      filename: 'test.ts',
+    },
+    {
+      code: 'const PARSE_HTML_STRING = "<p></p>" as const;',
+      filename: 'test.ts',
+    },
+    {
+      code: 'const A_URL = "https://example.com" as const;',
+      filename: 'test.ts',
+    },
+    {
+      code: 'const C_O_N_T = 1 as const;',
       filename: 'test.ts',
     },
     // Valid global constants with UPPER_SNAKE_CASE in JavaScript (no as const needed)
@@ -928,5 +948,239 @@ ruleTesterTs.run('global-const-style', rule, {
       errors: [{ messageId: 'asConst' }, { messageId: 'upperSnakeCase' }],
       output: 'const RETRY_DELAYS = [1, 2, 3] as const;',
     },
+    // Issue #1605: an acronym run is one word, so it is separated from its
+    // neighbours rather than exploded letter by letter (`H_T_T_P_SERVER`).
+    {
+      code: 'const HTTPServer = { port: 8080 } as const;',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'HTTPServer', suggestedName: 'HTTP_SERVER' },
+        },
+      ],
+      output: 'const HTTP_SERVER = { port: 8080 } as const;',
+    },
+    // Issue #1605: an acronym in the middle of a name keeps its neighbours on
+    // both sides.
+    {
+      code: 'const parseHTMLString = "<p></p>" as const;',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: {
+            name: 'parseHTMLString',
+            suggestedName: 'PARSE_HTML_STRING',
+          },
+        },
+      ],
+      output: 'const PARSE_HTML_STRING = "<p></p>" as const;',
+    },
+    // Issue #1605: a single leading letter is its own word, and the trailing
+    // acronym stays whole.
+    {
+      code: 'const aURL = "https://example.com" as const;',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'aURL', suggestedName: 'A_URL' },
+        },
+      ],
+      output: 'const A_URL = "https://example.com" as const;',
+    },
+    // Issue #1605: a trailing acronym gets exactly one separator.
+    {
+      code: 'const fooBAR = 42 as const;',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'fooBAR', suggestedName: 'FOO_BAR' },
+        },
+      ],
+      output: 'const FOO_BAR = 42 as const;',
+    },
+    // Issue #1605: an acronym adjacent to another word on both sides.
+    {
+      code: 'const XMLHttpRequestTimeout = 30 as const;',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: {
+            name: 'XMLHttpRequestTimeout',
+            suggestedName: 'XML_HTTP_REQUEST_TIMEOUT',
+          },
+        },
+      ],
+      output: 'const XML_HTTP_REQUEST_TIMEOUT = 30 as const;',
+    },
+    // Issue #1605: a two-letter trailing acronym (`USER_I_D` was the old
+    // spelling).
+    {
+      code: 'const userID = 1 as const;',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'userID', suggestedName: 'USER_ID' },
+        },
+      ],
+      output: 'const USER_ID = 1 as const;',
+    },
+    // Issue #1605 idempotence guard: a name that already carries separators is
+    // a fixed point of the converter. The previous converter re-split every
+    // capital, so it doubled the underscores it had itself inserted
+    // (`c_O_N_T` -> `C__O__N__T`) and every further `--fix` pass doubled them
+    // again, corrupting the source it was fixing.
+    {
+      code: 'const c_O_N_T = 1 as const;',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'c_O_N_T', suggestedName: 'C_O_N_T' },
+        },
+      ],
+      output: 'const C_O_N_T = 1 as const;',
+    },
+    // Issue #1605 growth guard: when a sibling rule lowercases the first letter
+    // of an already-converted name, the rename adds one boundary and stops.
+    // The previous converter re-split every capital it had inserted before
+    // (`H_T_T_P__S_E_R_V_E_R`), which is how repeated `--fix` passes diverged.
+    {
+      code: 'const hTTP_SERVER = { port: 8080 } as const;',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'hTTP_SERVER', suggestedName: 'H_TTP_SERVER' },
+        },
+      ],
+      output: 'const H_TTP_SERVER = { port: 8080 } as const;',
+    },
+    // Issue #1605: a digit boundary still separates, and the result is stable.
+    {
+      code: 'const http2Server = { port: 8080 } as const;',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'http2Server', suggestedName: 'HTTP2_SERVER' },
+        },
+      ],
+      output: 'const HTTP2_SERVER = { port: 8080 } as const;',
+    },
+    // Issue #1605: a leading underscore is still dropped, so the rename lands
+    // on a name `isUpperSnakeCase` accepts instead of one the rule would keep
+    // re-reporting forever.
+    {
+      code: 'const _privateThing = 1 as const;',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: '_privateThing', suggestedName: 'PRIVATE_THING' },
+        },
+      ],
+      output: 'const PRIVATE_THING = 1 as const;',
+    },
   ],
+});
+
+// Issue #1605: RuleTester applies a single fix pass, so it cannot see what
+// `--fix` actually does — ESLint re-lints its own output up to ten times per
+// file. These cases drive the real multi-pass loop and assert it converges.
+describe('global-const-style --fix convergence (Issue #1605)', () => {
+  const RULE_ID = 'global-const-style';
+  // Stands in for any sibling rule that demands the opposite casing of the same
+  // identifier (`enforce-react-type-naming` lowercases React-typed consts).
+  // Whether the pair settles on one spelling is a separate design question; what
+  // this file owns is that neither rule may grow the identifier.
+  const LOWERCASE_FIRST_LETTER = 'lowercase-first-letter';
+
+  const lowercaseFirstLetter: Rule.RuleModule = {
+    meta: {
+      type: 'suggestion',
+      fixable: 'code',
+      schema: [],
+      messages: { lowercase: 'Start "{{name}}" with a lowercase letter.' },
+    },
+    create(context) {
+      return {
+        VariableDeclaration(node) {
+          if (node.parent?.type !== 'Program') {
+            return;
+          }
+          for (const declaration of node.declarations) {
+            const id = declaration.id;
+            if (id.type !== 'Identifier' || !/^[A-Z]/.test(id.name)) {
+              continue;
+            }
+            context.report({
+              node: id,
+              messageId: 'lowercase',
+              data: { name: id.name },
+              fix: (fixer) =>
+                fixer.replaceTextRange(
+                  [id.range[0], id.range[0] + 1],
+                  id.name[0].toLowerCase(),
+                ),
+            });
+          }
+        },
+      };
+    },
+  };
+
+  const createLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(RULE_ID, rule as unknown as Rule.RuleModule);
+    linter.defineRule(LOWERCASE_FIRST_LETTER, lowercaseFirstLetter);
+    return linter;
+  };
+
+  const fixWith = (code: string, rules: Linter.RulesRecord) =>
+    createLinter().verifyAndFix(
+      code,
+      {
+        parser: '@typescript-eslint/parser',
+        parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+        rules,
+      },
+      'constants.ts',
+    ).output;
+
+  it('renames an acronym constant once and then leaves it alone', () => {
+    const fixed = fixWith('const HTTPServer = { port: 8080 } as const;', {
+      [RULE_ID]: 'error',
+    });
+
+    expect(fixed).toBe('const HTTP_SERVER = { port: 8080 } as const;');
+    expect(fixWith(fixed, { [RULE_ID]: 'error' })).toBe(fixed);
+  });
+
+  it('keeps the identifier bounded when a sibling rule reverses the rename', () => {
+    const rules: Linter.RulesRecord = {
+      [RULE_ID]: 'error',
+      [LOWERCASE_FIRST_LETTER]: 'error',
+    };
+    const code = 'const Content = 1 as const;';
+
+    const fixed = fixWith(code, rules);
+
+    // The two rules disagree about casing, so `--fix` may flip the first letter
+    // between runs; what it must never do is accumulate separators. Doubling
+    // underscores (`C__O__N__T…`) was the signature of the divergence.
+    expect(fixed).not.toMatch(/__/);
+    expect(fixed.length).toBeLessThanOrEqual(code.length + 1);
+    expect(fixWith(fixed, rules)).toBe(fixed);
+  });
 });
