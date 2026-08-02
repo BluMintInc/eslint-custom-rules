@@ -17,7 +17,7 @@ Functions and methods are actions, so their names should start with an action ve
 - Function declarations, function expressions, and arrow functions assigned to identifiers.
 - Class and object methods (excluding constructors and getters).
 - Converter and wrapper patterns starting with prepositions such as `to`, `with`, `by`, `from`, `of`, or `at` are allowed (e.g., `toNumber`, `withLogging`).
-- React components are exempted based on PascalCase + JSX heuristics so component names can stay noun-based.
+- React components are exempted so component names can stay noun-based — see [React component recognition](#react-component-recognition).
 - The rule validates the first word against a curated verb list and falls back to NLP tagging; it only reports when a verb phrase is not detected.
 
 ## Examples
@@ -62,6 +62,32 @@ React components are allowed:
 
 ```tsx
 const UserCard = ({ user }: { user: User }) => <Card>{user.name}</Card>;
+```
+
+## React component recognition
+
+A component's name is a noun by convention, and JSX requires it to be capitalized, so components are exempt from the verb-phrase requirement. In a `.tsx`/`.jsx` file every PascalCase function qualifies. A `.ts` file needs evidence, because PascalCase is also how a plain helper or a factory gets named, so the rule looks for any of:
+
+- **What it renders.** Every return path yields JSX, a `createElement`/`cloneElement` call, or `null`/`undefined` — the "renders nothing" case a component reaches through an early return. One ordinary return value among them is enough to disqualify it.
+- **What it calls.** It calls a React hook (`useState`, `useMemo`, …).
+- **What it declares.** It carries a React type annotation (`: React.FC`, `: React.JSX.Element`, `: ReactElement`, …).
+- **How the file uses it.** It is rendered as `<MyComponent />`, or handed to `memo(...)` / `forwardRef(...)`.
+
+The annotation is deliberately not the sole carrier. `no-explicit-return-type` ships in the same `recommended` config and deletes return-type annotations on `--fix`, so a component recognized only by `(): React.JSX.Element` would start reporting the moment a fix pass ran — proposing a rename that breaks every JSX call site and that restoring the annotation cannot silence, because the next fix pass strips it again.
+
+A PascalCase function that produces an ordinary value is still a function and keeps reporting:
+
+```ts
+// src/util/helper.ts
+function ConfigParser() { return { parsed: true }; }        // reports: returns data
+function DataSnapshot(input) {                              // reports: only one branch renders nothing
+  if (!input) { return null; }
+  return buildSnapshot(input);
+}
+function MyComponent() { return null; }                     // exempt: renders nothing
+function StatusPanel(props) {                               // exempt: renders via createElement
+  return React.createElement('div', null, props.label);
+}
 ```
 
 ## Options

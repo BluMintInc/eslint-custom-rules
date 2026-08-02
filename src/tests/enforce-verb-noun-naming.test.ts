@@ -1,6 +1,8 @@
+import { Linter, Rule } from 'eslint';
 import { TSESLint } from '@typescript-eslint/utils';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceVerbNounNaming } from '../rules/enforce-verb-noun-naming';
+import { noExplicitReturnType } from '../rules/no-explicit-return-type';
 
 const verbNounMessage = (name: string) =>
   `Function "${name}" should start with an action verb followed by the thing it acts on. Verb-first names tell readers this symbol performs work instead of representing data, which keeps APIs predictable and prevents accidental misuse. Rename "${name}" to a verb-noun phrase such as "fetchUsers" or "processRequest".`;
@@ -106,6 +108,123 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
     {
       code: `function MyComponent() { return null; }`,
       filename: 'src/components/MyComponent.tsx',
+    },
+
+    // Issue #1596: a return-type annotation cannot be the only carrier of
+    // component-hood, because `no-explicit-return-type --fix` deletes it. A
+    // component in a `.ts` file stays recognisable from what it renders, the
+    // hooks it calls, or how it is used.
+    {
+      name: 'a component whose only return renders nothing',
+      code: `function MyComponent() { return null; }`,
+      filename: 'src/components/MyComponent.ts',
+    },
+    {
+      name: 'the arrow form of the annotation-less component',
+      code: `const MyComponent = () => { return null; };`,
+      filename: 'src/components/MyComponent.ts',
+    },
+    {
+      name: 'a concise-body arrow component',
+      code: `const MyComponent = () => null;`,
+      filename: 'src/components/MyComponent.ts',
+    },
+    {
+      name: 'an explicit undefined return also renders nothing',
+      code: `function MyComponent() { return undefined; }`,
+      filename: 'src/components/MyComponent.ts',
+    },
+    {
+      name: 'a component built with createElement instead of JSX',
+      code: `function MyComponent() { return createElement('div'); }`,
+      filename: 'src/components/MyComponent.ts',
+    },
+    {
+      name: 'every branch renders: a null guard plus a React.createElement return',
+      code: `function MyComponent(props) {
+  if (!props.ready) {
+    return null;
+  }
+  return React.createElement('div', null, props.label);
+}`,
+      filename: 'src/components/MyComponent.ts',
+    },
+    {
+      name: 'a nullish return reached through an as-expression',
+      code: `function MyComponent() { return null as any; }`,
+      filename: 'src/components/MyComponent.ts',
+    },
+    {
+      name: 'a PascalCase function calling a React hook',
+      code: `function MyComponent(props) {
+  const [isOpen, setOpen] = useState(false);
+  return renderDialog(isOpen, setOpen, props);
+}`,
+      filename: 'src/components/MyComponent.ts',
+    },
+    {
+      name: 'an unmemoized component recognised through its memo() wrapper',
+      code: `const UserBadgeUnmemoized = (props) => {
+  return buildBadge(props);
+};
+export const UserBadge = memo(UserBadgeUnmemoized);`,
+      filename: 'src/components/UserBadge.ts',
+    },
+    {
+      name: 'a component recognised through its React.forwardRef() wrapper',
+      code: `const StatusPanelInner = (props, ref) => {
+  return buildPanel(props, ref);
+};
+export const StatusPanel = React.forwardRef(StatusPanelInner);`,
+      filename: 'src/components/StatusPanel.ts',
+    },
+    {
+      name: 'an async server component that renders nothing',
+      code: `async function MyComponent() { return null; }`,
+      filename: 'src/components/MyComponent.ts',
+    },
+    {
+      name: 'a component whose renders are spread across a switch',
+      code: `function MyComponent(props) {
+  switch (props.kind) {
+    case 'empty':
+      return null;
+    default:
+      return React.createElement('div');
+  }
+}`,
+      filename: 'src/components/MyComponent.ts',
+    },
+    {
+      name: 'a component whose renders are spread across a try/catch',
+      code: `function MyComponent(props) {
+  try {
+    return React.createElement('div', null, props.label);
+  } catch (error) {
+    return null;
+  }
+}`,
+      filename: 'src/components/MyComponent.ts',
+    },
+    {
+      name: 'a nested callback returning a value does not disqualify the component',
+      code: `function MyComponent(props) {
+  const ids = props.items.map((item) => item.id);
+  void ids;
+  return null;
+}`,
+      filename: 'src/components/MyComponent.ts',
+    },
+    {
+      name: 'a component recognised by its use as a JSX element',
+      code: `function MyComponent(props) {
+  return buildTree(props);
+}
+export const app = <MyComponent />;`,
+      filename: 'src/components/MyComponent.js',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+      },
     },
 
     // Data types with noun phrases
@@ -406,6 +525,124 @@ export { glyphPopulation };`,
       filename: 'utils.ts',
       errors: [verbNounError('HelperFunction')],
     },
+
+    // Issue #1596 controls — recognising annotation-less components must not
+    // become a blanket amnesty for every PascalCase function in a `.ts` file.
+    {
+      name: 'a PascalCase helper returning a data object is not a component',
+      code: `function ConfigParser() { return { parsed: true }; }`,
+      filename: 'src/helpers.ts',
+      errors: [verbNounError('ConfigParser')],
+    },
+    {
+      name: 'a PascalCase helper returning a computed value is not a component',
+      code: `function UserRecord() {
+  const value = fetchValue();
+  return value;
+}`,
+      filename: 'src/helpers.ts',
+      errors: [verbNounError('UserRecord')],
+    },
+    {
+      name: 'a nullish return on one branch only is not component evidence',
+      code: `function DataSnapshot(input) {
+  if (!input) {
+    return null;
+  }
+  return buildSnapshot(input);
+}`,
+      filename: 'src/helpers.ts',
+      errors: [verbNounError('DataSnapshot')],
+    },
+    {
+      name: 'a `|| null` fallback is an ordinary value, not a render',
+      code: `function TournamentRoster() { return roster.get(id) || null; }`,
+      filename: 'src/helpers.ts',
+      errors: [verbNounError('TournamentRoster')],
+    },
+    {
+      name: 'a return null nested in an inner function does not exempt the outer one',
+      code: `function StatusRegistry() {
+  const reset = () => {
+    return null;
+  };
+  reset();
+}`,
+      filename: 'src/helpers.ts',
+      errors: [verbNounError('StatusRegistry')],
+    },
+    {
+      name: 'a PascalCase helper that returns nothing at all is not a component',
+      code: `const PayloadBuilder = () => { doWork(); };`,
+      filename: 'src/helpers.ts',
+      errors: [verbNounError('PayloadBuilder')],
+    },
+    {
+      name: 'returning a plain call is not a createElement return',
+      code: `function MetricsSummary() { return computeSummary(); }`,
+      filename: 'src/helpers.ts',
+      errors: [verbNounError('MetricsSummary')],
+    },
+    {
+      name: 'a non-React wrapper is not component usage',
+      code: `const UserRecord = (row) => {
+  return mapRow(row);
+};
+export const cached = memoize(UserRecord);`,
+      filename: 'src/helpers.ts',
+      errors: [verbNounError('UserRecord')],
+    },
+    {
+      name: 'a camelCase function that renders nothing is still not a component',
+      code: `const statusLabel = () => { return null; };`,
+      filename: 'src/helpers.ts',
+      errors: [verbNounError('statusLabel')],
+    },
+    {
+      name: 'a generator never renders, whatever it returns',
+      code: `function* DataStream() {
+  yield 1;
+  return null;
+}`,
+      filename: 'src/helpers.ts',
+      errors: [verbNounError('DataStream')],
+    },
+    {
+      name: 'document.createElement is a DOM call, not a render',
+      code: `function DomFragment() { return document.createElement('div'); }`,
+      filename: 'src/helpers.ts',
+      errors: [verbNounError('DomFragment')],
+    },
+    {
+      name: 'a useX method on an object is not a React hook call',
+      code: `function StatusRegistry(db) { return db.useCache(); }`,
+      filename: 'src/helpers.ts',
+      errors: [verbNounError('StatusRegistry')],
+    },
+    {
+      name: 'a conditional with one non-render branch is not a render',
+      code: `function StatusLabel(flag) { return flag ? null : computeLabel(); }`,
+      filename: 'src/helpers.ts',
+      errors: [verbNounError('StatusLabel')],
+    },
+    {
+      name: 'a return null inside a nested object method does not exempt the outer one',
+      code: `function StatusRegistry() {
+  return {
+    build() {
+      return null;
+    },
+  };
+}`,
+      filename: 'src/helpers.ts',
+      errors: [verbNounError('StatusRegistry')],
+    },
+    {
+      name: 'an empty PascalCase function body is not a component',
+      code: `function StatusLabel() {}`,
+      filename: 'src/helpers.ts',
+      errors: [verbNounError('StatusLabel')],
+    },
     // Invalid function names (not verb phrases)
     {
       code: `function userData() { return null; }`,
@@ -556,4 +793,124 @@ export { axisProfile } from './registry.mjs';`,
       errors: [verbNounError('axisProfile')],
     },
   ],
+});
+
+// Both rules ship in the recommended config and `no-explicit-return-type` is
+// fixable, so one `eslint --fix` pass deletes the return-type annotation that
+// identifies a React component in a `.ts` file. Recognising the component only
+// by that annotation makes the fix pass manufacture a naming violation whose
+// remedy — renaming a component to a verb phrase — breaks every JSX call site
+// and cannot be silenced by restoring the annotation (issue #1596).
+describe('enforce-verb-noun-naming after no-explicit-return-type --fix', () => {
+  const VICTIM_ID = '@blumintinc/blumint/enforce-verb-noun-naming';
+  const CULPRIT_ID = '@blumintinc/blumint/no-explicit-return-type';
+  const FILENAME = 'src/components/MyComponent.ts';
+
+  const ANNOTATION = /:\s*(React\.)?(JSX\.Element|FC|ReactElement|Record<)/;
+
+  const COMPONENT_SOURCES: [string, string][] = [
+    [
+      'a JSX.Element return annotation',
+      'function MyComponent(): React.JSX.Element {\n  return null;\n}\n',
+    ],
+    [
+      'a React.FC return annotation',
+      'function MyComponent(): React.FC {\n  return null;\n}\n',
+    ],
+    [
+      'a bare ReactElement return annotation',
+      'export function MyComponent(): ReactElement {\n  return null;\n}\n',
+    ],
+    [
+      'an annotated arrow component',
+      'export const MyComponent = (): React.JSX.Element => {\n  return null;\n};\n',
+    ],
+  ];
+
+  // A genuinely misnamed helper carries an annotation too, so the fix pass
+  // strips it just the same; the rule must keep reporting it afterwards.
+  const HELPER_SOURCE =
+    'export function ConfigParser(): Record<string, string> {\n  return { parsed: "true" };\n}\n';
+
+  const makeLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      VICTIM_ID,
+      enforceVerbNounNaming as unknown as Rule.RuleModule,
+    );
+    linter.defineRule(
+      CULPRIT_ID,
+      noExplicitReturnType as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const configFor = (rules: Linter.RulesRecord): Linter.Config => ({
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2022 as const,
+      sourceType: 'module' as const,
+    },
+    rules,
+  });
+
+  it.each(COMPONENT_SOURCES)(
+    'keeps a component silent through the fix pass: %s',
+    (_label, source) => {
+      const linter = makeLinter();
+      expect(
+        linter.verify(source, configFor({ [VICTIM_ID]: 'error' }), FILENAME),
+      ).toHaveLength(0);
+
+      const fixed = linter.verifyAndFix(
+        source,
+        configFor({ [CULPRIT_ID]: 'error' }),
+        FILENAME,
+      );
+      // Without this the case passes vacuously whenever the culprit stops
+      // rewriting the annotated form.
+      expect(fixed.output).not.toMatch(ANNOTATION);
+      expect(fixed.output).not.toEqual(source);
+
+      expect(
+        linter.verify(
+          fixed.output,
+          configFor({ [VICTIM_ID]: 'error' }),
+          FILENAME,
+        ),
+      ).toHaveLength(0);
+    },
+  );
+
+  it('still reports a misnamed non-component through the same pipeline', () => {
+    const linter = makeLinter();
+    expect(
+      linter.verify(
+        HELPER_SOURCE,
+        configFor({ [VICTIM_ID]: 'error' }),
+        FILENAME,
+      ),
+    ).toHaveLength(1);
+
+    const fixed = linter.verifyAndFix(
+      HELPER_SOURCE,
+      configFor({ [CULPRIT_ID]: 'error' }),
+      FILENAME,
+    );
+    expect(fixed.output).not.toMatch(ANNOTATION);
+    expect(fixed.output).not.toEqual(HELPER_SOURCE);
+
+    expect(
+      linter.verify(
+        fixed.output,
+        configFor({ [VICTIM_ID]: 'error' }),
+        FILENAME,
+      ),
+    ).toHaveLength(1);
+  });
 });
