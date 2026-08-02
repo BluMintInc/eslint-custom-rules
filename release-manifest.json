@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.77",
+    "date": "2026-08-02T08:02:01.009Z",
+    "rules": [
+      {
+        "name": "prefer-spread-over-reassembly",
+        "changeType": "fix",
+        "issues": [
+          1610
+        ],
+        "summary": "see through transparent type-assertion wrappers (closes #1610)"
+      }
+    ]
+  },
+  {
     "version": "1.20.76",
     "date": "2026-08-02T07:09:34.794Z",
     "rules": [

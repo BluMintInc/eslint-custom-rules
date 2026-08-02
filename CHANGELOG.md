@@ -1,3 +1,10 @@
+## [1.20.77](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.76...v1.20.77) (2026-08-02)
+
+
+### Bug Fixes
+
+* **prefer-spread-over-reassembly:** see through transparent type-assertion wrappers (closes [#1610](https://github.com/BluMintInc/eslint-custom-rules/issues/1610)) ([6141f79](https://github.com/BluMintInc/eslint-custom-rules/commit/6141f792e4dfc3eb02ec4d3dfbeb85c4104887ca))
+
 ## [1.20.76](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.75...v1.20.76) (2026-08-02)
 
 
