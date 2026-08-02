@@ -342,34 +342,64 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
               member.key.name === property.name,
           );
           if (getter) {
-            // Check explicit return type
-            if (getter.value.returnType) {
-              return hasCollectionReferenceType(
-                getter.value.returnType.typeAnnotation,
-              );
-            }
-            // Check return statement to infer type
-            if (
-              getter.value.body &&
-              getter.value.body.type === AST_NODE_TYPES.BlockStatement
-            ) {
-              const returnStmt = getter.value.body.body.find(
-                (stmt): stmt is TSESTree.ReturnStatement =>
-                  stmt.type === AST_NODE_TYPES.ReturnStatement,
-              );
-              if (
-                returnStmt?.argument?.type === AST_NODE_TYPES.MemberExpression
-              ) {
-                return checkMemberExpressionForCollectionReference(
-                  returnStmt.argument,
-                );
-              }
-            }
+            return yieldsTypedCollectionReference(getter.value);
           }
         }
       }
 
       return false;
+    }
+
+    /**
+     * Guards the return-expression inference below against a class whose
+     * members refer to one another, such as `get a() { return this.a; }` or a
+     * pair of mutually recursive methods. Following the expression is otherwise
+     * unbounded, and a cycle is legal input that must terminate rather than
+     * exhaust the stack.
+     */
+    const inferenceInProgress = new Set<TSESTree.Node>();
+
+    /**
+     * Reports whether a class member provably hands back a typed
+     * CollectionReference.
+     *
+     * The explicit return annotation is authoritative where it exists, but it
+     * cannot be the only evidence read: `no-explicit-return-type` ships in the
+     * same recommended config and is fixable, so a single `eslint --fix` pass
+     * deletes it. The schema the annotation described still lives in the
+     * expression the member returns, and that expression is what the fixer
+     * leaves behind, so it is read as the fallback.
+     */
+    function yieldsTypedCollectionReference(
+      fn:
+        | TSESTree.FunctionExpression
+        | TSESTree.ArrowFunctionExpression
+        | TSESTree.TSEmptyBodyFunctionExpression,
+    ): boolean {
+      if (fn.returnType) {
+        return hasCollectionReferenceType(fn.returnType.typeAnnotation);
+      }
+
+      if (!fn.body || inferenceInProgress.has(fn)) {
+        return false;
+      }
+      inferenceInProgress.add(fn);
+      try {
+        if (fn.body.type !== AST_NODE_TYPES.BlockStatement) {
+          return isTypedCollectionReference(fn.body);
+        }
+
+        // Only top-level returns are read; a return nested inside another
+        // function belongs to that one.
+        return fn.body.body.some(
+          (statement) =>
+            statement.type === AST_NODE_TYPES.ReturnStatement &&
+            !!statement.argument &&
+            isTypedCollectionReference(statement.argument),
+        );
+      } finally {
+        inferenceInProgress.delete(fn);
+      }
     }
 
     function checkIdentifierForCollectionReference(
@@ -482,17 +512,9 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
           if (obj.type === AST_NODE_TYPES.ThisExpression) {
             const classNode = findParentClass(node);
             if (classNode) {
-              const method = classNode.body.body.find(
-                (member): member is TSESTree.MethodDefinition =>
-                  member.type === AST_NODE_TYPES.MethodDefinition &&
-                  member.key.type === AST_NODE_TYPES.Identifier &&
-                  member.key.name === property.name &&
-                  !!member.value.returnType,
-              );
-              if (method?.value.returnType) {
-                return hasCollectionReferenceType(
-                  method.value.returnType.typeAnnotation,
-                );
+              const callee = findClassCallable(classNode, property.name);
+              if (callee) {
+                return yieldsTypedCollectionReference(callee);
               }
             }
           }
@@ -500,6 +522,52 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
       }
 
       return false;
+    }
+
+    /**
+     * Resolves `this.<name>()` to the function the call runs, covering both a
+     * method declaration and a property holding a function expression. The
+     * member is matched by name alone: requiring a return annotation here would
+     * make the resolution disappear the moment `no-explicit-return-type`
+     * strips it, even though the returned expression is unchanged.
+     */
+    function findClassCallable(
+      classNode: TSESTree.ClassDeclaration,
+      name: string,
+    ):
+      | TSESTree.FunctionExpression
+      | TSESTree.ArrowFunctionExpression
+      | TSESTree.TSEmptyBodyFunctionExpression
+      | undefined {
+      for (const member of classNode.body.body) {
+        if (
+          member.type === AST_NODE_TYPES.MethodDefinition &&
+          member.kind === 'method' &&
+          member.key.type === AST_NODE_TYPES.Identifier &&
+          member.key.name === name
+        ) {
+          return member.value;
+        }
+
+        if (
+          member.type === AST_NODE_TYPES.PropertyDefinition &&
+          member.key.type === AST_NODE_TYPES.Identifier &&
+          member.key.name === name
+        ) {
+          // An annotated property is already resolved by the member-expression
+          // path, which reads the annotation rather than the initializer.
+          if (member.typeAnnotation || !member.value) {
+            return undefined;
+          }
+          const initializer = member.value;
+          const isFunction =
+            initializer.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+            initializer.type === AST_NODE_TYPES.FunctionExpression;
+          return isFunction ? initializer : undefined;
+        }
+      }
+
+      return undefined;
     }
 
     function getTypeOfMemberExpression(
