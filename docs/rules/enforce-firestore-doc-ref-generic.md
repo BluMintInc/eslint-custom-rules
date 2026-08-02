@@ -13,8 +13,57 @@ This rule requires every Firestore `DocumentReference`, `CollectionReference`, a
 - Provide a concrete document interface or type whenever you create a Firestore reference or call `doc`, `collection`, or `collectionGroup`.
 - Calls on an already typed `CollectionReference<T>` may omit the generic on `collectionRef.doc(...)` because the collection supplies the document shape. This holds whether the collection is chained (`db.collection<T>('x').doc('y')`) or first stored in a `const`.
 - Resolving a stored collection is deliberately shallow: only a `const` whose initializer is a `collection<T>(...)` call, whose annotation is `CollectionReference<T>`, or which asserts that type is followed, and only one hop. An alias of an alias, a `let`, a parameter, or an import cannot be proven typed, so `doc(...)` on those still requires its own generic.
+- A class member reached as `this.member` or `this.member()` is resolved through its return type annotation when it has one, and otherwise through the expression it returns. See [Where the schema evidence must live](#where-the-schema-evidence-must-live).
 - Generics that use `any` or `{}` erase the schema and disable compile-time checks; nested `any`/`{}` are flagged when the rule can see them inline or via same-file types.
 - Receivers that trace back to `@firebase/rules-unit-testing` are exempt. See [Compat Firestore from `@firebase/rules-unit-testing`](#compat-firestore-from-firebaserules-unit-testing).
+
+## Where the schema evidence must live
+
+A return type annotation is not a durable place to declare a Firestore document schema. `no-explicit-return-type` ships in the same `recommended` config and is fixable, so a single `eslint --fix` deletes the annotation. Whatever schema only the annotation described is gone from the program afterwards — the reference widens to `DocumentData` — and this rule reports it.
+
+This rule therefore reads the **expression** a class member returns, not just its annotation. A collection whose type argument is written at the call site keeps supplying the document shape after the annotation is stripped:
+
+```ts
+class ConfigService {
+  // Correct: the generic is at the call site, so nothing can strip it.
+  private getSettingsCollection() {
+    return db.collection<Settings>('settings');
+  }
+
+  getSettingsDoc(id: string) {
+    return this.getSettingsCollection().doc(id);
+  }
+}
+```
+
+Both a method and a getter are resolved this way, an explicit annotation still wins where it is present, and a member chain that never reaches a typed collection keeps reporting:
+
+```ts
+class ConfigService {
+  // Incorrect: no annotation and no call-site generic — no schema anywhere.
+  private getSettingsCollection() {
+    return db.collection('settings');
+  }
+
+  getSettingsDoc(id: string) {
+    return this.getSettingsCollection().doc(id);
+  }
+}
+```
+
+The same applies outside a class. If a function's return annotation is the only place the schema appears, moving the generic to the call site is the fix that survives `--fix`:
+
+```ts
+// Fragile: `--fix` removes the annotation and the schema goes with it.
+async function getRef(): Promise<DocumentReference<User>> {
+  return db.collection('users').doc(userId);
+}
+
+// Durable: the generic lives on the expression.
+async function getRef() {
+  return db.collection<User>('users').doc(userId);
+}
+```
 
 ## Compat Firestore from `@firebase/rules-unit-testing`
 

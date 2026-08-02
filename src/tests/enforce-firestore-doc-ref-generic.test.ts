@@ -1,6 +1,8 @@
 import type { TSESLint } from '@typescript-eslint/utils';
+import { Linter, Rule } from 'eslint';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceFirestoreDocRefGeneric } from '../rules/enforce-firestore-doc-ref-generic';
+import { noExplicitReturnType } from '../rules/no-explicit-return-type';
 
 type MessageIds = 'missingGeneric' | 'invalidGeneric';
 
@@ -1249,6 +1251,113 @@ ruleTesterTs.run(
         };
       `,
       },
+      // A class method with no return annotation still supplies the schema
+      // through the expression it returns. `no-explicit-return-type` deletes
+      // the annotation, so the annotation cannot be the only evidence read.
+      {
+        code: `
+        interface Settings {
+          theme: string;
+        }
+        class ConfigService {
+          private getSettingsCollection() {
+            return db.collection<Settings>('settings');
+          }
+
+          getSettingsDoc(id: string) {
+            return this.getSettingsCollection().doc(id);
+          }
+        }
+      `,
+      },
+      // The getter form of the same shape
+      {
+        code: `
+        interface Doc {
+          value: string;
+        }
+        class DocService {
+          private get typedCollection() {
+            return db.collection<Doc>('things');
+          }
+
+          getDoc(id: string) {
+            return this.typedCollection.doc(id);
+          }
+        }
+      `,
+      },
+      // An expression-bodied arrow property returning a typed collection
+      {
+        code: `
+        interface Doc {
+          value: string;
+        }
+        class DocService {
+          private typedCollection = () => db.collection<Doc>('things');
+
+          getDoc(id: string) {
+            return this.typedCollection().doc(id);
+          }
+        }
+      `,
+      },
+      // A method returning a typed collection held in a const still resolves
+      {
+        code: `
+        interface Doc {
+          value: string;
+        }
+        const typedCollection = db.collection<Doc>('things');
+        class DocService {
+          private getCollection() {
+            return typedCollection;
+          }
+
+          getDoc(id: string) {
+            return this.getCollection().doc(id);
+          }
+        }
+      `,
+      },
+      // A method hop: the inner method carries the evidence, the outer relays it
+      {
+        code: `
+        interface Doc {
+          value: string;
+        }
+        class DocService {
+          private getInner() {
+            return db.collection<Doc>('things');
+          }
+
+          private getOuter() {
+            return this.getInner();
+          }
+
+          getDoc(id: string) {
+            return this.getOuter().doc(id);
+          }
+        }
+      `,
+      },
+      // An explicit annotation still wins where it is present
+      {
+        code: `
+        interface Settings {
+          theme: string;
+        }
+        class ConfigService {
+          private getSettingsCollection(): CollectionReference<Settings> {
+            return getSettings();
+          }
+
+          getSettingsDoc(id: string) {
+            return this.getSettingsCollection().doc(id);
+          }
+        }
+      `,
+      },
     ],
     invalid: [
       // Missing generic type - DocumentReference
@@ -1840,6 +1949,241 @@ ruleTesterTs.run(
       `,
         errors: [missingGenericError('DocumentReference')],
       },
+      // Inferring from the returned expression is not an amnesty: a getter that
+      // hands back an untyped collection supplies no schema, so both the
+      // collection call and the derived document reference keep reporting.
+      {
+        code: `
+        class DocService {
+          private get untypedCollection() {
+            return db.collection('things');
+          }
+
+          getDoc(id: string) {
+            return this.untypedCollection.doc(id);
+          }
+        }
+      `,
+        errors: [
+          missingGenericError('CollectionReference'),
+          missingGenericError('DocumentReference'),
+        ],
+      },
+      // The same for a method hop that never reaches a typed collection
+      {
+        code: `
+        class DocService {
+          private getInner() {
+            return db.collection('things');
+          }
+
+          private getOuter() {
+            return this.getInner();
+          }
+
+          getDoc(id: string) {
+            return this.getOuter().doc(id);
+          }
+        }
+      `,
+        errors: [
+          missingGenericError('CollectionReference'),
+          missingGenericError('DocumentReference'),
+        ],
+      },
+      // A self-referential getter must terminate rather than recurse forever,
+      // and supplies no schema, so the reference still reports.
+      {
+        code: `
+        class DocService {
+          get selfReferential() {
+            return this.selfReferential;
+          }
+
+          getDoc(id: string) {
+            return this.selfReferential.doc(id);
+          }
+        }
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // Mutually recursive methods must terminate for the same reason
+      {
+        code: `
+        class DocService {
+          private first() {
+            return this.second();
+          }
+
+          private second() {
+            return this.first();
+          }
+
+          getDoc(id: string) {
+            return this.first().doc(id);
+          }
+        }
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // A reference returned from a function carrying no annotation and no
+      // call-site generic has no recoverable schema anywhere, so the return
+      // position is not itself an exemption.
+      {
+        code: `
+        function getUserRef(id: string) {
+          return db.collection('users').doc(id);
+        }
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
     ],
   },
 );
+
+// Both rules ship in the recommended config and `no-explicit-return-type` is
+// fixable, so a single `eslint --fix` pass deletes the return annotations this
+// rule reads. Schema evidence that lives in the returned expression must
+// therefore survive that pass.
+describe('enforce-firestore-doc-ref-generic after no-explicit-return-type --fix', () => {
+  const TARGET_ID = '@blumintinc/blumint/enforce-firestore-doc-ref-generic';
+  const STRIPPER_ID = '@blumintinc/blumint/no-explicit-return-type';
+  const FILENAME = 'src/services/ConfigService.ts';
+
+  const SOURCE = [
+    'interface Settings {',
+    '  theme: string;',
+    '}',
+    '',
+    'export class ConfigService {',
+    '  private getSettingsCollection(): CollectionReference<Settings> {',
+    "    return db.collection<Settings>('settings');",
+    '  }',
+    '',
+    '  getSettingsDoc(id: string) {',
+    '    return this.getSettingsCollection().doc(id);',
+    '  }',
+    '}',
+    '',
+  ].join('\n');
+
+  // The remedy this rule asks for lives at the call site, where no fixer in the
+  // recommended config can remove it.
+  const REMEDIED_SOURCE = [
+    'interface User {',
+    '  name: string;',
+    '}',
+    '',
+    'export async function getRef(): Promise<DocumentReference<User>> {',
+    "  return db.collection<User>('users').doc(userId);",
+    '}',
+    '',
+  ].join('\n');
+
+  const UNTYPED_SOURCE = [
+    'export class ConfigService {',
+    '  private getSettingsCollection(): CollectionReference {',
+    "    return db.collection('settings');",
+    '  }',
+    '',
+    '  getSettingsDoc(id: string) {',
+    '    return this.getSettingsCollection().doc(id);',
+    '  }',
+    '}',
+    '',
+  ].join('\n');
+
+  const makeLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      TARGET_ID,
+      enforceFirestoreDocRefGeneric as unknown as Rule.RuleModule,
+    );
+    linter.defineRule(
+      STRIPPER_ID,
+      noExplicitReturnType as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const configFor = (rules: Linter.RulesRecord): Linter.Config => ({
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2022 as const,
+      sourceType: 'module' as const,
+    },
+    rules,
+  });
+
+  it('reports nothing before or after the return annotation is stripped', () => {
+    const linter = makeLinter();
+    expect(
+      linter.verify(SOURCE, configFor({ [TARGET_ID]: 'error' }), FILENAME),
+    ).toHaveLength(0);
+
+    const fixed = linter.verifyAndFix(
+      SOURCE,
+      configFor({ [STRIPPER_ID]: 'error' }),
+      FILENAME,
+    );
+    // Without this assertion the test passes vacuously whenever the stripper
+    // stops rewriting the annotation it is here to remove.
+    expect(fixed.output).not.toContain('CollectionReference<Settings>');
+    expect(fixed.output).toContain('private getSettingsCollection() {');
+    expect(
+      linter.verify(
+        fixed.output,
+        configFor({ [TARGET_ID]: 'error' }),
+        FILENAME,
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('keeps a call-site generic silent through the same pipeline', () => {
+    const linter = makeLinter();
+    expect(
+      linter.verify(
+        REMEDIED_SOURCE,
+        configFor({ [TARGET_ID]: 'error' }),
+        FILENAME,
+      ),
+    ).toHaveLength(0);
+
+    const fixed = linter.verifyAndFix(
+      REMEDIED_SOURCE,
+      configFor({ [STRIPPER_ID]: 'error' }),
+      FILENAME,
+    );
+    expect(fixed.output).not.toContain('Promise<DocumentReference<User>>');
+    expect(
+      linter.verify(
+        fixed.output,
+        configFor({ [TARGET_ID]: 'error' }),
+        FILENAME,
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('still reports a genuinely untyped reference through the same pipeline', () => {
+    const linter = makeLinter();
+    const fixed = linter.verifyAndFix(
+      UNTYPED_SOURCE,
+      configFor({ [STRIPPER_ID]: 'error' }),
+      FILENAME,
+    );
+    const messages = linter.verify(
+      fixed.output,
+      configFor({ [TARGET_ID]: 'error' }),
+      FILENAME,
+    );
+    expect(messages.map((message) => message.messageId)).toEqual([
+      'missingGeneric',
+      'missingGeneric',
+    ]);
+  });
+});
