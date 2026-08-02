@@ -606,6 +606,116 @@ const invalidRest = [
     `,
     errors: [expectAlwaysFalse('false')],
   },
+  {
+    code: `
+if (Math.max(1, 2) === 0) {
+  doSomething();
+}
+`,
+    errors: [expectAlwaysFalse('Math.max(1, 2) === 0')],
+  },
+  {
+    code: `
+if (Math.min(1, 2) === 1) {
+  doSomething();
+}
+`,
+    errors: [expectAlwaysTrue('Math.min(1, 2) === 1')],
+  },
+  {
+    code: `
+if (0 === Math.max(1, 2)) {
+  doSomething();
+}
+`,
+    errors: [expectAlwaysFalse('0 === Math.max(1, 2)')],
+  },
+  {
+    code: `
+while (Math.max(1, 2) > 5) {
+  doSomething();
+}
+`,
+    errors: [expectAlwaysFalse('Math.max(1, 2) > 5')],
+  },
+
+  // Bare Math.max call as the whole condition keeps reporting
+  {
+    code: `
+if (Math.max(1, 2)) {
+  doSomething();
+}
+`,
+    errors: [expectAlwaysTrue('Math.max(1, 2)')],
+  },
+
+  // Math comparison inside a ternary test
+  {
+    code: `
+const result = Math.max(1, 2) === 0 ? 'yes' : 'no';
+`,
+    errors: [expectAlwaysFalse('Math.max(1, 2) === 0')],
+  },
+
+  // Negated Math comparison
+  {
+    code: `
+if (!(Math.max(1, 2) === 0)) {
+  doSomething();
+}
+`,
+    errors: [expectAlwaysTrue('!(Math.max(1, 2) === 0)')],
+  },
+
+  // Inequality against the folded Math result
+  {
+    code: `
+if (Math.min(4, 7) !== 4) {
+  doSomething();
+}
+`,
+    errors: [expectAlwaysFalse('Math.min(4, 7) !== 4')],
+  },
+
+  // Relational operators against the folded Math result
+  {
+    code: `
+if (Math.min(3, 9) <= 3) {
+  doSomething();
+}
+`,
+    errors: [expectAlwaysTrue('Math.min(3, 9) <= 3')],
+  },
+
+  // Math call on both sides of the comparison
+  {
+    code: `
+if (Math.max(1, 2) < Math.min(1, 2)) {
+  doSomething();
+}
+`,
+    errors: [expectAlwaysFalse('Math.max(1, 2) < Math.min(1, 2)')],
+  },
+
+  // Math comparison inside a for loop test
+  {
+    code: `
+for (let i = 0; Math.max(1, 2) >= 5; i++) {
+  doSomething();
+}
+`,
+    errors: [expectAlwaysFalse('Math.max(1, 2) >= 5')],
+  },
+
+  // A constant-false Math comparison short-circuits the whole conjunction
+  {
+    code: `
+if (foo && Math.max(1, 2) === 0) {
+  doSomething();
+}
+`,
+    errors: [expectAlwaysFalse('foo && Math.max(1, 2) === 0')],
+  },
 ];
 
 ruleTesterTs.run(
@@ -973,6 +1083,71 @@ ruleTesterTs.run(
       `
     if (new Date() > getTargetDate()) {
       handleExpired();
+    }
+    `,
+
+      // Math call with a runtime argument stays unresolved
+      `
+    if (Math.max(x, 2) === 0) {
+      doSomething();
+    }
+    `,
+
+      // Spread arguments hide the operand values
+      `
+    if (Math.max(...arr) === 0) {
+      doSomething();
+    }
+    `,
+
+      // Argument-less Math calls are left alone
+      `
+    if (Math.max() === 0) {
+      doSomething();
+    }
+    `,
+
+      // Single-argument Math calls are left alone
+      `
+    if (Math.max(1) === 1) {
+      doSomething();
+    }
+    `,
+
+      // A Math result stored in a variable is not folded through the binding
+      `
+    const largest = Math.max(1, 2);
+    if (largest === 0) {
+      doSomething();
+    }
+    `,
+
+      // Folded Math result compared against a runtime value
+      `
+    if (Math.max(1, 2) === getThreshold()) {
+      doSomething();
+    }
+    `,
+
+      // Computed member access resolves at runtime, so it is not Math.max
+      `
+    const max = pickMathMethod();
+    if (Math[max](1, 2) === 1) {
+      doSomething();
+    }
+    `,
+
+      // Unrelated Math methods stay unresolved
+      `
+    if (Math.random() === 0) {
+      doSomething();
+    }
+    `,
+
+      // Non-numeric Math arguments stay unresolved
+      `
+    if (Math.max('1', '2') === 0) {
+      doSomething();
     }
     `,
     ],
