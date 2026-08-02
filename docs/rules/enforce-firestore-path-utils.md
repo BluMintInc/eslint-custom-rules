@@ -11,12 +11,14 @@ Manually concatenating Firestore collection or document paths leads to brittle s
 This rule reports when:
 
 - The first argument of `firestore.doc(...)` or `firestore.collection(...)` is a string or template literal instead of a path helper.
+- The first argument is a `+` concatenation containing a string or template literal anywhere in the chain (for example `'teams/' + teamId + '/members'`), because that assembles a hard-coded path fragment inline.
 - The call lives outside of tests (`.test.`, `.spec.`, or `__tests__` paths are ignored).
 
 The rule allows:
 
 - Calls whose path argument is already produced by a helper named like `toUserPath(...)`.
-- Non-literal path expressions (variables, function calls, or other expressions) because those are likely already indirection helpers.
+- Path expressions that hide construction behind a name (variables, function calls, or other expressions) because those are likely already indirection helpers.
+- Concatenations of opaque operands only (for example `basePath + userId`), since no path fragment is written inline.
 
 ### Examples of **incorrect** code for this rule:
 
@@ -28,6 +30,11 @@ firestore.collection('users');
 
 // Template literal computed inline
 const ref = firestore.doc(`${prefix}/${id}`);
+
+// Concatenation, including nested chains and mixed template literals
+firestore.collection('teams/' + teamId + '/members');
+firestore.doc(`users/${userId}` + '/settings');
+firestore.doc(userId + '/settings');
 ```
 
 ### Examples of **correct** code for this rule:
@@ -44,6 +51,9 @@ firestore.collection(toUsersCollectionPath());
 
 // Non-literal expressions are allowed
 firestore.doc(nextPathFromState(state));
+
+// Concatenation without an inline path fragment is allowed
+firestore.doc(basePath + userId);
 ```
 
 ## When Not To Use It
