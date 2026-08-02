@@ -1,4 +1,5 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'preferFlatTransformEachKeys';
@@ -17,6 +18,37 @@ function isObjectExpression(
   node: TSESTree.Node | null | undefined,
 ): node is TSESTree.ObjectExpression {
   return !!node && node.type === AST_NODE_TYPES.ObjectExpression;
+}
+
+/**
+ * Strips assertion wrappers (`as const`, `as T`, `satisfies T`, `!`, `<T>x`),
+ * which nest, from an expression before its node type is inspected.
+ *
+ * An assertion changes no runtime value, so the write shape transformEach sends
+ * to Firestore — the only thing this rule judges — is identical with or without
+ * one. Matching bare node types alone leaves the rule blind to its own
+ * ecosystem: `enforce-object-literal-as-const` ships `'error'` in the same
+ * recommended config and is fixable, so `eslint --fix` appends `as const` to
+ * exactly these literals, which silences the nested-key report while the nested
+ * write shape survives (#1608).
+ *
+ * Unwrapping the whole chain rather than one level is safe because no wrapper's
+ * `typeAnnotation` carries information this rule reads; only key names and value
+ * shapes underneath matter.
+ */
+function unwrapAssertions(node: TSESTree.Node): TSESTree.Node {
+  return ASTHelpers.unwrapTSAssertions(node);
+}
+
+// Resolve the object literal an expression ultimately is, seeing through
+// assertion wrappers. Returns null when the underlying expression is anything
+// else (a call, a member expression, a binding reference).
+function unwrapToObjectExpression(
+  node: TSESTree.Node | null | undefined,
+): TSESTree.ObjectExpression | null {
+  if (!node) return null;
+  const inner = unwrapAssertions(node);
+  return isObjectExpression(inner) ? inner : null;
 }
 
 function isProperty(node: TSESTree.Node): node is TSESTree.Property {
@@ -85,7 +117,9 @@ function isStrategyObject(obj: TSESTree.ObjectExpression): boolean {
 function usesResolveSelf(obj: TSESTree.ObjectExpression): boolean {
   const resolveAllProp = findProp(obj, 'resolveAll');
   if (!resolveAllProp) return false;
-  const val = resolveAllProp.value;
+  // `resolveAll: resolveSelf as ResolveAllStrategy` still resolves self, so the
+  // exemption must survive an assertion on the reference.
+  const val = unwrapAssertions(resolveAllProp.value);
   return val.type === AST_NODE_TYPES.Identifier && val.name === 'resolveSelf';
 }
 
@@ -98,8 +132,8 @@ function getDataObject(
 ): TSESTree.ObjectExpression | null {
   const afterDataProp = findProp(obj, 'afterData');
   if (afterDataProp) {
-    const val = afterDataProp.value;
-    if (isObjectExpression(val)) return val;
+    const val = unwrapToObjectExpression(afterDataProp.value);
+    if (val) return val;
     // afterData exists but its value isn't a literal (e.g. a variable) — skip.
     return null;
   }
@@ -123,13 +157,13 @@ function resolveVariableBinding(
     if (stmt.type !== AST_NODE_TYPES.VariableDeclaration) continue;
     for (const decl of stmt.declarations) {
       if (
-        decl.id.type === AST_NODE_TYPES.Identifier &&
-        decl.id.name === varName &&
-        decl.init &&
-        isObjectExpression(decl.init)
+        decl.id.type !== AST_NODE_TYPES.Identifier ||
+        decl.id.name !== varName
       ) {
-        return decl.init;
+        continue;
       }
+      const init = unwrapToObjectExpression(decl.init);
+      if (init) return init;
     }
   }
   return null;
@@ -154,7 +188,7 @@ function checkDataObject(
     if (isDotNotationKey(keyName)) continue;
 
     // Flag when the value is a nested object literal.
-    if (isObjectExpression(prop.value)) {
+    if (unwrapToObjectExpression(prop.value)) {
       report(prop);
     }
   }
@@ -170,14 +204,12 @@ function analyzeBlockBody(
     if (stmt.type !== AST_NODE_TYPES.ReturnStatement) continue;
     if (!stmt.argument) continue;
 
-    let retObj: TSESTree.ObjectExpression | null = null;
+    const returned = unwrapAssertions(stmt.argument);
 
-    if (isObjectExpression(stmt.argument)) {
-      retObj = stmt.argument;
-    } else {
-      // Try single-binding pattern: const x = {...}; return x;
-      retObj = resolveVariableBinding(stmt.argument, body);
-    }
+    // Try single-binding pattern: const x = {...}; return x;
+    const retObj = isObjectExpression(returned)
+      ? returned
+      : resolveVariableBinding(returned, body);
 
     if (!retObj) continue;
 
@@ -223,7 +255,10 @@ export const preferFlatTransformEachKeys = createRule<[], MessageIds>({
         const transformEachProp = findProp(node, 'transformEach');
         if (!transformEachProp) return;
 
-        const fn = transformEachProp.value;
+        // A transform asserted at its binding
+        // (`transformEach: ((doc) => ({...})) as TransformEach`) is still the
+        // function the strategy runs.
+        const fn = unwrapAssertions(transformEachProp.value);
 
         const report = (violatingNode: TSESTree.Node) => {
           context.report({
@@ -237,10 +272,11 @@ export const preferFlatTransformEachKeys = createRule<[], MessageIds>({
           fn.type === AST_NODE_TYPES.FunctionExpression
         ) {
           const body = fn.body;
+          // Arrow function with implicit return: () => ({ ... })
+          const implicitReturn = unwrapToObjectExpression(body);
 
-          if (isObjectExpression(body)) {
-            // Arrow function with implicit return: () => ({ ... })
-            const dataObj = getDataObject(body);
+          if (implicitReturn) {
+            const dataObj = getDataObject(implicitReturn);
             if (dataObj) checkDataObject(dataObj, report);
           } else if (body.type === AST_NODE_TYPES.BlockStatement) {
             analyzeBlockBody(body, report);

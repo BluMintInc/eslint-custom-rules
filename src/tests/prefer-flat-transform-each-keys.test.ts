@@ -230,6 +230,150 @@ ruleTesterTs.run(
       queryResolveAll: resolveAll,
     };
     `,
+
+      // 21. Flat dot-notation keys with `as const` on the return — the shape
+      // enforce-object-literal-as-const's fixer produces; still flat, still fine.
+      `
+    const strategy = {
+      transformEach: ({ source }) => {
+        return {
+          'worthSummary.countUnpriceable': source.count,
+        } as const;
+      },
+      resolveAll: resolveParent,
+    };
+    `,
+
+      // 22. Flat keys with an implicit-return `as const`
+      `
+    const strategy = {
+      transformEach: ({ source }) => ({
+        'worthSummary.countUnpriceable': source.count,
+      } as const),
+      resolveAll: resolveParent,
+    };
+    `,
+
+      // 23. resolveSelf exemption survives an assertion on the resolveAll value
+      `
+    const STATUS_STRATEGY = {
+      transformEach: ({ source }) => ({
+        roundsStatus: { current: source.status },
+      }),
+      resolveAll: resolveSelf as ResolveAllStrategy,
+    };
+    `,
+
+      // 24. resolveSelf exemption survives a satisfies clause
+      `
+    const STATUS_STRATEGY = {
+      transformEach: ({ source }) => ({
+        roundsStatus: { current: source.status },
+      }),
+      resolveAll: resolveSelf satisfies ResolveAllStrategy,
+    };
+    `,
+
+      // 25. resolveSelf exemption survives a non-null assertion
+      `
+    const STATUS_STRATEGY = {
+      transformEach: ({ source }) => ({
+        roundsStatus: { current: source.status },
+      }),
+      resolveAll: resolveSelf!,
+    };
+    `,
+
+      // 26. Dot-notation key whose value carries an assertion — leaf data, exempt
+      `
+    const strategy = {
+      transformEach: ({ source }) => ({
+        'members.abc': { name: source.name } as const,
+      }),
+      resolveAll: resolveParent,
+    };
+    `,
+
+      // 27. Computed key whose value carries an assertion — dynamic leaf path, exempt
+      `
+    const strategy = {
+      transformEach: ({ sourceRef: { id } }) => ({
+        [\`cohortPreviews.\${id}\`]: { name: 'x' } as const,
+      }),
+      resolveAll: resolveParent,
+    };
+    `,
+
+      // 28. Unwrapping stops at a non-literal: an asserted member expression is
+      // not an object literal, so there is no nested-write shape to flag.
+      `
+    const strategy = {
+      transformEach: ({ source }) => ({
+        worthSummary: source.worthSummary as WorthSummary,
+        names: source.names as string[],
+      }),
+      resolveAll: resolveParent,
+    };
+    `,
+
+      // 29. afterData whose value is an asserted call — still not statically analyzable
+      `
+    const strategy = {
+      transformEach: ({ source }) => ({
+        afterData: buildAfterData(source) as AfterData,
+        method: 'update',
+      }),
+      resolveAll: resolveParent,
+    };
+    `,
+
+      // 30. Factory reference with an assertion — no inline function body to analyze
+      `
+    const strategy = {
+      transformEach: makeTransform(config) as TransformEach,
+      resolveAll: resolveParent,
+    };
+    `,
+
+      // 31. transformEach returning an asserted primitive — no object to check
+      `
+    const strategy = {
+      transformEach: ({ source }) => source.count as number,
+      resolveAll: resolveParent,
+    };
+    `,
+
+      // 32. Binding pattern with an asserted flat initialiser
+      `
+    const strategy = {
+      transformEach: ({ source }) => {
+        const result = {
+          'worthSummary.countUnpriceable': source.count,
+        } as const;
+        return result;
+      },
+      resolveAll: resolveParent,
+    };
+    `,
+
+      // 33. Strategy object itself asserted, flat keys inside
+      `
+    const strategy = {
+      transformEach: ({ source }) => ({
+        'worthSummary.countUnpriceable': source.count,
+      }),
+      resolveAll: resolveParent,
+    } as const;
+    `,
+
+      // 34. Non-strategy object with asserted nested return — still not a strategy
+      `
+    const notAStrategy = {
+      transformEach: ({ source }) => ({
+        worthSummary: { priceable: source.val },
+      } as const),
+    };
+    `,
     ],
     invalid: [
       // 1. Classic bad pattern: nested object under a non-dot key (the issue's primary example)
@@ -467,6 +611,364 @@ ruleTesterTs.run(
           worthSummary: { count: source.count },
         }),
         resolveAll: myResolveAll,
+      };
+      `,
+        errors: [{ messageId: 'preferFlatTransformEachKeys' }],
+      },
+
+      // 15. The exact shape `enforce-object-literal-as-const --fix` produces on
+      // the issue's strategy: `as const` appended to the returned object.
+      {
+        code: `
+      const strategy = {
+        transformEach: ({ source }) => {
+          const { priceable, countUnpriceable, countUnassured } = source.worthSummary;
+          return {
+            worthSummary: {
+              priceable,
+              countUnpriceable,
+              countUnassured,
+            },
+          } as const;
+        },
+        numericFieldPathConfig: {
+          'worthSummary.countUnpriceable': 'FieldValue.increment',
+        },
+        resolveAll: resolveParentSkipRegistry,
+      };
+      `,
+        errors: [{ messageId: 'preferFlatTransformEachKeys' }],
+      },
+
+      // 16. satisfies clause on the returned object
+      {
+        code: `
+      const strategy = {
+        transformEach: ({ source }) => {
+          return {
+            worthSummary: { count: source.count },
+          } satisfies Record<string, unknown>;
+        },
+        resolveAll: resolveParent,
+      };
+      `,
+        errors: [{ messageId: 'preferFlatTransformEachKeys' }],
+      },
+
+      // 17. Non-null assertion on the returned object
+      {
+        code: `
+      const strategy = {
+        transformEach: ({ source }) => {
+          return {
+            worthSummary: { count: source.count },
+          }!;
+        },
+        resolveAll: resolveParent,
+      };
+      `,
+        errors: [{ messageId: 'preferFlatTransformEachKeys' }],
+      },
+
+      // 18. Angle-bracket type assertion on the returned object
+      {
+        code: `
+      const strategy = {
+        transformEach: ({ source }) => {
+          return <const>{
+            worthSummary: { count: source.count },
+          };
+        },
+        resolveAll: resolveParent,
+      };
+      `,
+        errors: [{ messageId: 'preferFlatTransformEachKeys' }],
+      },
+
+      // 19. Wrappers nest: as const + satisfies
+      {
+        code: `
+      const strategy = {
+        transformEach: ({ source }) => {
+          return {
+            worthSummary: { count: source.count },
+          } as const satisfies Record<string, unknown>;
+        },
+        resolveAll: resolveParent,
+      };
+      `,
+        errors: [{ messageId: 'preferFlatTransformEachKeys' }],
+      },
+
+      // 20. Wrappers nest: non-null plus a double assertion
+      {
+        code: `
+      const strategy = {
+        transformEach: ({ source }) => {
+          return {
+            worthSummary: { count: source.count },
+          }! as unknown as WorthUpdates;
+        },
+        resolveAll: resolveParent,
+      };
+      `,
+        errors: [{ messageId: 'preferFlatTransformEachKeys' }],
+      },
+
+      // 21. Implicit arrow return wrapped in an assertion
+      {
+        code: `
+      const strategy = {
+        transformEach: ({ source }) => ({
+          worthSummary: { count: source.count },
+        } as const),
+        resolveAll: resolveParent,
+      };
+      `,
+        errors: [{ messageId: 'preferFlatTransformEachKeys' }],
+      },
+
+      // 22. Assertion on the nested value rather than the whole return
+      {
+        code: `
+      const strategy = {
+        transformEach: ({ source }) => ({
+          worthSummary: { count: source.count } as const,
+        }),
+        resolveAll: resolveParent,
+      };
+      `,
+        errors: [{ messageId: 'preferFlatTransformEachKeys' }],
+      },
+
+      // 23. Assertion on the afterData container value
+      {
+        code: `
+      const strategy = {
+        transformEach: ({ source }) => ({
+          afterData: {
+            worthSummary: { count: source.count },
+          } as const,
+          method: 'update',
+        }),
+        resolveAll: resolveParent,
+      };
+      `,
+        errors: [{ messageId: 'preferFlatTransformEachKeys' }],
+      },
+
+      // 24. Assertion on a nested value inside afterData
+      {
+        code: `
+      const strategy = {
+        transformEach: ({ source }) => ({
+          afterData: {
+            worthSummary: { count: source.count } as const,
+          },
+          method: 'update',
+        }),
+        resolveAll: resolveParent,
+      };
+      `,
+        errors: [{ messageId: 'preferFlatTransformEachKeys' }],
+      },
+
+      // 25. Assertion on the initialiser of a returned binding
+      {
+        code: `
+      const strategy = {
+        transformEach: ({ source }) => {
+          const result = {
+            worthSummary: { count: source.count },
+          } as const;
+          return result;
+        },
+        resolveAll: resolveParent,
+      };
+      `,
+        errors: [{ messageId: 'preferFlatTransformEachKeys' }],
+      },
+
+      // 26. Assertion on the returned identifier of a binding
+      {
+        code: `
+      const strategy = {
+        transformEach: ({ source }) => {
+          const result = {
+            worthSummary: { count: source.count },
+          };
+          return result as WorthUpdates;
+        },
+        resolveAll: resolveParent,
+      };
+      `,
+        errors: [{ messageId: 'preferFlatTransformEachKeys' }],
+      },
+
+      // 27. Assertions on both the binding initialiser and the return
+      {
+        code: `
+      const strategy = {
+        transformEach: ({ source }) => {
+          const result = {
+            worthSummary: { count: source.count },
+          } as const;
+          return result!;
+        },
+        resolveAll: resolveParent,
+      };
+      `,
+        errors: [{ messageId: 'preferFlatTransformEachKeys' }],
+      },
+
+      // 28. The transform itself is asserted at its binding — an arrow function
+      // wrapped in `as` is still the transformEach the strategy runs.
+      {
+        code: `
+      const strategy = {
+        transformEach: (({ source }) => ({
+          worthSummary: { count: source.count },
+        })) as TransformEach,
+        resolveAll: resolveParent,
+      };
+      `,
+        errors: [{ messageId: 'preferFlatTransformEachKeys' }],
+      },
+
+      // 29. A function expression asserted at its binding, with a wrapped return
+      {
+        code: `
+      const strategy = {
+        transformEach: (function ({ source }) {
+          return {
+            worthSummary: { count: source.count },
+          } as const;
+        }) as TransformEach,
+        resolveAll: resolveParent,
+      };
+      `,
+        errors: [{ messageId: 'preferFlatTransformEachKeys' }],
+      },
+
+      // 30. Method shorthand with a wrapped return
+      {
+        code: `
+      const strategy = {
+        transformEach({ source }) {
+          return {
+            roundsStatus: { current: source.status },
+          } as const;
+        },
+        resolveAll: resolveParentSkipRegistry,
+      };
+      `,
+        errors: [{ messageId: 'preferFlatTransformEachKeys' }],
+      },
+
+      // 31. The strategy object itself is asserted, with a wrapped nested return
+      {
+        code: `
+      const strategy = {
+        transformEach: ({ source }) => ({
+          worthSummary: { count: source.count },
+        } as const),
+        resolveAll: resolveParent,
+      } as const;
+      `,
+        errors: [{ messageId: 'preferFlatTransformEachKeys' }],
+      },
+
+      // 32. Wrappers at every level at once
+      {
+        code: `
+      const strategy = {
+        transformEach: (({ source }) => {
+          const result = {
+            afterData: {
+              worthSummary: { count: source.count } as const,
+            } as const,
+            method: 'update',
+          }! as unknown as Updates;
+          return result satisfies Updates;
+        }) as TransformEach,
+        resolveAll: resolveParent,
+      } as const;
+      `,
+        errors: [{ messageId: 'preferFlatTransformEachKeys' }],
+      },
+
+      // 33. Two wrapped nested keys — one error each
+      {
+        code: `
+      const strategy = {
+        transformEach: ({ source }) => ({
+          worthSummary: { count: source.count } as const,
+          matchesAggregation: { total: source.total } as const,
+        }),
+        resolveAll: resolveParent,
+      };
+      `,
+        errors: [
+          { messageId: 'preferFlatTransformEachKeys' },
+          { messageId: 'preferFlatTransformEachKeys' },
+        ],
+      },
+
+      // 34. An asserted resolveAll that is not resolveSelf stays unexempt
+      {
+        code: `
+      const strategy = {
+        transformEach: ({ source }) => ({
+          worthSummary: { count: source.count },
+        } as const),
+        resolveAll: resolveParentSkipRegistry as ResolveAllStrategy,
+      };
+      `,
+        errors: [{ messageId: 'preferFlatTransformEachKeys' }],
+      },
+
+      // 35. upsert strategy shape with a wrapped nested value
+      {
+        code: `
+      const strategy = {
+        transformEach: ({ source }) => ({
+          settings: { mode: source.mode } as const,
+        }),
+        upsert: true,
+      };
+      `,
+        errors: [{ messageId: 'preferFlatTransformEachKeys' }],
+      },
+
+      // 36. numericFieldPathConfig strategy shape with a wrapped return
+      {
+        code: `
+      const strategy = {
+        transformEach: ({ source }) => ({
+          worthSummary: {
+            countUnpriceable: source.isActive ? 1 : 0,
+          },
+        } satisfies Record<string, unknown>),
+        numericFieldPathConfig: {
+          'worthSummary.countUnpriceable': 'FieldValue.increment',
+        },
+      };
+      `,
+        errors: [{ messageId: 'preferFlatTransformEachKeys' }],
+      },
+
+      // 37. sourceDeletionOverride strategy shape with a wrapped afterData
+      {
+        code: `
+      const strategy = {
+        transformEach: ({ source }) => ({
+          afterData: {
+            matchesAggregation: { matchPreviews: { id: 'preview' } },
+          } as const,
+          method: 'update',
+          sourceDeletionOverride: DELETE_TARGET,
+        }),
+        resolveAll: resolveParent,
       };
       `,
         errors: [{ messageId: 'preferFlatTransformEachKeys' }],
