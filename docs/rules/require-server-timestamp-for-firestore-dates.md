@@ -48,6 +48,7 @@ have no Firestore type connection.
 
 ```typescript
 import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+import type { Advancement } from 'functions/src/types/firestore/Advancement';
 
 // Variable annotation
 const draftMetadata: TokenMetadata<'offchain', Date> = {
