@@ -1,3 +1,10 @@
+## [1.20.71](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.70...v1.20.71) (2026-08-02)
+
+
+### Bug Fixes
+
+* **no-firestore-object-arrays:** treat (typeof X)[number] over a primitive const array as a primitive union (closes [#1594](https://github.com/BluMintInc/eslint-custom-rules/issues/1594)) ([44d14cb](https://github.com/BluMintInc/eslint-custom-rules/commit/44d14cb7cdb2fee8a34611e09e5a185d25899890))
+
 ## [1.20.70](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.69...v1.20.70) (2026-08-01)
 
 

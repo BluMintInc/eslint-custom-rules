@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.71",
+    "date": "2026-08-02T01:25:22.489Z",
+    "rules": [
+      {
+        "name": "no-firestore-object-arrays",
+        "changeType": "fix",
+        "issues": [
+          1594
+        ],
+        "summary": "treat (typeof X)[number] over a primitive const array as a primitive union (closes #1594)"
+      }
+    ]
+  },
+  {
     "version": "1.20.70",
     "date": "2026-08-01T23:31:02.214Z",
     "rules": [
