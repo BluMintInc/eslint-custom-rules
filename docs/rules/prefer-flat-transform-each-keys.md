@@ -22,6 +22,34 @@ This rule is a **warning** rather than an error because ~10% of strategies legit
 - **Non-strategy objects** — the rule only fires on objects that look like propagation strategies (those having `transformEach` alongside `resolveAll`, `queryResolveAll`, `numericFieldPathConfig`, `upsert`, or `sourceDeletionOverride`).
 - **Factory-function references** — when `transformEach` is set to a call expression or variable reference rather than an inline function literal, the function body is not statically analyzable and the rule skips it.
 
+### Type assertions
+
+Assertion wrappers — `as const`, `as T`, `satisfies T`, `!` and `<T>x` — change no runtime value, so the write shape sent to Firestore is identical with or without one. The rule sees through them (including when they nest) wherever it inspects an expression: the returned object, an implicit arrow return, the value of a nested key, the `afterData` container, the initialiser or reference of a returned binding, the `transformEach` function at its binding, and the `resolveAll` reference that drives the `resolveSelf` exemption.
+
+This matters because `enforce-object-literal-as-const` is enabled in the same `recommended` config and is fixable: `eslint --fix` appends `as const` to exactly the object literals this rule judges.
+
+```typescript
+// BAD: still a nested write, and still reported.
+const strategy = {
+  transformEach: ({ source }) => {
+    return {
+      worthSummary: { countUnpriceable: source.count },
+    } as const;
+  },
+  resolveAll: resolveParentSkipRegistry,
+};
+```
+
+```typescript
+// GOOD: the resolveSelf exemption survives an assertion on the reference.
+const STATUS_STRATEGY = {
+  transformEach: ({ source }) => ({
+    roundsStatus: { current: source.status },
+  }),
+  resolveAll: resolveSelf as ResolveAllStrategy,
+};
+```
+
 ### Examples
 
 #### Incorrect
