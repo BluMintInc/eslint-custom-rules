@@ -193,6 +193,20 @@ a local, a parameter, a type-only specifier, or an import from another module �
 the suggestion is withheld rather than emitting a wrapper that calls the wrong
 value. The report still stands, so the literal is migrated deliberately.
 
+The suggestion is withheld for a second reason: when the literal **closes over
+nothing**. The wrapper is emitted with an empty dependency array for the author
+to fill in, and a literal built only from constants, globals and module-scope
+bindings has nothing to fill it with. That leaves a memo hook with permanently
+empty dependencies — the exact shape
+[`enforce-global-constants`](./enforce-global-constants.md) forbids, and it
+offers no autofix of its own, so accepting the suggestion would trade this
+report for one the author cannot clear. Hoisting is the right answer when
+nothing is closed over, and the report's own message already prescribes it.
+
+A literal that reads a prop, a local, a destructured value or another hook's
+result still gets its suggestion — those dependencies are real and the author
+completes the placeholder with them.
+
 ## When Not To Use It
 
 - Components that intentionally regenerate literals on every render (e.g., to force recalculation) and where the cost is acceptable.
