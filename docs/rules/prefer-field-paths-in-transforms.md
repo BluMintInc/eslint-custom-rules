@@ -10,6 +10,7 @@ Propagation transforms often merge into shared aggregation containers. Returning
 
 - Flags any `transformEach` that returns multi-level object literals under aggregation containers (default patterns: `*Aggregation`, `previews`, `*Previews`).
 - Does not flag already-flattened dot-path keys or dynamic values that are not object literals.
+- Sees through type assertions (`as const`, `as T`, `satisfies T`, `!`, `<T>x`) wherever they wrap the returned object, a container value or a nested value. An assertion changes no runtime value, so the write it produces is just as destructive.
 - Allows opt-outs per file via the `allowNestedIn` option.
 
 ## Why this rule matters
@@ -32,6 +33,22 @@ const strategy = {
         },
       },
     };
+  },
+};
+```
+
+An assertion on the returned object does not make the nested write safe, so it is flagged the same way:
+
+```typescript
+const STRATEGY = {
+  transformEach(doc) {
+    return {
+      matchesAggregation: {
+        matchPreviews: {
+          [doc.id]: doc.preview,
+        },
+      },
+    } as const;
   },
 };
 ```
@@ -74,6 +91,10 @@ const strategy = {
 1. Non-aggregation targets
 
    If a transform writes to fields that aren’t shared containers, the rule is silent by default. Scope can be configured via options.
+
+1. Type assertions
+
+   `enforce-object-literal-as-const` ships in the same `recommended` config and is fixable, so `eslint --fix` appends `as const` to exactly the literals this rule inspects. Assertions are therefore treated as transparent: the shape underneath is what gets judged, whether the wrapper sits on the returned object, on a container value, on a nested value, or on the transform function itself. Assertions nest (`as const satisfies T`), and every layer is stripped. A wrapper that hides a non-object — `matchesAggregation: updates as Updates` — is still not an object literal, so the rule stays silent.
 
 ## Options
 

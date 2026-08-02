@@ -1,6 +1,7 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import type { TSESLint } from '@typescript-eslint/utils';
 import { minimatch } from 'minimatch';
+import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
 
 // Options for the rule
@@ -26,8 +27,9 @@ function describeNestedPath(
     const firstKey = getPropertyName(prop);
     if (!firstKey) continue;
 
-    if (isObjectExpression(prop.value)) {
-      for (const child of prop.value.properties) {
+    const nestedValue = unwrapToObjectExpression(prop.value);
+    if (nestedValue) {
+      for (const child of nestedValue.properties) {
         if (child.type === AST_NODE_TYPES.SpreadElement) continue;
         if (!isProperty(child)) continue;
         if (child.computed) continue;
@@ -50,6 +52,56 @@ function isObjectExpression(
   node: TSESTree.Node | null | undefined,
 ): node is TSESTree.ObjectExpression {
   return !!node && node.type === AST_NODE_TYPES.ObjectExpression;
+}
+
+/**
+ * Resolves the object literal a value ultimately is, seeing through assertion
+ * wrappers (`as const`, `as T`, `satisfies T`, `!`, `<T>x`), which nest.
+ *
+ * An assertion changes no runtime value, so the write shape a transform sends
+ * to Firestore — the only thing this rule judges — is identical with or without
+ * one. Matching the bare `ObjectExpression` alone made the rule blind to its own
+ * ecosystem: `enforce-object-literal-as-const` ships `'error'` in the same
+ * recommended config and is fixable, so `eslint --fix` appends `as const` to
+ * exactly these literals and silences the nested-write report (#1607).
+ *
+ * Unwrapping the whole chain rather than one level at a time is safe here
+ * because no wrapper's `typeAnnotation` carries information this rule reads;
+ * only the key names and value shapes underneath matter.
+ */
+function unwrapToObjectExpression(
+  node: TSESTree.Node | null | undefined,
+): TSESTree.ObjectExpression | null {
+  if (!node) return null;
+  const inner = ASTHelpers.unwrapTSAssertions(node);
+  return isObjectExpression(inner) ? inner : null;
+}
+
+/**
+ * Assertion wrappers as seen from below, for walks that climb toward the
+ * declaration a function is bound to. A wrapped transform
+ * (`transformEach: ((doc) => ({...})) as Transform`) is still bound to that
+ * key, so the wrapper must not hide the binding.
+ */
+const ASSERTION_WRAPPER_TYPES = new Set<string>([
+  AST_NODE_TYPES.TSAsExpression,
+  AST_NODE_TYPES.TSSatisfiesExpression,
+  AST_NODE_TYPES.TSNonNullExpression,
+  AST_NODE_TYPES.TSTypeAssertion,
+]);
+
+function bindingParentOf(node: TSESTree.Node): TSESTree.Node | null {
+  let current: TSESTree.Node = node;
+  let parent = (current.parent as TSESTree.Node | null) ?? null;
+  while (
+    parent &&
+    ASSERTION_WRAPPER_TYPES.has(parent.type) &&
+    (parent as unknown as { expression?: TSESTree.Node }).expression === current
+  ) {
+    current = parent;
+    parent = (current.parent as TSESTree.Node | null) ?? null;
+  }
+  return parent;
 }
 
 function isProperty(node: TSESTree.Node): node is TSESTree.Property {
@@ -91,7 +143,7 @@ function isBoundToName(
     return isNamedFunction(fn, name);
   }
 
-  const parent = fn.parent as TSESTree.Node | null;
+  const parent = bindingParentOf(fn);
   if (!parent) return false;
 
   if (
@@ -155,15 +207,14 @@ function hasDeeperThanOneLevelUnderContainer(
 ): boolean {
   for (const prop of containerObj.properties) {
     if (prop.type === AST_NODE_TYPES.SpreadElement) {
-      if (isObjectExpression(prop.argument)) {
+      if (unwrapToObjectExpression(prop.argument)) {
         return true;
       }
       continue;
     }
     if (!isProperty(prop)) continue;
-    const value = prop.value;
 
-    if (isObjectExpression(value)) {
+    if (unwrapToObjectExpression(prop.value)) {
       // Any nested object literal implies depth >= 2 (even if it only spreads)
       return true;
     }
@@ -189,8 +240,9 @@ function analyzeReturnedObject(
 
     if (!containerNameMatches(keyName)) continue;
 
-    const containerValue = top.value;
-    if (!isObjectExpression(containerValue)) continue; // only care if returning an object under the container
+    // only care if returning an object under the container
+    const containerValue = unwrapToObjectExpression(top.value);
+    if (!containerValue) continue;
 
     if (hasDeeperThanOneLevelUnderContainer(containerValue)) {
       const nestedPath = describeNestedPath(containerValue) ?? 'nestedField';
@@ -292,16 +344,18 @@ export const preferFieldPathsInTransforms = createRule<
 
     return {
       ReturnStatement(node) {
-        if (!node.argument || !isObjectExpression(node.argument)) return;
+        const returned = unwrapToObjectExpression(node.argument);
+        if (!returned) return;
         if (!isInTargetTransform(node)) return;
-        analyzeReturnedObject(node.argument, context, containerNameMatches);
+        analyzeReturnedObject(returned, context, containerNameMatches);
       },
       ArrowFunctionExpression(node) {
         // Handle implicit returns: transformEach: doc => ({ ... })
         if (!isTransformEachFunction(node) || isTransformEachVaripotent(node))
           return;
-        if (isObjectExpression(node.body)) {
-          analyzeReturnedObject(node.body, context, containerNameMatches);
+        const returned = unwrapToObjectExpression(node.body);
+        if (returned) {
+          analyzeReturnedObject(returned, context, containerNameMatches);
         }
       },
     };
