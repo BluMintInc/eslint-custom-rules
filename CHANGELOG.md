@@ -1,3 +1,10 @@
+## [1.20.74](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.73...v1.20.74) (2026-08-02)
+
+
+### Bug Fixes
+
+* **global-const-style:** split the rename on case boundaries so it is idempotent (closes [#1605](https://github.com/BluMintInc/eslint-custom-rules/issues/1605)) ([5be993b](https://github.com/BluMintInc/eslint-custom-rules/commit/5be993b709850a45f146de97ff60fa51747bf1c6))
+
 ## [1.20.73](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.72...v1.20.73) (2026-08-02)
 
 

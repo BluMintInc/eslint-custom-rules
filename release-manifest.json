@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.74",
+    "date": "2026-08-02T06:07:00.009Z",
+    "rules": [
+      {
+        "name": "global-const-style",
+        "changeType": "fix",
+        "issues": [
+          1605
+        ],
+        "summary": "split the rename on case boundaries so it is idempotent (closes #1605)"
+      }
+    ]
+  },
+  {
     "version": "1.20.73",
     "date": "2026-08-02T05:14:39.301Z",
     "rules": [
