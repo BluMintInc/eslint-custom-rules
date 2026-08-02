@@ -55,6 +55,25 @@ const FUNCTION_TYPES = new Set<string>([
 ]);
 
 /**
+ * Sentinel standing in for the receiver of a `this`-rooted member chain, which
+ * has no identifier to key on. `this` is a reserved word, so no binding can
+ * carry this name and shadow the sentinel.
+ */
+const THIS_ROOT = 'this';
+
+/**
+ * Node types that bind their own `this`, so a `this` inside one is a different
+ * receiver than the enclosing scope's. Arrow functions are deliberately absent:
+ * they close over the lexical `this`, exactly as a closure closes over an
+ * identifier binding.
+ */
+const THIS_REBINDING_TYPES = new Set<string>([
+  AST_NODE_TYPES.FunctionExpression,
+  AST_NODE_TYPES.FunctionDeclaration,
+  AST_NODE_TYPES.ClassBody,
+]);
+
+/**
  * Function/constructor/conditional type notation must be parenthesized to
  * appear as a `|` union member, or the emitted annotation does not parse
  * ("Function type notation must be parenthesized when used in a union type").
@@ -414,11 +433,21 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       return cur.type === AST_NODE_TYPES.Identifier;
     }
 
-    /** Root identifier of a member chain (`a.b.c` -> `a`). */
-    function rootIdentifierName(node: TSESTree.Node): string | null {
+    /**
+     * Root of a member chain (`a.b.c` -> `a`, `this.a.b` -> `THIS_ROOT`).
+     *
+     * A `this`-rooted chain names its receiver with a keyword rather than a
+     * binding, so it needs a sentinel to participate in root-keyed analysis at
+     * all. `'this'` cannot collide with a real root: `this` is a reserved word,
+     * so no identifier can ever carry that name.
+     */
+    function chainRootName(node: TSESTree.Node): string | null {
       let cur: TSESTree.Node = node;
       while (cur.type === AST_NODE_TYPES.MemberExpression) {
         cur = cur.object;
+      }
+      if (cur.type === AST_NODE_TYPES.ThisExpression) {
+        return THIS_ROOT;
       }
       return cur.type === AST_NODE_TYPES.Identifier ? cur.name : null;
     }
@@ -547,6 +576,48 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
             }
           } else {
             visit(val, anyNode);
+          }
+        }
+      };
+      visit(node);
+      return found;
+    }
+
+    /**
+     * Whether the subtree reads the receiver of the enclosing scope — the `this`
+     * counterpart of `referencesIdentifier`. Nested `function`/class bodies are
+     * skipped because their `this` is a different receiver, so a `this` inside
+     * one is no more a read of the narrowed object than an identifier of the
+     * same name declared in an inner scope would be.
+     */
+    function referencesThis(node: TSESTree.Node): boolean {
+      let found = false;
+      const visit = (n: unknown): void => {
+        if (found || !n || typeof n !== 'object') {
+          return;
+        }
+        const anyNode = n as Record<string, unknown> & { type?: string };
+        if (typeof anyNode.type !== 'string') {
+          return;
+        }
+        if (anyNode.type === AST_NODE_TYPES.ThisExpression) {
+          found = true;
+          return;
+        }
+        if (THIS_REBINDING_TYPES.has(anyNode.type)) {
+          return;
+        }
+        for (const key of Object.keys(anyNode)) {
+          if (key === 'parent') {
+            continue;
+          }
+          const val = anyNode[key];
+          if (Array.isArray(val)) {
+            for (const child of val) {
+              visit(child);
+            }
+          } else {
+            visit(val);
           }
         }
       };
@@ -1024,6 +1095,12 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
      * Narrowing exemption (Edge Case 1): when the discriminant is `obj.tag`, a
      * flat Record cannot express variant narrowing. If any KEPT branch value
      * references the base object beyond the tag access itself, do not fire.
+     *
+     * `this.obj.tag` narrows identically — the receiver is reached through a
+     * keyword instead of a binding, which changes nothing about what the Record
+     * would lose (hoisting `this.obj.data` out of the switch drops the narrowing
+     * and the emitted code no longer typechecks), so a `this`-rooted chain is
+     * matched against `this` reads in the kept branches.
      */
     function isNarrowingExempt(
       discriminant: TSESTree.Node,
@@ -1032,11 +1109,15 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       if (discriminant.type !== AST_NODE_TYPES.MemberExpression) {
         return false;
       }
-      const root = rootIdentifierName(discriminant);
+      const root = chainRootName(discriminant);
       if (!root) {
         return false;
       }
-      return keptValues.some((value) => referencesIdentifier(value, root));
+      const readsRoot =
+        root === THIS_ROOT
+          ? referencesThis
+          : (value: TSESTree.Expression) => referencesIdentifier(value, root);
+      return keptValues.some(readsRoot);
     }
 
     // ---- Switch form --------------------------------------------------------
