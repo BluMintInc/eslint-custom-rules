@@ -216,6 +216,20 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
         return true;
       }
 
+      // An assertion whose parent is another assertion is an inner link of a chain
+      // (`x as unknown as T`). The chain expresses ONE violation, and only the
+      // outermost link describes the type that actually reaches the caller, so it
+      // alone carries the report — otherwise the author is told to fix a cast to
+      // "unknown", which is not actionable. Exempting inner links also makes the
+      // report count independent of body style: an expression-bodied arrow has no
+      // ReturnStatement node, so its chain yields a single report either way.
+      if (
+        node.parent?.type === AST_NODE_TYPES.TSAsExpression ||
+        node.parent?.type === AST_NODE_TYPES.TSTypeAssertion
+      ) {
+        return true;
+      }
+
       // If the parent is an arrow function, we already handle it in ArrowFunctionExpression
       if (node.parent?.type === AST_NODE_TYPES.ArrowFunctionExpression) {
         return true;
@@ -365,12 +379,9 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
             return;
           }
 
-          // For nested type assertions, only report the outermost one
-          if (node.argument.expression.type === AST_NODE_TYPES.TSAsExpression) {
-            reportTypeAssertion(node.argument);
-            return;
-          }
-
+          // The returned expression is the outermost link of any assertion chain, so
+          // reporting it here yields one report naming the final asserted type; inner
+          // links are exempted in shouldAllowTypeAssertion.
           reportTypeAssertion(node.argument);
         }
 

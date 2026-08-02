@@ -480,6 +480,43 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
       return x;
     }
     `,
+
+    // ==================== CHAINED ASSERTIONS (bug #1609) ====================
+
+    // Good: Chained assertion assigned to a variable — outside a return, so silent
+    `
+    function outsideReturn(refs: unknown) {
+      const typed = refs as unknown as DocumentReference<Tournament>;
+      return typed;
+    }
+    `,
+
+    // Good: Chained assertion in a module-scope variable declaration
+    `
+    const config = raw as unknown as Config;
+    `,
+
+    // Good: Chained assertion passed as a call argument — the call's result is returned,
+    // so no link of the chain is the returned value
+    `
+    function wrapChained(value: unknown) {
+      return normalize(value as unknown as Payload);
+    }
+    `,
+
+    // Good: Chained assertion inside an object property (JSX props escape hatch)
+    `
+    function buildProps(value: unknown) {
+      return { payload: value as unknown as Payload };
+    }
+    `,
+
+    // Good: Chained assertion terminating in 'as const' — allowAsConst covers the returned value
+    `
+    function asConstChain(value: unknown) {
+      return { ...value } as const;
+    }
+    `,
   ],
   invalid: [
     // ==================== BASIC INVALID CASES ====================
@@ -531,7 +568,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
       errors: [typeAssertionError('TournamentConfig')],
     },
 
-    // Bad: Multiple type assertions
+    // Bad: Chained type assertions are one violation, reported on the outermost link (#1609)
     {
       code: `
       function getMatchResult() {
@@ -541,10 +578,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
         } as MatchScore) as MatchResult;
       }
       `,
-      errors: [
-        typeAssertionError('MatchResult'),
-        typeAssertionError('MatchScore'),
-      ],
+      errors: [typeAssertionError('MatchResult')],
     },
 
     // Bad: Type assertion in array methods
@@ -727,18 +761,14 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
       errors: [typeAssertionError('ApiResponse')],
     },
 
-    // Bad: Multiple nested type assertions
+    // Bad: A three-link chain is still one violation, named by the final type (#1609)
     {
       code: `
       function getNestedResult() {
         return ((data as RawData) as ProcessedData) as FinalResult;
       }
       `,
-      errors: [
-        typeAssertionError('FinalResult'),
-        typeAssertionError('ProcessedData'),
-        typeAssertionError('RawData'),
-      ],
+      errors: [typeAssertionError('FinalResult')],
     },
 
     // Bad: Type assertion from partial type
@@ -891,6 +921,98 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
       }
       `,
       errors: [typeAssertionError('SomeResult')],
+    },
+
+    // ==================== CHAINED ASSERTIONS — ONE REPORT PER VIOLATION (bug #1609) ====================
+
+    // Bad: Double assertion in a block-bodied return reports once, naming the outermost type
+    {
+      code: `
+      function getRefs(refs: unknown) {
+        return refs as unknown as DocumentReference<Tournament>;
+      }
+      `,
+      errors: [typeAssertionError('DocumentReference<Tournament>')],
+    },
+
+    // Bad: Three-link chain is still a single violation
+    {
+      code: `
+      function getFoo(refs: unknown) {
+        return refs as unknown as Bar as Foo;
+      }
+      `,
+      errors: [typeAssertionError('Foo')],
+    },
+
+    // Bad: Arrow implicit return with a chained assertion — parity with the block body above
+    {
+      code: `
+      export const build = (): Foo => refs as unknown as Foo;
+      `,
+      errors: [typeAssertionError('Foo')],
+    },
+
+    // Bad: Arrow implicit return chain without a return-type annotation
+    {
+      code: `
+      const toFoo = (refs: unknown) => refs as unknown as Foo;
+      `,
+      errors: [typeAssertionError('Foo')],
+    },
+
+    // Bad: Angle-bracket chain reports once
+    {
+      code: `
+      function getFoo(refs: unknown) {
+        return <Foo><unknown>refs;
+      }
+      `,
+      errors: [typeAssertionError('Foo')],
+    },
+
+    // Bad: Mixed-syntax chain (angle bracket wrapping 'as') reports once
+    {
+      code: `
+      function getFoo(refs: unknown) {
+        return <Foo>(refs as unknown);
+      }
+      `,
+      errors: [typeAssertionError('Foo')],
+    },
+
+    // Bad: Chained assertion feeding a property access — the outermost link owns the report
+    {
+      code: `
+      function getBar(foo: unknown) {
+        return (foo as unknown as A).bar;
+      }
+      `,
+      errors: [typeAssertionError('A')],
+    },
+
+    // Bad: Property access on an asserted object, then asserted again — two independent
+    // assertions, not a chain (the inner cast's parent is the member expression), so both
+    // are reported and each names a type the author can act on
+    {
+      code: `
+      function getBar(foo: unknown) {
+        return (foo as A).bar as B;
+      }
+      `,
+      errors: [typeAssertionError('B'), typeAssertionError('A')],
+    },
+
+    // Bad: Chained assertion in a nested callback return reports once
+    {
+      code: `
+      function processItems(items: any[]) {
+        return items.map(item => {
+          return item as unknown as ProcessedItem;
+        });
+      }
+      `,
+      errors: [typeAssertionError('ProcessedItem')],
     },
   ],
 });
