@@ -1,3 +1,11 @@
+## [1.20.81](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.80...v1.20.81) (2026-08-02)
+
+
+### Bug Fixes
+
+* **no-unused-props:** resolve the props type from an FC-annotated declarator (closes [#1620](https://github.com/BluMintInc/eslint-custom-rules/issues/1620)) ([d2b4496](https://github.com/BluMintInc/eslint-custom-rules/commit/d2b4496ea6aa7fbe60a7a0e7db1e130d68ffee0d))
+* **prefer-destructuring-no-class:** recognize annotation-carried class instances (closes [#1619](https://github.com/BluMintInc/eslint-custom-rules/issues/1619)) ([2e12d61](https://github.com/BluMintInc/eslint-custom-rules/commit/2e12d61be18da6e99efd9cfe2a54b422b8cf52ba))
+
 ## [1.20.80](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.79...v1.20.80) (2026-08-02)
 
 
