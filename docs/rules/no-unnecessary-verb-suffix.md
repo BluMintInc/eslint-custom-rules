@@ -165,6 +165,43 @@ const buildQueryTerse = (): QueryLike => ({
 });
 ```
 
+#### Assertion wrappers are transparent
+
+`as const`, `as T`, `satisfies T` and `!` change no runtime value, so a literal
+underneath one is still the value the surrounding declaration checks. The rule
+looks through them when hunting for a signal — a wrapper cannot detach a literal
+from the type it is assigned to:
+
+```ts
+// Still exempt: the return-type annotation checks the asserted literal
+function buildQuery(): QueryLike {
+  return {
+    orderBy: (field, direction) => buildQuery(),
+  } as const;
+}
+
+// Still exempt: the annotation on `chain` reaches through the assertion
+const chain: QueryLike = {
+  orderBy: (field, direction) => chain,
+} as const;
+
+// Still exempt: `as const satisfies T` is one literal with two wrappers
+const query = {
+  orderBy: (field: string, direction: string) => query,
+} as const satisfies QueryLike;
+```
+
+This matters because `enforce-object-literal-as-const` ships in the same
+recommended config and appends `as const` to these literals by `--fix`. Without
+the unwrap, one `eslint --fix` pass would turn a silent fluent builder into a
+violation whose only remedies are deleting an `as const` the next `--fix`
+restores, or renaming a method the declared type pins.
+
+An assertion is *transparent*, never a signal of its own: it hides no violation.
+`{ orderBy: … } as QueryLike` with no annotation around it still fires, because
+an `as` clause — unlike an annotation or `satisfies` — does not reject members
+the target type never declares.
+
 #### Why the return type is its own signal
 
 A **recursive** factory — the common shape for a hand-built SDK double, where

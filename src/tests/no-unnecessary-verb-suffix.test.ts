@@ -1,5 +1,7 @@
+import { Linter, Rule } from 'eslint';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { noUnnecessaryVerbSuffix } from '../rules/no-unnecessary-verb-suffix';
+import { enforceObjectLiteralAsConst } from '../rules/enforce-object-literal-as-const';
 
 ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
   valid: [
@@ -572,6 +574,177 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       },
     } satisfies FakeQuery;
   };
+`,
+
+    // Assertion-wrapped literals (#1597). `as const`, `as T`, `satisfies` and
+    // `!` never change the runtime value, so the conformance signal that sits
+    // OUTSIDE the wrapper still pins the member names underneath it. The
+    // `as const` form is not hypothetical: `enforce-object-literal-as-const`
+    // ships in the same recommended config and appends it by `--fix`.
+
+    // D through `as const` on a returned literal.
+    `
+  interface FakeQuery {
+    orderBy: () => FakeQuery;
+  }
+  function buildQuery(): FakeQuery {
+    return {
+      orderBy: () => {
+        return buildQuery();
+      },
+    } as const;
+  }
+`,
+    // D through `as const` on an arrow builder's returned literal.
+    `
+  interface FakeQuery {
+    orderBy: () => FakeQuery;
+  }
+  const buildQuery = (): FakeQuery => {
+    return {
+      orderBy: () => {
+        return buildQuery();
+      },
+    } as const;
+  };
+`,
+    // D through `as const` on a class method's returned literal.
+    `
+  interface FakeQuery {
+    orderBy: () => FakeQuery;
+  }
+  class Fixture {
+    public buildQuery(): FakeQuery {
+      return {
+        orderBy: () => {
+          return this.buildQuery();
+        },
+      } as const;
+    }
+  }
+`,
+    // D through `as const` reaching a NESTED literal.
+    `
+  interface Cfg {
+    handlers: { orderBy: (field: string) => void };
+  }
+  const buildCfg = (): Cfg => {
+    return {
+      handlers: {
+        orderBy: (field: string) => {
+          return;
+        },
+      },
+    } as const;
+  };
+`,
+    // D through `as const` on a concise arrow body.
+    `
+  interface FakeQuery {
+    orderBy: () => FakeQuery;
+  }
+  const buildQuery = (): FakeQuery => ({
+    orderBy: () => {
+      return buildQuery();
+    },
+  } as const);
+`,
+    // A through `as const` on an annotated variable.
+    `
+  interface QueryLike {
+    orderBy: (field: string) => void;
+  }
+  const chain: QueryLike = {
+    orderBy: (field) => {
+      return;
+    },
+  } as const;
+`,
+    // A through `as const` on an annotated class field.
+    `
+  interface QueryLike {
+    orderBy: (field: string) => void;
+  }
+  class Service {
+    private handlers: QueryLike = {
+      orderBy: (field) => {
+        return;
+      },
+    } as const;
+  }
+`,
+    // A through `as const` on an array element inside an annotated array.
+    `
+  interface Handler {
+    filterUsersBy: (role: string) => void;
+  }
+  const handlers: Handler[] = [
+    {
+      filterUsersBy: (role) => {
+        return;
+      },
+    } as const,
+  ];
+`,
+    // A through `as const` wrapping the annotated array itself.
+    `
+  interface Handler {
+    filterUsersBy: (role: string) => void;
+  }
+  const handlers: Handler[] = [
+    {
+      filterUsersBy: (role) => {
+        return;
+      },
+    },
+  ] as const;
+`,
+    // B where `as const` sits between the literal and its `satisfies` clause —
+    // the idiomatic `as const satisfies T` pairing.
+    `
+  interface QueryLike {
+    orderBy: (field: string) => void;
+  }
+  const query = {
+    orderBy: (field: string) => {
+      return;
+    },
+  } as const satisfies QueryLike;
+`,
+    // A through a non-null assertion.
+    `
+  interface QueryLike {
+    orderBy: (field: string) => void;
+  }
+  const chain: QueryLike = {
+    orderBy: (field) => {
+      return;
+    },
+  }!;
+`,
+    // D through an angle-bracket type assertion.
+    `
+  interface FakeQuery {
+    orderBy: () => FakeQuery;
+  }
+  function buildQuery(): FakeQuery {
+    return <FakeQuery>{
+      orderBy: () => {
+        return buildQuery();
+      },
+    };
+  }
+`,
+    // A through stacked assertions: unwrapping must survive more than one layer.
+    `
+  interface QueryLike {
+    orderBy: (field: string) => void;
+  }
+  const chain: QueryLike = {
+    orderBy: (field) => {
+      return;
+    },
+  } as const as QueryLike;
 `,
   ],
   invalid: [
@@ -2131,5 +2304,235 @@ function computeFrom(compute: string) {
   `,
       errors: [{ messageId: 'unnecessaryVerbSuffix' }],
     },
+
+    // Controls for #1597: seeing through an assertion must not become a
+    // blanket amnesty. An assertion is transparent, not a contract — with no
+    // conformance signal outside it, the member name is still the author's.
+    {
+      code: `
+    const handlers = {
+      fetchTournamentsBy: (key: string) => {
+        return key;
+      },
+    } as const;
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    {
+      code: `
+    const buildQuery = () => {
+      return {
+        fetchTournamentsBy: (key: string) => {
+          return key;
+        },
+      } as const;
+    };
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // An `as` assertion does not excess-property-check what it wraps, so it is
+    // no substitute for the annotation the walk is looking for.
+    {
+      code: `
+    interface FakeQuery {
+      fetchTournamentsBy: (key: string) => string;
+    }
+    const query = {
+      fetchTournamentsBy: (key: string) => {
+        return key;
+      },
+    } as FakeQuery;
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // A return type of `any` still proves nothing once an assertion wraps the
+    // literal — the unwrap reaches the annotation, which is unchecked.
+    {
+      code: `
+    const buildQuery = (): any => {
+      return {
+        fetchTournamentsBy: (key: string) => {
+          return key;
+        },
+      } as const;
+    };
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // `satisfies any` imposes no excess-property check either, and the walk
+    // through it must not invent a signal the outer scope does not have.
+    {
+      code: `
+    const buildQuery = () => {
+      return {
+        fetchTournamentsBy: (key: string) => {
+          return key;
+        },
+      } satisfies any;
+    };
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
   ],
+});
+
+// Both rules ship in the recommended config and the `as const` appender is
+// fixable, so a single `eslint --fix` pass must not turn a silent fluent
+// builder into a violation whose only remedies are re-deleting the `as const`
+// (which the next `--fix` restores) or renaming a method the declared type
+// pins (#1597).
+describe('no-unnecessary-verb-suffix after enforce-object-literal-as-const --fix', () => {
+  const VICTIM_ID = '@blumintinc/blumint/no-unnecessary-verb-suffix';
+  const CULPRIT_ID = '@blumintinc/blumint/enforce-object-literal-as-const';
+  const FILENAME = 'x.ts';
+
+  const BUILDER_SOURCES: Record<string, string> = {
+    'arrow builder': [
+      'interface FakeQuery {',
+      '  orderBy: () => FakeQuery;',
+      '}',
+      'const buildQuery = (): FakeQuery => {',
+      '  return {',
+      '    orderBy: () => {',
+      '      return buildQuery();',
+      '    },',
+      '  };',
+      '};',
+      '',
+    ].join('\n'),
+    'function declaration builder': [
+      'interface FakeQuery {',
+      '  orderBy: () => FakeQuery;',
+      '}',
+      'function buildQuery(): FakeQuery {',
+      '  return {',
+      '    orderBy: () => {',
+      '      return buildQuery();',
+      '    },',
+      '  };',
+      '}',
+      '',
+    ].join('\n'),
+    'class method builder': [
+      'interface FakeQuery {',
+      '  orderBy: () => FakeQuery;',
+      '}',
+      'class Fixture {',
+      '  public buildQuery(): FakeQuery {',
+      '    return {',
+      '      orderBy: () => {',
+      '        return this.buildQuery();',
+      '      },',
+      '    };',
+      '  }',
+      '}',
+      '',
+    ].join('\n'),
+    'nested handlers config': [
+      'interface Cfg {',
+      '  handlers: { orderBy: (field: string) => void };',
+      '}',
+      'const buildCfg = (): Cfg => {',
+      '  return {',
+      '    handlers: {',
+      '      orderBy: (field: string) => {',
+      '        return;',
+      '      },',
+      '    },',
+      '  };',
+      '};',
+      '',
+    ].join('\n'),
+  };
+
+  const UNNECESSARY_SUFFIX_SOURCE = [
+    'const build = () => {',
+    '  return {',
+    '    fetchTournamentsBy: (key: string) => {',
+    '      return key;',
+    '    },',
+    '  };',
+    '};',
+    '',
+  ].join('\n');
+
+  const makeLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      VICTIM_ID,
+      noUnnecessaryVerbSuffix as unknown as Rule.RuleModule,
+    );
+    linter.defineRule(
+      CULPRIT_ID,
+      enforceObjectLiteralAsConst as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const configFor = (rules: Linter.RulesRecord): Linter.Config => ({
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2022 as const,
+      sourceType: 'module' as const,
+    },
+    rules,
+  });
+
+  it.each(Object.keys(BUILDER_SOURCES))(
+    'stays silent on a %s once the sibling fixer adds `as const`',
+    (label) => {
+      const linter = makeLinter();
+      const source = BUILDER_SOURCES[label];
+
+      expect(
+        linter.verify(source, configFor({ [VICTIM_ID]: 'error' }), FILENAME),
+      ).toHaveLength(0);
+
+      const fixed = linter.verifyAndFix(
+        source,
+        configFor({ [CULPRIT_ID]: 'error' }),
+        FILENAME,
+      );
+      // Without this assertion the test passes vacuously whenever the sibling
+      // fixer stops emitting `as const` for this shape.
+      expect(fixed.output).toContain('as const');
+      expect(
+        linter.verify(
+          fixed.output,
+          configFor({ [VICTIM_ID]: 'error' }),
+          FILENAME,
+        ),
+      ).toHaveLength(0);
+    },
+  );
+
+  it('still reports a genuinely unnecessary suffix through the same pipeline', () => {
+    const linter = makeLinter();
+    expect(
+      linter.verify(
+        UNNECESSARY_SUFFIX_SOURCE,
+        configFor({ [VICTIM_ID]: 'error' }),
+        FILENAME,
+      ),
+    ).toHaveLength(1);
+
+    const fixed = linter.verifyAndFix(
+      UNNECESSARY_SUFFIX_SOURCE,
+      configFor({ [CULPRIT_ID]: 'error' }),
+      FILENAME,
+    );
+    expect(fixed.output).toContain('as const');
+    expect(
+      linter.verify(
+        fixed.output,
+        configFor({ [VICTIM_ID]: 'error' }),
+        FILENAME,
+      ),
+    ).toHaveLength(1);
+  });
 });

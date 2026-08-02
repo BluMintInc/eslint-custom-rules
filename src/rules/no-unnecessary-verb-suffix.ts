@@ -324,6 +324,20 @@ function declaresCheckedReturnType(fn: FunctionNode | null): boolean {
 }
 
 /**
+ * Assertion wrappers, which never change the runtime value they wrap. An
+ * `as const`, `as T`, `satisfies T` or `!` therefore leaves the literal beneath
+ * it the same object, still checked by whatever declared type sits OUTSIDE the
+ * wrapper. Mirrors the set `no-firestore-object-arrays` unwraps for the same
+ * reason.
+ */
+const EXPRESSION_ASSERTION_TYPES = new Set<string>([
+  AST_NODE_TYPES.TSAsExpression,
+  AST_NODE_TYPES.TSSatisfiesExpression,
+  AST_NODE_TYPES.TSNonNullExpression,
+  AST_NODE_TYPES.TSTypeAssertion,
+]);
+
+/**
  * Reports whether `node` sits inside a value whose shape TypeScript checks
  * against a declared type — a type-annotated variable or class field, a
  * `satisfies` clause, or the return-type annotation of the function that
@@ -340,8 +354,13 @@ function declaresCheckedReturnType(fn: FunctionNode | null): boolean {
  * that shape's sole way to declare the contract it imitates.
  *
  * The walk climbs object/array containers so an outer signal covers nested
- * members, and stops at anything else — notably `as` assertions, which do not
- * reject undeclared members the same way.
+ * members, and climbs THROUGH assertion wrappers, which change no runtime value
+ * and so cannot detach a literal from the declared type it is assigned to
+ * (#1597) — `enforce-object-literal-as-const` ships in the same recommended
+ * config and appends `as const` to exactly these literals by `--fix`. An
+ * assertion is transparent, never itself a signal: `{...} as T` still reports,
+ * because an `as` clause does not reject undeclared members the way an
+ * annotation does. The walk stops at anything else.
  */
 function hasConformanceSignal(node: TSESTree.Node): boolean {
   let current: TSESTree.Node = node;
@@ -350,12 +369,21 @@ function hasConformanceSignal(node: TSESTree.Node): boolean {
     if (!parent) {
       return false;
     }
+    // A `satisfies` clause both asserts and checks, so it is answered before
+    // the wrapper is stepped over; an unchecked one (`satisfies any`) proves
+    // nothing on its own and the walk continues past it to the outer context.
+    if (
+      parent.type === AST_NODE_TYPES.TSSatisfiesExpression &&
+      parent.expression === current &&
+      checksExcessProperties(parent.typeAnnotation)
+    ) {
+      return true;
+    }
+    if (EXPRESSION_ASSERTION_TYPES.has(parent.type)) {
+      current = parent;
+      continue;
+    }
     switch (parent.type) {
-      case AST_NODE_TYPES.TSSatisfiesExpression:
-        return (
-          parent.expression === current &&
-          checksExcessProperties(parent.typeAnnotation)
-        );
       case AST_NODE_TYPES.VariableDeclarator:
         return (
           parent.init === current &&
