@@ -1,3 +1,11 @@
+## [1.20.78](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.77...v1.20.78) (2026-08-02)
+
+
+### Bug Fixes
+
+* **enforce-firestore-path-utils:** report concatenated inline paths (closes [#1611](https://github.com/BluMintInc/eslint-custom-rules/issues/1611)) ([5250d88](https://github.com/BluMintInc/eslint-custom-rules/commit/5250d88294914308b6bfcca59e75ad4a04c37ead))
+* **enforce-realtimedb-path-utils:** report concatenated inline paths (closes [#1612](https://github.com/BluMintInc/eslint-custom-rules/issues/1612)) ([611a9e7](https://github.com/BluMintInc/eslint-custom-rules/commit/611a9e73621af07773681881d80ce5412ced9171))
+
 ## [1.20.77](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.76...v1.20.77) (2026-08-02)
 
 
