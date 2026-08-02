@@ -18,6 +18,11 @@ The rule flags any prop declared in a `Props` type alias that is not read in the
 
 ### Examples of **incorrect** code for this rule:
 
+The props type may be carried either by the parameter annotation or by an
+FC-shaped declarator annotation (`React.FC<Props>`, `FC<Props>`,
+`FunctionComponent<Props>`); both resolve the same way when the type is
+declared in the same file.
+
 ```tsx
 type MyComponentProps = {
   title: string;
@@ -27,7 +32,9 @@ type MyComponentProps = {
 const MyComponent: React.FC<MyComponentProps> = ({ title }) => {
   return <h1>{title}</h1>;
 };
+```
 
+```tsx
 import { FormControlLabelProps } from '@mui/material';
 
 type GroupModeTogglesProps = {
