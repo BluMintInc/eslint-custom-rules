@@ -41,6 +41,24 @@ function hasConfig() {
 }
 ```
 
+A type assertion changes no runtime value, so wrapping the same return in one
+leaves the contract just as misleading. `as const`, `satisfies`, `!` and
+`<T>value` are all seen through, including when nested:
+
+```typescript
+function isUser() {
+  return { id: 1 } as const;
+}
+
+function hasProfile() {
+  return { name: 'a' } satisfies Profile;
+}
+
+function shouldCache() {
+  return ({ ttl: 1 } as const)!;
+}
+```
+
 ### Examples of correct code
 
 Boolean prefixes return explicit booleans, or the name drops the prefix.
@@ -66,11 +84,25 @@ function getConfig() {
 }
 ```
 
+An assertion that declares a boolean-like type states the same contract an
+explicit return annotation does, so it is accepted:
+
+```typescript
+function isReady(value: unknown) {
+  return value as boolean;
+}
+
+function isEnabled() {
+  return true as const;
+}
+```
+
 ## Allowed patterns
 
 - Type predicates (e.g., `function isUser(u): u is User { ... }`)
 - Explicit `boolean` return types or `Promise<boolean>` (and unions with `null`/`undefined`/`void`)
 - Obvious boolean expressions: comparisons (`>`, `===`), negations (`!x`, `!!x`), or `Boolean(x)`
+- Assertions declaring a boolean-like type (`value as boolean`, `value satisfies boolean`); an assertion naming any other type — or none, as with `as const` — leaves the asserted expression to decide
 
 ## How to fix
 

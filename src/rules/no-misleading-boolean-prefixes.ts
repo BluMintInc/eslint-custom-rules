@@ -113,6 +113,24 @@ function isExpressionBooleanLike(
   expr: TSESTree.Expression,
 ): boolean | 'non' | 'unknown' {
   switch (expr.type) {
+    // Assertion wrappers restate a type but never change the runtime value, so
+    // the expression beneath one still decides what the function returns
+    // (#1606). Recursing per level rather than unwrapping the whole chain at
+    // once is what lets a boolean declared at any level answer first, and it
+    // reaches through nesting such as `({...} as const)!`.
+    // `enforce-object-literal-as-const` ships in the same recommended config
+    // and appends `as const` to returned object literals by `--fix`, so
+    // without this the plugin's own fixer silences the report.
+    case AST_NODE_TYPES.TSAsExpression:
+    case AST_NODE_TYPES.TSSatisfiesExpression:
+    case AST_NODE_TYPES.TSTypeAssertion:
+      // A declared boolean-like type is the same promise an explicit return
+      // annotation makes, which the rule already accepts; `as const` names no
+      // type at all and falls through to the asserted expression.
+      if (isTsBooleanLike(expr.typeAnnotation)) return true;
+      return isExpressionBooleanLike(expr.expression);
+    case AST_NODE_TYPES.TSNonNullExpression:
+      return isExpressionBooleanLike(expr.expression);
     case AST_NODE_TYPES.Literal:
       return typeof expr.value === 'boolean' ? true : 'non';
     case AST_NODE_TYPES.TemplateLiteral:
