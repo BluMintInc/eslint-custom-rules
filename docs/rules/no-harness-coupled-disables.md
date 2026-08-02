@@ -29,8 +29,17 @@ type information, no parser services, no NLP.
 
 The justification text is everything after the `--` separator in a directive
 (the rule-name list before `--` is never scanned). For multi-line block
-directives the entire body is scanned, and an immediately-adjacent preceding
-comment is scanned when the directive defers to it ("see above").
+directives the entire body is scanned.
+
+When a directive defers to the prose above it ("see above", "per the note
+above", "^"), that prose is scanned too. Deferral is what unlocks the lookback:
+a directive stating its own self-contained, code-level reason owns its rationale
+outright, so an unrelated docblock above the declaration never merges into it.
+
+The scanned prose is the **whole contiguous run** of preceding comments, not
+just the nearest one — consecutive `//` lines are separate comments, so a
+rationale written as a multi-line block would otherwise be truncated to its last
+line. The run ends at a blank line or at another directive comment.
 
 The matched vocabulary is a fixed, closed list:
 
@@ -60,6 +69,12 @@ vocabulary this house-standard check exists to catch.
 // eslint-disable-next-line max-lines-per-function -- claude code's stop hook times out re-linting this file
 
 // eslint-disable-next-line import/order -- tracked at owner/repo#123, stop-hook cwd bug
+
+// The excuse stated as prose, with the directive deferring to it. The whole
+// run is scanned, so the harness term is caught wherever it sits in the block:
+// The stop-hook invokes lint from the wrong cwd.
+// So the resolver picks up the sibling package instead.
+// eslint-disable-next-line import/order -- see above
 ```
 
 A tracking-issue reference does not exempt harness-coupled text — the fix still
@@ -80,6 +95,13 @@ import type { Member } from 'functions/src/types/Team';
 
 // Genuine environment difference — CI/editor/local are not harness vocabulary:
 // eslint-disable-next-line no-process-env -- disabled in CI where NODE_ENV differs
+
+// Prose above a directive that states its OWN code-level reason is documentation
+// of the declaration, not the directive's rationale, so its incidental harness
+// words never merge in — the directive does not defer:
+// This maps onto the worktree layout used by local dev tooling
+// and the resolver picks the sibling package as a result.
+// eslint-disable-next-line react-hooks/exhaustive-deps -- onSnap is a stable ref, deps intentionally omitted
 ```
 
 ## When Not To Use It
