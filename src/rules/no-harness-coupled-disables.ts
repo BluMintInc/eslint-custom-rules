@@ -153,14 +153,28 @@ export const noHarnessCoupledDisables = createRule<[], MessageIds>({
           // declaration bleeds its incidental harness words into a directive
           // that already carries a self-contained code-level reason (#1312).
           let scanned = justification;
-          const previous = comments[index - 1];
-          if (
-            previous &&
-            !isDirectiveComment(previous) &&
-            comment.loc.start.line - previous.loc.end.line <= 1 &&
-            defersToPreceding(justification)
-          ) {
-            scanned = `${previous.value}\n${scanned}`;
+          if (defersToPreceding(justification)) {
+            // Consecutive `//` lines are separate comment nodes, so a rationale
+            // written as a multi-line block arrives as a RUN of adjacent
+            // comments. Reading only the nearest one truncates the deferral
+            // target to its last line, which is why the identical prose written
+            // as one `/* */` block was caught and the `//` form was not.
+            const preceding: string[] = [];
+            let below = comment;
+            for (let cursor = index - 1; cursor >= 0; cursor--) {
+              const previous = comments[cursor];
+              if (
+                isDirectiveComment(previous) ||
+                below.loc.start.line - previous.loc.end.line > 1
+              ) {
+                break;
+              }
+              preceding.unshift(previous.value);
+              below = previous;
+            }
+            if (preceding.length > 0) {
+              scanned = `${preceding.join('\n')}\n${scanned}`;
+            }
           }
 
           const matchedTerm = findHarnessTerm(scanned);

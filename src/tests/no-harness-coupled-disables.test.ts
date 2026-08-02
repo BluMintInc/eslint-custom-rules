@@ -104,6 +104,25 @@ const setupLayout = 1;`,
     `// this maps onto the worktree layout used by local dev tooling
 // eslint-disable-next-line react-hooks/exhaustive-deps -- onSnap is a stable ref, deps intentionally omitted
 const mappedLayout = 1;`,
+    // #1312 gate against the widened run walk (#1617): a MULTI-line `//` block
+    // carrying a harness term still must not merge into a directive that states
+    // its own code-level reason. Widening the walk is confined to the gate.
+    `// this maps onto the worktree layout used by local dev tooling
+// and the resolver picks the sibling package as a result
+// eslint-disable-next-line react-hooks/exhaustive-deps -- onSnap is a stable ref, deps intentionally omitted
+const mappedLayoutRun = 1;`,
+    // A blank line ends the run, so the harness comment is not this directive's
+    // rationale even though the directive defers.
+    `// the real cause is the worktree cwd resolver
+
+// eslint-disable-next-line import/order -- see above
+const gappedRun = 1;`,
+    // An intervening directive terminates the upward walk before the harness
+    // comment is reached.
+    `// the real cause is the worktree cwd resolver
+// eslint-disable-next-line no-console -- console output is intentional here
+// eslint-disable-next-line import/order -- see above
+const interruptedRun = 1;`,
     // "as needed" is not a deferral pointer, so a preceding claude JSDoc does
     // not merge into this self-contained directive.
     `/**
@@ -256,6 +275,30 @@ const n = 17;`,
       code: `// see the note above for the real reason: worktree cwd artifact
 // eslint-disable-next-line import/order -- see above
 const o = 18;`,
+      errors: [
+        { messageId: 'harnessCoupled', data: { matchedTerm: 'worktree' } },
+      ],
+    },
+    // Multi-line `//` rationale: consecutive line comments are separate comment
+    // nodes, so the whole contiguous run is the deferral target. Harness term on
+    // the FIRST line, two plain lines between it and the directive (#1617).
+    {
+      code: `// The stop-hook invokes lint from the wrong cwd.
+// So the resolver picks the sibling package.
+// Revisit after the harness config lands.
+// eslint-disable-next-line import/order -- see above
+const oo = 18.1;`,
+      errors: [
+        { messageId: 'harnessCoupled', data: { matchedTerm: 'stop-hook' } },
+      ],
+    },
+    // Harness term on the LAST line of the run, i.e. the one node the pre-#1617
+    // single-comment lookback already reached — pins that half against regression.
+    {
+      code: `// Keep the ordering exception until the resolver is fixed.
+// This path resolves against the worktree root, not the package.
+// eslint-disable-next-line import/order -- see above
+const op = 18.2;`,
       errors: [
         { messageId: 'harnessCoupled', data: { matchedTerm: 'worktree' } },
       ],
