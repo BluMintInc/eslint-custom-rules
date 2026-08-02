@@ -771,15 +771,6 @@ export const SUGGESTION_INDUCED_BASELINE: Record<string, string> = {
   // hoisted at all.
   'react-memoize-literals (suggestion) -> enforce-global-constants':
     "the emitted `[/* __TODO_MEMOIZATION_DEPENDENCIES__ */]` is a syntactically empty dependency array until the developer fills it in, which is the suggestion's stated contract; with real dependencies the report disappears",
-
-  // --- The violation is pre-existing and merely becomes visible.
-  // enforce-boolean-naming-prefixes reads `!!x`, `x === 1` and an `is`-prefixed
-  // callee as boolean initializers but does NOT read `Boolean(x)`, so
-  // `const flag = Boolean(state)` was already misnamed and unreported; swapping
-  // in `isSnapshotReady(state)` only lets the second rule see it. The fix
-  // belongs to enforce-boolean-naming-prefixes, not to this suggestion.
-  'enforce-snapshot-state-narrowing (suggestion) -> enforce-boolean-naming-prefixes':
-    'the narrowed value was already boolean; enforce-boolean-naming-prefixes does not recognise `Boolean(x)` as a boolean initializer, so the naming violation pre-dates the suggestion and is merely surfaced by it',
 };
 
 const corpus = buildCorpus();
