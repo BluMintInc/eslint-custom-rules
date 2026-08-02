@@ -49,13 +49,23 @@ export const noConditionalLiteralsInJsx: TSESLint.RuleModule<
 
         // If we were evaluating
         //   <div>{property} {conditional && 'string'}</div>
-        // Then {property} would be one of the siblingExpressionNodes
+        // Then {property} would be one of the siblingExpressionNodes.
+        //
+        // Any expression container beside the conditional can render text, and
+        // it fragments the text node exactly as adjacent JSX text does, so the
+        // shape of the sibling's expression is not a useful discriminator.
+        // Whether an arbitrary expression renders text rather than an element
+        // (or nothing at all) is not decidable syntactically, so the broad
+        // reading of "other text or expressions" wins. The one container that
+        // provably renders nothing is a comment ({/* ... */}), whose expression
+        // is a JSXEmptyExpression.
         const siblingExpressionNodes = parentChildren.filter(
           (n) =>
-            n.type === 'JSXExpressionContainer' &&
-            'expression' in n &&
-            (n.expression.type === 'Identifier' ||
-              n.expression.type === 'MemberExpression'),
+            // The container under evaluation is not its own sibling: a sole
+            // conditional literal fragments nothing.
+            n !== node &&
+            n.type === TSESTree.AST_NODE_TYPES.JSXExpressionContainer &&
+            n.expression.type !== TSESTree.AST_NODE_TYPES.JSXEmptyExpression,
         );
 
         const hasSiblingContent =

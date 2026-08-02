@@ -32,17 +32,117 @@ ruleTesterJsx.run(
         literal: `'missing'`,
         expression: `value || 'missing'`,
       },
-    ].map(({ code, condition, literal, expression }) => {
-      return {
-        code,
-        errors: [
-          {
-            messageId: 'unexpected',
-            data: { literal, condition, expression },
-          },
-        ],
-      };
-    }),
+      // Any sibling expression container fragments the text node, regardless of
+      // the shape of its expression.
+      {
+        code: `<div>{getName()} {isReturning && 'back'}</div>`,
+        condition: 'isReturning',
+        literal: `'back'`,
+        expression: `isReturning && 'back'`,
+      },
+      {
+        code: `<div>{first + last} {isReturning && 'back'}</div>`,
+        condition: 'isReturning',
+        literal: `'back'`,
+        expression: `isReturning && 'back'`,
+      },
+      {
+        code: `<div>{\`hi \${x}\`} {isReturning && 'back'}</div>`,
+        condition: 'isReturning',
+        literal: `'back'`,
+        expression: `isReturning && 'back'`,
+      },
+      {
+        code: `<div>{cond ? 'a' : 'b'} {isReturning && 'back'}</div>`,
+        condition: 'isReturning',
+        literal: `'back'`,
+        expression: `isReturning && 'back'`,
+      },
+      {
+        code: `<div>{name ?? fallback} {isReturning && 'back'}</div>`,
+        condition: 'isReturning',
+        literal: `'back'`,
+        expression: `isReturning && 'back'`,
+      },
+      {
+        code: `<div>{user.profile.name} {isReturning && 'back'}</div>`,
+        condition: 'isReturning',
+        literal: `'back'`,
+        expression: `isReturning && 'back'`,
+      },
+      // A sibling conditional element renders nothing when false, but its
+      // rendered output cannot be classified syntactically, so it counts.
+      {
+        code: `<div>{isLoading && <Spinner/>} {isReturning && 'back'}</div>`,
+        condition: 'isReturning',
+        literal: `'back'`,
+        expression: `isReturning && 'back'`,
+      },
+      // Whitespace-only JSXText is not content on its own, but the sibling
+      // container still is.
+      {
+        code: `<div>\n  {getName()}\n  {isReturning && 'back'}\n</div>`,
+        condition: 'isReturning',
+        literal: `'back'`,
+        expression: `isReturning && 'back'`,
+      },
+    ]
+      .map(({ code, condition, literal, expression }) => {
+        return {
+          code,
+          errors: [
+            {
+              messageId: 'unexpected' as const,
+              data: { literal, condition, expression },
+            },
+          ],
+        };
+      })
+      .concat([
+        // Two conditional literals are each other's sibling, so both report.
+        {
+          code: `<div>{isA && 'alpha'}{isB && 'beta'}</div>`,
+          errors: [
+            {
+              messageId: 'unexpected' as const,
+              data: {
+                literal: `'alpha'`,
+                condition: 'isA',
+                expression: `isA && 'alpha'`,
+              },
+            },
+            {
+              messageId: 'unexpected' as const,
+              data: {
+                literal: `'beta'`,
+                condition: 'isB',
+                expression: `isB && 'beta'`,
+              },
+            },
+          ],
+        },
+        {
+          code: `<div>{isA && 'alpha'} {isB && 'beta'}</div>`,
+          errors: [
+            {
+              messageId: 'unexpected' as const,
+              data: {
+                literal: `'alpha'`,
+                condition: 'isA',
+                expression: `isA && 'alpha'`,
+              },
+            },
+            {
+              messageId: 'unexpected' as const,
+              data: {
+                literal: `'beta'`,
+                condition: 'isB',
+                expression: `isB && 'beta'`,
+              },
+            },
+          ],
+        },
+      ]),
     valid: [
       // JSX with no conditional text literals
       `(
@@ -87,6 +187,29 @@ ruleTesterJsx.run(
         start {'always' || condition} end
       </div>
     )`,
+      // A conditional literal that is the sole child fragments nothing: the
+      // container must never count itself as its own sibling.
+      `<div>{isReturning && 'back'}</div>`,
+      `<div>Welcome <span>{isReturning && 'back'}</span> user</div>`,
+      // Surrounding whitespace-only JSXText is not adjacent content.
+      `(
+      <div>
+        {isReturning && 'back'}
+      </div>
+    )`,
+      // A comment container renders nothing.
+      `<div>{/* note */}{isReturning && 'back'}</div>`,
+      `(
+      <div>
+        {/* note */}
+        {isReturning && 'back'}
+        {/* trailing note */}
+      </div>
+    )`,
+      // A sibling container elsewhere in the tree is not a sibling.
+      `<div><span>{getName()}</span><span>{isReturning && 'back'}</span></div>`,
+      // Wrapping the conditional keeps it whole even beside an expression.
+      `<div>{formatDate(date)} <span>{isLate && 'late'}</span></div>`,
     ],
   },
 );
