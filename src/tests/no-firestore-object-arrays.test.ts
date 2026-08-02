@@ -1,5 +1,7 @@
+import { Linter, Rule } from 'eslint';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { noFirestoreObjectArrays } from '../rules/no-firestore-object-arrays';
+import { preferUnionFromConstArray } from '../rules/prefer-union-from-const-array';
 
 ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
   valid: [
@@ -172,6 +174,120 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
         export type T = { list: B[]; arr: Array<B> };
       `,
       filename: 'functions/src/types/firestore/alias-of-alias.ts',
+    },
+    // Test: Allow arrays of a const-array-derived string union, the shape
+    // prefer-union-from-const-array autofixes toward
+    {
+      code: `
+export const MEMBER_ROLE_VALUES = ['owner', 'admin', 'member'] as const;
+export type MemberRole = (typeof MEMBER_ROLE_VALUES)[number];
+export type Guild = { id: string; roles: MemberRole[] };
+`,
+      filename: 'functions/src/types/firestore/Guild/index.ts',
+    },
+    // Test: Const-array-derived union under every array syntax
+    {
+      code: `
+export const MEMBER_ROLE_VALUES = ['owner', 'admin', 'member'] as const;
+export type MemberRole = (typeof MEMBER_ROLE_VALUES)[number];
+export type Guild = {
+  roles: readonly MemberRole[];
+  list: Array<MemberRole>;
+  frozen: ReadonlyArray<MemberRole>;
+  nested: (MemberRole)[];
+};
+`,
+      filename: 'functions/src/types/firestore/Guild/roles.ts',
+    },
+    // Test: Const-array-derived union used inline, without an alias
+    {
+      code: `
+export const MEMBER_ROLE_VALUES = ['owner', 'admin', 'member'] as const;
+export type Guild = {
+  roles: (typeof MEMBER_ROLE_VALUES)[number][];
+  list: Array<(typeof MEMBER_ROLE_VALUES)[number]>;
+  frozen: ReadonlyArray<(typeof MEMBER_ROLE_VALUES)[number]>;
+};
+`,
+      filename: 'functions/src/types/firestore/Guild/inline.ts',
+    },
+    // Test: Const array of numbers, booleans, null and template literals
+    {
+      code: `
+export const CODES = [1, 2, -3] as const;
+export const FLAGS = [true, false] as const;
+export const NULLABLE = ['a', null, undefined] as const;
+export const TEMPLATES = [\`a-\${'b'}\`, 'c'] as const;
+export type Code = (typeof CODES)[number];
+export type Flag = (typeof FLAGS)[number];
+export type Nullable = (typeof NULLABLE)[number];
+export type Template = (typeof TEMPLATES)[number];
+export type Doc = {
+  codes: Code[];
+  flags: Flag[];
+  nullables: Nullable[];
+  templates: Template[];
+};
+`,
+      filename: 'functions/src/types/firestore/Doc/primitives.ts',
+    },
+    // Test: Alias chain over a const-array-derived union
+    {
+      code: `
+export const MEMBER_ROLE_VALUES = ['owner', 'admin'] as const;
+type A = (typeof MEMBER_ROLE_VALUES)[number];
+type B = A;
+export type Guild = { roles: B[]; list: Array<B> };
+`,
+      filename: 'functions/src/types/firestore/Guild/alias-chain.ts',
+    },
+    // Test: Const array assembled by spreading other const arrays
+    {
+      code: `
+export const ADMIN_ROLES = ['owner', 'admin'] as const;
+export const ALL_ROLES = [...ADMIN_ROLES, 'member'] as const;
+export type MemberRole = (typeof ALL_ROLES)[number];
+export type Guild = { roles: MemberRole[] };
+`,
+      filename: 'functions/src/types/firestore/Guild/spread.ts',
+    },
+    // Test: Const array without an `as const` assertion still yields a
+    // primitive element type
+    {
+      code: `
+export const MEMBER_ROLE_VALUES = ['owner', 'admin', 'member'];
+export type MemberRole = (typeof MEMBER_ROLE_VALUES)[number];
+export type Guild = { roles: MemberRole[] };
+`,
+      filename: 'functions/src/types/firestore/Guild/no-assertion.ts',
+    },
+    // Test: Const array of primitive tuples matches the tuple/nested-array
+    // allowance
+    {
+      code: `
+export const COORDS = [[0, 0], [1, 1]] as const;
+export type Coord = (typeof COORDS)[number];
+export type Doc = { path: Coord[] };
+`,
+      filename: 'functions/src/types/firestore/Doc/coords.ts',
+    },
+    // Test: Union mixing a const-array-derived union with literals
+    {
+      code: `
+export const MEMBER_ROLE_VALUES = ['owner', 'admin'] as const;
+export type MemberRole = (typeof MEMBER_ROLE_VALUES)[number] | 'guest';
+export type Guild = { roles: MemberRole[] };
+`,
+      filename: 'functions/src/types/firestore/Guild/union.ts',
+    },
+    // Test: Const array declared after the type that consumes it
+    {
+      code: `
+export type Guild = { roles: MemberRole[] };
+export type MemberRole = (typeof MEMBER_ROLE_VALUES)[number];
+export const MEMBER_ROLE_VALUES = ['owner', 'admin'] as const;
+`,
+      filename: 'functions/src/types/firestore/Guild/hoisted.ts',
     },
   ],
   invalid: [
@@ -505,5 +621,184 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
         },
       ],
     },
+    // Test: a const array of object literals indexed by [number] is still an
+    // object array, so the const-array narrowing is not a blanket amnesty
+    {
+      code: `
+export const OBJECT_VALUES = [{ a: 1 }, { a: 2 }] as const;
+export type Entry = (typeof OBJECT_VALUES)[number];
+export type Guild = { entries: Entry[] };
+`,
+      filename: 'functions/src/types/firestore/Guild/index.ts',
+      errors: [{ messageId: 'noObjectArrays' }],
+    },
+    // Test: A const array mixing primitives and objects is still an object array
+    {
+      code: `
+export const MIXED_VALUES = ['owner', { role: 'admin' }] as const;
+export type Mixed = (typeof MIXED_VALUES)[number];
+export type Guild = { entries: Mixed[] };
+`,
+      filename: 'functions/src/types/firestore/Guild/mixed.ts',
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'entries' },
+        },
+      ],
+    },
+    // Test: typeof over a non-array const carries no element union
+    {
+      code: `
+export const ROLE_MAP = { owner: 1, admin: 2 } as const;
+export type Role = (typeof ROLE_MAP)[number];
+export type Guild = { roles: Role[] };
+`,
+      filename: 'functions/src/types/firestore/Guild/object-const.ts',
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'roles' },
+        },
+      ],
+    },
+    // Test: A non-number index is not the element union, so the conservative
+    // object-lookup classification stands
+    {
+      code: `
+export const MEMBER_ROLE_VALUES = ['owner', 'admin'] as const;
+export type Length = (typeof MEMBER_ROLE_VALUES)['length'];
+export type Guild = { lengths: Length[] };
+`,
+      filename: 'functions/src/types/firestore/Guild/length.ts',
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'lengths' },
+        },
+      ],
+    },
+    // Test: A const array that cannot be resolved in this file (for example an
+    // imported one) stays conservative
+    {
+      code: `
+import { IMPORTED_VALUES } from './values';
+export type Imported = (typeof IMPORTED_VALUES)[number];
+export type Guild = { entries: Imported[] };
+`,
+      filename: 'functions/src/types/firestore/Guild/imported.ts',
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'entries' },
+        },
+      ],
+    },
+    // Test: A const array of objects consumed inline, without an alias
+    {
+      code: `
+export const OBJECT_VALUES = [{ a: 1 }] as const;
+export type Guild = { entries: (typeof OBJECT_VALUES)[number][] };
+`,
+      filename: 'functions/src/types/firestore/Guild/inline-objects.ts',
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'entries' },
+        },
+      ],
+    },
   ],
+});
+
+// Both rules ship in the recommended config and the union rewriter is fixable,
+// so a single `eslint --fix` pass must not turn silent Firestore types into
+// violations by rewriting a literal union into `(typeof VALUES)[number]`.
+describe('no-firestore-object-arrays after prefer-union-from-const-array --fix', () => {
+  const TARGET_ID = '@blumintinc/blumint/no-firestore-object-arrays';
+  const REWRITER_ID = '@blumintinc/blumint/prefer-union-from-const-array';
+  const FILENAME = 'functions/src/types/firestore/Guild/index.ts';
+
+  const SOURCE = [
+    "export type MemberRole = 'owner' | 'admin' | 'member';",
+    '',
+    'export type Guild = {',
+    '  id: string;',
+    '  roles: MemberRole[];',
+    '};',
+    '',
+  ].join('\n');
+
+  const OBJECT_ARRAY_SOURCE = [
+    'export type Guild = {',
+    '  members: { id: string; name: string }[];',
+    '};',
+    '',
+  ].join('\n');
+
+  const makeLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      TARGET_ID,
+      noFirestoreObjectArrays as unknown as Rule.RuleModule,
+    );
+    linter.defineRule(
+      REWRITER_ID,
+      preferUnionFromConstArray as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const configFor = (rules: Linter.RulesRecord): Linter.Config => ({
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2022 as const,
+      sourceType: 'module' as const,
+    },
+    rules,
+  });
+
+  it('reports nothing before or after the union rewriter runs', () => {
+    const linter = makeLinter();
+    expect(
+      linter.verify(SOURCE, configFor({ [TARGET_ID]: 'error' }), FILENAME),
+    ).toHaveLength(0);
+
+    const fixed = linter.verifyAndFix(
+      SOURCE,
+      configFor({ [REWRITER_ID]: 'error' }),
+      FILENAME,
+    );
+    // Without this assertion the test passes vacuously whenever the rewriter
+    // stops emitting the const-array form.
+    expect(fixed.output).toContain('(typeof MEMBER_ROLE_VALUES)[number]');
+    expect(
+      linter.verify(
+        fixed.output,
+        configFor({ [TARGET_ID]: 'error' }),
+        FILENAME,
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('still reports a genuine object array through the same pipeline', () => {
+    const linter = makeLinter();
+    const fixed = linter.verifyAndFix(
+      OBJECT_ARRAY_SOURCE,
+      configFor({ [REWRITER_ID]: 'error' }),
+      FILENAME,
+    );
+    expect(
+      linter.verify(
+        fixed.output,
+        configFor({ [TARGET_ID]: 'error' }),
+        FILENAME,
+      ),
+    ).toHaveLength(1);
+  });
 });

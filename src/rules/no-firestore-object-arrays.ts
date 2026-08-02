@@ -62,6 +62,48 @@ const isParenthesizedType = (node: unknown): node is ParenthesizedTypeNode => {
   );
 };
 
+const unwrapParenthesizedTypeNode = (
+  node: TSESTree.TypeNode | ParenthesizedTypeNode,
+): TSESTree.TypeNode => {
+  let current: TSESTree.TypeNode | ParenthesizedTypeNode = node;
+  // Cap iterations for the same reason as unwrapArrayElementType: wrappers are
+  // finite, but a future wrapper case must not be able to loop forever.
+  for (let i = 0; i < 10; i++) {
+    if (isParenthesizedType(current)) {
+      current = (current as ParenthesizedTypeNode).typeAnnotation;
+      continue;
+    }
+    break;
+  }
+  return current as TSESTree.TypeNode;
+};
+
+// Assertion wrappers never change the runtime value, so `[...] as const` and
+// `[...] as const satisfies readonly string[]` both still describe an array.
+const EXPRESSION_ASSERTION_TYPES = new Set<string>([
+  AST_NODE_TYPES.TSAsExpression,
+  AST_NODE_TYPES.TSNonNullExpression,
+  AST_NODE_TYPES.TSTypeAssertion,
+  'TSSatisfiesExpression',
+]);
+
+const unwrapExpressionAssertions = (
+  node: TSESTree.Expression,
+): TSESTree.Expression => {
+  let current: TSESTree.Expression = node;
+  for (let i = 0; i < 10; i++) {
+    if (EXPRESSION_ASSERTION_TYPES.has(current.type)) {
+      const inner = (current as unknown as { expression?: TSESTree.Expression })
+        .expression;
+      if (!inner) break;
+      current = inner;
+      continue;
+    }
+    break;
+  }
+  return current;
+};
+
 const unwrapArrayElementType = (
   node: TSESTree.TypeNode | ParenthesizedTypeNode,
 ): TSESTree.TypeNode => {
@@ -226,6 +268,7 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
     const aliasNameToType = new Map<string, TSESTree.TypeNode>();
     const interfaceNames = new Set<string>();
     const enumNames = new Set<string>();
+    const constArrayNameToLiteral = new Map<string, TSESTree.ArrayExpression>();
 
     const visitNode = (n: TSESTree.Node): void => {
       switch (n.type) {
@@ -239,6 +282,23 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
         }
         case AST_NODE_TYPES.TSEnumDeclaration: {
           enumNames.add(n.id.name);
+          break;
+        }
+        case AST_NODE_TYPES.VariableDeclaration: {
+          // Only `const` bindings can back a `(typeof X)[number]` element union
+          if (n.kind !== 'const') break;
+          for (const declarator of n.declarations) {
+            if (
+              declarator.id.type !== AST_NODE_TYPES.Identifier ||
+              !declarator.init
+            ) {
+              continue;
+            }
+            const init = unwrapExpressionAssertions(declarator.init);
+            if (init.type === AST_NODE_TYPES.ArrayExpression) {
+              constArrayNameToLiteral.set(declarator.id.name, init);
+            }
+          }
           break;
         }
         case AST_NODE_TYPES.ExportNamedDeclaration: {
@@ -282,6 +342,97 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
 
     const seenAlias = new Set<string>();
     const visitingAliases = new Set<string>();
+
+    const isPrimitiveLiteralElement = (
+      element: TSESTree.Expression | TSESTree.SpreadElement | null,
+      visitedConstArrays: Set<string>,
+    ): boolean => {
+      // Array holes resolve to `undefined`, but the shape is unusual enough
+      // that refusing to classify it keeps the narrowing conservative.
+      if (!element) return false;
+      if (element.type === AST_NODE_TYPES.SpreadElement) {
+        const argument = unwrapExpressionAssertions(element.argument);
+        if (argument.type === AST_NODE_TYPES.ArrayExpression) {
+          return argument.elements.every((nested) =>
+            isPrimitiveLiteralElement(nested, visitedConstArrays),
+          );
+        }
+        if (argument.type === AST_NODE_TYPES.Identifier) {
+          return isPrimitiveConstArray(argument.name, visitedConstArrays);
+        }
+        return false;
+      }
+      const expression = unwrapExpressionAssertions(element);
+      switch (expression.type) {
+        case AST_NODE_TYPES.Literal: {
+          // A regex literal is an object; its `value` is engine-dependent, so
+          // reject it explicitly rather than relying on the typeof check.
+          if ((expression as unknown as { regex?: unknown }).regex)
+            return false;
+          const value = (expression as TSESTree.Literal).value;
+          return (
+            value === null ||
+            typeof value === 'string' ||
+            typeof value === 'number' ||
+            typeof value === 'boolean' ||
+            typeof value === 'bigint'
+          );
+        }
+        case AST_NODE_TYPES.TemplateLiteral:
+          return true; // a template literal always produces a string
+        case AST_NODE_TYPES.ArrayExpression:
+          // Nested primitive arrays mirror the allowance for `string[][]` and
+          // tuples of primitives elsewhere in this rule.
+          return (expression as TSESTree.ArrayExpression).elements.every(
+            (nested) => isPrimitiveLiteralElement(nested, visitedConstArrays),
+          );
+        case AST_NODE_TYPES.UnaryExpression: {
+          const unary = expression as TSESTree.UnaryExpression;
+          if (unary.operator !== '-' && unary.operator !== '+') return false;
+          return isPrimitiveLiteralElement(unary.argument, visitedConstArrays);
+        }
+        case AST_NODE_TYPES.Identifier:
+          return (expression as TSESTree.Identifier).name === 'undefined';
+        default:
+          return false;
+      }
+    };
+
+    const isPrimitiveConstArray = (
+      name: string,
+      visitedConstArrays: Set<string>,
+    ): boolean => {
+      // A cyclic spread cannot be resolved syntactically; refuse to classify it
+      if (visitedConstArrays.has(name)) return false;
+      const arrayLiteral = constArrayNameToLiteral.get(name);
+      if (!arrayLiteral) return false;
+      visitedConstArrays.add(name);
+      const result = arrayLiteral.elements.every((element) =>
+        isPrimitiveLiteralElement(element, visitedConstArrays),
+      );
+      visitedConstArrays.delete(name);
+      return result;
+    };
+
+    /**
+     * Recognizes `(typeof VALUES)[number]` where VALUES is a same-file const
+     * array of primitive literals. That form denotes the union of those
+     * literals, not an object lookup, and it is exactly what the sibling
+     * rule prefer-union-from-const-array autofixes toward.
+     */
+    const isConstArrayElementUnion = (
+      node: TSESTree.TSIndexedAccessType,
+    ): boolean => {
+      const indexType = unwrapParenthesizedTypeNode(node.indexType);
+      // Only a `number` index yields the element union; `['length']` or any key
+      // lookup resolves to something this syntactic check cannot vouch for.
+      if (indexType.type !== AST_NODE_TYPES.TSNumberKeyword) return false;
+      const objectType = unwrapParenthesizedTypeNode(node.objectType);
+      if (objectType.type !== AST_NODE_TYPES.TSTypeQuery) return false;
+      const exprName = (objectType as TSESTree.TSTypeQuery).exprName;
+      if (exprName.type !== AST_NODE_TYPES.Identifier) return false;
+      return isPrimitiveConstArray(exprName.name, new Set());
+    };
 
     const isPrimitiveLikeAlias = (
       name: string,
@@ -338,6 +489,8 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
           return false;
         case AST_NODE_TYPES.TSLiteralType:
           return true; // string/number/boolean literals
+        case AST_NODE_TYPES.TSIndexedAccessType:
+          return isConstArrayElementUnion(node as TSESTree.TSIndexedAccessType);
         case AST_NODE_TYPES.TSTypeReference: {
           // Allow known primitive-like references and enums or primitive-like aliases
           const ref = node as TSESTree.TSTypeReference;
@@ -421,8 +574,12 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
         case AST_NODE_TYPES.TSMappedType:
           return true;
         case AST_NODE_TYPES.TSIndexedAccessType:
-          // Treat indexed access as object-like to align with existing tests
-          return true;
+          // An indexed access such as `DataShape['user']` is an object lookup,
+          // but `(typeof VALUES)[number]` over a const array of primitive
+          // literals is a primitive union and must not be flagged.
+          return !isConstArrayElementUnion(
+            node as TSESTree.TSIndexedAccessType,
+          );
         case AST_NODE_TYPES.TSTypeOperator:
           if ((node as TSESTree.TSTypeOperator).operator === 'readonly') {
             return isObjectType(
