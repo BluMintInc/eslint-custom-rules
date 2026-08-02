@@ -18,6 +18,69 @@ describe('no-unused-props messages', () => {
 
 ruleTesterTs.run('no-unused-props', noUnusedProps, {
   valid: [
+    // FC-annotated declarator with every prop read stays clean (#1620).
+    {
+      code: `
+        type MyComponentProps = { title: string; subtitle: string };
+        const MyComponent: React.FC<MyComponentProps> = ({ title, subtitle }) => (
+          <div>
+            <h1>{title}</h1>
+            <h2>{subtitle}</h2>
+          </div>
+        );
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // An IMPORTED props type under React.FC cannot be resolved in-file and
+    // stays out of scope — no report, matching the direct-annotation behavior.
+    {
+      code: `
+        import { CardProps } from './types';
+        const Card: React.FC<CardProps> = ({ title }) => <h1>{title}</h1>;
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A non-FC declarator annotation is never treated as a props source, even
+    // when a same-file *Props type is within reach of the resolver's descent.
+    {
+      code: `
+        type HandlerProps = { onClick: () => void; extra: string };
+        type Handler = (p: HandlerProps) => null;
+        const handle: Handler = (arg) => null;
+        const j = <div />;
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A parameter's own annotation wins over the declarator annotation when
+    // both exist.
+    {
+      code: `
+        type OuterProps = { a: string; b: string };
+        type InnerProps = { a: string };
+        const C: React.FC<OuterProps> = ({ a }: InnerProps) => <h1>{a}</h1>;
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
     {
       code: `
         type ReactionBase = {
@@ -453,6 +516,98 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         {
           messageId: 'unusedProp',
           data: { propName: 'subtitle' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // The docs' own headline incorrect example: the props type is carried by
+    // the DECLARATOR annotation (`React.FC<Props>`), not the parameter (#1620).
+    {
+      code: `
+        type MyComponentProps = {
+          title: string;
+          subtitle: string;
+        };
+        const MyComponent: React.FC<MyComponentProps> = ({ title }) => {
+          return <h1>{title}</h1>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'subtitle' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // Bare `FC` import alias resolves the same way.
+    {
+      code: `
+        import { FC } from 'react';
+        type CardProps = { title: string; footer: string };
+        const Card: FC<CardProps> = ({ title }) => <h1>{title}</h1>;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'footer' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // `FunctionComponent` long form.
+    {
+      code: `
+        import { FunctionComponent } from 'react';
+        type CardProps = { title: string; footer: string };
+        const Card: FunctionComponent<CardProps> = ({ title }) => <h1>{title}</h1>;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'footer' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // Identifier param under an FC annotation: body destructuring resolves
+    // against the annotation-carried props type.
+    {
+      code: `
+        type PanelProps = { header: string; body: string };
+        const Panel: React.FC<PanelProps> = (props) => {
+          const { header } = props;
+          return <h1>{header}</h1>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'body' },
           type: AST_NODE_TYPES.Identifier,
         },
       ],

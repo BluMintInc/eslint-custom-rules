@@ -239,6 +239,54 @@ export const noUnusedProps = createRule({
       return null;
     };
 
+    /**
+     * The props type carried by a component annotation on the DECLARATOR —
+     * `const C: React.FC<X> = ({ ... }) => ...` — used only when the parameter
+     * itself is unannotated (#1620). Gated to FC-shaped annotations so an
+     * arbitrary declarator type is never mistaken for a props source; the
+     * returned argument runs through the same resolver as a direct annotation,
+     * so wrappers like `React.FC<Readonly<XProps>>` resolve for free.
+     */
+    const FC_TYPE_NAMES = new Set([
+      'FC',
+      'FunctionComponent',
+      'VFC',
+      'VoidFunctionComponent',
+    ]);
+
+    const propsArgumentOfFcAnnotation = (
+      declarationId: TSESTree.BindingName,
+    ): TSESTree.TypeNode | undefined => {
+      if (declarationId.type !== AST_NODE_TYPES.Identifier) {
+        return undefined;
+      }
+      const annotation = declarationId.typeAnnotation?.typeAnnotation;
+      if (annotation?.type !== AST_NODE_TYPES.TSTypeReference) {
+        return undefined;
+      }
+      const { typeName } = annotation;
+      const localName =
+        typeName.type === AST_NODE_TYPES.Identifier
+          ? typeName.name
+          : typeName.type === AST_NODE_TYPES.TSQualifiedName &&
+            typeName.left.type === AST_NODE_TYPES.Identifier &&
+            typeName.left.name === 'React' &&
+            typeName.right.type === AST_NODE_TYPES.Identifier
+          ? typeName.right.name
+          : null;
+      if (localName === null || !FC_TYPE_NAMES.has(localName)) {
+        return undefined;
+      }
+      const typeArgs =
+        annotation.typeParameters ??
+        (
+          annotation as {
+            typeArguments?: TSESTree.TSTypeParameterInstantiation;
+          }
+        ).typeArguments;
+      return typeArgs?.params[0];
+    };
+
     const isAnyPropFromSpreadTypeUsed = (
       spreadTypeName: string,
       used: Set<string>,
@@ -1107,9 +1155,11 @@ export const noUnusedProps = createRule({
 
         if (param?.type === AST_NODE_TYPES.ObjectPattern) {
           // Resolve through generic wrappers (e.g. `Readonly<FooProps>`) as well
-          // as the plain `FooProps` annotation.
+          // as the plain `FooProps` annotation; an unannotated pattern under an
+          // FC-annotated declarator resolves from the annotation's argument.
           const typeName = resolvePropsTypeName(
-            param.typeAnnotation?.typeAnnotation,
+            param.typeAnnotation?.typeAnnotation ??
+              propsArgumentOfFcAnnotation(declaration.id),
           );
           if (typeName) {
             const used = new Set<string>();
@@ -1128,7 +1178,8 @@ export const noUnusedProps = createRule({
           // the body. Resolve the Props type (unwrapping generic wrappers) and
           // scan the body for `const { ... } = props`.
           const typeName = resolvePropsTypeName(
-            param.typeAnnotation?.typeAnnotation,
+            param.typeAnnotation?.typeAnnotation ??
+              propsArgumentOfFcAnnotation(declaration.id),
           );
           if (!typeName) {
             return;
