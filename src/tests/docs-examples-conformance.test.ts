@@ -212,7 +212,13 @@ for (const [name, rule] of Object.entries(plugin.rules)) {
 }
 linter.defineParser('ts', tsParser);
 
-type LintResult = { reports: string[]; skipped: boolean; reason?: string };
+type LintResult = {
+  reports: string[];
+  /** 1-based lines of the same reports, for segment attribution (#1622). */
+  reportLines: number[];
+  skipped: boolean;
+  reason?: string;
+};
 
 export function lintBlock(
   ruleName: string,
@@ -242,6 +248,7 @@ export function lintBlock(
     // which the RuleTester cannot supply; such rules are out of scope here.
     return {
       reports: [],
+      reportLines: [],
       skipped: true,
       reason: `the rule threw: ${(error as Error).message}`,
     };
@@ -252,15 +259,16 @@ export function lintBlock(
   if (fatal) {
     return {
       reports: [],
+      reportLines: [],
       skipped: true,
       reason: `parse failure at block line ${fatal.line}: ${fatal.message}`,
     };
   }
 
+  const mine = messages.filter((m) => m.ruleId === PREFIX + ruleName);
   return {
-    reports: messages
-      .filter((m) => m.ruleId === PREFIX + ruleName)
-      .map((m) => `line ${m.line}: ${m.message}`),
+    reports: mine.map((m) => `line ${m.line}: ${m.message}`),
+    reportLines: mine.map((m) => m.line),
     skipped: false,
   };
 }
@@ -670,5 +678,223 @@ describe('pages whose examples are announced in prose fail, not skip', () => {
 
   it('ships with no exempt pages, so no doc page is silently skipped', () => {
     expect(Object.keys(PAGES_WITHOUT_CORRECT_EXAMPLES)).toEqual([]);
+  });
+});
+
+/**
+ * Segment-level dead-example guard (#1622).
+ *
+ * The suites above judge fences whole, so a fence that bundles several
+ * independent bad examples passes as long as ANY of them reports — which is
+ * exactly how no-unused-props' headline `React.FC<Props>` example stayed dead
+ * behind its live sibling (#1620). Fences are linted once, in full (so no
+ * segment ever loses its imports or type context), and each report is then
+ * attributed to the top-level segment whose line range contains it.
+ *
+ * Asserting every silent segment would drown the signal: most segments are
+ * setup for a sibling (stub components, variables the payoff line reads), and
+ * several rules legitimately report once per file. The guard therefore fires
+ * only for a segment whose own comment CLAIMS it violates ("// flagged",
+ * "// ❌ ...", "never read or forwarded") — self-declared bad examples, the
+ * #1620 shape precisely. Measured on the full corpus: 80 silent segments,
+ * 7 claim-carrying, of which 1 was a real docs bug — the claim filter is what
+ * makes this assertable at all.
+ */
+const SEGMENT_STARTER =
+  /^(export\s+)?(const|let|var|function|class|abstract\s+class|enum)\b/;
+/** Shared setup, not an example in its own right. */
+const PRELUDE_STARTER = /^(import\b|type\b|interface\b)/;
+
+type FenceSegment = { start: number; end: number; text: string };
+
+export function segmentFence(code: string): FenceSegment[] {
+  const lines = code.split('\n');
+  const starts: number[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    if (SEGMENT_STARTER.test(lines[i]) && !PRELUDE_STARTER.test(lines[i])) {
+      starts.push(i + 1);
+    }
+  }
+  if (starts.length <= 1) {
+    return [{ start: 1, end: lines.length, text: code }];
+  }
+  return starts.map((start, idx) => {
+    // Leading prelude (imports, types, comments) folds into the first segment;
+    // each later segment begins at its own declaration.
+    const from = idx === 0 ? 1 : start;
+    const to = idx === starts.length - 1 ? lines.length : starts[idx + 1] - 1;
+    return {
+      start: from,
+      end: to,
+      text: lines.slice(from - 1, to).join('\n'),
+    };
+  });
+}
+
+/**
+ * A comment asserting THIS segment is the violation. Deliberately narrow:
+ * "flagged", an ❌ marker, or the never-read/not-X phrasing docs use to call
+ * out the defect. Widening it re-admits the setup-segment noise measured above.
+ */
+export const CLAIM_COMMENT =
+  /\/\/.*(flagged|❌|never (read|reported|fires|used)|\bunused\b|\bviolat)|\/\*[^*]*(flagged|❌|violat)/i;
+
+/**
+ * Silent claim-carrying segments verified by hand, keyed
+ * `<rule>:<fence docs line>:<segment start line within fence>`. Each entry is a
+ * conscious, audited exemption; the audit fails a stale entry the same way
+ * UNCHECKABLE_BLOCKS does.
+ */
+export const SILENT_CLAIM_SEGMENTS: Record<string, string> = {
+  'no-redundant-annotation-assertion:17:1':
+    'the trailing "// ❌ Redundant..." comment is a header for the NEXT segment, where the report lands (verified: the annotated statement below it fires)',
+};
+
+type SilentClaimSegment = { key: string; head: string };
+
+export function auditClaimSegments(
+  silents: readonly SilentClaimSegment[],
+  allowlist: Record<string, string>,
+): string[] {
+  const problems: string[] = [];
+  const seen = new Set<string>();
+  for (const s of silents) {
+    seen.add(s.key);
+    if (s.key in allowlist) continue;
+    problems.push(
+      [
+        `${s.key} carries a comment claiming it violates, but the rule never reports inside it:`,
+        `  ${s.head}`,
+        '  Either the example is broken (missing import/context — see #1622), the',
+        '  claim comment is wrong, or the rule cannot catch the documented shape.',
+        `  Fix it, or add the key to SILENT_CLAIM_SEGMENTS with the verified reason.`,
+      ].join('\n'),
+    );
+  }
+  for (const [key, reason] of Object.entries(allowlist)) {
+    if (seen.has(key)) continue;
+    problems.push(
+      `SILENT_CLAIM_SEGMENTS lists '${key}' (${reason}) but that segment now fires or no longer exists. Delete the entry.`,
+    );
+  }
+  return problems;
+}
+
+describe('claim-carrying segments of "incorrect" fences must report (#1622)', () => {
+  const silents: SilentClaimSegment[] = [];
+  let multiFences = 0;
+  let claimSegments = 0;
+
+  it('attributes reports to segments across every rule page', () => {
+    for (const ruleName of ruleNames) {
+      const md = fs.readFileSync(path.join(DOCS_DIR, `${ruleName}.md`), 'utf8');
+      const incorrect = extractBlocks(md).filter(
+        (b) => b.polarity === 'incorrect' && LINTABLE_LANGS.has(b.lang),
+      );
+      for (const block of incorrect) {
+        const segments = segmentFence(block.code);
+        if (segments.length <= 1) continue;
+        multiFences += 1;
+
+        const hinted = filenameHint(block.code);
+        const candidates = hinted
+          ? [hinted]
+          : (block.lang === 'tsx' || block.lang === 'jsx'
+              ? TSX_CANDIDATES
+              : [...TS_CANDIDATES, ...TSX_CANDIDATES]
+            ).map(anchor);
+
+        // Same calibration idea as the fence guard, at segment granularity:
+        // the filename that lights up the most segments judges the fence.
+        let bestLines: number[] | null = null;
+        let bestCovered = -1;
+        for (const filename of candidates) {
+          const outcome = lintBlock(
+            ruleName,
+            filename,
+            block.code,
+            optionsHint(block.code),
+          );
+          if (outcome.skipped) continue;
+          const covered = segments.filter((s) =>
+            outcome.reportLines.some((l) => l >= s.start && l <= s.end),
+          ).length;
+          if (covered > bestCovered) {
+            bestCovered = covered;
+            bestLines = outcome.reportLines;
+          }
+        }
+        // A fence no candidate can lint asserts nothing here; the fence-level
+        // machinery owns unparsable/type-needing examples.
+        if (bestLines === null) continue;
+
+        for (const s of segments) {
+          if (!CLAIM_COMMENT.test(s.text)) continue;
+          claimSegments += 1;
+          const fired = bestLines.some((l) => l >= s.start && l <= s.end);
+          if (!fired) {
+            silents.push({
+              key: `${ruleName}:${block.line}:${s.start}`,
+              head: s.text.split('\n').find((l) => l.trim()) ?? '',
+            });
+          }
+        }
+      }
+    }
+
+    // Coverage floor: the corpus holds ~106 multi-segment incorrect fences and
+    // ~20 claim-carrying segments; a collapse here means extraction or
+    // segmentation broke, not that the docs got clean.
+    expect(multiFences).toBeGreaterThan(80);
+    expect(claimSegments).toBeGreaterThan(10);
+
+    const problems = auditClaimSegments(silents, SILENT_CLAIM_SEGMENTS);
+    if (problems.length > 0) {
+      throw new Error(
+        [`${problems.length} claim-segment problem(s):`, ...problems].join(
+          '\n\n',
+        ),
+      );
+    }
+  });
+
+  it('catches a planted dead claim segment (control)', () => {
+    // Two bundled components; only the second violates. The first carries a
+    // violation claim but is clean — the #1620 shape exactly.
+    const fence = [
+      "import { memo } from 'react';",
+      'const Dead = () => <div>a{" "}b</div>; // flagged',
+      'const Live = () => <span>c{" "}d</span>;',
+    ].join('\n');
+    const segments = segmentFence(fence);
+    expect(segments.length).toBe(2);
+    const outcome = lintBlock(
+      'no-jsx-whitespace-literal',
+      '/repo/src/components/Widget.tsx',
+      fence,
+      null,
+    );
+    expect(outcome.skipped).toBe(false);
+    // Both segments report here (the rule fires on both literals), so the
+    // planted death is simulated by attributing only Live's report lines.
+    const liveOnly = outcome.reportLines.filter((l) => l >= segments[1].start);
+    const dead = segments[0];
+    expect(CLAIM_COMMENT.test(dead.text)).toBe(true);
+    expect(liveOnly.some((l) => l >= dead.start && l <= dead.end)).toBe(false);
+    const problems = auditClaimSegments(
+      [{ key: 'planted:1:1', head: 'const Dead = ...' }],
+      {},
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('claiming it violates');
+    // A listed key clears; a stale key fails.
+    expect(
+      auditClaimSegments([{ key: 'planted:1:1', head: 'x' }], {
+        'planted:1:1': 'reason',
+      }),
+    ).toEqual([]);
+    expect(auditClaimSegments([], { 'planted:1:1': 'reason' })[0]).toContain(
+      'Delete the entry',
+    );
   });
 });
