@@ -43,6 +43,28 @@ export const enforceFirestorePathUtils = createRule<[], MessageIds>({
       );
     }
 
+    /**
+     * A `+` chain qualifies as an inline path only when a string literal or
+     * template literal appears somewhere in it: that literal is the hard-coded
+     * path fragment the rule exists to push behind a helper. The walk recurses
+     * because `'teams/' + teamId + '/members'` parses as a left-nested
+     * BinaryExpression, which leaves the literals below the outermost operands.
+     * A chain of opaque operands (`a + b`) constructs no path fragment inline,
+     * so it keeps the same indirection allowance as a bare variable.
+     */
+    function isInlinePathExpression(node: TSESTree.Node): boolean {
+      if (isStringLiteralOrTemplate(node)) {
+        return true;
+      }
+
+      return (
+        node.type === AST_NODE_TYPES.BinaryExpression &&
+        node.operator === '+' &&
+        (isInlinePathExpression(node.left) ||
+          isInlinePathExpression(node.right))
+      );
+    }
+
     function isUtilityFunction(node: TSESTree.Node): boolean {
       if (node.type !== AST_NODE_TYPES.CallExpression) {
         return false;
@@ -74,8 +96,9 @@ export const enforceFirestorePathUtils = createRule<[], MessageIds>({
           return;
         }
 
-        // Skip if it's a variable or other non-literal expression
-        if (!isStringLiteralOrTemplate(pathArg)) {
+        // Skip if it's a variable or other expression that hides construction
+        // behind a name rather than assembling the path inline
+        if (!isInlinePathExpression(pathArg)) {
           return;
         }
 
