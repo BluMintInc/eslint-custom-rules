@@ -12,7 +12,7 @@ In BluMint's Propagation System, `transformEach` maps a source document to a par
 
 Flat dot-notation keys (e.g., `'worthSummary.countUnpriceable': n`) produce leaf-level diffs so deletion removes only the specific entry this source document contributed. They also ensure `numericFieldPathConfig` path matching works correctly: `DifferenceBucket` compares diff paths by exact string equality, so a nested object that produces a path like `['worthSummary']` never matches a config key like `'worthSummary.countUnpriceable'`, silently converting increments to literal overwrites.
 
-This rule is a **warning** rather than an error because ~10% of strategies legitimately own entire target documents (e.g., via `upsert` + `DELETE_TARGET`) and can safely use nested objects. Use `eslint-disable` with a comment explaining the intent for those cases.
+This rule is an **error**. Roughly 10% of strategies legitimately own entire target documents (e.g., via `upsert` + `DELETE_TARGET`) and can safely use nested objects; those cases take an `eslint-disable` with a comment explaining the intent, which keeps each exception conscious and reviewable rather than letting every violation ship unaddressed.
 
 ### Exemptions
 
