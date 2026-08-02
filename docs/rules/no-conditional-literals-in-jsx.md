@@ -8,7 +8,9 @@ Conditional string literals must not sit next to other JSX text or expressions. 
 
 ## Rule Details
 
-The rule reports conditional string literals that are adjacent to other JSX text or expressions. This pattern is risky because:
+The rule reports conditional string literals that are adjacent to other JSX text or expressions. A sibling counts as adjacent content when it is non-whitespace JSX text or any expression container — an identifier, a property access, a call, a concatenation, a template literal, a ternary, or another conditional literal. The single exception is a comment container (`{/* ... */}`), which renders nothing. A conditional literal with no such sibling renders as one text node and is not reported.
+
+This pattern is risky because:
 
 - Browser translation and screen readers treat each fragment as a separate node, so conditional pieces produce garbled output or untranslated leftovers.
 - React's server-rendered markup may not match the client because conditional fragments change how text nodes are grouped, creating hydration warnings.
@@ -26,6 +28,8 @@ To fix the warning, either:
 <p>Cart total: {showAmount && '$42.00'}</p>;
 <div><span>This is {maybe && 'sometimes'} split</span></div>;
 <div>Status: {state || 'unknown'}</div>;
+<div>{formatDate(date)} {isLate && 'late'}</div>;
+<div>{isA && 'alpha'}{isB && 'beta'}</div>;
 ```
 
 ### Examples of **correct** code for this rule:
@@ -35,4 +39,6 @@ To fix the warning, either:
 <p>{showAmount && 'Cart total: $42.00'}</p>;
 <div>{maybe && <div><span>This stays together</span></div>}</div>;
 <div>Status: <span>{state || 'unknown'}</span></div>;
+<div>{formatDate(date)} <span>{isLate && 'late'}</span></div>;
+<div>{isReturning && 'back'}</div>;
 ```
