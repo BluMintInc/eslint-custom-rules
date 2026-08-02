@@ -8,7 +8,7 @@
 
 BluMint follows Material Design 3 (M3) guidelines, which mandate **sentence case** for all user-facing text. Sentence case means only the first letter of the first word (and proper nouns / brand names) is capitalised. This rule flags two patterns:
 
-1. **Title Case** — multiple words where more than one non-first word starts with an upper-case letter (e.g. "Back To App").
+1. **Title Case** — multiple words where any non-first word starts with an upper-case letter and is neither an ignored word (proper noun / brand) nor an acronym (e.g. "Back To App", "Full Name").
 2. **ALL CAPS** — multi-word strings where all letters are upper-case (e.g. "SUBMIT FORM").
 
 Both patterns are flagged in JSX text content and in string literals passed to configured props (`label`, `title`, `placeholder`, `helperText`, `aria-label`, `alt`, and others).
