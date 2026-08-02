@@ -1,3 +1,10 @@
+## [1.20.82](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.81...v1.20.82) (2026-08-02)
+
+
+### Bug Fixes
+
+* **require-image-optimized:** key next/image detection on the imported binding (closes [#1623](https://github.com/BluMintInc/eslint-custom-rules/issues/1623)) ([ce71084](https://github.com/BluMintInc/eslint-custom-rules/commit/ce71084e6da7d81d2ec1158d0cd90082516fa194))
+
 ## [1.20.81](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.80...v1.20.81) (2026-08-02)
 
 

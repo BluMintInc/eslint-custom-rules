@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.82",
+    "date": "2026-08-02T21:42:12.697Z",
+    "rules": [
+      {
+        "name": "require-image-optimized",
+        "changeType": "fix",
+        "issues": [
+          1623
+        ],
+        "summary": "key next/image detection on the imported binding (closes #1623)"
+      }
+    ]
+  },
+  {
     "version": "1.20.81",
     "date": "2026-08-02T12:22:56.245Z",
     "rules": [
