@@ -1,5 +1,35 @@
 [
   {
+    "version": "1.20.75",
+    "date": "2026-08-02T06:40:23.306Z",
+    "rules": [
+      {
+        "name": "no-misleading-boolean-prefixes",
+        "changeType": "fix",
+        "issues": [
+          1606
+        ],
+        "summary": "see through assertion wrappers on a returned value (closes #1606)"
+      },
+      {
+        "name": "prefer-field-paths-in-transforms",
+        "changeType": "fix",
+        "issues": [
+          1607
+        ],
+        "summary": "see through assertion wrappers when classifying a transform return (closes #1607)"
+      },
+      {
+        "name": "prefer-flat-transform-each-keys",
+        "changeType": "fix",
+        "issues": [
+          1608
+        ],
+        "summary": "see through assertion wrappers when classifying a transform return (closes #1608)"
+      }
+    ]
+  },
+  {
     "version": "1.20.74",
     "date": "2026-08-02T06:07:00.009Z",
     "rules": [

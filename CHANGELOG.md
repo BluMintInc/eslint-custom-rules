@@ -1,3 +1,12 @@
+## [1.20.75](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.74...v1.20.75) (2026-08-02)
+
+
+### Bug Fixes
+
+* **no-misleading-boolean-prefixes:** see through assertion wrappers on a returned value (closes [#1606](https://github.com/BluMintInc/eslint-custom-rules/issues/1606)) ([2eb12e2](https://github.com/BluMintInc/eslint-custom-rules/commit/2eb12e20d1f39d6f0f9d7eb0d0327972a78985e2))
+* **prefer-field-paths-in-transforms:** see through assertion wrappers when classifying a transform return (closes [#1607](https://github.com/BluMintInc/eslint-custom-rules/issues/1607)) ([fcfc426](https://github.com/BluMintInc/eslint-custom-rules/commit/fcfc42630967c4201cc6db008bd5c49378c11d43))
+* **prefer-flat-transform-each-keys:** see through assertion wrappers when classifying a transform return (closes [#1608](https://github.com/BluMintInc/eslint-custom-rules/issues/1608)) ([bafb16d](https://github.com/BluMintInc/eslint-custom-rules/commit/bafb16d649692244e772dc11d895c89773f8745f))
+
 ## [1.20.74](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.73...v1.20.74) (2026-08-02)
 
 
