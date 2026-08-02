@@ -152,6 +152,96 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
       }
     }
 
+    const MATH_FOLDABLE_METHODS = new Set(['max', 'min']);
+
+    /**
+     * Resolves a `Math.max`/`Math.min` call over numeric literals to the number
+     * it always produces. Calls whose value depends on runtime state (spread
+     * arguments, identifiers, computed member access, nested calls) stay
+     * unresolved so callers never treat them as constants.
+     */
+    function evaluateMathMinMaxCall(node: TSESTree.Node): number | undefined {
+      if (
+        node.type !== AST_NODE_TYPES.CallExpression ||
+        node.callee.type !== AST_NODE_TYPES.MemberExpression ||
+        node.callee.computed ||
+        node.callee.object.type !== AST_NODE_TYPES.Identifier ||
+        node.callee.object.name !== 'Math' ||
+        node.callee.property.type !== AST_NODE_TYPES.Identifier ||
+        !MATH_FOLDABLE_METHODS.has(node.callee.property.name) ||
+        node.arguments.length < 2
+      ) {
+        return undefined;
+      }
+
+      const numbers: number[] = [];
+      for (const argument of node.arguments) {
+        if (
+          argument.type !== AST_NODE_TYPES.Literal ||
+          typeof argument.value !== 'number'
+        ) {
+          return undefined;
+        }
+        numbers.push(argument.value);
+      }
+
+      return node.callee.property.name === 'max'
+        ? Math.max(...numbers)
+        : Math.min(...numbers);
+    }
+
+    /**
+     * Resolves a comparison operand to the number it always evaluates to.
+     * Returns undefined when the operand depends on runtime values.
+     */
+    function resolveNumericOperand(node: TSESTree.Node): number | undefined {
+      if (
+        node.type === AST_NODE_TYPES.Literal &&
+        typeof node.value === 'number'
+      ) {
+        return node.value;
+      }
+
+      return evaluateMathMinMaxCall(node);
+    }
+
+    function compareNumericValues(
+      leftValue: number,
+      operator: string,
+      rightValue: number,
+    ): ConditionResult {
+      switch (operator) {
+        case '>':
+          return leftValue > rightValue
+            ? { isTruthy: true }
+            : { isFalsy: true };
+        case '>=':
+          return leftValue >= rightValue
+            ? { isTruthy: true }
+            : { isFalsy: true };
+        case '<':
+          return leftValue < rightValue
+            ? { isTruthy: true }
+            : { isFalsy: true };
+        case '<=':
+          return leftValue <= rightValue
+            ? { isTruthy: true }
+            : { isFalsy: true };
+        case '==':
+        case '===':
+          return leftValue === rightValue
+            ? { isTruthy: true }
+            : { isFalsy: true };
+        case '!=':
+        case '!==':
+          return leftValue !== rightValue
+            ? { isTruthy: true }
+            : { isFalsy: true };
+        default:
+          return {};
+      }
+    }
+
     /**
      * Checks if a binary expression with literals is always truthy or falsy
      */
@@ -175,12 +265,21 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
         }
       }
 
-      // Only handle cases where both sides are literals
+      // A non-literal operand can still be a compile-time constant, so resolve
+      // it before abandoning the comparison. Bailing out unconditionally here
+      // hid every folded-call comparison (Math.max(1, 2) === 0) from the rule.
       if (
         node.left.type !== AST_NODE_TYPES.Literal ||
         node.right.type !== AST_NODE_TYPES.Literal
       ) {
-        return {};
+        const resolvedLeft = resolveNumericOperand(node.left);
+        const resolvedRight = resolveNumericOperand(node.right);
+
+        if (resolvedLeft === undefined || resolvedRight === undefined) {
+          return {};
+        }
+
+        return compareNumericValues(resolvedLeft, node.operator, resolvedRight);
       }
 
       const leftValue = node.left.value;
@@ -198,33 +297,13 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
 
       // Check numeric comparisons
       if (typeof leftValue === 'number' && typeof rightValue === 'number') {
-        switch (node.operator) {
-          case '>':
-            return leftValue > rightValue
-              ? { isTruthy: true }
-              : { isFalsy: true };
-          case '>=':
-            return leftValue >= rightValue
-              ? { isTruthy: true }
-              : { isFalsy: true };
-          case '<':
-            return leftValue < rightValue
-              ? { isTruthy: true }
-              : { isFalsy: true };
-          case '<=':
-            return leftValue <= rightValue
-              ? { isTruthy: true }
-              : { isFalsy: true };
-          case '==':
-          case '===':
-            return leftValue === rightValue
-              ? { isTruthy: true }
-              : { isFalsy: true };
-          case '!=':
-          case '!==':
-            return leftValue !== rightValue
-              ? { isTruthy: true }
-              : { isFalsy: true };
+        const numericResult = compareNumericValues(
+          leftValue,
+          node.operator,
+          rightValue,
+        );
+        if (numericResult.isTruthy || numericResult.isFalsy) {
+          return numericResult;
         }
       }
 
@@ -820,80 +899,12 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
             : { isFalsy: true };
         }
 
-        // Handle Math.max/min
-        if (
-          node.callee.object.type === AST_NODE_TYPES.Identifier &&
-          node.callee.object.name === 'Math' &&
-          node.callee.property.type === AST_NODE_TYPES.Identifier &&
-          (node.callee.property.name === 'max' ||
-            node.callee.property.name === 'min') &&
-          node.arguments.length >= 2 &&
-          node.arguments.every(
-            (arg) =>
-              arg.type === AST_NODE_TYPES.Literal &&
-              typeof arg.value === 'number',
-          )
-        ) {
-          const numbers = node.arguments.map(
-            (arg) => (arg as TSESTree.Literal).value as number,
-          );
-          const result =
-            node.callee.property.name === 'max'
-              ? Math.max(...numbers)
-              : Math.min(...numbers);
-
-          // If this is part of a comparison, evaluate it
-          if (
-            node.parent &&
-            node.parent.type === AST_NODE_TYPES.BinaryExpression &&
-            ['===', '!==', '==', '!=', '>', '<', '>=', '<='].includes(
-              node.parent.operator,
-            ) &&
-            ((node.parent.left === node &&
-              node.parent.right.type === AST_NODE_TYPES.Literal &&
-              typeof node.parent.right.value === 'number') ||
-              (node.parent.right === node &&
-                node.parent.left.type === AST_NODE_TYPES.Literal &&
-                typeof node.parent.left.value === 'number'))
-          ) {
-            const comparison = node.parent as TSESTree.BinaryExpression;
-            const literalNode =
-              comparison.left === node
-                ? (comparison.right as TSESTree.Literal)
-                : (comparison.left as TSESTree.Literal);
-            const compareValue = literalNode.value as number;
-
-            switch (comparison.operator) {
-              case '===':
-              case '==':
-                return result === compareValue
-                  ? { isTruthy: true }
-                  : { isFalsy: true };
-              case '!==':
-              case '!=':
-                return result !== compareValue
-                  ? { isTruthy: true }
-                  : { isFalsy: true };
-              case '>':
-                return result > compareValue
-                  ? { isTruthy: true }
-                  : { isFalsy: true };
-              case '<':
-                return result < compareValue
-                  ? { isTruthy: true }
-                  : { isFalsy: true };
-              case '>=':
-                return result >= compareValue
-                  ? { isTruthy: true }
-                  : { isFalsy: true };
-              case '<=':
-                return result <= compareValue
-                  ? { isTruthy: true }
-                  : { isFalsy: true };
-            }
-          }
-
-          return result !== 0 ? { isTruthy: true } : { isFalsy: true };
+        // Handle Math.max/min used directly as the condition. Comparisons that
+        // contain such a call are folded by checkBinaryExpression instead,
+        // since evaluation of a comparison starts at the BinaryExpression.
+        const mathValue = evaluateMathMinMaxCall(node);
+        if (mathValue !== undefined) {
+          return mathValue !== 0 ? { isTruthy: true } : { isFalsy: true };
         }
 
         // Handle Object.keys().length
@@ -1332,84 +1343,6 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
 
           return result ? { isTruthy: true } : { isFalsy: true };
         }
-      }
-
-      // Handle Math.max/min
-      if (
-        node.type === AST_NODE_TYPES.CallExpression &&
-        node.callee.type === AST_NODE_TYPES.MemberExpression &&
-        node.callee.object.type === AST_NODE_TYPES.Identifier &&
-        node.callee.object.name === 'Math' &&
-        node.callee.property.type === AST_NODE_TYPES.Identifier &&
-        (node.callee.property.name === 'max' ||
-          node.callee.property.name === 'min') &&
-        node.arguments.length >= 2 &&
-        node.arguments.every(
-          (arg) =>
-            arg.type === AST_NODE_TYPES.Literal &&
-            typeof arg.value === 'number',
-        )
-      ) {
-        const numbers = node.arguments.map(
-          (arg) => (arg as TSESTree.Literal).value as number,
-        );
-        const result =
-          node.callee.property.name === 'max'
-            ? Math.max(...numbers)
-            : Math.min(...numbers);
-
-        // If this is part of a comparison, evaluate it
-        if (
-          node.parent &&
-          node.parent.type === AST_NODE_TYPES.BinaryExpression &&
-          ['===', '!==', '==', '!=', '>', '<', '>=', '<='].includes(
-            node.parent.operator,
-          ) &&
-          ((node.parent.left === node &&
-            node.parent.right.type === AST_NODE_TYPES.Literal &&
-            typeof node.parent.right.value === 'number') ||
-            (node.parent.right === node &&
-              node.parent.left.type === AST_NODE_TYPES.Literal &&
-              typeof node.parent.left.value === 'number'))
-        ) {
-          const comparison = node.parent as TSESTree.BinaryExpression;
-          const literalNode =
-            comparison.left === node
-              ? (comparison.right as TSESTree.Literal)
-              : (comparison.left as TSESTree.Literal);
-          const compareValue = literalNode.value as number;
-
-          switch (comparison.operator) {
-            case '===':
-            case '==':
-              return result === compareValue
-                ? { isTruthy: true }
-                : { isFalsy: true };
-            case '!==':
-            case '!=':
-              return result !== compareValue
-                ? { isTruthy: true }
-                : { isFalsy: true };
-            case '>':
-              return result > compareValue
-                ? { isTruthy: true }
-                : { isFalsy: true };
-            case '<':
-              return result < compareValue
-                ? { isTruthy: true }
-                : { isFalsy: true };
-            case '>=':
-              return result >= compareValue
-                ? { isTruthy: true }
-                : { isFalsy: true };
-            case '<=':
-              return result <= compareValue
-                ? { isTruthy: true }
-                : { isFalsy: true };
-          }
-        }
-
-        return result !== 0 ? { isTruthy: true } : { isFalsy: true };
       }
 
       // Handle nullish coalescing

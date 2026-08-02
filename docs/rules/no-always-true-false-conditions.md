@@ -16,6 +16,8 @@ The rule reports when the condition result is known at lint time, including:
 - Switch cases whose test literal can never match (or always matches) the discriminant literal.
 - Constant results from simple calls (`/[a]/.test('b')`, `[1, 2].includes(3)`, `Math.max(1, 2) === 0`, `Object.keys({}).length > 0`, `JSON.stringify({ a: 1 }) === '{}'`).
 
+`Math.max`/`Math.min` resolve only when the call passes at least two numeric literal arguments, and a comparison against such a call is reported only when its other operand is a number the rule can resolve too. `Math.max(count, 2) === 0`, `Math.max(...values) === 0`, and `Math.max(1, 2) === threshold` all stay untouched.
+
 The rule intentionally ignores common default-value patterns to avoid false positives:
 
 - Logical fallbacks (`foo || {}`, `bar ?? defaultValue`).
@@ -40,6 +42,10 @@ if ('a' === 'a') {
 const result = 5 > 10 ? 'yes' : 'no'; // condition always false
 
 if (/foo/.test('bar')) {
+  // never runs
+}
+
+if (Math.max(1, 2) === 0) {
   // never runs
 }
 
