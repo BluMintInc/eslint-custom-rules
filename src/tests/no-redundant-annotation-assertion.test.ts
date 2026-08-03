@@ -497,11 +497,11 @@ const second: User = raw as Person;
           { messageId: 'redundantAnnotationAndAssertion' },
         ],
         // The control for the suppressed case below: with nothing suppressed
-        // both annotations report and both are removed. Each report judges its
-        // own removal alone, so neither claims `User` is orphaned while the
-        // other annotation still names it and the import stays for this pass.
+        // both annotations report and both are removed, so nothing names `User`
+        // afterwards and its import goes with them. Neither removal orphans it
+        // alone — only their union does, which is why the batch is planned as
+        // one edit rather than a removal at a time.
         output: `
-import { User } from './types';
 import { Person } from './person';
 declare const raw: Person;
 const first = raw as Person;
@@ -529,6 +529,119 @@ declare const raw: Person;
 const first: User = raw as Person;
 const second = raw as Person;
         `,
+      },
+      {
+        code: `
+import { User } from './types';
+import { Person } from './person';
+declare const raw: Person;
+const first: User = raw as Person;
+// eslint-disable-next-line no-redundant-annotation-assertion
+const second: User = raw as Person;
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        // The carrier slot falls to a surviving site wherever the suppressed one
+        // sits: here the batch is `first` alone, and `second` keeps naming
+        // `User`, so the import stays.
+        output: `
+import { User } from './types';
+import { Person } from './person';
+declare const raw: Person;
+const first = raw as Person;
+// eslint-disable-next-line no-redundant-annotation-assertion
+const second: User = raw as Person;
+        `,
+      },
+      {
+        code: `
+import { User } from './types';
+import { Person } from './person';
+declare const raw: Person;
+const first: User = raw as Person;
+const second: User = raw as Person;
+const third: User = raw as Person;
+        `,
+        errors: [
+          { messageId: 'redundantAnnotationAndAssertion' },
+          { messageId: 'redundantAnnotationAndAssertion' },
+          { messageId: 'redundantAnnotationAndAssertion' },
+        ],
+        // The batch is not limited to a pair; the import goes once nothing in
+        // the file names it.
+        output: `
+import { Person } from './person';
+declare const raw: Person;
+const first = raw as Person;
+const second = raw as Person;
+const third = raw as Person;
+        `,
+      },
+      {
+        code: `
+import { User } from './types';
+import { Admin } from './admin';
+import { Person } from './person';
+declare const raw: Person;
+const user: User = raw as Person;
+const admin: Admin = raw as Person;
+        `,
+        errors: [
+          { messageId: 'redundantAnnotationAndAssertion' },
+          { messageId: 'redundantAnnotationAndAssertion' },
+        ],
+        // One fix carries every removal in the batch, so two distinct orphaned
+        // imports go in the same pass.
+        output: `
+import { Person } from './person';
+declare const raw: Person;
+const user = raw as Person;
+const admin = raw as Person;
+        `,
+      },
+      {
+        code: `
+import { User } from './types';
+import { Person } from './person';
+interface Wrapper { id: string }
+type Payload = { id: string };
+declare function load(): Payload;
+declare const raw: Person;
+const wrapped: Wrapper = load() as Payload;
+const shared: User = raw as Person;
+        `,
+        errors: [
+          { messageId: 'redundantAnnotationAndAssertion' },
+          { messageId: 'redundantAnnotationAndAssertion' },
+        ],
+        // A site the helper cannot plan must not veto the batch. `Wrapper` is an
+        // interface this rule declines to delete, so that annotation stays put
+        // while the imported `User` is still unbound alongside its annotation.
+        output: `
+import { Person } from './person';
+interface Wrapper { id: string }
+type Payload = { id: string };
+declare function load(): Payload;
+declare const raw: Person;
+const wrapped: Wrapper = load() as Payload;
+const shared = raw as Person;
+        `,
+      },
+      {
+        code: `
+interface Wrapper { id: string }
+type Payload = { id: string };
+declare function load(): Payload;
+const first: Wrapper = load() as Payload;
+const second: Wrapper = load() as Payload;
+        `,
+        errors: [
+          { messageId: 'redundantAnnotationAndAssertion' },
+          { messageId: 'redundantAnnotationAndAssertion' },
+        ],
+        // Neither removal orphans `Wrapper` alone, but together they do, and a
+        // declaration is not this rule's to delete. Judging the union declines
+        // the whole batch rather than stranding the interface.
+        output: null,
       },
     ],
   },

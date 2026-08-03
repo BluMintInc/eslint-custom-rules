@@ -3,9 +3,19 @@ import { visitorKeys } from '@typescript-eslint/visitor-keys';
 import * as ts from 'typescript';
 import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
+import { createSuppressionChecker } from '../utils/disableDirectives';
 import { planOrphanedImportRemoval, TextRange } from '../utils/importRemoval';
 
 type MessageIds = 'redundantAnnotationAndAssertion';
+
+/** A redundant annotation found during traversal, held until `Program:exit`. */
+type CandidateSite = {
+  reportNode: TSESTree.Node;
+  /** The slice this site's fix deletes. */
+  removal: TextRange;
+  /** The shared type name, rendered into the message. */
+  matchingType: string;
+};
 
 /**
  * Type string formatting flags chosen to keep comparisons stable and predictable.
@@ -512,29 +522,25 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
     const checker = parserServices.program.getTypeChecker();
 
     /**
-     * Reports the redundant annotation, taking with it any import it was the
-     * only consumer of. The two are one fix: applying either half alone leaves
-     * the file worse than applying neither — a stripped annotation with its
-     * import left behind fails `no-unused-vars`, and since this rule's own
-     * report is resolved by the fix, nothing re-reports the debt.
-     *
-     * Orphanhood is judged against this one annotation's own removal and the
-     * file as it stands, never against what the rest of the `--fix` run might
-     * also delete. A sibling annotation naming the same type may be
-     * `eslint-disable`d — which a rule cannot see, since suppression is applied
-     * to reports after they are emitted — so an edit that assumes its sibling
-     * will also go deletes an import the surviving annotation still references,
-     * trading an unused import for a dangling type. Judging one edit at a time
-     * is suppression-safe by construction: a suppressed report's fix never
-     * applies, so it can never have been depended on.
-     *
-     * A type the annotation names but the helper cannot rewrite — a local alias,
-     * an interface, a type parameter — declines the fix outright. Deleting a
-     * declaration is a materially riskier edit than dropping an import
-     * specifier, and the author is better placed to decide whether the type
-     * should go or be used elsewhere.
+     * Reporting is deferred to `Program:exit` because an import is unbound only
+     * once no reference to it survives the fix, and a file where two annotations
+     * name the same imported type strips both in a single pass. Judging each
+     * removal alone sees the sibling annotation still standing, concludes the
+     * binding is alive, and leaves the import stranded with no later pass to
+     * notice — this rule's own reports are resolved by the fix, so nothing
+     * re-reports the debt.
      */
-    function reportIfRedundant(
+    const sites: CandidateSite[] = [];
+
+    /**
+     * Suppression is applied to reports after a rule emits them, so a suppressed
+     * site keeps its annotation while losing its fix. Counting its removal
+     * toward orphanhood would unbind an import the surviving text still spells,
+     * trading an unused import for a dangling type.
+     */
+    const isReportSuppressed = createSuppressionChecker(context);
+
+    function collectIfRedundant(
       annotation: TSESTree.TSTypeAnnotation,
       assertion: TSESTree.TypeNode,
       reportNode: TSESTree.Node,
@@ -549,29 +555,71 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
 
       if (!matchingType) return;
 
-      const removal = annotationRemovalRange(fixerTarget, sourceCode);
-      const importRanges = planOrphanedImportRemoval(sourceCode, [removal]);
-
-      context.report({
-        node: reportNode,
-        messageId: 'redundantAnnotationAndAssertion',
-        data: { type: matchingType },
-        // No plan means no binding can be unbound safely, so the annotation
-        // stays too: the report without a fixer is the lesser damage.
-        ...(importRanges
-          ? {
-              fix: (fixer: TSESLint.RuleFixer) => [
-                fixer.removeRange([removal[0], removal[1]]),
-                ...importRanges.map((range) =>
-                  fixer.removeRange([range[0], range[1]]),
-                ),
-              ],
-            }
-          : {}),
+      sites.push({
+        reportNode,
+        removal: annotationRemovalRange(fixerTarget, sourceCode),
+        matchingType,
       });
     }
 
+    /**
+     * The sites whose fixes actually ship. A site is excluded when its report
+     * will be suppressed, or when its own removal orphans something the helper
+     * cannot rewrite — a local alias, an interface, a type parameter. Deleting a
+     * declaration is a materially riskier edit than dropping an import
+     * specifier, and the author is better placed to decide whether the type
+     * should go or be used elsewhere.
+     *
+     * Screening individually before batching keeps one unfixable site from
+     * vetoing the rest: orphanhood grows monotonically with the removed set, so
+     * a site that cannot be planned alone can only ever poison the batch.
+     */
+    function selectFixableSites(): CandidateSite[] {
+      return sites.filter(
+        (site) =>
+          !isReportSuppressed(site.reportNode) &&
+          planOrphanedImportRemoval(sourceCode, [site.removal]) !== null,
+      );
+    }
+
     return {
+      'Program:exit'() {
+        if (sites.length === 0) return;
+
+        const fixable = selectFixableSites();
+        const removals = fixable.map((site) => site.removal);
+        // One plan over every surviving removal: an import referenced solely by
+        // annotations that all go in this pass is orphaned by their union, even
+        // though no single one of them orphans it.
+        const importRanges =
+          removals.length > 0
+            ? planOrphanedImportRemoval(sourceCode, removals)
+            : null;
+
+        // The whole batch ships as one fix, so no removal can land without the
+        // others that the import's orphanhood was judged against. The rest
+        // report without a fixer; the carrier's pass already resolves them.
+        const carrier = importRanges ? fixable[0] : undefined;
+
+        for (const site of sites) {
+          context.report({
+            node: site.reportNode,
+            messageId: 'redundantAnnotationAndAssertion',
+            data: { type: site.matchingType },
+            fix:
+              site === carrier && importRanges
+                ? (fixer: TSESLint.RuleFixer) => [
+                    ...removals.map((range) =>
+                      fixer.removeRange([range[0], range[1]]),
+                    ),
+                    ...importRanges.map((range) =>
+                      fixer.removeRange([range[0], range[1]]),
+                    ),
+                  ]
+                : null,
+          });
+        }
+      },
       VariableDeclarator(node) {
         if (
           node.id.type !== AST_NODE_TYPES.Identifier ||
@@ -585,7 +633,7 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
         const assertionType = extractAssertionTypeNode(node.init);
         if (!assertionType) return;
 
-        reportIfRedundant(
+        collectIfRedundant(
           node.id.typeAnnotation,
           assertionType,
           node.id,
@@ -604,7 +652,7 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
         const assertionType = extractAssertionTypeNode(node.value);
         if (!assertionType) return;
 
-        reportIfRedundant(
+        collectIfRedundant(
           node.typeAnnotation,
           assertionType,
           node.key,
@@ -616,7 +664,7 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
         const assertionType = getReturnAssertion(node);
         if (!assertionType) return;
 
-        reportIfRedundant(
+        collectIfRedundant(
           node.returnType,
           assertionType,
           node.id ?? node,
@@ -632,7 +680,7 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
         const assertionType = getReturnAssertion(node);
         if (!assertionType) return;
 
-        reportIfRedundant(
+        collectIfRedundant(
           node.returnType,
           assertionType,
           node,
@@ -644,7 +692,7 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
         const assertionType = getReturnAssertion(node);
         if (!assertionType) return;
 
-        reportIfRedundant(
+        collectIfRedundant(
           node.returnType,
           assertionType,
           node,
@@ -656,7 +704,7 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
         const assertionType = getReturnAssertion(node);
         if (!assertionType) return;
 
-        reportIfRedundant(
+        collectIfRedundant(
           node.value.returnType,
           assertionType,
           node.key,
