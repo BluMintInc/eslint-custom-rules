@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.20.93",
+    "date": "2026-08-03T22:34:05.616Z",
+    "rules": [
+      {
+        "name": "enforce-date-ttime",
+        "changeType": "fix",
+        "issues": [
+          1667
+        ],
+        "summary": "keep the alias it rewrites away (closes #1667)"
+      },
+      {
+        "name": "no-redundant-annotation-assertion",
+        "changeType": "fix",
+        "issues": [
+          1666
+        ],
+        "summary": "keep the type its annotation named (closes #1666)"
+      }
+    ]
+  },
+  {
     "version": "1.20.92",
     "date": "2026-08-03T19:30:56.799Z",
     "rules": [

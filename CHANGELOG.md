@@ -1,3 +1,11 @@
+## [1.20.93](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.92...v1.20.93) (2026-08-03)
+
+
+### Bug Fixes
+
+* **enforce-date-ttime:** keep the alias it rewrites away (closes [#1667](https://github.com/BluMintInc/eslint-custom-rules/issues/1667)) ([f9d9bd4](https://github.com/BluMintInc/eslint-custom-rules/commit/f9d9bd4c322ede149344e1d3df07f6d8ccade492)), closes [#1653](https://github.com/BluMintInc/eslint-custom-rules/issues/1653) [#1654](https://github.com/BluMintInc/eslint-custom-rules/issues/1654) [#1663](https://github.com/BluMintInc/eslint-custom-rules/issues/1663)
+* **no-redundant-annotation-assertion:** keep the type its annotation named (closes [#1666](https://github.com/BluMintInc/eslint-custom-rules/issues/1666)) ([6c2740f](https://github.com/BluMintInc/eslint-custom-rules/commit/6c2740f9140b124a4de8dcb031492eccbd84f92f)), closes [#1653](https://github.com/BluMintInc/eslint-custom-rules/issues/1653) [#1654](https://github.com/BluMintInc/eslint-custom-rules/issues/1654)
+
 ## [1.20.92](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.91...v1.20.92) (2026-08-03)
 
 
