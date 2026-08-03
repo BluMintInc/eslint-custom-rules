@@ -1,6 +1,7 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import * as ts from 'typescript';
 import { createRule } from '../utils/createRule';
+import { planOrphanedImportRemoval } from '../utils/importRemoval';
 
 type MessageIds = 'enforceDateTTime';
 
@@ -22,7 +23,9 @@ export const enforceDateTTime = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = (context as any).sourceCode ?? context.getSourceCode();
+    const sourceCode =
+      (context as typeof context & { sourceCode?: TSESLint.SourceCode })
+        .sourceCode ?? context.getSourceCode();
     const parserServices = sourceCode?.parserServices ?? context.parserServices;
     const checker = parserServices?.program?.getTypeChecker();
 
@@ -141,14 +144,49 @@ export const enforceDateTTime = createRule<[], MessageIds>({
             },
           });
         } else if (!isExactDate(tTimeArg)) {
-          // TTime is provided but is not exactly Date
+          // TTime is provided but is not exactly Date. Overwriting the argument
+          // deletes every name it mentions, so the rewrite and the unbinding of
+          // whatever it was the last reference to are one fix: applying either
+          // half alone leaves the file worse than applying neither, and since
+          // this rule's own report is resolved by the fix, nothing re-reports
+          // the debt an orphaned declaration becomes.
+          //
+          // Orphanhood is judged against this one argument's own range and the
+          // file as it stands, never against what the rest of the `--fix` run
+          // might also overwrite. A sibling argument naming the same alias may
+          // be `eslint-disable`d — which a rule cannot see, since suppression is
+          // applied to reports after they are emitted — so an edit assuming its
+          // sibling will also go unbinds an import the survivor still
+          // references, trading an unused import for a dangling type. Judging
+          // one edit at a time is suppression-safe by construction.
+          const importRanges = planOrphanedImportRemoval(sourceCode, [
+            tTimeArg.range,
+          ]);
+
           context.report({
             node: tTimeArg,
             messageId: 'enforceDateTTime',
             data: { typeName },
-            fix(fixer) {
-              return fixer.replaceText(tTimeArg, 'Date');
-            },
+            // No plan means the argument holds the last reference to something
+            // the helper cannot rewrite — a locally declared alias, or the
+            // enclosing declaration's own type parameter — so the argument
+            // stays as written: the report without a fixer is the lesser
+            // damage. Deleting a declaration is a materially riskier edit than
+            // dropping an import specifier, and a type parameter left unread by
+            // its own body fails `no-unused-vars` and `noUnusedParameters`
+            // exactly as an orphaned alias does, on top of turning a
+            // pass-through generic into one whose argument no longer means
+            // anything.
+            ...(importRanges
+              ? {
+                  fix: (fixer: TSESLint.RuleFixer) => [
+                    fixer.replaceText(tTimeArg, 'Date'),
+                    ...importRanges.map((range) =>
+                      fixer.removeRange([range[0], range[1]]),
+                    ),
+                  ],
+                }
+              : {}),
           });
         }
       },

@@ -64,6 +64,46 @@ type NotificationDate = Notification<Date>;
 type WalletDoc = PendingWalletToken<'offchain', Date>;
 ```
 
+### Fixer behavior
+
+The fixer supplies the missing `Date` argument, or overwrites the one that is not `Date`. Overwriting deletes every name the argument mentions, and that argument is often the only reference to the alias it names. Dropping it alone would leave the alias bound to nothing, so a file that lints clean would fail `@typescript-eslint/no-unused-vars` afterwards — with a violation this rule cannot report, because its own finding is resolved by the fix. The rewrite and anything it orphans therefore go as a single fix:
+
+```ts
+// Before: the argument is the only consumer of the Time import
+import { Time } from './time';
+
+type Doc = Notification<Time>;
+
+// After: the import goes with the argument it bound
+type Doc = Notification<Date>;
+```
+
+Two limits keep the fix safe rather than clever:
+
+- **Each argument is judged on its own rewrite, against the file as it stands.** An alias two rewritable arguments share is not unbound in one pass — neither argument is its last consumer. A rule cannot see `eslint-disable` (suppression is applied to reports after they are emitted), so assuming a sibling argument will also be rewritten would delete an import the surviving argument still references, trading an unused import for a type bound to nothing.
+- **A binding that cannot be unbound cleanly cancels the whole fix.** The report then carries no fixer, and you resolve it by hand — by dropping the declaration or by using it. This covers a locally declared `type` alias or `interface`, an import behind a `// eslint-disable-next-line` or `@ts-expect-error` directive, a comment sitting among the specifiers, and a name another binding shadows.
+
+```ts
+// The alias is declared here and named nowhere else, so the argument stays as
+// written and the report is left for you: deleting a declaration is your call.
+type Time = Date;
+
+type Doc = Notification<Time>;
+```
+
+The enclosing declaration's own type parameter is treated the same way, for a second reason as well: hard-coding a pass-through argument leaves the parameter unread by the body it was declared for — reported by `@typescript-eslint/no-unused-vars` and by `tsc --noUnusedParameters` alike — and leaves callers an argument that no longer means anything. The use sites are still fixed, and `UserDoc<Date>` already forwards `Date`:
+
+```ts
+// Reported, not rewritten: TTime is UserDoc's only link between its callers
+// and Notification.
+type UserDoc<TTime = Timestamp> = Notification<TTime>;
+
+// Fixed, because UserDoc<Date> resolves createdAt to Date on its own.
+const doc: UserDoc<Date> = load();
+```
+
+An alias that is exported, or still named elsewhere in the file, keeps its declaration and its autofix — nothing is orphaned by the rewrite.
+
 ## When to Use This Rule
 
 This rule should be applied to frontend code (e.g., `src/**`) via ESLint overrides. It is not intended for backend code where `Timestamp` is the appropriate default.

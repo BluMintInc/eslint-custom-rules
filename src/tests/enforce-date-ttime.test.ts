@@ -25,6 +25,16 @@ const COMMON_TYPES = `
   }
 `;
 
+/**
+ * The same `Notification` declaration without `COMMON_TYPES`' leading newline
+ * and indentation, so a case may put an `import` on the first line and spell
+ * out what the file looks like once that import is gone.
+ */
+const NOTIFICATION = `type Timestamp = { seconds: number; nanoseconds: number };
+interface Notification<TTime = Timestamp> {
+  createdAt: TTime;
+}`;
+
 ruleTesterTs.run('enforce-date-ttime', enforceDateTTime, {
   valid: [
     {
@@ -124,9 +134,91 @@ ruleTesterTs.run('enforce-date-ttime', enforceDateTTime, {
       errors: [{ messageId: 'enforceDateTTime' }],
     },
     {
-      // Provided TTime but not Date (Alias)
+      // Provided TTime but not Date (Alias). The argument holds the only
+      // reference to `Time`, and a local declaration is not something the
+      // removal helper can rewrite, so the fix is declined rather than traded
+      // for a `no-unused-vars` violation on the stranded alias.
       code: `${COMMON_TYPES}\ntype Time = Date;\ntype Foo = Notification<Time>;`,
-      output: `${COMMON_TYPES}\ntype Time = Date;\ntype Foo = Notification<Date>;`,
+      output: null,
+      parserOptions,
+      filename,
+      errors: [{ messageId: 'enforceDateTTime' }],
+    },
+    {
+      // The regression guard for the common case: `Time` is named elsewhere, so
+      // rewriting the argument orphans nothing and the autofix survives.
+      code: `${COMMON_TYPES}\ntype Time = Date;\ntype Foo = Notification<Time>;\nconst t: Time = new Date();`,
+      output: `${COMMON_TYPES}\ntype Time = Date;\ntype Foo = Notification<Date>;\nconst t: Time = new Date();`,
+      parserOptions,
+      filename,
+      errors: [{ messageId: 'enforceDateTTime' }],
+    },
+    {
+      // An exported declaration has consumers no edit to this file can reach,
+      // so losing its last local reference orphans nothing and the rewrite
+      // proceeds with the declaration left exactly as written.
+      code: `${COMMON_TYPES}\nexport type Time = Date;\ntype Foo = Notification<Time>;`,
+      output: `${COMMON_TYPES}\nexport type Time = Date;\ntype Foo = Notification<Date>;`,
+      parserOptions,
+      filename,
+      errors: [{ messageId: 'enforceDateTTime' }],
+    },
+    {
+      // An import the argument solely consumed is unbound by the same fix, so
+      // neither half can ship without the other.
+      code: `import { Time } from './time';\n${NOTIFICATION}\ntype Foo = Notification<Time>;`,
+      output: `${NOTIFICATION}\ntype Foo = Notification<Date>;`,
+      parserOptions,
+      filename,
+      errors: [{ messageId: 'enforceDateTTime' }],
+    },
+    {
+      // Only the orphaned specifier and its separator go; the sibling binding
+      // and the declaration around it are untouched.
+      code: `import { Time, Zone } from './time';\n${NOTIFICATION}\ntype Foo = Notification<Time>;\ntype Bar = Zone;`,
+      output: `import { Zone } from './time';\n${NOTIFICATION}\ntype Foo = Notification<Date>;\ntype Bar = Zone;`,
+      parserOptions,
+      filename,
+      errors: [{ messageId: 'enforceDateTTime' }],
+    },
+    {
+      // An imported alias named elsewhere in the file keeps its binding alive,
+      // so the rewrite proceeds and the import declaration stays whole.
+      code: `import { Time } from './time';\n${NOTIFICATION}\ntype Foo = Notification<Time>;\nconst t: Time = new Date();`,
+      output: `import { Time } from './time';\n${NOTIFICATION}\ntype Foo = Notification<Date>;\nconst t: Time = new Date();`,
+      parserOptions,
+      filename,
+      errors: [{ messageId: 'enforceDateTTime' }],
+    },
+    {
+      // A re-exported import is reachable from outside the file, so the
+      // specifier is never unbound however the argument is rewritten.
+      code: `import { Time } from './time';\nexport type { Time };\n${NOTIFICATION}\ntype Foo = Notification<Time>;`,
+      output: `import { Time } from './time';\nexport type { Time };\n${NOTIFICATION}\ntype Foo = Notification<Date>;`,
+      parserOptions,
+      filename,
+      errors: [{ messageId: 'enforceDateTTime' }],
+    },
+    {
+      // The control for the suppressed case below: with nothing suppressed both
+      // arguments report and both are rewritten. Each report judges its own
+      // range alone, so neither claims `Time` is orphaned while the other
+      // argument still names it, and the import survives the pass.
+      code: `import { Time } from './time';\n${NOTIFICATION}\ntype Foo = Notification<Time>;\ntype Bar = Notification<Time>;`,
+      output: `import { Time } from './time';\n${NOTIFICATION}\ntype Foo = Notification<Date>;\ntype Bar = Notification<Date>;`,
+      parserOptions,
+      filename,
+      errors: [
+        { messageId: 'enforceDateTTime' },
+        { messageId: 'enforceDateTTime' },
+      ],
+    },
+    {
+      // Suppression is applied to reports after a rule emits them, so a fix
+      // that counted on its suppressed sibling's rewrite would unbind an import
+      // `Foo` still names. The declaration survives.
+      code: `import { Time } from './time';\n${NOTIFICATION}\n// eslint-disable-next-line enforce-date-ttime\ntype Foo = Notification<Time>;\ntype Bar = Notification<Time>;`,
+      output: `import { Time } from './time';\n${NOTIFICATION}\n// eslint-disable-next-line enforce-date-ttime\ntype Foo = Notification<Time>;\ntype Bar = Notification<Date>;`,
       parserOptions,
       filename,
       errors: [{ messageId: 'enforceDateTTime' }],
@@ -183,15 +275,29 @@ ruleTesterTs.run('enforce-date-ttime', enforceDateTTime, {
       errors: [{ messageId: 'enforceDateTTime' }],
     },
     {
-      // Aliased generic with TTime
+      // Aliased generic with TTime. Overwriting the pass-through argument would
+      // leave `UserDoc`'s own type parameter unread by its body — reported by
+      // `@typescript-eslint/no-unused-vars` and by `tsc --noUnusedParameters`
+      // alike, and leaving an argument callers may still pass that no longer
+      // means anything. The use site is fixed regardless, and `UserDoc<Date>`
+      // already forwards `Date` to `Notification`.
       code: `${COMMON_TYPES}\ntype UserDoc<TTime = Timestamp> = Notification<TTime>;\nconst x: UserDoc = {} as any;`,
-      output: `${COMMON_TYPES}\ntype UserDoc<TTime = Timestamp> = Notification<Date>;\nconst x: UserDoc<Date> = {} as any;`,
+      output: `${COMMON_TYPES}\ntype UserDoc<TTime = Timestamp> = Notification<TTime>;\nconst x: UserDoc<Date> = {} as any;`,
       parserOptions,
       filename,
       errors: [
         { messageId: 'enforceDateTTime' }, // for Notification<TTime>
         { messageId: 'enforceDateTTime' }, // for UserDoc
       ],
+    },
+    {
+      // A type parameter its body reads elsewhere is not orphaned by the
+      // rewrite, so the argument is fixed and the parameter stays meaningful.
+      code: `${COMMON_TYPES}\ntype UserDoc<TTime = Timestamp> = { n: Notification<TTime>; at: TTime };\nconst x: UserDoc<Date> = {} as any;`,
+      output: `${COMMON_TYPES}\ntype UserDoc<TTime = Timestamp> = { n: Notification<Date>; at: TTime };\nconst x: UserDoc<Date> = {} as any;`,
+      parserOptions,
+      filename,
+      errors: [{ messageId: 'enforceDateTTime' }],
     },
     {
       // TSQualifiedName (Namespace)
