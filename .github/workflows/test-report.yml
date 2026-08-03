@@ -28,3 +28,13 @@ jobs:
           name: JEST Tests
           path: reports/jest-*.xml
           reporter: jest-junit
+
+      # Placed after the test report so a docs mismatch cannot suppress the jest
+      # results, and run on failure too so one CI round surfaces both a test
+      # regression and docs drift rather than one at a time. `npm ci` builds
+      # lib/ via the prepare script, which is what eslint-doc-generator reads.
+      # Only the docs check is green today — do not add `lint:js` here, it
+      # carries ~434 pre-existing errors.
+      - name: Docs metadata check
+        if: success() || failure()
+        run: npm run lint:eslint-docs
