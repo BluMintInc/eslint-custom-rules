@@ -1,3 +1,13 @@
+## [1.20.89](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.88...v1.20.89) (2026-08-03)
+
+
+### Bug Fixes
+
+* **memo-compare-deeply-complex-props:** treat a primitive-backed intersection as primitive, not complex (closes [#1656](https://github.com/BluMintInc/eslint-custom-rules/issues/1656)) ([305db7d](https://github.com/BluMintInc/eslint-custom-rules/commit/305db7de4dcedf55fcc4e8de5388dbb26c6aa063))
+* **no-explicit-return-type:** unbind an import when the annotations jointly keeping it alive are all stripped (closes [#1654](https://github.com/BluMintInc/eslint-custom-rules/issues/1654)) ([b39f973](https://github.com/BluMintInc/eslint-custom-rules/commit/b39f973951d111b76bcc4f0f55bb7277055ed61c))
+* **no-redundant-param-types:** remove the type imports a stripped parameter annotation was the sole consumer of (closes [#1653](https://github.com/BluMintInc/eslint-custom-rules/issues/1653)) ([37ab4c9](https://github.com/BluMintInc/eslint-custom-rules/commit/37ab4c9b1f8c95c807e5e84878808802d9f8c753))
+* **no-type-assertion-returns:** exempt type assertions in JSX spread attributes (closes [#1655](https://github.com/BluMintInc/eslint-custom-rules/issues/1655)) ([23c2b07](https://github.com/BluMintInc/eslint-custom-rules/commit/23c2b0777883a8280543e624c41edf9414ca8e2c))
+
 ## [1.20.88](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.87...v1.20.88) (2026-08-03)
 
 

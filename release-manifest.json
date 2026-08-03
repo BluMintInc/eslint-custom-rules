@@ -1,5 +1,43 @@
 [
   {
+    "version": "1.20.89",
+    "date": "2026-08-03T12:31:01.823Z",
+    "rules": [
+      {
+        "name": "memo-compare-deeply-complex-props",
+        "changeType": "fix",
+        "issues": [
+          1656
+        ],
+        "summary": "treat a primitive-backed intersection as primitive, not complex (closes #1656)"
+      },
+      {
+        "name": "no-explicit-return-type",
+        "changeType": "fix",
+        "issues": [
+          1654
+        ],
+        "summary": "unbind an import when the annotations jointly keeping it alive are all stripped (closes #1654)"
+      },
+      {
+        "name": "no-redundant-param-types",
+        "changeType": "fix",
+        "issues": [
+          1653
+        ],
+        "summary": "remove the type imports a stripped parameter annotation was the sole consumer of (closes #1653)"
+      },
+      {
+        "name": "no-type-assertion-returns",
+        "changeType": "fix",
+        "issues": [
+          1655
+        ],
+        "summary": "exempt type assertions in JSX spread attributes (closes #1655)"
+      }
+    ]
+  },
+  {
     "version": "1.20.88",
     "date": "2026-08-03T09:05:50.265Z",
     "rules": [
