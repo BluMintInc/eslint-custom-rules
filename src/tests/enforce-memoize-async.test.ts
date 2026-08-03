@@ -2119,3 +2119,101 @@ export class IsolatedLogin {
     expect(messages[0].ruleId).toBe(RULE_ID);
   });
 });
+
+// Issue #1648: the injected `import { Memoize }` must land below whatever
+// governs the top of the file. A file with no import declaration has nothing to
+// anchor to, and inserting above everything demotes a `'use client'` directive
+// out of the prologue, moves a `#!` shebang off character 0 (leaving the file
+// unparseable) and lifts an import above the header comment that covers it.
+ruleTesterTs.run(
+  'enforce-memoize-async: file prologue (issue #1648)',
+  enforceMemoizeAsync,
+  {
+    valid: [],
+    invalid: [
+      // A directive only counts while it is the first statement.
+      {
+        code: `'use client';
+class Example {
+  async getData() {
+    return await fetch('data');
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `'use client';
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Example {
+  @Memoize()
+  async getData() {
+    return await fetch('data');
+  }
+}
+`,
+      },
+      // A shebang parses only at character 0.
+      {
+        code: `#!/usr/bin/env node
+class Example {
+  async getData() {
+    return await fetch('data');
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `#!/usr/bin/env node
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Example {
+  @Memoize()
+  async getData() {
+    return await fetch('data');
+  }
+}
+`,
+      },
+      // A header comment governs the code beneath it, import included.
+      {
+        code: `// @ts-nocheck
+class Example {
+  async getData() {
+    return await fetch('data');
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `// @ts-nocheck
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Example {
+  @Memoize()
+  async getData() {
+    return await fetch('data');
+  }
+}
+`,
+      },
+      // Control: an existing import still anchors the injected one, so the
+      // prologue cases cannot pass by declining to insert at all.
+      {
+        code: `'use client';
+import { something } from 'lib';
+class Example {
+  async getData() {
+    return await something(fetch('data'));
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `'use client';
+import { Memoize } from '@blumintinc/typescript-memoize';
+import { something } from 'lib';
+class Example {
+  @Memoize()
+  async getData() {
+    return await something(fetch('data'));
+  }
+}
+`,
+      },
+    ],
+  },
+);

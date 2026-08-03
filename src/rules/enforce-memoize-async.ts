@@ -2,6 +2,12 @@ import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
 import { createSuppressionChecker } from '../utils/disableDirectives';
+import {
+  importAnchorIndent,
+  importAnchorLineStart,
+  importInsertionAnchor,
+  insertAtImportAnchor,
+} from '../utils/importInsertion';
 
 type MessageIds = 'requireMemoize';
 type Options = [];
@@ -411,37 +417,23 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
               memoizeNamespaces.size === 0 &&
               !scheduledImportFix
             ) {
-              const programBody = (sourceCode.ast as TSESTree.Program).body;
-              const firstImport = programBody.find(
-                (n) => n.type === AST_NODE_TYPES.ImportDeclaration,
+              // The shared anchor keeps the import below whatever governs the
+              // top of the file — a `'use client'` directive that must stay the
+              // first statement, a `#!` shebang that must stay at character 0,
+              // a header comment — while still placing it above the first
+              // existing import.
+              const anchor = importInsertionAnchor(sourceCode);
+              fixes.push(
+                insertAtImportAnchor(
+                  sourceCode,
+                  fixer,
+                  importAnchorLineStart(sourceCode, anchor),
+                  `${importAnchorIndent(
+                    sourceCode,
+                    anchor,
+                  )}${importStatement}\n`,
+                ),
               );
-              const anchorNode = (firstImport ?? programBody[0]) as
-                | typeof programBody[number]
-                | undefined;
-
-              if (anchorNode) {
-                const text = sourceCode.text;
-                const anchorStart = anchorNode.range![0];
-                const lineStart = text.lastIndexOf('\n', anchorStart - 1) + 1;
-                const leadingWhitespace =
-                  text.slice(lineStart, anchorStart).match(/^[ \t]*/)?.[0] ??
-                  '';
-                const importLine = `${leadingWhitespace}${importStatement}\n`;
-                fixes.push(
-                  fixer.insertTextBeforeRange(
-                    [lineStart, lineStart],
-                    importLine,
-                  ),
-                );
-              } else {
-                // Fallback: empty file
-                fixes.push(
-                  fixer.insertTextBeforeRange(
-                    [0, 0],
-                    `import { Memoize } from '${MEMOIZE_MODULE}';\n`,
-                  ),
-                );
-              }
               scheduledImportFix = true;
             }
 
