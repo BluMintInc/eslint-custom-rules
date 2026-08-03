@@ -198,6 +198,39 @@ parse) so branch values that close over local scope stay valid, then indexes it.
 The derived form is a `Record` index — not a switch/ternary/if — so it never
 re-flags (the fix is idempotent).
 
+### Key emission
+
+An inline-literal case test becomes a plain key (`case 'active':` → `active:`,
+`case 3:` → `3:`). Any other test — a constant reference, an enum member, a
+template literal, a negated number — becomes a **computed key carrying the
+original expression**:
+
+```ts
+switch (status) {
+  case THIS_DEVICE_STATUS.active: return <Row status="active" />;
+  case THIS_DEVICE_STATUS.blocked: return <Row status="blocked" />;
+}
+```
+
+```ts
+const RESULT_BY_STATUS: Record<'active' | 'blocked', JSX.Element> = {
+  [THIS_DEVICE_STATUS.active]: <Row status="active" />,
+  [THIS_DEVICE_STATUS.blocked]: <Row status="blocked" />,
+};
+return RESULT_BY_STATUS[status];
+```
+
+The checker resolves such a test to a literal value — that is how the rule
+proves the discriminant is a finite literal union — but emitting the *value* as
+the key would strip the reference: the constant is left unused (an imported one
+then fails `@typescript-eslint/no-unused-vars`) and its value is baked into the
+call site, so the map no longer tracks the single source of truth the constant
+exists to provide. The computed key is type-safe by construction: the fix runs
+only after the checker resolved the expression to a string/number *literal*
+type, so the key is a literal key and `Record<D, V>` stays exhaustive over it.
+Keys for the member a `default`/`else` covers have no case-test expression of
+their own and stay plain.
+
 ### Incorrect
 
 Because the rule fires only when the discriminant's static type is a finite
