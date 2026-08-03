@@ -76,4 +76,4 @@ When the rule fires, it points to the problematic field and suggests a replaceme
 
 > What's wrong: friends stores an array of objects in a Firestore document.
 > Why it matters: Firestore cannot query inside object arrays, and updating one item rewrites the whole array; concurrent writes can overwrite each other and lose data.
-> How to fix: Store items as Record<string, T> keyed by id (with an index field for ordering; convert with toMap/toArr), or move items into a subcollection or store only an array of IDs.
+> How to fix: Store items as Record<string, T> keyed by id with an index field for ordering (use toMap/toArr helpers), or move items into a subcollection or store only an array of IDs.
