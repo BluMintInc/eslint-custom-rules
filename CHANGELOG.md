@@ -1,3 +1,11 @@
+## [1.20.90](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.89...v1.20.90) (2026-08-03)
+
+
+### Bug Fixes
+
+* **enforce-assert-safe-object-key:** decline the fix inside a jest mock factory (closes [#1659](https://github.com/BluMintInc/eslint-custom-rules/issues/1659)) ([8c1d35f](https://github.com/BluMintInc/eslint-custom-rules/commit/8c1d35f6b02237ea0f193c450d046da16e36396d))
+* **prefer-fragment-component:** decline the fix inside a jest mock factory (closes [#1660](https://github.com/BluMintInc/eslint-custom-rules/issues/1660)) ([56c34ab](https://github.com/BluMintInc/eslint-custom-rules/commit/56c34ab47ec53036dacb85f69b46e16499426496))
+
 ## [1.20.89](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.88...v1.20.89) (2026-08-03)
 
 
