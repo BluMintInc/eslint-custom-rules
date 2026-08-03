@@ -22,50 +22,65 @@ const describeChild = (child: TSESTree.JSXChild): string => {
   }
 };
 
+/**
+ * A `JSXText` child that is pure whitespace AND spans a line break is
+ * formatting padding — the newline + indentation prettier inserts around a
+ * single-line child in the multi-line fragment form — and renders no output.
+ * A whitespace-only child WITHOUT a newline (e.g. `<> <Foo /> </>`) renders
+ * an actual space between siblings, so it still counts as meaningful.
+ */
+const isFormattingWhitespace = (child: TSESTree.JSXChild): boolean =>
+  child.type === 'JSXText' &&
+  /^\s*$/.test(child.value) &&
+  child.value.includes('\n');
+
 export const noUselessFragment = createRule<[], 'noUselessFragment'>({
   name: 'no-useless-fragment',
   create(context) {
     return {
       JSXFragment(node: TSESTree.JSXFragment) {
-        if (node.children.length === 1) {
-          const [child] = node.children;
+        const meaningfulChildren = node.children.filter(
+          (child) => !isFormattingWhitespace(child),
+        );
 
-          /**
-           * A fragment whose only child is an expression container — e.g.
-           * `<>{portal}</>` — is NOT useless. Unwrapping it to a bare
-           * `{portal}` is invalid in statement/return position, and wrapping a
-           * single ReactNode expression in a fragment is the idiomatic way to
-           * render it. (Mirrors the upstream rule's `allowExpressions`.)
-           */
-          if (child.type === 'JSXExpressionContainer') {
-            return;
-          }
-
-          context.report({
-            node,
-            messageId: 'noUselessFragment',
-            data: {
-              childKind: describeChild(child),
-            },
-            fix(fixer) {
-              const sourceCode = context.sourceCode;
-              // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-              const openingFragment = sourceCode.getFirstToken(node)!;
-              // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-              const closingFragment = sourceCode.getLastToken(node)!;
-              return [
-                fixer.removeRange([
-                  openingFragment.range[0],
-                  openingFragment.range[0] + 2,
-                ]),
-                fixer.removeRange([
-                  closingFragment.range[0] - 3,
-                  closingFragment.range[0],
-                ]),
-              ];
-            },
-          });
+        if (meaningfulChildren.length !== 1) {
+          return;
         }
+
+        const [child] = meaningfulChildren;
+
+        /**
+         * A fragment whose only child is an expression container — e.g.
+         * `<>{portal}</>` — is NOT useless. Unwrapping it to a bare
+         * `{portal}` is invalid in statement/return position, and wrapping a
+         * single ReactNode expression in a fragment is the idiomatic way to
+         * render it. (Mirrors the upstream rule's `allowExpressions`.)
+         */
+        if (child.type === 'JSXExpressionContainer') {
+          return;
+        }
+
+        /**
+         * Unwrapping is only sound when the child is itself standalone JSX.
+         * A text child (`<>hello</>`) would become a bare identifier
+         * reference, and a spread child (`<>{...items}</>`) is not a valid
+         * expression on its own — both are report-only so the developer
+         * chooses how to restructure the surrounding code.
+         */
+        const isFixable =
+          child.type === 'JSXElement' || child.type === 'JSXFragment';
+
+        context.report({
+          node,
+          messageId: 'noUselessFragment',
+          data: {
+            childKind: describeChild(child),
+          },
+          fix: isFixable
+            ? (fixer) =>
+                fixer.replaceText(node, context.sourceCode.getText(child))
+            : null,
+        });
       },
     };
   },
