@@ -132,6 +132,86 @@ const Comp = ({ obj }) => {
 };
 `,
       },
+      // A file with no imports still has a prologue: the inserted import lands
+      // below the directive, which stops being one the moment a statement
+      // precedes it.
+      {
+        code: `'use client';
+
+const Comp = ({ userConfig }) => {
+  const formatted = useMemo(() => ({ name: userConfig.name }), [userConfig]);
+  return <div>{formatted.name}</div>;
+};
+`,
+        errors: [error],
+        output: `'use client';
+
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const Comp = ({ userConfig }) => {
+  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+  return <div>{formatted.name}</div>;
+};
+`,
+      },
+      // A shebang is only a shebang at character 0, so an import spliced above
+      // it leaves the file unparseable.
+      {
+        code: `#!/usr/bin/env node
+const Comp = ({ userConfig }) => {
+  const formatted = useMemo(() => ({ name: userConfig.name }), [userConfig]);
+  return <div>{formatted.name}</div>;
+};
+`,
+        errors: [error],
+        output: `#!/usr/bin/env node
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const Comp = ({ userConfig }) => {
+  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+  return <div>{formatted.name}</div>;
+};
+`,
+      },
+      // A header comment governs the code beneath it, so the import belongs
+      // below the comment rather than above it.
+      {
+        code: `// @ts-nocheck
+const Comp = ({ userConfig }) => {
+  const formatted = useMemo(() => ({ name: userConfig.name }), [userConfig]);
+  return <div>{formatted.name}</div>;
+};
+`,
+        errors: [error],
+        output: `// @ts-nocheck
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const Comp = ({ userConfig }) => {
+  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+  return <div>{formatted.name}</div>;
+};
+`,
+      },
+      // Control for the prologue cases: an existing import still anchors the
+      // insertion, so the directive-aware path cannot pass by refusing to
+      // place imports at all.
+      {
+        code: `'use client';
+
+import { useMemo } from 'react';
+const Comp = ({ userConfig }) => {
+  const formatted = useMemo(() => ({ name: userConfig.name }), [userConfig]);
+  return <div>{formatted.name}</div>;
+};
+`,
+        errors: [error],
+        output: `'use client';
+
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+import { useMemo } from 'react';
+const Comp = ({ userConfig }) => {
+  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+  return <div>{formatted.name}</div>;
+};
+`,
+      },
       // Generic type parameter preservation (access a property so rule triggers)
       {
         code: `
