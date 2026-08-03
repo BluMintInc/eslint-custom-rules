@@ -4,6 +4,7 @@ lib/**/*
 
 # Rule fixtures read from disk as test input, not as project source
 src/tests/fixtures/require-props-composition/
+src/tests/fixtures/prefer-spread-over-reassembly/
 
 # Logs
 logs

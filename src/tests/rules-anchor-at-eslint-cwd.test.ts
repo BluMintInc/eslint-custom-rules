@@ -48,6 +48,7 @@ const RULES_WITH_SANCTIONED_FALLBACK = [
   'enforce-querykey-ts.ts',
   'no-firestore-jest-mock.ts',
   'prefer-global-router-state-key.ts',
+  'prefer-spread-over-reassembly.ts',
   'require-props-composition.ts',
   'test-file-location-enforcement.ts',
 ];

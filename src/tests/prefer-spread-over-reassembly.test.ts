@@ -1,5 +1,17 @@
+import path from 'path';
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { preferSpreadOverReassembly } from '../rules/prefer-spread-over-reassembly';
+
+// Issue #1644: proving an imported pick narrowing requires reading the sibling
+// module off disk, so these cases need a filename that really sits next to the
+// fixture modules under `fixtures/prefer-spread-over-reassembly/`.
+const FIXTURE_DIR = path.join(
+  __dirname,
+  'fixtures/prefer-spread-over-reassembly',
+);
+const FIXTURE_FILE = path.join(FIXTURE_DIR, 'consumer.ts');
+const FIXTURE_FILE_TSX = path.join(FIXTURE_DIR, 'consumer.tsx');
+const FIXTURE_FILE_NESTED = path.join(FIXTURE_DIR, 'nested/consumer.ts');
 
 ruleTesterJsx.run('prefer-spread-over-reassembly', preferSpreadOverReassembly, {
   valid: [
@@ -549,6 +561,142 @@ const build = (units: ReadonlyArray<Readonly<Unit>>) =>
 type Wide = Readonly<{ a: string; b: string; c: string }>;
 const Narrowed = ({ a, b }: Wide) => <Child a={a} b={b} />;
 `,
+
+    // Regression (#1644): the reported agora site verbatim. `LinkedPullRequest`
+    // lives in the sibling `types.ts` and carries four members; the callback
+    // picks three and keeps a literal `state`, so the collapse would inject
+    // `closesIssue` into a GraphQL fixture. The partial shape — a retained
+    // non-shorthand property alongside the forwarded ones — is exactly what the
+    // proof has to run on.
+    {
+      filename: FIXTURE_FILE,
+      code: `
+import { ExecFn, LinkedPullRequest, QueueIssue } from './types';
+function linkageSelections(linkedPrs: readonly LinkedPullRequest[]) {
+  const asNode = ({ number, headRefName, updatedAt }: LinkedPullRequest) => {
+    return { number, state: 'OPEN', headRefName, updatedAt } as const;
+  };
+  return asNode;
+}
+`,
+    },
+
+    // Regression (#1644): a type-only import of a wider sibling type.
+    {
+      filename: FIXTURE_FILE,
+      code: `
+import type { Wide } from './types';
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+    },
+
+    // Regression (#1644): the value-import spelling reaches the same
+    // declaration, so it proves the same thing.
+    {
+      filename: FIXTURE_FILE,
+      code: `
+import { Wide } from './types';
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+    },
+
+    // Regression (#1644): an import alias renames the local binding, never the
+    // export the sibling declares.
+    {
+      filename: FIXTURE_FILE,
+      code: `
+import type { Wide as Renamed } from './types';
+const pick = ({ a, b }: Renamed) => ({ a, b });
+`,
+    },
+
+    // Regression (#1644): the sibling spells its record \`Readonly<{...}>\`, and
+    // #1643's unwrapping applies inside the sibling's own scope.
+    {
+      filename: FIXTURE_FILE,
+      code: `
+import type { WideReadonly } from './types';
+const pick = ({ a, b }: WideReadonly) => ({ a, b });
+`,
+    },
+
+    // Regression (#1644): an interface is as enumerable across the hop as it is
+    // in the file under lint.
+    {
+      filename: FIXTURE_FILE,
+      code: `
+import type { WideInterface } from './types';
+const pick = ({ a, b }: WideInterface) => ({ a, b });
+`,
+    },
+
+    // Regression (#1644): an alias chain confined to the sibling stays within
+    // the single hop, so it resolves.
+    {
+      filename: FIXTURE_FILE,
+      code: `
+import type { WideViaLocalAlias } from './types';
+const pick = ({ a, b }: WideViaLocalAlias) => ({ a, b });
+`,
+    },
+
+    // Regression (#1644): a \`../\` specifier resolves against the file's own
+    // directory, not the process cwd.
+    {
+      filename: FIXTURE_FILE_NESTED,
+      code: `
+import type { Wide } from '../types';
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+    },
+
+    // Regression (#1644): a directory specifier resolves to its index module.
+    {
+      filename: FIXTURE_FILE,
+      code: `
+import type { NestedWide } from './nested';
+const pick = ({ a, b }: NestedWide) => ({ a, b });
+`,
+    },
+
+    // Regression (#1644): the extension search reaches a \`.tsx\` sibling.
+    {
+      filename: FIXTURE_FILE,
+      code: `
+import type { WidgetProps } from './widget';
+const pick = ({ a, b }: WidgetProps) => ({ a, b });
+`,
+    },
+
+    // Regression (#1644): the contextual route reads the element type through
+    // the same enumerator, so an imported element type resolves too.
+    {
+      filename: FIXTURE_FILE,
+      code: `
+import type { Wide } from './types';
+const build = (units: Wide[]) => units.map(({ a, b }) => ({ a, b }));
+`,
+    },
+
+    // Regression (#1644): a JSX target widens exactly as an object literal
+    // does, imported source type included.
+    {
+      filename: FIXTURE_FILE_TSX,
+      code: `
+import type { Wide } from './types';
+const Narrowed = ({ a, b }: Wide) => <Child a={a} b={b} />;
+`,
+    },
+
+    // Regression (#1644): a key-preserving operator at the use site wraps an
+    // imported argument, whose member list the hop supplies.
+    {
+      filename: FIXTURE_FILE,
+      code: `
+import type { Wide } from './types';
+const pick = ({ a, b }: Readonly<Wide>) => ({ a, b });
+`,
+    },
   ],
 
   invalid: [
@@ -1613,8 +1761,9 @@ const W = (props: Pair) => <Child {...props} />;
 `,
     },
 
-    // Regression (#1642): an imported element type lives in a module this rule
-    // cannot read, so nothing is proven and the report stands.
+    // Regression (#1642): the specifier resolves to no module on disk beside
+    // this file, so the element type's members stay unknown and the report
+    // stands. #1644 reads a sibling that does resolve.
     {
       code: `
 import type { Unit } from './unit';
@@ -2049,8 +2198,8 @@ const pick = (props: Readonly<Big, Big>) => ({ ...props });
 `,
     },
 
-    // Regression (#1643): the operator preserves keys, but an imported
-    // argument's keys still live in a module this rule cannot read.
+    // Regression (#1643): the operator preserves keys, but the argument's own
+    // keys live in a module that does not resolve beside this file.
     {
       code: `
 import type { Big } from './types';
@@ -2074,6 +2223,170 @@ const pick = ({ a, b }: Readonly<Big<string>>) => ({ a, b });
       output: `
 type Big<T> = { a: string; b: string; c: T };
 const pick = (props: Readonly<Big<string>>) => ({ ...props });
+`,
+    },
+
+    // Regression (#1644): an imported member set that matches the pick exactly
+    // is exhaustive, so reading the sibling confirms the report rather than
+    // silencing it.
+    {
+      filename: FIXTURE_FILE,
+      code: `
+import type { Exact } from './types';
+const pick = ({ a, b }: Exact) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+import type { Exact } from './types';
+const pick = (props: Exact) => ({ ...props });
+`,
+    },
+
+    // Regression (#1644): a bare package specifier names a module whose
+    // location depends on resolution settings this rule does not read.
+    {
+      filename: FIXTURE_FILE,
+      code: `
+import type { Wide } from 'shared-types';
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+import type { Wide } from 'shared-types';
+const pick = (props: Wide) => ({ ...props });
+`,
+    },
+
+    // Regression (#1644): a relative specifier that resolves to nothing on disk
+    // proves nothing.
+    {
+      filename: FIXTURE_FILE,
+      code: `
+import type { Wide } from './missing-module';
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+import type { Wide } from './missing-module';
+const pick = (props: Wide) => ({ ...props });
+`,
+    },
+
+    // Regression (#1644): the sibling re-exports the name from a third module,
+    // which is past the single hop.
+    {
+      filename: FIXTURE_FILE,
+      code: `
+import type { Relayed } from './types';
+const pick = ({ a, b }: Relayed) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+import type { Relayed } from './types';
+const pick = (props: Relayed) => ({ ...props });
+`,
+    },
+
+    // Regression (#1644): the sibling's own declaration is a \`Pick\`, which
+    // rewrites the key set.
+    {
+      filename: FIXTURE_FILE,
+      code: `
+import type { NarrowPick } from './types';
+const pick = ({ a, b }: NarrowPick) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+import type { NarrowPick } from './types';
+const pick = (props: NarrowPick) => ({ ...props });
+`,
+    },
+
+    // Regression (#1644): the sibling's declaration aliases a type it imports
+    // itself, so the member list is two hops out.
+    {
+      filename: FIXTURE_FILE,
+      code: `
+import type { ViaThird } from './types';
+const pick = ({ a, b }: ViaThird) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+import type { ViaThird } from './types';
+const pick = (props: ViaThird) => ({ ...props });
+`,
+    },
+
+    // Regression (#1644): a barrel names no declaration of its own.
+    {
+      filename: FIXTURE_FILE,
+      code: `
+import type { Wide } from './barrel';
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+import type { Wide } from './barrel';
+const pick = (props: Wide) => ({ ...props });
+`,
+    },
+
+    // Regression (#1644): the sibling resolves but exports no such name.
+    {
+      filename: FIXTURE_FILE,
+      code: `
+import type { Missing } from './types';
+const pick = ({ a, b }: Missing) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+import type { Missing } from './types';
+const pick = (props: Missing) => ({ ...props });
+`,
+    },
+
+    // Regression (#1644): a specifier export is indistinguishable from a
+    // re-export at the specifier, so only \`export type X = …\` is followed.
+    {
+      filename: FIXTURE_FILE,
+      code: `
+import type { SpecifierExported } from './types';
+const pick = ({ a, b }: SpecifierExported) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+import type { SpecifierExported } from './types';
+const pick = (props: SpecifierExported) => ({ ...props });
+`,
+    },
+
+    // Regression (#1644): a namespace import is referenced as a qualified name,
+    // which the enumerator does not read.
+    {
+      filename: FIXTURE_FILE,
+      code: `
+import * as Types from './types';
+const pick = ({ a, b }: Types.Wide) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+import * as Types from './types';
+const pick = (props: Types.Wide) => ({ ...props });
+`,
+    },
+
+    // Regression (#1644): a default import carries no exported name to look up
+    // in the sibling.
+    {
+      filename: FIXTURE_FILE,
+      code: `
+import Wide from './types';
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+import Wide from './types';
+const pick = (props: Wide) => ({ ...props });
 `,
     },
   ],
