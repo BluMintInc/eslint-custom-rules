@@ -59,6 +59,36 @@ function danglingTypeReferences(code: string): string[] {
   return [...used].filter((name) => !bound.has(name));
 }
 
+/**
+ * Bindings the source declares and never reads — the debt issue #1654 is about.
+ * Read from `no-unused-vars` itself rather than re-derived, since that rule is
+ * what turns the leftover into a failing build downstream.
+ */
+function unusedBindings(code: string): string[] {
+  const linter = new Linter();
+  linter.defineParser('@typescript-eslint/parser', tsParser as never);
+  return (
+    linter
+      .verify(
+        code,
+        {
+          parser: '@typescript-eslint/parser',
+          parserOptions: {
+            ecmaVersion: 2022 as const,
+            sourceType: 'module' as const,
+          },
+          rules: { 'no-unused-vars': 'error' },
+        },
+        'x.ts',
+      )
+      // A source carrying a disable directive for the rule under test also draws
+      // "Definition for rule ... was not found" from a linter that does not
+      // define it, which says nothing about unused bindings.
+      .filter((message) => message.ruleId === 'no-unused-vars')
+      .map((message) => message.message)
+  );
+}
+
 ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
   valid: [
     // Basic functions without return type
@@ -1289,11 +1319,12 @@ export const buildUser = (id: string) => {
 `,
     },
 
-    // Two annotations sharing the type: each fix is judged alone against the
-    // file as it stands, so neither is the last consumer and the import stays.
-    // Assuming both strips land is unsound — the other report may be
-    // `eslint-disable`d, which a rule cannot see — and it would strand the
-    // surviving annotation's type reference. See the suppression suite below.
+    // Issue #1654: two annotations sharing the type. Neither is the last
+    // consumer on its own, and waiting for a later pass never pays off — once
+    // both are stripped the rule has nothing left to report, so no fix remains
+    // to carry the cleanup. One fix therefore removes both annotations and the
+    // import together. Both reports carry that same fix, so whichever ESLint
+    // applies does the whole job; the other conflicts and is dropped.
     {
       code: `import type { User } from './User';
 
@@ -1310,10 +1341,626 @@ export const cloneUser = (id: string): User => ({ id });
           data: { functionKind: 'arrow function "cloneUser"' },
         },
       ],
-      output: `import type { User } from './User';
-
+      output: `
 export const buildUser = (id: string) => ({ id });
 export const cloneUser = (id: string) => ({ id });
+`,
+    },
+
+    // Three annotations sharing one specifier of a multi-specifier import: the
+    // issue's own reproduction, reduced. Only the orphaned specifier goes.
+    {
+      code: `import type { Tournament, PrizePoolTarget } from './Tournament';
+
+export const selfFund = (id: string): PrizePoolTarget => ({ id });
+export const crowdfund = (id: string): PrizePoolTarget => ({ id });
+export const sponsor = (id: string): PrizePoolTarget => ({ id });
+
+export const NAME: Tournament = { id: 'x' };
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "selfFund"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "crowdfund"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "sponsor"' },
+        },
+      ],
+      output: `import type { Tournament } from './Tournament';
+
+export const selfFund = (id: string) => ({ id });
+export const crowdfund = (id: string) => ({ id });
+export const sponsor = (id: string) => ({ id });
+
+export const NAME: Tournament = { id: 'x' };
+`,
+    },
+
+    // Two types, each shared by a different pair of annotations: the batches are
+    // independent, so ESLint applies one and the next pass applies the other.
+    // A single pass leaves the second import bound to its own annotations.
+    {
+      code: `import type { User } from './User';
+import type { Team } from './Team';
+
+export const buildUser = (): User => ({});
+export const cloneUser = (): User => ({});
+export const buildTeam = (): Team => ({});
+export const cloneTeam = (): Team => ({});
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildTeam"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneTeam"' },
+        },
+      ],
+      output: `import type { Team } from './Team';
+
+export const buildUser = () => ({});
+export const cloneUser = () => ({});
+export const buildTeam = (): Team => ({});
+export const cloneTeam = (): Team => ({});
+`,
+    },
+
+    // A type two annotations share, one of which also names a second import:
+    // both imports are unbound by the batch that removes both annotations.
+    {
+      code: `import type { User } from './User';
+import type { Role } from './Role';
+
+export const buildUser = (): User => ({});
+export const cloneUser = (): Record<Role, User> => ({});
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+      ],
+      output: `
+export const buildUser = () => ({});
+export const cloneUser = () => ({});
+`,
+    },
+
+    // Only import bindings are unbindable, so only they group annotations. Two
+    // annotations sharing a local type alias are stripped one at a time as
+    // before, and the alias — which no import surgery can remove — keeps the
+    // import that it, not the annotations, references.
+    {
+      code: `import type { User } from './User';
+
+type Wrapper = { user: User };
+
+export const buildUser = (): Wrapper => ({ user: { id: '1' } });
+export const cloneUser = (): Wrapper => ({ user: { id: '2' } });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+      ],
+      output: `import type { User } from './User';
+
+type Wrapper = { user: User };
+
+export const buildUser = () => ({ user: { id: '1' } });
+export const cloneUser = () => ({ user: { id: '2' } });
+`,
+    },
+
+    // An aliased specifier is shared by its local name
+    {
+      code: `import type { User as UserModel } from './User';
+
+export const buildUser = (): UserModel => ({});
+export const cloneUser = (): UserModel => ({});
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+      ],
+      output: `
+export const buildUser = () => ({});
+export const cloneUser = () => ({});
+`,
+    },
+
+    // An inline `type` specifier shared by two annotations, next to a default
+    // import that survives
+    {
+      code: `import Client, { type User } from './client';
+
+export const buildUser = (): User => Client.build();
+export const cloneUser = (): User => Client.clone();
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+      ],
+      output: `import Client from './client';
+
+export const buildUser = () => Client.build();
+export const cloneUser = () => Client.clone();
+`,
+    },
+
+    // A default import shared by two annotations
+    {
+      code: `import User from './User';
+
+export const buildUser = (): User => ({});
+export const cloneUser = (): User => ({});
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+      ],
+      output: `
+export const buildUser = () => ({});
+export const cloneUser = () => ({});
+`,
+    },
+
+    // A namespace import reached through a qualified name in two annotations
+    {
+      code: `import * as Api from './api';
+
+export const load = (): Api.User => ({ id: 1 });
+export const reload = (): Api.User => ({ id: 2 });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "load"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "reload"' },
+        },
+      ],
+      output: `
+export const load = () => ({ id: 1 });
+export const reload = () => ({ id: 2 });
+`,
+    },
+
+    // A namespace still used for a value survives both strips
+    {
+      code: `import * as Api from './api';
+
+export const load = (): Api.User => Api.fetchUser();
+export const reload = (): Api.User => ({ id: 2 });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "load"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "reload"' },
+        },
+      ],
+      output: `import * as Api from './api';
+
+export const load = () => Api.fetchUser();
+export const reload = () => ({ id: 2 });
+`,
+    },
+
+    // Class methods sharing a type are batched like any other annotation
+    {
+      code: `import type { User } from './User';
+
+export class Repository {
+  find(): User {
+    return {} as never;
+  }
+  load(): User {
+    return {} as never;
+  }
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'class method "find"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'class method "load"' },
+        },
+      ],
+      output: `
+export class Repository {
+  find() {
+    return {} as never;
+  }
+  load() {
+    return {} as never;
+  }
+}
+`,
+    },
+
+    // An annotation nested inside another function counts the same as a
+    // top-level one
+    {
+      code: `import type { User } from './User';
+
+export const outer = (): User => {
+  const inner = (): User => ({});
+  return inner();
+};
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "outer"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "inner"' },
+        },
+      ],
+      output: `
+export const outer = () => {
+  const inner = () => ({});
+  return inner();
+};
+`,
+    },
+
+    // A value use of the shared type keeps the import: the reference is outside
+    // every annotation the batch deletes
+    {
+      code: `import { User } from './User';
+
+export const SEED = new User();
+
+export const buildUser = (): User => SEED;
+export const cloneUser = (): User => SEED;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+      ],
+      output: `import { User } from './User';
+
+export const SEED = new User();
+
+export const buildUser = () => SEED;
+export const cloneUser = () => SEED;
+`,
+    },
+
+    // An annotation the rule cannot strip holds the import up for the batch too
+    {
+      code: `import type { User } from './User';
+
+declare function findUser(id: string): User;
+
+export const buildUser = (): User => ({});
+export const cloneUser = (): User => ({});
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeNonInferable',
+          data: { functionKind: 'function "findUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+      ],
+      output: `import type { User } from './User';
+
+declare function findUser(id: string): User;
+
+export const buildUser = () => ({});
+export const cloneUser = () => ({});
+`,
+    },
+
+    // A re-export is a consumer no batch can delete
+    {
+      code: `import type { User } from './User';
+
+export type { User };
+
+export const buildUser = (): User => ({});
+export const cloneUser = (): User => ({});
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+      ],
+      output: `import type { User } from './User';
+
+export type { User };
+
+export const buildUser = () => ({});
+export const cloneUser = () => ({});
+`,
+    },
+
+    // A shadowing binding of the same name makes the deletion unprovable, so
+    // the batch declines and each annotation falls back to its own judgement
+    {
+      code: `import type { User } from './User';
+
+export const buildUser = (): User => ({});
+export const cloneUser = (): User => ({});
+export const nameOf = (User: string) => User;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+      ],
+      output: `import type { User } from './User';
+
+export const buildUser = () => ({});
+export const cloneUser = () => ({});
+export const nameOf = (User: string) => User;
+`,
+    },
+
+    // A comment among the specifiers would be swallowed by the separator
+    // surgery, so the import stays and only the annotations go
+    {
+      code: `import type { /* keep */ User, Role } from './types';
+
+export const ROLE: Role = 'admin';
+
+export const buildUser = (): User => ({});
+export const cloneUser = (): User => ({});
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+      ],
+      output: `import type { /* keep */ User, Role } from './types';
+
+export const ROLE: Role = 'admin';
+
+export const buildUser = () => ({});
+export const cloneUser = () => ({});
+`,
+    },
+
+    // A directive bound to the import's line would outlive its subject, so the
+    // whole batch is declined — annotations included
+    {
+      code: `// eslint-disable-next-line no-unused-vars
+import { User } from './User';
+
+export const buildUser = (): User => ({});
+export const cloneUser = (): User => ({});
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+      ],
+      output: `// eslint-disable-next-line no-unused-vars
+import { User } from './User';
+
+export const buildUser = () => ({});
+export const cloneUser = () => ({});
+`,
+    },
+
+    // The issue's own layout: a multi-line specifier list keeps its shape when
+    // one of its specifiers is unbound by a batch
+    {
+      code: `import type {
+  PrizePoolTarget,
+  Tournament,
+} from './Tournament';
+
+const selfFund = (id: string): PrizePoolTarget => ({ id });
+const crowdfund = (id: string): PrizePoolTarget => ({ id });
+
+export const of = (t: Tournament) => [selfFund, crowdfund, t];
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "selfFund"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "crowdfund"' },
+        },
+      ],
+      output: `import type {
+  Tournament,
+} from './Tournament';
+
+const selfFund = (id: string) => ({ id });
+const crowdfund = (id: string) => ({ id });
+
+export const of = (t: Tournament) => [selfFund, crowdfund, t];
+`,
+    },
+
+    // Function kinds mix freely inside one batch
+    {
+      code: `import type { User } from './User';
+
+export function buildUser(): User {
+  return {} as never;
+}
+
+export const cloneUser = function (): User {
+  return {} as never;
+};
+
+export class Repository {
+  find(): User {
+    return {} as never;
+  }
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "cloneUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'class method "find"' },
+        },
+      ],
+      output: `
+export function buildUser() {
+  return {} as never;
+}
+
+export const cloneUser = function () {
+  return {} as never;
+};
+
+export class Repository {
+  find() {
+    return {} as never;
+  }
+}
+`,
+    },
+
+    // Empty bodies and comments between the annotations change nothing about
+    // which removals belong together
+    {
+      code: `import type { User } from './User';
+
+// builds nothing
+export const buildUser = (): User => {};
+
+/* clones nothing */
+export const cloneUser = (): User => {};
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+      ],
+      output: `
+// builds nothing
+export const buildUser = () => {};
+
+/* clones nothing */
+export const cloneUser = () => {};
+`,
+    },
+
+    // No imports at all: two annotations naming built-ins are stripped with no
+    // import surgery to consider
+    {
+      code: `export const buildUser = (): Record<string, string> => ({});
+export const cloneUser = (): Record<string, string> => ({});
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+      ],
+      output: `export const buildUser = () => ({});
+export const cloneUser = () => ({});
 `,
     },
 
@@ -2049,17 +2696,12 @@ describe('no-explicit-return-type --fix leaves no import bound to nothing', () =
     ).toHaveLength(0);
   });
 
-  // A type two strippable annotations share is deliberately NOT unbound. Each
-  // fix is judged alone against the file as it stands, so neither annotation
-  // sees itself as the last consumer, and ESLint applies both non-conflicting
-  // strips in the same pass — leaving the import unused.
-  //
-  // That is the price of suppression safety, and it is the cheaper side of the
-  // trade. Judging the fixes together would delete the import whenever a
-  // sibling annotation turned out to be `eslint-disable`d (which a rule cannot
-  // see), leaving a type reference bound to nothing: a compile error in place
-  // of an unused-import warning. The suppression suite below pins that.
-  it('leaves an import two annotations share rather than assuming both go', () => {
+  // Issue #1654: a type several strippable annotations share. No annotation is
+  // the last consumer while the others stand, and once they are all stripped
+  // the rule has nothing left to report — there is no later pass, because there
+  // is no later report. The annotations that hold the import up are therefore
+  // removed by one fix, together with the import.
+  it('unbinds an import two annotations share, in one fix', () => {
     const linter = makeLinter();
     const source = [
       "import type { User } from './User';",
@@ -2071,10 +2713,95 @@ describe('no-explicit-return-type --fix leaves no import bound to nothing', () =
 
     const fixed = linter.verifyAndFix(source, configFor(FIX_RULES), FILENAME);
     expect(fixed.output).not.toContain(': User =>');
-    expect(fixed.output).toContain("import type { User } from './User';");
+    expect(fixed.output).not.toContain('import');
+    expect(
+      linter.verify(fixed.output, configFor(UNUSED_RULES), FILENAME),
+    ).toHaveLength(0);
     // The property that actually matters: nothing is left naming a type the
     // file no longer binds.
     expect(danglingTypeReferences(fixed.output)).toEqual([]);
+  });
+
+  // The issue's own shape: three annotations, one of several specifiers. Driven
+  // to a fixed point rather than a single pass, so a cleanup that needed a
+  // second pass would still count — the assertion is about where the fixer
+  // settles, not how many passes it takes.
+  it('unbinds one specifier of an import three annotations share', () => {
+    const linter = makeLinter();
+    const source = [
+      "import type { Tournament, PrizePoolTarget } from './Tournament';",
+      '',
+      'const selfFund = (id: string): PrizePoolTarget => ({ id });',
+      'const crowdfund = (id: string): PrizePoolTarget => ({ id });',
+      'const sponsor = (id: string): PrizePoolTarget => ({ id });',
+      '',
+      'export const of = (t: Tournament) => [selfFund, crowdfund, sponsor, t];',
+      '',
+    ].join('\n');
+
+    expect(
+      linter.verify(source, configFor(UNUSED_RULES), FILENAME),
+    ).toHaveLength(0);
+
+    const fixed = linter.verifyAndFix(source, configFor(FIX_RULES), FILENAME);
+    expect(fixed.output).not.toContain('PrizePoolTarget');
+    expect(fixed.output).toContain(
+      "import type { Tournament } from './Tournament';",
+    );
+    expect(
+      linter.verify(fixed.output, configFor(UNUSED_RULES), FILENAME),
+    ).toHaveLength(0);
+    expect(danglingTypeReferences(fixed.output)).toEqual([]);
+  });
+
+  // A batch deletes a wider span than a lone strip, so ESLint drops any fix
+  // overlapping it — including this rule's own fix for an unrelated annotation
+  // sitting between the batched ones. Those land on the next pass, which is
+  // what the fix loop is for; what matters is where it settles.
+  it('finishes the annotations a batch crowds out of its own pass', () => {
+    const linter = makeLinter();
+    const source = [
+      "import type { User } from './User';",
+      '',
+      'export const buildUser = (): User => ({});',
+      'export const countUsers = (): number => 1;',
+      'export const cloneUser = (): User => ({});',
+      '',
+    ].join('\n');
+
+    const fixed = linter.verifyAndFix(source, configFor(FIX_RULES), FILENAME);
+    expect(fixed.output).not.toContain(':');
+    expect(linter.verify(fixed.output, configFor(FIX_RULES), FILENAME)).toEqual(
+      [],
+    );
+    expect(danglingTypeReferences(fixed.output)).toEqual([]);
+  });
+
+  // Re-invoking the fixer must not turn up work the first invocation left
+  // behind: the orphan this issue is about survived precisely because nothing
+  // re-reported it, so "no reports left" is not by itself evidence of a clean
+  // file.
+  it('settles with nothing left to clean up', () => {
+    const linter = makeLinter();
+    const source = [
+      "import type { User } from './User';",
+      '',
+      'export const buildUser = (id: string): User => ({ id });',
+      'export const cloneUser = (user: unknown): User => ({ id: String(user) });',
+      '',
+    ].join('\n');
+
+    let code = source;
+    for (let invocation = 0; invocation < 3; invocation++) {
+      const fixed = linter.verifyAndFix(code, configFor(FIX_RULES), FILENAME);
+      code = fixed.output;
+    }
+
+    expect(linter.verify(code, configFor(FIX_RULES), FILENAME)).toHaveLength(0);
+    expect(linter.verify(code, configFor(UNUSED_RULES), FILENAME)).toHaveLength(
+      0,
+    );
+    expect(danglingTypeReferences(code)).toEqual([]);
   });
 
   // The mirror image: a binding with a consumer the fix does not touch keeps
@@ -2200,5 +2927,90 @@ describe('no-explicit-return-type --fix under eslint-disable', () => {
 
     expect(output).toBe(source);
     expectNoDanglingType(source, output);
+  });
+
+  // Issue #1654 batches the annotations that jointly hold an import up. A
+  // disabled member of that set is the case the batch must not assume away: its
+  // annotation stays, so the import it names has to stay too.
+  it('keeps the import when one of three sharing annotations is disabled', () => {
+    const source = [
+      IMPORT,
+      '',
+      annotated('a'),
+      '',
+      `// eslint-disable-next-line ${RULE_ID}`,
+      annotated('b'),
+      '',
+      annotated('c'),
+      '',
+    ].join('\n');
+    const { output } = fixWith(source);
+
+    expect(output).toContain(IMPORT);
+    // Exactly the disabled annotation survives.
+    expect(output.match(/: User =>/g)).toHaveLength(1);
+    expectNoDanglingType(source, output);
+    expect(unusedBindings(output)).toEqual([]);
+  });
+
+  it('keeps the import when a sibling is disabled on its own line', () => {
+    const source = [
+      IMPORT,
+      '',
+      annotated('a'),
+      '',
+      `export const b = (id: string): User => { // eslint-disable-line ${RULE_ID}`,
+      '  return { id };',
+      '};',
+      '',
+    ].join('\n');
+    const { output } = fixWith(source);
+
+    expect(output).toContain(IMPORT);
+    expect(output).toContain('(id: string): User =>');
+    expectNoDanglingType(source, output);
+    expect(unusedBindings(output)).toEqual([]);
+  });
+
+  it('keeps the import when a sibling is disabled by a bare block directive', () => {
+    const source = [
+      IMPORT,
+      '',
+      annotated('a'),
+      '',
+      '/* eslint-disable */',
+      annotated('b'),
+      '/* eslint-enable */',
+      '',
+      annotated('c'),
+      '',
+    ].join('\n');
+    const { output } = fixWith(source);
+
+    expect(output).toContain(IMPORT);
+    expect(output.match(/: User =>/g)).toHaveLength(1);
+    expectNoDanglingType(source, output);
+    expect(unusedBindings(output)).toEqual([]);
+  });
+
+  // The control for the three above: a directive that cannot silence this rule
+  // must not cost the cleanup, or "suppression-safe" would just mean "switched
+  // off by any nearby comment".
+  it('still unbinds the import when the directive names another rule', () => {
+    const source = [
+      IMPORT,
+      '',
+      annotated('a'),
+      '',
+      '// eslint-disable-next-line no-unused-vars',
+      annotated('b'),
+      '',
+    ].join('\n');
+    const { output } = fixWith(source);
+
+    expect(output).not.toContain(IMPORT);
+    expect(output).not.toContain(': User =>');
+    expectNoDanglingType(source, output);
+    expect(unusedBindings(output)).toEqual([]);
   });
 });
