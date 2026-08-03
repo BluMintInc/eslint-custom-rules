@@ -100,6 +100,41 @@ Two consequences worth knowing:
   statement moves with it; a comment on its own line above a statement is treated as
   that statement's preamble and moves with it too.
 
+### Sequential awaits are never split
+
+Two or more adjacent `await` statements are a run, and the search treats keeping that
+run contiguous — and in its original order — as a hard constraint. Any ordering that
+splits a run is rejected outright, however clean it otherwise scores. If every clean
+ordering of the block splits a run, the violation is still reported, but with no
+autofix.
+
+The reason is that adjacency is the *entire* input to
+[`parallelize-async-operations`](./parallelize-async-operations.md): a single unrelated
+statement dropped between two sequential awaits does not defer its `Promise.all`
+rewrite, it silences that rule permanently. In the shipped config both rules are
+fixable and can report on the same statement, and ESLint applies non-overlapping fixes
+in source order — this rule's fix range opens earlier, so it used to win the pass and
+the `Promise.all` never landed. That trade is the wrong way round: the parallel rewrite
+removes a network round trip from the request, while the regrouping only reads better.
+Nothing is lost by yielding, because the parallelized form groups the awaited inputs at
+the call site and satisfies this rule anyway.
+
+```typescript
+// Reported, but NOT autofixed: pulling `senderFriends` up next to `sender` would
+// split the await pair. Let parallelize-async-operations rewrite it instead.
+const sender = payload.sender;
+const receiver = payload.receiver;
+const senderFriends = await fetchFriends(sender);
+const receiverFriends = await fetchFriends(receiver);
+```
+
+The guard is purely syntactic — two adjacent await-bearing statements — so it also
+withholds the autofix from runs that `parallelize-async-operations` would decline
+(dependent awaits, awaits inside `try`/`catch`, awaits in a loop). That over-yield is
+deliberate: reproducing that rule's dependency analysis and options from here would
+couple the two rules far more tightly than a withheld autofix costs. The violation is
+still reported, so nothing goes unflagged; the reordering just has to be made by hand.
+
 ## When Not To Use It
 
 Disable this rule if you intentionally rely on non-linear ordering (e.g., staged startup logging for distributed tracing) or need to keep audit/compliance logging after initialization even when it breaks top-to-bottom grouping.
