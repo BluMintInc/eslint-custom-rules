@@ -8,6 +8,7 @@ import {
   insertAtImportAnchor,
 } from '../utils/importInsertion';
 import { planOrphanedImportRemoval } from '../utils/importRemoval';
+import { createSuppressionChecker } from '../utils/disableDirectives';
 
 const DEEP_COMPARE_MODULE = '@blumintinc/use-deep-compare';
 const DEEP_COMPARE_HOOK = 'useDeepCompareMemo';
@@ -231,6 +232,78 @@ function bindsHookImport(
   );
 }
 
+/**
+ * A `useMemo(...)` the rule reports, paired with the scope its callee resolves
+ * in. The scope is captured during traversal because the fix runs afterwards,
+ * when an ESLint version lacking `sourceCode.getScope` can only report the
+ * global scope and would miss a narrower shadow.
+ */
+type ConvertibleCall = {
+  node: TSESTree.CallExpression;
+  scope: TSESLint.Scope.Scope;
+};
+
+/**
+ * Whether the name the rewrite spells resolves, at this call site, to nothing or
+ * to the very import this fix would insert. Any other binding makes the edit
+ * wrong twice over: the inserted import declares the name a second time
+ * (TS2440/TS2300), and a shadowing parameter or local silently routes the call
+ * to the wrong value with no diagnostic at all. Such a call site keeps its
+ * report and stays out of the batch, so the author migrates it deliberately —
+ * and, still spelling `useMemo`, it holds the specifier the batch would
+ * otherwise unbind.
+ */
+function emitsResolvableHook(
+  call: ConvertibleCall,
+  hookImport: TSESTree.ImportClause | null,
+): boolean {
+  const existing = ASTHelpers.findVariableInScope(
+    call.scope,
+    DEEP_COMPARE_HOOK,
+  );
+  return !existing || bindsHookImport(existing, hookImport);
+}
+
+/**
+ * The single fix that converts every call in `calls`, imports the hook once, and
+ * unbinds whatever the conversions stop reading.
+ *
+ * Batching is what makes the unbinding reachable at all. Judged one call at a
+ * time, a file with two convertible calls never sees either as the specifier's
+ * sole remaining reference, and once both are rewritten the rule no longer
+ * reports — so nothing revisits the stranded import. The batch is sound only
+ * because it contains exactly the calls this one fix rewrites: siblings the
+ * caller has already dropped for being suppressed or unfixable are absent, so no
+ * unbinding is ever claimed on the strength of an edit that does not happen.
+ */
+function convertCallsFixes(
+  context: TSESLint.RuleContext<'preferUseDeepCompareMemo', []>,
+  fixer: TSESLint.RuleFixer,
+  calls: readonly ConvertibleCall[],
+): TSESLint.RuleFix[] | null {
+  // The callees are the text this fix deletes, so they are also the text
+  // whatever carried the hook stops being read from: `useMemo` for a bare call,
+  // `React` for a member call. A binding left with no reference at all is
+  // unbound here, in this same fix — stripping its last use and keeping the
+  // declaration trades this rule's report for an unused-import one, and nothing
+  // re-reports that debt once the rewrite has resolved the original violation.
+  const importRemoval = planOrphanedImportRemoval(
+    context.sourceCode,
+    calls.map((call) => call.node.callee.range),
+  );
+  // No plan means a binding is orphaned yet cannot be unbound safely, so the
+  // rewrite stays too: the report without a fixer is the lesser damage.
+  if (!importRemoval) return null;
+
+  return [
+    ...calls.map((call) =>
+      fixer.replaceText(call.node.callee, DEEP_COMPARE_HOOK),
+    ),
+    ...ensureDeepCompareImportFixes(context, fixer),
+    ...importRemoval.map((range) => fixer.removeRange([range[0], range[1]])),
+  ];
+}
+
 function ensureDeepCompareImportFixes(
   context: TSESLint.RuleContext<'preferUseDeepCompareMemo', []>,
   fixer: TSESLint.RuleFixer,
@@ -374,6 +447,20 @@ export const preferUseDeepCompareMemo = createRule<[], MessageIds>({
   create(context) {
     const memoizedIds = collectMemoizedIdentifiers(context);
 
+    // Reporting is deferred to Program:exit because the import rewrite depends
+    // on knowing every conversion in the file: the `useMemo` specifier may only
+    // be unbound once no reference to it survives the fix, and a file where two
+    // call sites convert in the same pass has no later pass to notice that.
+    const calls: ConvertibleCall[] = [];
+
+    /**
+     * A suppressed report is discarded together with its fix, yet its
+     * `useMemo(...)` call stays in the file. Counting such a call as converted
+     * would unbind an import the surviving text still spells — trading an unused
+     * import for a dangling reference, a lint warning for a compile error.
+     */
+    const isReportSuppressed = createSuppressionChecker(context);
+
     return {
       CallExpression(node) {
         if (!isUseMemoCallee(node.callee)) return;
@@ -443,91 +530,40 @@ export const preferUseDeepCompareMemo = createRule<[], MessageIds>({
 
         if (!hasUnmemoizedNonPrimitive) return;
 
-        // Captured during traversal because the fix runs afterwards, when an
-        // ESLint version lacking sourceCode.getScope can only report the
-        // global scope and would miss a narrower shadow.
-        const scope = ASTHelpers.getScope(context, node);
+        calls.push({ node, scope: ASTHelpers.getScope(context, node) });
+      },
+      'Program:exit'() {
+        if (calls.length === 0) return;
 
-        context.report({
-          node,
-          messageId: 'preferUseDeepCompareMemo',
-          data: {
-            hook: 'useMemo',
-          },
-          fix(fixer) {
-            // Resolve the emitted name through the scope chain at the call
-            // site. A binding that is not this fix's own import makes the edit
-            // wrong twice over: the inserted import declares the name a second
-            // time (TS2440/TS2300), and a shadowing parameter or local silently
-            // routes the call to the wrong value with no diagnostic at all.
-            // Declining leaves the report so the author migrates deliberately —
-            // including the useMemo specifier removal below, which would
-            // otherwise strip an import the untouched call site still needs.
-            const existing = ASTHelpers.findVariableInScope(
-              scope,
-              DEEP_COMPARE_HOOK,
-            );
-            if (
-              existing &&
-              !bindsHookImport(
-                existing,
-                findDeepCompareMemoImport(context.sourceCode.ast),
-              )
-            ) {
-              return null;
-            }
+        const hookImport = findDeepCompareMemoImport(context.sourceCode.ast);
+        // Exactly the calls the carrier's fix rewrites: a suppressed report
+        // loses its fix, and one whose scope binds the hook name to something
+        // else must not be rewritten at all.
+        const converted = calls.filter(
+          (call) =>
+            !isReportSuppressed(call.node) &&
+            emitsResolvableHook(call, hookImport),
+        );
+        // The carrier is the first violation whose fix actually survives, so a
+        // suppressed or unfixable leading violation cannot take the batch down
+        // with it. Every other report emits without a fixer: the carrier's one
+        // pass already resolves them, and a second fixer would either duplicate
+        // its edits or contradict them.
+        const [carrier] = converted;
 
-            // The callee is the text this fix deletes, so it is also the text
-            // whatever carried the hook stops being read from: `useMemo` for a
-            // bare call, `React` for a member call. A binding left with no
-            // reference at all is unbound here, in this same fix — stripping
-            // its last use and keeping the declaration trades this rule's
-            // report for an unused-import one, and nothing re-reports that debt
-            // once the rewrite has resolved the original violation.
-            //
-            // Orphanhood is judged against this one callee's removal and the
-            // file as it stands. A second `useMemo` call site keeps the
-            // specifier, even one this rule also reports: that sibling may be
-            // `eslint-disable`d (suppression is applied after a rule emits its
-            // reports, so its fix never runs) or lose its fix to a conflict, and
-            // either way the surviving call would spell a name nothing binds. A
-            // later pass, reading a source where the sibling is already
-            // converted, finds the specifier orphaned and removes it then.
-            const importRemoval = planOrphanedImportRemoval(
-              context.sourceCode,
-              [node.callee.range],
-            );
-            // No plan means a binding is orphaned yet cannot be unbound safely,
-            // so the rewrite stays too: the report without a fixer is the lesser
-            // damage.
-            if (!importRemoval) return null;
-
-            const fixes: TSESLint.RuleFix[] = [];
-
-            // Replace callee
-            if (node.callee.type === AST_NODE_TYPES.Identifier) {
-              fixes.push(fixer.replaceText(node.callee, 'useDeepCompareMemo'));
-            } else if (node.callee.type === AST_NODE_TYPES.MemberExpression) {
-              fixes.push(
-                fixer.replaceText(
-                  node.callee as TSESTree.MemberExpression,
-                  'useDeepCompareMemo',
-                ),
-              );
-            }
-
-            // Ensure import exists
-            fixes.push(...ensureDeepCompareImportFixes(context, fixer));
-
-            fixes.push(
-              ...importRemoval.map((range) =>
-                fixer.removeRange([range[0], range[1]]),
-              ),
-            );
-
-            return fixes;
-          },
-        });
+        for (const call of calls) {
+          context.report({
+            node: call.node,
+            messageId: 'preferUseDeepCompareMemo',
+            data: {
+              hook: 'useMemo',
+            },
+            fix:
+              call === carrier
+                ? (fixer) => convertCallsFixes(context, fixer, converted)
+                : null,
+          });
+        }
       },
     };
   },

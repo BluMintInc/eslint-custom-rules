@@ -86,7 +86,8 @@ it is reported in turn. Depend on the object's primitive fields, or reach for
 - Empty dependency arrays: ignored.
 - JSX in memo body: ignored, to avoid false positives with JSX-returning memos.
 - Performance hotspots: prefer memoizing dependencies instead of deep comparison when deep equality cost is a concern.
-- Another `useMemo` call in the same file keeps the import, including one this rule also reports: a suppressed or conflicting sibling never gets rewritten, and unbinding on its behalf would leave it spelling a name nothing binds. A later `--fix` pass, reading a file where the sibling is already converted, removes the import then.
+- Every reported `useMemo` call the fix can rewrite is rewritten by one edit, so the import they all stop reading is unbound in that same edit. Splitting the rewrites would strand it: with two call sites neither is the specifier's last reader on its own, and once both are converted the rule no longer reports, so nothing revisits the file.
+- A call that edit does *not* rewrite keeps the import bound — one the rule never reports, one behind a disable directive (suppression is applied after a rule emits its reports, so that fix never runs), or one whose scope binds `useDeepCompareMemo` to something else. Unbinding on such a call's behalf would leave it spelling a name nothing binds.
 - The report stands without a fix whenever the rewrite would strand something the fix cannot safely unbind — a locally declared `useMemo`, an import behind a directive comment, or a name that also occurs outside the rewritten call. Rewrite those by hand.
 
 ### When Not To Use It

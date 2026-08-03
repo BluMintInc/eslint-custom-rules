@@ -652,6 +652,184 @@ const v = useMemo(() => 1, [{ a: 1 }, 2]);
 `,
         errors: [error],
       },
+      // Two convertible calls in a file that already imports the hook are
+      // rewritten in the same pass, so neither is the specifier's sole reader
+      // when its own fix is planned, and afterwards the rule no longer reports —
+      // no later pass exists to notice the stranded import. One fix covering
+      // both calls unbinds it here.
+      //
+      // This case is also the non-suppressed control for the two directive cases
+      // below: both call sites report, and both are fixed, when no directive
+      // covers them.
+      {
+        code: `
+import { useMemo } from 'react';
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const first = useMemo(() => 1, [{ a: 1 }]);
+const second = useMemo(() => 2, [{ b: 2 }]);
+`,
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const first = useDeepCompareMemo(() => 1, [{ a: 1 }]);
+const second = useDeepCompareMemo(() => 2, [{ b: 2 }]);
+`,
+        errors: [error, error],
+      },
+      // The batch is not limited to a pair.
+      {
+        code: `
+import { useMemo } from 'react';
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const first = useMemo(() => 1, [{ a: 1 }]);
+const second = useMemo(() => 2, [{ b: 2 }]);
+const third = useMemo(() => 3, [{ c: 3 }]);
+`,
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const first = useDeepCompareMemo(() => 1, [{ a: 1 }]);
+const second = useDeepCompareMemo(() => 2, [{ b: 2 }]);
+const third = useDeepCompareMemo(() => 3, [{ c: 3 }]);
+`,
+        errors: [error, error, error],
+      },
+      // The same shape without the hook already imported, which used to reach a
+      // clean file only by colliding on the insertion anchor and deferring one
+      // rewrite to another pass. The single fix inserts the import once and
+      // finishes in one.
+      {
+        code: `
+import { useMemo } from 'react';
+const first = useMemo(() => 1, [{ a: 1 }]);
+const second = useMemo(() => 2, [{ b: 2 }]);
+`,
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const first = useDeepCompareMemo(() => 1, [{ a: 1 }]);
+const second = useDeepCompareMemo(() => 2, [{ b: 2 }]);
+`,
+        errors: [error, error],
+      },
+      // A directive is applied after the rule emits its reports, so a suppressed
+      // call keeps its `useMemo(...)` text while its fix is discarded. It stays
+      // out of the batch, and still reading the specifier it keeps the import
+      // alive. The case above is the control: both calls report there.
+      {
+        code: `
+import { useMemo } from 'react';
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const first = useMemo(() => 1, [{ a: 1 }]);
+// eslint-disable-next-line
+const second = useMemo(() => 2, [{ b: 2 }]);
+`,
+        output: `
+import { useMemo } from 'react';
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const first = useDeepCompareMemo(() => 1, [{ a: 1 }]);
+// eslint-disable-next-line
+const second = useMemo(() => 2, [{ b: 2 }]);
+`,
+        errors: [error],
+      },
+      // Suppressing the leading call moves the carrier slot to the next one that
+      // survives, so the batch is not lost with it.
+      {
+        code: `
+import { useMemo } from 'react';
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+// eslint-disable-next-line
+const first = useMemo(() => 1, [{ a: 1 }]);
+const second = useMemo(() => 2, [{ b: 2 }]);
+`,
+        output: `
+import { useMemo } from 'react';
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+// eslint-disable-next-line
+const first = useMemo(() => 1, [{ a: 1 }]);
+const second = useDeepCompareMemo(() => 2, [{ b: 2 }]);
+`,
+        errors: [error],
+      },
+      // A sibling the rule never reports reads the specifier just as a
+      // suppressed one does, so the import survives the batch.
+      {
+        code: `
+import { useMemo } from 'react';
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const count = 2;
+const first = useMemo(() => 1, [{ a: 1 }]);
+const second = useMemo(() => count * 2, [count]);
+`,
+        output: `
+import { useMemo } from 'react';
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const count = 2;
+const first = useDeepCompareMemo(() => 1, [{ a: 1 }]);
+const second = useMemo(() => count * 2, [count]);
+`,
+        errors: [error],
+      },
+      // A call whose scope binds the hook name to something else is reported
+      // without being rewritten, so it stays out of the batch and keeps the
+      // specifier bound for its own sake.
+      {
+        code: `
+import { useMemo } from 'react';
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+function build(useDeepCompareMemo: (factory: () => number) => number) {
+  return useMemo(() => 1, [{ a: 1 }]);
+}
+const v = useMemo(() => 2, [{ b: 2 }]);
+`,
+        output: `
+import { useMemo } from 'react';
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+function build(useDeepCompareMemo: (factory: () => number) => number) {
+  return useMemo(() => 1, [{ a: 1 }]);
+}
+const v = useDeepCompareMemo(() => 2, [{ b: 2 }]);
+`,
+        errors: [error, error],
+      },
+      // A member call and a bare one drop different bindings — `React` and
+      // `useMemo` — and the batch unbinds both, which empties the declaration.
+      {
+        code: `
+import React, { useMemo } from 'react';
+const first = React.useMemo(() => 1, [{ a: 1 }]);
+const second = useMemo(() => 2, [{ b: 2 }]);
+`,
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const first = useDeepCompareMemo(() => 1, [{ a: 1 }]);
+const second = useDeepCompareMemo(() => 2, [{ b: 2 }]);
+`,
+        errors: [error, error],
+      },
+      // The name occurring outside every rewritten callee declines the removal,
+      // and a removal the batch cannot make declines the batch: both calls are
+      // reported without a fix rather than converted into a file whose import is
+      // stranded.
+      {
+        code: `
+import { useMemo } from 'react';
+function unrelated(fn: () => number) {
+  const useMemo = (factory: () => number) => factory();
+  return useMemo(fn);
+}
+const first = useMemo(() => 1, [{ a: 1 }]);
+const second = useMemo(() => 2, [{ b: 2 }]);
+`,
+        output: `
+import { useMemo } from 'react';
+function unrelated(fn: () => number) {
+  const useMemo = (factory: () => number) => factory();
+  return useMemo(fn);
+}
+const first = useMemo(() => 1, [{ a: 1 }]);
+const second = useMemo(() => 2, [{ b: 2 }]);
+`,
+        errors: [error, error],
+      },
     ],
   },
 );
