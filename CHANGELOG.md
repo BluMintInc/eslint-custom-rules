@@ -1,3 +1,10 @@
+## [1.20.88](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.87...v1.20.88) (2026-08-03)
+
+
+### Bug Fixes
+
+* **use-latest-callback:** decline the fix when dropping the deps array orphans a local binding (closes [#1652](https://github.com/BluMintInc/eslint-custom-rules/issues/1652)) ([600b64b](https://github.com/BluMintInc/eslint-custom-rules/commit/600b64b14a658094c3e672192f245bd58b94b09b))
+
 ## [1.20.87](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.86...v1.20.87) (2026-08-03)
 
 

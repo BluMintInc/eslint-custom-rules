@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.88",
+    "date": "2026-08-03T09:05:50.265Z",
+    "rules": [
+      {
+        "name": "use-latest-callback",
+        "changeType": "fix",
+        "issues": [
+          1652
+        ],
+        "summary": "decline the fix when dropping the deps array orphans a local binding (closes #1652)"
+      }
+    ]
+  },
+  {
     "version": "1.20.87",
     "date": "2026-08-03T08:16:33.082Z",
     "rules": [
