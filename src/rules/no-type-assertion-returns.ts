@@ -189,8 +189,17 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
       let current: TSESTree.Node | undefined = node;
 
       while (current?.parent) {
-        // Direct JSX attribute
-        if (current.parent.type === AST_NODE_TYPES.JSXAttribute) {
+        // Direct JSX attribute, in either spelling. A named attribute
+        // (`title={x as T}`) and a spread (`{...(x as T)}`) feed the receiving
+        // component's props identically, so they earn the same carve-out: what
+        // the enclosing function returns is a JSXElement, never the asserted
+        // value, and the object is re-checked against the component's prop
+        // types at the JSX call site. This is the argument already accepted for
+        // call and new arguments above.
+        if (
+          current.parent.type === AST_NODE_TYPES.JSXAttribute ||
+          current.parent.type === AST_NODE_TYPES.JSXSpreadAttribute
+        ) {
           return true;
         }
 
@@ -198,6 +207,11 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
         if (current.parent.type === AST_NODE_TYPES.Property) {
           return true;
         }
+
+        // A SpreadElement is deliberately absent: `return { ...(x as T) }`
+        // splices the asserted value's own members into the returned value, so
+        // the cast is exactly the unvalidated data reaching callers that this
+        // rule exists to catch. Unlike a JSX spread, nothing re-checks it.
 
         current = current.parent;
       }

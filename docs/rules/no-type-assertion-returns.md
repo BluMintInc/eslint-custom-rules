@@ -13,6 +13,25 @@ Returning a type assertion or relying on an explicit return type for an untyped 
 - Flags explicit return annotations when the returned expression is untyped (for example, an object literal or function call), because the annotation can mask missing or wrong fields.
 - Allows type predicates and `as const` only when explicitly configured.
 
+## What is not flagged
+
+The rule targets the value a function hands back to its caller. An assertion that merely sits somewhere inside the returned expression, without becoming part of what the caller receives, is exempt:
+
+- **Call and `new` arguments** — `return fn(x as T)` returns the call's result, and TypeScript already checks the argument against the parameter type.
+- **JSX props, in both spellings** — `return <C prop={x as T} />` and `return <C {...(x as T)} />`. The function returns a `JSXElement`, never the asserted value, and the object is re-checked against the receiving component's prop types at the JSX call site. The named and spread forms are treated identically because they have identical semantics.
+- **Object properties** — an assertion on a property value inside a returned object literal.
+- **Variable declarations, conditions, and logical expressions** — the assertion is consumed locally rather than returned.
+
+An object or array **spread** is deliberately not exempt, even though it looks like the JSX spread:
+
+```ts
+function probe(x: unknown) {
+  return { ...(x as Record<string, unknown>) }; // reported
+}
+```
+
+Spreading an asserted value into a returned object or array splices its own members into the return value, so the unvalidated data reaches the caller directly. Nothing re-checks it the way a component's prop types re-check a JSX spread.
+
 ## Why this matters
 
 - Type assertions bypass TypeScript’s structural checks and let incomplete data escape a function without warnings.
@@ -53,6 +72,13 @@ const createUser = () => {
   }; // TS checks this object matches User before returning
   return user;
 };
+```
+
+```tsx
+function Field({ rest }: { rest: unknown }) {
+  // The return value is a JSX.Element; Select validates the spread against its own props
+  return <Select {...(rest as SelectProps)} />;
+}
 ```
 
 ## Options
