@@ -43,10 +43,10 @@ export const closeRoom: RealtimeDbChangeHandler<
 };
 ```
 
-Two limits keep the fix safe rather than clever:
+Two properties keep the fix safe rather than clever:
 
-- **Each annotation is judged on its own removal, against the file as it stands.** A type that two strippable annotations share is not unbound in one pass — neither annotation is its last consumer. A rule cannot see `eslint-disable` (suppression is applied to reports after they are emitted), so assuming a sibling annotation will also go would delete an import the surviving annotation still references, trading an unused import for a type bound to nothing.
-- **A binding that cannot be unbound cleanly cancels the whole fix, annotation included.** The report then carries no fixer, and you resolve it by hand. This covers an import behind a `// eslint-disable-next-line` or `@ts-expect-error` directive, a comment sitting among the specifiers, a name that another binding shadows, and an orphan bound by something other than an import — a local `type` alias or a type parameter.
+- **Every strip a pass makes ships as one fix, and orphanhood is judged against all of them together.** A type that several strippable annotations share is unbound by their union, even though no single annotation is its last consumer — judging each removal alone would see the sibling annotation still standing, strip both anyway, and strand the import with nothing left to re-report it. A site whose report is suppressed is left out of that union: a rule cannot see `eslint-disable` (suppression is applied to reports after they are emitted), so a disabled sibling keeps its annotation, and counting its reference as removed would delete an import the surviving annotation still names — trading an unused import for a type bound to nothing.
+- **A binding that cannot be unbound cleanly cancels the fix that would orphan it, annotation included.** The report then carries no fixer, and you resolve it by hand. This covers an import behind a `// eslint-disable-next-line` or `@ts-expect-error` directive, a comment sitting among the specifiers, a name that another binding shadows, and an orphan bound by something other than an import — a local `type` alias or a type parameter. Such a site is screened out before the batch is planned, so it declines its own fix without cancelling its siblings'; when the batch as a whole still orphans something unrewritable — a local alias that every one of those annotations reads, say — every report in it goes without a fixer.
 
 ### Why this rule?
 
