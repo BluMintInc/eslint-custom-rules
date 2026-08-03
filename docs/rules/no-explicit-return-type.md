@@ -14,7 +14,7 @@
 
 ## Rule details
 
-This rule reports explicit return type annotations on functions that include an implementation body where TypeScript can infer the return value. The fixer (`--fix`) removes the return type annotation, along with any import the annotation was the only consumer of (see [The fix takes the imports it strands with it](#the-fix-takes-the-imports-it-strands-with-it)). Interface method signatures and abstract methods are allowed by default because they lack bodies for inference; setting `allowInterfaceMethodSignatures` or `allowAbstractMethodSignatures` to `false` makes the rule report these signatures (no auto-fix) instead of treating them as allowed. The rule keeps the annotation for cases where the annotation conveys additional meaning:
+This rule reports explicit return type annotations on functions that include an implementation body where TypeScript can infer the return value. The fixer (`--fix`) removes the return type annotation, along with any import the annotations it deletes were the only consumers of (see [The fix takes the imports it strands with it](#the-fix-takes-the-imports-it-strands-with-it)). Interface method signatures and abstract methods are allowed by default because they lack bodies for inference; setting `allowInterfaceMethodSignatures` or `allowAbstractMethodSignatures` to `false` makes the rule report these signatures (no auto-fix) instead of treating them as allowed. The rule keeps the annotation for cases where the annotation conveys additional meaning:
 
 - Type predicates (`value is Type`) and assertion functions (`asserts value is Type`) where the return type changes control flow.
 - Recursive functions, overloads, interface method signatures, and abstract methods when those allowances are enabled.
@@ -75,14 +75,49 @@ Only a binding proven dead is unbound, using scope analysis rather than a text s
 - Any remaining reference keeps the import — another annotation, a variable's type, a value use, a re-export (`export { User }`), a reference from a nested scope.
 - A specifier with surviving siblings is removed on its own (`import type { Role, User }` → `import type { Role }`); a declaration that loses its last specifier is removed whole, never left as `import type {} from './User';`.
 
-Each fix is judged **alone**, against the file as it stands — never against what the rest of the `--fix` run might also delete. That is not a simplification, it is the only sound reading: a rule cannot see `eslint-disable` comments, because suppression is applied to reports *after* the rule emits them. A fix that assumed a sibling annotation would also be stripped would delete the import whenever that sibling turned out to be disabled, leaving a type reference bound to nothing — trading an unused-import warning for a compile error.
+Orphanhood is judged against **one fix's own deletions**, never against what the rest of the `--fix` run might also delete. ESLint applies a fix whole or not at all, so a fix may only count on a deletion it performs itself: an edit that *assumed* a sibling annotation would also be stripped would delete the import whenever that sibling turned out to be `eslint-disable`d or its own fix dropped, leaving a type reference bound to nothing — trading an unused-import warning for a compile error.
 
-The price is that a type named by **two or more** strippable annotations is not unbound: neither annotation is its last consumer, so both are stripped and the import is left unused. That is the shape this rule's fixer produced everywhere before, now confined to the multi-consumer case.
+A type named by **two or more** strippable annotations therefore has no single last consumer, and waiting for one does not help: once every annotation is stripped the rule has nothing left to report, so no later fix exists to carry the cleanup and the import stays orphaned for good. Those annotations are instead removed **together, by one fix**:
 
-When the deletion would strand a binding that cannot be unbound cleanly, the **whole fix is declined** and the annotation stays: the report remains for a human, which is strictly better than trading it for an unused-variable error. That happens when the binding is a local type alias or a type parameter (neither is an import specifier), when a directive comment (`// eslint-disable-next-line`, `// @ts-expect-error`) is bound to the import's line, when a comment sits among the specifiers, or when a same-named binding elsewhere makes the deletion unprovable.
+```ts
+// before
+import type { PrizePoolTarget, Tournament } from './Tournament';
+
+const selfFund = (id: string): PrizePoolTarget => ({ id });
+const crowdfund = (id: string): PrizePoolTarget => ({ id });
+
+export const of = (t: Tournament) => [selfFund, crowdfund, t];
+
+// after --fix
+import type { Tournament } from './Tournament';
+
+const selfFund = (id: string) => ({ id });
+const crowdfund = (id: string) => ({ id });
+
+export const of = (t: Tournament) => [selfFund, crowdfund, t];
+```
+
+Every report in such a set carries that same fix, so whichever one ESLint applies does the whole job and the rest are dropped as conflicting. Two things keep this sound:
+
+- The fix deletes each annotation itself rather than assuming a sibling report's fix lands.
+- Annotations whose reports ESLint will discard are excluded. Suppression is applied to reports *after* a rule emits them, so the rule resolves inline `eslint-disable` directives itself (the same way ESLint does) and leaves a suppressed annotation out of the set. Its type reference outlives the pass, so the import stays:
+
+```ts
+import type { User } from './User';
+
+export const buildUser = (id: string): User => ({ id });
+
+// eslint-disable-next-line @blumintinc/blumint/no-explicit-return-type
+export const cloneUser = (id: string): User => ({ id });
+```
+
+Here only `buildUser`'s annotation goes; `cloneUser` keeps both its annotation and the import it needs.
+
+When the deletion would strand a binding that cannot be unbound cleanly, the **whole fix is declined** and the annotation stays: the report remains for a human, which is strictly better than trading it for an unused-variable error. That happens when the binding is a local type alias or a type parameter (neither is an import specifier), when a directive comment (`// eslint-disable-next-line`, `// @ts-expect-error`) is bound to the import's line, when a comment sits among the specifiers, or when a same-named binding elsewhere makes the deletion unprovable. A set of annotations whose joint removal cannot be completed this way falls back to stripping them one at a time, which leaves the import — the same outcome as declining the cleanup, without withdrawing the strip each annotation earns on its own.
 
 Limitations, all of which err toward silence or toward the status quo:
 
+- Only *import* bindings are unbindable, so only they group annotations. Annotations sharing a local type alias are stripped one at a time and the alias is left unused, exactly as before.
 - A self-reference inside a closure in the returned value counts, even though TypeScript can sometimes still break the cycle (it depends on how the returned value is contextually typed, which needs type information this rule does not have).
 - Mutual recursion is resolved among module-scope functions only. A mutually recursive pair declared inside another function body is still reported.
 - Annotating *either* member of a mutually recursive pair is enough for TypeScript; the rule exempts both rather than picking one.

@@ -1,6 +1,11 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
-import { planOrphanedImportRemoval } from '../utils/importRemoval';
+import { createSuppressionChecker } from '../utils/disableDirectives';
+import {
+  importBindingReferences,
+  planOrphanedImportRemoval,
+  TextRange,
+} from '../utils/importRemoval';
 
 type MessageIds =
   | 'noExplicitReturnTypeInferable'
@@ -892,6 +897,106 @@ function declaresVoidResult(returnType: TSESTree.TSTypeAnnotation): boolean {
   );
 }
 
+/**
+ * An annotation waiting to be reported. Reports are held until the whole file
+ * has been walked because whether one annotation's fix may unbind an import
+ * depends on which other annotations the same fix can take with it — a question
+ * with no answer while the walk is still in progress.
+ */
+type PendingAnnotation = {
+  node: TSESTree.Node;
+  returnType: TSESTree.TSTypeAnnotation;
+  strippable: boolean;
+};
+
+function containsRange(outer: TextRange, inner: TextRange): boolean {
+  return inner[0] >= outer[0] && inner[1] <= outer[1];
+}
+
+/**
+ * Partitions annotations into the sets whose removals have to travel together.
+ *
+ * An import read from two annotations is unbound only once both are gone, so
+ * neither annotation may unbind it alone — and a fix may only count on the other
+ * removal happening if it performs that removal itself. Annotations that jointly
+ * keep an import alive are therefore merged into one batch, and every other
+ * annotation is a batch of one, judged against the file as it stands.
+ *
+ * `candidates` must already exclude suppressed reports: a suppressed report's
+ * fix never runs, so its annotation — and the reference it holds — outlives the
+ * pass.
+ */
+function batchAnnotations(
+  source: TSESLint.SourceCode,
+  candidates: readonly PendingAnnotation[],
+): PendingAnnotation[][] {
+  const parents = candidates.map((_, index) => index);
+  const rootOf = (index: number): number => {
+    let root = index;
+    while (parents[root] !== root) {
+      root = parents[root];
+    }
+    return root;
+  };
+
+  const ownerOf = (reference: TextRange): number =>
+    candidates.findIndex((candidate) =>
+      containsRange(candidate.returnType.range, reference),
+    );
+
+  for (const binding of importBindingReferences(source)) {
+    // A single reference cannot be shared, so the one-annotation judgement
+    // already covers it.
+    if (binding.references.length < 2) continue;
+
+    const owners = new Set<number>();
+    const escapes = binding.references.some((reference) => {
+      const owner = ownerOf(reference);
+      if (owner === -1) return true;
+      owners.add(owner);
+      return false;
+    });
+    // A reference outside every strippable annotation survives whatever this
+    // pass deletes, so no batch can unbind the import.
+    if (escapes || owners.size < 2) continue;
+
+    const [target, ...rest] = [...owners].map(rootOf);
+    for (const root of rest) {
+      if (root !== target) {
+        parents[root] = target;
+      }
+    }
+  }
+
+  const batches = new Map<number, PendingAnnotation[]>();
+  candidates.forEach((candidate, index) => {
+    const root = rootOf(index);
+    const batch = batches.get(root);
+    if (batch) {
+      batch.push(candidate);
+    } else {
+      batches.set(root, [candidate]);
+    }
+  });
+
+  return [...batches.values()];
+}
+
+/**
+ * The ranges a single fix deletes for `batch`: the annotations themselves plus
+ * any import they were the last consumers of. `null` when a binding the removal
+ * orphans cannot be unbound safely — the caller then drops the fix rather than
+ * emitting the half of it that leaves a binding behind.
+ */
+function planRemoval(
+  source: TSESLint.SourceCode,
+  batch: readonly PendingAnnotation[],
+): TextRange[] | null {
+  const annotations = batch.map((entry) => entry.returnType.range);
+  const imports = planOrphanedImportRemoval(source, annotations);
+  return imports ? [...annotations, ...imports] : null;
+}
+
 export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
   createRule<Options, MessageIds>({
     name: 'no-explicit-return-type',
@@ -933,6 +1038,16 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
       const filename = context.getFilename();
       const sourceCode = context.getSourceCode();
       const visitorKeys = sourceCode.visitorKeys as VisitorKeys;
+
+      const pending: PendingAnnotation[] = [];
+
+      /**
+       * Whether ESLint will discard a report, resolved the way ESLint resolves
+       * it. A fix that deletes several annotations at once is counting on all of
+       * them being reportable; a suppressed one keeps its type reference, so it
+       * must be left out of every batch.
+       */
+      const isReportSuppressed = createSuppressionChecker(context);
 
       // Built at most once per file, and only when a direct self-reference has
       // already been ruled out.
@@ -1005,54 +1120,89 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
       }
 
       /**
-       * Reports an annotation, taking with it any import it was the only
-       * consumer of. The two are one fix: applying either half alone leaves the
-       * file worse than applying neither.
-       *
-       * Orphanhood is judged against this annotation's own removal and the file
-       * as it stands, never against what the rest of the `--fix` run might also
-       * delete. A sibling annotation naming the same type may be
-       * `eslint-disable`d — which a rule cannot see, since suppression is
-       * applied to reports after they are emitted — so an edit that assumes its
-       * sibling will also go deletes an import the surviving annotation still
-       * references, trading an unused import for a dangling type. Judging one
-       * edit at a time is suppression-safe by construction: a suppressed
-       * report's fix never applies, so it can never have been depended on.
-       *
-       * The cost is that a type shared by several strippable annotations is not
-       * unbound in a single pass; each pass removes the annotations it can see,
-       * and only a pass that leaves the binding with no reference at all
-       * removes the import.
+       * Holds an annotation for `flushReports`, which decides once the file has
+       * been walked which removals may travel together.
        */
       function reportAnnotation(
         node: TSESTree.Node,
         returnType: TSESTree.TSTypeAnnotation,
         strippable: boolean,
       ): void {
-        const importRanges = strippable
-          ? planOrphanedImportRemoval(sourceCode, [returnType.range])
-          : null;
+        pending.push({ node, returnType, strippable });
+      }
 
-        context.report({
-          node: returnType,
-          messageId: strippable
-            ? 'noExplicitReturnTypeInferable'
-            : 'noExplicitReturnTypeNonInferable',
-          data: { functionKind: describeFunctionKind(node) },
-          ...(importRanges
-            ? {
-                fix: (fixer) => [
-                  fixer.remove(returnType),
-                  ...importRanges.map((range) =>
-                    fixer.removeRange([range[0], range[1]]),
-                  ),
-                ],
-              }
-            : {}),
-        });
+      /**
+       * Emits every held report, each carrying the import cleanup its own
+       * removal makes necessary. An annotation and the import it unbinds are one
+       * fix: applying either half alone leaves the file worse than applying
+       * neither.
+       *
+       * Orphanhood is judged against a single fix's own deletions, never against
+       * what the rest of the `--fix` run might also delete. That is what makes
+       * the cleanup suppression-safe, and it is why a type several annotations
+       * share cannot be unbound by any one of them: a sibling annotation may be
+       * `eslint-disable`d, and deleting "its" import strands a reference that
+       * outlives the pass — a compile error in place of an unused import.
+       *
+       * Waiting for the last such annotation does not work either. Once every
+       * annotation is stripped the rule has nothing left to report, so no later
+       * fix exists to carry the cleanup and the binding stays orphaned for good
+       * (issue #1654). The annotations that jointly hold an import alive are
+       * therefore removed by one fix, which owes two things: it deletes all of
+       * them itself rather than assuming sibling reports land, and it counts
+       * only annotations whose reports ESLint will not discard.
+       */
+      function flushReports(): void {
+        const strippable = pending.filter((entry) => entry.strippable);
+
+        // Every annotation starts with the judgement it would get alone, so a
+        // batch can only ever add a cleanup, never withdraw one.
+        const plans = new Map<PendingAnnotation, TextRange[]>();
+        for (const entry of strippable) {
+          const plan = planRemoval(sourceCode, [entry]);
+          if (plan) {
+            plans.set(entry, plan);
+          }
+        }
+
+        const batches = batchAnnotations(
+          sourceCode,
+          strippable.filter((entry) => !isReportSuppressed(entry.returnType)),
+        );
+        for (const batch of batches) {
+          if (batch.length < 2) continue;
+          const plan = planRemoval(sourceCode, batch);
+          if (!plan) continue;
+          for (const entry of batch) {
+            plans.set(entry, plan);
+          }
+        }
+
+        for (const entry of pending) {
+          const plan = plans.get(entry);
+          context.report({
+            node: entry.returnType,
+            messageId: entry.strippable
+              ? 'noExplicitReturnTypeInferable'
+              : 'noExplicitReturnTypeNonInferable',
+            data: { functionKind: describeFunctionKind(entry.node) },
+            ...(plan
+              ? {
+                  fix: (fixer) =>
+                    plan.map((range) =>
+                      fixer.removeRange([range[0], range[1]]),
+                    ),
+                }
+              : {}),
+          });
+        }
       }
 
       return {
+        'Program:exit'() {
+          flushReports();
+        },
+
         FunctionDeclaration(node) {
           const returnType = node.returnType;
           if (!returnType) return;

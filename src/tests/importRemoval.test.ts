@@ -2,6 +2,7 @@ import { SourceCode } from 'eslint';
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import * as parser from '@typescript-eslint/parser';
 import {
+  importBindingReferences,
   importBindingSpecifierOf,
   ImportRemovalSource,
   planImportBindingRemoval,
@@ -359,6 +360,74 @@ describe('importBindingSpecifierOf', () => {
     expect(importBindingSpecifierOf(variable as TSESLint.Scope.Variable)).toBe(
       undefined,
     );
+  });
+});
+
+describe('importBindingReferences', () => {
+  const namesAndCounts = (code: string) =>
+    importBindingReferences(sourceOf(code)).map((use) => [
+      use.specifier.local.name,
+      use.references.length,
+    ]);
+
+  it('pairs each binding with every position that reads it', () => {
+    expect(
+      namesAndCounts(
+        "import type { A, B } from './a';\nconst v: A = 1;\nconst w: A = 2;\nconst x: B = 3;\n",
+      ),
+    ).toEqual([
+      ['A', 2],
+      ['B', 1],
+    ]);
+  });
+
+  it('reports a binding nothing reads', () => {
+    expect(namesAndCounts("import type { A } from './a';\n")).toEqual([
+      ['A', 0],
+    ]);
+  });
+
+  it('covers default and namespace bindings', () => {
+    expect(
+      namesAndCounts(
+        "import A, { b } from './a';\nimport * as N from './n';\nexport const v = [new A(), b, N.c];\n",
+      ),
+    ).toEqual([
+      ['A', 1],
+      ['b', 1],
+      ['N', 1],
+    ]);
+  });
+
+  it('ignores bindings that are not imports', () => {
+    expect(
+      namesAndCounts('type Local = number;\nconst v: Local = 1;\n'),
+    ).toEqual([]);
+  });
+
+  it('ignores an import-equals declaration it cannot unbind', () => {
+    expect(
+      namesAndCounts("import A = require('./a');\nexport const b = A;\n"),
+    ).toEqual([]);
+  });
+
+  it('does not count a shadowing binding as a reference', () => {
+    expect(
+      namesAndCounts(
+        "import type { A } from './a';\nconst v: A = 1;\nexport const f = (A: string) => A;\n",
+      ),
+    ).toEqual([['A', 1]]);
+  });
+
+  // The ranges must line up with the deletions a caller plans, or a batch would
+  // be assembled from positions nothing deletes.
+  it('reports ranges that address the referencing text', () => {
+    const code = "import type { A } from './a';\nconst v: A = 1;\n";
+    const [use] = importBindingReferences(sourceOf(code));
+    expect(
+      use.references.map(([start, end]) => code.slice(start, end)),
+    ).toEqual(['A']);
+    expect(use.references[0][0]).toBeGreaterThan(code.indexOf('const'));
   });
 });
 

@@ -311,6 +311,43 @@ function allVariables(
   return variables;
 }
 
+/** An import binding together with the ranges that reference it. */
+export type ImportBindingUse = {
+  specifier: ImportBindingSpecifier;
+  references: TextRange[];
+};
+
+/**
+ * Every import binding the file declares, paired with the positions that read
+ * it.
+ *
+ * A caller deleting several regions at once needs this to decide *which* of its
+ * own deletions a binding depends on before asking
+ * {@link planOrphanedImportRemoval} to unbind it: a binding read from two
+ * regions is unbound only if both go, and only a caller that deletes both in one
+ * fix may claim that.
+ */
+export function importBindingReferences(
+  source: ImportRemovalSource,
+): ImportBindingUse[] {
+  const uses: ImportBindingUse[] = [];
+
+  for (const variable of allVariables(source.scopeManager)) {
+    if (!isImportBindingVariable(variable)) continue;
+    const specifier = importBindingSpecifierOf(variable);
+    if (!specifier) continue;
+
+    uses.push({
+      specifier,
+      references: variable.references.map(
+        (reference) => reference.identifier.range,
+      ),
+    });
+  }
+
+  return uses;
+}
+
 type IdentifierVisit = (
   node: TSESTree.Identifier | TSESTree.JSXIdentifier,
   parent: TSESTree.Node | undefined,
@@ -460,14 +497,21 @@ function exportedBindingKeys(ast: TSESTree.Program): Set<string> {
  * file that lints clean into one that fails `no-unused-vars`, and since the
  * original report is resolved by the fix, nothing re-reports the debt.
  *
- * `removed` is one fix's own deletion, judged against the file as it stands.
- * Widening it to "everything this `--fix` run will delete" looks like it would
- * catch a binding two edits share, but it is unsound: a rule cannot see
- * `eslint-disable` comments, because suppression is applied to reports after the
- * rule emits them. A suppressed sibling edit never happens, so the widened view
- * deletes an import that a surviving reference still needs — trading an unused
- * import for a dangling type reference, a lint warning for a compile error.
- * There is deliberately no way to ask this helper that question.
+ * `removed` is **one fix's own deletion**, judged against the file as it stands.
+ * Several ranges may be passed only when a single fix deletes all of them, since
+ * ESLint applies a fix whole or not at all. Passing ranges that belong to other
+ * reports is unsound in two ways: a sibling report may be suppressed (ESLint
+ * applies `eslint-disable` after the rule emits its reports, so the sibling's fix
+ * never runs), and a sibling fix that overlaps another rule's fix is dropped for
+ * the pass. Either way the surviving reference outlives the import this helper
+ * was told to unbind — trading an unused import for a dangling type reference, a
+ * lint warning for a compile error.
+ *
+ * A caller batching several of its own edits therefore owes two things: the
+ * edits must ship as one fix, and the reports they came from must be checked
+ * with `createSuppressionChecker` so that a suppressed one is never counted on.
+ * {@link importBindingReferences} exposes the reference sets such a caller needs
+ * to work out which edits belong in the same batch.
  */
 export function planOrphanedImportRemoval(
   source: ImportRemovalSource,
