@@ -7,6 +7,7 @@ import {
 import { minimatch } from 'minimatch';
 import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
+import { planOrphanedImportRemoval, TextRange } from '../utils/importRemoval';
 
 type Options = [
   {
@@ -631,6 +632,44 @@ function dedentedCallbackText(
     .join('\n');
 }
 
+/**
+ * The imports the hoist leaves bound to nothing, or `null` when none can be
+ * unbound safely.
+ *
+ * The hoist is not a deletion: the declared identifier and the callback text
+ * are re-emitted at module scope, so every reference inside them outlives the
+ * fix. Only the wrapper disappears — the `const` keyword, the ` = hook(`
+ * between the identifier and the callback, and the trailing `, []);`. Orphan-
+ * hood is judged against those three slices alone, which keeps a hook call
+ * nested in the callback body counted as a live reference (unwrapping the
+ * outer call carries the inner one along verbatim).
+ *
+ * A member callee (`React.useCallback`) is left alone. Its object is usually
+ * the JSX pragma, and under the classic runtime JSX consumes that binding
+ * through a transform no scope analysis records — a use this cannot see, so it
+ * must not delete it.
+ */
+function planHoistImportRemoval(
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  callExpression: TSESTree.CallExpression,
+  declarator: TSESTree.VariableDeclarator,
+  callback: TSESTree.Node,
+  idRangeEnd: number,
+  removal: TextRange,
+): TextRange[] | null {
+  if (callExpression.callee.type !== AST_NODE_TYPES.Identifier) {
+    return null;
+  }
+
+  const deleted: TextRange[] = [
+    [removal[0], declarator.id.range[0]],
+    [idRangeEnd, callback.range[0]],
+    [callback.range[1], removal[1]],
+  ];
+
+  return planOrphanedImportRemoval(sourceCode, deleted);
+}
+
 function buildHoistFixes(
   context: Readonly<TSESLint.RuleContext<MessageIds, Options>>,
   callExpression: TSESTree.CallExpression,
@@ -727,9 +766,25 @@ function buildHoistFixes(
     removeEnd = lineEnd + 1;
   }
 
+  // The hook import the call was the last consumer of goes with the hoist, in
+  // the same fix: applying the hoist alone trades this rule's report for an
+  // unused-import one, and nothing re-reports that debt once the hoist has
+  // resolved the original violation. An unremovable binding costs only the
+  // unused import — the hoist is the fix's value and is kept regardless.
+  const importRanges =
+    planHoistImportRemoval(
+      sourceCode,
+      callExpression,
+      declarator,
+      callback,
+      idRangeEnd,
+      [removeStart, removeEnd],
+    ) ?? [];
+
   return (fixer) => [
     fixer.insertTextBefore(hoistTarget, hoisted),
     fixer.removeRange([removeStart, removeEnd]),
+    ...importRanges.map((range) => fixer.removeRange([range[0], range[1]])),
   ];
 }
 

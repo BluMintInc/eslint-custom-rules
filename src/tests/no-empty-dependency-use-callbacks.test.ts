@@ -1,5 +1,51 @@
+import { Linter, Rule } from 'eslint';
+import * as tsParser from '@typescript-eslint/parser';
 import { noEmptyDependencyUseCallbacks } from '../rules/no-empty-dependency-use-callbacks';
+import { useLatestCallback } from '../rules/use-latest-callback';
 import { ruleTesterJsx } from '../utils/ruleTester';
+
+const PARSE_OPTIONS = {
+  ecmaVersion: 2022 as const,
+  sourceType: 'module' as const,
+  ecmaFeatures: { jsx: true },
+};
+
+function scopesOf(code: string) {
+  const { scopeManager } = tsParser.parseForESLint(code, {
+    ...PARSE_OPTIONS,
+    range: true,
+    loc: true,
+  });
+  const global = scopeManager?.globalScope;
+  const module = global?.childScopes.find((child) => child.type === 'module');
+  return { global, module };
+}
+
+/**
+ * Names the source references but no longer binds.
+ *
+ * This is what a fix that unbinds an import too eagerly produces, and it is
+ * invisible to the rule's own reports — the fix resolves them, so nothing
+ * re-reports the damage. It is also strictly worse than the orphaned import
+ * issue #1650 reports: an unused import is a lint warning, a call bound to
+ * nothing is a runtime error.
+ */
+function unboundReferences(code: string): string[] {
+  const { global } = scopesOf(code);
+  return (global?.through ?? []).map((reference) => reference.identifier.name);
+}
+
+/** Imported locals nothing in the file references — issue #1650's symptom. */
+function orphanedImportBindings(code: string): string[] {
+  const { module } = scopesOf(code);
+  return (module?.variables ?? [])
+    .filter(
+      (variable) =>
+        variable.defs.some((def) => def.type === 'ImportBinding') &&
+        variable.references.length === 0,
+    )
+    .map((variable) => variable.name);
+}
 
 // Shared across the filename-gated option cases below so that the option (or
 // the filename it is matched against) is the only difference between the valid
@@ -14,7 +60,6 @@ const Component = () => {
 `;
 
 const OPTION_PAIR_OUTPUT = `
-import { useCallback } from 'react';
 const formatLabel = (value) => value.trim();
 const Component = () => {
   return <div>{formatLabel('x')}</div>;
@@ -276,6 +321,17 @@ function Component() {
   return handler({ id: 'a' });
 }
 `,
+  // Detection is by callee name, so a locally renamed hook is not reported —
+  // and with no fix there is no specifier to unbind either. Pinned so that
+  // teaching the rule about aliases forces the import question to be answered
+  // at the same time.
+  `
+import { useCallback as useCb } from 'react';
+export const Button = () => {
+  const onClick = useCb(() => console.log('hi'), []);
+  return <button onClick={onClick} />;
+};
+`,
   // ignoreTestFiles: true is the default, but stating it explicitly pairs this
   // with the invalid twin that only flips it to false on the same fixture.
   {
@@ -305,7 +361,6 @@ function Component() {
     `,
     errors: [{ messageId: 'preferUtilityFunction' as const }],
     output: `
-import { useCallback } from 'react';
 const formatCurrency = (amount) => amount.toFixed(2);
 function Component() {
   return <span>{formatCurrency(10)}</span>;
@@ -323,7 +378,6 @@ const Component = () => {
     `,
     errors: [{ messageId: 'preferUtilityFunction' as const }],
     output: `
-import { useCallback } from 'react';
 import { format } from './format';
 const formatter = (value) => format(value);
 const Component = () => {
@@ -358,7 +412,6 @@ const useHook = () => {
     `,
     errors: [{ messageId: 'preferUtilityFunction' as const }],
     output: `
-import { useCallback } from 'react';
 const noop = () => {};
 const useHook = () => {
   return noop;
@@ -375,7 +428,6 @@ export function useApiClient() {
     `,
     errors: [{ messageId: 'preferUtilityFunction' as const }],
     output: `
-import { useCallback } from 'react';
 const apiCall = (endpoint) => fetch(endpoint);
 export function useApiClient() {
   return { apiCall };
@@ -392,7 +444,6 @@ const Component = () => {
     `,
     errors: [{ messageId: 'preferUtilityLatest' as const }],
     output: `
-import { useLatestCallback } from 'use-latest-callback';
 const validate = (email) => email.includes('@');
 const Component = () => {
   return <div>{validate('test@example.com') ? 'ok' : 'bad'}</div>;
@@ -410,7 +461,6 @@ function Component() {
     `,
     errors: [{ messageId: 'preferUtilityLatest' as const }],
     output: `
-import { useLatestCallback } from 'use-latest-callback';
 import { sanitizeInput } from './sanitize';
 const clean = (value) => sanitizeInput(value);
 function Component() {
@@ -428,7 +478,6 @@ export const Component = () => {
     `,
     errors: [{ messageId: 'preferUtilityFunction' as const }],
     output: `
-import { useCallback } from 'react';
 const handle = () => console.log('x');
 export const Component = () => {
   return <button onClick={handle}/>;
@@ -445,7 +494,6 @@ export function useThing() {
     `,
     errors: [{ messageId: 'preferUtilityLatest' as const }],
     output: `
-import { useLatestCallback } from 'use-latest-callback';
 const latest = () => 'value';
 export function useThing() {
   return latest;
@@ -462,7 +510,6 @@ function Component() {
     `,
     errors: [{ messageId: 'preferUtilityFunction' as const }],
     output: `
-import { useCallback } from 'react';
 const combine = (a, b) => a + b;
 function Component() {
   return <div>{combine(1, 2)}</div>;
@@ -499,7 +546,6 @@ function Outer() {
     `,
     errors: [{ messageId: 'preferUtilityFunction' as const }],
     output: `
-import { useCallback } from 'react';
 const handler = () => 123;
 function Outer() {
   function Inner() {
@@ -520,7 +566,6 @@ function Component() {
     `,
     errors: [{ messageId: 'preferUtilityFunction' as const }],
     output: `
-import { useCallback } from 'react';
 const base = 1;
 const handler = () => base + 1;
 function Component() {
@@ -529,6 +574,9 @@ function Component() {
 }
     `,
   },
+  // Only the first hoist lands: the second declares the same identifier, which
+  // the reservation refuses to duplicate at module scope. The call it leaves
+  // behind still consumes the import, so the import stays.
   {
     code: `
 import { useCallback } from 'react';
@@ -592,7 +640,6 @@ function Component() {
     `,
     errors: [{ messageId: 'preferUtilityFunction' as const }],
     output: `
-import { useCallback } from 'react';
 type Formatter = (value: string) => number;
 const format: Formatter = (value: string) => value.length;
 function Component() {
@@ -614,7 +661,6 @@ function Component() {
     `,
     errors: [{ messageId: 'preferUtilityFunction' as const }],
     output: `
-import { useCallback } from 'react';
 namespace External {
   export type LocalType = { id: string };
 }
@@ -641,7 +687,6 @@ export const ElectronCloseButton = () => {
     `,
     errors: [{ messageId: 'preferUtilityFunction' as const }],
     output: `
-import { useCallback } from 'react';
 const closeWindow = () => {
   if (IS_ELECTRON) {
     closeWindowNative();
@@ -671,7 +716,6 @@ function Component() {
     `,
     errors: [{ messageId: 'preferUtilityFunction' as const }],
     output: `
-import { useCallback } from 'react';
 const handleClick = () => {
   track({
     name: 'click',
@@ -702,7 +746,6 @@ const QueryPanel = () => {
     `,
     errors: [{ messageId: 'preferUtilityFunction' as const }],
     output: `
-import { useCallback } from 'react';
 const buildQuery = () => {
   return \`
       SELECT *
@@ -727,7 +770,6 @@ function TabbedComponent() {
     `,
     errors: [{ messageId: 'preferUtilityFunction' as const }],
     output: `
-import { useCallback } from 'react';
 const formatLabel = (value) => {
 \treturn value.trim();
 };
@@ -754,7 +796,6 @@ const Component = () => {
     `,
     errors: [{ messageId: 'preferUtilityFunction' as const }],
     output: `
-import { useCallback } from 'react';
 const parseAmount = (raw: string) => {
   return Number.parseFloat(raw);
 };
@@ -783,7 +824,6 @@ const Component = () => {
     `,
     errors: [{ messageId: 'preferUtilityFunction' as const }],
     output: `
-import { useCallback } from 'react';
 const describe = () => {
   const parts = [
 'first',
@@ -811,7 +851,6 @@ return <div>{handler()}</div>;
     `,
     errors: [{ messageId: 'preferUtilityFunction' as const }],
     output: `
-import { useCallback } from 'react';
 const handler = () => {
   return 1;
 };
@@ -834,7 +873,6 @@ return <div>{buildLabel()}</div>;
     `,
     errors: [{ messageId: 'preferUtilityFunction' as const }],
     output: `
-import { useCallback } from 'react';
   const buildLabel = () => {
   return 'label';
   };
@@ -857,7 +895,6 @@ import { useCallback } from 'react';
     `,
     errors: [{ messageId: 'preferUtilityFunction' as const }],
     output: `
-import { useCallback } from 'react';
 \tconst toKey = (value) => {
     return String(value);
   };
@@ -895,6 +932,281 @@ function MixedIndent() {
     errors: [{ messageId: 'preferUtilityFunction' as const }],
     output: OPTION_PAIR_OUTPUT,
   },
+  // Issue #1650, verbatim: the hoist consumes the last useCallback call, so the
+  // declaration it emptied goes with it rather than being left for
+  // no-unused-vars to report.
+  {
+    code: `
+import { useCallback } from 'react';
+
+export const Button = () => {
+  const onClick = useCallback(() => {
+    console.log('hi');
+  }, []);
+  return <button onClick={onClick} />;
+};
+`,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+
+const onClick = () => {
+  console.log('hi');
+};
+export const Button = () => {
+  return <button onClick={onClick} />;
+};
+`,
+  },
+  // A second call the rule leaves alone still consumes the specifier, so
+  // removing it would strand that call. Guards against over-removal.
+  {
+    code: `
+import { useCallback } from 'react';
+export const Button = ({ id }) => {
+  const onClick = useCallback(() => console.log('static'), []);
+  const onBlur = useCallback(() => console.log(id), [id]);
+  return <button onClick={onClick} onBlur={onBlur} />;
+};
+`,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+import { useCallback } from 'react';
+const onClick = () => console.log('static');
+export const Button = ({ id }) => {
+  const onBlur = useCallback(() => console.log(id), [id]);
+  return <button onClick={onClick} onBlur={onBlur} />;
+};
+`,
+  },
+  // A surviving default clause keeps the declaration: only the named specifier
+  // and its separator go, leaving neither empty braces nor a dangling comma.
+  {
+    code: `
+import React, { useCallback } from 'react';
+export const Button = () => {
+  const onClick = useCallback(() => console.log('hi'), []);
+  return React.createElement('button', { onClick });
+};
+`,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+import React from 'react';
+const onClick = () => console.log('hi');
+export const Button = () => {
+  return React.createElement('button', { onClick });
+};
+`,
+  },
+  // A specifier list broken over several lines keeps its layout: the removal
+  // reaches to the next survivor, taking one separator and nothing else.
+  {
+    code: `
+import {
+  useCallback,
+  useState,
+} from 'react';
+export const Button = () => {
+  const [n] = useState(0);
+  const onClick = useCallback(() => console.log('hi'), []);
+  return <button onClick={onClick}>{n}</button>;
+};
+`,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+import {
+  useState,
+} from 'react';
+const onClick = () => console.log('hi');
+export const Button = () => {
+  const [n] = useState(0);
+  return <button onClick={onClick}>{n}</button>;
+};
+`,
+  },
+  // An aliased specifier is removed by its clause, not by the name it imports.
+  {
+    code: `
+import { default as useLatestCallback } from 'use-latest-callback';
+export const Button = () => {
+  const onClick = useLatestCallback(() => console.log('hi'));
+  return <button onClick={onClick} />;
+};
+`,
+    errors: [{ messageId: 'preferUtilityLatest' as const }],
+    output: `
+const onClick = () => console.log('hi');
+export const Button = () => {
+  return <button onClick={onClick} />;
+};
+`,
+  },
+  // A comment naming the hook binds nothing, so it does not keep the specifier
+  // alive — it is left where the author wrote it.
+  {
+    code: `
+import { useCallback } from 'react';
+export const Button = () => {
+  // useCallback buys nothing here
+  const onClick = useCallback(() => console.log('hi'), []);
+  return <button onClick={onClick} />;
+};
+`,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+const onClick = () => console.log('hi');
+export const Button = () => {
+  // useCallback buys nothing here
+  return <button onClick={onClick} />;
+};
+`,
+  },
+  // A type query consumes the value binding, so the specifier stays even though
+  // no call site survives.
+  {
+    code: `
+import { useCallback } from 'react';
+export type Wrapper = typeof useCallback;
+export const Button = () => {
+  const onClick = useCallback(() => console.log('hi'), []);
+  return <button onClick={onClick} />;
+};
+`,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+import { useCallback } from 'react';
+export type Wrapper = typeof useCallback;
+const onClick = () => console.log('hi');
+export const Button = () => {
+  return <button onClick={onClick} />;
+};
+`,
+  },
+  // The hoist reproduces the callback verbatim, so a hook call nested in its
+  // body moves with it. That surviving reference keeps the specifier: counting
+  // it as deleted would strand the relocated call.
+  {
+    code: `
+import { useCallback } from 'react';
+export const Button = () => {
+  const onClick = useCallback(() => {
+    const inner = useCallback(() => 1, []);
+    return inner();
+  }, []);
+  return <button onClick={onClick} />;
+};
+`,
+    errors: [
+      { messageId: 'preferUtilityFunction' as const },
+      { messageId: 'preferUtilityFunction' as const },
+    ],
+    output: `
+import { useCallback } from 'react';
+const inner = () => 1;
+export const Button = () => {
+  const onClick = useCallback(() => {
+    return inner();
+  }, []);
+  return <button onClick={onClick} />;
+};
+`,
+  },
+  // Two components, two independent hoists, one pass. Each fix judges
+  // orphanhood alone against the file as it stands, so neither sees itself as
+  // the last consumer and the specifier survives the pass unused. That residue
+  // is the price of suppression safety — see the eslint-disable suite below —
+  // and a later pass clears it once one call remains.
+  {
+    code: `
+import { useCallback } from 'react';
+export const First = () => {
+  const first = useCallback(() => console.log('first'), []);
+  return <button onClick={first} />;
+};
+export const Second = () => {
+  const second = useCallback(() => console.log('second'), []);
+  return <button onClick={second} />;
+};
+`,
+    errors: [
+      { messageId: 'preferUtilityFunction' as const },
+      { messageId: 'preferUtilityFunction' as const },
+    ],
+    output: `
+import { useCallback } from 'react';
+const first = () => console.log('first');
+export const First = () => {
+  return <button onClick={first} />;
+};
+const second = () => console.log('second');
+export const Second = () => {
+  return <button onClick={second} />;
+};
+`,
+  },
+  // A re-export is a consumer no edit to this file can reach, so the specifier
+  // stays bound even though the last call site goes.
+  {
+    code: `
+import { useCallback } from 'react';
+export { useCallback };
+export const Button = () => {
+  const onClick = useCallback(() => 1, []);
+  return <button onClick={onClick} />;
+};
+`,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+import { useCallback } from 'react';
+export { useCallback };
+const onClick = () => 1;
+export const Button = () => {
+  return <button onClick={onClick} />;
+};
+`,
+  },
+  // A directive comment governs the line below it, so deleting that line would
+  // re-aim the directive at whatever moves up. The removal is declined and the
+  // hoist — the fix's whole value — still lands; an unused import is a lint
+  // report, while losing the hoist would leave the reported code as written.
+  {
+    code: `
+// @ts-expect-error untyped module
+import { useCallback } from 'react';
+export const Button = () => {
+  const onClick = useCallback(() => 1, []);
+  return <button onClick={onClick} />;
+};
+`,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+// @ts-expect-error untyped module
+import { useCallback } from 'react';
+const onClick = () => 1;
+export const Button = () => {
+  return <button onClick={onClick} />;
+};
+`,
+  },
+  // A namespace object is left bound. Under the classic JSX runtime it is
+  // consumed by a transform no scope analysis records, so a member callee never
+  // takes its object with it.
+  {
+    code: `
+import * as React from 'react';
+export const Button = () => {
+  const onClick = React.useCallback(() => console.log('hi'), []);
+  return <button onClick={onClick} />;
+};
+`,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+import * as React from 'react';
+const onClick = () => console.log('hi');
+export const Button = () => {
+  return <button onClick={onClick} />;
+};
+`,
+  },
 ];
 
 ruleTesterJsx.run(
@@ -905,3 +1217,144 @@ ruleTesterJsx.run(
     invalid,
   },
 );
+
+// A rule cannot see `eslint-disable`: suppression is applied to reports after
+// they are emitted. So a fix may never assume that another report's fix also
+// lands — a disabled sibling keeps calling the hook forever, and unbinding
+// "its" import strands that call. These pin every suppression shape against the
+// real `Linter`, which is the only place the interaction exists: RuleTester
+// bypasses directive processing entirely.
+describe('no-empty-dependency-use-callbacks --fix under eslint-disable', () => {
+  const RULE_ID = '@blumintinc/blumint/no-empty-dependency-use-callbacks';
+  const LATEST_ID = '@blumintinc/blumint/use-latest-callback';
+  const FILENAME = 'Button.tsx';
+
+  const fixWith = (code: string, rules: Record<string, 'error'>) => {
+    const linter = new Linter();
+    linter.defineParser('@typescript-eslint/parser', tsParser as never);
+    linter.defineRule(
+      RULE_ID,
+      noEmptyDependencyUseCallbacks as unknown as Rule.RuleModule,
+    );
+    linter.defineRule(
+      LATEST_ID,
+      useLatestCallback as unknown as Rule.RuleModule,
+    );
+    return linter.verifyAndFix(
+      code,
+      {
+        parser: '@typescript-eslint/parser',
+        parserOptions: PARSE_OPTIONS,
+        rules,
+      },
+      FILENAME,
+    );
+  };
+
+  const fix = (code: string) => fixWith(code, { [RULE_ID]: 'error' });
+
+  const IMPORT = "import { useCallback } from 'react';";
+  const component = (name: string, body: string[] = []) =>
+    [
+      `export const ${name} = () => {`,
+      ...body,
+      `  const on${name} = useCallback(() => console.log('${name}'), []);`,
+      `  return <button onClick={on${name}} />;`,
+      '};',
+    ].join('\n');
+
+  const expectNothingStranded = (source: string, output: string) => {
+    expect(unboundReferences(output)).toEqual(unboundReferences(source));
+  };
+
+  it('hoists and unbinds the specifier when nothing is disabled', () => {
+    const source = [IMPORT, '', component('First'), ''].join('\n');
+    const { output } = fixWith(source, { [RULE_ID]: 'error' });
+
+    // Vacuity guard: a rule that stopped fixing would satisfy every assertion
+    // about what the output no longer contains.
+    expect(output).not.toBe(source);
+    expect(output).toContain("const onFirst = () => console.log('First');");
+    expect(output).not.toContain('useCallback');
+    expect(orphanedImportBindings(output)).toEqual([]);
+    expectNothingStranded(source, output);
+  });
+
+  it('keeps the import when a sibling call is disabled next-line', () => {
+    const source = [
+      IMPORT,
+      '',
+      component('First'),
+      '',
+      'export const Second = () => {',
+      `  // eslint-disable-next-line ${RULE_ID}`,
+      "  const onSecond = useCallback(() => console.log('Second'), []);",
+      '  return <button onClick={onSecond} />;',
+      '};',
+      '',
+    ].join('\n');
+    const { output } = fix(source);
+
+    expect(output).toContain("const onFirst = () => console.log('First');");
+    expect(output).toContain(IMPORT);
+    expect(output).toContain(
+      "const onSecond = useCallback(() => console.log('Second'), []);",
+    );
+    expectNothingStranded(source, output);
+  });
+
+  it('keeps the import when a sibling call is disabled by a block', () => {
+    const source = [
+      IMPORT,
+      '',
+      component('First'),
+      '',
+      `/* eslint-disable ${RULE_ID} */`,
+      component('Second'),
+      `/* eslint-enable ${RULE_ID} */`,
+      '',
+    ].join('\n');
+    const { output } = fix(source);
+
+    expect(output).toContain("const onFirst = () => console.log('First');");
+    expect(output).toContain(IMPORT);
+    expect(output).toContain(
+      "const onSecond = useCallback(() => console.log('Second'), []);",
+    );
+    expectNothingStranded(source, output);
+  });
+
+  it('changes nothing when the sole call is itself disabled', () => {
+    const source = [
+      IMPORT,
+      '',
+      'export const First = () => {',
+      `  // eslint-disable-next-line ${RULE_ID}`,
+      "  const onFirst = useCallback(() => console.log('First'), []);",
+      '  return <button onClick={onFirst} />;',
+      '};',
+      '',
+    ].join('\n');
+    const { output } = fix(source);
+
+    expect(output).toBe(source);
+    expectNothingStranded(source, output);
+  });
+
+  // use-latest-callback rewrites the same declaration this rule hoists, and its
+  // own import handling is issue #1650's sibling. What is pinned here is only
+  // that this rule's fix composes: the pass converges, nothing is left bound to
+  // nothing, and the hoist still happens.
+  it('composes with use-latest-callback', () => {
+    const source = [IMPORT, '', component('First'), ''].join('\n');
+    const { output } = fixWith(source, {
+      [RULE_ID]: 'error',
+      [LATEST_ID]: 'error',
+    });
+
+    expect(output).not.toBe(source);
+    expect(output).toContain('const onFirst = () =>');
+    expectNothingStranded(source, output);
+    expect(orphanedImportBindings(output)).toEqual([]);
+  });
+});
