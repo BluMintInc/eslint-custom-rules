@@ -201,11 +201,12 @@ ruleTesterTs.run('enforce-date-ttime', enforceDateTTime, {
     },
     {
       // The control for the suppressed case below: with nothing suppressed both
-      // arguments report and both are rewritten. Each report judges its own
-      // range alone, so neither claims `Time` is orphaned while the other
-      // argument still names it, and the import survives the pass.
+      // arguments report and both are rewritten, so nothing names `Time`
+      // afterwards and its import goes with them. Neither rewrite orphans it
+      // alone — only their union does, which is why the batch is planned as one
+      // edit rather than a rewrite at a time.
       code: `import { Time } from './time';\n${NOTIFICATION}\ntype Foo = Notification<Time>;\ntype Bar = Notification<Time>;`,
-      output: `import { Time } from './time';\n${NOTIFICATION}\ntype Foo = Notification<Date>;\ntype Bar = Notification<Date>;`,
+      output: `${NOTIFICATION}\ntype Foo = Notification<Date>;\ntype Bar = Notification<Date>;`,
       parserOptions,
       filename,
       errors: [
@@ -222,6 +223,68 @@ ruleTesterTs.run('enforce-date-ttime', enforceDateTTime, {
       parserOptions,
       filename,
       errors: [{ messageId: 'enforceDateTTime' }],
+    },
+    {
+      // The carrier slot falls to a surviving site wherever the suppressed one
+      // sits: here the batch is `Foo` alone, and `Bar` keeps naming `Time`, so
+      // the import stays.
+      code: `import { Time } from './time';\n${NOTIFICATION}\ntype Foo = Notification<Time>;\n// eslint-disable-next-line enforce-date-ttime\ntype Bar = Notification<Time>;`,
+      output: `import { Time } from './time';\n${NOTIFICATION}\ntype Foo = Notification<Date>;\n// eslint-disable-next-line enforce-date-ttime\ntype Bar = Notification<Time>;`,
+      parserOptions,
+      filename,
+      errors: [{ messageId: 'enforceDateTTime' }],
+    },
+    {
+      // The batch is not limited to a pair; the import goes once nothing in the
+      // file names it.
+      code: `import { Time } from './time';\n${NOTIFICATION}\ntype Foo = Notification<Time>;\ntype Bar = Notification<Time>;\ntype Baz = Notification<Time>;`,
+      output: `${NOTIFICATION}\ntype Foo = Notification<Date>;\ntype Bar = Notification<Date>;\ntype Baz = Notification<Date>;`,
+      parserOptions,
+      filename,
+      errors: [
+        { messageId: 'enforceDateTTime' },
+        { messageId: 'enforceDateTTime' },
+        { messageId: 'enforceDateTTime' },
+      ],
+    },
+    {
+      // One fix carries every rewrite in the batch, so two distinct orphaned
+      // imports go in the same pass.
+      code: `import { Time } from './time';\nimport { Moment } from './moment';\n${NOTIFICATION}\ntype Foo = Notification<Time>;\ntype Bar = Notification<Moment>;`,
+      output: `${NOTIFICATION}\ntype Foo = Notification<Date>;\ntype Bar = Notification<Date>;`,
+      parserOptions,
+      filename,
+      errors: [
+        { messageId: 'enforceDateTTime' },
+        { messageId: 'enforceDateTTime' },
+      ],
+    },
+    {
+      // A site the helper cannot plan must not veto the batch. `Local` is a
+      // locally declared alias this rule declines to delete, so that argument
+      // stays as written while the imported `Time` is still unbound alongside
+      // the argument that solely consumed it.
+      code: `import { Time } from './time';\ntype Local = { seconds: number };\n${NOTIFICATION}\ntype Foo = Notification<Local>;\ntype Bar = Notification<Time>;`,
+      output: `type Local = { seconds: number };\n${NOTIFICATION}\ntype Foo = Notification<Local>;\ntype Bar = Notification<Date>;`,
+      parserOptions,
+      filename,
+      errors: [
+        { messageId: 'enforceDateTTime' },
+        { messageId: 'enforceDateTTime' },
+      ],
+    },
+    {
+      // Neither rewrite orphans `Local` alone, but together they do, and a
+      // declaration is not this rule's to delete. Judging the union declines the
+      // whole batch rather than stranding the alias.
+      code: `type Local = { seconds: number };\n${NOTIFICATION}\ntype Foo = Notification<Local>;\ntype Bar = Notification<Local>;`,
+      output: null,
+      parserOptions,
+      filename,
+      errors: [
+        { messageId: 'enforceDateTTime' },
+        { messageId: 'enforceDateTTime' },
+      ],
     },
     {
       // Nested usage
