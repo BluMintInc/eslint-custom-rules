@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.20.92",
+    "date": "2026-08-03T19:30:56.799Z",
+    "rules": [
+      {
+        "name": "prefer-map-over-conditional-dispatch",
+        "changeType": "fix",
+        "issues": [
+          1663
+        ],
+        "summary": "emit computed keys for resolved case tests (closes #1663)"
+      },
+      {
+        "name": "prefer-use-deep-compare-memo",
+        "changeType": "fix",
+        "issues": [
+          1662
+        ],
+        "summary": "convert every call site in one edit (closes #1662)"
+      }
+    ]
+  },
+  {
     "version": "1.20.91",
     "date": "2026-08-03T15:15:42.831Z",
     "rules": [

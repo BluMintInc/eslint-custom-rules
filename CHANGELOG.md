@@ -1,3 +1,11 @@
+## [1.20.92](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.91...v1.20.92) (2026-08-03)
+
+
+### Bug Fixes
+
+* **prefer-map-over-conditional-dispatch:** emit computed keys for resolved case tests (closes [#1663](https://github.com/BluMintInc/eslint-custom-rules/issues/1663)) ([42e5571](https://github.com/BluMintInc/eslint-custom-rules/commit/42e5571ce5d8e52b0b9c67222dfa940a75ca3d7e))
+* **prefer-use-deep-compare-memo:** convert every call site in one edit (closes [#1662](https://github.com/BluMintInc/eslint-custom-rules/issues/1662)) ([0273be3](https://github.com/BluMintInc/eslint-custom-rules/commit/0273be3eaec54cdf0bd7deb88da598ce0e318bee))
+
 ## [1.20.91](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.90...v1.20.91) (2026-08-03)
 
 
