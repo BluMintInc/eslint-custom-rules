@@ -42,7 +42,11 @@ The subset relation is established from syntax alone, without type information, 
 - **The parameter's own annotation** — `({ path, body }: Unit)` or an inline `({ path, body }: { path: string; body: string; findings: unknown[] })`.
 - **The element type of an array method's receiver** — the callback of `.map()`, `.forEach()`, `.filter()` or `.flatMap()` whose receiver resolves to something annotated `Unit[]`, `readonly Unit[]`, `Array<Unit>` or `ReadonlyArray<Unit>`. The receiver is traced through `const` initializers, annotated bindings (an annotation holds on a `let` too, since it constrains every assignment), `as` assertions, `await`, and the declared return type of a local function.
 
-The referenced type must be a plain, fully written-out member list declared in the same file. A union, an intersection, a mapped or conditional type, a generic instantiation, an interface with an `extends` clause, an index signature and an imported alias all describe a member set assembled elsewhere, so none of them proves anything: those keep reporting, exactly as before. So does a member set that matches the pick **exactly** — that reassembly is exhaustive, and the spread rewrite is behavior-preserving.
+The referenced type must be a plain, fully written-out member list declared in the same file, reached either directly or through one of the three **key-preserving type operators**: `Readonly<T>`, `Required<T>` and `Partial<T>`. Each of those rewrites the modifiers of every member and leaves the key set identical, so the member list is read straight through the wrapper — `Readonly<{ path: string; body: string; findings: unknown[] }>`, `Readonly<Unit>` where `Unit` is a same-file alias or interface, and a nested `Readonly<Partial<Unit>>` all enumerate exactly what they wrap.
+
+Every other shape describes a member set assembled elsewhere and proves nothing, so it keeps reporting: a union, an intersection, a mapped or conditional type, an interface with an `extends` clause, an index signature, an imported alias, and any generic instantiation other than the three above. `Pick`, `Omit`, `Record`, `Exclude` and `Extract` are the notable exclusions — each rewrites the key set, and a wrong proof would silence a report the rule owes rather than merely fail to find one. A member set that matches the pick **exactly** keeps reporting too: that reassembly is exhaustive, so the spread rewrite is behavior-preserving.
+
+A file that declares its own `Readonly`, `Required` or `Partial` — as a type alias, an interface, a class, an enum or an import of that name — is read as naming that declaration rather than the lib utility, so no unwrapping applies and the pick is treated as unprovable.
 
 ### ❌ Incorrect
 
@@ -149,6 +153,23 @@ type Unit = {
   findings: unknown[];
 };
 const toComments = (units: Unit[]) => {
+  return units.map(({ path, line, side, body }) => {
+    return { path, line, side, body } as const;
+  });
+};
+```
+
+```ts
+// Valid — the pick is read through `Readonly`, which leaves the key set of the
+// record it wraps identical, so `findings` is still proven absent from the pick.
+type ReviewCommentUnit = Readonly<{
+  path: string;
+  line: number;
+  side: string;
+  body: string;
+  findings: readonly unknown[];
+}>;
+const toComments = (units: readonly ReviewCommentUnit[]) => {
   return units.map(({ path, line, side, body }) => {
     return { path, line, side, body } as const;
   });

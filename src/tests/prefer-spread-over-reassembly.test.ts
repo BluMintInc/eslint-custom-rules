@@ -450,6 +450,105 @@ const pick = ({ a, b }: Alias) => ({ a, b });
 type Wide = { a: string; b: string; c: string };
 const pick = ({ a, b }: Wide) => ({ a, b, label: 'x' });
 `,
+
+    // Regression (#1643): the reported agora declaration verbatim. A
+    // \`Readonly<{...}>\` record is the idiomatic spelling there, and reading
+    // through it is what makes the #1642 proof reach the reported site.
+    `
+type ReviewCommentUnit = Readonly<{
+  path: string;
+  line: number;
+  side: 'RIGHT';
+  body: string;
+  findings: readonly unknown[];
+}>;
+function build(units: readonly ReviewCommentUnit[]) {
+  return units.map(({ path, line, side, body }) => {
+    return { path, line, side, body } as const;
+  });
+}
+`,
+
+    // Regression (#1643): \`Partial\` rewrites optionality, never the key set.
+    `
+type Wide = Partial<{ a: string; b: string; c: string }>;
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+
+    // Regression (#1643): \`Required\` likewise.
+    `
+type Wide = Required<{ a?: string; b?: string; c?: string }>;
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+
+    // Regression (#1643): the operator's argument may be an alias, whose own
+    // member list is resolved exactly as an unwrapped one is.
+    `
+type Inner = { a: string; b: string; c: string };
+type Wide = Readonly<Inner>;
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+
+    // Regression (#1643): the argument may be an interface.
+    `
+interface Inner {
+  a: string;
+  b: string;
+  c: string;
+}
+type Wide = Readonly<Inner>;
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+
+    // Regression (#1643): key-preserving operators nest, and each one leaves
+    // the key set of what it wraps alone.
+    `
+type Wide = Readonly<Partial<{ a: string; b: string; c: string }>>;
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+
+    // Regression (#1643): nesting through an alias as well.
+    `
+type Inner = { a: string; b: string; c: string };
+type Wide = Readonly<Readonly<Inner>>;
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+
+    // Regression (#1643): the parameter's own annotation may spell the
+    // operator directly.
+    `
+type Inner = { a: string; b: string; c: string };
+const pick = ({ a, b }: Readonly<Inner>) => ({ a, b });
+`,
+
+    // Regression (#1643): an inline object type behind the operator.
+    `
+const pick = ({ a, b }: Readonly<{ a: string; b: string; c: string }>) => ({
+  a,
+  b,
+});
+`,
+
+    // Regression (#1643): \`readonly Readonly<Unit>[]\` — a type operator over
+    // an array of wrapped elements, which is how agora annotates a batch.
+    `
+type Unit = { a: string; b: string; c: string };
+const build = (units: readonly Readonly<Unit>[]) =>
+  units.map(({ a, b }) => ({ a, b }));
+`,
+
+    // Regression (#1643): \`ReadonlyArray<Readonly<Unit>>\` spells the same.
+    `
+type Unit = { a: string; b: string; c: string };
+const build = (units: ReadonlyArray<Readonly<Unit>>) =>
+  units.map(({ a, b }) => ({ a, b }));
+`,
+
+    // Regression (#1643): the JSX target narrows through the operator too.
+    `
+type Wide = Readonly<{ a: string; b: string; c: string }>;
+const Narrowed = ({ a, b }: Wide) => <Child a={a} b={b} />;
+`,
   ],
 
   invalid: [
@@ -1772,6 +1871,209 @@ const build = (units: Unit[]) => units.map(identity, ({ a, b }) => ({ a, b }));
       output: `
 type Unit = { a: string; b: string; c: string };
 const build = (units: Unit[]) => units.map(identity, (props) => ({ ...props }));
+`,
+    },
+
+    // Regression (#1643): reading through \`Readonly\` widens what can be
+    // proven, never what is silenced — an exhaustive pick still reports.
+    {
+      code: `
+type Wide = Readonly<{ a: string; b: string }>;
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Wide = Readonly<{ a: string; b: string }>;
+const pick = (props: Wide) => ({ ...props });
+`,
+    },
+
+    // Regression (#1643): an exhaustive pick through \`Partial\`.
+    {
+      code: `
+type Wide = Partial<{ a: string; b: string }>;
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Wide = Partial<{ a: string; b: string }>;
+const pick = (props: Wide) => ({ ...props });
+`,
+    },
+
+    // Regression (#1643): an exhaustive pick through \`Required\`.
+    {
+      code: `
+type Wide = Required<{ a?: string; b?: string }>;
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Wide = Required<{ a?: string; b?: string }>;
+const pick = (props: Wide) => ({ ...props });
+`,
+    },
+
+    // Regression (#1643): \`Pick\` rewrites the key set, so its argument's
+    // member list says nothing about the instantiation. Reading through it
+    // would silence this exhaustive reassembly.
+    {
+      code: `
+type Big = { a: string; b: string; c: string };
+type Wide = Pick<Big, 'a' | 'b'>;
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Big = { a: string; b: string; c: string };
+type Wide = Pick<Big, 'a' | 'b'>;
+const pick = (props: Wide) => ({ ...props });
+`,
+    },
+
+    // Regression (#1643): \`Omit\` removes keys.
+    {
+      code: `
+type Big = { a: string; b: string; c: string };
+type Wide = Omit<Big, 'c'>;
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Big = { a: string; b: string; c: string };
+type Wide = Omit<Big, 'c'>;
+const pick = (props: Wide) => ({ ...props });
+`,
+    },
+
+    // Regression (#1643): \`Record\` names no members at all.
+    {
+      code: `
+type Wide = Record<string, number>;
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Wide = Record<string, number>;
+const pick = (props: Wide) => ({ ...props });
+`,
+    },
+
+    // Regression (#1643): only the three key-preserving operators are read
+    // through, so a single-argument instantiation of anything else proves
+    // nothing.
+    {
+      code: `
+type Big = { a: string; b: string; c: string };
+type Wide = NonNullable<Big>;
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Big = { a: string; b: string; c: string };
+type Wide = NonNullable<Big>;
+const pick = (props: Wide) => ({ ...props });
+`,
+    },
+
+    // Regression (#1643): a file declaring its own \`Readonly\` is not talking
+    // about the lib utility, and this one drops a key — reading through it
+    // would silence an exhaustive reassembly.
+    {
+      code: `
+type Readonly<T> = Pick<T, 'a' | 'b'>;
+type Big = { a: string; b: string; c: string };
+const pick = ({ a, b }: Readonly<Big>) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Readonly<T> = Pick<T, 'a' | 'b'>;
+type Big = { a: string; b: string; c: string };
+const pick = (props: Readonly<Big>) => ({ ...props });
+`,
+    },
+
+    // Regression (#1643): an imported \`Partial\` shadows the global just as a
+    // local declaration does.
+    {
+      code: `
+import { Partial } from './types';
+type Big = { a: string; b: string; c: string };
+const pick = ({ a, b }: Partial<Big>) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+import { Partial } from './types';
+type Big = { a: string; b: string; c: string };
+const pick = (props: Partial<Big>) => ({ ...props });
+`,
+    },
+
+    // Regression (#1643): a nested declaration shadows too, so the whole file
+    // is scanned rather than its top level alone.
+    {
+      code: `
+type Big = { a: string; b: string; c: string };
+const build = () => {
+  interface Required {
+    a: string;
+    b: string;
+  }
+  return ({ a, b }: Required<Big>) => ({ a, b });
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Big = { a: string; b: string; c: string };
+const build = () => {
+  interface Required {
+    a: string;
+    b: string;
+  }
+  return (props: Required<Big>) => ({ ...props });
+};
+`,
+    },
+
+    // Regression (#1643): an arity other than one is malformed for these
+    // operators, so the instantiation is not the utility it spells.
+    {
+      code: `
+type Big = { a: string; b: string; c: string };
+const pick = ({ a, b }: Readonly<Big, Big>) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Big = { a: string; b: string; c: string };
+const pick = (props: Readonly<Big, Big>) => ({ ...props });
+`,
+    },
+
+    // Regression (#1643): the operator preserves keys, but an imported
+    // argument's keys still live in a module this rule cannot read.
+    {
+      code: `
+import type { Big } from './types';
+const pick = ({ a, b }: Readonly<Big>) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+import type { Big } from './types';
+const pick = (props: Readonly<Big>) => ({ ...props });
+`,
+    },
+
+    // Regression (#1643): a generic alias behind the operator resolves to a
+    // member list only once its type argument is known.
+    {
+      code: `
+type Big<T> = { a: string; b: string; c: T };
+const pick = ({ a, b }: Readonly<Big<string>>) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Big<T> = { a: string; b: string; c: T };
+const pick = (props: Readonly<Big<string>>) => ({ ...props });
 `,
     },
   ],
