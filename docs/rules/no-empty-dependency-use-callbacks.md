@@ -177,6 +177,54 @@ function Component() {
 }
 ```
 
+### The hook import goes with the call
+
+Unwrapping the last `useCallback`/`useLatestCallback` call in a file leaves its
+import bound to nothing, so the fix removes that specifier in the same edit —
+otherwise `--fix` would trade this rule's report for a `no-unused-vars` one that
+nothing re-reports:
+
+```tsx
+// Before
+import { useCallback, useState } from 'react';
+
+export const Button = () => {
+  const [label] = useState('hi');
+  const onClick = useCallback(() => console.log('hi'), []);
+  return <button onClick={onClick}>{label}</button>;
+};
+
+// After --fix
+import { useState } from 'react';
+
+const onClick = () => console.log('hi');
+export const Button = () => {
+  const [label] = useState('hi');
+  return <button onClick={onClick}>{label}</button>;
+};
+```
+
+Only the emptied specifier goes: the rest of the import declaration is
+untouched, and the declaration itself is removed only when no specifier
+survives, never leaving `import {} from 'react';` behind. The specifier stays
+whenever anything else in the file still names it — another call the rule does
+not report, a `typeof useCallback` type query, or a call nested inside the
+callback body, which the hoist reproduces verbatim rather than deleting.
+
+A member callee (`React.useCallback`) never takes its object with it. Under the
+classic JSX runtime that binding is consumed by a transform no scope analysis
+records, so removing it would break a file that lints clean.
+
+**Limitation — several reports in one file.** Each report judges orphanhood
+against its own edit and the file as it stands, never against what the rest of
+the `--fix` run might also remove. Two independent empty-dependency callbacks
+therefore both hoist in one pass while the import survives unused, cleared only
+by a later pass that leaves a single call. Judging the edits together would be
+unsound: a rule cannot see `eslint-disable` (suppression is applied to reports
+after they are emitted), so an edit that assumed a suppressed sibling also
+applied would delete an import the surviving call still needs — a runtime error
+in place of an unused-import warning.
+
 Callbacks that reference component scope or return JSX are not reported to avoid false positives. Callbacks declared in multi-variable statements may be reported without an auto-fix to avoid unsafe refactors. If a callback must stay for memoization or HMR reasons, add an `eslint-disable-next-line @blumintinc/blumint/no-empty-dependency-use-callbacks` comment with a short justification.
 Callbacks declared with `let`/`var` are reported without a fix to avoid mutating declaration kinds; use `const` before applying `--fix` if hoisting is safe.
 Callbacks that rely on type aliases, interfaces, enums, or namespaces defined in any enclosing block scope are treated as component-bound and will not be hoisted.
