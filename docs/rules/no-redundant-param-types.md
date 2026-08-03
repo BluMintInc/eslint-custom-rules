@@ -10,7 +10,43 @@
 
 TypeScript already provides parameter types to arrow functions via contextual typing when you assign them to a typed variable, property, or assignment target. Adding explicit parameter annotations inside the arrow duplicates that information and forces you to keep two places in sync.
 
-This rule reports inline parameter type annotations on arrow functions when your surrounding declaration already specifies the function type. The auto-fix removes the redundant annotation while keeping defaults, rest parameters, and destructuring intact.
+This rule reports inline parameter type annotations on arrow functions when your surrounding declaration already specifies the function type. The auto-fix removes the redundant annotation while keeping defaults, rest parameters, and destructuring intact, along with any import the annotation was the only consumer of (see [The fix takes the imports the annotation was the only consumer of](#the-fix-takes-the-imports-the-annotation-was-the-only-consumer-of)).
+
+### The fix takes the imports the annotation was the only consumer of
+
+An annotation is often the sole reference to the types it names. Deleting it alone would leave those imports bound to nothing, so a file that lints clean would fail `@typescript-eslint/no-unused-vars` afterwards — with a violation this rule cannot report, because its own finding is resolved by the fix. The annotation and the imports it orphans therefore go as a single fix: applying either half alone leaves your file worse than applying neither.
+
+```ts
+// Before: the parameter annotation is the only consumer of three imports
+import { Change } from 'firebase-functions/v2';
+import { DatabaseEvent } from 'firebase-functions/v2/database';
+import { DataSnapshot } from '../types/DataSnapshot';
+import { RealtimeDbChangeHandler } from '../v2/handlerTypes';
+import { CallerCount, CallerCountPath } from '../types/CallerCount';
+
+export const closeRoom: RealtimeDbChangeHandler<
+  CallerCount,
+  CallerCountPath
+> = async (event: DatabaseEvent<Change<DataSnapshot<CallerCount>>>) => {
+  await close(event);
+};
+
+// After: the handler type still names CallerCount, so that import stays
+import { RealtimeDbChangeHandler } from '../v2/handlerTypes';
+import { CallerCount, CallerCountPath } from '../types/CallerCount';
+
+export const closeRoom: RealtimeDbChangeHandler<
+  CallerCount,
+  CallerCountPath
+> = async (event) => {
+  await close(event);
+};
+```
+
+Two limits keep the fix safe rather than clever:
+
+- **Each annotation is judged on its own removal, against the file as it stands.** A type that two strippable annotations share is not unbound in one pass — neither annotation is its last consumer. A rule cannot see `eslint-disable` (suppression is applied to reports after they are emitted), so assuming a sibling annotation will also go would delete an import the surviving annotation still references, trading an unused import for a type bound to nothing.
+- **A binding that cannot be unbound cleanly cancels the whole fix, annotation included.** The report then carries no fixer, and you resolve it by hand. This covers an import behind a `// eslint-disable-next-line` or `@ts-expect-error` directive, a comment sitting among the specifiers, a name that another binding shadows, and an orphan bound by something other than an import — a local `type` alias or a type parameter.
 
 ### Why this rule?
 

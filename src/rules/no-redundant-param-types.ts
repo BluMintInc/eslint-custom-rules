@@ -1,5 +1,6 @@
-import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { planOrphanedImportRemoval, TextRange } from '../utils/importRemoval';
 
 type MessageIds = 'redundantParamType';
 
@@ -10,73 +11,34 @@ type ParamNode =
   | TSESTree.ArrayPattern
   | TSESTree.AssignmentPattern;
 
-function isIdentifierWithTypeAnnotation(
-  node: ParamNode,
-): node is TSESTree.Identifier & { typeAnnotation: TSESTree.TSTypeAnnotation } {
-  return (
-    node.type === AST_NODE_TYPES.Identifier && node.typeAnnotation !== undefined
-  );
+/**
+ * The annotation a parameter carries, or `undefined` when it has none. A
+ * parameter with a default value holds its annotation on the pattern it assigns
+ * to, and only an identifier pattern is read there: a destructured parameter
+ * with a default keeps its annotation.
+ */
+function annotationOf(param: ParamNode): TSESTree.TSTypeAnnotation | undefined {
+  if (param.type === AST_NODE_TYPES.AssignmentPattern) {
+    return param.left.type === AST_NODE_TYPES.Identifier
+      ? param.left.typeAnnotation
+      : undefined;
+  }
+  return param.typeAnnotation;
 }
 
-function isRestElementWithTypeAnnotation(
-  node: ParamNode,
-): node is TSESTree.RestElement & {
-  typeAnnotation: TSESTree.TSTypeAnnotation;
-} {
-  return (
-    node.type === AST_NODE_TYPES.RestElement &&
-    node.typeAnnotation !== undefined
-  );
-}
-
-function isObjectPatternWithTypeAnnotation(
-  node: ParamNode,
-): node is TSESTree.ObjectPattern & {
-  typeAnnotation: TSESTree.TSTypeAnnotation;
-} {
-  return (
-    node.type === AST_NODE_TYPES.ObjectPattern &&
-    node.typeAnnotation !== undefined
-  );
-}
-
-function isArrayPatternWithTypeAnnotation(
-  node: ParamNode,
-): node is TSESTree.ArrayPattern & {
-  typeAnnotation: TSESTree.TSTypeAnnotation;
-} {
-  return (
-    node.type === AST_NODE_TYPES.ArrayPattern &&
-    node.typeAnnotation !== undefined
-  );
-}
-
-function isAssignmentPatternWithTypeAnnotation(
-  node: ParamNode,
-): node is TSESTree.AssignmentPattern & {
-  left: TSESTree.Identifier & { typeAnnotation: TSESTree.TSTypeAnnotation };
-} {
-  return (
-    node.type === AST_NODE_TYPES.AssignmentPattern &&
-    node.left.type === AST_NODE_TYPES.Identifier &&
-    node.left.typeAnnotation !== undefined
-  );
-}
-
-function removeTypeAnnotation(
-  fixer: TSESLint.RuleFixer,
+/**
+ * The slice a fix deletes to drop `typeAnnotation`. An optional marker goes with
+ * it: contextual typing supplies a parameter's optionality along with its type,
+ * so a `?` left behind keeps half of the duplication the rule exists to remove.
+ */
+function annotationRemovalRange(
   typeAnnotation: TSESTree.TSTypeAnnotation,
   sourceCode: { getText(): string },
-): TSESLint.RuleFix {
-  const typeStart = typeAnnotation.range[0];
-  const typeEnd = typeAnnotation.range[1];
-
-  // Check if there's a question mark before the type annotation
+): TextRange {
+  const [typeStart, typeEnd] = typeAnnotation.range;
   const hasQuestionMark =
     typeStart > 0 && sourceCode.getText().charAt(typeStart - 1) === '?';
-  const startPos = hasQuestionMark ? typeStart - 1 : typeStart;
-
-  return fixer.removeRange([startPos, typeEnd]);
+  return [hasQuestionMark ? typeStart - 1 : typeStart, typeEnd];
 }
 
 function hasRedundantTypeAnnotation(
@@ -130,84 +92,66 @@ export const noRedundantParamTypes = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
+    const sourceCode = context.getSourceCode();
+
+    /**
+     * Reports a parameter annotation, taking with it any import it was the only
+     * consumer of. The two are one fix: applying either half alone leaves the
+     * file worse than applying neither — a stripped annotation with its import
+     * left behind fails `no-unused-vars`, and since this rule's own report is
+     * resolved by the fix, nothing re-reports the debt.
+     *
+     * Orphanhood is judged against this one annotation's own removal and the
+     * file as it stands, never against what the rest of the `--fix` run might
+     * also delete. A sibling annotation naming the same type may be
+     * `eslint-disable`d — which a rule cannot see, since suppression is applied
+     * to reports after they are emitted — so an edit that assumes its sibling
+     * will also go deletes an import the surviving annotation still references,
+     * trading an unused import for a dangling type. Judging one edit at a time
+     * is suppression-safe by construction: a suppressed report's fix never
+     * applies, so it can never have been depended on.
+     *
+     * The cost is that a type shared by several strippable annotations is not
+     * unbound in a single pass; each pass removes the annotations it can see,
+     * and only a pass that leaves the binding with no reference at all removes
+     * the import.
+     */
+    function reportParam(
+      param: ParamNode,
+      typeAnnotation: TSESTree.TSTypeAnnotation,
+    ): void {
+      const removal = annotationRemovalRange(typeAnnotation, sourceCode);
+      const importRanges = planOrphanedImportRemoval(sourceCode, [removal]);
+
+      context.report({
+        node: param,
+        messageId: 'redundantParamType',
+        data: {
+          paramText: sourceCode.getText(param).replace(/\s+/g, ' ').trim(),
+        },
+        // No plan means no binding can be unbound safely, so the annotation
+        // stays too: the report without a fixer is the lesser damage.
+        ...(importRanges
+          ? {
+              fix: (fixer: TSESLint.RuleFixer) => [
+                fixer.removeRange([removal[0], removal[1]]),
+                ...importRanges.map((range) =>
+                  fixer.removeRange([range[0], range[1]]),
+                ),
+              ],
+            }
+          : {}),
+      });
+    }
+
     return {
       ArrowFunctionExpression(node) {
         if (!hasRedundantTypeAnnotation(node)) return;
 
-        const params = node.params as ParamNode[];
-        const sourceCode = context.getSourceCode();
-
-        params.forEach((param) => {
-          const paramText = sourceCode
-            .getText(param)
-            .replace(/\s+/g, ' ')
-            .trim();
-          if (isIdentifierWithTypeAnnotation(param)) {
-            context.report({
-              node: param,
-              messageId: 'redundantParamType',
-              data: { paramText },
-              fix(fixer) {
-                return removeTypeAnnotation(
-                  fixer,
-                  param.typeAnnotation,
-                  sourceCode,
-                );
-              },
-            });
-          } else if (isRestElementWithTypeAnnotation(param)) {
-            context.report({
-              node: param,
-              messageId: 'redundantParamType',
-              data: { paramText },
-              fix(fixer) {
-                return removeTypeAnnotation(
-                  fixer,
-                  param.typeAnnotation,
-                  sourceCode,
-                );
-              },
-            });
-          } else if (isObjectPatternWithTypeAnnotation(param)) {
-            context.report({
-              node: param,
-              messageId: 'redundantParamType',
-              data: { paramText },
-              fix(fixer) {
-                return removeTypeAnnotation(
-                  fixer,
-                  param.typeAnnotation,
-                  sourceCode,
-                );
-              },
-            });
-          } else if (isArrayPatternWithTypeAnnotation(param)) {
-            context.report({
-              node: param,
-              messageId: 'redundantParamType',
-              data: { paramText },
-              fix(fixer) {
-                return removeTypeAnnotation(
-                  fixer,
-                  param.typeAnnotation,
-                  sourceCode,
-                );
-              },
-            });
-          } else if (isAssignmentPatternWithTypeAnnotation(param)) {
-            const { left } = param;
-            context.report({
-              node: param,
-              messageId: 'redundantParamType',
-              data: { paramText },
-              fix(fixer) {
-                return removeTypeAnnotation(
-                  fixer,
-                  left.typeAnnotation,
-                  sourceCode,
-                );
-              },
-            });
+        (node.params as ParamNode[]).forEach((param) => {
+          const typeAnnotation = annotationOf(param);
+          if (typeAnnotation) {
+            reportParam(param, typeAnnotation);
           }
         });
       },
