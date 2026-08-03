@@ -450,6 +450,30 @@ function f() {
   return out;
 }
 `,
+    // #1663: the equality forms (`if`/ternary) match only when one side of the
+    // `===` is an INLINE literal, so a constant reference on the key side is
+    // not a recognized dispatch at all — the resolver's constant-reference path
+    // is unreachable from here, and both forms are left alone.
+    `
+const A = 'a';
+type K = 'a' | 'b';
+declare const k: K;
+function f() {
+  if (k === A) {
+    return 1;
+  }
+  return 2;
+}
+`,
+    `
+const A = 'a';
+type K = 'a' | 'b';
+declare const k: K;
+function f() {
+  const out = k === A ? 1 : 2;
+  return out;
+}
+`,
   ],
   invalid: [
     // Edge 3/6: full-coverage class-reference switch with a fail-loud default
@@ -740,7 +764,10 @@ function name() {
 `,
       errors: [{ messageId: 'preferMap' }],
     },
-    // Case tests that are constant references resolved to literals.
+    // #1663: bare identifier constants as case tests keep their reference —
+    // the checker resolves them to prove the key is a literal, but emitting
+    // the resolved value would leave `A`/`B` unreferenced (an imported one
+    // then trips no-unused-vars) and bake their values into the call site.
     {
       code: `
 const A = 'a';
@@ -763,10 +790,338 @@ type X = 'a' | 'b';
 declare const x: X;
 function f() {
   const RESULT_BY_X: Record<X, number> = {
-    a: 1,
-    b: 2,
+    [A]: 1,
+    [B]: 2,
   };
   return RESULT_BY_X[x];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1663: the live agora shape — a constant object imported for the sole
+    // purpose of naming the dispatch keys. The import must still be read by
+    // the generated Record.
+    {
+      code: `
+declare module 'device-status' {
+  export const THIS_DEVICE_STATUS: {
+    readonly active: 'active';
+    readonly unregistered: 'unregistered';
+  };
+}
+import { THIS_DEVICE_STATUS } from 'device-status';
+type Status = 'active' | 'unregistered';
+declare const status: Status;
+function f() {
+  switch (status) {
+    case THIS_DEVICE_STATUS.active:
+      return 1;
+    case THIS_DEVICE_STATUS.unregistered:
+      return 2;
+  }
+}
+`,
+      output: `
+declare module 'device-status' {
+  export const THIS_DEVICE_STATUS: {
+    readonly active: 'active';
+    readonly unregistered: 'unregistered';
+  };
+}
+import { THIS_DEVICE_STATUS } from 'device-status';
+type Status = 'active' | 'unregistered';
+declare const status: Status;
+function f() {
+  const RESULT_BY_STATUS: Record<Status, number> = {
+    [THIS_DEVICE_STATUS.active]: 1,
+    [THIS_DEVICE_STATUS.unregistered]: 2,
+  };
+  return RESULT_BY_STATUS[status];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1663: the same shape with a locally declared `as const` object.
+    {
+      code: `
+const STATUS = { active: 'active', blocked: 'blocked' } as const;
+type S = 'active' | 'blocked';
+declare const s: S;
+function f() {
+  switch (s) {
+    case STATUS.active:
+      return 1;
+    case STATUS.blocked:
+      return 2;
+  }
+}
+`,
+      output: `
+const STATUS = { active: 'active', blocked: 'blocked' } as const;
+type S = 'active' | 'blocked';
+declare const s: S;
+function f() {
+  const RESULT_BY_S: Record<S, number> = {
+    [STATUS.active]: 1,
+    [STATUS.blocked]: 2,
+  };
+  return RESULT_BY_S[s];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1663: a nested member chain through a namespace resolves and is kept
+    // whole, not collapsed to its trailing property.
+    {
+      code: `
+namespace Config {
+  export const ACTIVE = 'active';
+  export const BLOCKED = 'blocked';
+}
+type S = 'active' | 'blocked';
+declare const s: S;
+function f() {
+  switch (s) {
+    case Config.ACTIVE:
+      return 1;
+    case Config.BLOCKED:
+      return 2;
+  }
+}
+`,
+      output: `
+namespace Config {
+  export const ACTIVE = 'active';
+  export const BLOCKED = 'blocked';
+}
+type S = 'active' | 'blocked';
+declare const s: S;
+function f() {
+  const RESULT_BY_S: Record<S, number> = {
+    [Config.ACTIVE]: 1,
+    [Config.BLOCKED]: 2,
+  };
+  return RESULT_BY_S[s];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1663: string enum members are references too — `Status.Active` is a
+    // computed key, and `Record<Status, V>` stays exhaustive over it.
+    {
+      code: `
+enum Status {
+  Active = 'active',
+  Blocked = 'blocked',
+}
+declare const s: Status;
+function f() {
+  switch (s) {
+    case Status.Active:
+      return 1;
+    case Status.Blocked:
+      return 2;
+  }
+}
+`,
+      output: `
+enum Status {
+  Active = 'active',
+  Blocked = 'blocked',
+}
+declare const s: Status;
+function f() {
+  const RESULT_BY_S: Record<Status, number> = {
+    [Status.Active]: 1,
+    [Status.Blocked]: 2,
+  };
+  return RESULT_BY_S[s];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1663: a numeric enum member — the resolved value (1/2) would print as a
+    // legal key, which is exactly why inlining it went unnoticed.
+    {
+      code: `
+enum Level {
+  Low = 1,
+  High = 2,
+}
+declare const level: Level;
+function f() {
+  switch (level) {
+    case Level.Low:
+      return 'low';
+    case Level.High:
+      return 'high';
+  }
+}
+`,
+      output: `
+enum Level {
+  Low = 1,
+  High = 2,
+}
+declare const level: Level;
+function f() {
+  const RESULT_BY_LEVEL: Record<Level, string> = {
+    [Level.Low]: 'low',
+    [Level.High]: 'high',
+  };
+  return RESULT_BY_LEVEL[level];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1663: inline literals and constant references in one switch — each key
+    // is emitted in the form its own test had.
+    {
+      code: `
+const STATUS = { active: 'active' } as const;
+type S = 'active' | 'blocked' | 'idle';
+declare const s: S;
+function f() {
+  switch (s) {
+    case STATUS.active:
+      return 1;
+    case 'blocked':
+      return 2;
+    case 'idle':
+      return 3;
+  }
+}
+`,
+      output: `
+const STATUS = { active: 'active' } as const;
+type S = 'active' | 'blocked' | 'idle';
+declare const s: S;
+function f() {
+  const RESULT_BY_S: Record<S, number> = {
+    [STATUS.active]: 1,
+    blocked: 2,
+    idle: 3,
+  };
+  return RESULT_BY_S[s];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1663: a member the `default` covers has no case-test expression of its
+    // own, so it keeps a plain key while the explicit cases stay references.
+    {
+      code: `
+const STATUS = { active: 'active' } as const;
+type S = 'active' | 'blocked';
+declare const s: S;
+function f() {
+  switch (s) {
+    case STATUS.active:
+      return 1;
+    default:
+      return 2;
+  }
+}
+`,
+      output: `
+const STATUS = { active: 'active' } as const;
+type S = 'active' | 'blocked';
+declare const s: S;
+function f() {
+  const RESULT_BY_S: Record<S, number> = {
+    [STATUS.active]: 1,
+    blocked: 2,
+  };
+  return RESULT_BY_S[s];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1663: a grouped case whose tests mix both forms expands into one entry
+    // per test, each keeping its own form.
+    {
+      code: `
+const K = { a: 'a' } as const;
+type X = 'a' | 'b' | 'c';
+declare const x: X;
+function f() {
+  switch (x) {
+    case K.a:
+    case 'b':
+      return 1;
+    case 'c':
+      return 2;
+  }
+}
+`,
+      output: `
+const K = { a: 'a' } as const;
+type X = 'a' | 'b' | 'c';
+declare const x: X;
+function f() {
+  const RESULT_BY_X: Record<X, number> = {
+    [K.a]: 1,
+    b: 1,
+    c: 2,
+  };
+  return RESULT_BY_X[x];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1663: a negated numeric literal is not an inline literal — its resolved
+    // value does not print as a legal object key (`{ -1: v }` does not parse),
+    // so the computed key is what makes this output compile at all.
+    {
+      code: `
+type Offset = -1 | 1;
+declare const offset: Offset;
+function f() {
+  switch (offset) {
+    case -1:
+      return 'back';
+    case 1:
+      return 'forward';
+  }
+}
+`,
+      output: `
+type Offset = -1 | 1;
+declare const offset: Offset;
+function f() {
+  const RESULT_BY_OFFSET: Record<Offset, string> = {
+    [-1]: 'back',
+    1: 'forward',
+  };
+  return RESULT_BY_OFFSET[offset];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1663: a no-substitution template literal is resolved by the checker,
+    // not read off the AST, so it is carried verbatim.
+    {
+      code: `
+type K = 'a' | 'b';
+declare const k: K;
+function f() {
+  switch (k) {
+    case \`a\`:
+      return 1;
+    case 'b':
+      return 2;
+  }
+}
+`,
+      output: `
+type K = 'a' | 'b';
+declare const k: K;
+function f() {
+  const RESULT_BY_K: Record<K, number> = {
+    [\`a\`]: 1,
+    b: 2,
+  };
+  return RESULT_BY_K[k];
 }
 `,
       errors: [{ messageId: 'preferMap' }],
@@ -1795,6 +2150,67 @@ function render() {
   const RESULT_BY_STATUS: Record<Status, any> = {
     active: device ? <Row status="active" /> : null,
     blocked: <Row status="blocked" />,
+  };
+  return RESULT_BY_STATUS[status];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1663: the live agora file (PushDeviceList.tsx) — a status constant
+    // imported solely to name the dispatch keys. Emitting the checker-resolved
+    // values left the import unreferenced and failed no-unused-vars there.
+    {
+      code: `
+declare module '../../hooks/notification/useThisDeviceStatus' {
+  export const THIS_DEVICE_STATUS: {
+    readonly active: 'active';
+    readonly unregistered: 'unregistered';
+    readonly hasOtherDevices: 'hasOtherDevices';
+    readonly blocked: 'blocked';
+  };
+}
+import { THIS_DEVICE_STATUS } from '../../hooks/notification/useThisDeviceStatus';
+type Status = 'active' | 'unregistered' | 'hasOtherDevices' | 'blocked';
+declare const status: Status;
+declare const device: unknown;
+declare const turnOn: () => void;
+declare const recover: () => void;
+declare const ThisDeviceRow: any;
+function render() {
+  switch (status) {
+    case THIS_DEVICE_STATUS.active:
+      return device ? <ThisDeviceRow device={device} status="active" /> : null;
+    case THIS_DEVICE_STATUS.unregistered:
+      return <ThisDeviceRow status="unregistered" onTurnOn={turnOn} />;
+    case THIS_DEVICE_STATUS.hasOtherDevices:
+      return <ThisDeviceRow status="hasOtherDevices" onTurnOn={turnOn} />;
+    case THIS_DEVICE_STATUS.blocked:
+      return <ThisDeviceRow status="blocked" onRecover={recover} />;
+  }
+}
+`,
+      output: `
+declare module '../../hooks/notification/useThisDeviceStatus' {
+  export const THIS_DEVICE_STATUS: {
+    readonly active: 'active';
+    readonly unregistered: 'unregistered';
+    readonly hasOtherDevices: 'hasOtherDevices';
+    readonly blocked: 'blocked';
+  };
+}
+import { THIS_DEVICE_STATUS } from '../../hooks/notification/useThisDeviceStatus';
+type Status = 'active' | 'unregistered' | 'hasOtherDevices' | 'blocked';
+declare const status: Status;
+declare const device: unknown;
+declare const turnOn: () => void;
+declare const recover: () => void;
+declare const ThisDeviceRow: any;
+function render() {
+  const RESULT_BY_STATUS: Record<Status, any> = {
+    [THIS_DEVICE_STATUS.active]: device ? <ThisDeviceRow device={device} status="active" /> : null,
+    [THIS_DEVICE_STATUS.unregistered]: <ThisDeviceRow status="unregistered" onTurnOn={turnOn} />,
+    [THIS_DEVICE_STATUS.hasOtherDevices]: <ThisDeviceRow status="hasOtherDevices" onTurnOn={turnOn} />,
+    [THIS_DEVICE_STATUS.blocked]: <ThisDeviceRow status="blocked" onRecover={recover} />,
   };
   return RESULT_BY_STATUS[status];
 }

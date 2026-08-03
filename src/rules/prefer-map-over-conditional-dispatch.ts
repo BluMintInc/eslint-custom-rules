@@ -25,8 +25,22 @@ type BranchValue =
       stmt: TSESTree.Statement;
     };
 
-/** Literal key resolved from a case test / equality test. */
-type LiteralKey = { value: string | number; kind: 'string' | 'number' };
+/**
+ * Literal key resolved from a case test / equality test.
+ *
+ * `sourceText` is present only when the key came from a test the checker had to
+ * resolve — a constant reference (`STATUS.active`, `Status.Active`, `ACTIVE`),
+ * an enum member, a template literal, a negated numeric literal — rather than
+ * from an inline literal. The fixer emits those as computed keys built from the
+ * source expression. Keys derived from the discriminant's union type (the
+ * members a `default`/`else` covers) have no source expression at all and carry
+ * no `sourceText`.
+ */
+type LiteralKey = {
+  value: string | number;
+  kind: 'string' | 'number';
+  sourceText?: string;
+};
 
 /**
  * Node types whose presence anywhere in a branch value means the value is NOT
@@ -234,6 +248,15 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
      * Resolve a case-test / equality-test node to a literal key. Handles inline
      * literals directly and constant references (e.g. `THIS_DEVICE_STATUS.active`)
      * via the checker.
+     *
+     * A test the checker had to resolve carries its source text along with the
+     * value: the value proves the key is a literal, but emitting the value as
+     * the key destroys the expression it came from. For a constant reference
+     * that orphans the constant (an imported one then trips `no-unused-vars`)
+     * and bakes its value into the call site, discarding the single source of
+     * truth the constant exists to provide; for `case -1:` the resolved value
+     * does not even print as a legal object key (`{ -1: v }` does not parse).
+     * The fixer emits a computed key from the source text instead.
      */
     function resolveLiteralKey(node: TSESTree.Node): LiteralKey | null {
       if (node.type === AST_NODE_TYPES.Literal) {
@@ -249,7 +272,11 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       if (!type) {
         return null;
       }
-      return literalValueOf(type);
+      const literal = literalValueOf(type);
+      if (!literal) {
+        return null;
+      }
+      return { ...literal, sourceText: sourceCode.getText(node) };
     }
 
     function computeValueTypeText(exprs: TSESTree.Expression[]): string | null {
@@ -665,6 +692,13 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
     // ---- Fix construction ---------------------------------------------------
 
     function formatKey(key: LiteralKey): string {
+      if (key.sourceText !== undefined) {
+        // Computed key preserving the constant reference the case tested on.
+        // Type-safe by construction: the fix is reached only after the checker
+        // resolved this expression to a string/number *literal* type, so the
+        // computed key is a literal key and the Record stays exhaustive.
+        return `[${key.sourceText}]`;
+      }
       if (key.kind === 'number') {
         return String(key.value);
       }
