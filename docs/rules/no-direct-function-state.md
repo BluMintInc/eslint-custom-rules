@@ -21,9 +21,11 @@ This rule flags `setter(fn)` patterns where `fn` is a function reference, and au
 
 The rule uses purely syntactic detection (no type-checker required):
 
-1. **Primary signal — explicit function type parameter**: If `useState<T>()` has a type parameter `T` that is (or contains in a union) a function type (e.g. `(() => void) | null`), *any* bare identifier or member expression passed to the setter is flagged.
+1. **Primary signal — explicit function type parameter**: If `useState<T>()` has a type parameter `T` that is (or contains in a union) a function type (e.g. `(() => void) | null`), *any* bare identifier or member expression passed to the setter is flagged. `T` may also be a same-file `type` alias (including alias chains and unions of aliases) that resolves to a function type — the rule follows the alias back to its declaration, wherever in the file it's declared.
 2. **Secondary signal — naming heuristic**: If there is no explicit function type, the argument name is matched against configurable patterns (default: `callback`, `handler`, `fn`, `func`, `on[A-Z].*`).
 3. **Tertiary signal — scope binding**: If an identifier is bound in scope to an arrow function or function expression, passing it to any tracked setter is flagged.
+
+> **Alias resolution is same-file only.** A type alias imported from another module (e.g. `import { ToClose } from './types'`) can't be resolved without a type checker, so state typed with an imported alias falls back to the name-pattern and scope-binding signals above.
 
 ### Safe forms (never flagged)
 
@@ -39,6 +41,8 @@ The rule uses purely syntactic detection (no type-checker required):
 
 ```typescript
 // Function-typed state, bare identifier — React would call newOnClose
+type ToClose = () => void;
+declare const newOnClose: ToClose;
 const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
 setOnCloseState(newOnClose);
 
@@ -55,6 +59,8 @@ setX(props.onClose);
 
 ```typescript
 // Wrap in a thunk so React stores the function as a value
+type ToClose = () => void;
+declare const newOnClose: ToClose;
 const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
 setOnCloseState(() => newOnClose);
 
