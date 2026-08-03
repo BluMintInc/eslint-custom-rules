@@ -7,6 +7,7 @@ import {
   importInsertionAnchor,
   insertAtImportAnchor,
 } from '../utils/importInsertion';
+import { planOrphanedImportRemoval } from '../utils/importRemoval';
 
 const DEEP_COMPARE_MODULE = '@blumintinc/use-deep-compare';
 const DEEP_COMPARE_HOOK = 'useDeepCompareMemo';
@@ -260,58 +261,6 @@ function ensureDeepCompareImportFixes(
   ];
 }
 
-function findVariableInScope(scope: any, name: string): any | null {
-  if (!scope) return null;
-  const found = scope.variables?.find((v: any) => v.name === name);
-  if (found) return found;
-  if (Array.isArray(scope.childScopes)) {
-    for (const child of scope.childScopes) {
-      const v = findVariableInScope(child, name);
-      if (v) return v;
-    }
-  }
-  return null;
-}
-
-function isIdentifierReferenced(
-  sourceCode: TSESLint.SourceCode,
-  name: string,
-): boolean {
-  const scope = sourceCode.scopeManager?.globalScope;
-  if (!scope) return true;
-  const variable = findVariableInScope(scope, name);
-  if (!variable) return false;
-  return variable.references.some(
-    (ref: any) => ref.identifier && ref.identifier.name === name,
-  );
-}
-
-function removeImportSpecifierFixes(
-  sourceCode: TSESLint.SourceCode,
-  fixer: TSESLint.RuleFixer,
-  importDecl: TSESTree.ImportDeclaration,
-  specifier: TSESTree.ImportSpecifier | TSESTree.ImportDefaultSpecifier,
-): TSESLint.RuleFix[] {
-  const fixes: TSESLint.RuleFix[] = [];
-  if (importDecl.specifiers.length === 1) {
-    fixes.push(fixer.remove(importDecl));
-    return fixes;
-  }
-
-  const tokenAfter = sourceCode.getTokenAfter(specifier);
-  const tokenBefore = sourceCode.getTokenBefore(specifier);
-
-  if (tokenAfter && tokenAfter.value === ',') {
-    fixes.push(fixer.removeRange([specifier.range[0], tokenAfter.range![1]]));
-  } else if (tokenBefore && tokenBefore.value === ',') {
-    fixes.push(fixer.removeRange([tokenBefore.range![0], specifier.range[1]]));
-  } else {
-    fixes.push(fixer.remove(specifier));
-  }
-
-  return fixes;
-}
-
 function isImportedIdentifier(
   context: TSESLint.RuleContext<'preferUseDeepCompareMemo', []>,
   name: string,
@@ -528,6 +477,31 @@ export const preferUseDeepCompareMemo = createRule<[], MessageIds>({
               return null;
             }
 
+            // The callee is the text this fix deletes, so it is also the text
+            // whatever carried the hook stops being read from: `useMemo` for a
+            // bare call, `React` for a member call. A binding left with no
+            // reference at all is unbound here, in this same fix — stripping
+            // its last use and keeping the declaration trades this rule's
+            // report for an unused-import one, and nothing re-reports that debt
+            // once the rewrite has resolved the original violation.
+            //
+            // Orphanhood is judged against this one callee's removal and the
+            // file as it stands. A second `useMemo` call site keeps the
+            // specifier, even one this rule also reports: that sibling may be
+            // `eslint-disable`d (suppression is applied after a rule emits its
+            // reports, so its fix never runs) or lose its fix to a conflict, and
+            // either way the surviving call would spell a name nothing binds. A
+            // later pass, reading a source where the sibling is already
+            // converted, finds the specifier orphaned and removes it then.
+            const importRemoval = planOrphanedImportRemoval(
+              context.sourceCode,
+              [node.callee.range],
+            );
+            // No plan means a binding is orphaned yet cannot be unbound safely,
+            // so the rewrite stays too: the report without a fixer is the lesser
+            // damage.
+            if (!importRemoval) return null;
+
             const fixes: TSESLint.RuleFix[] = [];
 
             // Replace callee
@@ -545,54 +519,11 @@ export const preferUseDeepCompareMemo = createRule<[], MessageIds>({
             // Ensure import exists
             fixes.push(...ensureDeepCompareImportFixes(context, fixer));
 
-            // Clean up now-unused React/useMemo imports if safe
-            const sourceCode = context.sourceCode;
-            const program = sourceCode.ast;
-            const reactImport = program.body.find(
-              (n): n is TSESTree.ImportDeclaration =>
-                n.type === AST_NODE_TYPES.ImportDeclaration &&
-                n.source.value === 'react',
+            fixes.push(
+              ...importRemoval.map((range) =>
+                fixer.removeRange([range[0], range[1]]),
+              ),
             );
-            if (reactImport) {
-              // remove named useMemo if unused
-              const useMemoSpec = reactImport.specifiers.find(
-                (s): s is TSESTree.ImportSpecifier =>
-                  s.type === AST_NODE_TYPES.ImportSpecifier &&
-                  s.imported.type === AST_NODE_TYPES.Identifier &&
-                  s.imported.name === 'useMemo',
-              );
-              if (
-                useMemoSpec &&
-                !isIdentifierReferenced(sourceCode, useMemoSpec.local.name)
-              ) {
-                fixes.push(
-                  ...removeImportSpecifierFixes(
-                    sourceCode,
-                    fixer,
-                    reactImport,
-                    useMemoSpec,
-                  ),
-                );
-              }
-
-              const defaultSpec = reactImport.specifiers.find(
-                (s): s is TSESTree.ImportDefaultSpecifier =>
-                  s.type === AST_NODE_TYPES.ImportDefaultSpecifier,
-              );
-              if (
-                defaultSpec &&
-                !isIdentifierReferenced(sourceCode, defaultSpec.local.name)
-              ) {
-                fixes.push(
-                  ...removeImportSpecifierFixes(
-                    sourceCode,
-                    fixer,
-                    reactImport,
-                    defaultSpec,
-                  ),
-                );
-              }
-            }
 
             return fixes;
           },
