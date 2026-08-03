@@ -13,8 +13,40 @@ Renaming during object destructuring is useful when it resolves naming conflicts
 - Targets object destructuring where `source: alias` (or `source: alias = default`) is declared.
 - Flags when the alias is used exactly once, solely as the value of an object property whose key is `source` and the property is not computed.
 - Skips computed property names and aliases that are read more than once or participate in other expressions.
-- Does not offer a fix when using the original key would shadow another binding in the same or nested scope, preventing semantic changes.
+- Stays silent — no report, not merely no fix — when using the original key would change which binding is read. See [When a name conflict suppresses the report](#when-a-name-conflict-suppresses-the-report).
 - Skips properties whose original key cannot be used as a binding identifier (for example reserved words), because the alias is required in those cases.
+
+### When a name conflict suppresses the report
+
+Dropping the rename is only safe when the original key means nothing else where the alias lives. When it does mean something else, the rule discards the candidate before reporting it — there is no report-without-a-fix path. Any of these is a conflict:
+
+- The declaring scope already binds the original key.
+- A scope between the matched usage and the declaration binds it, so the inlined reference would resolve to that binding instead.
+- The key is referenced *freely* anywhere inside the declaring scope, including nested functions — the inlined declaration would capture that reference and silently change what it reads.
+
+A nested scope that declares its **own** binding of the same name does not suppress the report: that binding shadows the inlined name rather than being captured by it, so the rename is still unnecessary.
+
+```ts
+// Not reported: the arrow reads a free `nextMatchId` that the inlined
+// declaration would capture.
+function build(afterData) {
+  const { nextMatchId: nextId } = afterData ?? {};
+  const inner = () => {
+    return nextMatchId;
+  };
+  return { nextMatchId: nextId, inner };
+}
+
+// Reported: the nested `nextMatchId` is a separate binding, not a capture.
+function build(afterData) {
+  const { nextMatchId: nextId } = afterData ?? {};
+  const inner = () => {
+    const nextMatchId = 5;
+    return nextMatchId;
+  };
+  return { nextMatchId: nextId, inner };
+}
+```
 
 ### Examples of **incorrect** code for this rule:
 
