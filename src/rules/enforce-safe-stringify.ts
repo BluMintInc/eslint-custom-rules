@@ -1,6 +1,10 @@
 import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
+import {
+  importInsertionAnchor,
+  insertAtImportAnchor,
+} from '../utils/importInsertion';
 
 type MessageIds = 'useStableStringify' | 'replaceWithStringify';
 type Options = [];
@@ -128,17 +132,17 @@ export const enforceStableStringify = createRule<Options, MessageIds>({
                   // application self-contained (the re-lint suppresses a
                   // duplicate for later call sites).
                   if (!importsStringify(program)) {
-                    const firstImport = program.body.find(
-                      (statement) =>
-                        statement.type === AST_NODE_TYPES.ImportDeclaration,
-                    );
-                    const importStatement =
-                      "import stringify from 'safe-stable-stringify';\n";
-
+                    // Anchor through the shared helper so the import lands
+                    // below the file's prologue: splicing it above a
+                    // `'use client'` directive demotes the directive to a plain
+                    // expression, and above a `#!` shebang leaves the file
+                    // unparseable.
                     fixes.push(
-                      fixer.insertTextBefore(
-                        firstImport ?? program.body[0],
-                        importStatement,
+                      insertAtImportAnchor(
+                        context.sourceCode,
+                        fixer,
+                        importInsertionAnchor(context.sourceCode),
+                        "import stringify from 'safe-stable-stringify';\n",
                       ),
                     );
                   }

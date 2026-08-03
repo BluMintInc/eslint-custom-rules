@@ -384,6 +384,110 @@ const result = stringify({ a: 1 });
       ],
     },
     {
+      // #1648: a file with zero imports has no import to anchor to. The
+      // inserted import must stay BELOW the `'use client'` directive — above
+      // it, the directive becomes an ordinary string expression and the module
+      // silently reverts to a server component.
+      code: `'use client';
+
+const obj = { a: 1 };
+const result = JSON.stringify(obj);
+`,
+      output: null,
+      errors: [
+        {
+          messageId: 'useStableStringify',
+          suggestions: [
+            {
+              messageId: 'replaceWithStringify',
+              output: `'use client';
+
+import stringify from 'safe-stable-stringify';
+const obj = { a: 1 };
+const result = stringify(obj);
+`,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      // #1648: a `#!` shebang only works at character 0, so an import spliced
+      // above it makes the file unparseable.
+      code: `#!/usr/bin/env node
+const obj = { a: 1 };
+const result = JSON.stringify(obj);
+`,
+      output: null,
+      errors: [
+        {
+          messageId: 'useStableStringify',
+          suggestions: [
+            {
+              messageId: 'replaceWithStringify',
+              output: `#!/usr/bin/env node
+import stringify from 'safe-stable-stringify';
+const obj = { a: 1 };
+const result = stringify(obj);
+`,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      // #1648: a `// @ts-nocheck` header governs the whole file only from the
+      // top comment block, so the import belongs below it.
+      code: `// @ts-nocheck
+const obj = { a: 1 };
+const result = JSON.stringify(obj);
+`,
+      output: null,
+      errors: [
+        {
+          messageId: 'useStableStringify',
+          suggestions: [
+            {
+              messageId: 'replaceWithStringify',
+              output: `// @ts-nocheck
+import stringify from 'safe-stable-stringify';
+const obj = { a: 1 };
+const result = stringify(obj);
+`,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      // #1648 control: with an existing import the anchor is that import, so
+      // the prologue fix cannot pass by suppressing insertion altogether.
+      code: `'use client';
+
+import { helper } from './helper';
+const obj = { a: 1 };
+const result = JSON.stringify(helper(obj));
+`,
+      output: null,
+      errors: [
+        {
+          messageId: 'useStableStringify',
+          suggestions: [
+            {
+              messageId: 'replaceWithStringify',
+              output: `'use client';
+
+import stringify from 'safe-stable-stringify';
+import { helper } from './helper';
+const obj = { a: 1 };
+const result = stringify(helper(obj));
+`,
+            },
+          ],
+        },
+      ],
+    },
+    {
       // Two call sites under one collision: every report keeps firing, and each
       // suggestion is withheld independently.
       code: `
