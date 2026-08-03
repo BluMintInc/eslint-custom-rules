@@ -1646,6 +1646,119 @@ const id = 'key1';
 console.log(obj[assertSafe(id)], something);
 `,
     },
+    // ------------------------------------------------------------------
+    // Issue #1659: a jest registrar's module factory is hoisted above the
+    // file's imports, and babel-plugin-jest-hoist rejects a factory that
+    // reads an out-of-scope binding whose name does not begin with `mock`.
+    // An injected `import { assertSafe }` is unreachable from inside one, so
+    // the fix declines there while the report stands.
+    // ------------------------------------------------------------------
+    {
+      // A jest.mock factory is hoisted above the imports, so it cannot reference an
+      // out-of-scope `assertSafe`. The report stands; the fix must decline.
+      code: `
+let mockChips: unknown[] = [];
+jest.mock('./useThing', () => {
+  return { useThing: () => [0, 1].map((i) => ({ Chip: mockChips[i] })) };
+});
+`,
+      output: null,
+      errors: [{ messageId: 'useAssertSafe' }],
+    },
+    {
+      name: 'a jest.doMock factory withholds the fix',
+      code: `
+let mockChips: unknown[] = [];
+jest.doMock('./useThing', () => {
+  return { useThing: (i) => mockChips[i] };
+});
+      `,
+      errors: [lintError('i')],
+      output: null,
+    },
+    {
+      name: 'a jest.setMock factory withholds the fix',
+      code: `
+let mockChips: unknown[] = [];
+jest.setMock('./useThing', () => {
+  return { useThing: (i) => mockChips[i] };
+});
+      `,
+      errors: [lintError('i')],
+      output: null,
+    },
+    {
+      // The control for the decline: the same violation outside any factory
+      // still gains the import and the wrap.
+      name: 'a violation outside every mock factory fixes normally',
+      code: `
+let mockChips: unknown[] = [];
+jest.mock('./useThing', () => ({ useThing: () => [] }));
+const read = (i) => mockChips[i];
+      `,
+      errors: [lintError('i')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+let mockChips: unknown[] = [];
+jest.mock('./useThing', () => ({ useThing: () => [] }));
+const read = (i) => mockChips[assertSafe(i)];
+      `,
+    },
+    {
+      name: 'a declining mock-factory violation passes the import carrier on',
+      code: `
+const obj = { alpha: 1, beta: 2 };
+let mockChips: unknown[] = [];
+jest.mock('./useThing', () => {
+  return { useThing: (i) => mockChips[i] };
+});
+const id = 'alpha';
+const first = obj[id];
+      `,
+      errors: [lintError('i'), lintError('id')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { alpha: 1, beta: 2 };
+let mockChips: unknown[] = [];
+jest.mock('./useThing', () => {
+  return { useThing: (i) => mockChips[i] };
+});
+const id = 'alpha';
+const first = obj[assertSafe(id)];
+      `,
+    },
+    {
+      // The module specifier is evaluated in place rather than hoisted with
+      // the factory, so a key there keeps its access to the file's imports.
+      name: 'a computed key in the mock specifier position fixes normally',
+      code: `
+const paths = { alpha: './alpha' };
+const id = 'alpha';
+jest.mock(paths[id], () => ({}));
+      `,
+      errors: [lintError('id')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const paths = { alpha: './alpha' };
+const id = 'alpha';
+jest.mock(paths[assertSafe(id)], () => ({}));
+      `,
+    },
+    {
+      // `jest.fn` is not a registrar: its callback is never hoisted, so a
+      // violation inside it fixes like any other.
+      name: 'a factory-shaped callback outside a registrar fixes normally',
+      code: `
+let mockChips: unknown[] = [];
+const spy = jest.fn((i) => mockChips[i]);
+      `,
+      errors: [lintError('i')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+let mockChips: unknown[] = [];
+const spy = jest.fn((i) => mockChips[assertSafe(i)]);
+      `,
+    },
   ],
 });
 

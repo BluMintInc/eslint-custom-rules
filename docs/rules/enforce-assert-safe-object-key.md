@@ -170,6 +170,38 @@ read from the AST when the fix is built rather than from traversal order, a key
 access that appears _before_ the import declaration does not add a duplicate
 either.
 
+The fix is withheld for one more reason: a key inside a `jest.mock`,
+`jest.doMock` or `jest.setMock` **module factory**. Jest hoists that factory
+above every import in the file, and permits it to read only globals and
+bindings whose name begins with `mock` — an `assertSafe` reference there fails
+the transform (`Invalid variable access: assertSafe`) and takes the whole suite
+down with it. The report still fires, and two remedies the factory can hold are
+available to the author:
+
+```js
+let mockChips = [];
+
+jest.mock('./useThing', () => {
+  // Legal: the helper is loaded inside the hoisted factory.
+  const { assertSafe } = jest.requireActual('../../functions/src/util/assertSafe');
+  return { useThing: (i) => mockChips[assertSafe(i)] };
+});
+```
+
+```js
+// Legal: the `mock` prefix puts the alias on Jest's allowlist.
+import { assertSafe as mockAssertSafe } from '../../functions/src/util/assertSafe';
+
+jest.mock('./useThing', () => ({
+  useThing: (i) => mockChips[mockAssertSafe(i)],
+}));
+```
+
+Only the factory — the registrar's second argument — declines. A key in the
+module specifier position, or anywhere else in the file, is fixed as usual, and
+a declining factory never claims the import: the injected
+`import { assertSafe }` rides on the first violation that does fix.
+
 ### The injected import's file extension
 
 Node's ESM resolver takes a specifier literally: an extensionless one throws

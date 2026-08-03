@@ -92,6 +92,53 @@ function nearestManifestDeclaresModule(startDir: string): boolean {
   }
 }
 
+/**
+ * `jest.mock` hoists its module factory above the file's imports;
+ * `doMock`/`setMock` register a factory of the same shape at call time. The
+ * hoist rejects a factory that reads any out-of-scope binding whose name does
+ * not begin with `mock`, which is what puts the injected `assertSafe` import
+ * out of reach inside one.
+ */
+const MOCK_REGISTRARS = new Set(['mock', 'doMock', 'setMock']);
+
+/** Whether the call registers a module factory with `jest`. */
+function isMockRegistrarCall(node: TSESTree.CallExpression): boolean {
+  const { callee } = node;
+  if (callee.type !== AST_NODE_TYPES.MemberExpression || callee.computed) {
+    return false;
+  }
+  const { object, property } = callee;
+  return (
+    object.type === AST_NODE_TYPES.Identifier &&
+    object.name === 'jest' &&
+    property.type === AST_NODE_TYPES.Identifier &&
+    MOCK_REGISTRARS.has(property.name)
+  );
+}
+
+/**
+ * Whether the node sits inside the factory a jest registrar hoists — the second
+ * argument of the call. The module specifier that precedes it is evaluated in
+ * place and keeps its access to the file's imports, so only the factory subtree
+ * is out of reach.
+ */
+function isInsideMockFactory(node: TSESTree.Node): boolean {
+  let child: TSESTree.Node = node;
+  let parent = node.parent;
+  while (parent) {
+    if (
+      parent.type === AST_NODE_TYPES.CallExpression &&
+      parent.arguments[1] === child &&
+      isMockRegistrarCall(parent)
+    ) {
+      return true;
+    }
+    child = parent;
+    parent = parent.parent;
+  }
+  return false;
+}
+
 /** Names that read as a positional sequence rather than a keyed record. */
 const ARRAY_LIKE_NAME = /^(array|arr|items|elements|list|collection|data)s?$/i;
 
@@ -433,6 +480,19 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
           // fix — and leaving the import unclaimed — passes the carrier slot to
           // the first violation that survives.
           if (isReportSuppressed(node)) {
+            return null;
+          }
+
+          // A jest registrar's factory is hoisted above every import in the
+          // file, so the injected `import { assertSafe }` binds too late for
+          // the emitted call: the hoist allows a factory to read only globals
+          // and `mock`-prefixed bindings, and rejects the module at transform
+          // time otherwise, taking the whole suite down with it. Declining —
+          // and leaving the import unclaimed for a violation that does fix —
+          // keeps the report standing so the author reaches for a remedy the
+          // factory can hold, such as `jest.requireActual` inside it or a
+          // `mock`-prefixed import alias.
+          if (isInsideMockFactory(node)) {
             return null;
           }
 
