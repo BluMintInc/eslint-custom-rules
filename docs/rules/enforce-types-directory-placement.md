@@ -8,11 +8,13 @@
 
 In the BluMint monorepo, all shared TypeScript type definitions must live under `functions/src/types/**`. This convention centralizes the data model, prevents circular dependencies, and ensures both frontend (`src/`) and backend (`functions/src/`) code import types from a single canonical location.
 
-This rule detects files whose **entire content** consists of type definitions (no functions, classes, `const`/`let`/`var` assignments, or other runtime code) and flags them when they are located outside `functions/src/types/`.
+This rule detects files whose **entire content** contributes only types — type declarations or type re-exports, with no functions, classes, `const`/`let`/`var` assignments, or other runtime code — and flags them when they are located outside `functions/src/types/`.
 
 ## Rule Details
 
-A file is considered "type-only" when every top-level statement is one of:
+A file is considered "type-only" when **both** conditions hold.
+
+**1. No top-level statement is runtime code.** Every statement must be one of:
 
 - `type` alias declarations
 - `interface` declarations
@@ -22,6 +24,17 @@ A file is considered "type-only" when every top-level statement is one of:
 - `export { ... } from '...'` (value re-exports from external modules)
 - `export * from '...'` or `export type * from '...'`
 - `declare` / `TSModuleDeclaration` blocks
+
+**2. At least one statement is a type construct.** That means a `type`, `interface`, `enum`, or `declare`/`TSModuleDeclaration` — bare or exported — or an `export type { ... }` re-export, or `export type * from '...'`.
+
+The second condition is what separates a type file from a barrel, and the list above alone will mislead you without it. The value-side forms — plain imports, `export { ... } from '...'`, and `export * from '...'` — only keep a file from being *disqualified*; none of them can *qualify* one. So a file consisting entirely of imports and value re-exports is a barrel and is left alone, even though every one of its statements appears in the list.
+
+The `type` keyword is the whole difference:
+
+```typescript
+export type { Foo } from './other'; // reported outside the canonical directory
+export { Foo } from './other'; // not reported — a value re-export barrel
+```
 
 The rule reports once on the **first statement** of the program when the file is type-only and outside the canonical directory.
 
