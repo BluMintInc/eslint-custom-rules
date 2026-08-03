@@ -4,6 +4,10 @@ import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
 import { createSuppressionChecker } from '../utils/disableDirectives';
+import {
+  importInsertionAnchor,
+  insertAtImportAnchor,
+} from '../utils/importInsertion';
 
 type MessageIds = 'useAssertSafe';
 type Options = [
@@ -377,22 +381,22 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       });
 
     /**
-     * Helper function to add assertSafe import if needed
+     * Emits the `import { assertSafe }` statement the wrapped call needs. The
+     * position comes from the shared anchor so the file's prologue keeps its
+     * meaning: a `'use client'` directive stops being a directive the moment a
+     * statement precedes it, and a `#!` shebang stops parsing once it leaves
+     * character 0.
      */
     const addAssertSafeImport = (
       fixer: TSESLint.RuleFixer,
     ): TSESLint.RuleFix => {
-      const program = context.sourceCode.ast;
-      const firstImport = program.body.find(
-        (node) => node.type === AST_NODE_TYPES.ImportDeclaration,
-      );
       const importStatement = `import { assertSafe } from '${computeImportSpecifier()}';\n`;
-
-      if (firstImport) {
-        return fixer.insertTextBefore(firstImport, importStatement);
-      } else {
-        return fixer.insertTextBefore(program.body[0], importStatement);
-      }
+      return insertAtImportAnchor(
+        context.sourceCode,
+        fixer,
+        importInsertionAnchor(context.sourceCode),
+        importStatement,
+      );
     };
 
     /**
