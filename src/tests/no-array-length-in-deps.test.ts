@@ -2277,3 +2277,96 @@ const C = (items: any[]) => {
     });
   }
 });
+
+// ------------------------------------------------------------------
+// Issue #1648: a fix that writes brand-new imports must not displace the
+// file's prologue. Each case is flush-left because a prologue's meaning
+// depends on its position in the file. The final case is the control: an
+// anchor disabled outright would also "preserve" every prologue above, so
+// the imports must still land at the top of an existing import block.
+// ------------------------------------------------------------------
+ruleTesterJsx.run('no-array-length-in-deps', noArrayLengthInDeps, {
+  valid: [],
+  invalid: [
+    {
+      name: "the injected imports land below a 'use client' directive",
+      code: `'use client';
+const C = ({ items }) => {
+  useEffect(() => {}, [items.length]);
+  return null;
+};
+`,
+      errors: [{ messageId: 'noArrayLengthInDeps' }],
+      output: `'use client';
+import { useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+const C = ({ items }) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  useEffect(() => {}, [itemsHash]);
+  return null;
+};
+`,
+    },
+    {
+      name: 'the injected imports leave a shebang at character 0',
+      code: `#!/usr/bin/env node
+const C = ({ items }) => {
+  useEffect(() => {}, [items.length]);
+  return null;
+};
+`,
+      errors: [{ messageId: 'noArrayLengthInDeps' }],
+      output: `#!/usr/bin/env node
+import { useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+const C = ({ items }) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  useEffect(() => {}, [itemsHash]);
+  return null;
+};
+`,
+    },
+    {
+      name: 'the injected imports stay below a // @ts-nocheck header',
+      code: `// @ts-nocheck
+const C = ({ items }) => {
+  useEffect(() => {}, [items.length]);
+  return null;
+};
+`,
+      errors: [{ messageId: 'noArrayLengthInDeps' }],
+      output: `// @ts-nocheck
+import { useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+const C = ({ items }) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  useEffect(() => {}, [itemsHash]);
+  return null;
+};
+`,
+    },
+    {
+      name: "a 'use client' file with an existing import anchors on that import",
+      code: `'use client';
+import { x } from './x';
+void x;
+const C = ({ items }) => {
+  useEffect(() => {}, [items.length]);
+  return null;
+};
+`,
+      errors: [{ messageId: 'noArrayLengthInDeps' }],
+      output: `'use client';
+import { useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+import { x } from './x';
+void x;
+const C = ({ items }) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  useEffect(() => {}, [itemsHash]);
+  return null;
+};
+`,
+    },
+  ],
+});

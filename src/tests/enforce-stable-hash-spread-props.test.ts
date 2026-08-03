@@ -1179,3 +1179,124 @@ const First = ({ ...alphaProps }) => {
     expect(messages[0].fix).toBeUndefined();
   });
 });
+
+// ------------------------------------------------------------------
+// Issue #1648: a fix that writes a brand-new import must not displace the
+// file's prologue. Each case is flush-left because a prologue's meaning
+// depends on its position in the file. The final case is the control: an
+// anchor disabled outright would also "preserve" every prologue above, so
+// the import must still land at the top of an existing import block.
+// ------------------------------------------------------------------
+ruleTesterJsx.run(
+  'enforce-stable-hash-spread-props',
+  enforceStableHashSpreadProps,
+  {
+    valid: [],
+    invalid: [
+      {
+        name: "the injected import lands below a 'use client' directive",
+        code: `'use client';
+const MyComponent = ({ title, ...typographyProps }) => {
+  useEffect(() => {
+    console.log(title);
+  }, [typographyProps]);
+
+  return <Typography {...typographyProps}>Hello</Typography>;
+};
+`,
+        errors: [{ messageId: 'wrapSpreadPropsWithStableHash' }],
+        output: `'use client';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+const MyComponent = ({ title, ...typographyProps }) => {
+  useEffect(() => {
+    console.log(title);
+  }, 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [stableHash(typographyProps)]);
+
+  return <Typography {...typographyProps}>Hello</Typography>;
+};
+`,
+      },
+      {
+        name: 'the injected import leaves a shebang at character 0',
+        code: `#!/usr/bin/env node
+const MyComponent = ({ title, ...typographyProps }) => {
+  useEffect(() => {
+    console.log(title);
+  }, [typographyProps]);
+
+  return <Typography {...typographyProps}>Hello</Typography>;
+};
+`,
+        errors: [{ messageId: 'wrapSpreadPropsWithStableHash' }],
+        output: `#!/usr/bin/env node
+import { stableHash } from 'functions/src/util/hash/stableHash';
+const MyComponent = ({ title, ...typographyProps }) => {
+  useEffect(() => {
+    console.log(title);
+  }, 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [stableHash(typographyProps)]);
+
+  return <Typography {...typographyProps}>Hello</Typography>;
+};
+`,
+      },
+      {
+        name: 'the injected import stays below a // @ts-nocheck header',
+        code: `// @ts-nocheck
+const MyComponent = ({ title, ...typographyProps }) => {
+  useEffect(() => {
+    console.log(title);
+  }, [typographyProps]);
+
+  return <Typography {...typographyProps}>Hello</Typography>;
+};
+`,
+        errors: [{ messageId: 'wrapSpreadPropsWithStableHash' }],
+        output: `// @ts-nocheck
+import { stableHash } from 'functions/src/util/hash/stableHash';
+const MyComponent = ({ title, ...typographyProps }) => {
+  useEffect(() => {
+    console.log(title);
+  }, 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [stableHash(typographyProps)]);
+
+  return <Typography {...typographyProps}>Hello</Typography>;
+};
+`,
+      },
+      {
+        name: "a 'use client' file with an existing import anchors on that import",
+        code: `'use client';
+import { x } from './x';
+void x;
+const MyComponent = ({ title, ...typographyProps }) => {
+  useEffect(() => {
+    console.log(title);
+  }, [typographyProps]);
+
+  return <Typography {...typographyProps}>Hello</Typography>;
+};
+`,
+        errors: [{ messageId: 'wrapSpreadPropsWithStableHash' }],
+        output: `'use client';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+import { x } from './x';
+void x;
+const MyComponent = ({ title, ...typographyProps }) => {
+  useEffect(() => {
+    console.log(title);
+  }, 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [stableHash(typographyProps)]);
+
+  return <Typography {...typographyProps}>Hello</Typography>;
+};
+`,
+      },
+    ],
+  },
+);

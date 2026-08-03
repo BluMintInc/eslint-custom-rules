@@ -3,6 +3,12 @@ import { visitorKeys } from '@typescript-eslint/visitor-keys';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
 import { createSuppressionChecker } from '../utils/disableDirectives';
+import {
+  importAnchorIndent,
+  importAnchorLineStart,
+  importInsertionAnchor,
+  insertAtImportAnchor,
+} from '../utils/importInsertion';
 
 type MessageIds = 'requireMemoizeGetter';
 type Options = [];
@@ -571,38 +577,25 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
               }
             }
 
-            // Insert import if needed, at the top alongside other imports
+            // Insert import if needed, at the top alongside other imports.
+            // The shared anchor keeps the edit below the file's prologue: a
+            // `'use client'` directive demoted to a plain expression statement
+            // and a shebang displaced off character 0 both change what the file
+            // means, and neither is recoverable from the emitted decorator.
             if (!hasMemoizeImport && !scheduledImportFix) {
-              const programBody = (sourceCode.ast as TSESTree.Program).body;
-              const firstImport = programBody.find(
-                (n) => n.type === AST_NODE_TYPES.ImportDeclaration,
+              const anchor = importInsertionAnchor(sourceCode);
+              // Indent comes from the anchor's own line, so the import lines up
+              // with the statement it displaces; widening to the line start
+              // then leaves that statement's indentation intact.
+              const indent = importAnchorIndent(sourceCode, anchor);
+              fixes.push(
+                insertAtImportAnchor(
+                  sourceCode,
+                  fixer,
+                  importAnchorLineStart(sourceCode, anchor),
+                  `${indent}import { Memoize } from '${MEMOIZE_PREFERRED_MODULE}';\n`,
+                ),
               );
-              const anchorNode = (firstImport ?? programBody[0]) as
-                | typeof programBody[number]
-                | undefined;
-
-              if (anchorNode) {
-                const text = sourceCode.text;
-                const anchorStart = anchorNode.range[0];
-                const lineStart = text.lastIndexOf('\n', anchorStart - 1) + 1;
-                const leadingWhitespace =
-                  text.slice(lineStart, anchorStart).match(/^[ \t]*/)?.[0] ??
-                  '';
-                const importLine = `${leadingWhitespace}import { Memoize } from '${MEMOIZE_PREFERRED_MODULE}';\n`;
-                fixes.push(
-                  fixer.insertTextBeforeRange(
-                    [lineStart, lineStart],
-                    importLine,
-                  ),
-                );
-              } else {
-                fixes.push(
-                  fixer.insertTextBeforeRange(
-                    [0, 0],
-                    `import { Memoize } from '${MEMOIZE_PREFERRED_MODULE}';\n`,
-                  ),
-                );
-              }
               scheduledImportFix = true;
             }
 

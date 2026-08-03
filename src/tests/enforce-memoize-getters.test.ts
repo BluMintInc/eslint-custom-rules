@@ -613,7 +613,9 @@ ruleTesterTs.run('enforce-memoize-getters', enforceMemoizeGetters, {
         }
       `,
     },
-    // Insert import before first non-import statement when there are no imports
+    // Insert import before the first non-import statement when there are no
+    // imports, which lands below a directive prologue: a statement pushed under
+    // an inserted import stops being a directive at all.
     {
       code: `
         'use strict';
@@ -623,13 +625,88 @@ ruleTesterTs.run('enforce-memoize-getters', enforceMemoizeGetters, {
       `,
       errors: [{ messageId: 'requireMemoizeGetter' }],
       output: `
-        import { Memoize } from '@blumintinc/typescript-memoize';
         'use strict';
+        import { Memoize } from '@blumintinc/typescript-memoize';
         class Example {
           @Memoize()
           private get a() { return 1; }
         }
       `,
+    },
+    // ------------------------------------------------------------------
+    // Issue #1648: a file with no import to anchor to must still keep its
+    // prologue. Each case is written flush-left because the prologue's
+    // meaning depends on its position in the file, which indentation of the
+    // surrounding template literal would obscure.
+    // ------------------------------------------------------------------
+    {
+      name: "the injected import lands below a 'use client' directive",
+      code: `'use client';
+class Example {
+  private get fetcher() { return {}; }
+}
+`,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `'use client';
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Example {
+  @Memoize()
+  private get fetcher() { return {}; }
+}
+`,
+    },
+    {
+      name: 'the injected import leaves a shebang at character 0',
+      code: `#!/usr/bin/env node
+class Example {
+  private get fetcher() { return {}; }
+}
+`,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `#!/usr/bin/env node
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Example {
+  @Memoize()
+  private get fetcher() { return {}; }
+}
+`,
+    },
+    {
+      name: 'the injected import stays below a // @ts-nocheck header',
+      code: `// @ts-nocheck
+class Example {
+  private get fetcher() { return {}; }
+}
+`,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `// @ts-nocheck
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Example {
+  @Memoize()
+  private get fetcher() { return {}; }
+}
+`,
+    },
+    {
+      // The control: an anchor disabled outright would also "preserve" every
+      // prologue above, so the import must still reach the top of the import
+      // block when one exists.
+      name: "a 'use client' file with an existing import anchors on that import",
+      code: `'use client';
+import { something } from 'lib';
+class Example {
+  private get fetcher() { return {}; }
+}
+`,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `'use client';
+import { Memoize } from '@blumintinc/typescript-memoize';
+import { something } from 'lib';
+class Example {
+  @Memoize()
+  private get fetcher() { return {}; }
+}
+`,
     },
     // ------------------------------------------------------------------
     // Issue #1409: the import fix must ride on the first *surviving*

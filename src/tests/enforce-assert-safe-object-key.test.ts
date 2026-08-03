@@ -1575,6 +1575,77 @@ const name = 'voice';
 RESULTS[assertSafe(name)] = 1;
       `,
     },
+    // ------------------------------------------------------------------
+    // Issue #1648: a file with no import to anchor to must still keep its
+    // prologue intact. A directive that stops being the first statement
+    // stops being a directive, and a shebang that leaves character 0 stops
+    // parsing, so the injected import belongs below both.
+    // ------------------------------------------------------------------
+    {
+      name: "a 'use client' directive stays ahead of the injected import",
+      code: `'use client';
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+console.log(obj[String(id)]);
+`,
+      errors: [lintError('id')],
+      output: `'use client';
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+console.log(obj[assertSafe(id)]);
+`,
+    },
+    {
+      name: 'a shebang stays at character 0 ahead of the injected import',
+      code: `#!/usr/bin/env node
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+console.log(obj[String(id)]);
+`,
+      errors: [lintError('id')],
+      output: `#!/usr/bin/env node
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+console.log(obj[assertSafe(id)]);
+`,
+    },
+    {
+      name: 'a @ts-nocheck header keeps covering the code below the injected import',
+      code: `// @ts-nocheck
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+console.log(obj[String(id)]);
+`,
+      errors: [lintError('id')],
+      output: `// @ts-nocheck
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+console.log(obj[assertSafe(id)]);
+`,
+    },
+    {
+      // The control for the three prologue cases: with an import present the
+      // anchor is that import, so a fix that simply stopped anchoring would
+      // fail here rather than pass everything.
+      name: 'an existing import anchors the injected one below the directive',
+      code: `'use client';
+import something from 'other-module';
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+console.log(obj[String(id)], something);
+`,
+      errors: [lintError('id')],
+      output: `'use client';
+import { assertSafe } from 'functions/src/util/assertSafe';
+import something from 'other-module';
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+console.log(obj[assertSafe(id)], something);
+`,
+    },
   ],
 });
 

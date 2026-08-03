@@ -1,6 +1,10 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
+import {
+  importInsertionAnchor,
+  insertAtImportAnchor,
+} from '../utils/importInsertion';
 
 type MessageIds =
   | 'componentLiteral'
@@ -875,9 +879,10 @@ function bindsReactHook(
  */
 function buildHookImportFix(
   fixer: TSESLint.RuleFixer,
-  program: TSESTree.Program,
+  sourceCode: TSESLint.SourceCode,
   hookName: string,
 ): TSESLint.RuleFix | null {
+  const program = sourceCode.ast;
   if (importsHook(program, hookName)) {
     return null;
   }
@@ -909,14 +914,16 @@ function buildHookImportFix(
     return fixer.insertTextAfter(defaultSpecifier, `, { ${hookName} }`);
   }
 
+  // The shared anchor keeps the declaration below whatever prologue the file
+  // opens with: a `'use client'` directive stops being a directive, and a `#!`
+  // shebang stops parsing, once a statement is spliced above it.
   const statement = `import { ${hookName} } from '${REACT_MODULE}';\n`;
-  const firstImport = program.body.find(
-    (node) => node.type === AST_NODE_TYPES.ImportDeclaration,
+  return insertAtImportAnchor(
+    sourceCode,
+    fixer,
+    importInsertionAnchor(sourceCode),
+    statement,
   );
-  const anchor = firstImport ?? program.body[0];
-  return anchor
-    ? fixer.insertTextBefore(anchor, statement)
-    : fixer.insertTextAfterRange([0, 0], statement);
 }
 
 /**
@@ -1101,7 +1108,7 @@ function buildMemoSuggestions(
         const fixes: TSESLint.RuleFix[] = [];
         const importFix = buildHookImportFix(
           fixer,
-          sourceCode.ast,
+          sourceCode,
           descriptor.memoHook,
         );
         if (importFix) {

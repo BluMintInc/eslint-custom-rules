@@ -2,6 +2,11 @@ import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
 import { createSuppressionChecker } from '../utils/disableDirectives';
+import {
+  importAnchorIndent,
+  importInsertionAnchor,
+  insertAtImportAnchor,
+} from '../utils/importInsertion';
 
 type MessageIds = 'requireMemoizeJsxReturner';
 type Options = [];
@@ -782,29 +787,20 @@ function getImportFixes(
     }
   }
 
-  const firstImport = programBody.find(
-    (statement) => statement.type === AST_NODE_TYPES.ImportDeclaration,
+  // The anchor sits past the file's prologue, so a `'use client'` directive
+  // keeps its position as the first statement and a `#!` shebang keeps
+  // character 0. Emitting the anchor's own indentation after the import leaves
+  // the displaced statement indented exactly as it was.
+  const anchor = importInsertionAnchor(sourceCode);
+  const indent = importAnchorIndent(sourceCode, anchor);
+  fixes.push(
+    insertAtImportAnchor(
+      sourceCode,
+      fixer,
+      anchor,
+      `import { Memoize } from '${MEMOIZE_PREFERRED_MODULE}';\n${indent}`,
+    ),
   );
-  const anchorNode = (firstImport ?? programBody[0]) as
-    | TSESTree.Node
-    | undefined;
-
-  if (anchorNode) {
-    const text = sourceCode.text;
-    const anchorStart = anchorNode.range?.[0] ?? 0;
-    const lineStart = text.lastIndexOf('\n', anchorStart - 1) + 1;
-    const leadingWhitespace =
-      text.slice(lineStart, anchorStart).match(/^[ \t]*/)?.[0] ?? '';
-    const importLine = `${leadingWhitespace}import { Memoize } from '${MEMOIZE_PREFERRED_MODULE}';\n`;
-    fixes.push(fixer.insertTextBeforeRange([lineStart, lineStart], importLine));
-  } else {
-    fixes.push(
-      fixer.insertTextBeforeRange(
-        [0, 0],
-        `import { Memoize } from '${MEMOIZE_PREFERRED_MODULE}';\n`,
-      ),
-    );
-  }
 
   return { fixes, scheduledImportFix: true };
 }

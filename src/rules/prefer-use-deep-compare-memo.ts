@@ -1,6 +1,12 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
+import {
+  importAnchorIndent,
+  importAnchorLineStart,
+  importInsertionAnchor,
+  insertAtImportAnchor,
+} from '../utils/importInsertion';
 
 const DEEP_COMPARE_MODULE = '@blumintinc/use-deep-compare';
 const DEEP_COMPARE_HOOK = 'useDeepCompareMemo';
@@ -228,33 +234,30 @@ function ensureDeepCompareImportFixes(
   context: TSESLint.RuleContext<'preferUseDeepCompareMemo', []>,
   fixer: TSESLint.RuleFixer,
 ): TSESLint.RuleFix[] {
-  const fixes: TSESLint.RuleFix[] = [];
   const sourceCode = context.sourceCode;
   const program = sourceCode.ast;
 
   // If already imported anywhere, skip adding
-  if (findDeepCompareMemoImport(program)) return fixes;
+  if (findDeepCompareMemoImport(program)) return [];
 
-  // Determine insertion point and indentation
-  const importDecls = program.body.filter(
-    (n) => n.type === AST_NODE_TYPES.ImportDeclaration,
-  ) as TSESTree.ImportDeclaration[];
+  // The shared anchor keeps the insertion below whatever opens the file: text
+  // spliced above a `#!` shebang stops the file parsing, and text above a
+  // `'use client'` directive or a header comment strips the prologue of the
+  // meaning it only carries while it leads.
+  const anchor = importInsertionAnchor(sourceCode);
+  const indent = importAnchorIndent(sourceCode, anchor);
+  const importText = `${indent}import { ${DEEP_COMPARE_HOOK} } from '${DEEP_COMPARE_MODULE}';\n`;
 
-  const fullText = sourceCode.getText();
-  let importText = `import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';\n`;
-
-  if (importDecls.length === 0) {
-    fixes.push(fixer.insertTextBeforeRange([0, 0], importText));
-  } else {
-    const firstImport = importDecls[0];
-    const before = fullText.slice(0, firstImport.range![0]);
-    const lastNewline = before.lastIndexOf('\n');
-    const indent = lastNewline >= 0 ? before.slice(lastNewline + 1) : '';
-    importText = `${indent}${importText}`;
-    fixes.push(fixer.insertTextBefore(firstImport, importText));
-  }
-
-  return fixes;
+  // Widened to the anchor's line start because the emitted statement carries
+  // its own indentation, leaving the displaced anchor sitting on the original.
+  return [
+    insertAtImportAnchor(
+      sourceCode,
+      fixer,
+      importAnchorLineStart(sourceCode, anchor),
+      importText,
+    ),
+  ];
 }
 
 function findVariableInScope(scope: any, name: string): any | null {

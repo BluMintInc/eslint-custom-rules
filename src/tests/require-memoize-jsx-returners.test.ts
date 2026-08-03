@@ -1153,6 +1153,157 @@ class Widget {
   }
 }`,
     },
+    // Issue #1648: a file with no import to anchor to must not have its
+    // prologue displaced by the inserted import.
+    {
+      name: "keeps 'use client' the first statement in a file with no imports",
+      filename: 'file.tsx',
+      code: `'use client';
+class ConditionalJsx {
+  get component() {
+    const make = () => <div />;
+    const alt = () => null;
+    return condition ? make : alt;
+  }
+}`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `'use client';
+import { Memoize } from '@blumintinc/typescript-memoize';
+class ConditionalJsx {
+  @Memoize()
+  get component() {
+    const make = () => <div />;
+    const alt = () => null;
+    return condition ? make : alt;
+  }
+}`,
+    },
+    {
+      // A shebang that stops being the first characters of the file makes the
+      // whole file unparseable.
+      name: 'keeps a shebang at character zero in a file with no imports',
+      filename: 'file.tsx',
+      code: `#!/usr/bin/env node
+class ConditionalJsx {
+  get component() {
+    const make = () => <div />;
+    const alt = () => null;
+    return condition ? make : alt;
+  }
+}`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `#!/usr/bin/env node
+import { Memoize } from '@blumintinc/typescript-memoize';
+class ConditionalJsx {
+  @Memoize()
+  get component() {
+    const make = () => <div />;
+    const alt = () => null;
+    return condition ? make : alt;
+  }
+}`,
+    },
+    {
+      // A header comment governs the code below it, so the import belongs
+      // under it rather than above it.
+      name: 'keeps a // @ts-nocheck header above the inserted import',
+      filename: 'file.tsx',
+      code: `// @ts-nocheck
+class ConditionalJsx {
+  get component() {
+    const make = () => <div />;
+    const alt = () => null;
+    return condition ? make : alt;
+  }
+}`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `// @ts-nocheck
+import { Memoize } from '@blumintinc/typescript-memoize';
+class ConditionalJsx {
+  @Memoize()
+  get component() {
+    const make = () => <div />;
+    const alt = () => null;
+    return condition ? make : alt;
+  }
+}`,
+    },
+    {
+      // The control for the three cases above: an existing import is still the
+      // anchor, so the prologue fix cannot pass by refusing to anchor at all.
+      name: "inserts below 'use client' and above an existing import",
+      filename: 'file.tsx',
+      code: `'use client';
+import foo from './foo';
+class ConditionalJsx {
+  get component() {
+    const make = () => <div />;
+    const alt = () => null;
+    return condition ? make : alt;
+  }
+}`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `'use client';
+import { Memoize } from '@blumintinc/typescript-memoize';
+import foo from './foo';
+class ConditionalJsx {
+  @Memoize()
+  get component() {
+    const make = () => <div />;
+    const alt = () => null;
+    return condition ? make : alt;
+  }
+}`,
+    },
+    {
+      // Widening the anchor to its line start is what demoted the directive:
+      // a directive sharing the anchor's line put the line start at character
+      // 0, above the prologue.
+      name: 'keeps a directive that shares a line with the anchor first',
+      filename: 'file.tsx',
+      code: `'use client';import foo from './foo';
+class ConditionalJsx {
+  get component() {
+    const make = () => <div />;
+    const alt = () => null;
+    return condition ? make : alt;
+  }
+}`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `'use client';import { Memoize } from '@blumintinc/typescript-memoize';
+import foo from './foo';
+class ConditionalJsx {
+  @Memoize()
+  get component() {
+    const make = () => <div />;
+    const alt = () => null;
+    return condition ? make : alt;
+  }
+}`,
+    },
+    {
+      // An indented anchor keeps its own indentation: the import takes the
+      // anchor's position and re-emits the whitespace it displaced.
+      name: 'preserves the indentation of an indented anchor statement',
+      filename: 'file.tsx',
+      code: `  class ConditionalJsx {
+    get component() {
+      const make = () => <div />;
+      const alt = () => null;
+      return condition ? make : alt;
+    }
+  }`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `  import { Memoize } from '@blumintinc/typescript-memoize';
+  class ConditionalJsx {
+    @Memoize()
+    get component() {
+      const make = () => <div />;
+      const alt = () => null;
+      return condition ? make : alt;
+    }
+  }`,
+    },
   ],
 });
 

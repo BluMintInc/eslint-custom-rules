@@ -544,5 +544,49 @@ function Component({foo}) { return <div>{foo}</div>; }`,
 const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
       name: 'Component',
     }),
+
+    // ---------------------------------------------------------------------
+    // File prologues survive the inserted import (no import to anchor to).
+    // ---------------------------------------------------------------------
+    // A `'use client'` directive stops being one the moment a statement
+    // precedes it, turning the file into a server module.
+    withDefaults({
+      code: `'use client';
+function Component({foo}) { return <div>{foo}</div>; }`,
+      output: `'use client';
+import { memo } from '../util/memo';
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
+      name: 'Component',
+    }),
+    // A shebang parses only at character 0.
+    withDefaults({
+      code: `#!/usr/bin/env node
+function Component({foo}) { return <div>{foo}</div>; }`,
+      output: `#!/usr/bin/env node
+import { memo } from '../util/memo';
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
+      name: 'Component',
+    }),
+    // A file-level `// @ts-nocheck` covers the whole file only from the top.
+    withDefaults({
+      code: `// @ts-nocheck
+function Component({foo}) { return <div>{foo}</div>; }`,
+      output: `// @ts-nocheck
+import { memo } from '../util/memo';
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
+      name: 'Component',
+    }),
+    // Control: with an import to anchor to, the directive is already safe and
+    // the helper import still follows the module's own imports.
+    withDefaults({
+      code: `'use client';
+import { useState } from 'react';
+function Component({foo}) { return <div>{foo}</div>; }`,
+      output: `'use client';
+import { useState } from 'react';
+import { memo } from '../util/memo';
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
+      name: 'Component',
+    }),
   ],
 });

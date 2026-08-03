@@ -3436,3 +3436,136 @@ function Component({ ids }) {
     },
   ],
 });
+
+// Prologue preservation (#1648): the suggestion inserts a brand-new `react`
+// import when the file has none, so the insertion point has to sit BELOW
+// whatever opens the file. A `'use client'` directive demoted to an ordinary
+// expression statement stops marking the module as a client component, and a
+// `#!` shebang moved off character 0 stops parsing.
+ruleTesterJsx.run('react-memoize-literals', reactMemoizeLiterals, {
+  valid: [],
+  invalid: [
+    // 'use client' prologue with zero imports: the directive keeps its place.
+    {
+      code: `
+'use client';
+
+function Component({ onClick }) {
+  const handleClick = () => onClick();
+  return <button onClick={handleClick}>Click</button>;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [
+            {
+              messageId: 'memoizeLiteralSuggestion',
+              output: `
+'use client';
+
+import { useCallback } from 'react';
+function Component({ onClick }) {
+  const handleClick = useCallback(() => onClick(), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);
+  return <button onClick={handleClick}>Click</button>;
+}
+      `,
+            },
+          ],
+        },
+      ],
+    },
+    // Shebang with zero imports: the `#!` line stays at character 0, so the
+    // suggested output still parses.
+    {
+      code: `#!/usr/bin/env node
+function Component({ onClick }) {
+  const handleClick = () => onClick();
+  return <button onClick={handleClick}>Click</button>;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [
+            {
+              messageId: 'memoizeLiteralSuggestion',
+              output: `#!/usr/bin/env node
+import { useCallback } from 'react';
+function Component({ onClick }) {
+  const handleClick = useCallback(() => onClick(), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);
+  return <button onClick={handleClick}>Click</button>;
+}
+      `,
+            },
+          ],
+        },
+      ],
+    },
+    // `// @ts-nocheck` header with zero imports: the header governs the whole
+    // file, so the import lands under it rather than above it.
+    {
+      code: `
+// @ts-nocheck
+function Component({ onClick }) {
+  const handleClick = () => onClick();
+  return <button onClick={handleClick}>Click</button>;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [
+            {
+              messageId: 'memoizeLiteralSuggestion',
+              output: `
+// @ts-nocheck
+import { useCallback } from 'react';
+function Component({ onClick }) {
+  const handleClick = useCallback(() => onClick(), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);
+  return <button onClick={handleClick}>Click</button>;
+}
+      `,
+            },
+          ],
+        },
+      ],
+    },
+    // Control: a directive plus one existing import. The import declaration
+    // remains the anchor, proving the prologue fix did not simply stop
+    // anchoring.
+    {
+      code: `
+'use client';
+
+import { BasicInput } from './BasicInput';
+
+function Component({ onChange }) {
+  const handleChange = (value) => onChange(Number(value));
+  return <BasicInput onChange={handleChange} />;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          suggestions: [
+            {
+              messageId: 'memoizeLiteralSuggestion',
+              output: `
+'use client';
+
+import { useCallback } from 'react';
+import { BasicInput } from './BasicInput';
+
+function Component({ onChange }) {
+  const handleChange = useCallback((value) => onChange(Number(value)), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);
+  return <BasicInput onChange={handleChange} />;
+}
+      `,
+            },
+          ],
+        },
+      ],
+    },
+  ],
+});

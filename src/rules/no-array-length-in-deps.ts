@@ -2,6 +2,10 @@ import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
 import { createSuppressionChecker } from '../utils/disableDirectives';
+import {
+  importInsertionAnchor,
+  insertAtImportAnchor,
+} from '../utils/importInsertion';
 
 // React hooks to check
 const HOOK_NAMES = new Set(['useEffect', 'useCallback', 'useMemo']);
@@ -737,7 +741,27 @@ export const noArrayLengthInDeps = createRule<Options, MessageIds>({
                 if (firstImport) {
                   fixes.push(fixer.insertTextBefore(firstImport, importText));
                 } else {
-                  fixes.push(fixer.insertTextBeforeRange([0, 0], importText));
+                  // A file's first import may cross only the whitespace the
+                  // source opens with. The shared anchor is the floor of that
+                  // climb: text spliced above a `#!` shebang leaves the file
+                  // unparseable, and text above a `'use client'` directive or
+                  // a header comment strips the prologue of the meaning it
+                  // carries only while it leads.
+                  const anchor = importInsertionAnchor(sourceCode);
+                  const anchorIndex =
+                    anchor.kind === 'before'
+                      ? anchor.target.range[0]
+                      : anchor.index;
+                  const opensFile =
+                    sourceCode.text.slice(0, anchorIndex).trim() === '';
+                  fixes.push(
+                    insertAtImportAnchor(
+                      sourceCode,
+                      fixer,
+                      opensFile ? { kind: 'index', index: 0 } : anchor,
+                      importText,
+                    ),
+                  );
                 }
               }
               importsPlanned = true;

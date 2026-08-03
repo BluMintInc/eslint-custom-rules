@@ -1881,3 +1881,95 @@ function Component() {
     expect(remaining).toHaveLength(0);
   });
 });
+
+// ------------------------------------------------------------------
+// Issue #1648: a fix that writes a brand-new import must not displace the
+// file's prologue. Each case is flush-left because a prologue's meaning
+// depends on its position in the file. The final case is the control: an
+// anchor disabled outright would also "preserve" every prologue above, so
+// the import must still land at the top of an existing import block.
+// ------------------------------------------------------------------
+ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
+  valid: [],
+  invalid: [
+    {
+      name: "the injected import lands below a 'use client' directive",
+      filename: '/repo/src/components/Widget.tsx',
+      code: `'use client';
+function Component() {
+  const [playbackId] = useRouterState({ key: 'playback-id' });
+  return <div>{playbackId}</div>;
+}
+`,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: `'use client';
+import { QUERY_KEY_PLAYBACK_ID } from '../util/routing/queryKeys';
+
+function Component() {
+  const [playbackId] = useRouterState({ key: QUERY_KEY_PLAYBACK_ID });
+  return <div>{playbackId}</div>;
+}
+`,
+    },
+    {
+      name: 'the injected import leaves a shebang at character 0',
+      filename: '/repo/src/components/Widget.tsx',
+      code: `#!/usr/bin/env node
+function Component() {
+  const [playbackId] = useRouterState({ key: 'playback-id' });
+  return <div>{playbackId}</div>;
+}
+`,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: `#!/usr/bin/env node
+import { QUERY_KEY_PLAYBACK_ID } from '../util/routing/queryKeys';
+
+function Component() {
+  const [playbackId] = useRouterState({ key: QUERY_KEY_PLAYBACK_ID });
+  return <div>{playbackId}</div>;
+}
+`,
+    },
+    {
+      name: 'the injected import stays below a // @ts-nocheck header',
+      filename: '/repo/src/components/Widget.tsx',
+      code: `// @ts-nocheck
+function Component() {
+  const [playbackId] = useRouterState({ key: 'playback-id' });
+  return <div>{playbackId}</div>;
+}
+`,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: `// @ts-nocheck
+import { QUERY_KEY_PLAYBACK_ID } from '../util/routing/queryKeys';
+
+function Component() {
+  const [playbackId] = useRouterState({ key: QUERY_KEY_PLAYBACK_ID });
+  return <div>{playbackId}</div>;
+}
+`,
+    },
+    {
+      name: "a 'use client' file with an existing import anchors on that import",
+      filename: '/repo/src/components/Widget.tsx',
+      code: `'use client';
+import { x } from './x';
+void x;
+function Component() {
+  const [playbackId] = useRouterState({ key: 'playback-id' });
+  return <div>{playbackId}</div>;
+}
+`,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: `'use client';
+import { QUERY_KEY_PLAYBACK_ID } from '../util/routing/queryKeys';
+import { x } from './x';
+void x;
+function Component() {
+  const [playbackId] = useRouterState({ key: QUERY_KEY_PLAYBACK_ID });
+  return <div>{playbackId}</div>;
+}
+`,
+    },
+  ],
+});
