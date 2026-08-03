@@ -98,6 +98,90 @@ const ELEMENT_CALLBACK_METHODS = new Set([
 const ARRAY_TYPE_NAMES = new Set(['Array', 'ReadonlyArray']);
 
 /**
+ * Type operators that are homomorphic over their argument: each one rewrites
+ * the modifiers of every member and leaves the key set identical, so a member
+ * list read through them describes the wrapped type exactly. `Readonly<{...}>`
+ * is the idiomatic spelling of a data record, and refusing to see through it
+ * makes the narrowing proof inert on the code it exists to protect (#1643).
+ *
+ * `Pick`, `Omit`, `Record`, `Exclude` and `Extract` are deliberately absent:
+ * they rewrite the key set, and a wrong proof silences a report the rule owes
+ * rather than merely failing to find one.
+ */
+const KEY_PRESERVING_TYPE_OPERATORS = new Set([
+  'Readonly',
+  'Required',
+  'Partial',
+]);
+
+/**
+ * Collects every name the file itself binds in a way that can stand in front of
+ * a type argument list — a type alias, an interface, a class, an enum, a
+ * namespace or an import. A file spelling `Readonly` as one of these is talking
+ * about its own declaration rather than the lib utility, so the key-preserving
+ * unwrap must not apply to it.
+ *
+ * The walk covers nested declarations too, since a `type Partial<T>` inside a
+ * function body shadows the global just as effectively as a top-level one.
+ */
+function collectLocallyBoundNames(
+  node: TSESTree.Node,
+  names: Set<string>,
+): void {
+  switch (node.type) {
+    case AST_NODE_TYPES.TSTypeAliasDeclaration:
+    case AST_NODE_TYPES.TSInterfaceDeclaration:
+    case AST_NODE_TYPES.TSEnumDeclaration:
+    case AST_NODE_TYPES.TSImportEqualsDeclaration:
+      names.add(node.id.name);
+      break;
+    case AST_NODE_TYPES.ClassDeclaration:
+    case AST_NODE_TYPES.ClassExpression:
+      if (node.id) {
+        names.add(node.id.name);
+      }
+      break;
+    case AST_NODE_TYPES.TSModuleDeclaration:
+      if (node.id.type === AST_NODE_TYPES.Identifier) {
+        names.add(node.id.name);
+      }
+      break;
+    case AST_NODE_TYPES.ImportSpecifier:
+    case AST_NODE_TYPES.ImportDefaultSpecifier:
+    case AST_NODE_TYPES.ImportNamespaceSpecifier:
+      names.add(node.local.name);
+      break;
+    default:
+      break;
+  }
+
+  for (const key of Object.keys(node)) {
+    if (key === 'parent') continue;
+    const value = (node as unknown as Record<string, unknown>)[key];
+    if (Array.isArray(value)) {
+      for (const child of value) {
+        if (child && typeof child === 'object' && 'type' in child) {
+          collectLocallyBoundNames(child as TSESTree.Node, names);
+        }
+      }
+    } else if (value && typeof value === 'object' && 'type' in value) {
+      collectLocallyBoundNames(value as TSESTree.Node, names);
+    }
+  }
+}
+
+/**
+ * What member enumeration needs to know about the file under lint: the program
+ * a same-file alias resolves against, and whether a name is bound by the file
+ * itself, which decides whether `Readonly<T>` names the lib utility or the
+ * author's own declaration.
+ */
+type TypeResolutionScope = {
+  program: TSESTree.Program;
+  isLocallyBound: (name: string) => boolean;
+};
+
+/**
  * Resolves `Promise<T>` to `T`, leaving anything else as it stands, which is
  * what `await` does to the type of the expression it operates on.
  */
@@ -208,14 +292,16 @@ function findLocalTypeDeclaration(
  * Enumerates every property name a type node declares, or null when the member
  * list cannot be established with certainty.
  *
- * Only an unambiguous, fully written-out member list qualifies. A union, an
- * intersection, a mapped or conditional type, a generic instantiation and an
- * interface with an `extends` clause all describe a member set assembled
- * elsewhere, so none of them can prove anything here.
+ * Only an unambiguous, fully written-out member list qualifies, reached either
+ * directly or through the key-preserving operators in
+ * {@link KEY_PRESERVING_TYPE_OPERATORS}. A union, an intersection, a mapped or
+ * conditional type, any other generic instantiation and an interface with an
+ * `extends` clause all describe a member set assembled elsewhere, so none of
+ * them can prove anything here.
  */
 function memberNamesOf(
   typeNode: TSESTree.TypeNode,
-  program: TSESTree.Program,
+  scope: TypeResolutionScope,
   seen: Set<string> = new Set(),
 ): Set<string> | null {
   if (typeNode.type === AST_NODE_TYPES.TSTypeLiteral) {
@@ -224,26 +310,39 @@ function memberNamesOf(
 
   if (
     typeNode.type !== AST_NODE_TYPES.TSTypeReference ||
-    typeNode.typeName.type !== AST_NODE_TYPES.Identifier ||
-    typeNode.typeParameters
+    typeNode.typeName.type !== AST_NODE_TYPES.Identifier
   ) {
     return null;
   }
 
   const name = typeNode.typeName.name;
+
+  if (typeNode.typeParameters) {
+    // An arity other than one is not the lib utility this name spells, so
+    // nothing about the wrapped member list follows from it.
+    if (
+      !KEY_PRESERVING_TYPE_OPERATORS.has(name) ||
+      typeNode.typeParameters.params.length !== 1 ||
+      scope.isLocallyBound(name)
+    ) {
+      return null;
+    }
+    return memberNamesOf(typeNode.typeParameters.params[0], scope, seen);
+  }
+
   // A self-referential alias (`type T = T`) would otherwise recur forever.
   if (seen.has(name)) {
     return null;
   }
   seen.add(name);
 
-  const declaration = findLocalTypeDeclaration(program, name);
+  const declaration = findLocalTypeDeclaration(scope.program, name);
   if (!declaration || declaration.typeParameters) {
     return null;
   }
 
   if (declaration.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
-    return memberNamesOf(declaration.typeAnnotation, program, seen);
+    return memberNamesOf(declaration.typeAnnotation, scope, seen);
   }
 
   if (declaration.extends && declaration.extends.length > 0) {
@@ -815,6 +914,21 @@ export const preferSpreadOverReassembly = createRule<Options, MessageIds>({
     const sourceCode = context.getSourceCode();
     const program = sourceCode.ast;
 
+    // The scan walks the whole file, so it is deferred until a key-preserving
+    // operator actually turns up in a position the proof depends on — most
+    // files never reach it.
+    let locallyBoundNames: Set<string> | null = null;
+    const typeScope: TypeResolutionScope = {
+      program,
+      isLocallyBound: (name) => {
+        if (!locallyBoundNames) {
+          locallyBoundNames = new Set<string>();
+          collectLocallyBoundNames(program, locallyBoundNames);
+        }
+        return locallyBoundNames.has(name);
+      },
+    };
+
     /**
      * Walks an expression toward its syntactic root and returns the type node
      * that root declares, mirroring the receiver trace in
@@ -981,7 +1095,7 @@ export const preferSpreadOverReassembly = createRule<Options, MessageIds>({
       }
 
       const elementType = arrayElementTypeOf(receiverType);
-      return elementType ? memberNamesOf(elementType, program) : null;
+      return elementType ? memberNamesOf(elementType, typeScope) : null;
     }
 
     /**
@@ -992,9 +1106,10 @@ export const preferSpreadOverReassembly = createRule<Options, MessageIds>({
      *
      * The proof runs in the safe direction only. A member set that matches the
      * pick exactly is exhaustive, so the rewrite is behavior-preserving and the
-     * rule still reports; a type it cannot resolve — imported, generic, a union,
-     * an index signature — yields no proof and the rule likewise still reports.
-     * Silence is reserved for the case where the widening is demonstrated.
+     * rule still reports; a type it cannot resolve — imported, a union, an
+     * index signature, or an instantiation of anything but a key-preserving
+     * operator — yields no proof and the rule likewise still reports. Silence
+     * is reserved for the case where the widening is demonstrated.
      */
     function isProvablyNarrowingPick(
       fn: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
@@ -1004,7 +1119,7 @@ export const preferSpreadOverReassembly = createRule<Options, MessageIds>({
       // An explicit annotation overrides whatever the call site would imply,
       // so the contextual route is consulted only in its absence.
       const memberNames = param.typeAnnotation
-        ? memberNamesOf(param.typeAnnotation.typeAnnotation, program)
+        ? memberNamesOf(param.typeAnnotation.typeAnnotation, typeScope)
         : contextualElementMemberNames(fn);
 
       if (!memberNames || memberNames.size <= destructuredNames.length) {
