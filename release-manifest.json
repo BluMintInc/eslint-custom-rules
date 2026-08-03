@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.95",
+    "date": "2026-08-03T23:44:33.733Z",
+    "rules": [
+      {
+        "name": "no-redundant-param-types",
+        "changeType": "fix",
+        "issues": [
+          1670
+        ],
+        "summary": "unbind the import two annotations share (closes #1670)"
+      }
+    ]
+  },
+  {
     "version": "1.20.94",
     "date": "2026-08-03T22:57:52.839Z",
     "rules": [

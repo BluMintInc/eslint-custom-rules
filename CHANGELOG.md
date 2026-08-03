@@ -1,3 +1,10 @@
+## [1.20.95](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.94...v1.20.95) (2026-08-03)
+
+
+### Bug Fixes
+
+* **no-redundant-param-types:** unbind the import two annotations share (closes [#1670](https://github.com/BluMintInc/eslint-custom-rules/issues/1670)) ([752f0a0](https://github.com/BluMintInc/eslint-custom-rules/commit/752f0a0fdb91f94453240ee1024905b7d56d80f8))
+
 ## [1.20.94](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.93...v1.20.94) (2026-08-03)
 
 
