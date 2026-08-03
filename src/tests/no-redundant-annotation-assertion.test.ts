@@ -359,13 +359,10 @@ declare function load(): Payload;
 const result: Exported = load() as Alias;
         `,
         errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
-        output: `
-type Payload = { id: string; name: string };
-type Alias = Payload;
-type Exported = Alias;
-declare function load(): Payload;
-const result = load() as Alias;
-        `,
+        // `Exported` is named nowhere else, so stripping the annotation would
+        // leave the alias declaration unreferenced. The report stands without a
+        // fix rather than trading itself for a `no-unused-vars` violation.
+        output: null,
       },
       {
         code: `
@@ -387,10 +384,150 @@ type B = { x: number };
 const val: A = { x: 1 } as B;
         `,
         errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        // The annotation holds the only reference to `A`, so the fix is
+        // declined: `B` keeps the assertion alive but nothing would keep `A`.
+        output: null,
+      },
+      {
+        code: `
+type FormattedPart = { readonly year: number; readonly month: number };
+declare function parsePart(name: string): number;
+function parseFormattedParts() {
+  const result: FormattedPart = {
+    year: parsePart('year'),
+    month: parsePart('month'),
+  } as const;
+  return result;
+}
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        // The shape reported from production: a locally declared alias consumed
+        // by exactly one annotation. Stripping it strands the declaration, so
+        // the rule reports and leaves the source alone.
+        output: null,
+      },
+      {
+        code: `
+interface Wrapper { id: string }
+type Payload = { id: string };
+declare function load(): Payload;
+const result: Wrapper = load() as Payload;
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        // An interface declaration is orphaned the same way an alias is.
+        output: null,
+      },
+      {
+        code: `
+export type Alias = { id: string };
+type Payload = { id: string };
+declare function load(): Payload;
+const result: Alias = load() as Payload;
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        // An exported declaration has consumers no edit to this file can reach,
+        // so losing its last local reference orphans nothing.
         output: `
-type A = { x: number };
-type B = { x: number };
-const val = { x: 1 } as B;
+export type Alias = { id: string };
+type Payload = { id: string };
+declare function load(): Payload;
+const result = load() as Payload;
+        `,
+      },
+      {
+        code: `
+type Payload = { id: string };
+type Alias = { id: string };
+declare function load(): Alias;
+declare function store(value: Payload): void;
+const result: Payload = load() as Alias;
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        // The common case: `Payload` is named elsewhere, so the annotation goes
+        // and the declaration stays. Autofix must survive here.
+        output: `
+type Payload = { id: string };
+type Alias = { id: string };
+declare function load(): Alias;
+declare function store(value: Payload): void;
+const result = load() as Alias;
+        `,
+      },
+      {
+        code: `
+import { User } from './types';
+import { Person } from './person';
+declare const raw: Person;
+const user: User = raw as Person;
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        // An import the annotation solely consumed is unbound by the same fix,
+        // so neither half can ship without the other.
+        output: `
+import { Person } from './person';
+declare const raw: Person;
+const user = raw as Person;
+        `,
+      },
+      {
+        code: `
+import { Person, User } from './types';
+declare const raw: Person;
+const user: User = raw as Person;
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        // Only the orphaned specifier and its separator go; the sibling binding
+        // and its declaration are untouched.
+        output: `
+import { Person } from './types';
+declare const raw: Person;
+const user = raw as Person;
+        `,
+      },
+      {
+        code: `
+import { User } from './types';
+import { Person } from './person';
+declare const raw: Person;
+const first: User = raw as Person;
+const second: User = raw as Person;
+        `,
+        errors: [
+          { messageId: 'redundantAnnotationAndAssertion' },
+          { messageId: 'redundantAnnotationAndAssertion' },
+        ],
+        // The control for the suppressed case below: with nothing suppressed
+        // both annotations report and both are removed. Each report judges its
+        // own removal alone, so neither claims `User` is orphaned while the
+        // other annotation still names it and the import stays for this pass.
+        output: `
+import { User } from './types';
+import { Person } from './person';
+declare const raw: Person;
+const first = raw as Person;
+const second = raw as Person;
+        `,
+      },
+      {
+        code: `
+import { User } from './types';
+import { Person } from './person';
+declare const raw: Person;
+// eslint-disable-next-line no-redundant-annotation-assertion
+const first: User = raw as Person;
+const second: User = raw as Person;
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        // Suppression is applied to reports after a rule emits them, so a fix
+        // that counted on its suppressed sibling's removal would unbind an
+        // import `first` still names. The import survives.
+        output: `
+import { User } from './types';
+import { Person } from './person';
+declare const raw: Person;
+// eslint-disable-next-line no-redundant-annotation-assertion
+const first: User = raw as Person;
+const second = raw as Person;
         `,
       },
     ],

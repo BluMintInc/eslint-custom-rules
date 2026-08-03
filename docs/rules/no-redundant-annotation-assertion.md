@@ -43,6 +43,36 @@ const docRef: DocumentReference<ResultSummary> =
 
 The fixer removes the explicit type annotation and leaves the assertion intact, since assertions are typically the intentional part of the declaration.
 
+An annotation is often the only reference to the type it names. Deleting it alone would leave that type bound to nothing, so a file that lints clean would fail `@typescript-eslint/no-unused-vars` afterwards — with a violation this rule cannot report, because its own finding is resolved by the fix. The annotation and anything it orphans therefore go as a single fix:
+
+```ts
+// Before: the annotation is the only consumer of the User import
+import { User } from './types';
+import { Person } from './person';
+
+const user: User = raw as Person;
+
+// After: the import goes with the annotation
+import { Person } from './person';
+
+const user = raw as Person;
+```
+
+Two limits keep the fix safe rather than clever:
+
+- **Each annotation is judged on its own removal, against the file as it stands.** A type that two strippable annotations share is not unbound in one pass — neither annotation is its last consumer. A rule cannot see `eslint-disable` (suppression is applied to reports after they are emitted), so assuming a sibling annotation will also go would delete an import the surviving annotation still references, trading an unused import for a type bound to nothing.
+- **A binding that cannot be unbound cleanly cancels the whole fix, annotation included.** The report then carries no fixer, and you resolve it by hand — by dropping the declaration or by using it. This covers a locally declared `type` alias or `interface`, a type parameter, an import behind a `// eslint-disable-next-line` or `@ts-expect-error` directive, a comment sitting among the specifiers, and a name that another binding shadows.
+
+```ts
+// The alias is declared here and named nowhere else, so the annotation stays
+// and the report is left for you: deleting a declaration is your call.
+type FormattedPart = { readonly year: number };
+
+const result: FormattedPart = { year: parseYear() } as const;
+```
+
+A type that is exported, or still named elsewhere in the file, keeps its declaration and its autofix — nothing is orphaned by the removal.
+
 ### Not covered
 
 - Destructuring patterns are intentionally ignored to avoid surprising edits.
