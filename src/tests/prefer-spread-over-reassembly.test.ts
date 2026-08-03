@@ -275,6 +275,181 @@ const send = ({ a, b }) => {
     `
 const keyed = ({ data, id }) => ({ data, id } as Record<typeof id, string>);
 `,
+
+    // Regression (#1642): the reported agora shape. `Unit` carries five
+    // members and the callback picks four, so `{ ...props }` would put the
+    // fifth on the produced object.
+    {
+      // A narrowing pick: the target has fewer fields than the source type.
+      // Spreading here would widen the result and change behavior.
+      code: `
+        type Unit = { path: string; line: number; side: string; body: string; findings: unknown[] };
+        function build(units: Unit[]) {
+          return units.map(({ path, line, side, body }) => {
+            return { path, line, side, body } as const;
+          });
+        }
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+    },
+
+    // Regression (#1642): an interface is as enumerable as an alias.
+    `
+interface Unit {
+  a: string;
+  b: string;
+  c: string;
+}
+const build = (units: Unit[]) => units.map(({ a, b }) => ({ a, b }));
+`,
+
+    // Regression (#1642): \`Array<Unit>\` spells the same receiver type.
+    `
+type Unit = { a: string; b: string; c: string };
+const build = (units: Array<Unit>) => units.map(({ a, b }) => ({ a, b }));
+`,
+
+    // Regression (#1642): so does \`ReadonlyArray<Unit>\`.
+    `
+type Unit = { a: string; b: string; c: string };
+const build = (units: ReadonlyArray<Unit>) => units.map(({ a, b }) => ({ a, b }));
+`,
+
+    // Regression (#1642): and \`readonly Unit[]\`, which is a type operator over
+    // the array type.
+    `
+type Unit = { a: string; b: string; c: string };
+const build = (units: readonly Unit[]) => units.map(({ a, b }) => ({ a, b }));
+`,
+
+    // Regression (#1642): the parameter's own annotation names the source type
+    // directly, so no call-site context is needed.
+    `
+type Wide = { a: string; b: string; c: string };
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+
+    // Regression (#1642): an inline object type is enumerable too.
+    `
+const pick = ({ a, b }: { a: string; b: string; c: string }) => ({ a, b });
+`,
+
+    // Regression (#1642): a JSX target widens exactly as an object literal
+    // does — the extra members would reach the child as unwanted props.
+    `
+type Wide = { a: string; b: string; c: string };
+const W = ({ a, b }: Wide) => <Child a={a} b={b} />;
+`,
+
+    // Regression (#1642): forEach hands the callback an element too.
+    `
+type Unit = { a: string; b: string; c: string };
+const build = (units: Unit[]) => units.forEach(({ a, b }) => ({ a, b }));
+`,
+
+    // Regression (#1642): filter.
+    `
+type Unit = { a: string; b: string; c: string };
+const build = (units: Unit[]) => units.filter(({ a, b }) => ({ a, b }));
+`,
+
+    // Regression (#1642): flatMap.
+    `
+type Unit = { a: string; b: string; c: string };
+const build = (units: Unit[]) => units.flatMap(({ a, b }) => ({ a, b }));
+`,
+
+    // Regression (#1642): an annotated \`const\` receiver.
+    `
+type Unit = { a: string; b: string; c: string };
+const units: Unit[] = load();
+const build = () => units.map(({ a, b }) => ({ a, b }));
+`,
+
+    // Regression (#1642): an annotation binds every assignment, so it proves
+    // the element type on a \`let\` as well as on a \`const\`.
+    `
+type Unit = { a: string; b: string; c: string };
+let units: Unit[] = [];
+const build = () => units.map(({ a, b }) => ({ a, b }));
+`,
+
+    // Regression (#1642): an unannotated \`const\` still resolves through its
+    // initializer, here the declared return type of a local helper.
+    `
+type Unit = { a: string; b: string; c: string };
+function loadUnits(): Unit[] {
+  return [];
+}
+const units = loadUnits();
+const build = () => units.map(({ a, b }) => ({ a, b }));
+`,
+
+    // Regression (#1642): the receiver is the call result itself.
+    `
+type Unit = { a: string; b: string; c: string };
+const loadUnits = (): Unit[] => [];
+const build = () => loadUnits().map(({ a, b }) => ({ a, b }));
+`,
+
+    // Regression (#1642): an assertion on the receiver states the element type
+    // outright.
+    `
+type Unit = { a: string; b: string; c: string };
+const build = (raw) => (raw as Unit[]).map(({ a, b }) => ({ a, b }));
+`,
+
+    // Regression (#1642): \`await\` unwraps the declared Promise.
+    `
+type Unit = { a: string; b: string; c: string };
+async function loadUnits(): Promise<Unit[]> {
+  return [];
+}
+const build = async () => (await loadUnits()).map(({ a, b }) => ({ a, b }));
+`,
+
+    // Regression (#1642): optional members count as members — spreading would
+    // carry \`c\` through whenever the source happens to have it.
+    `
+type Wide = { a: string; b?: number; c?: string };
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+
+    // Regression (#1642): a method signature is a named member like any other.
+    `
+interface Wide {
+  a: string;
+  b: string;
+  run(): void;
+}
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+
+    // Regression (#1642): an exported alias is declared in this file too.
+    `
+export type Wide = { a: string; b: string; c: string };
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+
+    // Regression (#1642): a quoted key is still a written-down member name.
+    `
+type Wide = { a: string; b: string; 'c-d': string };
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+
+    // Regression (#1642): the source type is reached through an alias chain.
+    `
+type Wide = { a: string; b: string; c: string };
+type Alias = Wide;
+const pick = ({ a, b }: Alias) => ({ a, b });
+`,
+
+    // Regression (#1642): a retained extra property does not make the rewrite
+    // safe — the spread still adds \`c\` alongside \`label\`.
+    `
+type Wide = { a: string; b: string; c: string };
+const pick = ({ a, b }: Wide) => ({ a, b, label: 'x' });
+`,
   ],
 
   invalid: [
@@ -1278,6 +1453,325 @@ const W = (props) => {
     />
   ) as const;
 };
+`,
+    },
+
+    // Regression (#1642): a member set EQUAL to the pick is exhaustive, so the
+    // spread produces the very same object and the rule works as intended.
+    {
+      code: `
+type Pair = { a: string; b: string };
+const build = (units: Pair[]) => units.map(({ a, b }) => ({ a, b }));
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Pair = { a: string; b: string };
+const build = (units: Pair[]) => units.map((props) => ({ ...props }));
+`,
+    },
+
+    // Regression (#1642): the same exhaustive set through the parameter's own
+    // annotation.
+    {
+      code: `
+type Pair = { a: string; b: string };
+const pick = ({ a, b }: Pair) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Pair = { a: string; b: string };
+const pick = (props: Pair) => ({ ...props });
+`,
+    },
+
+    // Regression (#1642): an exhaustive inline annotation.
+    {
+      code: `
+const pick = ({ a, b }: { a: string; b: string }) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const pick = (props: { a: string; b: string }) => ({ ...props });
+`,
+    },
+
+    // Regression (#1642): an exhaustive interface behind a JSX target.
+    {
+      code: `
+interface Pair {
+  a: string;
+  b: string;
+}
+const W = ({ a, b }: Pair) => <Child a={a} b={b} />;
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+interface Pair {
+  a: string;
+  b: string;
+}
+const W = (props: Pair) => <Child {...props} />;
+`,
+    },
+
+    // Regression (#1642): an imported element type lives in a module this rule
+    // cannot read, so nothing is proven and the report stands.
+    {
+      code: `
+import type { Unit } from './unit';
+const build = (units: Unit[]) => units.map(({ a, b }) => ({ a, b }));
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+import type { Unit } from './unit';
+const build = (units: Unit[]) => units.map((props) => ({ ...props }));
+`,
+    },
+
+    // Regression (#1642): a union assembles its members elsewhere.
+    {
+      code: `
+type Wide = { a: string; b: string; c: string } | { a: string; b: string };
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Wide = { a: string; b: string; c: string } | { a: string; b: string };
+const pick = (props: Wide) => ({ ...props });
+`,
+    },
+
+    // Regression (#1642): so does an intersection.
+    {
+      code: `
+type Wide = { a: string; b: string } & Extra;
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Wide = { a: string; b: string } & Extra;
+const pick = (props: Wide) => ({ ...props });
+`,
+    },
+
+    // Regression (#1642): a mapped type's members are computed from a key set.
+    {
+      code: `
+type Wide = { [K in Keys]: string };
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Wide = { [K in Keys]: string };
+const pick = (props: Wide) => ({ ...props });
+`,
+    },
+
+    // Regression (#1642): a conditional type resolves to a member list only
+    // once the checker runs.
+    {
+      code: `
+type Wide = Source extends object ? Source : never;
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Wide = Source extends object ? Source : never;
+const pick = (props: Wide) => ({ ...props });
+`,
+    },
+
+    // Regression (#1642): an index signature admits members that are never
+    // written down, so the list cannot be enumerated.
+    {
+      code: `
+type Wide = { a: string; b: string; [key: string]: string };
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Wide = { a: string; b: string; [key: string]: string };
+const pick = (props: Wide) => ({ ...props });
+`,
+    },
+
+    // Regression (#1642): an interface's \`extends\` clause carries members from
+    // a declaration this rule may not even be able to see.
+    {
+      code: `
+interface Wide extends Base {
+  a: string;
+  b: string;
+  c: string;
+}
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+interface Wide extends Base {
+  a: string;
+  b: string;
+  c: string;
+}
+const pick = (props: Wide) => ({ ...props });
+`,
+    },
+
+    // Regression (#1642): a generic instantiation's members depend on the type
+    // argument.
+    {
+      code: `
+type Wide<T> = { a: string; b: string; c: T };
+const pick = ({ a, b }: Wide<string>) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Wide<T> = { a: string; b: string; c: T };
+const pick = (props: Wide<string>) => ({ ...props });
+`,
+    },
+
+    // Regression (#1642): a member expression receiver — the property's type
+    // lives in the type of its object, which syntax alone does not supply.
+    {
+      code: `
+type Unit = { a: string; b: string; c: string };
+const build = (state) => state.units.map(({ a, b }) => ({ a, b }));
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Unit = { a: string; b: string; c: string };
+const build = (state) => state.units.map((props) => ({ ...props }));
+`,
+    },
+
+    // Regression (#1642): an unannotated reassignable receiver can hold
+    // anything by the time the callback runs.
+    {
+      code: `
+type Unit = { a: string; b: string; c: string };
+let units = [];
+const build = () => units.map(({ a, b }) => ({ a, b }));
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Unit = { a: string; b: string; c: string };
+let units = [];
+const build = () => units.map((props) => ({ ...props }));
+`,
+    },
+
+    // Regression (#1642): an inferred return type is not written down.
+    {
+      code: `
+type Unit = { a: string; b: string; c: string };
+const loadUnits = () => [];
+const build = () => loadUnits().map(({ a, b }) => ({ a, b }));
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Unit = { a: string; b: string; c: string };
+const loadUnits = () => [];
+const build = () => loadUnits().map((props) => ({ ...props }));
+`,
+    },
+
+    // Regression (#1642): the binding in scope at the call site is the inner
+    // one, whose type the pick covers exhaustively. Reading the outer (wider)
+    // annotation instead would silence a report the rule owes.
+    {
+      code: `
+type Unit = { a: string; b: string; c: string };
+type Pair = { a: string; b: string };
+const outer = (units: Unit[]) => {
+  const inner = (units: Pair[]) => units.map(({ a, b }) => ({ a, b }));
+  return inner([]);
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Unit = { a: string; b: string; c: string };
+type Pair = { a: string; b: string };
+const outer = (units: Unit[]) => {
+  const inner = (units: Pair[]) => units.map((props) => ({ ...props }));
+  return inner([]);
+};
+`,
+    },
+
+    // Regression (#1642): a callback to a method that is not an element
+    // iterator says nothing about its parameter's type.
+    {
+      code: `
+type Unit = { a: string; b: string; c: string };
+const build = (units: Unit[]) => wrap(({ a, b }) => ({ a, b }));
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Unit = { a: string; b: string; c: string };
+const build = (units: Unit[]) => wrap((props) => ({ ...props }));
+`,
+    },
+
+    // Regression (#1642): a self-referential alias terminates without proving
+    // anything.
+    {
+      code: `
+type Wide = Wide;
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Wide = Wide;
+const pick = (props: Wide) => ({ ...props });
+`,
+    },
+
+    // Regression (#1642): only top-level declarations are resolved, so a type
+    // declared inside a function body proves nothing.
+    {
+      code: `
+const build = () => {
+  type Wide = { a: string; b: string; c: string };
+  const pick = ({ a, b }: Wide) => ({ a, b });
+  return pick;
+};
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+const build = () => {
+  type Wide = { a: string; b: string; c: string };
+  const pick = (props: Wide) => ({ ...props });
+  return pick;
+};
+`,
+    },
+
+    // Regression (#1642): a pick naming a member the source type does not
+    // declare proves no subset relation, so today's behavior stands.
+    {
+      code: `
+type Wide = { a: string; c: string; d: string };
+const pick = ({ a, b }: Wide) => ({ a, b });
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Wide = { a: string; c: string; d: string };
+const pick = (props: Wide) => ({ ...props });
+`,
+    },
+
+    // Regression (#1642): the callback is not the first argument, so the
+    // element type belongs to some other parameter.
+    {
+      code: `
+type Unit = { a: string; b: string; c: string };
+const build = (units: Unit[]) => units.map(identity, ({ a, b }) => ({ a, b }));
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Unit = { a: string; b: string; c: string };
+const build = (units: Unit[]) => units.map(identity, (props) => ({ ...props }));
 `,
     },
   ],

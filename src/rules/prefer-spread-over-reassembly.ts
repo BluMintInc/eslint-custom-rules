@@ -5,6 +5,7 @@ import {
   TSESTree,
 } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds = 'preferSpread';
 
@@ -80,6 +81,175 @@ function getSimpleDestructuredNames(
     names.push(prop.value.name);
   }
   return names;
+}
+
+/**
+ * Array methods that hand each element of the receiver to their callback. They
+ * are the contextual route by which an unannotated destructured parameter still
+ * has a knowable type: the element type of the array being iterated.
+ */
+const ELEMENT_CALLBACK_METHODS = new Set([
+  'map',
+  'forEach',
+  'filter',
+  'flatMap',
+]);
+
+const ARRAY_TYPE_NAMES = new Set(['Array', 'ReadonlyArray']);
+
+/**
+ * Resolves `Promise<T>` to `T`, leaving anything else as it stands, which is
+ * what `await` does to the type of the expression it operates on.
+ */
+function unwrapPromise(typeNode: TSESTree.TypeNode): TSESTree.TypeNode {
+  if (
+    typeNode.type === AST_NODE_TYPES.TSTypeReference &&
+    typeNode.typeName.type === AST_NODE_TYPES.Identifier &&
+    typeNode.typeName.name === 'Promise' &&
+    typeNode.typeParameters?.params.length === 1
+  ) {
+    return typeNode.typeParameters.params[0];
+  }
+  return typeNode;
+}
+
+/** The element type of an array type, or null when the type is not an array. */
+function arrayElementTypeOf(
+  typeNode: TSESTree.TypeNode,
+): TSESTree.TypeNode | null {
+  if (typeNode.type === AST_NODE_TYPES.TSArrayType) {
+    return typeNode.elementType;
+  }
+  // `readonly Unit[]` wraps the array type in a type operator.
+  if (
+    typeNode.type === AST_NODE_TYPES.TSTypeOperator &&
+    typeNode.operator === 'readonly' &&
+    typeNode.typeAnnotation
+  ) {
+    return arrayElementTypeOf(typeNode.typeAnnotation);
+  }
+  if (
+    typeNode.type === AST_NODE_TYPES.TSTypeReference &&
+    typeNode.typeName.type === AST_NODE_TYPES.Identifier &&
+    ARRAY_TYPE_NAMES.has(typeNode.typeName.name) &&
+    typeNode.typeParameters?.params.length === 1
+  ) {
+    return typeNode.typeParameters.params[0];
+  }
+  return null;
+}
+
+/**
+ * The property names a member list declares, or null when the list cannot be
+ * enumerated exactly. An index signature, a call/construct signature or a
+ * computed key all describe members whose names are not written down, and a
+ * member set that may be larger than what is read would let a narrowing pick
+ * pass for an exhaustive one.
+ */
+function namesOfMembers(
+  members: readonly TSESTree.TypeElement[],
+): Set<string> | null {
+  const names = new Set<string>();
+  for (const member of members) {
+    if (
+      member.type !== AST_NODE_TYPES.TSPropertySignature &&
+      member.type !== AST_NODE_TYPES.TSMethodSignature
+    ) {
+      return null;
+    }
+    if (member.computed) {
+      return null;
+    }
+    const key = member.key;
+    if (key.type === AST_NODE_TYPES.Identifier) {
+      names.add(key.name);
+    } else if (
+      key.type === AST_NODE_TYPES.Literal &&
+      typeof key.value === 'string'
+    ) {
+      names.add(key.value);
+    } else {
+      return null;
+    }
+  }
+  return names;
+}
+
+/**
+ * Finds a type alias or interface declared at the top level of the file being
+ * linted, including one that is exported.
+ *
+ * Resolution stops at the file boundary on purpose: an imported name's members
+ * live in a module this rule cannot read, and guessing at them would be the
+ * opposite of a proof.
+ */
+function findLocalTypeDeclaration(
+  program: TSESTree.Program,
+  name: string,
+): TSESTree.TSTypeAliasDeclaration | TSESTree.TSInterfaceDeclaration | null {
+  for (const statement of program.body) {
+    const declaration =
+      statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
+      statement.declaration
+        ? statement.declaration
+        : statement;
+    if (
+      (declaration.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
+        declaration.type === AST_NODE_TYPES.TSInterfaceDeclaration) &&
+      declaration.id.name === name
+    ) {
+      return declaration;
+    }
+  }
+  return null;
+}
+
+/**
+ * Enumerates every property name a type node declares, or null when the member
+ * list cannot be established with certainty.
+ *
+ * Only an unambiguous, fully written-out member list qualifies. A union, an
+ * intersection, a mapped or conditional type, a generic instantiation and an
+ * interface with an `extends` clause all describe a member set assembled
+ * elsewhere, so none of them can prove anything here.
+ */
+function memberNamesOf(
+  typeNode: TSESTree.TypeNode,
+  program: TSESTree.Program,
+  seen: Set<string> = new Set(),
+): Set<string> | null {
+  if (typeNode.type === AST_NODE_TYPES.TSTypeLiteral) {
+    return namesOfMembers(typeNode.members);
+  }
+
+  if (
+    typeNode.type !== AST_NODE_TYPES.TSTypeReference ||
+    typeNode.typeName.type !== AST_NODE_TYPES.Identifier ||
+    typeNode.typeParameters
+  ) {
+    return null;
+  }
+
+  const name = typeNode.typeName.name;
+  // A self-referential alias (`type T = T`) would otherwise recur forever.
+  if (seen.has(name)) {
+    return null;
+  }
+  seen.add(name);
+
+  const declaration = findLocalTypeDeclaration(program, name);
+  if (!declaration || declaration.typeParameters) {
+    return null;
+  }
+
+  if (declaration.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
+    return memberNamesOf(declaration.typeAnnotation, program, seen);
+  }
+
+  if (declaration.extends && declaration.extends.length > 0) {
+    return null;
+  }
+  return namesOfMembers(declaration.body.body);
 }
 
 type ForwardedField = {
@@ -643,6 +813,205 @@ export const preferSpreadOverReassembly = createRule<Options, MessageIds>({
   create(context, [options]) {
     const minFields = options?.minFields ?? DEFAULT_MIN_FIELDS;
     const sourceCode = context.getSourceCode();
+    const program = sourceCode.ast;
+
+    /**
+     * Walks an expression toward its syntactic root and returns the type node
+     * that root declares, mirroring the receiver trace in
+     * `enforce-firestore-doc-ref-generic`.
+     *
+     * The trace is syntax only. `parserOptions.project` is absent from the
+     * shared testers and from many consumer configs, so a type-checker branch
+     * would be dead exactly where the destructured pick it must protect lives —
+     * inside an `Array.prototype.map` callback, whose signature comes from
+     * `lib.d.ts`.
+     */
+    function typeNodeOfExpression(
+      node: TSESTree.Node | null | undefined,
+      visited: Set<TSESTree.Node>,
+    ): TSESTree.TypeNode | null {
+      // Guards against a self-referential declaration such as `const a = a.b;`.
+      if (!node || visited.has(node)) {
+        return null;
+      }
+      visited.add(node);
+
+      switch (node.type) {
+        case AST_NODE_TYPES.AwaitExpression: {
+          const awaited = typeNodeOfExpression(node.argument, visited);
+          return awaited ? unwrapPromise(awaited) : null;
+        }
+        case AST_NODE_TYPES.ChainExpression:
+        case AST_NODE_TYPES.TSNonNullExpression:
+          return typeNodeOfExpression(node.expression, visited);
+        // An assertion states the type outright, which is stronger evidence
+        // than anything the operand could supply.
+        case AST_NODE_TYPES.TSAsExpression:
+        case AST_NODE_TYPES.TSSatisfiesExpression:
+          return node.typeAnnotation;
+        case AST_NODE_TYPES.Identifier:
+          return typeNodeOfIdentifier(node, visited);
+        case AST_NODE_TYPES.CallExpression:
+          return typeNodeOfCallResult(node);
+        default:
+          // A member expression is deliberately absent: a property's type lives
+          // in the type of its object, which syntax alone does not supply.
+          return null;
+      }
+    }
+
+    function typeNodeOfIdentifier(
+      node: TSESTree.Identifier,
+      visited: Set<TSESTree.Node>,
+    ): TSESTree.TypeNode | null {
+      const scope = ASTHelpers.getScope(context, node);
+      const variable = ASTHelpers.findVariableInScope(scope, node.name);
+      if (!variable || variable.defs.length !== 1) {
+        return null;
+      }
+
+      const def = variable.defs[0];
+
+      if (def.type === 'Parameter') {
+        return def.name.type === AST_NODE_TYPES.Identifier &&
+          def.name.typeAnnotation
+          ? def.name.typeAnnotation.typeAnnotation
+          : null;
+      }
+
+      if (
+        def.type !== 'Variable' ||
+        def.node.type !== AST_NODE_TYPES.VariableDeclarator
+      ) {
+        return null;
+      }
+
+      const declarator = def.node;
+
+      // An annotation constrains every assignment rather than just the
+      // initializer, so it describes the binding even when it is a `let`.
+      if (
+        declarator.id.type === AST_NODE_TYPES.Identifier &&
+        declarator.id.typeAnnotation
+      ) {
+        return declarator.id.typeAnnotation.typeAnnotation;
+      }
+
+      // Without an annotation only an immutable binding still holds its
+      // initializer's type by the time the callback runs.
+      if (
+        def.parent?.type !== AST_NODE_TYPES.VariableDeclaration ||
+        def.parent.kind !== 'const'
+      ) {
+        return null;
+      }
+
+      return typeNodeOfExpression(declarator.init, visited);
+    }
+
+    /**
+     * A receiver that is a call result takes its type from what the callee
+     * declares it returns; an inferred return type is not written down and so
+     * proves nothing.
+     */
+    function typeNodeOfCallResult(
+      node: TSESTree.CallExpression,
+    ): TSESTree.TypeNode | null {
+      if (node.callee.type !== AST_NODE_TYPES.Identifier) {
+        return null;
+      }
+
+      const scope = ASTHelpers.getScope(context, node.callee);
+      const variable = ASTHelpers.findVariableInScope(scope, node.callee.name);
+      if (!variable || variable.defs.length !== 1) {
+        return null;
+      }
+
+      const def = variable.defs[0];
+
+      // A hoisted declaration binds the helper the same way a `const` arrow
+      // does, so both spellings are read.
+      if (def.type === 'FunctionName') {
+        return def.node.returnType?.typeAnnotation ?? null;
+      }
+
+      if (
+        def.type !== 'Variable' ||
+        def.node.type !== AST_NODE_TYPES.VariableDeclarator ||
+        def.parent?.type !== AST_NODE_TYPES.VariableDeclaration ||
+        def.parent.kind !== 'const'
+      ) {
+        return null;
+      }
+
+      const init = def.node.init;
+      if (
+        init?.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
+        init?.type !== AST_NODE_TYPES.FunctionExpression
+      ) {
+        return null;
+      }
+      return init.returnType?.typeAnnotation ?? null;
+    }
+
+    /**
+     * The member names of the element type of the array whose method call this
+     * function is the callback of, e.g. `Unit` for `units.map(fn)` where
+     * `units` is annotated `Unit[]`.
+     */
+    function contextualElementMemberNames(
+      fn: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
+    ): Set<string> | null {
+      const call = fn.parent;
+      if (
+        !call ||
+        call.type !== AST_NODE_TYPES.CallExpression ||
+        call.arguments[0] !== fn ||
+        call.callee.type !== AST_NODE_TYPES.MemberExpression ||
+        call.callee.computed ||
+        call.callee.property.type !== AST_NODE_TYPES.Identifier ||
+        !ELEMENT_CALLBACK_METHODS.has(call.callee.property.name)
+      ) {
+        return null;
+      }
+
+      const receiverType = typeNodeOfExpression(call.callee.object, new Set());
+      if (!receiverType) {
+        return null;
+      }
+
+      const elementType = arrayElementTypeOf(receiverType);
+      return elementType ? memberNamesOf(elementType, program) : null;
+    }
+
+    /**
+     * Reports whether the destructured pick is provably a PROPER subset of the
+     * source object's own type, in which case spreading the parameter would add
+     * the members the author left out and change what the function produces
+     * (#1642: a GitHub review payload gained unknown keys).
+     *
+     * The proof runs in the safe direction only. A member set that matches the
+     * pick exactly is exhaustive, so the rewrite is behavior-preserving and the
+     * rule still reports; a type it cannot resolve — imported, generic, a union,
+     * an index signature — yields no proof and the rule likewise still reports.
+     * Silence is reserved for the case where the widening is demonstrated.
+     */
+    function isProvablyNarrowingPick(
+      fn: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
+      param: TSESTree.ObjectPattern,
+      destructuredNames: readonly string[],
+    ): boolean {
+      // An explicit annotation overrides whatever the call site would imply,
+      // so the contextual route is consulted only in its absence.
+      const memberNames = param.typeAnnotation
+        ? memberNamesOf(param.typeAnnotation.typeAnnotation, program)
+        : contextualElementMemberNames(fn);
+
+      if (!memberNames || memberNames.size <= destructuredNames.length) {
+        return false;
+      }
+      return destructuredNames.every((name) => memberNames.has(name));
+    }
 
     function checkFunction(
       fn: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
@@ -702,6 +1071,12 @@ export const preferSpreadOverReassembly = createRule<Options, MessageIds>({
           // truly unused. Either way, don't flag.
           return;
         }
+      }
+
+      // The pick may exist precisely because the omitted members must not flow
+      // through; spreading would reinstate them.
+      if (isProvablyNarrowingPick(fn, param, destructuredNames)) {
+        return;
       }
 
       context.report({

@@ -33,6 +33,17 @@ A parameter with a default value (`({ a, b }: FooProps = {} as FooProps)`) is ne
 
 Type-only wrappers on the target — `as const`, `satisfies T`, `as T`, `!`, and chains of them such as `as unknown as T` — are stripped before the target is classified. They compile away entirely, so a wrapped reassembly is the same reassembly; the autofix rewrites the literal in place and leaves the wrapper exactly as written.
 
+### Narrowing picks are never reported
+
+A destructuring that deliberately takes a **subset** of a wider source type is left alone, because spreading the parameter would put every omitted member back on the result. The pick exists precisely so that those members do not flow through, so the rewrite changes what the function produces — for an object literal it adds keys, and for a JSX element it forwards props the child never asked for. The same protection covers both target kinds.
+
+The subset relation is established from syntax alone, without type information, so the rule stays silent only where the widening is demonstrable. Two shapes are read:
+
+- **The parameter's own annotation** — `({ path, body }: Unit)` or an inline `({ path, body }: { path: string; body: string; findings: unknown[] })`.
+- **The element type of an array method's receiver** — the callback of `.map()`, `.forEach()`, `.filter()` or `.flatMap()` whose receiver resolves to something annotated `Unit[]`, `readonly Unit[]`, `Array<Unit>` or `ReadonlyArray<Unit>`. The receiver is traced through `const` initializers, annotated bindings (an annotation holds on a `let` too, since it constrains every assignment), `as` assertions, `await`, and the declared return type of a local function.
+
+The referenced type must be a plain, fully written-out member list declared in the same file. A union, an intersection, a mapped or conditional type, a generic instantiation, an interface with an `extends` clause, an index signature and an imported alias all describe a member set assembled elsewhere, so none of them proves anything: those keep reporting, exactly as before. So does a member set that matches the pick **exactly** — that reassembly is exhaustive, and the spread rewrite is behavior-preserving.
+
 ### ❌ Incorrect
 
 ```tsx
@@ -125,6 +136,30 @@ const toPreviews = (subgroups) => {
 const pick = ({ a, b, c }) => {
   return { a, b } as const;
 };
+```
+
+```ts
+// Valid — `Unit` declares five members and the callback picks four, so the
+// spread rewrite would put `findings` on every payload.
+type Unit = {
+  path: string;
+  line: number;
+  side: string;
+  body: string;
+  findings: unknown[];
+};
+const toComments = (units: Unit[]) => {
+  return units.map(({ path, line, side, body }) => {
+    return { path, line, side, body } as const;
+  });
+};
+```
+
+```tsx
+// Valid — the JSX target narrows too: `Wide` has a third member the child
+// must not receive.
+type Wide = { a: string; b: string; c: string };
+const Narrowed = ({ a, b }: Wide) => <Child a={a} b={b} />;
 ```
 
 ```tsx
