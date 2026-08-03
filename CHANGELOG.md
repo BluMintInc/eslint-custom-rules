@@ -1,3 +1,15 @@
+## [1.20.83](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.82...v1.20.83) (2026-08-03)
+
+
+### Bug Fixes
+
+* **enforce-identifiable-firestore-type:** require the folder-matching type to be exported (closes [#1635](https://github.com/BluMintInc/eslint-custom-rules/issues/1635)) ([448b34b](https://github.com/BluMintInc/eslint-custom-rules/commit/448b34beffe518f50307ec35eea07ee8355ae245))
+* **no-always-true-false-conditions:** fold Math.max/min operands inside comparisons (closes [#1625](https://github.com/BluMintInc/eslint-custom-rules/issues/1625)) ([c1f9b41](https://github.com/BluMintInc/eslint-custom-rules/commit/c1f9b4113e00e6ef19c293306a805095b5d84c76))
+* **no-conditional-literals-in-jsx:** count every non-comment expression container as adjacent content (closes [#1627](https://github.com/BluMintInc/eslint-custom-rules/issues/1627)) ([ee517e2](https://github.com/BluMintInc/eslint-custom-rules/commit/ee517e23d67edf73c286ba094deb1bc68cb660f2))
+* **no-direct-function-state:** see function types behind a same-file alias (closes [#1636](https://github.com/BluMintInc/eslint-custom-rules/issues/1636)) ([86a8d62](https://github.com/BluMintInc/eslint-custom-rules/commit/86a8d6246131f5dd7603b53bf6a7b102a464fa20))
+* **no-useless-fragment:** stop the fixer corrupting source and count meaningful children (closes [#1634](https://github.com/BluMintInc/eslint-custom-rules/issues/1634)) ([6fa08d4](https://github.com/BluMintInc/eslint-custom-rules/commit/6fa08d4468deb198ed1a6c988dfdc0b9f289bfe7)), closes [#1195](https://github.com/BluMintInc/eslint-custom-rules/issues/1195)
+* **prefer-map-over-conditional-dispatch:** extend the narrowing exemption to this-rooted discriminants (closes [#1626](https://github.com/BluMintInc/eslint-custom-rules/issues/1626)) ([3aad9f7](https://github.com/BluMintInc/eslint-custom-rules/commit/3aad9f751116334101f2254742cca1d7487a7717))
+
 ## [1.20.82](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.81...v1.20.82) (2026-08-02)
 
 

@@ -1,5 +1,59 @@
 [
   {
+    "version": "1.20.83",
+    "date": "2026-08-03T02:05:36.672Z",
+    "rules": [
+      {
+        "name": "enforce-identifiable-firestore-type",
+        "changeType": "fix",
+        "issues": [
+          1635
+        ],
+        "summary": "require the folder-matching type to be exported (closes #1635)"
+      },
+      {
+        "name": "no-always-true-false-conditions",
+        "changeType": "fix",
+        "issues": [
+          1625
+        ],
+        "summary": "fold Math.max/min operands inside comparisons (closes #1625)"
+      },
+      {
+        "name": "no-conditional-literals-in-jsx",
+        "changeType": "fix",
+        "issues": [
+          1627
+        ],
+        "summary": "count every non-comment expression container as adjacent content (closes #1627)"
+      },
+      {
+        "name": "no-direct-function-state",
+        "changeType": "fix",
+        "issues": [
+          1636
+        ],
+        "summary": "see function types behind a same-file alias (closes #1636)"
+      },
+      {
+        "name": "no-useless-fragment",
+        "changeType": "fix",
+        "issues": [
+          1634
+        ],
+        "summary": "stop the fixer corrupting source and count meaningful children (closes #1634)"
+      },
+      {
+        "name": "prefer-map-over-conditional-dispatch",
+        "changeType": "fix",
+        "issues": [
+          1626
+        ],
+        "summary": "extend the narrowing exemption to this-rooted discriminants (closes #1626)"
+      }
+    ]
+  },
+  {
     "version": "1.20.82",
     "date": "2026-08-02T21:42:12.697Z",
     "rules": [
