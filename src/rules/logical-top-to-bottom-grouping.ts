@@ -2266,6 +2266,76 @@ type Move = {
 };
 
 /**
+ * A statement whose own value comes straight from an `await`, matching how
+ * `parallelize-async-operations` recognizes the members of a sequential-await run:
+ * an expression statement that *is* an await, or a declaration whose initializer *is*
+ * an await. An await buried deeper (`const x = (await f()).y`) is deliberately not
+ * counted — that rule does not group it either, so protecting it would cost autofixes
+ * for no gain.
+ */
+function isAwaitBearingStatement(statement: TSESTree.Statement): boolean {
+  if (statement.type === AST_NODE_TYPES.ExpressionStatement) {
+    return statement.expression.type === AST_NODE_TYPES.AwaitExpression;
+  }
+  if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
+    return statement.declarations.some(
+      (declaration) =>
+        declaration.init?.type === AST_NODE_TYPES.AwaitExpression,
+    );
+  }
+  return false;
+}
+
+/**
+ * Maximal stretches of two or more adjacent await-bearing statements.
+ *
+ * Adjacency is the entire input to `parallelize-async-operations`: a single unrelated
+ * statement dropped between two sequential awaits ends the run and silences that rule
+ * outright. A run of one is not protected because no such rule exists for it.
+ */
+function collectAwaitRuns(body: TSESTree.Statement[]): TSESTree.Statement[][] {
+  const runs: TSESTree.Statement[][] = [];
+  let run: TSESTree.Statement[] = [];
+
+  for (const statement of body) {
+    if (isAwaitBearingStatement(statement)) {
+      run.push(statement);
+      continue;
+    }
+    if (run.length >= 2) {
+      runs.push(run);
+    }
+    run = [];
+  }
+  if (run.length >= 2) {
+    runs.push(run);
+  }
+
+  return runs;
+}
+
+/**
+ * Whether a candidate ordering leaves every await run contiguous and internally
+ * ordered as it was.
+ *
+ * Relative order matters as much as contiguity: `parallelize-async-operations` anchors
+ * its report and its `Promise.all` rewrite on the run's first await, so permuting the
+ * run relocates the transform even when the awaits stay adjacent.
+ */
+function preservesAwaitRuns(
+  order: TSESTree.Statement[],
+  runs: TSESTree.Statement[][],
+): boolean {
+  return runs.every((run) => {
+    const start = order.indexOf(run[0]);
+    return (
+      start !== -1 &&
+      run.every((statement, offset) => order[start + offset] === statement)
+    );
+  });
+}
+
+/**
  * Upper bound on candidate moves expanded per search node. Each candidate costs one
  * full detection pass, so a node offering more violations than this has its tail
  * ignored: the frontier stays bounded and the budget buys depth rather than width.
@@ -2337,6 +2407,12 @@ function orderKey(
  * can still be the only route to a clean order, so the frontier is bounded by move
  * count and detection budget rather than by any notion of progress. Only the
  * zero-violation goal test decides whether a fix is emitted at all.
+ *
+ * The one hard constraint on the search is the block's await runs. Splitting a run of
+ * sequential awaits destroys `parallelize-async-operations`' `Promise.all` rewrite,
+ * and that rewrite carries a latency win this reordering does not — so orders that
+ * break a run are not candidates at all, however clean they score. A block whose only
+ * clean orders break a run is reported without a fix (#1651).
  */
 function findResolvingMoves(
   sourceCode: TSESLint.SourceCode,
@@ -2348,6 +2424,7 @@ function findResolvingMoves(
     return null;
   }
 
+  const awaitRuns = collectAwaitRuns(body);
   const indices = new Map<TSESTree.Statement, number>(
     body.map((statement, index) => [statement, index]),
   );
@@ -2369,6 +2446,12 @@ function findResolvingMoves(
 
       const { fromIndex, toIndex } = node.violations[candidate];
       const order = applyMove(node.order, fromIndex, toIndex);
+      // Checked before the budget is charged: the test is a couple of array lookups,
+      // and dropping the order here prunes the frontier as well as the goal, so no
+      // route to a clean order passes through a broken run.
+      if (!preservesAwaitRuns(order, awaitRuns)) {
+        continue;
+      }
       const key = orderKey(order, indices);
       if (seen.has(key)) {
         continue;

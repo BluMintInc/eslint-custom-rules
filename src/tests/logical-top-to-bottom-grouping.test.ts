@@ -2,6 +2,7 @@ import { Linter } from 'eslint';
 import * as tsParser from '@typescript-eslint/parser';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { logicalTopToBottomGrouping } from '../rules/logical-top-to-bottom-grouping';
+import { configs, rules } from '../index';
 
 ruleTesterTs.run('logical-top-to-bottom-grouping', logicalTopToBottomGrouping, {
   valid: [
@@ -1011,6 +1012,171 @@ const extra = 1;
 `,
       errors: [{ messageId: 'groupDerived' }],
     },
+    // #1651. Two sequential awaits sit adjacent, so `parallelize-async-operations`
+    // owns this block: its `Promise.all` rewrite buys a round trip, while the
+    // regrouping here only reads better. The reorder that would satisfy this rule
+    // splits the pair with `const receiver`, which does not defer that rewrite but
+    // destroys it — the adjacency is the whole of that rule's input. So the
+    // violation is reported and the autofix is declined (`output: null`).
+    {
+      code: `
+async function loadPair(payload: Payload) {
+  const sender = payload.sender;
+  const receiver = payload.receiver;
+  const senderFriends = await fetchFriends(sender);
+  const receiverFriends = await fetchFriends(receiver);
+  return [senderFriends, receiverFriends];
+}
+`,
+      output: null,
+      errors: [{ messageId: 'groupDerived' }],
+    },
+    // The same shape with no awaits: nothing competes for the block, so the reorder
+    // still ships. The await guard is a constraint on the fix search, not an excuse
+    // to stop fixing.
+    {
+      code: `
+function loadPair(payload: Payload) {
+  const sender = payload.sender;
+  const receiver = payload.receiver;
+  const senderFriends = friendsOf(sender);
+  const receiverFriends = friendsOf(receiver);
+  return [senderFriends, receiverFriends];
+}
+`,
+      output: `
+function loadPair(payload: Payload) {
+  const sender = payload.sender;
+  const senderFriends = friendsOf(sender);
+  const receiver = payload.receiver;
+  const receiverFriends = friendsOf(receiver);
+  return [senderFriends, receiverFriends];
+}
+`,
+      errors: [{ messageId: 'groupDerived' }],
+    },
+    // Deliberate over-yield: these awaits share a receiver, so
+    // `parallelize-async-operations` treats them as dependent and declines — nothing
+    // would have been lost by reordering. The guard is syntactic on purpose; matching
+    // that rule's eligibility would mean duplicating its dependency analysis and
+    // tracking its options from here, which couples two rules far more tightly than a
+    // withheld autofix costs. Adjacent awaits therefore forfeit the fix either way.
+    {
+      code: `
+async function loadPair(payload: Payload) {
+  const sender = payload.sender;
+  const receiver = payload.receiver;
+  const senderFriends = await api.fetch(sender);
+  const receiverFriends = await api.fetch(receiver);
+  return [senderFriends, receiverFriends];
+}
+`,
+      output: null,
+      errors: [{ messageId: 'groupDerived' }],
+    },
+    // A lone await is not a run: no adjacency-based rewrite exists for it, so the
+    // reorder that splits it from the statement below ships as before.
+    {
+      code: `
+async function loadOne(payload: Payload) {
+  const sender = payload.sender;
+  const receiver = payload.receiver;
+  const senderFriends = await fetchFriends(sender);
+  return [senderFriends, receiver];
+}
+`,
+      output: `
+async function loadOne(payload: Payload) {
+  const sender = payload.sender;
+  const senderFriends = await fetchFriends(sender);
+  const receiver = payload.receiver;
+  return [senderFriends, receiver];
+}
+`,
+      errors: [{ messageId: 'groupDerived' }],
+    },
+    // The run stays intact under the reordering, so the fix ships: the guard prunes
+    // the search, it does not switch the fixer off for any block containing awaits.
+    // Two violations resolve in one pass with the await pair untouched.
+    {
+      code: `
+async function load() {
+  const base = getBase();
+  const unrelated = 1;
+  const detail = base.value;
+  const other = getOther();
+  const filler = 2;
+  const derived = other.value;
+  const first = await fetchFirst();
+  const second = await fetchSecond();
+  use(detail, derived, unrelated, filler, first, second);
+}
+`,
+      output: `
+async function load() {
+  const base = getBase();
+  const detail = base.value;
+  const unrelated = 1;
+  const other = getOther();
+  const derived = other.value;
+  const filler = 2;
+  const first = await fetchFirst();
+  const second = await fetchSecond();
+  use(detail, derived, unrelated, filler, first, second);
+}
+`,
+      errors: [{ messageId: 'groupDerived' }, { messageId: 'groupDerived' }],
+    },
+    // A statement relocating across a run keeps the fix as long as it lands outside
+    // it: contiguity, not distance, is what the guard protects.
+    {
+      code: `
+async function load() {
+  const base = getBase();
+  const first = await fetchFirst();
+  const second = await fetchSecond();
+  const unrelated = 1;
+  const detail = base.value;
+  use(detail, unrelated, first, second);
+}
+`,
+      output: `
+async function load() {
+  const base = getBase();
+  const first = await fetchFirst();
+  const second = await fetchSecond();
+  const detail = base.value;
+  const unrelated = 1;
+  use(detail, unrelated, first, second);
+}
+`,
+      errors: [{ messageId: 'moveDeclarationCloser' }],
+    },
+    // An await run built from expression statements is protected on the same terms as
+    // one built from declarations, and a reorder above it still ships.
+    {
+      code: `
+async function load() {
+  const base = getBase();
+  const unrelated = 1;
+  const detail = base.value;
+  await flushFirst();
+  await flushSecond();
+  use(detail, unrelated);
+}
+`,
+      output: `
+async function load() {
+  const base = getBase();
+  const detail = base.value;
+  const unrelated = 1;
+  await flushFirst();
+  await flushSecond();
+  use(detail, unrelated);
+}
+`,
+      errors: [{ messageId: 'groupDerived' }],
+    },
   ],
 });
 
@@ -1367,5 +1533,142 @@ use(mockFetch, mockRefs);
     expect(rerun.text).toBe(text);
     expect(rerun.passes).toBe(0);
     expect(rerun.pendingFixes).toBe(0);
+  });
+});
+
+/**
+ * Every other test here registers one rule, so none of them can see what the shipped
+ * config does: ESLint applies non-overlapping fixes in `range[0]` order, and this
+ * rule's fix range opens at the start of the line above the statement it moves, ahead
+ * of where `parallelize-async-operations` anchors on the first await. The reorder
+ * therefore won the pass and the `Promise.all` rewrite was dropped — and because the
+ * reorder splits the run, that rewrite was never offered again (#1651).
+ */
+const PARALLELIZE_ID = '@blumintinc/blumint/parallelize-async-operations';
+const GROUPING_ID = '@blumintinc/blumint/logical-top-to-bottom-grouping';
+
+const AWAIT_PAIR = `async function loadPair(payload: Payload) {
+  const sender = payload.sender;
+  const receiver = payload.receiver;
+  const senderFriends = await fetchFriends(sender);
+  const receiverFriends = await fetchFriends(receiver);
+  return [senderFriends, receiverFriends];
+}
+`;
+
+const SYNC_PAIR = `function loadPair(payload: Payload) {
+  const sender = payload.sender;
+  const receiver = payload.receiver;
+  const senderFriends = friendsOf(sender);
+  const receiverFriends = friendsOf(receiver);
+  return [senderFriends, receiverFriends];
+}
+`;
+
+const composedLinter = () => {
+  const linter = new Linter();
+  linter.defineParser('ts', tsParser as unknown as Linter.ParserModule);
+  for (const [name, rule] of Object.entries(rules)) {
+    linter.defineRule(`@blumintinc/blumint/${name}`, rule as never);
+  }
+  return linter;
+};
+
+const configFor = (ruleIds: Record<string, string>) =>
+  ({
+    parser: 'ts',
+    parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+    rules: ruleIds,
+  } as unknown as Linter.Config);
+
+/**
+ * The shipped recommended set minus the rules that demand type information: a bare
+ * `Linter` builds no program, so those throw rather than report, and one throw would
+ * abort the run and turn this assertion vacuous. Membership is decided by running
+ * each rule against the fixture instead of by name, so a rule that becomes type-aware
+ * later drops out on its own.
+ */
+const recommendedRunnableOn = (code: string): Record<string, string> => {
+  const linter = composedLinter();
+  const runnable: Record<string, string> = {};
+
+  for (const [id, severity] of Object.entries(
+    configs.recommended.rules as Record<string, string>,
+  )) {
+    if (!id.startsWith('@blumintinc/blumint/')) {
+      continue;
+    }
+    if (!rules[id.slice('@blumintinc/blumint/'.length)]) {
+      continue;
+    }
+    try {
+      linter.verify(code, configFor({ [id]: severity }), 'file.ts');
+      runnable[id] = severity;
+    } catch {
+      // Type-aware: unavailable to this harness, and irrelevant to fix ordering here.
+    }
+  }
+
+  return runnable;
+};
+
+describe('logical-top-to-bottom-grouping composed with parallelize-async-operations', () => {
+  it('yields the fix pass so the Promise.all rewrite lands', () => {
+    const linter = composedLinter();
+    const config = configFor({
+      [GROUPING_ID]: 'error',
+      [PARALLELIZE_ID]: 'error',
+    });
+
+    // Control: both rules must actually claim this block, or "the rewrite landed"
+    // would prove nothing about their interaction.
+    const reported = linter
+      .verify(AWAIT_PAIR, config, 'file.ts')
+      .map((message) => message.ruleId);
+    expect(reported).toContain(GROUPING_ID);
+    expect(reported).toContain(PARALLELIZE_ID);
+
+    const { output } = linter.verifyAndFix(AWAIT_PAIR, config, 'file.ts');
+
+    expect(output).toContain('await Promise.all([');
+    // The reorder is not deferred, it is subsumed: the parallelized form groups the
+    // pair's inputs at the call, which satisfies this rule outright.
+    expect(linter.verify(output, config, 'file.ts')).toEqual([]);
+  });
+
+  it('yields under the full recommended rule set', () => {
+    const linter = composedLinter();
+    const runnable = recommendedRunnableOn(AWAIT_PAIR);
+
+    expect(runnable[GROUPING_ID]).toBe('error');
+    expect(runnable[PARALLELIZE_ID]).toBe('error');
+
+    const { output } = linter.verifyAndFix(
+      AWAIT_PAIR,
+      configFor(runnable),
+      'file.ts',
+    );
+
+    expect(output).toContain('await Promise.all([');
+  });
+
+  it('still applies its reorder when no await run is at stake', () => {
+    const linter = composedLinter();
+    const config = configFor({
+      [GROUPING_ID]: 'error',
+      [PARALLELIZE_ID]: 'error',
+    });
+
+    const { output } = linter.verifyAndFix(SYNC_PAIR, config, 'file.ts');
+
+    expect(output).toBe(`function loadPair(payload: Payload) {
+  const sender = payload.sender;
+  const senderFriends = friendsOf(sender);
+  const receiver = payload.receiver;
+  const receiverFriends = friendsOf(receiver);
+  return [senderFriends, receiverFriends];
+}
+`);
+    expect(linter.verify(output, config, 'file.ts')).toEqual([]);
   });
 });
