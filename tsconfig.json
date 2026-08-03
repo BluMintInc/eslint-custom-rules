@@ -41,6 +41,7 @@
     "node_modules",
     "lib",
     "**/*.test.ts",
-    "src/tests/fixtures/require-props-composition"
+    "src/tests/fixtures/require-props-composition",
+    "src/tests/fixtures/prefer-spread-over-reassembly"
   ]
 }
