@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.20.94",
+    "date": "2026-08-03T22:57:52.839Z",
+    "rules": [
+      {
+        "name": "enforce-date-ttime",
+        "changeType": "fix",
+        "issues": [
+          1669
+        ],
+        "summary": "unbind the import two arguments share (closes #1669)"
+      },
+      {
+        "name": "no-redundant-annotation-assertion",
+        "changeType": "fix",
+        "issues": [
+          1668
+        ],
+        "summary": "unbind the import two annotations share (closes #1668)"
+      }
+    ]
+  },
+  {
     "version": "1.20.93",
     "date": "2026-08-03T22:34:05.616Z",
     "rules": [

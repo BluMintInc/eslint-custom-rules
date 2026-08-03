@@ -1,3 +1,11 @@
+## [1.20.94](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.93...v1.20.94) (2026-08-03)
+
+
+### Bug Fixes
+
+* **enforce-date-ttime:** unbind the import two arguments share (closes [#1669](https://github.com/BluMintInc/eslint-custom-rules/issues/1669)) ([1aed03a](https://github.com/BluMintInc/eslint-custom-rules/commit/1aed03a381df60196c45917bb6d62c78cbd08082))
+* **no-redundant-annotation-assertion:** unbind the import two annotations share (closes [#1668](https://github.com/BluMintInc/eslint-custom-rules/issues/1668)) ([232deb9](https://github.com/BluMintInc/eslint-custom-rules/commit/232deb9d0876c5fc4608e3c2c9f47dd9d6c55dda))
+
 ## [1.20.93](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.92...v1.20.93) (2026-08-03)
 
 
