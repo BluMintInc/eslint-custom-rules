@@ -13,7 +13,9 @@ Enforce using global constants or type-safe functions for `useRouterState` key p
 This rule requires every `useRouterState` `key` to come from the centralized `QUERY_KEY_*` exports in `src/util/routing/queryKeys` (or an approved re-export such as `src/constants`). Ad-hoc string keys fragment the router cache, hide the set of supported keys, and make refactors brittle. The rule reports:
 
 - String literals (including template/binary expressions with static segments) passed as the `key`.
-- Variables that are not imported from `queryKeys.ts` or its approved re-exports.
+- Variables that resolve to a static string not sourced from `queryKeys.ts` or its approved re-exports.
+
+Two kinds of key variable are deliberately exempt — see [What the rule allows](#what-the-rule-allows).
 
 ### Why this matters
 
@@ -25,7 +27,25 @@ This rule requires every `useRouterState` `key` to come from the centralized `QU
 
 - Passing a string literal or template literal directly to `useRouterState`.
 - Building the key with inline string concatenation.
-- Using a variable that was not imported from `queryKeys.ts` (or an allowed re-export) as the key.
+- Using a variable that resolves to a static string and was not imported from `queryKeys.ts` (or an allowed re-export) as the key.
+
+### What the rule allows
+
+Two classes of key variable never report, because neither exposes a static string the rule could check:
+
+- **Function parameters.** A key bound by a parameter is exempt: the caller chooses the key, and the callee cannot control where it came from (issue #1394). Enforcement belongs at the call site, which the rule checks there instead.
+- **Call results.** A variable initialized from a function call is exempt, as is a call passed straight to `key`. A return value is opaque to a syntactic check, so the rule stays permissive rather than guessing. This is the "type-safe functions" allowance the summary at the top refers to.
+
+```tsx
+// Allowed: the caller owns the key (#1394)
+function useSessionState(key: string) {
+  return useRouterState({ key });
+}
+
+// Allowed: a call's return value is opaque to a syntactic check
+const derivedKey = buildQueryKey('match-session');
+const [value] = useRouterState({ key: derivedKey });
+```
 
 ### Examples
 
