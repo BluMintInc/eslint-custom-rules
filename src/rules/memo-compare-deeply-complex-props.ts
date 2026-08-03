@@ -862,12 +862,83 @@ function isIntersectionType(
   return (flags & ts.TypeFlags.Intersection) !== 0;
 }
 
+/**
+ * Returns true when `type` holds a JavaScript primitive at runtime — a string,
+ * number, boolean, bigint, symbol, enum member, or any literal/template/mapping
+ * flavour of those. A union qualifies when every constituent does.
+ *
+ * Deliberately narrower than `isPrimitiveType`, which also accepts
+ * `null`/`undefined`/`void`/`never`: those carry no runtime *value* to reason
+ * about, and inside an intersection they collapse the whole type to `never`
+ * anyway, so admitting them would prove nothing about the surviving members.
+ */
+function isRuntimePrimitiveType(
+  ts: typeof import('typescript'),
+  type: Type,
+): boolean {
+  const flags = type.flags ?? 0;
+
+  if (
+    (flags &
+      (ts.TypeFlags.StringLike |
+        ts.TypeFlags.NumberLike |
+        ts.TypeFlags.BooleanLike |
+        ts.TypeFlags.BigIntLike |
+        ts.TypeFlags.ESSymbolLike |
+        ts.TypeFlags.EnumLike)) !==
+    0
+  ) {
+    return true;
+  }
+
+  // `('a' | 'b') & {}` can surface the literal union as a single member.
+  if ((flags & ts.TypeFlags.Union) !== 0) {
+    const members = (type as UnionType).types;
+    return (
+      members.length > 0 &&
+      members.every((member) => isRuntimePrimitiveType(ts, member))
+    );
+  }
+
+  return false;
+}
+
+/**
+ * Detects the open-ended literal union idiom — a primitive intersected with an
+ * object type, e.g. `'alert' | 'button' | (string & {})`, of which React's own
+ * `AriaRole` is the most widespread instance. The `& {}` exists purely to defeat
+ * TypeScript's literal-union widening so editors keep offering autocomplete on
+ * the named members; it contributes no runtime object identity.
+ *
+ * A value of `string & X` is still assignable to `string`, so it is a primitive
+ * at runtime no matter what `X` is. That makes `compareDeeply('role')` provably
+ * inert: the consuming comparator only reaches deep equality behind a
+ * `typeof value === 'object'` guard, and `isEqual` on two primitives is `===`
+ * regardless. So the reduction keys on "the intersection has a primitive
+ * member", not on the object member being empty — branded primitives
+ * (`string & { brand: 'x' }`) reduce identically, and the widener is spelled
+ * several ways in the wild (`{}`, `Record<never, never>`, `Record<string, never>`)
+ * that no structural emptiness test or name allowlist covers uniformly.
+ */
+function isPrimitiveBackedIntersection(
+  ts: typeof import('typescript'),
+  intersectionType: IntersectionType,
+): boolean {
+  return intersectionType.types.some((member) =>
+    isRuntimePrimitiveType(ts, member),
+  );
+}
+
 function checkIntersectionType(
   ts: typeof import('typescript'),
   intersectionType: IntersectionType,
   checker: TypeChecker,
   visited: Set<Type>,
 ): boolean {
+  if (isPrimitiveBackedIntersection(ts, intersectionType)) {
+    return false;
+  }
+
   return intersectionType.types.some((t) =>
     isComplexTypeInternal(ts, t, checker, visited),
   );
