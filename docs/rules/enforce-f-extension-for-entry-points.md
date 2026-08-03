@@ -13,11 +13,13 @@ This convention serves as a visual signal in the file explorer and code reviews,
 - **Enhanced Discoverability**: Developers can quickly scan the `functions/src/` directory to identify all deployed Cloud Functions.
 - **Consistency across the Monorepo**: Aligns with our established pattern for Firestore, RealtimeDB, and Callable entry points.
 - **Improved Code Reviews**: Reviewers can immediately see if a change impacts a public API or a database trigger based on the filename.
-- **Prevents Accidental Deployment of Helpers**: Ensures that internal utility files aren't mistakenly structured as entry points, and vice versa.
+- **Prevents Accidental Deployment of Helpers**: Ensures that internal utility files aren't mistakenly structured as entry points.
 
 ## Rule Details
 
 The rule applies to any `.ts` or `.tsx` file under `functions/src/`. It flags files that invoke one of the protected entry point wrappers but do not have the `.f.ts` or `.f.tsx` extension.
+
+The check runs in one direction only. A file already named `.f.ts` or `.f.tsx` is skipped outright, so a `.f.ts` file holding nothing but helpers is never reported. The extension is read as a declaration of intent, not as a claim the rule verifies.
 
 ### Import Handling
 
