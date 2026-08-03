@@ -85,9 +85,10 @@ const Comp = ({ userConfig }) => {
 };
 `,
         errors: [error],
+        // The rewritten call was the react import's only reader, so the
+        // specifier — and with it the whole declaration — goes with it.
         output: `
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
-import { useMemo } from 'react';
 const Comp = ({ userConfig }) => {
   const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
   return <div>{formatted.name}</div>;
@@ -106,7 +107,6 @@ const Comp = ({ a, b }) => {
         errors: [error],
         output: `
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
-import { useMemo } from 'react';
 const Comp = ({ a, b }) => {
   const arr = useDeepCompareMemo(() => a + b, [[a,b]]);
   return <div>{arr}</div>;
@@ -125,7 +125,6 @@ const Comp = ({ obj }) => {
         errors: [error],
         output: `
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
-import { useMemo } from 'react';
 const Comp = ({ obj }) => {
   const result = useDeepCompareMemo(() => obj.id, [{ a: obj.id }]);
   return <div>{result}</div>;
@@ -205,7 +204,6 @@ const Comp = ({ userConfig }) => {
         output: `'use client';
 
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
-import { useMemo } from 'react';
 const Comp = ({ userConfig }) => {
   const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
   return <div>{formatted.name}</div>;
@@ -225,11 +223,174 @@ const Comp = ({ value }: { value: T }) => {
         errors: [error],
         output: `
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
-import { useMemo } from 'react';
 type T = { a: number };
 const Comp = ({ value }: { value: T }) => {
   const v = useDeepCompareMemo<T>(() => value.a, [value]);
   return <div>{v}</div>;
+};
+`,
+      },
+      // The shape the consumer's files actually carry: only the useMemo
+      // specifier and its separator go, and the siblings keep their spacing.
+      {
+        code: `
+import { ComponentType, useMemo, FC } from 'react';
+const withFormatted = (Wrapped: ComponentType<{ name: string }>): FC<{ userConfig: { name: string } }> => {
+  return ({ userConfig }) => {
+    const formatted = useMemo(() => ({ name: userConfig.name }), [userConfig]);
+    return <Wrapped {...formatted} />;
+  };
+};
+export default withFormatted;
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+import { ComponentType, FC } from 'react';
+const withFormatted = (Wrapped: ComponentType<{ name: string }>): FC<{ userConfig: { name: string } }> => {
+  return ({ userConfig }) => {
+    const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+    return <Wrapped {...formatted} />;
+  };
+};
+export default withFormatted;
+`,
+      },
+      // A specifier list spread over lines loses its own line, not its
+      // neighbours'.
+      {
+        code: `
+import {
+  ComponentType,
+  useMemo,
+  FC,
+} from 'react';
+const Comp = ({ userConfig }) => {
+  const formatted = useMemo(() => ({ name: userConfig.name }), [userConfig]);
+  return <div>{formatted.name}</div>;
+};
+export type Wrapped = ComponentType<Record<string, never>> | FC;
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+import {
+  ComponentType,
+  FC,
+} from 'react';
+const Comp = ({ userConfig }) => {
+  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+  return <div>{formatted.name}</div>;
+};
+export type Wrapped = ComponentType<Record<string, never>> | FC;
+`,
+      },
+      // Surviving hooks from the same declaration are untouched.
+      {
+        code: `
+import { useState, useMemo } from 'react';
+const Comp = ({ userConfig }) => {
+  const [open, setOpen] = useState(false);
+  const formatted = useMemo(() => ({ name: userConfig.name }), [userConfig]);
+  return <div onClick={() => setOpen(!open)}>{open ? formatted.name : null}</div>;
+};
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+import { useState } from 'react';
+const Comp = ({ userConfig }) => {
+  const [open, setOpen] = useState(false);
+  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+  return <div onClick={() => setOpen(!open)}>{open ? formatted.name : null}</div>;
+};
+`,
+      },
+      // A second call site the rule leaves alone still reads the specifier, so
+      // it stays. Judging one rewrite at a time is what makes the removal
+      // suppression-safe.
+      {
+        code: `
+import { useMemo } from 'react';
+const Comp = ({ userConfig, count }) => {
+  const formatted = useMemo(() => ({ name: userConfig.name }), [userConfig]);
+  const doubled = useMemo(() => count * 2, [count]);
+  return <div>{formatted.name}{doubled}</div>;
+};
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+import { useMemo } from 'react';
+const Comp = ({ userConfig, count }) => {
+  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+  const doubled = useMemo(() => count * 2, [count]);
+  return <div>{formatted.name}{doubled}</div>;
+};
+`,
+      },
+      // The suppression hazard: a suppressed sibling never reports, so its fix
+      // never runs. Removing the specifier on the strength of a sibling report
+      // would leave the surviving call spelling a name nothing binds.
+      {
+        code: `
+import { useMemo } from 'react';
+const Comp = ({ userConfig, other }) => {
+  // eslint-disable-next-line
+  const kept = useMemo(() => ({ name: other.name }), [other]);
+  const formatted = useMemo(() => ({ name: userConfig.name }), [userConfig]);
+  return <div>{formatted.name}{kept.name}</div>;
+};
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+import { useMemo } from 'react';
+const Comp = ({ userConfig, other }) => {
+  // eslint-disable-next-line
+  const kept = useMemo(() => ({ name: other.name }), [other]);
+  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+  return <div>{formatted.name}{kept.name}</div>;
+};
+`,
+      },
+      // JSX references the default specifier through the factory pragma, so a
+      // member call is not its last reader and the import stays.
+      {
+        code: `
+import React from 'react';
+const Comp = ({ userConfig }) => {
+  const formatted = React.useMemo(() => ({ name: userConfig.name }), [userConfig]);
+  return <div>{formatted.name}</div>;
+};
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+import React from 'react';
+const Comp = ({ userConfig }) => {
+  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+  return <div>{formatted.name}</div>;
+};
+`,
+      },
+      // Losing every named specifier next to a surviving default takes the
+      // braces with it rather than leaving `import React, {} from 'react'`.
+      {
+        code: `
+import React, { useMemo } from 'react';
+const Comp = ({ userConfig }) => {
+  const formatted = useMemo(() => ({ name: userConfig.name }), [userConfig]);
+  return <div>{formatted.name}</div>;
+};
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+import React from 'react';
+const Comp = ({ userConfig }) => {
+  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+  return <div>{formatted.name}</div>;
 };
 `,
       },
@@ -262,7 +423,6 @@ const v = useMemo(() => 1, [{ a: 1 }, 2]);
         errors: [error],
         output: `
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
-import { useMemo } from 'react';
 const v = useDeepCompareMemo(() => 1, [{ a: 1 }, 2]);
 `,
       },
@@ -376,7 +536,6 @@ const v = useMemo(() => 1, [{ a: 1 }, 2]);
 `,
         output: `
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
-import { useMemo } from 'react';
 const a = useDeepCompareMemo(() => 2, [{ b: 2 }]);
 const v = useDeepCompareMemo(() => 1, [{ a: 1 }, 2]);
 `,
@@ -394,7 +553,6 @@ const v = useMemo(() => 1, [{ a: 1 }, 2]);
         output: `
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 import { useDeepCompareMemo as deepMemo } from '@blumintinc/use-deep-compare';
-import { useMemo } from 'react';
 const a = deepMemo(() => 2, [{ b: 2 }]);
 const v = useDeepCompareMemo(() => 1, [{ a: 1 }, 2]);
 `,
@@ -413,12 +571,84 @@ const v = useMemo(() => 1, [{ a: 1 }, 2]);
 `,
         output: `
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
-import { useMemo } from 'react';
 function unrelated() {
   const useDeepCompareMemo = 1;
   return useDeepCompareMemo;
 }
 const v = useDeepCompareMemo(() => 1, [{ a: 1 }, 2]);
+`,
+        errors: [error],
+      },
+      // A member call reads the default specifier, so unbinding it collapses
+      // the declaration along with the line it owns.
+      {
+        code: `
+import React from 'react';
+const v = React.useMemo(() => 1, [{ a: 1 }, 2]);
+`,
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const v = useDeepCompareMemo(() => 1, [{ a: 1 }, 2]);
+`,
+        errors: [error],
+      },
+      // A type position reads the specifier just as a call does, so the import
+      // survives the rewrite.
+      {
+        code: `
+import { useMemo } from 'react';
+const v = useMemo(() => 1, [{ a: 1 }, 2]);
+export type Hook = typeof useMemo;
+`,
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+import { useMemo } from 'react';
+const v = useDeepCompareMemo(() => 1, [{ a: 1 }, 2]);
+export type Hook = typeof useMemo;
+`,
+        errors: [error],
+      },
+      // A nested binding of the same name is a different variable, so scope
+      // analysis alone would unbind the import here. The name still occurring
+      // outside the rewritten callee is the coarser second opinion that
+      // disagrees, and a disagreement declines the whole fix: a removal that
+      // turns out to be wrong deletes working code, while one declined in error
+      // only leaves the report standing.
+      {
+        code: `
+import { useMemo } from 'react';
+function unrelated(fn: () => number) {
+  const useMemo = (factory: () => number) => factory();
+  return useMemo(fn);
+}
+const v = useMemo(() => 1, [{ a: 1 }, 2]);
+`,
+        output: `
+import { useMemo } from 'react';
+function unrelated(fn: () => number) {
+  const useMemo = (factory: () => number) => factory();
+  return useMemo(fn);
+}
+const v = useMemo(() => 1, [{ a: 1 }, 2]);
+`,
+        errors: [error],
+      },
+      // A hook the file declares itself is orphaned by the rewrite too, and it
+      // is bound by a declaration this fix has no business deleting, so the
+      // rewrite is withheld rather than trading the report for an unused
+      // function.
+      {
+        code: `
+function useMemo(factory: () => number, deps: unknown[]) {
+  return factory();
+}
+const v = useMemo(() => 1, [{ a: 1 }, 2]);
+`,
+        output: `
+function useMemo(factory: () => number, deps: unknown[]) {
+  return factory();
+}
+const v = useMemo(() => 1, [{ a: 1 }, 2]);
 `,
         errors: [error],
       },

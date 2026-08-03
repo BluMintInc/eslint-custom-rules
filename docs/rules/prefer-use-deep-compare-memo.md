@@ -12,7 +12,7 @@
 
 - **Why**: Non-primitive dependencies change identity each render. Reference equality in `useMemo` sees them as different, so the memo recomputes and can force avoidable renders.
 - **How**: The rule flags `useMemo` calls when the dependency array contains an object or array that is not already memoized. Identifiers are considered safe when they come from `useMemo`, `useCallback`, `useLatestCallback`, or `useDeepCompareMemo`.
-- **Fix**: Auto-fix replaces `useMemo` with `useDeepCompareMemo` and inserts `import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';`. You can also silence the warning by memoizing the dependencies first.
+- **Fix**: Auto-fix replaces `useMemo` with `useDeepCompareMemo` and inserts `import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';`. The rewritten call no longer reads whatever carried the hook, so the fix also unbinds `useMemo` — or `React`, for a `React.useMemo(...)` call — from the React import when nothing else in the file reads it, leaving the other specifiers untouched. You can also silence the warning by memoizing the dependencies first.
 
 Auto-fix adds the import if needed:
 
@@ -86,6 +86,8 @@ it is reported in turn. Depend on the object's primitive fields, or reach for
 - Empty dependency arrays: ignored.
 - JSX in memo body: ignored, to avoid false positives with JSX-returning memos.
 - Performance hotspots: prefer memoizing dependencies instead of deep comparison when deep equality cost is a concern.
+- Another `useMemo` call in the same file keeps the import, including one this rule also reports: a suppressed or conflicting sibling never gets rewritten, and unbinding on its behalf would leave it spelling a name nothing binds. A later `--fix` pass, reading a file where the sibling is already converted, removes the import then.
+- The report stands without a fix whenever the rewrite would strand something the fix cannot safely unbind — a locally declared `useMemo`, an import behind a directive comment, or a name that also occurs outside the rewritten call. Rewrite those by hand.
 
 ### When Not To Use It
 
