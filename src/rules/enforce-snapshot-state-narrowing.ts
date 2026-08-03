@@ -5,6 +5,11 @@ import {
   TSESTree,
 } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import {
+  ImportInsertionAnchor,
+  importInsertionAnchor,
+  insertAtImportAnchor,
+} from '../utils/importInsertion';
 
 type MessageIds = 'noFalsyCheck' | 'noRawTypeof';
 
@@ -288,6 +293,7 @@ export const enforceSnapshotStateNarrowing = createRule<Options, MessageIds>({
      * otherwise add the canonical import statement.
      */
     function buildImportFix(fixer: TSESLint.RuleFixer): TSESLint.RuleFix {
+      const sourceCode = context.getSourceCode();
       const declarations = importDeclarationsOf();
       const guardDeclarations = declarations.filter((declaration) =>
         isGuardModule(String(declaration.source.value)),
@@ -313,14 +319,38 @@ export const enforceSnapshotStateNarrowing = createRule<Options, MessageIds>({
         : guardImportSource;
       const importText = `import { ${guardName} } from '${source}';\n`;
 
-      const [firstImport] = declarations;
-      if (firstImport) {
-        return fixer.insertTextBefore(firstImport, importText);
+      const anchor = importInsertionAnchor(sourceCode);
+      if (declarations.length) {
+        // The statement joins an import block, and the anchor is that block's
+        // first declaration (or a suppression comment bound to it), so it lands
+        // among its siblings with nothing above them displaced.
+        return insertAtImportAnchor(sourceCode, fixer, anchor, importText);
       }
-      // Keep the import visually separated from the code it precedes unless the
-      // file already opens with a blank line.
-      const separator = /^\r?\n/.test(context.getSourceCode().text) ? '' : '\n';
-      return fixer.insertTextBeforeRange([0, 0], `${importText}${separator}`);
+
+      // A file's first import opens the file, so it may cross the blank lines
+      // the source starts with. The anchor is the floor of that climb: a
+      // `'use client'` directive stops being a directive, a `#!` shebang stops
+      // parsing, and a header comment stops covering its subject the moment a
+      // statement precedes them, so only whitespace may be crossed.
+      const anchorIndex =
+        anchor.kind === 'before' ? anchor.target.range[0] : anchor.index;
+      const opensFile = sourceCode.text.slice(0, anchorIndex).trim() === '';
+      const insertion: ImportInsertionAnchor = opensFile
+        ? { kind: 'index', index: 0 }
+        : anchor;
+      // Keep the import visually separated from the code it precedes unless a
+      // blank line already sits at the insertion point.
+      const separator = /^\r?\n/.test(
+        sourceCode.text.slice(opensFile ? 0 : anchorIndex),
+      )
+        ? ''
+        : '\n';
+      return insertAtImportAnchor(
+        sourceCode,
+        fixer,
+        insertion,
+        `${importText}${separator}`,
+      );
     }
 
     /**

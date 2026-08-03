@@ -1298,6 +1298,169 @@ if (isSnapshotReady(state)) { return state.name; }
           },
         ],
       },
+
+      // ---- REGRESSIONS: the added import keeps the prologue intact (#1648) ----
+
+      // 49. A file with no imports at all: the guard import goes below the
+      // `'use client'` directive, which stops being a directive as soon as any
+      // statement precedes it.
+      {
+        filename: 'src/components/Widget.tsx',
+        code: `'use client';
+const state = useDocSnapshot({ docPath });
+if (state) { return state.name; }
+`,
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: `'use client';
+import { isSnapshotReady } from 'src/types/FirestoreSnapshotState';
+
+const state = useDocSnapshot({ docPath });
+if (isSnapshotReady(state)) { return state.name; }
+`,
+              },
+            ],
+          },
+        ],
+      },
+
+      // 50. A `#!` shebang has to stay at character 0 or the file stops parsing
+      {
+        filename: 'src/scripts/widget.ts',
+        code: `#!/usr/bin/env node
+const state = useDocSnapshot({ docPath });
+if (state) { return state.name; }
+`,
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: `#!/usr/bin/env node
+import { isSnapshotReady } from 'src/types/FirestoreSnapshotState';
+
+const state = useDocSnapshot({ docPath });
+if (isSnapshotReady(state)) { return state.name; }
+`,
+              },
+            ],
+          },
+        ],
+      },
+
+      // 51. A header comment covers the code below it, so the import lands
+      // under it rather than between the comment and its subject
+      {
+        filename: 'src/components/Widget.tsx',
+        code: `// @ts-nocheck
+const state = useDocSnapshot({ docPath });
+if (state) { return state.name; }
+`,
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: `// @ts-nocheck
+import { isSnapshotReady } from 'src/types/FirestoreSnapshotState';
+
+const state = useDocSnapshot({ docPath });
+if (isSnapshotReady(state)) { return state.name; }
+`,
+              },
+            ],
+          },
+        ],
+      },
+
+      // 52. Control for 49-51: an existing import already sits below the
+      // directive, so the guard import joins that block
+      {
+        filename: 'src/components/Widget.tsx',
+        code: `'use client';
+import { useDocSnapshot } from 'src/hooks/useDocSnapshot';
+const state = useDocSnapshot({ docPath });
+if (state) { return state.name; }
+`,
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: `'use client';
+import { isSnapshotReady } from 'src/types/FirestoreSnapshotState';
+import { useDocSnapshot } from 'src/hooks/useDocSnapshot';
+const state = useDocSnapshot({ docPath });
+if (isSnapshotReady(state)) { return state.name; }
+`,
+              },
+            ],
+          },
+        ],
+      },
+
+      // 53. A suppression comment binds the line under it, so the import goes
+      // above the comment instead of stealing its subject — and still below the
+      // directive
+      {
+        filename: 'src/components/Widget.tsx',
+        code: `'use client';
+// eslint-disable-next-line no-console
+const state = useDocSnapshot({ docPath });
+if (state) { return state.name; }
+`,
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: `'use client';
+import { isSnapshotReady } from 'src/types/FirestoreSnapshotState';
+
+// eslint-disable-next-line no-console
+const state = useDocSnapshot({ docPath });
+if (isSnapshotReady(state)) { return state.name; }
+`,
+              },
+            ],
+          },
+        ],
+      },
+
+      // 54. The import block is joined below a shebang too, so the file still
+      // parses after the suggestion is applied
+      {
+        filename: 'src/scripts/widget.ts',
+        code: `#!/usr/bin/env node
+import { useDocSnapshot } from 'src/hooks/useDocSnapshot';
+const state = useDocSnapshot({ docPath });
+if (state) { return state.name; }
+`,
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: `#!/usr/bin/env node
+import { isSnapshotReady } from 'src/types/FirestoreSnapshotState';
+import { useDocSnapshot } from 'src/hooks/useDocSnapshot';
+const state = useDocSnapshot({ docPath });
+if (isSnapshotReady(state)) { return state.name; }
+`,
+              },
+            ],
+          },
+        ],
+      },
     ],
   },
 );
