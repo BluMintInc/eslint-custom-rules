@@ -34,11 +34,11 @@ function useCustomComponent() {
 ```
 
 ```tsx
+// eslint-options: {"additionalHocNames": ["connect"]}
 function ReduxComponent() {
   const Connected = connect(mapState)(BaseComponent);
   return <Connected />;
 }
-// Configure connect as an additional HOC name to catch this form
 ```
 
 ### Examples of **correct** code for this rule:
@@ -62,11 +62,11 @@ function useCustomComponent() {
 ```
 
 ```tsx
+// eslint-options: {"additionalHocNames": ["connect"]}
 function ReduxComponent() {
   const Connected = useMemo(() => connect(mapState)(BaseComponent), [mapState]);
   return <Connected />;
 }
-// connect listed under additionalHocNames
 ```
 
 HOCs created inside event handlers, effect callbacks, or other nested functions are ignored because they do not run on every render.
