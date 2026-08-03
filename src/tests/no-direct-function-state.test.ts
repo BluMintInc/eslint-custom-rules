@@ -143,6 +143,43 @@ const [value, setValue] = useState(null);
 setValue(actions.refresh);
       `,
     },
+
+    // Alias resolves to a non-function type — bare identifier stays safe
+    `
+    type Count = number;
+    const [count, setCount] = useState<Count>(0);
+    const n = 5;
+    setCount(n);
+    `,
+
+    // Self-referential/mutually-recursive alias chain terminates instead of
+    // resolving to a function type — the reference stays unreported by this
+    // signal (name/scope heuristics don't fire either, since `newOnClose` is
+    // a `declare`d value, not a locally-bound arrow function).
+    `
+    type A = B;
+    type B = A;
+    declare const newOnClose: A;
+    const [onCloseState, setOnCloseState] = useState<A | undefined>(undefined);
+    setOnCloseState(newOnClose);
+    `,
+
+    // TSTypeReference with no matching same-file alias (e.g. an imported
+    // type) — unresolvable syntactically, so this signal stays silent.
+    `
+    import { ToClose } from './types';
+    declare const newOnClose: ToClose;
+    const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+    setOnCloseState(newOnClose);
+    `,
+
+    // Qualified type name (Foo.Bar) — not a plain Identifier, so it's never
+    // looked up in the alias map.
+    `
+    declare const newOnClose: Foo.Bar;
+    const [onCloseState, setOnCloseState] = useState<Foo.Bar | undefined>(undefined);
+    setOnCloseState(newOnClose);
+    `,
   ],
 
   invalid: [
@@ -417,6 +454,143 @@ setValue(props.onDismiss);
       output: `
 const [value, setValue] = useState(null);
 setValue(() => props.onDismiss);
+      `,
+    },
+
+    // Same-file type alias resolved via a TSTypeReference — the arg arrives
+    // as a `declare`d parameter, so neither the name pattern nor the
+    // scope-binding fallback would catch it; only alias resolution does.
+    {
+      code: `
+type ToClose = () => void;
+declare const newOnClose: ToClose;
+const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+setOnCloseState(newOnClose);
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+type ToClose = () => void;
+declare const newOnClose: ToClose;
+const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+setOnCloseState(() => newOnClose);
+      `,
+    },
+
+    // Same as above, but through the realistic usePortal.tsx shape: the
+    // function arrives as a parameter of a returned hook method.
+    {
+      code: `
+type ToClose = () => void;
+function usePortal() {
+  const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+  const open = (newOnClose: ToClose) => {
+    setOnCloseState(newOnClose);
+  };
+  return { open };
+}
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+type ToClose = () => void;
+function usePortal() {
+  const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+  const open = (newOnClose: ToClose) => {
+    setOnCloseState(() => newOnClose);
+  };
+  return { open };
+}
+      `,
+    },
+
+    // Alias declared AFTER the useState call — proves the alias map is
+    // built up front from Program.body rather than relying on visitor order.
+    {
+      code: `
+declare const newOnClose: ToClose;
+const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+setOnCloseState(newOnClose);
+type ToClose = () => void;
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+declare const newOnClose: ToClose;
+const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+setOnCloseState(() => newOnClose);
+type ToClose = () => void;
+      `,
+    },
+
+    // Alias chain two hops deep: ToClose -> Base -> function type
+    {
+      code: `
+type Base = () => void;
+type ToClose = Base;
+declare const newOnClose: ToClose;
+const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+setOnCloseState(newOnClose);
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+type Base = () => void;
+type ToClose = Base;
+declare const newOnClose: ToClose;
+const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+setOnCloseState(() => newOnClose);
+      `,
+    },
+
+    // `export type` alias — still resolved the same way
+    {
+      code: `
+export type ToClose = () => void;
+declare const newOnClose: ToClose;
+const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+setOnCloseState(newOnClose);
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+export type ToClose = () => void;
+declare const newOnClose: ToClose;
+const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+setOnCloseState(() => newOnClose);
+      `,
+    },
+
+    // Alias to a TSConstructorType (`new () => void`)
+    {
+      code: `
+type Ctor = new () => void;
+declare const newCtor: Ctor;
+const [c, setC] = useState<Ctor | undefined>(undefined);
+setC(newCtor);
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+type Ctor = new () => void;
+declare const newCtor: Ctor;
+const [c, setC] = useState<Ctor | undefined>(undefined);
+setC(() => newCtor);
+      `,
+    },
+
+    // Alias union: `type Maybe = ToClose | undefined` — the useState type
+    // parameter references the union alias directly, one hop from the
+    // function type.
+    {
+      code: `
+type ToClose = () => void;
+type Maybe = ToClose | undefined;
+declare const newOnClose: ToClose;
+const [onCloseState, setOnCloseState] = useState<Maybe>(undefined);
+setOnCloseState(newOnClose);
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+type ToClose = () => void;
+type Maybe = ToClose | undefined;
+declare const newOnClose: ToClose;
+const [onCloseState, setOnCloseState] = useState<Maybe>(undefined);
+setOnCloseState(() => newOnClose);
       `,
     },
   ],
