@@ -27,9 +27,13 @@ const DOCS_DIR = path.join(__dirname, '../../docs/rules');
  * enabled and requires ZERO reports: following the docs must never produce a
  * lint error.
  *
- * The reverse direction (an "incorrect" block must report) is deliberately NOT
- * asserted. Those blocks are frequently fragments that depend on surrounding
- * context, so requiring them to fire produces false alarms rather than signal.
+ * The reverse direction is asserted too (#1641): every lintable "incorrect"
+ * fence must produce at least one report from its own rule. A documented
+ * violation the rule never flags is a promise the plugin does not keep — a
+ * consumer who writes exactly that code is never warned — and #1625 and #1637
+ * both shipped through that hole. Rules declaring `meta.docs.requiresTypeChecking`
+ * are exempt because no `Linter` without `parserOptions.project` can exercise
+ * them at all; the rest of the residue is named in SILENT_INCORRECT_BLOCKS.
  *
  * Out of scope, by design: rules whose examples are not TypeScript (e.g.
  * `avoid-utils-directory` illustrates directory layout in ```text fences) and
@@ -326,8 +330,9 @@ export type SkippedBlock = { rule: string; line: number; reason: string };
  *
  * A legitimate entry is a block that is malformed BY DESIGN — the way
  * `no-curly-brackets-around-commented-properties` documents a syntax error as
- * the defect it prevents (that one lands in an "incorrect" fence, which this
- * guard never asserts on, so it needs no entry).
+ * the defect it prevents (that one lands in an "incorrect" fence, so it is out
+ * of this allowlist's scope; the #1641 guard counts it as unlintable and
+ * asserts nothing about it either).
  */
 export const UNCHECKABLE_BLOCKS: Record<string, string> = {};
 
@@ -896,5 +901,284 @@ describe('claim-carrying segments of "incorrect" fences must report (#1622)', ()
     expect(auditClaimSegments([], { 'planted:1:1': 'reason' })[0]).toContain(
       'Delete the entry',
     );
+  });
+});
+
+/**
+ * Fence-level dead-example guard (#1641).
+ *
+ * Everything above asserts one direction: a documented CORRECT fence must not
+ * report. The reverse went unasserted, so a rule could ship a headline ❌
+ * example it never flags — #1625 (`Math.max(1, 2) === 0`) and #1637 both did,
+ * and both were found by hand rather than by a gate.
+ *
+ * Each incorrect fence is linted under the context it declares (`// File:` /
+ * `// eslint-options:`), or under every candidate filename when it declares
+ * none, and counts as live if ANY candidate produces a report from that fence's
+ * own rule. Which part of the fence reports is the #1622 guard's concern; this
+ * one only asks whether the fence is enforced at all.
+ */
+
+/**
+ * A rule declaring it needs type information cannot be exercised here: the
+ * isolated program the parser builds without `parserOptions.project` resolves
+ * imported and cross-declaration types to `any`, so such rules either return an
+ * empty visitor or see nothing to report. Reading the declaration off the rule
+ * object keeps the exemption self-maintaining — a rule that stops needing types
+ * is asserted again with no edit here, and one that starts needing them does not
+ * accumulate allowlist entries.
+ */
+export function requiresTypeChecking(ruleName: string): boolean {
+  const rule = plugin.rules[ruleName] as
+    | { meta?: { docs?: { requiresTypeChecking?: boolean } } }
+    | undefined;
+  return rule?.meta?.docs?.requiresTypeChecking === true;
+}
+
+type SilentIncorrectBlock = { key: string; head: string };
+
+/**
+ * Documented "incorrect" fences verified by hand to be unreportable by this
+ * harness, keyed `<rule>:<fence docs line>` and carrying the reason.
+ *
+ * Deliberately tiny, and audited both ways like UNCHECKABLE_BLOCKS and
+ * SILENT_CLAIM_SEGMENTS. A dead fence is almost always fixable by declaring the
+ * context the example already assumes — the path for a path-scoped rule, the
+ * option for an option-gated one — so add the hint rather than an entry here.
+ */
+export const SILENT_INCORRECT_BLOCKS: Record<string, string> = {
+  'consistent-callback-naming:44':
+    'the JSX-prop half resolves the prop type through getTypeChecker (consistent-callback-naming.ts:53-57), so `<Dialog submit={onSubmit} />` needs parserOptions.project; the rule is not dead — its Implementations fences fire here',
+  'consistent-callback-naming:48':
+    'same type-aware JSX-prop half as :44 — `<Form changeHandler={onChange} />` cannot be typed from an isolated program; the implementation half of the rule still fires',
+};
+
+/**
+ * Compare the silent fences against the allowlist in both directions. An
+ * unlisted silent fence is a documented violation nobody enforces; a listed
+ * fence that fires again is a stale exemption that would absorb the next real
+ * one.
+ */
+export function auditSilentIncorrect(
+  silents: readonly SilentIncorrectBlock[],
+  allowlist: Record<string, string>,
+): string[] {
+  const problems: string[] = [];
+  const seen = new Set<string>();
+
+  for (const silent of silents) {
+    const [rule, line] = silent.key.split(':');
+    seen.add(silent.key);
+    if (silent.key in allowlist) continue;
+    problems.push(
+      [
+        `docs/rules/${rule}.md:${line} is documented as INCORRECT but the rule never reports on it:`,
+        `  ${silent.head}`,
+        '  A documented violation nobody flags is a promise the plugin does not keep.',
+        '  Usually the fence omits the context it assumes: add a `// File: <path>`',
+        '  comment for a path-scoped rule or `// eslint-options: {...}` for an',
+        '  option-gated one. If the example is genuinely uncatchable, fix the rule —',
+        `  or add '${silent.key}' to SILENT_INCORRECT_BLOCKS with the verified reason.`,
+      ].join('\n'),
+    );
+  }
+
+  for (const [key, reason] of Object.entries(allowlist)) {
+    if (seen.has(key)) continue;
+    problems.push(
+      [
+        `SILENT_INCORRECT_BLOCKS lists '${key}' (${reason}) but that fence now reports or no longer exists.`,
+        '  Delete the entry: a stale exemption hides the next dead example.',
+      ].join('\n'),
+    );
+  }
+
+  return problems;
+}
+
+describe('documented "incorrect" fences must report (#1641)', () => {
+  const silents: SilentIncorrectBlock[] = [];
+  let assertedFences = 0;
+  let typeAwareFences = 0;
+  let unlintableFences = 0;
+
+  it('requires every lintable "incorrect" fence to fire its own rule', () => {
+    for (const ruleName of ruleNames) {
+      const md = fs.readFileSync(path.join(DOCS_DIR, `${ruleName}.md`), 'utf8');
+      const incorrect = extractBlocks(md).filter(
+        (b) => b.polarity === 'incorrect' && LINTABLE_LANGS.has(b.lang),
+      );
+      if (incorrect.length === 0) continue;
+      if (requiresTypeChecking(ruleName)) {
+        typeAwareFences += incorrect.length;
+        continue;
+      }
+
+      for (const block of incorrect) {
+        const hinted = filenameHint(block.code);
+        const candidates = hinted
+          ? [hinted]
+          : (block.lang === 'tsx' || block.lang === 'jsx'
+              ? TSX_CANDIDATES
+              : [...TS_CANDIDATES, ...TSX_CANDIDATES]
+            ).map(anchor);
+
+        let lintable = false;
+        let fired = false;
+        for (const filename of candidates) {
+          const outcome = lintBlock(
+            ruleName,
+            filename,
+            block.code,
+            optionsHint(block.code),
+          );
+          if (outcome.skipped) continue;
+          lintable = true;
+          if (outcome.reports.length > 0) {
+            fired = true;
+            break;
+          }
+        }
+
+        // A fence no candidate can lint (it does not parse, or the rule threw)
+        // asserts nothing here; the fence-level machinery above owns that class.
+        if (!lintable) {
+          unlintableFences += 1;
+          continue;
+        }
+
+        assertedFences += 1;
+        if (fired) continue;
+        silents.push({
+          key: `${ruleName}:${block.line}`,
+          head: block.code.split('\n').find((l) => l.trim()) ?? '',
+        });
+      }
+    }
+
+    // Coverage floor. If extraction or heading classification breaks, every
+    // fence disappears and this suite passes while asserting nothing — the
+    // vacuous green that makes a guard worse than none. The corpus holds ~330
+    // asserted fences; raise this as coverage grows, never lower it to make a
+    // run pass.
+    expect(assertedFences).toBeGreaterThan(300);
+    // Ceilings on the two exempt classes, so neither absorbs the corpus. Type-
+    // aware rules legitimately appear (~9 fences across 6 rules), but declaring
+    // requiresTypeChecking must not become the way to retire an example, and
+    // unlintable fences (1: the syntax error `no-curly-brackets-around-commented
+    // -properties` documents on purpose) are packaging defects everywhere else.
+    expect(typeAwareFences).toBeLessThan(30);
+    expect(unlintableFences).toBeLessThan(5);
+
+    const problems = auditSilentIncorrect(silents, SILENT_INCORRECT_BLOCKS);
+    if (problems.length > 0) {
+      throw new Error(
+        [
+          `${problems.length} documented "incorrect" example(s) report nothing:`,
+          ...problems,
+        ].join('\n\n'),
+      );
+    }
+  });
+
+  it('catches an option-gated fence that never fires (control)', () => {
+    // The shape this guard was built for: a fence filed under "incorrect" that
+    // only violates under a non-default option, so by default it documents a
+    // rule that says nothing (memoize-root-level-hocs, #1641).
+    const fence = [
+      'function ReduxComponent() {',
+      '  const Connected = connect(mapState)(BaseComponent);',
+      '  return <Connected />;',
+      '}',
+    ].join('\n');
+    const WIDGET = '/repo/src/components/Widget.tsx';
+
+    const bare = lintBlock('memoize-root-level-hocs', WIDGET, fence, null);
+    expect(bare.skipped).toBe(false);
+    // Dead: parsed, rule ran, nothing reported. The danger is that this reads
+    // exactly like a page with no examples at all.
+    expect(bare.reports).toEqual([]);
+
+    const hinted = lintBlock('memoize-root-level-hocs', WIDGET, fence, {
+      additionalHocNames: ['connect'],
+    });
+    expect(hinted.skipped).toBe(false);
+    expect(hinted.reports.length).toBeGreaterThan(0);
+    expect(hinted.reports[0]).toContain('HOC "connect" is created inside');
+
+    const problems = auditSilentIncorrect(
+      [{ key: 'planted-rule:36', head: 'function ReduxComponent() {' }],
+      {},
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('docs/rules/planted-rule.md:36');
+    expect(problems[0]).toContain('documented as INCORRECT');
+    // A listed key clears; a stale key fails.
+    expect(
+      auditSilentIncorrect([{ key: 'planted-rule:36', head: 'x' }], {
+        'planted-rule:36': 'reason',
+      }),
+    ).toEqual([]);
+    expect(
+      auditSilentIncorrect([], { 'planted-rule:36': 'reason' })[0],
+    ).toContain('Delete the entry');
+  });
+
+  it('catches a path-scoped fence that never fires (control)', () => {
+    // The other dead shape (require-migration-script-metadata, #1641): a rule
+    // scoped by glob, documented in a fence that omits the path it assumes, so
+    // the rule never engages and the example enforces nothing.
+    const fence = [
+      '/**',
+      ' * @migration true',
+      ' * @migrationPhase after',
+      ' * @migrationDescription Backfill data',
+      ' */',
+      "import { onCallVaripotent } from '../../v2/https/onCall';",
+    ].join('\n');
+
+    const offPath = lintBlock(
+      'require-migration-script-metadata',
+      '/repo/src/util/helper.ts',
+      fence,
+      null,
+    );
+    expect(offPath.skipped).toBe(false);
+    expect(offPath.reports).toEqual([]);
+
+    const hint = '// functions/src/callable/scripts/backfillData.f.ts';
+    const hinted = filenameHint(`${hint}\n${fence}`);
+    expect(hinted).toBe(
+      '/repo/functions/src/callable/scripts/backfillData.f.ts',
+    );
+    const onPath = lintBlock(
+      'require-migration-script-metadata',
+      hinted as string,
+      `${hint}\n${fence}`,
+      null,
+    );
+    expect(onPath.skipped).toBe(false);
+    expect(onPath.reports.length).toBeGreaterThan(0);
+    expect(onPath.reports[0]).toContain('@migrationDependencies');
+  });
+
+  // Pins the residue to the two fences verified as harness artifacts. An
+  // exemption is meant to be a conscious, reviewable opt-out, so growing this
+  // set means editing this expectation on purpose.
+  it('ships with only the two verified type-aware JSX-prop exemptions', () => {
+    expect(Object.keys(SILENT_INCORRECT_BLOCKS).sort()).toEqual([
+      'consistent-callback-naming:44',
+      'consistent-callback-naming:48',
+    ]);
+  });
+
+  it('skips exactly the rules that declare requiresTypeChecking', () => {
+    const declared = ruleNames.filter(requiresTypeChecking);
+    // Non-vacuity: if the metadata read ever breaks, every rule looks
+    // type-aware (or none does) and the skip silently swallows the corpus.
+    expect(declared.length).toBeGreaterThan(0);
+    expect(declared.length).toBeLessThan(ruleNames.length / 10);
+    expect(declared).toContain('no-usememo-for-pass-by-value');
+    expect(requiresTypeChecking('no-jsx-whitespace-literal')).toBe(false);
   });
 });
