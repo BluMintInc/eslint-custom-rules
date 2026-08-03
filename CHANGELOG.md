@@ -1,3 +1,10 @@
+## [1.20.86](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.85...v1.20.86) (2026-08-03)
+
+
+### Bug Fixes
+
+* **prefer-spread-over-reassembly:** prove narrowing through a relative import (closes [#1644](https://github.com/BluMintInc/eslint-custom-rules/issues/1644)) ([58cdf6f](https://github.com/BluMintInc/eslint-custom-rules/commit/58cdf6fb7bf100eb613e88edf16c424330e305b9))
+
 ## [1.20.85](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.84...v1.20.85) (2026-08-03)
 
 

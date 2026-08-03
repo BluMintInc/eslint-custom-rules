@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.86",
+    "date": "2026-08-03T03:52:41.277Z",
+    "rules": [
+      {
+        "name": "prefer-spread-over-reassembly",
+        "changeType": "fix",
+        "issues": [
+          1644
+        ],
+        "summary": "prove narrowing through a relative import (closes #1644)"
+      }
+    ]
+  },
+  {
     "version": "1.20.85",
     "date": "2026-08-03T03:21:29.711Z",
     "rules": [
