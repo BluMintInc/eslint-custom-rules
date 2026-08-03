@@ -93,6 +93,39 @@ An alias (`import { Fragment as Frag } from 'react'`) leaves the name free, so
 the fix adds the specifier it needs. `React.Fragment` is a member access on the
 default import rather than a `Fragment` binding, so it never blocks the fix.
 
+### Fragments inside a `jest.mock` factory
+
+The fix is withheld for one more reason: a fragment inside a `jest.mock`,
+`jest.doMock` or `jest.setMock` **module factory**. Jest hoists that factory
+above every import in the file, and permits it to read only globals and bindings
+whose name begins with `mock` — a `Fragment` reference there fails the transform
+(`Invalid variable access: Fragment`) and takes the whole suite down with it.
+The shorthand `<>` is the spelling that works in that position. The report still
+fires, and two remedies the factory can hold are available to the author:
+
+```jsx
+jest.mock('./Provider', () => {
+  // Legal: react is loaded inside the hoisted factory.
+  const { Fragment } = jest.requireActual('react');
+  return { Provider: ({ children }) => <Fragment>{children}</Fragment> };
+});
+```
+
+```jsx
+// Legal: the `mock` prefix puts the alias on Jest's allowlist.
+import { Fragment as MockFragment } from 'react';
+
+jest.mock('./Provider', () => ({
+  Provider: ({ children }) => <MockFragment>{children}</MockFragment>,
+}));
+```
+
+Only the factory — the registrar's second argument — declines. A fragment in the
+module specifier position, inside a `jest.fn` callback, or anywhere else in the
+file is fixed as usual, and a declining factory never claims the import: the
+injected `import { Fragment } from 'react'` rides on the first violation that
+does fix.
+
 ## When Not To Use It
 
 Skip this rule if your project intentionally mixes fragment styles for brevity and you accept losing fragment props like `key` on shorthand fragments.

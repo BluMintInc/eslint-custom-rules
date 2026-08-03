@@ -82,6 +82,59 @@ function bindsReactFragment(variable: TSESLint.Scope.Variable): boolean {
   );
 }
 
+/**
+ * `jest.mock` hoists its module factory above the file's imports;
+ * `doMock`/`setMock` register a factory of the same shape at call time. The
+ * hoist rejects a factory that reads any out-of-scope binding whose name does
+ * not begin with `mock`, which is what puts the injected `Fragment` import out
+ * of reach inside one: the module fails at transform time
+ * (`Invalid variable access: Fragment`) and takes the whole suite down with it.
+ * The shorthand `<>` the rule rewrites away is the spelling that works there.
+ *
+ * The report still fires, because remedies the factory can hold exist —
+ * `const { Fragment } = jest.requireActual('react')` inside it, or a
+ * `mock`-prefixed import alias — and only the fix is withheld.
+ */
+const MOCK_REGISTRARS = new Set(['mock', 'doMock', 'setMock']);
+
+/** Whether the call registers a module factory with `jest`. */
+function isMockRegistrarCall(node: TSESTree.CallExpression): boolean {
+  const { callee } = node;
+  if (callee.type !== AST_NODE_TYPES.MemberExpression || callee.computed) {
+    return false;
+  }
+  const { object, property } = callee;
+  return (
+    object.type === AST_NODE_TYPES.Identifier &&
+    object.name === 'jest' &&
+    property.type === AST_NODE_TYPES.Identifier &&
+    MOCK_REGISTRARS.has(property.name)
+  );
+}
+
+/**
+ * Whether the node sits inside the factory a jest registrar hoists — the second
+ * argument of the call. The module specifier that precedes it is evaluated in
+ * place and keeps its access to the file's imports, so only the factory subtree
+ * is out of reach.
+ */
+function isInsideMockFactory(node: TSESTree.Node): boolean {
+  let child: TSESTree.Node = node;
+  let parent = node.parent;
+  while (parent) {
+    if (
+      parent.type === AST_NODE_TYPES.CallExpression &&
+      parent.arguments[1] === child &&
+      isMockRegistrarCall(parent)
+    ) {
+      return true;
+    }
+    child = parent;
+    parent = parent.parent;
+  }
+  return false;
+}
+
 export const preferFragmentComponent = createRule<[], MessageIds>({
   name: 'prefer-fragment-component',
   meta: {
@@ -308,6 +361,14 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
                 return null;
               }
 
+              // A hoisted jest factory cannot reach the injected import, so
+              // the rewrite is withheld inside one. Checking the inner
+              // fragment covers the outer React.Fragment as well, since a
+              // parent of a node in the factory is in the factory too.
+              if (isInsideMockFactory(node)) {
+                return null;
+              }
+
               // Both tags are rewritten to the same bare name, so resolving at
               // the inner fragment — the deeper of the two scopes — covers the
               // outer one too. Every bail precedes the latch so a withheld edit
@@ -414,6 +475,12 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
               return null;
             }
 
+            // A hoisted jest factory cannot reach the injected import, so the
+            // rewrite is withheld inside one.
+            if (isInsideMockFactory(node)) {
+              return null;
+            }
+
             // Every bail precedes the latch so a withheld edit cannot make a
             // later fix believe the import is already handled.
             if (!resolvesToReactFragment(node)) {
@@ -486,6 +553,12 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
                 return null;
               }
 
+              // A hoisted jest factory cannot reach the injected import, so
+              // the rewrite is withheld inside one.
+              if (isInsideMockFactory(node)) {
+                return null;
+              }
+
               // Every bail precedes the latch so a withheld edit cannot make a
               // later fix believe the import is already handled.
               if (!resolvesToReactFragment(node)) {
@@ -542,6 +615,12 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
             // A suppressed report is discarded together with its fix, so it
             // must not claim the import carrier slot.
             if (isReportSuppressed(node.name)) {
+              return null;
+            }
+
+            // A hoisted jest factory cannot reach the injected import, so the
+            // rewrite is withheld inside one.
+            if (isInsideMockFactory(node)) {
               return null;
             }
 

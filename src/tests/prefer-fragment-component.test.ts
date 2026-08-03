@@ -1336,3 +1336,119 @@ const Component = () => <Fragment>Hello World</Fragment>;
     },
   ],
 });
+
+// ------------------------------------------------------------------
+// Issue #1660: a jest registrar's module factory is hoisted above the file's
+// imports, and babel-plugin-jest-hoist rejects a factory that reads an
+// out-of-scope binding whose name does not begin with `mock`. The injected
+// `import { Fragment } from 'react'` is unreachable from inside one, so the
+// fix declines there while the report stands. The shorthand `<>` the rule
+// rewrites away is the spelling that works inside a factory.
+// ------------------------------------------------------------------
+ruleTesterJsx.run('prefer-fragment-component', preferFragmentComponent, {
+  valid: [],
+  invalid: [
+    {
+      // A jest.mock factory is hoisted above the imports, so it cannot reference an
+      // out-of-scope `Fragment`. The report stands; the fix must decline.
+      code: `
+jest.mock('./Provider', () => {
+  return { Provider: ({ children }) => <>{children}</> };
+});
+`,
+      output: null,
+      errors: [{ messageId: 'preferFragment' }],
+    },
+    {
+      name: 'a jest.doMock factory withholds the fix',
+      code: `
+jest.doMock('./Provider', () => {
+  return { Provider: ({ children }) => <>{children}</> };
+});
+`,
+      output: null,
+      errors: [{ messageId: 'preferFragment' }],
+    },
+    {
+      name: 'a jest.setMock factory withholds the fix',
+      code: `
+jest.setMock('./Provider', () => {
+  return { Provider: ({ children }) => <>{children}</> };
+});
+`,
+      output: null,
+      errors: [{ messageId: 'preferFragment' }],
+    },
+    {
+      name: 'a React.Fragment inside a mock factory withholds the fix',
+      code: `
+jest.mock('./Provider', () => {
+  return { Provider: ({ children }) => <React.Fragment>{children}</React.Fragment> };
+});
+`,
+      output: null,
+      errors: [{ messageId: 'preferFragment' }],
+    },
+    {
+      // The control for the decline: the same fragment outside every factory
+      // still gains the import and the rewrite.
+      name: 'a fragment outside every mock factory fixes normally',
+      code: `
+jest.mock('./Provider', () => ({ Provider: null }));
+const Component = () => <>Hello World</>;
+`,
+      errors: [{ messageId: 'preferFragment' }],
+      output: `
+import { Fragment } from 'react';
+jest.mock('./Provider', () => ({ Provider: null }));
+const Component = () => <Fragment>Hello World</Fragment>;
+`,
+    },
+    {
+      name: 'a declining mock-factory fragment passes the import carrier on',
+      code: `
+jest.mock('./Provider', () => {
+  return { Provider: ({ children }) => <>{children}</> };
+});
+const Component = () => <>Hello World</>;
+`,
+      errors: [
+        { messageId: 'preferFragment' },
+        { messageId: 'preferFragment' },
+      ],
+      output: `
+import { Fragment } from 'react';
+jest.mock('./Provider', () => {
+  return { Provider: ({ children }) => <>{children}</> };
+});
+const Component = () => <Fragment>Hello World</Fragment>;
+`,
+    },
+    {
+      // The module specifier is evaluated in place rather than hoisted with the
+      // factory, so a fragment there keeps its access to the file's imports.
+      name: 'a fragment in the mock specifier position fixes normally',
+      code: `
+jest.mock(pathFor(<>{name}</>), () => ({ Provider: null }));
+`,
+      errors: [{ messageId: 'preferFragment' }],
+      output: `
+import { Fragment } from 'react';
+jest.mock(pathFor(<Fragment>{name}</Fragment>), () => ({ Provider: null }));
+`,
+    },
+    {
+      // `jest.fn` is not a registrar: its callback is never hoisted, so a
+      // fragment inside it fixes like any other.
+      name: 'a factory-shaped callback outside a registrar fixes normally',
+      code: `
+const render = jest.fn(() => <>{x}</>);
+`,
+      errors: [{ messageId: 'preferFragment' }],
+      output: `
+import { Fragment } from 'react';
+const render = jest.fn(() => <Fragment>{x}</Fragment>);
+`,
+    },
+  ],
+});
