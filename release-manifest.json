@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.91",
+    "date": "2026-08-03T15:15:42.831Z",
+    "rules": [
+      {
+        "name": "prefer-use-deep-compare-memo",
+        "changeType": "fix",
+        "issues": [
+          1661
+        ],
+        "summary": "unbind the orphaned useMemo import (closes #1661)"
+      }
+    ]
+  },
+  {
     "version": "1.20.90",
     "date": "2026-08-03T13:37:18.271Z",
     "rules": [

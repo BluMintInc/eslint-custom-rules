@@ -1,3 +1,10 @@
+## [1.20.91](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.90...v1.20.91) (2026-08-03)
+
+
+### Bug Fixes
+
+* **prefer-use-deep-compare-memo:** unbind the orphaned useMemo import (closes [#1661](https://github.com/BluMintInc/eslint-custom-rules/issues/1661)) ([529e560](https://github.com/BluMintInc/eslint-custom-rules/commit/529e560e990a18a12e5e14a87651175e8a7cc240))
+
 ## [1.20.90](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.89...v1.20.90) (2026-08-03)
 
 
