@@ -1,10 +1,11 @@
 import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
+import { createSuppressionChecker } from '../utils/disableDirectives';
 import {
-  createSuppressionChecker,
-  parseDisableDirectives,
-} from '../utils/disableDirectives';
+  importInsertionAnchor,
+  insertAtImportAnchor,
+} from '../utils/importInsertion';
 
 type MessageIds = 'preferFragment' | 'addFragmentImport';
 
@@ -202,34 +203,6 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
     }
 
     /**
-     * Where a brand-new import statement can be spliced in without changing
-     * what the file's directives govern. A whole-line insertion directly before
-     * the first statement slides in between an `eslint-disable-next-line`
-     * comment and the line it applies to, silently retargeting that directive
-     * at the import. Anchoring above such comments keeps every directive
-     * pointed at the code its author aimed it at.
-     */
-    function findImportAnchor(): TSESTree.Node | TSESTree.Comment {
-      const firstStatement = sourceCode.ast.body[0];
-      let anchor: TSESTree.Node | TSESTree.Comment = firstStatement;
-
-      const leadingComments = sourceCode.getCommentsBefore(firstStatement);
-      for (let index = leadingComments.length - 1; index >= 0; index--) {
-        const comment = leadingComments[index];
-        const [directive] = parseDisableDirectives([comment]);
-        if (
-          directive?.kind !== 'disable-next-line' ||
-          comment.loc.end.line + 1 !== anchor.loc.start.line
-        ) {
-          break;
-        }
-        anchor = comment;
-      }
-
-      return anchor;
-    }
-
-    /**
      * Adds Fragment to an existing react import or creates a new one. The
      * emitted shape is a value named specifier, since the rewritten element
      * references `Fragment` at runtime. Declarations come from `Program.body`
@@ -277,12 +250,18 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
         }
       }
 
-      // No React import found, create a new one
-      const importText = `import { ${FRAGMENT_NAME} } from '${REACT_MODULE}';\n`;
-      const indentation = sourceCode.text.match(/^[ \t]*/m)?.[0] || '';
-      return fixer.insertTextBefore(
-        findImportAnchor(),
-        indentation + importText,
+      // No react declaration can host the specifier, so the fix emits its own
+      // declaration. The shared anchor keeps the file's prologue intact: a
+      // `'use client'` directive stays the first statement, a `#!` shebang
+      // stays at character 0, a header comment stays above the code it covers,
+      // and an `eslint-disable-next-line` keeps pointing at the line its author
+      // aimed it at instead of at the inserted import.
+      const anchor = importInsertionAnchor(sourceCode);
+      return insertAtImportAnchor(
+        sourceCode,
+        fixer,
+        anchor,
+        `import { ${FRAGMENT_NAME} } from '${REACT_MODULE}';\n`,
       );
     }
 

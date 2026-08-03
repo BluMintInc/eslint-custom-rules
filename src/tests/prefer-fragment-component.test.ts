@@ -1275,3 +1275,64 @@ const B = () => <Fragment>Two</Fragment>;
     expectNoUnboundFragment(output);
   });
 });
+
+// ------------------------------------------------------------------
+// Issue #1648: a fix that writes a brand-new import must not displace the
+// file's prologue. Each case is flush-left because a prologue's meaning
+// depends on its position in the file. The final case is the control: an
+// anchor disabled outright would also "preserve" every prologue above, so
+// the import must still land at the top of an existing import block.
+// ------------------------------------------------------------------
+ruleTesterJsx.run('prefer-fragment-component', preferFragmentComponent, {
+  valid: [],
+  invalid: [
+    {
+      name: "the injected import lands below a 'use client' directive",
+      code: `'use client';
+const Component = () => <>Hello World</>;
+`,
+      errors: [{ messageId: 'preferFragment' }],
+      output: `'use client';
+import { Fragment } from 'react';
+const Component = () => <Fragment>Hello World</Fragment>;
+`,
+    },
+    {
+      name: 'the injected import leaves a shebang at character 0',
+      code: `#!/usr/bin/env node
+const Component = () => <>Hello World</>;
+`,
+      errors: [{ messageId: 'preferFragment' }],
+      output: `#!/usr/bin/env node
+import { Fragment } from 'react';
+const Component = () => <Fragment>Hello World</Fragment>;
+`,
+    },
+    {
+      name: 'the injected import stays below a // @ts-nocheck header',
+      code: `// @ts-nocheck
+const Component = () => <>Hello World</>;
+`,
+      errors: [{ messageId: 'preferFragment' }],
+      output: `// @ts-nocheck
+import { Fragment } from 'react';
+const Component = () => <Fragment>Hello World</Fragment>;
+`,
+    },
+    {
+      name: "a 'use client' file with an existing import anchors on that import",
+      code: `'use client';
+import { x } from './x';
+void x;
+const Component = () => <>Hello World</>;
+`,
+      errors: [{ messageId: 'preferFragment' }],
+      output: `'use client';
+import { Fragment } from 'react';
+import { x } from './x';
+void x;
+const Component = () => <Fragment>Hello World</Fragment>;
+`,
+    },
+  ],
+});
