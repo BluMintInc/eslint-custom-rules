@@ -7,6 +7,10 @@ import {
 } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
+import {
+  importInsertionAnchor,
+  insertAtImportAnchor,
+} from '../utils/importInsertion';
 
 type MessageIds = 'preferGlobalRouterStateKey' | 'invalidQueryKeySource';
 
@@ -436,30 +440,6 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
       )?.[0];
     }
 
-    /**
-     * Helper to find the last directive prologue in a statement list
-     */
-    function findLastDirective(
-      body: TSESTree.Statement[],
-    ): TSESTree.ExpressionStatement | undefined {
-      let lastDirective: TSESTree.ExpressionStatement | undefined;
-
-      for (const stmt of body) {
-        if (
-          stmt.type === AST_NODE_TYPES.ExpressionStatement &&
-          stmt.expression.type === AST_NODE_TYPES.Literal &&
-          typeof stmt.expression.value === 'string' &&
-          typeof stmt.directive === 'string'
-        ) {
-          lastDirective = stmt;
-          continue;
-        }
-        break;
-      }
-
-      return lastDirective;
-    }
-
     return {
       // Track imports from queryKeys.ts
       ImportDeclaration(node: TSESTree.ImportDeclaration) {
@@ -742,25 +722,33 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                                     ),
                                   );
                                 } else {
-                                  const lastDirective = findLastDirective(
-                                    sourceCode.ast.body,
+                                  // A file's first import may cross only the
+                                  // whitespace the source opens with. The
+                                  // shared anchor is the floor of that climb:
+                                  // it clears the directive prologue, but
+                                  // also a `#!` shebang or a leading header
+                                  // comment, which text spliced at character
+                                  // 0 would displace.
+                                  const anchor =
+                                    importInsertionAnchor(sourceCode);
+                                  const anchorIndex =
+                                    anchor.kind === 'before'
+                                      ? anchor.target.range[0]
+                                      : anchor.index;
+                                  const opensFile =
+                                    sourceCode.text
+                                      .slice(0, anchorIndex)
+                                      .trim() === '';
+                                  fixes.push(
+                                    insertAtImportAnchor(
+                                      sourceCode,
+                                      fixer,
+                                      opensFile
+                                        ? { kind: 'index', index: 0 }
+                                        : anchor,
+                                      importText,
+                                    ),
                                   );
-
-                                  if (lastDirective) {
-                                    fixes.push(
-                                      fixer.insertTextAfter(
-                                        lastDirective,
-                                        `\n${importText}`,
-                                      ),
-                                    );
-                                  } else {
-                                    fixes.push(
-                                      fixer.insertTextBeforeRange(
-                                        [0, 0],
-                                        importText,
-                                      ),
-                                    );
-                                  }
                                 }
                               }
                               scheduledQueryKeyNamedImports.add(

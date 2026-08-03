@@ -1533,3 +1533,96 @@ function Component() {
     ],
   },
 );
+
+// ------------------------------------------------------------------
+// Issue #1648: a fix that writes a brand-new import must not displace the
+// file's prologue. Each case is flush-left because a prologue's meaning
+// depends on its position in the file. The final case is the control: an
+// anchor disabled outright would also "preserve" every prologue above, so
+// the import must still land at the top of an existing import block.
+// ------------------------------------------------------------------
+ruleTesterJsx.run(
+  'prefer-global-router-state-key',
+  preferGlobalRouterStateKey,
+  {
+    valid: [],
+    invalid: [
+      {
+        name: "the injected import lands below a 'use client' directive",
+        filename: '/repo/src/components/Widget.tsx',
+        code: `'use client';
+function Component() {
+  const [value] = useRouterState({ key: 'user-profile' });
+  return <div>{value}</div>;
+}
+`,
+        errors: [stringLiteralError("'user-profile'")],
+        output: `'use client';
+import { QUERY_KEY_USER_PROFILE } from '../util/routing/queryKeys';
+function Component() {
+  const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+  return <div>{value}</div>;
+}
+`,
+      },
+      {
+        name: 'the injected import leaves a shebang at character 0',
+        filename: '/repo/src/components/Widget.tsx',
+        code: `#!/usr/bin/env node
+function Component() {
+  const [value] = useRouterState({ key: 'user-profile' });
+  return <div>{value}</div>;
+}
+`,
+        errors: [stringLiteralError("'user-profile'")],
+        output: `#!/usr/bin/env node
+import { QUERY_KEY_USER_PROFILE } from '../util/routing/queryKeys';
+function Component() {
+  const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+  return <div>{value}</div>;
+}
+`,
+      },
+      {
+        name: 'the injected import stays below a // @ts-nocheck header',
+        filename: '/repo/src/components/Widget.tsx',
+        code: `// @ts-nocheck
+function Component() {
+  const [value] = useRouterState({ key: 'user-profile' });
+  return <div>{value}</div>;
+}
+`,
+        errors: [stringLiteralError("'user-profile'")],
+        output: `// @ts-nocheck
+import { QUERY_KEY_USER_PROFILE } from '../util/routing/queryKeys';
+function Component() {
+  const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+  return <div>{value}</div>;
+}
+`,
+      },
+      {
+        name: "a 'use client' file with an existing import anchors on that import",
+        filename: '/repo/src/components/Widget.tsx',
+        code: `'use client';
+import { x } from './x';
+void x;
+function Component() {
+  const [value] = useRouterState({ key: 'user-profile' });
+  return <div>{value}</div>;
+}
+`,
+        errors: [stringLiteralError("'user-profile'")],
+        output: `'use client';
+import { QUERY_KEY_USER_PROFILE } from '../util/routing/queryKeys';
+import { x } from './x';
+void x;
+function Component() {
+  const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+  return <div>{value}</div>;
+}
+`,
+      },
+    ],
+  },
+);
