@@ -485,6 +485,180 @@ export const run: Handler = (payload) => payload;
 `,
     },
 
+    // Issue #1670: a type several strippable annotations share is orphaned by
+    // their union even though no single annotation orphans it. The strips ship
+    // as one fix carried by the first of them, so the import goes with the last
+    // reference to it rather than being stranded by a pass that deletes them
+    // all and unbinds nothing.
+    {
+      code: `import { Handler } from './handler';
+import { Payload } from './payload';
+
+export const runA: Handler = (payload: Payload) => payload;
+export const runB: Handler = (payload: Payload) => payload;
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('payload: Payload'),
+        },
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('payload: Payload'),
+        },
+      ],
+      output: `import { Handler } from './handler';
+
+export const runA: Handler = (payload) => payload;
+export const runB: Handler = (payload) => payload;
+`,
+    },
+
+    // Three consumers of one import, so the union spans a site that is neither
+    // the carrier nor the last
+    {
+      code: `import { Handler } from './handler';
+import { Payload } from './payload';
+
+export const runA: Handler = (payload: Payload) => payload;
+export const runB: Handler = (payload: Payload) => payload;
+export const runC: Handler = (payload: Payload) => payload;
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('payload: Payload'),
+        },
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('payload: Payload'),
+        },
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('payload: Payload'),
+        },
+      ],
+      output: `import { Handler } from './handler';
+
+export const runA: Handler = (payload) => payload;
+export const runB: Handler = (payload) => payload;
+export const runC: Handler = (payload) => payload;
+`,
+    },
+
+    // Shared annotations reaching a named specifier: only the orphan leaves the
+    // braces, its siblings in the same declaration stay
+    {
+      code: `import { Handler, Payload, Result } from './types';
+
+export const RESULT: Result = { ok: true };
+
+export const runA: Handler = (payload: Payload) => RESULT;
+export const runB: Handler = (payload: Payload) => RESULT;
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('payload: Payload'),
+        },
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('payload: Payload'),
+        },
+      ],
+      output: `import { Handler, Result } from './types';
+
+export const RESULT: Result = { ok: true };
+
+export const runA: Handler = (payload) => RESULT;
+export const runB: Handler = (payload) => RESULT;
+`,
+    },
+
+    // Two annotations of one signature sharing a type: the union of a single
+    // fix's own removals is what the plan is made against
+    {
+      code: `import { Handler } from './handler';
+import { Payload } from './payload';
+
+export const run: Handler = (first: Payload, second: Payload) => [first, second];
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('first: Payload'),
+        },
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('second: Payload'),
+        },
+      ],
+      output: `import { Handler } from './handler';
+
+export const run: Handler = (first, second) => [first, second];
+`,
+    },
+
+    // A site whose orphan cannot be unbound is screened out before the union is
+    // planned, so it declines its own fix without vetoing its siblings'
+    {
+      code: `import { Handler } from './handler';
+import { Payload } from './payload';
+
+type Meta = { tag: string };
+
+export const runA: Handler = (payload: Payload) => payload;
+export const runB: Handler = (payload: Payload) => payload;
+export const tag: Handler = (meta: Meta) => meta.tag;
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('payload: Payload'),
+        },
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('payload: Payload'),
+        },
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('meta: Meta'),
+        },
+      ],
+      output: `import { Handler } from './handler';
+
+type Meta = { tag: string };
+
+export const runA: Handler = (payload) => payload;
+export const runB: Handler = (payload) => payload;
+export const tag: Handler = (meta: Meta) => meta.tag;
+`,
+    },
+
+    // A local alias shared by every annotation that reads it: the union orphans
+    // what the helper refuses to delete, so the whole batch declines rather
+    // than stripping both and leaving the alias unused
+    {
+      code: `import { Handler } from './handler';
+
+type Payload = { id: string };
+
+export const runA: Handler = (payload: Payload) => payload;
+export const runB: Handler = (payload: Payload) => payload;
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('payload: Payload'),
+        },
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('payload: Payload'),
+        },
+      ],
+      output: null,
+    },
+
     // Control: a type used elsewhere too keeps its import, so the fix is
     // corrected rather than switched off
     {
@@ -1290,10 +1464,10 @@ describe('no-redundant-param-types --fix leaves no import bound to nothing', () 
     ).toHaveLength(0);
   });
 
-  // Several parameters of one signature each orphan their own import. The fixes
-  // merge into ranges that span from each import to its annotation, so they
-  // conflict and ESLint defers all but one per pass; the run still converges.
-  it('unbinds every import across passes when each parameter orphans one', () => {
+  // Several parameters of one signature each orphan their own import. Every
+  // strip rides on one carrier fix, so the whole signature and both imports go
+  // together.
+  it('unbinds every import when each parameter of a signature orphans one', () => {
     const linter = makeLinter();
     const source = [
       "import { Handler } from './handler';",
@@ -1316,17 +1490,18 @@ describe('no-redundant-param-types --fix leaves no import bound to nothing', () 
     expect(danglingTypeReferences(fixed.output)).toEqual([]);
   });
 
-  // A type two strippable annotations share is deliberately NOT unbound. Each
-  // fix is judged alone against the file as it stands, so neither annotation
-  // sees itself as the last consumer, and ESLint applies both non-conflicting
-  // strips in the same pass — leaving the import unused.
+  // A type two strippable annotations share is unbound by their union. Judging
+  // each strip alone sees the sibling annotation still standing and concludes
+  // the binding is alive, so both annotations go while the import stays — and
+  // nothing re-reports it, because this rule's own reports are resolved by the
+  // fix. Both strips therefore ship as one fix, and the plan is made against
+  // every removal that fix carries.
   //
-  // That is the price of suppression safety, and it is the cheaper side of the
-  // trade. Judging the fixes together would delete the import whenever a
-  // sibling annotation turned out to be `eslint-disable`d (which a rule cannot
-  // see), leaving a type reference bound to nothing: a compile error in place
-  // of an unused-import warning. The suppression suite below pins that.
-  it('leaves an import two annotations share rather than assuming both go', () => {
+  // Suppression safety is preserved by excluding a suppressed site from the
+  // batch instead of by refusing to batch: a disabled sibling (which a rule
+  // cannot see from its reports) keeps its annotation, so its reference is
+  // never counted as removed. The suppression suite below pins that.
+  it('unbinds an import two annotations share in a single pass', () => {
     const linter = makeLinter();
     const source = [
       "import { Handler } from './handler';",
@@ -1339,9 +1514,62 @@ describe('no-redundant-param-types --fix leaves no import bound to nothing', () 
 
     const fixed = linter.verifyAndFix(source, configFor(FIX_RULES), FILENAME);
     expect(fixed.output).not.toContain('(payload: Payload)');
-    expect(fixed.output).toContain("import { Payload } from './payload';");
+    expect(fixed.output).not.toContain("import { Payload } from './payload';");
+    expect(
+      linter.verify(fixed.output, configFor(UNUSED_RULES), FILENAME),
+    ).toHaveLength(0);
     // The property that actually matters: nothing is left naming a type the
     // file no longer binds.
+    expect(danglingTypeReferences(fixed.output)).toEqual([]);
+  });
+
+  // Three consumers exercise the same union with a site that is neither first
+  // (the carrier) nor last.
+  it('unbinds an import three annotations share in a single pass', () => {
+    const linter = makeLinter();
+    const source = [
+      "import { Handler } from './handler';",
+      "import { Payload } from './payload';",
+      '',
+      'export const runA: Handler = (payload: Payload) => payload;',
+      'export const runB: Handler = (payload: Payload) => payload;',
+      'export const runC: Handler = (payload: Payload) => payload;',
+      '',
+    ].join('\n');
+
+    const fixed = linter.verifyAndFix(source, configFor(FIX_RULES), FILENAME);
+    expect(fixed.output).not.toContain('(payload: Payload)');
+    expect(fixed.output).not.toContain('./payload');
+    expect(
+      linter.verify(fixed.output, configFor(UNUSED_RULES), FILENAME),
+    ).toHaveLength(0);
+    expect(danglingTypeReferences(fixed.output)).toEqual([]);
+  });
+
+  // One site whose orphan cannot be unbound must not veto its siblings: the
+  // batch is screened site by site before the union is planned. `Meta` is a
+  // local alias the helper refuses to delete, so that annotation keeps its
+  // type while the shared import still goes.
+  it('keeps an unfixable site from vetoing the fixes around it', () => {
+    const linter = makeLinter();
+    const source = [
+      "import { Handler } from './handler';",
+      "import { Payload } from './payload';",
+      '',
+      'type Meta = { tag: string };',
+      '',
+      'export const runA: Handler = (payload: Payload) => payload;',
+      'export const runB: Handler = (payload: Payload) => payload;',
+      'export const tag: Handler = (meta: Meta) => meta.tag;',
+      '',
+    ].join('\n');
+
+    const fixed = linter.verifyAndFix(source, configFor(FIX_RULES), FILENAME);
+    expect(fixed.output).not.toContain('(payload: Payload)');
+    expect(fixed.output).not.toContain('./payload');
+    // The alias survives because the annotation that would orphan it does.
+    expect(fixed.output).toContain('(meta: Meta)');
+    expect(fixed.output).toContain('type Meta = { tag: string };');
     expect(danglingTypeReferences(fixed.output)).toEqual([]);
   });
 });
@@ -1395,7 +1623,10 @@ describe('no-redundant-param-types --fix under eslint-disable', () => {
 
     // Vacuity guard: a rule that stopped fixing would pass every assertion
     // about what the output does not contain.
+    expect(output).toContain('(payload) => payload');
     expect(output).not.toContain('(payload: Payload)');
+    // With every reference gone in the same fix, the shared import goes too.
+    expect(output).not.toContain("import { Payload } from './payload';");
     expectNoDanglingType(source, output);
   });
 
