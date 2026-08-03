@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { planOrphanedImportRemoval } from '../utils/importRemoval';
 
 type MessageIds =
   | 'noExplicitReturnTypeInferable'
@@ -1003,26 +1004,52 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
         );
       }
 
-      type FixableNode =
-        | TSESTree.FunctionDeclaration
-        | TSESTree.FunctionExpression
-        | TSESTree.ArrowFunctionExpression
-        | TSESTree.MethodDefinition;
+      /**
+       * Reports an annotation, taking with it any import it was the only
+       * consumer of. The two are one fix: applying either half alone leaves the
+       * file worse than applying neither.
+       *
+       * Orphanhood is judged against this annotation's own removal and the file
+       * as it stands, never against what the rest of the `--fix` run might also
+       * delete. A sibling annotation naming the same type may be
+       * `eslint-disable`d — which a rule cannot see, since suppression is
+       * applied to reports after they are emitted — so an edit that assumes its
+       * sibling will also go deletes an import the surviving annotation still
+       * references, trading an unused import for a dangling type. Judging one
+       * edit at a time is suppression-safe by construction: a suppressed
+       * report's fix never applies, so it can never have been depended on.
+       *
+       * The cost is that a type shared by several strippable annotations is not
+       * unbound in a single pass; each pass removes the annotations it can see,
+       * and only a pass that leaves the binding with no reference at all
+       * removes the import.
+       */
+      function reportAnnotation(
+        node: TSESTree.Node,
+        returnType: TSESTree.TSTypeAnnotation,
+        strippable: boolean,
+      ): void {
+        const importRanges = strippable
+          ? planOrphanedImportRemoval(sourceCode, [returnType.range])
+          : null;
 
-      function fixReturnType(
-        fixer: TSESLint.RuleFixer,
-        node: FixableNode,
-      ): TSESLint.RuleFix | null {
-        // Some nodes expose returnType directly while others nest it under value.
-        const returnType =
-          'returnType' in node
-            ? node.returnType
-            : 'value' in node
-            ? node.value.returnType
-            : null;
-        if (!returnType) return null;
-
-        return fixer.remove(returnType);
+        context.report({
+          node: returnType,
+          messageId: strippable
+            ? 'noExplicitReturnTypeInferable'
+            : 'noExplicitReturnTypeNonInferable',
+          data: { functionKind: describeFunctionKind(node) },
+          ...(importRanges
+            ? {
+                fix: (fixer) => [
+                  fixer.remove(returnType),
+                  ...importRanges.map((range) =>
+                    fixer.removeRange([range[0], range[1]]),
+                  ),
+                ],
+              }
+            : {}),
+        });
       }
 
       return {
@@ -1041,18 +1068,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
             return;
           }
 
-          const isInferable = Boolean(node.body);
-
-          context.report({
-            node: returnType,
-            messageId: isInferable
-              ? 'noExplicitReturnTypeInferable'
-              : 'noExplicitReturnTypeNonInferable',
-            data: { functionKind: describeFunctionKind(node) },
-            ...(isInferable
-              ? { fix: (fixer) => fixReturnType(fixer, node) }
-              : {}),
-          });
+          reportAnnotation(node, returnType, Boolean(node.body));
         },
 
         FunctionExpression(node) {
@@ -1074,12 +1090,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
             return;
           }
 
-          context.report({
-            node: returnType,
-            messageId: 'noExplicitReturnTypeInferable',
-            data: { functionKind: describeFunctionKind(node) },
-            fix: (fixer) => fixReturnType(fixer, node),
-          });
+          reportAnnotation(node, returnType, true);
         },
 
         ArrowFunctionExpression(node) {
@@ -1095,12 +1106,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
             return;
           }
 
-          context.report({
-            node: returnType,
-            messageId: 'noExplicitReturnTypeInferable',
-            data: { functionKind: describeFunctionKind(node) },
-            fix: (fixer) => fixReturnType(fixer, node),
-          });
+          reportAnnotation(node, returnType, true);
         },
 
         TSMethodSignature(node) {
@@ -1118,11 +1124,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
             return;
           }
 
-          context.report({
-            node: returnType,
-            messageId: 'noExplicitReturnTypeNonInferable',
-            data: { functionKind: describeFunctionKind(node) },
-          });
+          reportAnnotation(node, returnType, false);
         },
 
         MethodDefinition(node) {
@@ -1140,18 +1142,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
             return;
           }
 
-          const isInferable = Boolean(node.value.body);
-
-          context.report({
-            node: returnType,
-            messageId: isInferable
-              ? 'noExplicitReturnTypeInferable'
-              : 'noExplicitReturnTypeNonInferable',
-            data: { functionKind: describeFunctionKind(node) },
-            ...(isInferable
-              ? { fix: (fixer) => fixReturnType(fixer, node) }
-              : {}),
-          });
+          reportAnnotation(node, returnType, Boolean(node.value.body));
         },
 
         TSAbstractMethodDefinition(node) {
@@ -1168,11 +1159,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
 
           // Abstract methods never have bodies; they are always non-inferable and
           // intentionally have no fixer.
-          context.report({
-            node: returnType,
-            messageId: 'noExplicitReturnTypeNonInferable',
-            data: { functionKind: describeFunctionKind(node) },
-          });
+          reportAnnotation(node, returnType, false);
         },
 
         TSDeclareFunction(node) {
@@ -1190,11 +1177,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
             return;
           }
 
-          context.report({
-            node: returnType,
-            messageId: 'noExplicitReturnTypeNonInferable',
-            data: { functionKind: describeFunctionKind(node) },
-          });
+          reportAnnotation(node, returnType, false);
         },
       };
     },

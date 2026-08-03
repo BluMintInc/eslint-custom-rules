@@ -1,7 +1,63 @@
 import { Linter, Rule } from 'eslint';
+import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import * as tsParser from '@typescript-eslint/parser';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { noExplicitReturnType } from '../rules/no-explicit-return-type';
 import { preferTypeOverInterface } from '../rules/prefer-type-over-interface';
+
+/**
+ * Type names the source references but no longer binds.
+ *
+ * This is the failure a fix that deletes an import too eagerly produces, and it
+ * is invisible to the rule's own reports — the fix resolves them, so nothing
+ * re-reports the damage. It is also strictly worse than the unused import issue
+ * #1649 reports: an unused import is a lint warning, a type reference bound to
+ * nothing is a compile error.
+ */
+function danglingTypeReferences(code: string): string[] {
+  const ast = tsParser.parse(code, {
+    ecmaVersion: 2022,
+    sourceType: 'module',
+    range: true,
+    loc: true,
+  });
+
+  const bound = new Set<string>();
+  const used = new Set<string>();
+
+  const visit = (node: TSESTree.Node): void => {
+    if (node.type === AST_NODE_TYPES.ImportDeclaration) {
+      for (const specifier of node.specifiers) {
+        bound.add(specifier.local.name);
+      }
+      return;
+    }
+    if (
+      node.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
+      node.type === AST_NODE_TYPES.TSInterfaceDeclaration
+    ) {
+      bound.add(node.id.name);
+    }
+    if (
+      node.type === AST_NODE_TYPES.TSTypeReference &&
+      node.typeName.type === AST_NODE_TYPES.Identifier
+    ) {
+      used.add(node.typeName.name);
+    }
+
+    for (const [key, value] of Object.entries(node)) {
+      if (key === 'parent') continue;
+      for (const child of Array.isArray(value) ? value : [value]) {
+        if (child && typeof child === 'object' && 'type' in child) {
+          visit(child as TSESTree.Node);
+        }
+      }
+    }
+  };
+
+  visit(ast as TSESTree.Node);
+  return [...used].filter((name) => !bound.has(name));
+}
 
 ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
   valid: [
@@ -1178,6 +1234,643 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
       ],
       output: null,
     },
+
+    // Issue #1649: an annotation can be the only consumer of the type it names.
+    // Stripping it on its own leaves the import bound to nothing, so a file that
+    // linted clean fails `no-unused-vars` afterwards — and since the rule's own
+    // report is resolved by the fix, nothing re-reports the debt. The import
+    // therefore goes with the annotation, as one atomic fix.
+
+    // The issue's exact reproduction
+    {
+      code: `import type { User } from './User';
+
+export const buildUser = (id: string): User => {
+  return { id };
+};
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: `
+export const buildUser = (id: string) => {
+  return { id };
+};
+`,
+    },
+
+    // Control: the type is used elsewhere too, so only the annotation goes.
+    // Without this the fix could have been "disabled" rather than corrected.
+    {
+      code: `import type { User } from './User';
+
+const SEED: User = { id: 'seed' };
+
+export const buildUser = (id: string): User => {
+  return { id, seed: SEED };
+};
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: `import type { User } from './User';
+
+const SEED: User = { id: 'seed' };
+
+export const buildUser = (id: string) => {
+  return { id, seed: SEED };
+};
+`,
+    },
+
+    // Two annotations sharing the type: each fix is judged alone against the
+    // file as it stands, so neither is the last consumer and the import stays.
+    // Assuming both strips land is unsound — the other report may be
+    // `eslint-disable`d, which a rule cannot see — and it would strand the
+    // surviving annotation's type reference. See the suppression suite below.
+    {
+      code: `import type { User } from './User';
+
+export const buildUser = (id: string): User => ({ id });
+export const cloneUser = (id: string): User => ({ id });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+      ],
+      output: `import type { User } from './User';
+
+export const buildUser = (id: string) => ({ id });
+export const cloneUser = (id: string) => ({ id });
+`,
+    },
+
+    // A second reference inside the same function body keeps the import
+    {
+      code: `import type { User } from './User';
+
+export const buildUser = (id: string): User => {
+  return { id } as User;
+};
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: `import type { User } from './User';
+
+export const buildUser = (id: string) => {
+  return { id } as User;
+};
+`,
+    },
+
+    // Multiple specifiers: only the orphaned one goes, siblings stay
+    {
+      code: `import type { Role, User } from './types';
+
+export const ROLE: Role = 'admin';
+
+export const buildUser = (id: string): User => ({ id });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: `import type { Role } from './types';
+
+export const ROLE: Role = 'admin';
+
+export const buildUser = (id: string) => ({ id });
+`,
+    },
+
+    // The orphan first in the list takes the comma that follows it
+    {
+      code: `import type { User, Role } from './types';
+
+export const ROLE: Role = 'admin';
+
+export const buildUser = (id: string): User => ({ id });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: `import type { Role } from './types';
+
+export const ROLE: Role = 'admin';
+
+export const buildUser = (id: string) => ({ id });
+`,
+    },
+
+    // A multi-line specifier list keeps its layout
+    {
+      code: `import type {
+  Role,
+  User,
+} from './types';
+
+export const ROLE: Role = 'admin';
+
+export const buildUser = (id: string): User => ({ id });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: `import type {
+  Role,
+} from './types';
+
+export const ROLE: Role = 'admin';
+
+export const buildUser = (id: string) => ({ id });
+`,
+    },
+
+    // Three specifiers, two of them orphaned by one annotation
+    {
+      code: `import type { Role, User, Team } from './types';
+
+export const TEAM: Team = 'blue';
+
+export const buildUser = (): Record<Role, User> => ({});
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: `import type { Team } from './types';
+
+export const TEAM: Team = 'blue';
+
+export const buildUser = () => ({});
+`,
+    },
+
+    // Every specifier orphaned: the declaration goes rather than becoming
+    // \`import type {} from './types';\`
+    {
+      code: `import type { Role, User } from './types';
+
+export const buildUser = (): Record<Role, User> => ({});
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: `
+export const buildUser = () => ({});
+`,
+    },
+
+    // Losing the last named specifier takes the braces with it
+    {
+      code: `import Client, { type User } from './client';
+
+export const buildUser = (): User => Client.build();
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: `import Client from './client';
+
+export const buildUser = () => Client.build();
+`,
+    },
+
+    // A value import — not just \`import type\` — used only as an annotation
+    {
+      code: `import { User } from './User';
+
+export function buildUser(id: string): User {
+  return { id };
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "buildUser"' },
+        },
+      ],
+      output: `
+export function buildUser(id: string) {
+  return { id };
+}
+`,
+    },
+
+    // An aliased specifier is bound by its local name
+    {
+      code: `import type { User as UserModel } from './User';
+
+export const buildUser = (): UserModel => ({});
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: `
+export const buildUser = () => ({});
+`,
+    },
+
+    // A default import used only as an annotation
+    {
+      code: `import User from './User';
+
+export const buildUser = (): User => ({});
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: `
+export const buildUser = () => ({});
+`,
+    },
+
+    // A default import whose sibling named specifier survives
+    {
+      code: `import User, { build } from './User';
+
+export const buildUser = (): User => build();
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: `import { build } from './User';
+
+export const buildUser = () => build();
+`,
+    },
+
+    // A namespace import reached through a qualified name
+    {
+      code: `import * as Api from './api';
+
+export const load = (): Api.User => ({ id: 1 });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "load"' },
+        },
+      ],
+      output: `
+export const load = () => ({ id: 1 });
+`,
+    },
+
+    // A namespace import still used for a value stays put
+    {
+      code: `import * as Api from './api';
+
+export const load = (): Api.User => Api.fetchUser();
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "load"' },
+        },
+      ],
+      output: `import * as Api from './api';
+
+export const load = () => Api.fetchUser();
+`,
+    },
+
+    // A reference from an inner scope is still a reference
+    {
+      code: `import type { User } from './User';
+
+export const buildUser = (): User => {
+  const inner = () => {
+    const user: User = { id: '1' };
+    return user;
+  };
+  return inner();
+};
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: `import type { User } from './User';
+
+export const buildUser = () => {
+  const inner = () => {
+    const user: User = { id: '1' };
+    return user;
+  };
+  return inner();
+};
+`,
+    },
+
+    // An exported binding keeps its import: the re-export is a consumer the
+    // deleted annotation says nothing about
+    {
+      code: `import type { User } from './User';
+
+export type { User };
+
+export const buildUser = (): User => ({});
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: `import type { User } from './User';
+
+export type { User };
+
+export const buildUser = () => ({});
+`,
+    },
+    {
+      code: `import { User } from './User';
+
+export { User };
+
+export const buildUser = (): User => ({});
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: `import { User } from './User';
+
+export { User };
+
+export const buildUser = () => ({});
+`,
+    },
+
+    // An annotation the rule cannot strip keeps the import alive for the one it
+    // can: a signature-only declaration has no body to infer from
+    {
+      code: `import type { User } from './User';
+
+declare function findUser(id: string): User;
+
+export const buildUser = (): User => ({});
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeNonInferable',
+          data: { functionKind: 'function "findUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: `import type { User } from './User';
+
+declare function findUser(id: string): User;
+
+export const buildUser = () => ({});
+`,
+    },
+
+    // An exempt annotation is likewise a surviving consumer
+    {
+      code: `import type { User } from './User';
+
+interface Repository {
+  find(id: string): User;
+}
+
+export const buildUser = (): User => ({});
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: `import type { User } from './User';
+
+interface Repository {
+  find(id: string): User;
+}
+
+export const buildUser = () => ({});
+`,
+    },
+
+    // A comment trailing the import on its own line describes the import, so it
+    // goes with it rather than being stranded
+    {
+      code: `import type { User } from './User'; // the stored shape
+
+export const buildUser = (): User => ({});
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: `
+export const buildUser = () => ({});
+`,
+    },
+
+    // Deleting the whole fix beats emitting half of it. Each case below would
+    // orphan a binding that cannot be unbound cleanly, so the annotation stays
+    // too and the report carries no fixer.
+
+    // A directive bound to the import's line would outlive its subject
+    {
+      code: `// eslint-disable-next-line no-unused-vars
+import { User } from './User';
+
+export const buildUser = (): User => ({});
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: null,
+    },
+    {
+      code: `// @ts-expect-error the module has no types
+import { User } from './User';
+
+export const buildUser = (): User => ({});
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: null,
+    },
+
+    // A comment among the specifiers would be swallowed by the separator surgery
+    {
+      code: `import type { /* keep */ User, Role } from './types';
+
+export const ROLE: Role = 'admin';
+
+export const buildUser = (): User => ({});
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: null,
+    },
+
+    // A shadowing binding of the same name means the two views of "is it still
+    // used" disagree, and an unprovable deletion is not attempted
+    {
+      code: `import type { User } from './User';
+
+export const buildUser = (): User => ({});
+export const nameOf = (User: string) => User;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: null,
+    },
+
+    // A local type alias cannot be unbound by dropping an import specifier, so
+    // an annotation that is its only consumer keeps it company
+    {
+      code: `type User = { id: string };
+
+export const buildUser = (id: string): User => ({ id });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: null,
+    },
+    // A type parameter is likewise stranded by the strip
+    {
+      code: `export function firstOf<T>(items: unknown[]): T {
+  return items[0] as T;
+}
+
+export function emptyOf<T>(): T[] {
+  return [];
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "firstOf"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "emptyOf"' },
+        },
+      ],
+      output: `export function firstOf<T>(items: unknown[]) {
+  return items[0] as T;
+}
+
+export function emptyOf<T>(): T[] {
+  return [];
+}
+`,
+    },
+    // An exported local type has a consumer outside the file, so the annotation
+    // still goes
+    {
+      code: `export type User = { id: string };
+
+export const buildUser = (id: string): User => ({ id });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: `export type User = { id: string };
+
+export const buildUser = (id: string) => ({ id });
+`,
+    },
+    // A local type used elsewhere too is not orphaned by the strip
+    {
+      code: `type User = { id: string };
+
+const SEED: User = { id: 'seed' };
+
+export const buildUser = (id: string): User => ({ id, seed: SEED });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: `type User = { id: string };
+
+const SEED: User = { id: 'seed' };
+
+export const buildUser = (id: string) => ({ id, seed: SEED });
+`,
+    },
   ],
 });
 
@@ -1282,5 +1975,230 @@ describe('no-explicit-return-type after prefer-type-over-interface --fix', () =>
     );
     expect(messages).toHaveLength(1);
     expect(messages[0].messageId).toBe('noExplicitReturnTypeInferable');
+  });
+});
+
+// RuleTester applies one fix pass and never re-lints, so it cannot observe the
+// consequence this fix exists to prevent (issue #1649): an import left bound to
+// nothing after its only consumer — the return type annotation — is deleted.
+// These drive the real `Linter` to a fixed point and re-lint the output with
+// `no-unused-vars`.
+describe('no-explicit-return-type --fix leaves no import bound to nothing', () => {
+  const RULE_ID = '@blumintinc/blumint/no-explicit-return-type';
+  const FILENAME = 'x.ts';
+
+  const makeLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      noExplicitReturnType as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const configFor = (rules: Linter.RulesRecord): Linter.Config => ({
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2022 as const,
+      sourceType: 'module' as const,
+    },
+    rules,
+  });
+
+  const FIX_RULES: Linter.RulesRecord = { [RULE_ID]: 'error' };
+  const UNUSED_RULES: Linter.RulesRecord = { 'no-unused-vars': 'error' };
+
+  const REPRO = [
+    "import type { User } from './User';",
+    '',
+    'export const buildUser = (id: string): User => {',
+    '  return { id };',
+    '};',
+    '',
+  ].join('\n');
+
+  // Without this the assertions below would hold for a rule that simply stopped
+  // fixing, or for a `no-unused-vars` that never noticed a type-only import.
+  it('reports an unused binding for the shape a bare annotation strip produces', () => {
+    const stripped = REPRO.replace('(id: string): User =>', '(id: string) =>');
+    const messages = makeLinter().verify(
+      stripped,
+      configFor(UNUSED_RULES),
+      FILENAME,
+    );
+    expect(messages).toHaveLength(1);
+    expect(messages[0].message).toContain("'User' is defined but never used");
+  });
+
+  it('removes the annotation and the import it was the sole consumer of', () => {
+    const linter = makeLinter();
+    expect(
+      linter.verify(REPRO, configFor(UNUSED_RULES), FILENAME),
+    ).toHaveLength(0);
+
+    const fixed = linter.verifyAndFix(REPRO, configFor(FIX_RULES), FILENAME);
+    expect(fixed.output).not.toContain(': User');
+    expect(fixed.output).not.toContain('import');
+    expect(
+      linter.verify(fixed.output, configFor(UNUSED_RULES), FILENAME),
+    ).toHaveLength(0);
+  });
+
+  // A type two strippable annotations share is deliberately NOT unbound. Each
+  // fix is judged alone against the file as it stands, so neither annotation
+  // sees itself as the last consumer, and ESLint applies both non-conflicting
+  // strips in the same pass — leaving the import unused.
+  //
+  // That is the price of suppression safety, and it is the cheaper side of the
+  // trade. Judging the fixes together would delete the import whenever a
+  // sibling annotation turned out to be `eslint-disable`d (which a rule cannot
+  // see), leaving a type reference bound to nothing: a compile error in place
+  // of an unused-import warning. The suppression suite below pins that.
+  it('leaves an import two annotations share rather than assuming both go', () => {
+    const linter = makeLinter();
+    const source = [
+      "import type { User } from './User';",
+      '',
+      'export const buildUser = (id: string): User => ({ id });',
+      'export const cloneUser = (user: unknown): User => ({ id: String(user) });',
+      '',
+    ].join('\n');
+
+    const fixed = linter.verifyAndFix(source, configFor(FIX_RULES), FILENAME);
+    expect(fixed.output).not.toContain(': User =>');
+    expect(fixed.output).toContain("import type { User } from './User';");
+    // The property that actually matters: nothing is left naming a type the
+    // file no longer binds.
+    expect(danglingTypeReferences(fixed.output)).toEqual([]);
+  });
+
+  // The mirror image: a binding with a consumer the fix does not touch keeps
+  // its import, so the fix is corrected rather than switched off.
+  it('keeps an import that survives the annotation', () => {
+    const linter = makeLinter();
+    const source = [
+      "import type { User } from './User';",
+      '',
+      "const SEED: User = { id: 'seed' };",
+      '',
+      'export const buildUser = (id: string): User => ({ id, seed: SEED });',
+      '',
+    ].join('\n');
+
+    const fixed = linter.verifyAndFix(source, configFor(FIX_RULES), FILENAME);
+    expect(fixed.output).toContain("import type { User } from './User';");
+    expect(fixed.output).not.toContain('(id: string): User =>');
+    expect(
+      linter.verify(fixed.output, configFor(UNUSED_RULES), FILENAME),
+    ).toHaveLength(0);
+  });
+});
+
+// A rule cannot see `eslint-disable`: suppression is applied to reports after
+// they are emitted. So a fix may never assume that another report's fix also
+// lands — a disabled sibling annotation keeps referencing the type forever, and
+// deleting "its" import strands that reference. These pin every suppression
+// shape against the real `Linter`, which is the only place the interaction
+// exists: RuleTester bypasses directive processing entirely.
+describe('no-explicit-return-type --fix under eslint-disable', () => {
+  const RULE_ID = '@blumintinc/blumint/no-explicit-return-type';
+  const FILENAME = 'x.ts';
+
+  const fixWith = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      noExplicitReturnType as unknown as Rule.RuleModule,
+    );
+    return linter.verifyAndFix(
+      code,
+      {
+        parser: '@typescript-eslint/parser',
+        parserOptions: {
+          ecmaVersion: 2022 as const,
+          sourceType: 'module' as const,
+        },
+        rules: { [RULE_ID]: 'error' },
+      },
+      FILENAME,
+    );
+  };
+
+  const IMPORT = "import type { User } from './User';";
+  const annotated = (name: string) =>
+    `export const ${name} = (id: string): User => {\n  return { id };\n};`;
+
+  const expectNoDanglingType = (source: string, output: string) => {
+    expect(danglingTypeReferences(source)).toEqual([]);
+    expect(danglingTypeReferences(output)).toEqual([]);
+  };
+
+  it('strips both annotations and strands nothing when neither is disabled', () => {
+    const source = `${IMPORT}\n\n${annotated('a')}\n\n${annotated('b')}\n`;
+    const { output } = fixWith(source);
+
+    // Vacuity guard: a rule that stopped fixing would pass every assertion
+    // about what the output does not contain.
+    expect(output).not.toContain(': User =>');
+    expectNoDanglingType(source, output);
+  });
+
+  it('keeps the import when a sibling annotation is disabled next-line', () => {
+    const source = [
+      IMPORT,
+      '',
+      annotated('a'),
+      '',
+      `// eslint-disable-next-line ${RULE_ID}`,
+      annotated('b'),
+      '',
+    ].join('\n');
+    const { output } = fixWith(source);
+
+    expect(output).toContain(IMPORT);
+    expect(output).toContain('(id: string): User =>');
+    expectNoDanglingType(source, output);
+  });
+
+  it('keeps the import when a sibling annotation is disabled by a block', () => {
+    const source = [
+      IMPORT,
+      '',
+      annotated('a'),
+      '',
+      `/* eslint-disable ${RULE_ID} */`,
+      annotated('b'),
+      `/* eslint-enable ${RULE_ID} */`,
+      '',
+    ].join('\n');
+    const { output } = fixWith(source);
+
+    expect(output).toContain(IMPORT);
+    expect(output).toContain('(id: string): User =>');
+    expectNoDanglingType(source, output);
+  });
+
+  it('changes nothing when the sole consumer is itself disabled', () => {
+    const source = [
+      IMPORT,
+      '',
+      `// eslint-disable-next-line ${RULE_ID}`,
+      annotated('b'),
+      '',
+    ].join('\n');
+    const { output } = fixWith(source);
+
+    expect(output).toBe(source);
+    expectNoDanglingType(source, output);
   });
 });
