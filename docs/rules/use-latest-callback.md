@@ -19,6 +19,7 @@ This rule:
 - Removes the `useCallback` specifier from the `react` import only when every reference to it is converted. If a JSX-returning call — or any other use of the binding, such as `const cb = useCallback` — survives, the `react` import is kept untouched and the `use-latest-callback` import is added alongside it.
 - Splices only the `useCallback` specifier and its separating comma out of the `react` import, so the rest of the declaration — its layout, its quote style, and every comment in it — is preserved. A comment that belongs to the removed specifier is left behind rather than deleted, because a trailing comment can be an eslint directive that governs the **next** line and dropping it would change which rules report on the file. The whole declaration is replaced only when `useCallback` is its sole specifier, in which case no comment inside it can govern anything that remains.
 - Emits the import rewrite and every call-site conversion as **one atomic fix** on a single report. When another rule's fix conflicts with any part of it in the same `--fix` pass, ESLint defers the whole conversion to the next pass instead of applying half of it, so the `useCallback` import can never be removed while a `useCallback(...)` call remains.
+- Withholds the fix when dropping the dependency array would leave a binding declared inside the component or hook with no reader left — see [Dependencies nothing else reads](#dependencies-nothing-else-reads).
 - Keeps the rewritten call on one line only while that line fits the print width, and breaks the argument list open past it — see [Print width](#print-width).
 - Skips files in `node_modules` for performance so third-party code is untouched.
 
@@ -150,6 +151,47 @@ each of those withholds the fix. A hook import aliased the other way
 merely similar name such as `useLatestCallbackRef` never trips the guard. The
 name freed by the `react` specifiers the fix deletes stays claimable, so
 `useCallback as uc` still hands `uc` to the new import.
+
+### Dependencies nothing else reads
+
+The fix deletes the dependency array. When that array holds the **last read** of
+a binding declared inside the component or hook, deleting it strands that
+declaration — and whatever imports feed it — with nothing using it, so `--fix`
+turns a file that lints clean into one `no-unused-vars` rejects, with a
+violation this plugin cannot itself fix. The conversion is still **reported**;
+only the automated edit is withheld, so the dead declaration is dropped together
+with the array.
+
+The shape is routine rather than hypothetical, because a sibling fixer writes
+it: `no-array-length-in-deps` answers a `[list.length]` dependency by hoisting a
+hash and depending on that instead, and the dependency array is the hash's only
+reader.
+
+```ts
+// After no-array-length-in-deps has fixed the same file
+const listHash = useMemo(() => stableHash(list), [list]);
+
+// Reported, not fixed: dropping [listHash] would leave the useMemo above — and
+// the stableHash import feeding it — with no reader at all.
+const handle = useCallback(async () => {
+  await setThing({ only: list.length === 1 });
+}, [listHash, setThing]);
+```
+
+The batch is atomic, so one orphaned binding withholds every conversion in the
+file. Bindings are compared by **resolution, not by name**, so a dependency that
+reaches a shadowed declaration is judged against that declaration rather than
+against an unrelated binding spelled the same way, and only **reads** keep a
+binding alive — one left merely written to is as dead as one left unreferenced.
+
+Two things never withhold the fix:
+
+- A dependency that anything outside the deleted array still reads, the
+  rewritten callback's own body included. It survives the deletion untouched.
+- A **module-scope or imported** binding. Whether a module-level name is dead is
+  not settled by this file — it can be exported, re-exported, or read from
+  another module — and the hoisted declarations this guard exists for are
+  written inside the hook.
 
 ### ❌ Incorrect
 
