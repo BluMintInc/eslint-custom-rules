@@ -115,6 +115,69 @@ ruleTesterTs.run(
       `,
         filename: 'functions/src/types/firestore/Guild/index.ts',
       },
+      // Issue #1635: a folder-matching alias exported separately (rather than
+      // inline) must still satisfy the rule, since consumers can import it.
+      {
+        code: `
+        import { Identifiable } from '../../Identifiable';
+
+        type Connection = Identifiable & {
+          userIdsConnected: string[];
+        };
+
+        export { Connection };
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+      },
+      {
+        code: `
+        import { Identifiable } from '../../Identifiable';
+
+        type Connection = Identifiable & {
+          userIdsConnected: string[];
+        };
+
+        export type { Connection };
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+      },
+      // The export specifier is legal TypeScript even when it precedes the
+      // aliased declaration it references (type declarations hoist), so the
+      // rule must not depend on visiting the export before the alias.
+      {
+        code: `
+        import { Identifiable } from '../../Identifiable';
+
+        export { Connection };
+
+        type Connection = Identifiable & {
+          userIdsConnected: string[];
+        };
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+      },
+      // Renaming on export (including `as default`) still exports the local
+      // "Connection" binding, so it must satisfy the gate.
+      {
+        code: `
+        import { Identifiable } from '../../Identifiable';
+
+        type Connection = Identifiable & {
+          userIdsConnected: string[];
+        };
+
+        export { Connection as default };
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+      },
+      // Files outside functions/src/types/firestore/** are untouched by the
+      // rule regardless of what they export.
+      {
+        code: `
+        export const notAFirestoreType = 1;
+      `,
+        filename: 'functions/src/types/Connection/index.ts',
+      },
     ],
     invalid: [
       {
@@ -284,6 +347,101 @@ ruleTesterTs.run(
           {
             messageId: 'notExtendingIdentifiable',
             data: { typeName: 'Connection' },
+          },
+        ],
+      },
+      // Issue #1635: a folder-matching type alias with no `export` at all is
+      // unreachable by any consumer, so it must not satisfy the rule.
+      {
+        code: `
+        import { Identifiable } from '../../Identifiable';
+
+        type Connection = Identifiable & {
+          userIdsConnected: string[];
+          documentPath: string;
+        };
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+        errors: [
+          {
+            messageId: 'missingType',
+            data: { typeName: 'Connection', folderName: 'Connection' },
+          },
+        ],
+      },
+      // An unrelated export existing alongside the unexported matching alias
+      // does not make the alias itself reachable.
+      {
+        code: `
+        import { Identifiable } from '../../Identifiable';
+
+        type Connection = Identifiable & {
+          userIdsConnected: string[];
+        };
+
+        export const DEFAULT_CONNECTION = { id: '1' };
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+        errors: [
+          {
+            messageId: 'missingType',
+            data: { typeName: 'Connection', folderName: 'Connection' },
+          },
+        ],
+      },
+      // A re-export with a source exports a binding from another module, not
+      // the local alias declared in this file, so it must not satisfy the gate.
+      {
+        code: `
+        import { Identifiable } from '../../Identifiable';
+
+        type Connection = Identifiable & {
+          userIdsConnected: string[];
+        };
+
+        export { Connection } from './other';
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+        errors: [
+          {
+            messageId: 'missingType',
+            data: { typeName: 'Connection', folderName: 'Connection' },
+          },
+        ],
+      },
+      // A separately-exported alias still needs to extend Identifiable; being
+      // exported doesn't exempt it from the id-field requirement.
+      {
+        code: `
+        type Connection = {
+          userIdsConnected: string[];
+        };
+
+        export { Connection };
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+        errors: [
+          {
+            messageId: 'notExtendingIdentifiable',
+            data: { typeName: 'Connection' },
+          },
+        ],
+      },
+      // No alias named after the folder exists at all; an unrelated exported
+      // type doesn't satisfy the requirement.
+      {
+        code: `
+        import { Identifiable } from '../../Identifiable';
+
+        export type Other = Identifiable & {
+          userIdsConnected: string[];
+        };
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+        errors: [
+          {
+            messageId: 'missingType',
+            data: { typeName: 'Connection', folderName: 'Connection' },
           },
         ],
       },

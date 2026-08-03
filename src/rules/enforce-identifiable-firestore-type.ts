@@ -42,16 +42,30 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
 
     // Get the expected type name from the parent folder
     const folderName = path.basename(path.dirname(filename));
-    let hasExpectedType = false;
-    let typeHasIdentifiable = false;
+    // The folder-matching alias only satisfies the rule if it is reachable by
+    // consumers. An alias can be exported inline (`export type X = ...`) or
+    // separately (`export { X }` / `export type { X }`), and the separate form
+    // can appear either before or after the declaration, so exportedness can't
+    // be decided inside the TSTypeAliasDeclaration visitor alone — it's
+    // resolved once the whole module has been scanned, in Program:exit.
+    let matchingAliasNode: TSESTree.TSTypeAliasDeclaration | null = null;
+    let matchingAliasInlineExported = false;
+    let matchingAliasHasIdentifiable = false;
+    const locallyExportedNames = new Set<string>();
 
     return {
       Program() {
         // Reset flags for each file
-        hasExpectedType = false;
-        typeHasIdentifiable = false;
+        matchingAliasNode = null;
+        matchingAliasInlineExported = false;
+        matchingAliasHasIdentifiable = false;
+        locallyExportedNames.clear();
       },
       'Program:exit'(node) {
+        const hasExpectedType =
+          matchingAliasNode !== null &&
+          (matchingAliasInlineExported || locallyExportedNames.has(folderName));
+
         if (!hasExpectedType) {
           context.report({
             node,
@@ -61,7 +75,7 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
               folderName,
             },
           });
-        } else if (!typeHasIdentifiable) {
+        } else if (!matchingAliasHasIdentifiable) {
           context.report({
             node,
             messageId: 'notExtendingIdentifiable',
@@ -71,9 +85,23 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
           });
         }
       },
+      ExportNamedDeclaration(node) {
+        // A re-export (`export { X } from './elsewhere'`) exports a binding
+        // from another module, not the local alias declared in this file, so
+        // it must never satisfy the gate.
+        if (node.source != null) {
+          return;
+        }
+
+        for (const specifier of node.specifiers) {
+          locallyExportedNames.add(specifier.local.name);
+        }
+      },
       TSTypeAliasDeclaration(node) {
         if (node.id.name === folderName) {
-          hasExpectedType = true;
+          matchingAliasNode = node;
+          matchingAliasInlineExported =
+            node.parent?.type === AST_NODE_TYPES.ExportNamedDeclaration;
 
           const findTypeAliasAnnotation = (
             typeName: string,
@@ -320,7 +348,7 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
             return false;
           };
 
-          typeHasIdentifiable = checkType(node.typeAnnotation);
+          matchingAliasHasIdentifiable = checkType(node.typeAnnotation);
         }
       },
     };

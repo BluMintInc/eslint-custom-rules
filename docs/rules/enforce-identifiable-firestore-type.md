@@ -10,7 +10,7 @@ Firestore documents must always expose an `id` to avoid ad-hoc `string` plumbing
 
 This rule runs only on `functions/src/types/firestore/**/index.ts` and reports when:
 
-- No exported type alias matches the containing folder name.
+- No exported type alias matches the containing folder name. Any local export form counts — `export type Connection = ...`, or a bare `type Connection = ...` paired with `export { Connection }` or `export type { Connection }`, in either order. A re-export that names another module (`export { Connection } from './other'`) does not, since it publishes that module's type rather than this file's.
 - The matching type alias does not extend `Identifiable` and does not provide an `id: string` (including when wrapped in `Resolve<>` or through intersection types).
 
 ### Examples of **incorrect** code for this rule:
