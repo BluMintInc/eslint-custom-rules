@@ -4,6 +4,10 @@ import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { RuleContext } from '@typescript-eslint/utils/dist/ts-eslint';
 import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
+import {
+  importInsertionAnchor,
+  insertAtImportAnchor,
+} from '../utils/importInsertion';
 
 export type NodeWithParent = TSESTree.Node & { parent: NodeWithParent };
 
@@ -273,25 +277,29 @@ function checkFunction(
                     const currentFilePath = context.getFilename();
                     const importPath = calculateImportPath(currentFilePath);
 
-                    // Find the first import statement to insert after
+                    const importStatement = `import { memo } from '${importPath}';`;
+
                     const firstImport = program.body.find(
                       (statement) =>
                         statement.type === AST_NODE_TYPES.ImportDeclaration,
                     );
 
-                    // Add new import statement for memo
-                    const importStatement = `import { memo } from '${importPath}';`;
-
+                    // An existing import hosts the helper import directly after
+                    // it, keeping the module's imports contiguous. With none to
+                    // follow, the shared anchor keeps the file's prologue in
+                    // place: a `'use client'` directive only counts as one while
+                    // it is the first statement, and a `#!` shebang only parses
+                    // at character 0.
                     importFix = firstImport
-                      ? // Insert after the first import with a single newline
-                        fixer.insertTextAfter(
+                      ? fixer.insertTextAfter(
                           firstImport,
-                          '\n' + importStatement,
+                          `\n${importStatement}`,
                         )
-                      : // Insert at the start of the file
-                        fixer.insertTextBeforeRange(
-                          [program.range[0], program.range[0]],
-                          importStatement + '\n',
+                      : insertAtImportAnchor(
+                          sourceCode,
+                          fixer,
+                          importInsertionAnchor(sourceCode),
+                          `${importStatement}\n`,
                         );
                   }
                 }
