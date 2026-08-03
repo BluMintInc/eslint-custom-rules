@@ -22,6 +22,8 @@ The rule inspects dependency arrays of `useEffect`, `useCallback`, and `useMemo`
 - **Object key count checks**: `Object.keys(obj).length === 0`, `Object.keys(obj).length > 0`, etc.
 - **Combined boolean expressions**: `!obj || Object.keys(obj).length === 0`
 
+Only the dependency array is inspected. The same expression written inside the hook body — as a JSX prop, say — is left alone, because it is the inline *dependency* that defeats memoization, not the computation itself.
+
 A negated identifier only qualifies when it can actually hold an object. Negating a primitive produces a stable boolean already, so `!isCollapsed` and `!count` carry none of the cost this rule removes — see [Dependencies the rule leaves alone](#dependencies-the-rule-leaves-alone).
 
 ### Examples
@@ -45,7 +47,12 @@ const tabPanes = useMemo(() => {
     },
   ];
   return tabs;
-}, [roundPreviews, cohortPreviews, mode, phase]);
+}, [
+  !roundPreviews || Object.keys(roundPreviews).length === 0,
+  !cohortPreviews || Object.keys(cohortPreviews).length === 0,
+  mode,
+  phase,
+]);
 ```
 
 ```jsx
