@@ -14,7 +14,7 @@
 
 ## Rule details
 
-This rule reports explicit return type annotations on functions that include an implementation body where TypeScript can infer the return value. The fixer (`--fix`) removes only the return type annotation while keeping the rest of the signature intact. Interface method signatures and abstract methods are allowed by default because they lack bodies for inference; setting `allowInterfaceMethodSignatures` or `allowAbstractMethodSignatures` to `false` makes the rule report these signatures (no auto-fix) instead of treating them as allowed. The rule keeps the annotation for cases where the annotation conveys additional meaning:
+This rule reports explicit return type annotations on functions that include an implementation body where TypeScript can infer the return value. The fixer (`--fix`) removes the return type annotation, along with any import the annotation was the only consumer of (see [The fix takes the imports it strands with it](#the-fix-takes-the-imports-it-strands-with-it)). Interface method signatures and abstract methods are allowed by default because they lack bodies for inference; setting `allowInterfaceMethodSignatures` or `allowAbstractMethodSignatures` to `false` makes the rule report these signatures (no auto-fix) instead of treating them as allowed. The rule keeps the annotation for cases where the annotation conveys additional meaning:
 
 - Type predicates (`value is Type`) and assertion functions (`asserts value is Type`) where the return type changes control flow.
 - Recursive functions, overloads, interface method signatures, and abstract methods when those allowances are enabled.
@@ -50,12 +50,44 @@ So by default (`allowVoidReturnTypes`) the rule leaves these annotations alone o
 
 Signature-only declarations are outside this allowance: an interface method, an abstract method or a `declare function` has no body to infer from, so its annotation is mandatory rather than redundant, it is reported only when its own `allow*` option is turned off, and no fixer ever strips it.
 
+### The fix takes the imports it strands with it
+
+An annotation is often the only thing in a file that names its type. Deleting it on its own leaves the import bound to nothing, so a file that linted clean fails `no-unused-vars` afterwards — and because the rule's own report is resolved by the fix, nothing re-reports the debt.
+
+The annotation and the import therefore go together, as **one** fix:
+
+```ts
+// before
+import type { User } from './User';
+
+export const buildUser = (id: string): User => {
+  return { id };
+};
+
+// after --fix
+export const buildUser = (id: string) => {
+  return { id };
+};
+```
+
+Only a binding proven dead is unbound, using scope analysis rather than a text search:
+
+- Any remaining reference keeps the import — another annotation, a variable's type, a value use, a re-export (`export { User }`), a reference from a nested scope.
+- A specifier with surviving siblings is removed on its own (`import type { Role, User }` → `import type { Role }`); a declaration that loses its last specifier is removed whole, never left as `import type {} from './User';`.
+
+Each fix is judged **alone**, against the file as it stands — never against what the rest of the `--fix` run might also delete. That is not a simplification, it is the only sound reading: a rule cannot see `eslint-disable` comments, because suppression is applied to reports *after* the rule emits them. A fix that assumed a sibling annotation would also be stripped would delete the import whenever that sibling turned out to be disabled, leaving a type reference bound to nothing — trading an unused-import warning for a compile error.
+
+The price is that a type named by **two or more** strippable annotations is not unbound: neither annotation is its last consumer, so both are stripped and the import is left unused. That is the shape this rule's fixer produced everywhere before, now confined to the multi-consumer case.
+
+When the deletion would strand a binding that cannot be unbound cleanly, the **whole fix is declined** and the annotation stays: the report remains for a human, which is strictly better than trading it for an unused-variable error. That happens when the binding is a local type alias or a type parameter (neither is an import specifier), when a directive comment (`// eslint-disable-next-line`, `// @ts-expect-error`) is bound to the import's line, when a comment sits among the specifiers, or when a same-named binding elsewhere makes the deletion unprovable.
+
 Limitations, all of which err toward silence or toward the status quo:
 
 - A self-reference inside a closure in the returned value counts, even though TypeScript can sometimes still break the cycle (it depends on how the returned value is contextually typed, which needs type information this rule does not have).
 - Mutual recursion is resolved among module-scope functions only. A mutually recursive pair declared inside another function body is still reported.
 - Annotating *either* member of a mutually recursive pair is enough for TypeScript; the rule exempts both rather than picking one.
 - A function with no resolvable name (an anonymous callback) cannot be self-referential by name, so it is always reported.
+- An annotation whose removal would strand a declaration the fixer cannot delete is reported without a fix rather than fixed halfway.
 
 ### Examples of incorrect code
 
