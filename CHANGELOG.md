@@ -1,3 +1,27 @@
+## [1.20.87](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.86...v1.20.87) (2026-08-03)
+
+
+### Bug Fixes
+
+* **enforce-assert-safe-object-key:** keep the autofix's added import below the file prologue ([#1648](https://github.com/BluMintInc/eslint-custom-rules/issues/1648)) ([8943233](https://github.com/BluMintInc/eslint-custom-rules/commit/89432339093d8d85ab825ac2586b4fdc20102b66))
+* **enforce-memoize-async:** keep the autofix's added import below the file prologue ([#1648](https://github.com/BluMintInc/eslint-custom-rules/issues/1648)) ([d3cfed9](https://github.com/BluMintInc/eslint-custom-rules/commit/d3cfed920d355ee8f4df21f66f19bbef597200cf))
+* **enforce-memoize-getters:** keep the autofix's added import below the file prologue ([#1648](https://github.com/BluMintInc/eslint-custom-rules/issues/1648)) ([9e1b0bb](https://github.com/BluMintInc/eslint-custom-rules/commit/9e1b0bbdfaa7ed6213b9505875dd392b523e4c78))
+* **enforce-microdiff:** keep the autofix's added import below the file prologue ([#1648](https://github.com/BluMintInc/eslint-custom-rules/issues/1648)) ([cca3f0a](https://github.com/BluMintInc/eslint-custom-rules/commit/cca3f0a33b4fd2a6e30e52297c31fb4c4c0bc9f5))
+* **enforce-querykey-ts:** keep the autofix's added import below the file prologue ([#1648](https://github.com/BluMintInc/eslint-custom-rules/issues/1648)) ([113f0e2](https://github.com/BluMintInc/eslint-custom-rules/commit/113f0e22bab43563289840de844d79bdc83b4a8f))
+* **enforce-safe-stringify:** keep the suggestion's added import below the file prologue ([#1648](https://github.com/BluMintInc/eslint-custom-rules/issues/1648)) ([f1d0315](https://github.com/BluMintInc/eslint-custom-rules/commit/f1d03154e060480e7ce115e49f9a9af8cc0b810e))
+* **enforce-snapshot-state-narrowing:** keep the suggestion's added import below the file prologue ([#1648](https://github.com/BluMintInc/eslint-custom-rules/issues/1648)) ([9140664](https://github.com/BluMintInc/eslint-custom-rules/commit/914066491a428215d6741ead58b81a75340e0a28))
+* **enforce-stable-hash-spread-props:** keep the autofix's added import below the file prologue ([#1648](https://github.com/BluMintInc/eslint-custom-rules/issues/1648)) ([cea8bfd](https://github.com/BluMintInc/eslint-custom-rules/commit/cea8bfd9b472b25a5b283fd7a4437a60ca626de6))
+* **logical-top-to-bottom-grouping:** never reorder across a sequential-await run parallelize-async-operations owns (closes [#1651](https://github.com/BluMintInc/eslint-custom-rules/issues/1651)) ([67993b2](https://github.com/BluMintInc/eslint-custom-rules/commit/67993b2e645275a27feb94b39000645f9ffa1b33))
+* **no-array-length-in-deps:** keep the autofix's added import below the file prologue ([#1648](https://github.com/BluMintInc/eslint-custom-rules/issues/1648)) ([646b6e6](https://github.com/BluMintInc/eslint-custom-rules/commit/646b6e6686f92e5b61c5564082f3876e9a5dce0e))
+* **no-empty-dependency-use-callbacks:** unbind the hook import the hoist empties (closes [#1650](https://github.com/BluMintInc/eslint-custom-rules/issues/1650)) ([8e47ced](https://github.com/BluMintInc/eslint-custom-rules/commit/8e47ced1c4c331ed07e338229166f73f1ba67ff2))
+* **no-explicit-return-type:** drop the import the stripped annotation solely consumed (closes [#1649](https://github.com/BluMintInc/eslint-custom-rules/issues/1649)) ([d95af37](https://github.com/BluMintInc/eslint-custom-rules/commit/d95af37a64b37d2d494740daa7ac8e64b41b13f6))
+* **prefer-fragment-component:** keep the autofix's added import below the file prologue ([#1648](https://github.com/BluMintInc/eslint-custom-rules/issues/1648)) ([177f992](https://github.com/BluMintInc/eslint-custom-rules/commit/177f992aea8efaedf61a846456fd4658987e7da9))
+* **prefer-global-router-state-key:** keep the autofix's added import below the file prologue ([#1648](https://github.com/BluMintInc/eslint-custom-rules/issues/1648)) ([f1bb0eb](https://github.com/BluMintInc/eslint-custom-rules/commit/f1bb0eb8340bf088627446de671b0a18e0d6cc1b))
+* **prefer-use-deep-compare-memo:** keep the autofix's added import below the file prologue ([#1648](https://github.com/BluMintInc/eslint-custom-rules/issues/1648)) ([fa80440](https://github.com/BluMintInc/eslint-custom-rules/commit/fa80440e6ed55644750e62d5fa277d7dd77c0f4f))
+* **react-memoize-literals:** keep the suggestion's added import below the file prologue ([#1648](https://github.com/BluMintInc/eslint-custom-rules/issues/1648)) ([337ee2e](https://github.com/BluMintInc/eslint-custom-rules/commit/337ee2e3b86d93e2a804c4cc030d093c2fc5f801))
+* **require-memoize-jsx-returners:** keep the autofix's added import below the file prologue (closes [#1648](https://github.com/BluMintInc/eslint-custom-rules/issues/1648)) ([b1e2b09](https://github.com/BluMintInc/eslint-custom-rules/commit/b1e2b09d7dcee989d5fe3bb4c0e3d6245c56fbc4))
+* **require-memo:** keep the autofix's added import below the file prologue ([#1648](https://github.com/BluMintInc/eslint-custom-rules/issues/1648)) ([739c0c7](https://github.com/BluMintInc/eslint-custom-rules/commit/739c0c7ae9a6356d74b6202c50876e4e42158d6c))
+
 ## [1.20.86](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.85...v1.20.86) (2026-08-03)
 
 

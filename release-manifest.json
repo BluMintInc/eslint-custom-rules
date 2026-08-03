@@ -1,5 +1,155 @@
 [
   {
+    "version": "1.20.87",
+    "date": "2026-08-03T08:16:33.082Z",
+    "rules": [
+      {
+        "name": "enforce-assert-safe-object-key",
+        "changeType": "fix",
+        "issues": [
+          1648
+        ],
+        "summary": "keep the autofix's added import below the file prologue (#1648)"
+      },
+      {
+        "name": "enforce-memoize-async",
+        "changeType": "fix",
+        "issues": [
+          1648
+        ],
+        "summary": "keep the autofix's added import below the file prologue (#1648)"
+      },
+      {
+        "name": "enforce-memoize-getters",
+        "changeType": "fix",
+        "issues": [
+          1648
+        ],
+        "summary": "keep the autofix's added import below the file prologue (#1648)"
+      },
+      {
+        "name": "enforce-microdiff",
+        "changeType": "fix",
+        "issues": [
+          1648
+        ],
+        "summary": "keep the autofix's added import below the file prologue (#1648)"
+      },
+      {
+        "name": "enforce-querykey-ts",
+        "changeType": "fix",
+        "issues": [
+          1648
+        ],
+        "summary": "keep the autofix's added import below the file prologue (#1648)"
+      },
+      {
+        "name": "enforce-safe-stringify",
+        "changeType": "fix",
+        "issues": [
+          1648
+        ],
+        "summary": "keep the suggestion's added import below the file prologue (#1648)"
+      },
+      {
+        "name": "enforce-snapshot-state-narrowing",
+        "changeType": "fix",
+        "issues": [
+          1648
+        ],
+        "summary": "keep the suggestion's added import below the file prologue (#1648)"
+      },
+      {
+        "name": "enforce-stable-hash-spread-props",
+        "changeType": "fix",
+        "issues": [
+          1648
+        ],
+        "summary": "keep the autofix's added import below the file prologue (#1648)"
+      },
+      {
+        "name": "logical-top-to-bottom-grouping",
+        "changeType": "fix",
+        "issues": [
+          1651
+        ],
+        "summary": "never reorder across a sequential-await run parallelize-async-operations owns (closes #1651)"
+      },
+      {
+        "name": "no-array-length-in-deps",
+        "changeType": "fix",
+        "issues": [
+          1648
+        ],
+        "summary": "keep the autofix's added import below the file prologue (#1648)"
+      },
+      {
+        "name": "no-empty-dependency-use-callbacks",
+        "changeType": "fix",
+        "issues": [
+          1650
+        ],
+        "summary": "unbind the hook import the hoist empties (closes #1650)"
+      },
+      {
+        "name": "no-explicit-return-type",
+        "changeType": "fix",
+        "issues": [
+          1649
+        ],
+        "summary": "drop the import the stripped annotation solely consumed (closes #1649)"
+      },
+      {
+        "name": "prefer-fragment-component",
+        "changeType": "fix",
+        "issues": [
+          1648
+        ],
+        "summary": "keep the autofix's added import below the file prologue (#1648)"
+      },
+      {
+        "name": "prefer-global-router-state-key",
+        "changeType": "fix",
+        "issues": [
+          1648
+        ],
+        "summary": "keep the autofix's added import below the file prologue (#1648)"
+      },
+      {
+        "name": "prefer-use-deep-compare-memo",
+        "changeType": "fix",
+        "issues": [
+          1648
+        ],
+        "summary": "keep the autofix's added import below the file prologue (#1648)"
+      },
+      {
+        "name": "react-memoize-literals",
+        "changeType": "fix",
+        "issues": [
+          1648
+        ],
+        "summary": "keep the suggestion's added import below the file prologue (#1648)"
+      },
+      {
+        "name": "require-memo",
+        "changeType": "fix",
+        "issues": [
+          1648
+        ],
+        "summary": "keep the autofix's added import below the file prologue (#1648)"
+      },
+      {
+        "name": "require-memoize-jsx-returners",
+        "changeType": "fix",
+        "issues": [
+          1648
+        ],
+        "summary": "keep the autofix's added import below the file prologue (closes #1648)"
+      }
+    ]
+  },
+  {
     "version": "1.20.86",
     "date": "2026-08-03T03:52:41.277Z",
     "rules": [
