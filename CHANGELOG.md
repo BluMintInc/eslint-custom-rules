@@ -1,3 +1,10 @@
+## [1.20.84](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.83...v1.20.84) (2026-08-03)
+
+
+### Bug Fixes
+
+* **prefer-spread-over-reassembly:** stay silent on a provably narrowing pick (closes [#1642](https://github.com/BluMintInc/eslint-custom-rules/issues/1642)) ([3c13155](https://github.com/BluMintInc/eslint-custom-rules/commit/3c131557fd22102df9a821217874a7b5ab9a7ecb))
+
 ## [1.20.83](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.82...v1.20.83) (2026-08-03)
 
 
