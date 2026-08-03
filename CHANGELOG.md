@@ -1,3 +1,10 @@
+## [1.20.85](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.84...v1.20.85) (2026-08-03)
+
+
+### Bug Fixes
+
+* **prefer-spread-over-reassembly:** read the narrowing proof through Readonly (closes [#1643](https://github.com/BluMintInc/eslint-custom-rules/issues/1643)) ([5931cf4](https://github.com/BluMintInc/eslint-custom-rules/commit/5931cf46c786880d17fba2f0df5bf821a362ae61)), closes [#1642](https://github.com/BluMintInc/eslint-custom-rules/issues/1642) [#1642](https://github.com/BluMintInc/eslint-custom-rules/issues/1642)
+
 ## [1.20.84](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.83...v1.20.84) (2026-08-03)
 
 
