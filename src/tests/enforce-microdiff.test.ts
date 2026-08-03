@@ -1062,5 +1062,70 @@ function compareConfigs(oldConfig, newConfig) {
   return diff(oldConfig, newConfig);
 }`,
     },
+    {
+      // A `'use client'` directive stops being one as soon as a statement
+      // precedes it, so the emitted import lands below the prologue.
+      code: `'use client';
+
+function hasConfigChanged(oldConfig, newConfig) {
+  return JSON.stringify(oldConfig) !== JSON.stringify(newConfig);
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: `'use client';
+
+import diff from '@blumintinc/microdiff';
+
+function hasConfigChanged(oldConfig, newConfig) {
+  return diff(oldConfig, newConfig).length > 0;
+}`,
+    },
+    {
+      // A `#!` shebang has to stay at character 0: anything above it leaves the
+      // file unparseable.
+      code: `#!/usr/bin/env node
+function hasConfigChanged(oldConfig, newConfig) {
+  return JSON.stringify(oldConfig) !== JSON.stringify(newConfig);
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: `#!/usr/bin/env node
+import diff from '@blumintinc/microdiff';
+
+function hasConfigChanged(oldConfig, newConfig) {
+  return diff(oldConfig, newConfig).length > 0;
+}`,
+    },
+    {
+      // A `// @ts-nocheck` header governs the file only from above its code, so
+      // the import goes below the comment rather than over it.
+      code: `// @ts-nocheck
+function hasConfigChanged(oldConfig, newConfig) {
+  return JSON.stringify(oldConfig) !== JSON.stringify(newConfig);
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: `// @ts-nocheck
+import diff from '@blumintinc/microdiff';
+
+function hasConfigChanged(oldConfig, newConfig) {
+  return diff(oldConfig, newConfig).length > 0;
+}`,
+    },
+    {
+      // The control for the three cases above: an existing import is the anchor,
+      // and the directive in front of it still comes first.
+      code: `'use client';
+import { formatConfig } from './formatConfig';
+
+function hasConfigChanged(oldConfig, newConfig) {
+  return JSON.stringify(formatConfig(oldConfig)) !== JSON.stringify(newConfig);
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: `'use client';
+import diff from '@blumintinc/microdiff';
+import { formatConfig } from './formatConfig';
+
+function hasConfigChanged(oldConfig, newConfig) {
+  return diff(oldConfig, newConfig).length > 0;
+}`,
+    },
   ],
 });

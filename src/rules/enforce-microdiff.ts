@@ -1,6 +1,10 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
+import {
+  importInsertionAnchor,
+  insertAtImportAnchor,
+} from '../utils/importInsertion';
 
 type MessageIds = 'enforceMicrodiff' | 'enforceMicrodiffImport';
 
@@ -404,6 +408,11 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
      * the reported node, because the reported node is rarely at module scope: a
      * comparison inside a function body, or a function behind an `export`,
      * would otherwise take the import somewhere the grammar forbids it.
+     *
+     * The shared anchor decides where the prologue ends. Splicing at character
+     * 0 put the import above a `'use client'` directive, which demotes it to an
+     * ordinary expression statement, and above a `#!` shebang, which has to sit
+     * at character 0 for the file to parse at all.
      */
     function buildMicrodiffImportFix(
       fixer: TSESLint.RuleFixer,
@@ -411,7 +420,20 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
       if (findMicrodiffImport(sourceCode.ast)) {
         return null;
       }
-      return fixer.insertTextBeforeRange([0, 0], `${MICRODIFF_IMPORT}\n\n`);
+      const anchor = importInsertionAnchor(sourceCode);
+      // A blank line separates the import from the code below it, but not from
+      // another import: an import block split in two reads as two groups.
+      const separator =
+        anchor.kind === 'before' &&
+        anchor.target.type === AST_NODE_TYPES.ImportDeclaration
+          ? '\n'
+          : '\n\n';
+      return insertAtImportAnchor(
+        sourceCode,
+        fixer,
+        anchor,
+        `${MICRODIFF_IMPORT}${separator}`,
+      );
     }
 
     // Add a specific set to track which import names are used
