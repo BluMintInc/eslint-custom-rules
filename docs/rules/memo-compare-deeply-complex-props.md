@@ -61,6 +61,20 @@ export const UserProfileCardMemo = memo(
 );
 ```
 
+An open-ended literal union (`primitive & {}`) is a primitive at runtime, so it is not reported.
+
+```tsx
+import { memo } from 'src/util/memo';
+
+// The shape of React's own `AriaRole`, spelled out here rather than imported.
+type AriaRole = 'alert' | 'alertdialog' | 'button' | (string & {});
+type Props = { role?: AriaRole; kind?: 'alert' | 'button' | (string & {}) };
+
+const Banner = ({ role, kind }: Props) => <div role={role}>{kind}</div>;
+
+export const BannerMemo = memo(Banner); // ✅ neither prop needs compareDeeply
+```
+
 ## Edge Cases
 
 - Already supplying a comparison function (including `compareDeeply`) — rule does not report.
@@ -68,6 +82,10 @@ export const UserProfileCardMemo = memo(
 - `children` prop — ignored to avoid warnings on intentionally dynamic children.
 - Higher-order wrappers (e.g., `memo(forwardRef(...))`, `memo(connect(...)(Component))`) are analyzed; the comparator is added after the wrapped expression.
 - Immutable data structures — still reported; add an inline disable if deep comparison is not desired for that component.
+- React render types (`ReactNode`, `ReactElement`, `ComponentType`, `FC`, render-prop functions) and DOM element types (`HTMLElement | null` anchors, containers) — not reported; they are stable references, and deep-comparing a DOM node walks React's circular fiber back-references.
+- Reserved React slots (`ref`, `key`) — skipped, because React strips them before the memo equality function runs.
+- `sx` / `*Sx` / `style` / `*Style` — skipped when `memo` comes from `src/util/memo`, since `blumintAreEqual` already deep-compares them.
+- Intersections carrying a primitive member — not reported. A value of `string & X` is still assignable to `string`, so it is a primitive at runtime whatever `X` is. This covers both the open-ended literal union idiom (`'alert' | (string & {})`, of which React's `AriaRole` is the most widespread instance) and branded primitives (`string & { readonly __brand: 'UserId' }`). `compareDeeply` on such a prop would be dead code: `blumintAreEqual` only reaches deep equality behind a `typeof value === 'object'` guard, and deep equality on two primitives is `===` anyway. The exemption keys on the primitive member rather than on the object member being empty, so every spelling of the widener (`{}`, `Record<never, never>`, `Record<string, never>`) is covered. An intersection with no primitive member (`{ a: string } & { b: number }`) is still reported, as is an array of an exempt type (`('alert' | (string & {}))[]`).
 
 ## Version
 

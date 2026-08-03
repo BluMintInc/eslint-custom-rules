@@ -391,6 +391,203 @@ const Comp = ({ root, node, id }: Props) => <div>{id}</div>;
 export const Wrapped = memo(Comp);
 `,
       },
+      // Bug #1656: the open-ended literal union idiom — a primitive intersected
+      // with an object type (`'alert' | 'button' | (string & {})`) — is a
+      // PRIMITIVE at runtime. The `& {}` only defeats TypeScript's literal-union
+      // widening so editors keep offering autocomplete on the named members. The
+      // cases below start from the characterization table in the report: the
+      // plain-primitive rows already passed, and are pinned here so the carve-out
+      // cannot regress them.
+      {
+        filename: 'src/components/PlainStringProp.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+type Props = { kind?: string; label: string };
+const Comp = ({ kind, label }: Props) => <div data-kind={kind}>{label}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/LiteralUnionProp.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+type Props = { kind?: 'alert' | 'button'; label: string };
+const Comp = ({ kind, label }: Props) => <div data-kind={kind}>{label}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/LiteralUnionWidenedProp.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+// TypeScript collapses this to plain \`string\` before the rule sees it.
+type Props = { kind?: 'alert' | 'button' | string; label: string };
+const Comp = ({ kind, label }: Props) => <div data-kind={kind}>{label}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/StringAliasProp.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+type MyStringAlias = string;
+type Props = { kind?: MyStringAlias; label: string };
+const Comp = ({ kind, label }: Props) => <div data-kind={kind}>{label}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/OpenStringUnionProp.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+type Props = { kind?: 'alert' | 'button' | (string & {}); label: string };
+const Comp = ({ kind, label }: Props) => <div data-kind={kind}>{label}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      // The bare intersection, standalone rather than a union constituent.
+      {
+        filename: 'src/components/BareStringIntersectionProp.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+type Props = { kind?: string & {}; label: string };
+const Comp = ({ kind, label }: Props) => <div data-kind={kind}>{label}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      // The reduction keys on "any member is a runtime primitive", so every
+      // primitive flavour of the idiom is covered, not just `string`.
+      {
+        filename: 'src/components/OpenNumberUnionProp.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+type Props = { size?: 1 | 2 | (number & {}); label: string };
+const Comp = ({ size, label }: Props) => <div data-size={size}>{label}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/OpenBooleanIntersectionProp.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+type Props = { flag?: boolean & {}; label: string };
+const Comp = ({ flag, label }: Props) => <div>{flag ? label : ''}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/OpenBigIntIntersectionProp.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+type Props = { total?: bigint & {}; label: string };
+const Comp = ({ total, label }: Props) => <div>{String(total)}{label}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/OpenSymbolIntersectionProp.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+type Props = { token?: symbol & {}; label: string };
+const Comp = ({ token, label }: Props) => <div>{String(token)}{label}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      // The widener is spelled several ways in the wild; keying on the primitive
+      // member rather than on the object member being an empty literal covers
+      // all of them.
+      {
+        filename: 'src/components/RecordWidenedUnionProp.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+type Props = { kind?: 'alert' | (string & Record<never, never>); label: string };
+const Comp = ({ kind, label }: Props) => <div data-kind={kind}>{label}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/RecordNeverWidenedProp.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+// The \`Record<string, never>\` spelling carries an index signature rather than
+// being structurally empty, so only the primitive member can carve it out.
+type Props = { kind?: 'alert' | (string & Record<string, never>); label: string };
+const Comp = ({ kind, label }: Props) => <div data-kind={kind}>{label}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      // The idiom as it actually reaches real code: React's `AriaRole`, inherited
+      // by every component whose props extend HTML attributes. Declared locally
+      // rather than imported from `react` because this repo has no @types/react —
+      // an imported `AriaRole` resolves to `any` here, which exercises the
+      // unrelated any-annotation path instead of the union classifier.
+      {
+        filename: 'src/components/AriaRoleProp.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+type AriaRole = 'alert' | 'alertdialog' | 'button' | 'dialog' | (string & {});
+type Props = { role?: AriaRole; label: string };
+const Comp = ({ role, label }: Props) => <div role={role}>{label}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      // The report's real-world shape: the props type reaches the component
+      // through a `Readonly<...>` wrapper.
+      {
+        filename: 'src/components/AriaRoleReadonlyProp.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+type AriaRole = 'alert' | 'button' | (string & {});
+const Comp = ({ role, label }: Readonly<{ role?: AriaRole; label: string }>) => (
+  <div role={role}>{label}</div>
+);
+export const Wrapped = memo(Comp);
+`,
+      },
+      // A union nesting the idiom several levels deep (TypeScript flattens the
+      // constituents, so the intersection still arrives as a union member).
+      {
+        filename: 'src/components/NestedOpenUnionProp.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+type Inner = 'b' | (string & {});
+type Outer = 'a' | Inner | null;
+type Props = { kind?: Outer; label: string };
+const Comp = ({ kind, label }: Props) => <div data-kind={kind}>{label}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      // An intersection of two primitives reduces to `never`, which the primitive
+      // early-out already handles — pinned so the intersection branch is not the
+      // thing keeping it quiet.
+      {
+        filename: 'src/components/PrimitiveIntersectionProp.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+type Props = { impossible?: string & number; label: string };
+const Comp = ({ impossible, label }: Props) => <div>{String(impossible)}{label}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      // Bug #1656 decision: a BRANDED primitive (`string & { __brand: 'UserId' }`)
+      // is exempt too. Its runtime value is a string — a branded type is a
+      // compile-time phantom, never materialised — so `isEqual` on two of them
+      // is `===`, and `blumintAreEqual` never even reaches the deep branch
+      // because it is gated on `typeof value === 'object'`. Flagging it
+      // prescribes provably dead code, which is what the rule's own "props that
+      // are only primitives are not reported" contract rules out. This case was
+      // previously pinned as `invalid`; that pin was the same intersection
+      // blind spot #1656 reports, captured rather than intended.
+      {
+        filename: 'src/components/BrandedTypeProp.tsx',
+        code: `
+import { memo } from 'react';
+type UserId = string & { readonly __brand: 'UserId' };
+type Props = { userId: UserId };
+const Comp = ({ userId }: Props) => <div>{userId}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
     ]),
     invalid: withParserOptions(parserOptions, [
       // Bug #1179 regression: mixed React render types + data objects — only data props flagged.
@@ -1001,25 +1198,6 @@ export const Wrapped = memo(Comp, compareDeeply('settings'));
         errors: [{ messageId: 'useCompareDeeply' }],
       },
       {
-        filename: 'src/components/BrandedTypeProp.tsx',
-        code: `
-import { memo } from 'react';
-type UserId = string & { readonly __brand: 'UserId' };
-type Props = { userId: UserId };
-const Comp = ({ userId }: Props) => <div>{userId}</div>;
-export const Wrapped = memo(Comp);
-`,
-        output: `
-import { compareDeeply } from 'src/util/memo';
-import { memo } from 'react';
-type UserId = string & { readonly __brand: 'UserId' };
-type Props = { userId: UserId };
-const Comp = ({ userId }: Props) => <div>{userId}</div>;
-export const Wrapped = memo(Comp, compareDeeply('userId'));
-`,
-        errors: [{ messageId: 'useCompareDeeply' }],
-      },
-      {
         filename: 'src/components/ClassInstanceProp.tsx',
         code: `
 import { memo } from 'react';
@@ -1196,6 +1374,87 @@ import { memo } from 'react';
 type Props = { anchorEl: HTMLElement | null; settings: { theme: string } };
 const Comp = ({ anchorEl, settings }: Props) => <div>{settings.theme}</div>;
 export const Wrapped = memo(Comp, compareDeeply('settings'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      // Bug #1656 regression guard: the open-ended-union carve-out must NOT
+      // over-suppress a genuine data object sitting alongside one. Only
+      // `viewSize` is named — `kind` is excluded.
+      {
+        filename: 'src/components/OpenUnionMixedInvalid.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+type Props = { kind?: 'alert' | (string & {}); viewSize?: { width: number } };
+const Comp = ({ kind, viewSize }: Props) => <div data-kind={kind}>{viewSize?.width}</div>;
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { memo, compareDeeply } from 'src/util/memo';
+type Props = { kind?: 'alert' | (string & {}); viewSize?: { width: number } };
+const Comp = ({ kind, viewSize }: Props) => <div data-kind={kind}>{viewSize?.width}</div>;
+export const Wrapped = memo(Comp, compareDeeply('viewSize'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      // An ARRAY of the open-ended union is a genuine object at runtime; the
+      // element type's exemption must not propagate to the container.
+      {
+        filename: 'src/components/OpenUnionArrayInvalid.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+type Props = { kinds: ('alert' | (string & {}))[]; label: string };
+const Comp = ({ kinds, label }: Props) => <div>{kinds.join(',')}{label}</div>;
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { memo, compareDeeply } from 'src/util/memo';
+type Props = { kinds: ('alert' | (string & {}))[]; label: string };
+const Comp = ({ kinds, label }: Props) => <div>{kinds.join(',')}{label}</div>;
+export const Wrapped = memo(Comp, compareDeeply('kinds'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      // A nested data object reached through an open-ended union sibling still
+      // reports, and an intersection with NO primitive member (two object types)
+      // stays complex — the reduction is keyed on the primitive member, not on
+      // the type being an intersection.
+      {
+        filename: 'src/components/ObjectIntersectionInvalid.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+type Props = {
+  kind?: 'alert' | (string & {});
+  config: { nested: { depth: number } } & { extra: string };
+};
+const Comp = ({ kind, config }: Props) => <div data-kind={kind}>{config.extra}</div>;
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { memo, compareDeeply } from 'src/util/memo';
+type Props = {
+  kind?: 'alert' | (string & {});
+  config: { nested: { depth: number } } & { extra: string };
+};
+const Comp = ({ kind, config }: Props) => <div data-kind={kind}>{config.extra}</div>;
+export const Wrapped = memo(Comp, compareDeeply('config'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      // A bare `{}` prop type has no primitive member, so it keeps reporting: it
+      // admits any non-nullish value, including a freshly built object.
+      {
+        filename: 'src/components/EmptyObjectProp.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+type Props = { data: {}; label: string };
+const Comp = ({ data, label }: Props) => <div>{label}{String(data)}</div>;
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { memo, compareDeeply } from 'src/util/memo';
+type Props = { data: {}; label: string };
+const Comp = ({ data, label }: Props) => <div>{label}{String(data)}</div>;
+export const Wrapped = memo(Comp, compareDeeply('data'));
 `,
         errors: [{ messageId: 'useCompareDeeply' }],
       },
