@@ -6,7 +6,9 @@
 
 ## Rule Details
 
-Passing `this.foo` into a class method duplicates instance state that the method already owns. It turns a shared class contract into parameter plumbing, inflates signatures, and makes refactors brittle. This rule reports any call to a method defined on the same class where an argument (directly or inside an object/array) is an instance member accessed via `this`.
+Passing `this.foo` into a class method duplicates instance state that the method already owns. It turns a shared class contract into parameter plumbing, inflates signatures, and makes refactors brittle. This rule reports a call to a method defined on the same class where an argument (directly or inside an object/array) is an instance member accessed via `this`.
+
+Two conditions must also hold, so that removing the parameter is provably safe. Both are described under [What the rule allows](#what-the-rule-allows): the method must not be reachable from outside the file, and every visible call site must pass the same member in that argument slot. In practice the rule fires on `private` methods and on classes that are neither exported nor `abstract`.
 
 ### ✅ Correct
 
@@ -58,7 +60,7 @@ class CoinflowProcessorPropsExtractor {
 
 ## What the rule flags
 
-- `this.method(this.config)` when `method` is defined on the same class (private/protected/public/abstract/field arrow methods).
+- `this.method(this.config)` when `method` is defined on the same class (private/protected/public/field arrow methods).
 - Redundant members inside objects/arrays passed to a class method, e.g. `this.request({ url: this.baseUrl })`.
 - Calls from constructors and regular methods alike.
 - Passing getters as arguments, e.g. `this.handle(this.userId)`.
@@ -66,6 +68,8 @@ class CoinflowProcessorPropsExtractor {
 
 ## What the rule allows
 
+- **Externally reachable methods.** A non-`private` method of an exported or `abstract` class is never reported: a subclass or caller in another file may thread a different `this.<member>` through that parameter, so dropping it would be unsafe (issue #1309). The exemption keys on the method, not the class — a `private` (or `#name`) method is still reported inside an exported or abstract class, because private methods are never inherited and all of their call sites live in the declaring body. An `abstract` method can never be reported, since it cannot be `private` and its class is extensible by definition.
+- **Methods whose visible call sites disagree.** A report requires that *every* call to the method in the file passes the same `this.<member>` in that argument slot. A single call site passing something else means the parameter genuinely varies, so the method is left alone.
 - Parent method calls (`super.method(...)`).
 - Methods not declared on the current class (inherited/external utilities).
 - Invocations inside callbacks or nested functions (e.g. within `map`/`reduce` lambdas).
@@ -76,5 +80,6 @@ class CoinflowProcessorPropsExtractor {
 
 ## Notes
 
-- No options are available; the rule always reports redundant instance arguments.
+- No options are available. A redundant instance argument is reported only when both conditions above hold — the method is not externally reachable, and every visible call site passes the same member in that slot.
+- Exporting a class silences the rule for its non-`private` methods. To keep the check on an exported class, mark the callee `private`, which is what the redundant-parameter shape usually calls for anyway.
 - Fixing requires removing the parameter from the method signature and reading the member via `this` inside the method body.
