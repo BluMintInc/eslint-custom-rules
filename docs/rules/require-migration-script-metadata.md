@@ -38,6 +38,7 @@ import { onCallVaripotent } from '../../v2/https/onCall';
 #### Metadata after imports
 
 ```typescript
+// functions/src/callable/scripts/backfillData.f.ts
 import { onCallVaripotent } from '../../v2/https/onCall';
 
 /**
@@ -51,6 +52,7 @@ import { onCallVaripotent } from '../../v2/https/onCall';
 #### Missing required tags
 
 ```typescript
+// functions/src/callable/scripts/backfillData.f.ts
 /**
  * @migration true
  * @migrationPhase after
@@ -62,6 +64,7 @@ import { onCallVaripotent } from '../../v2/https/onCall';
 #### Invalid values
 
 ```typescript
+// functions/src/callable/scripts/backfillData.f.ts
 /**
  * @migration true
  * @migrationPhase during
