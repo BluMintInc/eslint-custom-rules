@@ -2,6 +2,7 @@ import { Linter, Rule } from 'eslint';
 import { TSESLint } from '@typescript-eslint/utils';
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { useLatestCallback } from '../rules/use-latest-callback';
+import { noArrayLengthInDeps } from '../rules/no-array-length-in-deps';
 import { verticallyGroupRelatedFunctions } from '../rules/vertically-group-related-functions';
 
 type RuleError = TSESLint.TestCaseError<'useLatestCallback'>;
@@ -2234,6 +2235,305 @@ export const useBatch = (onFlush: (rows: readonly string[]) => void) => {
 };`,
       errors: errors('useCallback', 'useLatestCallback', 3),
     },
+    // Issue #1652: the dependency array holds the only read of `listHash`, the
+    // binding `no-array-length-in-deps` hoists for it. Deleting the array would
+    // strand that declaration (and the imports feeding it) with nothing using
+    // it, so the violation reports with no fix attached.
+    {
+      code: `import { useCallback, useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+export const useThing = ({ items }: { items: string[] }) => {
+  const list = useList({ items });
+  const listHash = useMemo(() => stableHash(list), [list]);
+
+  const handle = useCallback(() => {
+    save(list);
+  }, [listHash]);
+
+  return handle;
+};`,
+      output: null,
+      errors: errors(),
+    },
+    // The batch is atomic, so one orphaned binding withholds the whole change
+    // set — including the sibling call that would convert cleanly on its own.
+    {
+      code: `import { useCallback, useMemo } from 'react';
+
+export const useThing = (rows: string[]) => {
+  const rowsHash = useMemo(() => hash(rows), [rows]);
+
+  const first = useCallback(() => {
+    send(rows);
+  }, [rowsHash]);
+
+  const second = useCallback(() => {
+    send(rows);
+  }, [rows]);
+
+  return { first, second };
+};`,
+      output: null,
+      errors: errors('useCallback', 'useLatestCallback', 3),
+    },
+    // A binding declared in an enclosing function, not the callback's own, is
+    // orphaned just the same.
+    {
+      code: `import { useCallback } from 'react';
+
+export const makeHook = (source: string[]) => {
+  const sizeKey = source.length;
+
+  return () => {
+    const handle = useCallback(() => {
+      go();
+    }, [sizeKey]);
+    return handle;
+  };
+};`,
+      output: null,
+      errors: errors(),
+    },
+    // Resolution, not name matching: the orphaned `seed` is the inner one, while
+    // a module-scope binding of the same name keeps its own readers.
+    {
+      code: `import { useCallback } from 'react';
+
+const seed = createSeed();
+
+export const useThing = () => {
+  const seed = deriveSeed();
+
+  const handle = useCallback(() => {
+    go();
+  }, [seed]);
+
+  return handle;
+};
+
+export const report = () => log(seed);`,
+      output: null,
+      errors: errors(),
+    },
+    // Only reads keep a binding alive: an assignment that survives inside the
+    // callback still leaves `attempts` written but never read.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (initial: number) => {
+  let attempts = initial;
+
+  const reset = useCallback(() => {
+    attempts = 0;
+  }, [attempts]);
+
+  return reset;
+};`,
+      output: null,
+      errors: errors(),
+    },
+    // No over-yield: a dependency the callback body reads too survives the fix.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (rows: string[]) => {
+  const total = rows.length;
+
+  const report = useCallback(() => {
+    send(total);
+  }, [total]);
+
+  return report;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (rows: string[]) => {
+  const total = rows.length;
+
+  const report = useLatestCallback(() => {
+    send(total);
+  });
+
+  return report;
+};`,
+      errors: errors(),
+    },
+    // A dependency read by another hook, outside the deleted array, survives.
+    {
+      code: `import { useCallback, useEffect } from 'react';
+
+export const useThing = () => {
+  const view = useView();
+
+  const handle = useCallback(() => {
+    go();
+  }, [view]);
+
+  useEffect(() => {
+    track(view);
+  }, [view]);
+
+  return handle;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { useEffect } from 'react';
+
+export const useThing = () => {
+  const view = useView();
+
+  const handle = useLatestCallback(() => {
+    go();
+  });
+
+  useEffect(() => {
+    track(view);
+  }, [view]);
+
+  return handle;
+};`,
+      errors: errors(),
+    },
+    // A module-scope binding is not this rule's to call dead — it can be
+    // exported or read from another file — so it never withholds the fix.
+    {
+      code: `import { useCallback } from 'react';
+
+const OPTIONS = { retries: 3 };
+
+export const useThing = () => {
+  const handle = useCallback(() => {
+    go();
+  }, [OPTIONS]);
+
+  return handle;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+const OPTIONS = { retries: 3 };
+
+export const useThing = () => {
+  const handle = useLatestCallback(() => {
+    go();
+  });
+
+  return handle;
+};`,
+      errors: errors(),
+    },
+    // The same holds for an imported binding.
+    {
+      code: `import { useCallback } from 'react';
+import { CONFIG } from './config';
+
+export const useThing = () => {
+  const handle = useCallback(() => {
+    go();
+  }, [CONFIG]);
+
+  return handle;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { CONFIG } from './config';
+
+export const useThing = () => {
+  const handle = useLatestCallback(() => {
+    go();
+  });
+
+  return handle;
+};`,
+      errors: errors(),
+    },
+    // A dependency resolving past a shadow to module scope converts, even though
+    // an inner binding of that name exists.
+    {
+      code: `import { useCallback } from 'react';
+
+const scale = 2;
+
+export const useThing = () => {
+  const handle = useCallback(() => {
+    go();
+  }, [scale]);
+
+  const nested = () => {
+    const scale = 1;
+    return scale;
+  };
+
+  return { handle, nested };
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+const scale = 2;
+
+export const useThing = () => {
+  const handle = useLatestCallback(() => {
+    go();
+  });
+
+  const nested = () => {
+    const scale = 1;
+    return scale;
+  };
+
+  return { handle, nested };
+};`,
+      errors: errors(),
+    },
+    // An empty dependency array deletes no reference at all.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = () => {
+  const limit = useLimit();
+
+  const handle = useCallback(() => {
+    send(limit);
+  }, []);
+
+  return handle;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = () => {
+  const limit = useLimit();
+
+  const handle = useLatestCallback(() => {
+    send(limit);
+  });
+
+  return handle;
+};`,
+      errors: errors(),
+    },
+    // Neither does a call written without a dependency array.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = () => {
+  const limit = useLimit();
+
+  const handle = useCallback(() => {
+    send(limit);
+  });
+
+  return handle;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = () => {
+  const limit = useLimit();
+
+  const handle = useLatestCallback(() => {
+    send(limit);
+  });
+
+  return handle;
+};`,
+      errors: errors(),
+    },
   ],
 });
 
@@ -2449,6 +2749,140 @@ export const useThing = (go) => {
       "import useLatestCallback from 'use-latest-callback';",
     );
     expect(/\buseCallback\s*\(/.test(output)).toBe(false);
+    expect(messages).toHaveLength(0);
+  });
+});
+
+// `--fix` runs every enabled rule over one file, so this fix has to stay sound
+// against text a sibling rule wrote. `no-array-length-in-deps` hoists
+// `const listHash = useMemo(() => stableHash(list), [list])` and points the
+// dependency at it, leaving the dependency array as that binding's only reader —
+// which dropping the array would strand (issue #1652). RuleTester runs one rule
+// for one pass and cannot stage that, so the interaction is driven directly.
+describe('use-latest-callback: no orphaned bindings after --fix (issue #1652)', () => {
+  const parserConfig = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2022 as const,
+      sourceType: 'module' as const,
+      ecmaFeatures: { jsx: true },
+    },
+  };
+
+  const createLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      'test/use-latest-callback',
+      useLatestCallback as unknown as Rule.RuleModule,
+    );
+    linter.defineRule(
+      'test/no-array-length-in-deps',
+      noArrayLengthInDeps as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const bothRules = {
+    ...parserConfig,
+    rules: {
+      'test/use-latest-callback': 'error' as const,
+      'test/no-array-length-in-deps': 'error' as const,
+    },
+  };
+
+  // The property the issue states: a file that starts clean under
+  // no-unused-vars must still be clean after --fix.
+  const unusedVarsIn = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    return linter.verify(
+      code,
+      { ...parserConfig, rules: { 'no-unused-vars': 'error' as const } },
+      'useThing.ts',
+    );
+  };
+
+  const lengthDependency = `import { useEffect, useCallback } from 'react';
+
+export const useThing = ({ items }: { items: string[] }) => {
+  const { setThing } = useStore();
+  const list = useList({ items });
+
+  const handle = useCallback(async () => {
+    if (!list) {
+      return;
+    }
+    const only = list.length === 1;
+    await setThing({ only });
+  }, [list?.length, setThing]);
+
+  useEffect(() => {
+    handle();
+  }, [handle]);
+
+  return handle;
+};
+`;
+
+  it('withholds the conversion that would strand the hoisted useMemo', () => {
+    expect(unusedVarsIn(lengthDependency)).toHaveLength(0);
+
+    const { output, messages } = createLinter().verifyAndFix(
+      lengthDependency,
+      bothRules,
+      'useThing.ts',
+    );
+
+    // The sibling's hoist lands, so the hazard is really staged.
+    expect(output).toContain('const listHash = useMemo');
+    expect(output).toContain('[listHash, setThing]');
+    expect(unusedVarsIn(output)).toHaveLength(0);
+
+    // The violation still stands; only its fix is withheld.
+    expect(messages.length).toBeGreaterThan(0);
+    expect(
+      messages.every(
+        (message) => message.ruleId === 'test/use-latest-callback',
+      ),
+    ).toBe(true);
+    expect(messages.some((message) => message.fix)).toBe(false);
+  });
+
+  it('converts normally when the sibling rule hoists nothing', () => {
+    const plainDependency = `import { useCallback } from 'react';
+
+export const useThing = ({ items }: { items: string[] }) => {
+  const { setThing } = useStore();
+  const list = useList({ items });
+
+  const handle = useCallback(async () => {
+    await setThing({ list });
+  }, [list, setThing]);
+
+  return handle;
+};
+`;
+
+    const { output, messages } = createLinter().verifyAndFix(
+      plainDependency,
+      bothRules,
+      'useThing.ts',
+    );
+
+    expect(output).toContain(
+      "import useLatestCallback from 'use-latest-callback';",
+    );
+    expect(/\buseCallback\b/.test(output)).toBe(false);
+    expect(unusedVarsIn(output)).toHaveLength(0);
     expect(messages).toHaveLength(0);
   });
 });

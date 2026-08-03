@@ -382,6 +382,81 @@ const brokenOpenCallText = (
   return `${head}(\n${calleeIndent}${moved}${comma}\n${callIndent})`;
 };
 
+/** Whether a range sits wholly inside one of the ranges a fix deletes. */
+const fallsInside = (
+  ranges: readonly TSESTree.Range[],
+  range: TSESTree.Range,
+): boolean =>
+  ranges.some(([start, end]) => start <= range[0] && range[1] <= end);
+
+/**
+ * Whether the binding belongs to a function rather than to the module. A
+ * module-scope binding is left alone because this file cannot settle whether it
+ * is dead: it may be exported, re-exported, or declared for a side effect,
+ * whereas a binding declared inside a component or hook is reachable only from
+ * the references this file spells out.
+ */
+const isFunctionLocal = (variable: TSESLint.Scope.Variable): boolean => {
+  for (
+    let scope: TSESLint.Scope.Scope | null = variable.scope;
+    scope;
+    scope = scope.upper
+  ) {
+    if (scope.type === 'function') {
+      return true;
+    }
+  }
+  return false;
+};
+
+/** The bindings a reference inside one of the deleted ranges resolves to. */
+const variablesReferencedIn = (
+  root: TSESLint.Scope.Scope,
+  deletedRanges: readonly TSESTree.Range[],
+): Set<TSESLint.Scope.Variable> => {
+  const referenced = new Set<TSESLint.Scope.Variable>();
+  const walk = (scope: TSESLint.Scope.Scope) => {
+    for (const reference of scope.references) {
+      if (
+        reference.resolved &&
+        fallsInside(deletedRanges, reference.identifier.range)
+      ) {
+        referenced.add(reference.resolved);
+      }
+    }
+    scope.childScopes.forEach(walk);
+  };
+  walk(root);
+  return referenced;
+};
+
+/**
+ * Whether deleting the given ranges would strip the last read of a binding
+ * declared inside a function, leaving a declaration — and whatever imports feed
+ * it — that nothing uses.
+ *
+ * A dependency array can hold the sole reference to a value computed for it
+ * alone, which is precisely what `no-array-length-in-deps` produces when it
+ * hoists `const listHash = useMemo(() => stableHash(list), [list])` and points
+ * the dependency at it. Dropping the array then strands that statement, turning
+ * a clean file into one `no-unused-vars` rejects with a violation this plugin
+ * cannot itself fix (issue #1652). Only a write left behind counts as no use at
+ * all, matching how an unused-variable check reads the result.
+ */
+const orphansLocalBinding = (
+  root: TSESLint.Scope.Scope,
+  deletedRanges: readonly TSESTree.Range[],
+): boolean =>
+  [...variablesReferencedIn(root, deletedRanges)]
+    .filter((variable) => variable.defs.length > 0 && isFunctionLocal(variable))
+    .some((variable) =>
+      variable.references.every(
+        (reference) =>
+          !reference.isRead() ||
+          fallsInside(deletedRanges, reference.identifier.range),
+      ),
+    );
+
 export const useLatestCallback = createRule<Options, MessageIds>({
   name: 'use-latest-callback',
   meta: {
@@ -971,6 +1046,18 @@ export const useLatestCallback = createRule<Options, MessageIds>({
           return texts;
         };
 
+        // Everything a rewritten call carries past its callback argument — the
+        // dependency array, and any further argument — is absent from the
+        // replacement text, so those ranges are what the fix deletes.
+        const droppedRanges: TSESTree.Range[] = batchedConversions.map(
+          (conversion) =>
+            [
+              conversion.node.arguments[0].range[1],
+              conversion.node.range[1],
+            ] as TSESTree.Range,
+        );
+        const programScope = ASTHelpers.getScope(context, program);
+
         // Every call-site conversion and the import rewrite ride on ONE fix
         // from ONE report. ESLint discards a multi-part fix wholesale when any
         // part conflicts with another rule's fix and retries it on the next
@@ -994,6 +1081,15 @@ export const useLatestCallback = createRule<Options, MessageIds>({
             // the author resolves the name clash deliberately. The batch is
             // atomic, so one unreachable call site withholds all of it.
             if (!batchedConversions.every(reachesHook)) {
+              return null;
+            }
+
+            // Deleting the dependency arrays must not strand a binding that
+            // exists only to be listed in one. The batch is atomic, so a single
+            // orphaned binding withholds all of it, and the violation still
+            // stands as a report: the author drops the dead declaration
+            // together with the array.
+            if (orphansLocalBinding(programScope, droppedRanges)) {
               return null;
             }
 
