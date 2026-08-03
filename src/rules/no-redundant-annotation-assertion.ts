@@ -3,6 +3,7 @@ import { visitorKeys } from '@typescript-eslint/visitor-keys';
 import * as ts from 'typescript';
 import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
+import { planOrphanedImportRemoval, TextRange } from '../utils/importRemoval';
 
 type MessageIds = 'redundantAnnotationAndAssertion';
 
@@ -153,15 +154,18 @@ function findTypeAnnotationStart(
   return removalStart;
 }
 
-function removeTypeAnnotation(
-  fixer: TSESLint.RuleFixer,
+/**
+ * The slice a fix deletes to drop `typeAnnotation`: the `:` and the whitespace
+ * separating it from the declared name go with the type.
+ */
+function annotationRemovalRange(
   typeAnnotation: TSESTree.TSTypeAnnotation,
   sourceCode: TSESLint.SourceCode,
-): TSESLint.RuleFix {
-  const end = typeAnnotation.range[1];
-  const removalStart = findTypeAnnotationStart(typeAnnotation, sourceCode);
-
-  return fixer.removeRange([removalStart, end]);
+): TextRange {
+  return [
+    findTypeAnnotationStart(typeAnnotation, sourceCode),
+    typeAnnotation.range[1],
+  ];
 }
 
 function typeText(type: ts.Type, checker: ts.TypeChecker): string {
@@ -507,6 +511,29 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
 
     const checker = parserServices.program.getTypeChecker();
 
+    /**
+     * Reports the redundant annotation, taking with it any import it was the
+     * only consumer of. The two are one fix: applying either half alone leaves
+     * the file worse than applying neither — a stripped annotation with its
+     * import left behind fails `no-unused-vars`, and since this rule's own
+     * report is resolved by the fix, nothing re-reports the debt.
+     *
+     * Orphanhood is judged against this one annotation's own removal and the
+     * file as it stands, never against what the rest of the `--fix` run might
+     * also delete. A sibling annotation naming the same type may be
+     * `eslint-disable`d — which a rule cannot see, since suppression is applied
+     * to reports after they are emitted — so an edit that assumes its sibling
+     * will also go deletes an import the surviving annotation still references,
+     * trading an unused import for a dangling type. Judging one edit at a time
+     * is suppression-safe by construction: a suppressed report's fix never
+     * applies, so it can never have been depended on.
+     *
+     * A type the annotation names but the helper cannot rewrite — a local alias,
+     * an interface, a type parameter — declines the fix outright. Deleting a
+     * declaration is a materially riskier edit than dropping an import
+     * specifier, and the author is better placed to decide whether the type
+     * should go or be used elsewhere.
+     */
     function reportIfRedundant(
       annotation: TSESTree.TSTypeAnnotation,
       assertion: TSESTree.TypeNode,
@@ -522,11 +549,25 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
 
       if (!matchingType) return;
 
+      const removal = annotationRemovalRange(fixerTarget, sourceCode);
+      const importRanges = planOrphanedImportRemoval(sourceCode, [removal]);
+
       context.report({
         node: reportNode,
         messageId: 'redundantAnnotationAndAssertion',
         data: { type: matchingType },
-        fix: (fixer) => removeTypeAnnotation(fixer, fixerTarget, sourceCode),
+        // No plan means no binding can be unbound safely, so the annotation
+        // stays too: the report without a fixer is the lesser damage.
+        ...(importRanges
+          ? {
+              fix: (fixer: TSESLint.RuleFixer) => [
+                fixer.removeRange([removal[0], removal[1]]),
+                ...importRanges.map((range) =>
+                  fixer.removeRange([range[0], range[1]]),
+                ),
+              ],
+            }
+          : {}),
       });
     }
 
