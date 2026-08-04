@@ -7,6 +7,77 @@ type MessageIds =
   | 'missingExportedReturnType'
   | 'missingExportedPropsType';
 
+type ComponentFunction =
+  | TSESTree.ArrowFunctionExpression
+  | TSESTree.FunctionExpression;
+
+type UnwrappedComponent = {
+  fn: ComponentFunction;
+  /**
+   * True when the function reached the export through `memo`/`forwardRef`. The
+   * wrapper is itself proof of component-hood, which is the only signal left
+   * when the component is anonymous (`export default memo((props: P) => ...)`).
+   */
+  isWrapped: boolean;
+};
+
+/**
+ * `require-memo` rewrites `export function Banner(props: P)` into
+ * `export const Banner = memo(function BannerUnmemoized(props: P) {...})`, so
+ * every wrapper it can emit has to be unwrapped here or the config's own
+ * autofix hides the component from this rule.
+ */
+const COMPONENT_WRAPPERS = new Set(['memo', 'forwardRef']);
+
+function isComponentName(name: string): boolean {
+  return /^[A-Z]/.test(name);
+}
+
+function isComponentWrapperCallee(callee: TSESTree.Node): boolean {
+  if (callee.type === AST_NODE_TYPES.Identifier) {
+    return COMPONENT_WRAPPERS.has(callee.name);
+  }
+  if (
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    !callee.computed &&
+    callee.property.type === AST_NODE_TYPES.Identifier
+  ) {
+    return COMPONENT_WRAPPERS.has(callee.property.name);
+  }
+  return false;
+}
+
+/**
+ * Resolves the function that actually receives the props, peeling any nesting
+ * of component wrappers (`memo(forwardRef(fn))`) along the way.
+ */
+function unwrapComponentFunction(
+  node: TSESTree.Node | null | undefined,
+  isWrapped = false,
+): UnwrappedComponent | undefined {
+  if (!node) return undefined;
+
+  if (
+    node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+    node.type === AST_NODE_TYPES.FunctionExpression
+  ) {
+    return { fn: node, isWrapped };
+  }
+
+  if (
+    node.type === AST_NODE_TYPES.CallExpression &&
+    isComponentWrapperCallee(node.callee)
+  ) {
+    const [firstArgument] = node.arguments;
+    if (!firstArgument || firstArgument.type === AST_NODE_TYPES.SpreadElement) {
+      return undefined;
+    }
+    return unwrapComponentFunction(firstArgument, true);
+  }
+
+  return undefined;
+}
+
 export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
   name: 'enforce-exported-function-types',
   meta: {
@@ -16,6 +87,7 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
         'Enforce exporting types for function props and return values',
       recommended: 'error',
     },
+    fixable: 'code',
     schema: [],
     messages: {
       missingExportedType:
@@ -396,6 +468,38 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
       return builtInTypes.has(typeName);
     }
 
+    /**
+     * Locates the module-scope declaration of a type so the report can offer to
+     * export it. Only a bare declaration in `Program.body` qualifies: anything
+     * already carrying `export` is an `ExportNamedDeclaration` (and never
+     * reported), while a declaration nested in a namespace or a function body
+     * cannot be exported by inserting a single keyword.
+     *
+     * Merged declarations (repeated `interface Props`) are left alone: TypeScript
+     * requires every declaration of a merged name to be exported or none of
+     * them, so exporting one of several would trade a lint report for a compile
+     * error.
+     */
+    function findExportableTypeDeclaration(
+      typeName: string,
+    ):
+      | TSESTree.TSTypeAliasDeclaration
+      | TSESTree.TSInterfaceDeclaration
+      | undefined {
+      const declarations = context.sourceCode.ast.body.filter(
+        (
+          statement,
+        ): statement is
+          | TSESTree.TSTypeAliasDeclaration
+          | TSESTree.TSInterfaceDeclaration =>
+          (statement.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
+            statement.type === AST_NODE_TYPES.TSInterfaceDeclaration) &&
+          statement.id.name === typeName,
+      );
+
+      return declarations.length === 1 ? declarations[0] : undefined;
+    }
+
     function checkAndReportType(
       node: TSESTree.TypeNode,
       parentNode: TSESTree.Node,
@@ -412,14 +516,38 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
           const key = `${typeName}-${parentNode.loc?.start.line}-${parentNode.loc?.start.column}`;
           if (!reportedTypes.has(key)) {
             reportedTypes.add(key);
+            // The props contract is the shape consumers compose against, so its
+            // remedy — exporting the local declaration — is offered as a fix.
+            const declaration =
+              messageId === 'missingExportedPropsType'
+                ? findExportableTypeDeclaration(typeName)
+                : undefined;
             context.report({
               node: parentNode,
               messageId,
               data: { typeName },
+              fix: declaration
+                ? (fixer) => fixer.insertTextBefore(declaration, 'export ')
+                : undefined,
             });
           }
         }
       }
+    }
+
+    /**
+     * Applies the props check every exported component shape shares, reusing
+     * the parameter walk the `export function Banner(props: P)` visitor
+     * performs so the widened shapes cannot drift from it.
+     *
+     * Only the first parameter carries props. `forwardRef` hands the second one
+     * a ref, whose type (`Ref<HTMLDivElement>`) is no part of the contract a
+     * consumer composes against, so reporting it would be noise.
+     */
+    function checkComponentProps(fn: ComponentFunction): void {
+      const [props] = fn.params;
+      if (!props) return;
+      checkAndReportParameterType(props, 'missingExportedPropsType');
     }
 
     function checkAndReportParameterType(
@@ -632,6 +760,42 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
             'missingExportedPropsType',
           );
         }
+      },
+
+      // Handle exported components written as an expression:
+      // `export const Banner = (props: P) => ...`,
+      // `export const Banner = function (props: P) {...}` and any
+      // `memo`/`forwardRef` nesting around either form.
+      VariableDeclarator(node) {
+        if (
+          node.id.type !== AST_NODE_TYPES.Identifier ||
+          !isComponentName(node.id.name) ||
+          !isExported(node.parent)
+        ) {
+          return;
+        }
+
+        const component = unwrapComponentFunction(node.init);
+        if (!component) return;
+
+        checkComponentProps(component.fn);
+      },
+
+      // `export default memo(function Banner(props: P) {...})` mirrors the
+      // `export default function Banner(props: P)` form the declaration
+      // visitors already cover.
+      ExportDefaultDeclaration(node) {
+        const component = unwrapComponentFunction(node.declaration);
+        if (!component) return;
+
+        const name = component.fn.id?.name;
+        // An anonymous default export is only recognizable as a component
+        // through its wrapper, since there is no name to inspect.
+        const isComponent =
+          name === undefined ? component.isWrapped : isComponentName(name);
+        if (!isComponent) return;
+
+        checkComponentProps(component.fn);
       },
 
       // Skip type checking for React components since we handle them separately
