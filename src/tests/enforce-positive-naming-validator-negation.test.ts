@@ -50,6 +50,23 @@ ruleTesterTs.run(
       `export const isNotBlank = (value?: string): string | true => validate(value);`,
       `export const isNonNegative = (value?: number): true | string => check(value);`,
 
+      // #1692: `no-explicit-return-type` — recommended and fixable — deletes the
+      // `string | true` annotation above, leaving only an opaque call body. A
+      // body that yields no syntactic verdict must not be read as a boolean
+      // predicate; the rule prefers a false negative over renaming a validator.
+      `export const isNotBlank = (value?: string) => validate(value);`,
+      `export function isNotBlank(value?: string) {
+        return validate(value);
+      }`,
+      `const validators = {
+        isNotBlank: (value?: string) => validate(value),
+      };`,
+      `class Validators {
+        isNotBlank(value?: string) {
+          return validate(value);
+        }
+      }`,
+
       // Concise-arrow conditional returning an error string on rejection.
       `export const isNotBlank = (value?: string) => !value ? 'Must not be blank' : true;`,
 
@@ -143,6 +160,50 @@ ruleTesterTs.run(
           {
             messageId: 'avoidNegativeNaming',
             data: { name: 'isNotEligible', alternatives: 'isEligible' },
+          },
+        ],
+      },
+      // An unannotated body that provably yields a boolean is still flagged, so
+      // declining on an *opaque* body (#1692) grants no blanket amnesty.
+      {
+        code: `export const isNotEmpty = (v: string) => v.length > 0;`,
+        errors: [
+          {
+            messageId: 'avoidNegativeNaming',
+            data: { name: 'isNotEmpty', alternatives: 'isEmpty' },
+          },
+        ],
+      },
+      {
+        code: `export function isNotValid(x: number) {
+          return x < 0;
+        }`,
+        errors: [
+          {
+            messageId: 'avoidNegativeNaming',
+            data: { name: 'isNotValid', alternatives: 'isValid' },
+          },
+        ],
+      },
+      {
+        code: `export const isNotAdmin = (user: User) => !user.admin;`,
+        errors: [
+          {
+            messageId: 'avoidNegativeNaming',
+            data: { name: 'isNotAdmin', alternatives: 'isAdmin' },
+          },
+        ],
+      },
+      {
+        code: `class Roles {
+          isNotAdmin(user: User) {
+            return user.role !== 'admin';
+          }
+        }`,
+        errors: [
+          {
+            messageId: 'avoidNegativeNaming',
+            data: { name: 'isNotAdmin', alternatives: 'isAdmin' },
           },
         ],
       },

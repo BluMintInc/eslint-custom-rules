@@ -310,6 +310,13 @@ const pairKey = (finding: Finding) =>
  * a triaged, tracked contradiction rather than a way to make a build green.
  * Anything unlisted fails, and a listed pair that stops reproducing also fails,
  * so the exemption cannot rot into a shield for the next regression.
+ *
+ * The dominant shape on this axis — `no-explicit-return-type` deleting the
+ * return annotation another rule reads as its exemption carrier (6 of the 12
+ * findings that opened it, #1595/#1596, then #1691 and #1692) — is answered on
+ * the READER side each time: the rule classifies the body's returns and
+ * declines when they yield no verdict, so no annotation has to survive for its
+ * exemption to hold. Reach for that before making a fixer decline.
  */
 export const EXEMPTION_DESTROYED_BASELINE: Record<string, string> = {
   // Resolved by design, not deferred — the one entry here that is NOT a defect.
@@ -322,18 +329,6 @@ export const EXEMPTION_DESTROYED_BASELINE: Record<string, string> = {
   // the fixed-point test in `no-static-constants-in-dynamic-files.test.ts`.
   'global-const-style -> no-static-constants-in-dynamic-files':
     'the rename makes a genuinely-static const in a .dynamic file visible; the second verdict is correct and its remedy converges (#1599)',
-
-  // --- `no-explicit-return-type` deletes the return annotation that another
-  // rule reads as its exemption carrier. The dominant shape on this axis: 6 of
-  // the 12 findings that opened it (#1595, #1596) were this, and the entry
-  // below is a further instance. The open question is the same each time:
-  // should the fixer decline when the annotation is load-bearing for another
-  // rule, or should the reader infer from the body instead of falling back to a
-  // name heuristic? `enforce-boolean-naming-prefixes` answers it on the reader
-  // side (#1691): it classifies a callee's returns from the body, so no
-  // annotation has to survive for its exemption to hold.
-  'no-explicit-return-type -> enforce-positive-naming':
-    "stripping a validator's `string | true` return annotation leaves an opaque body, so the negatively-named validator is read as a boolean predicate and reported (#1692)",
 };
 
 const observedPairs = new Set(findings.map(pairKey));
