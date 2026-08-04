@@ -11,7 +11,65 @@ import {
 
 type MessageIds = 'useCentralizedMockFirestore';
 
-const MOCK_FIRESTORE_PATH = '../../../../../__test-utils__/mockFirestore';
+/**
+ * The centralized module's identity: the path segments that name it, without
+ * the relative prefix a specifier needs to reach it. Keeping the identity
+ * separate from the specifier is what makes the self-file guard below correct
+ * no matter what prefix the fixer emits — the emitted depth is a hardcoded
+ * guess (Issue #1387) and a guard keyed on it would exempt the wrong files.
+ */
+const MOCK_FIRESTORE_MODULE = '__test-utils__/mockFirestore';
+
+const MOCK_FIRESTORE_PATH = `../../../../../${MOCK_FIRESTORE_MODULE}`;
+
+const SOURCE_EXTENSION = /\.(?:ts|tsx|js|jsx)$/;
+
+/**
+ * The module every other file is told to import from is the one module that
+ * must define `mockFirestore` locally: rewriting it produces an import of
+ * itself, so the canonical implementation is deleted and the module imports a
+ * name it no longer defines.
+ *
+ * The linted path is matched by suffix because it reaches the rule in whatever
+ * form the caller used — absolute (`/repo/src/__test-utils__/mockFirestore.ts`)
+ * or project-relative (`__test-utils__/mockFirestore.ts`). The suffix has to
+ * land on a path-segment boundary, otherwise `not__test-utils__/mockFirestore`
+ * — an unrelated module — would be exempted too.
+ */
+const isCentralizedMockModule = (filename: string): boolean => {
+  const normalized = filename.replace(/\\/g, '/').replace(SOURCE_EXTENSION, '');
+  if (!normalized.endsWith(MOCK_FIRESTORE_MODULE)) {
+    return false;
+  }
+  const suffixStart = normalized.length - MOCK_FIRESTORE_MODULE.length;
+  return suffixStart === 0 || normalized[suffixStart - 1] === '/';
+};
+
+/**
+ * Reports whether a flagged declaration sits on the module's export surface,
+ * either as `export const mockFirestore = …` or as one binding of an exported
+ * multi-declarator `const`.
+ *
+ * An exported name is a cross-file contract whose importers a single-file fixer
+ * cannot reach: retiring the declaration drops the name from the surface and
+ * every importer fails to resolve it. The hazard lives entirely in those other
+ * files, so it does not depend on whether the declaring file also uses the name
+ * — a mock module with no local use sites is the most exposed shape, not the
+ * safest. `global-const-style` and `renameFixes` withhold their fixes on the
+ * same grounds.
+ *
+ * Only `ExportNamedDeclaration` can front a flagged node: `export default`
+ * takes an expression, never a `const`, and a class property — the other shape
+ * this rule flags — belongs to its class rather than to the module, so
+ * `export default class { mockFirestore = … }` exports nothing by that name.
+ */
+function isExportedDeclaration(node: TSESTree.Node): boolean {
+  const statement =
+    node.parent?.type === AST_NODE_TYPES.VariableDeclaration
+      ? node.parent
+      : node;
+  return statement.parent?.type === AST_NODE_TYPES.ExportNamedDeclaration;
+}
 
 /**
  * A character-range rewrite of the source. Ranges are always original-text
@@ -95,19 +153,22 @@ const STATEMENT_CONTAINERS = new Set<string>([
 ]);
 
 /**
- * Widens a declaration to the `export` that fronts it, whose keyword lives
- * outside the declaration's own range and would otherwise be stranded.
+ * The declaration when it stands as a statement of its own, and nothing
+ * otherwise.
+ *
+ * An `export const` is deliberately not widened to the `export` that fronts it:
+ * swallowing the keyword retires the name from the module's export surface, so
+ * such a declaration has no retirable statement at all and its enclosing
+ * `ExportNamedDeclaration` is absent from `STATEMENT_CONTAINERS` for that
+ * reason. `isExportedDeclaration` refuses the same shape ahead of this call and
+ * covers the multi-declarator form this branch never sees.
  */
 function retirableStatement(
   declaration: TSESTree.VariableDeclaration,
 ): TSESTree.Node | undefined {
-  const statement =
-    declaration.parent?.type === AST_NODE_TYPES.ExportNamedDeclaration
-      ? declaration.parent
-      : declaration;
-  return statement.parent &&
-    STATEMENT_CONTAINERS.has(statement.parent.type as string)
-    ? statement
+  return declaration.parent &&
+    STATEMENT_CONTAINERS.has(declaration.parent.type as string)
+    ? declaration
     : undefined;
 }
 
@@ -222,6 +283,22 @@ export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
+    // A processor hands the rule a virtual filename for an extracted code block;
+    // the physical path is the one that identifies the module on disk.
+    const filename = context.getPhysicalFilename
+      ? context.getPhysicalFilename()
+      : context.getFilename();
+
+    // The centralized module is exempt outright rather than reported without a
+    // fix: its local definition IS the canonical one this rule directs every
+    // other file to, so there is nothing for its author to do — the message's
+    // remedy, "import mockFirestore from the centralized test util", names the
+    // file it is reported in. `use-custom-memo`, `use-custom-router` and
+    // `use-custom-link` exempt their wrapper implementations the same way.
+    if (isCentralizedMockModule(filename)) {
+      return {};
+    }
+
     let hasCentralizedImport = false;
     const mockFirestoreNodes: Set<TSESTree.Node> = new Set();
     const customMockFirestoreNames: Set<string> = new Set();
@@ -400,6 +477,13 @@ export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
               // them.
               const removals: SourceEdit[] = [];
               for (const node of mockFirestoreNodes) {
+                if (isExportedDeclaration(node)) {
+                  // Retiring an exported declaration takes the name off the
+                  // module's export surface, breaking importers this fixer
+                  // cannot see. The report stands so the local mock is still
+                  // surfaced; collapsing it is a cross-file edit a human owns.
+                  return null;
+                }
                 const span = retiredSpan(node);
                 if (!span) {
                   // A declaration that cannot be excised cleanly gets no

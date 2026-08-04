@@ -114,6 +114,47 @@ beforeEach(() => { notMockFirestore({}); use(keepMe); });`,
         code: `const mocks = { mockFirestore: jest.fn() };
 beforeEach(() => { mocks.mockFirestore({}); });`,
       },
+      // The centralized module defines the mock every other file is sent to
+      // import, so its own definition is the remedy, not a violation of it.
+      // Reporting there has no available fix — the message would tell the
+      // module to import itself (#1703, same class as #1671).
+      {
+        code: `export const mockFirestore = jest.fn();`,
+        filename: '__test-utils__/mockFirestore.ts',
+      },
+      {
+        code: `export const mockFirestore = jest.fn();
+export const mockAuth = jest.fn();`,
+        filename: 'src/__test-utils__/mockFirestore.ts',
+      },
+      {
+        code: `const mockFirestore = jest.fn();
+export { mockFirestore };`,
+        filename: '/repo/src/__test-utils__/mockFirestore.ts',
+      },
+      // The module is exempt under every source extension it can ship as
+      {
+        code: `export const mockFirestore = jest.fn();`,
+        filename: 'src/__test-utils__/mockFirestore.tsx',
+      },
+      {
+        code: `export const mockFirestore = jest.fn();`,
+        filename: '/repo/__test-utils__/mockFirestore.js',
+      },
+      {
+        code: `export const mockFirestore = jest.fn();`,
+        filename: 'src/__test-utils__/mockFirestore.jsx',
+      },
+      // An extensionless path still identifies the module
+      {
+        code: `export const mockFirestore = jest.fn();`,
+        filename: '/repo/src/__test-utils__/mockFirestore',
+      },
+      // Windows separators name the same module as POSIX ones
+      {
+        code: `export const mockFirestore = jest.fn();`,
+        filename: 'C:\\repo\\src\\__test-utils__\\mockFirestore.ts',
+      },
     ],
     invalid: [
       // Invalid case: Local mockFirestore declaration
@@ -523,22 +564,65 @@ for (let i = 0; i < 1; i++) { mockFirestore({}); }`,
         errors: [ERROR],
         output: null,
       },
-      // The `export` keyword lives outside the declaration's range and must go
-      // with it instead of being stranded
+      // An exported mockFirestore is reported without a fix: retiring it would
+      // take the name off the module's export surface, and the importers that
+      // spell it out live in files this single-file fixer cannot reach (#1703)
       {
         code: `export const mockFirestore = jest.fn(); export const keepMe = 1;
 beforeEach(() => { mockFirestore({}); use(keepMe); });`,
         errors: [ERROR],
-        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
-export const keepMe = 1;
-beforeEach(() => { mockFirestore({}); use(keepMe); });`,
+        output: null,
       },
       {
         code: `export const mockFirestore = jest.fn();
 beforeEach(() => { mockFirestore({}); });`,
         errors: [ERROR],
-        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+        output: null,
+      },
+      // An exported declaration with no in-file use site is the most exposed
+      // shape, not the safest: every reference to it is in another file (#1703)
+      {
+        code: `export const mockFirestore = jest.fn();`,
+        errors: [ERROR],
+        output: null,
+      },
+      // The export survives a multi-declarator `const` too, where the fixer
+      // excises the declarator rather than the whole statement (#1703)
+      {
+        code: `export const before = 1, mockFirestore = jest.fn();
+beforeEach(() => { mockFirestore({}); use(before); });`,
+        errors: [ERROR],
+        output: null,
+      },
+      // One exported declaration withholds the fix for the whole file, since
+      // the file is reported once and fixed as a unit (#1703)
+      {
+        code: `const localMock = 1;
+export const mockFirestore = jest.fn();
+class T { mockFirestore = 1; run() { this.mockFirestore({}); } }
+beforeEach(() => { mockFirestore({}); use(localMock); });`,
+        errors: [ERROR],
+        output: null,
+      },
+      // An exported destructured require is on the export surface as well
+      {
+        code: `export const { mockFirestore } = require('./localMocks');
 beforeEach(() => { mockFirestore({}); });`,
+        errors: [ERROR],
+        output: null,
+      },
+      // A class property belongs to its class, not to the module, so an
+      // exported class can still give up its local mock (#1703)
+      {
+        code: `export default class T {
+  mockFirestore = jest.fn();
+  run() { this.mockFirestore({}); }
+}`,
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+export default class T {
+  run() { mockFirestore({}); }
+}`,
       },
       // A declaration inside a switch case block
       {
@@ -613,14 +697,26 @@ beforeEach(() => { mockFirestore({}); use(keepMe); });`,
 const keepMe = 1;
 beforeEach(() => { mockFirestore({}); use(keepMe); });`,
       },
-      // A declaration inside a namespace export
+      // A declaration inside a namespace export: `Mocks.mockFirestore` is a
+      // contract for every reader of the namespace, so it is reported without
+      // a fix rather than excised (#1703)
       {
         code: `namespace Mocks {
   export const mockFirestore = jest.fn();
 }`,
         errors: [ERROR],
+        output: null,
+      },
+      // A namespace-local declaration carries no export and is still fixed
+      {
+        code: `namespace Mocks {
+  const mockFirestore = jest.fn();
+  use(mockFirestore);
+}`,
+        errors: [ERROR],
         output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 namespace Mocks {
+  use(mockFirestore);
 }`,
       },
       // An ambient declaration
@@ -777,6 +873,59 @@ beforeEach(() => { mockFirestore({}); });`,
         errors: [ERROR],
         output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 // eslint-disable-next-line no-undef
+beforeEach(() => { mockFirestore({}); });`,
+      },
+      // An exported local definition outside the centralized module is
+      // reported but not rewritten -- the export is a cross-file contract
+      // (#1703)
+      {
+        code: "export const mockFirestore = jest.fn();\nbeforeEach(() => { mockFirestore({ 'a/b': [] }); });",
+        filename: 'src/foo.test.ts',
+        errors: [ERROR],
+        output: null,
+      },
+
+      // ---------------------------------------------------------------------
+      // The centralized module's exemption is keyed on the module's identity,
+      // so files that merely resemble it stay reportable and fixable (#1703).
+      // ---------------------------------------------------------------------
+
+      // An ordinary test file defining a local mock is fixed, which is what
+      // keeps the exemption above from being a blanket disable
+      {
+        code: `const mockFirestore = jest.fn();
+beforeEach(() => { mockFirestore({ 'a/b': [] }); });`,
+        filename: 'src/foo.test.ts',
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+beforeEach(() => { mockFirestore({ 'a/b': [] }); });`,
+      },
+      // The centralized module's own test file is a consumer, not the module
+      {
+        code: `const mockFirestore = jest.fn();
+beforeEach(() => { mockFirestore({}); });`,
+        filename: 'src/__test-utils__/mockFirestore.test.ts',
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+beforeEach(() => { mockFirestore({}); });`,
+      },
+      // The suffix must land on a path-segment boundary: an unrelated
+      // directory whose name merely ends in the module's is not the module
+      {
+        code: `const mockFirestore = jest.fn();
+beforeEach(() => { mockFirestore({}); });`,
+        filename: 'src/not__test-utils__/mockFirestore.ts',
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+beforeEach(() => { mockFirestore({}); });`,
+      },
+      // A sibling of the centralized module is not the centralized module
+      {
+        code: `const mockFirestore = jest.fn();
+beforeEach(() => { mockFirestore({}); });`,
+        filename: 'src/__test-utils__/mockAuth.ts',
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 beforeEach(() => { mockFirestore({}); });`,
       },
     ],
