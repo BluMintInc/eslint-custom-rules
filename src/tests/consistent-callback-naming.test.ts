@@ -1,3 +1,4 @@
+import { Linter, Rule } from 'eslint';
 import { ruleTesterJsx } from '../utils/ruleTester';
 import rule from '../rules/consistent-callback-naming';
 
@@ -377,6 +378,63 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
       code: `const handleClick = () => {};`,
       parser: require.resolve('espree'),
       parserOptions: { ecmaVersion: 2020 },
+    },
+    // Bug #1719: in an ObjectPattern the key names a property of the object
+    // being destructured — here Stream Chat's own `handleDelete` member, passed
+    // to the hook as a string literal too. It is not a name this file owns, and
+    // rewriting it changes WHICH property is read (the fixer produced
+    // `const { delete: streamDeleteMessage } = ...`, a read of a member that
+    // does not exist). The local binding is already well named, so there is
+    // nothing to report at all.
+    {
+      code: `
+        const { handleDelete: streamDeleteMessage } = useMessage('handleDelete');
+        export const remove = streamDeleteMessage;
+      `,
+    },
+    // Bug #1719: a shorthand destructuring binding is one token serving as both
+    // the foreign property name and the local name. Rewriting it read the wrong
+    // property AND stranded every reference to the binding.
+    {
+      code: `
+        const { handleClick } = props;
+        export const clicked = handleClick;
+      `,
+    },
+    // Bug #1719: the same shape whose rewrite did not even parse —
+    // `const { delete } = useMessage()` is a SyntaxError because `delete` is a
+    // reserved word and cannot be a binding name.
+    {
+      code: `
+        const { handleDelete } = useMessage();
+        export const remove = handleDelete;
+      `,
+    },
+    // Bug #1719: a destructured function parameter is the same pattern in
+    // another position — the key names the caller's property.
+    {
+      code: `
+        export function useSubmit({ handleSubmit: submit }) {
+          return submit;
+        }
+      `,
+    },
+    // Bug #1719: nested patterns are patterns too.
+    {
+      code: `
+        const {
+          actions: { handleOpenThread: openThread },
+        } = useMessage('handleOpenThread');
+        export const open = openThread;
+      `,
+    },
+    // Bug #1719: a pattern with a rest element and a default keeps the same
+    // exemption — the keys still name the source object's properties.
+    {
+      code: `
+        const { handleClick: click = noop, ...rest } = props;
+        export const used = [click, rest];
+      `,
     },
   ],
   invalid: [
@@ -804,5 +862,275 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         }
       `,
     },
+    // Bug #1719 control: the narrowing must not become a silent disable. A real
+    // class method is the case the rule exists for, and it still reports and
+    // still auto-fixes.
+    {
+      code: `class C { handleClick() {} }`,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `class C { click() {} }`,
+    },
+    // Bug #1719 control: an ordinary object literal — neither exported nor
+    // returned, so its members have no reader outside this file — keeps its
+    // autofix.
+    {
+      code: `const config = { handleClick: onClick };`,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `const config = { click: onClick };`,
+    },
+    // Bug #1719 control: an object literal method in a local object is fixed the
+    // same way its property-valued sibling is.
+    {
+      code: `const config = { handleClick() {} };`,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `const config = { click() {} };`,
+    },
+    // Bug #1719: stripping the prefix lands on `delete`, a reserved word.
+    // `class C { delete() {} }` happens to parse, but the rule cannot see
+    // whether the member is later destructured into a binding (where it does
+    // not), so it declines uniformly rather than emitting a keyword.
+    {
+      code: `class C { handleDelete() {} }`,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1719: `handleNew` -> `new` is the same hazard.
+    {
+      code: `class C { handleNew() {} }`,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1719: `handleReturn` -> `return`, in an object literal this time.
+    {
+      code: `const config = { handleReturn: onReturn };`,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1719: the reserved-word hazard is worse on a variable, where the
+    // emitted name is a binding: `const delete = () => {}` does not parse.
+    {
+      code: `
+        const handleDelete = () => {};
+        export const remove = handleDelete;
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1719: `handleTypeof` -> `typeof` on a function declaration.
+    {
+      code: `function handleTypeof() {}`,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1719: a shorthand property in an object literal is a single token
+    // that is both the member name and a reference to a binding. Rewriting it
+    // renamed the member and re-pointed it at a name that need not exist, so the
+    // violation is reported without a fix.
+    {
+      code: `const api = { handleClick };`,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1719: an exported object literal is an API surface whose readers live
+    // in files a single-file fixer cannot edit. Reported, not rewritten — the
+    // fixer used to silently rename the member to `openThread`.
+    {
+      code: `export const api = { handleOpenThread: openThread };`,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1719: an object literal returned from a hook is read by its callers
+    // (usually by destructuring), so its member names are equally out of reach.
+    {
+      code: `
+        export function useThread() {
+          return { handleOpenThread: openThread };
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1719: when a destructuring pattern binds a prefixed key to a local
+    // name that ALSO carries the prefix, the local name is the file's own and is
+    // what the report targets — the key stays untouched and every reference to
+    // the binding moves with the declaration. The report is relocated, not
+    // dropped: the guard narrows what is rewritten, not what is caught.
+    {
+      code: `
+        const { handleClose: handleCloseModal } = props;
+        console.log(handleCloseModal);
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `
+        const { handleClose: closeModal } = props;
+        console.log(closeModal);
+      `,
+    },
+    // Bug #1719: the same relocation, with a rename that would emit a reserved
+    // word — reported, not rewritten.
+    {
+      code: `
+        const { handleClose: handleDelete } = props;
+        console.log(handleDelete);
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1719: an exported binding is read by importers the fixer cannot
+    // reach, so the rename is withheld.
+    {
+      code: `export const { handleClose: handleCloseModal } = props;`,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1719: the rename would collide with a binding already visible here,
+    // silently re-pointing the references at the other declaration.
+    {
+      code: `
+        const closeModal = () => {};
+        const { handleClose: handleCloseModal } = props;
+        console.log(closeModal, handleCloseModal);
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1719: withholding the destructuring-key rewrite would otherwise let
+    // the object-literal half of the same rename move on its own, leaving the
+    // pattern reading a member that no longer exists. A member the file reads by
+    // name is not renamed.
+    {
+      code: `
+        const handlers = { handleClick: onClick };
+        const { handleClick } = handlers;
+        console.log(handleClick);
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1719: the same guard covers a member read through a property access.
+    {
+      code: `
+        const handlers = { handleClick: onClick };
+        handlers.handleClick();
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1719: a computed read by string literal is a read too.
+    {
+      code: `
+        const handlers = { handleClick: onClick };
+        handlers['handleClick']();
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1719: the rename would produce two members with the same name, and
+    // the later one silently wins.
+    {
+      code: `const handlers = { click: onClick, handleClick: onClick };`,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1719: the same collision on a class body is a duplicate method.
+    {
+      code: `class C { click() {} handleClick() {} }`,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
   ],
+});
+
+/**
+ * Bug #1719 whole-file check. A `RuleTester` case compares `output` to an
+ * expected string, which pins the text but never asks whether that text is a
+ * program. The defect this suite guards against produced output that does not
+ * parse at all (`const { delete } = useMessage()`), so the fixer is run over a
+ * whole file and its result fed back to the parser.
+ */
+describe('consistent-callback-naming --fix output parses (Bug #1719)', () => {
+  const RULE_ID = 'test/consistent-callback-naming';
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const tsParser = require('@typescript-eslint/parser');
+  const PARSER_OPTIONS = {
+    ecmaVersion: 2020 as const,
+    sourceType: 'module' as const,
+    ecmaFeatures: { jsx: true },
+  };
+
+  const fix = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser('@typescript-eslint/parser', tsParser);
+    linter.defineRule(RULE_ID, rule as unknown as Rule.RuleModule);
+    return linter.verifyAndFix(
+      code,
+      {
+        parser: '@typescript-eslint/parser',
+        parserOptions: PARSER_OPTIONS,
+        rules: { [RULE_ID]: 'error' },
+      },
+      'useDeleteMessage.dynamic.tsx',
+    ).output;
+  };
+
+  const parses = (code: string) => {
+    try {
+      // `range`/`loc` are required: without them the standalone parser throws on
+      // valid input too, which would make every assertion below vacuous.
+      tsParser.parse(code, { ...PARSER_OPTIONS, range: true, loc: true });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  it('rejects the output the fixer used to produce (control)', () => {
+    // Without this control the parse assertions could pass on a parser that
+    // never throws.
+    expect(parses('const { delete } = useMessage();')).toBe(false);
+    expect(parses('const delete = () => {};')).toBe(false);
+    expect(parses('const { handleDelete } = useMessage();')).toBe(true);
+  });
+
+  it('leaves a shorthand destructuring binding alone and parseable', () => {
+    const code = [
+      `const { handleDelete } = useMessage();`,
+      `export const remove = handleDelete;`,
+      ``,
+    ].join('\n');
+
+    const output = fix(code);
+
+    expect(output).toBe(code);
+    expect(parses(output)).toBe(true);
+  });
+
+  it('leaves a renamed destructuring key alone and parseable', () => {
+    const code = [
+      `const { handleDelete: streamDeleteMessage } = useMessage('handleDelete');`,
+      `export const remove = streamDeleteMessage;`,
+      ``,
+    ].join('\n');
+
+    const output = fix(code);
+
+    expect(output).toBe(code);
+    expect(parses(output)).toBe(true);
+  });
+
+  it('never emits a reserved word for a variable rename', () => {
+    const code = `const handleDelete = () => {};\nexport const remove = handleDelete;\n`;
+
+    const output = fix(code);
+
+    expect(output).toBe(code);
+    expect(parses(output)).toBe(true);
+  });
+
+  it('still renames a class method end to end', () => {
+    const output = fix(`class C {\n  handleClick() {}\n}\n`);
+
+    expect(output).toBe(`class C {\n  click() {}\n}\n`);
+    expect(parses(output)).toBe(true);
+  });
 });

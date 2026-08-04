@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { createRule } from '../utils/createRule';
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import * as ts from 'typescript';
 
 // The "handle" prefix the rule targets is the verb-phrase pattern
@@ -15,6 +15,199 @@ import * as ts from 'typescript';
 // prefix.
 function hasHandlePrefix(name: string): boolean {
   return /^handle[A-Z]/.test(name);
+}
+
+function stripHandlePrefix(name: string): string {
+  return name.slice(6).charAt(0).toLowerCase() + name.slice(7);
+}
+
+// Stripping the prefix can land the rename squarely on a keyword:
+// `handleDelete` -> `delete`, `handleNew` -> `new`, `handleReturn` -> `return`,
+// `handleTrue` -> `true`. None of those is a legal binding name, so a fix that
+// emits one turns a working file into a parse error — `const delete = fn` and
+// `const { delete } = api` are both SyntaxErrors (Bug #1719). The set covers the
+// ES reserved words, the strict-mode/module reserved words (the linted codebase
+// is entirely ES modules, where `await` and `implements` et al. are reserved
+// too) and the three keyword literals. The guard is applied at every emission
+// site, including member names where a keyword happens to be legal
+// (`class C { delete() {} }`): the rule cannot see whether that member is later
+// destructured into a binding, and a fixer that is safe only sometimes is not
+// safe.
+const RESERVED_WORDS = new Set([
+  'arguments',
+  'await',
+  'break',
+  'case',
+  'catch',
+  'class',
+  'const',
+  'continue',
+  'debugger',
+  'default',
+  'delete',
+  'do',
+  'else',
+  'enum',
+  'eval',
+  'export',
+  'extends',
+  'false',
+  'finally',
+  'for',
+  'function',
+  'if',
+  'implements',
+  'import',
+  'in',
+  'instanceof',
+  'interface',
+  'let',
+  'new',
+  'null',
+  'package',
+  'private',
+  'protected',
+  'public',
+  'return',
+  'static',
+  'super',
+  'switch',
+  'this',
+  'throw',
+  'true',
+  'try',
+  'typeof',
+  'var',
+  'void',
+  'while',
+  'with',
+  'yield',
+]);
+
+function isEmittableName(name: string): boolean {
+  return name.length > 0 && !RESERVED_WORDS.has(name);
+}
+
+function isExportedDeclaration(node: TSESTree.Node | undefined): boolean {
+  let current: TSESTree.Node | undefined = node;
+  while (current) {
+    if (
+      current.type === AST_NODE_TYPES.ExportNamedDeclaration ||
+      current.type === AST_NODE_TYPES.ExportDefaultDeclaration
+    ) {
+      return true;
+    }
+    current = current.parent;
+  }
+  return false;
+}
+
+// An object literal that is exported or returned is a value other modules read
+// by member name (`api.handleOpenThread`, `const { handleOpenThread } = useX()`).
+// Renaming a member of it edits one end of a contract whose readers live in
+// files a single-file fixer cannot even see, so the violation is reported
+// without a fix — the same reasoning that withholds the JSX prop rename.
+function isApiSurfaceValue(node: TSESTree.Node): boolean {
+  let child: TSESTree.Node = node;
+  let current: TSESTree.Node | undefined = node.parent;
+  while (current) {
+    switch (current.type) {
+      case AST_NODE_TYPES.ExportNamedDeclaration:
+      case AST_NODE_TYPES.ExportDefaultDeclaration:
+      case AST_NODE_TYPES.ReturnStatement:
+        return true;
+      case AST_NODE_TYPES.ArrowFunctionExpression:
+        // A concise body is a return with no `return` keyword.
+        return current.body === child;
+      case AST_NODE_TYPES.BlockStatement:
+      case AST_NODE_TYPES.ClassBody:
+      case AST_NODE_TYPES.FunctionDeclaration:
+      case AST_NODE_TYPES.FunctionExpression:
+      case AST_NODE_TYPES.Program:
+        return false;
+      default:
+        child = current;
+        current = current.parent;
+    }
+  }
+  return false;
+}
+
+/** The member names already declared alongside `node`, keyed by identifier. */
+function siblingMemberNames(node: TSESTree.Node | undefined): Set<string> {
+  const names = new Set<string>();
+  const record = (member: TSESTree.Node) => {
+    const key = (member as { computed?: boolean; key?: TSESTree.Node }).key;
+    if (
+      !(member as { computed?: boolean }).computed &&
+      key?.type === AST_NODE_TYPES.Identifier
+    ) {
+      names.add(key.name);
+    }
+  };
+  if (node?.type === AST_NODE_TYPES.ObjectExpression) {
+    node.properties.forEach(record);
+  } else if (node?.type === AST_NODE_TYPES.ClassBody) {
+    node.body.forEach(record);
+  }
+  return names;
+}
+
+/**
+ * Every member name the file reads by name — `obj.handleClick`,
+ * `obj['handleClick']`, `const { handleClick } = obj`.
+ *
+ * Renaming an object literal's key has to move every one of those reads with
+ * it, and a fixer scoped to the literal moves none of them: `const o = { click:
+ * fn }; o.handleClick()` type-checks as a missing property and throws at
+ * runtime. The presence of any reader therefore withholds the rewrite. The walk
+ * is over the whole program because a reader may appear anywhere, including
+ * before the literal.
+ */
+function collectMemberReads(
+  program: TSESTree.Program,
+  visitorKeys: Readonly<Record<string, readonly string[] | undefined>>,
+): Set<string> {
+  const names = new Set<string>();
+  const stack: TSESTree.Node[] = [program];
+  const push = (value: unknown) => {
+    if (Array.isArray(value)) {
+      value.forEach(push);
+    } else if (value && typeof value === 'object' && 'type' in value) {
+      stack.push(value as TSESTree.Node);
+    }
+  };
+
+  while (stack.length > 0) {
+    const node = stack.pop() as TSESTree.Node;
+    if (node.type === AST_NODE_TYPES.MemberExpression) {
+      if (!node.computed && node.property.type === AST_NODE_TYPES.Identifier) {
+        names.add(node.property.name);
+      } else if (
+        node.property.type === AST_NODE_TYPES.Literal &&
+        typeof node.property.value === 'string'
+      ) {
+        names.add(node.property.value);
+      }
+    }
+    // Read directly off the pattern rather than through `parent`, which is not
+    // guaranteed to be assigned on nodes the traversal has not reached.
+    if (node.type === AST_NODE_TYPES.ObjectPattern) {
+      for (const property of node.properties) {
+        if (
+          property.type === AST_NODE_TYPES.Property &&
+          !property.computed &&
+          property.key.type === AST_NODE_TYPES.Identifier
+        ) {
+          names.add(property.key.name);
+        }
+      }
+    }
+    for (const key of visitorKeys[node.type] ?? []) {
+      push((node as unknown as Record<string, unknown>)[key]);
+    }
+  }
+  return names;
 }
 
 export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
@@ -234,6 +427,125 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
       );
     }
 
+    // Built once per file, and only when an object literal member is actually a
+    // rename candidate.
+    let memberReads: Set<string> | undefined;
+    function isReadByName(name: string): boolean {
+      const sourceCode = context.getSourceCode();
+      memberReads ??= collectMemberReads(
+        sourceCode.ast,
+        sourceCode.visitorKeys as Readonly<
+          Record<string, readonly string[] | undefined>
+        >,
+      );
+      return memberReads.has(name);
+    }
+
+    /**
+     * The variable a pattern identifier binds. `getDeclaredVariables` is
+     * authoritative — it is asked of the declaring ancestor (the
+     * `VariableDeclaration`, the function owning a destructured parameter, the
+     * `CatchClause`) rather than reconstructed by crawling scopes by name,
+     * which cannot tell two same-named bindings apart.
+     */
+    function findPatternVariable(
+      id: TSESTree.Identifier,
+    ): TSESLint.Scope.Variable | undefined {
+      let current: TSESTree.Node | undefined = id.parent;
+      while (current) {
+        const match = context
+          .getDeclaredVariables(current)
+          .find((variable) => variable.identifiers.includes(id));
+        if (match) {
+          return match;
+        }
+        current = current.parent;
+      }
+      return undefined;
+    }
+
+    // Renaming a binding that leaves the module — `export const { a: handleX }`,
+    // or `export { handleX }` — breaks importers the fixer cannot edit.
+    function isExportedBinding(variable: TSESLint.Scope.Variable): boolean {
+      const namedByExportSpecifier = (id: TSESTree.Node) =>
+        id.parent?.type === AST_NODE_TYPES.ExportSpecifier;
+      return (
+        variable.references.some((ref) =>
+          namedByExportSpecifier(ref.identifier),
+        ) ||
+        variable.identifiers.some(namedByExportSpecifier) ||
+        variable.defs.some((def) => isExportedDeclaration(def.node))
+      );
+    }
+
+    // A rename that collides with a name already visible where the binding (or
+    // any of its references) lives silently re-points those references at the
+    // other declaration.
+    function isNameTaken(
+      variable: TSESLint.Scope.Variable,
+      newName: string,
+    ): boolean {
+      let scope: TSESLint.Scope.Scope | null = variable.scope;
+      while (scope) {
+        if (scope.set.has(newName)) {
+          return true;
+        }
+        scope = scope.upper;
+      }
+      return variable.scope.childScopes.some((child) => child.set.has(newName));
+    }
+
+    /**
+     * A `Property` inside an `ObjectPattern`. Its key names a property of the
+     * object being destructured — someone else's API (`const { handleDelete: fn }
+     * = useMessage('handleDelete')` reads Stream Chat's own member) — so
+     * rewriting the key changes WHICH property is read, strands every reader of
+     * the old name, and can emit a keyword that is not a legal binding
+     * (Bug #1719). The key is therefore never reported and never rewritten. The
+     * only name the file owns here is the local binding, so that is what the
+     * report targets when it too carries the prefix.
+     */
+    function reportDestructuredBinding(node: TSESTree.Property): void {
+      // A shorthand binding is a single token that is simultaneously the
+      // foreign property name and the local name: there is no name the file
+      // chose independently, and no in-place edit can change one without the
+      // other. Left alone entirely rather than reported with no remedy.
+      if (node.shorthand || node.value.type !== AST_NODE_TYPES.Identifier) {
+        return;
+      }
+
+      const binding = node.value;
+      if (!hasHandlePrefix(binding.name)) {
+        return;
+      }
+
+      const newName = stripHandlePrefix(binding.name);
+      const variable = findPatternVariable(binding);
+      const canFix =
+        isEmittableName(newName) &&
+        !!variable &&
+        !isExportedBinding(variable) &&
+        !isNameTaken(variable, newName);
+
+      context.report({
+        node: binding,
+        messageId: 'callbackFunctionPrefix',
+        data: { functionName: binding.name },
+        fix(fixer) {
+          if (!canFix || !variable) {
+            return null;
+          }
+          // Every occurrence in one edit: a rename that reaches the declaration
+          // but not its readers is worse than no rename at all.
+          const targets = new Set<TSESTree.Node>([binding]);
+          for (const ref of variable.references) {
+            targets.add(ref.identifier);
+          }
+          return [...targets].map((id) => fixer.replaceText(id, newName));
+        },
+      });
+    }
+
     return {
       // Check JSX attributes for callback props
       JSXAttribute(node: TSESTree.JSXAttribute) {
@@ -408,9 +720,12 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
             data: { functionName },
             fix(fixer) {
               // Remove 'handle' prefix and convert first character to lowercase
-              const newName =
-                functionName.slice(6).charAt(0).toLowerCase() +
-                functionName.slice(7);
+              const newName = stripHandlePrefix(functionName);
+              // `const handleDelete = fn` would become `const delete = fn`,
+              // which does not parse (Bug #1719).
+              if (!isEmittableName(newName)) {
+                return null;
+              }
 
               // Fix the declaration and all references
               const fixes: Array<
@@ -432,35 +747,61 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
       'MethodDefinition, Property'(
         node: TSESTree.MethodDefinition | TSESTree.Property,
       ) {
+        const key = node.key;
         if (
-          node.key.type === 'Identifier' &&
-          node.key.name &&
-          hasHandlePrefix(node.key.name)
+          key.type !== AST_NODE_TYPES.Identifier ||
+          !key.name ||
+          !hasHandlePrefix(key.name)
         ) {
-          const name = node.key.name;
+          return;
+        }
+        const name = key.name;
 
-          // Skip autofixing for class parameters and getters
-          if (node.type === 'MethodDefinition' && node.kind === 'get') {
-            context.report({
-              node: node.key,
-              messageId: 'callbackFunctionPrefix',
-              data: { functionName: name },
-            });
-            return;
-          }
-
+        // Skip autofixing for class parameters and getters
+        if (
+          node.type === AST_NODE_TYPES.MethodDefinition &&
+          node.kind === 'get'
+        ) {
           context.report({
-            node: node.key,
+            node: key,
             messageId: 'callbackFunctionPrefix',
             data: { functionName: name },
-            fix(fixer) {
-              // Remove 'handle' prefix and convert first character to lowercase
-              const newName =
-                name.slice(6).charAt(0).toLowerCase() + name.slice(7);
-              return fixer.replaceText(node.key, newName);
-            },
           });
+          return;
         }
+
+        const isProperty = node.type === AST_NODE_TYPES.Property;
+        if (isProperty && node.parent?.type === AST_NODE_TYPES.ObjectPattern) {
+          reportDestructuredBinding(node);
+          return;
+        }
+
+        const newName = stripHandlePrefix(name);
+        // A shorthand property's key and value are the same token, so replacing
+        // the key also replaces the value: `{ handleClick }` becomes
+        // `{ click }`, which both renames the member and re-points it at a
+        // binding that need not exist (Bug #1719).
+        const canFix =
+          isEmittableName(newName) &&
+          // A sibling already holding the target name turns the rename into a
+          // duplicate member: `{ click: a, handleClick: b }` would collapse to
+          // two `click` keys, silently discarding the first.
+          !siblingMemberNames(node.parent).has(newName) &&
+          !(isProperty && node.shorthand) &&
+          !(
+            isProperty &&
+            node.parent &&
+            (isApiSurfaceValue(node.parent) || isReadByName(name))
+          );
+
+        context.report({
+          node: key,
+          messageId: 'callbackFunctionPrefix',
+          data: { functionName: name },
+          fix(fixer) {
+            return canFix ? fixer.replaceText(key, newName) : null;
+          },
+        });
       },
 
       // Check constructor parameters
