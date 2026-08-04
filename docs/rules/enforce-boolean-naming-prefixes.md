@@ -261,6 +261,19 @@ const [userInternal, setUserInternal] = useState<
 >(findItem(FIREBASE_USER_LOCAL_KEY_REGEX) || undefined);
 ```
 
+#### UPPER_SNAKE_CASE names
+
+An approved prefix is recognized in `UPPER_SNAKE_CASE` names too, where the prefix must occupy the whole first segment — capitalization can no longer mark the word boundary, so `ISVALID` reads as one word and stays flagged while `IS_VALID` does not. Digits fused onto that first segment belong to it, so `ARE2_VALID` is accepted exactly as its camelCase spelling `are2Valid` is. This matters because [`global-const-style`](./global-const-style.md) renames module-scope constants to `UPPER_SNAKE_CASE`, and a correctly prefixed constant must not become a violation just by being renamed.
+
+```ts
+const IS_ENABLED: boolean = true;   // Not flagged — first segment is the prefix
+const ARE2_VALID: boolean = true;   // Not flagged — trailing digits stay in the prefix segment
+const HAS3_ITEMS: boolean = true;   // Not flagged
+const ENABLED: boolean = true;      // Flagged — no prefix
+const VALID_FLAG: boolean = true;   // Flagged — no prefix
+const ARENA2_MAP: boolean = true;   // Flagged — the segment is ARENA2, not the prefix ARE
+```
+
 #### Property signatures in interfaces and type aliases
 
 Boolean property signatures in interfaces and type aliases are **not** checked by default. Property names in type definitions are commonly imposed by contracts you cannot rename — external API request/response shapes, third-party library interfaces, and persisted data-model schemas (for example, Firestore document fields). Enforcing prefixes there produces unavoidable false positives, so it is opt-in:

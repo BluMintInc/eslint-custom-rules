@@ -312,6 +312,19 @@ ruleTesterTs.run(
       `const have_access: boolean = true;`, // "have" + underscore
       `const were$processed: boolean = true;`, // "were" + special char
 
+      // UPPER_SNAKE spellings of the same digit-suffixed prefixes. `global-const-style`
+      // renames module-scope `are2Valid` to `ARE2_VALID`, so the first segment must
+      // tolerate trailing digits or `--fix` turns silent code into a violation (#1690).
+      `const ARE2_VALID: boolean = true;`,
+      `const IS2_READY: boolean = true;`,
+      `const HAS3_ITEMS: boolean = true;`,
+      `const SHOULD10_RUN_TWICE: boolean = false;`,
+      `const WERE$PROCESSED: boolean = true;`, // the rename of were$processed
+
+      // Digit-free UPPER_SNAKE prefixes stay silent (regression guards)
+      `const IS_ENABLED: boolean = true;`,
+      `const ARE_VALID: boolean = true;`,
+
       // Test with very long compound names
       `const areAllItemsInTheSystemValidAndReadyForProcessing: boolean = true;`,
       `const haveAllUsersInTheOrganizationConfirmedTheirEmailAddresses: boolean = true;`,
@@ -669,6 +682,33 @@ ruleTesterTs.run(
       },
       {
         code: `const haven: boolean = true;`,
+        errors: [{ messageId: 'missingBooleanPrefix' }],
+      },
+
+      // UPPER_SNAKE names get no blanket amnesty: tolerating digits fused onto the
+      // first segment must not degrade into "ignore digits anywhere" or
+      // "match the prefix as a substring" (#1690).
+      {
+        code: `const ENABLED: boolean = true;`,
+        errors: [{ messageId: 'missingBooleanPrefix' }],
+      },
+      {
+        code: `const VALID_FLAG: boolean = true;`,
+        errors: [{ messageId: 'missingBooleanPrefix' }],
+      },
+      {
+        // First segment is not an approved prefix even with its digits removed
+        code: `const DATA2_VALUE: boolean = true;`,
+        errors: [{ messageId: 'missingBooleanPrefix' }],
+      },
+      {
+        // Digits interior to the segment do not spell an approved prefix
+        code: `const H2AS_ITEMS: boolean = true;`,
+        errors: [{ messageId: 'missingBooleanPrefix' }],
+      },
+      {
+        // "ARE" is only a substring here; the segment is ARENA2
+        code: `const ARENA2_MAP: boolean = true;`,
         errors: [{ messageId: 'missingBooleanPrefix' }],
       },
     ],

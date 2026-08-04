@@ -333,12 +333,6 @@ export const EXEMPTION_DESTROYED_BASELINE: Record<string, string> = {
     "stripping a callee's non-boolean return annotation collapses the callee-return-type exemption, so a boolean-ish callee name drives a missingBooleanPrefix report on the assigned variable (#1691)",
   'no-explicit-return-type -> enforce-positive-naming':
     "stripping a validator's `string | true` return annotation leaves an opaque body, so the negatively-named validator is read as a boolean predicate and reported (#1692)",
-
-  // --- The rename is correct and the victim reads UPPER_SNAKE prefixes fine;
-  // only a digit fused onto the first segment breaks the match, so the emitted
-  // report is a false positive on correctly-prefixed code.
-  'global-const-style -> enforce-boolean-naming-prefixes':
-    'the rename produces ARE2_VALID, whose approved `are` prefix the UPPER_SNAKE boundary check rejects for the trailing digit (ARE_VALID and are2Valid are both silent) (#1690)',
 };
 
 const observedPairs = new Set(findings.map(pairKey));
