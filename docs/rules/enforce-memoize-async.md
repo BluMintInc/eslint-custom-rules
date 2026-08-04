@@ -216,6 +216,57 @@ a second one, and an aliased import (`import { Memoize as Cache }`) emits
 `@Cache()` — which references no bare `Memoize` — so an unrelated `Memoize`
 binding never blocks it.
 
+### Methods inside a `jest.mock` factory
+
+The fix is withheld for one more reason: a method inside a `jest.mock`,
+`jest.doMock` or `jest.setMock` **module factory**. Jest hoists that factory
+above every import in the file, and permits it to read only globals and bindings
+whose name begins with `mock` — a `Memoize` reference there fails the transform
+(`Invalid variable access: Memoize`) and takes the whole suite down with it. The
+report still fires, and two remedies the factory can hold are available to the
+author:
+
+```ts
+jest.mock('../FirestoreFetcher', () => {
+  // Legal: the decorator is loaded inside the hoisted factory.
+  const { Memoize } = jest.requireActual('@blumintinc/typescript-memoize');
+
+  class FirestoreFetcherMock {
+    @Memoize()
+    public async fetch() {
+      return [];
+    }
+  }
+
+  return { FirestoreFetcher: FirestoreFetcherMock };
+});
+```
+
+```ts
+// Legal: the `mock` prefix puts the alias on Jest's allowlist.
+import { Memoize as mockMemoize } from '@blumintinc/typescript-memoize';
+
+jest.mock('../FirestoreFetcher', () => {
+  class FirestoreFetcherMock {
+    @mockMemoize()
+    public async fetch() {
+      return [];
+    }
+  }
+
+  return { FirestoreFetcher: FirestoreFetcherMock };
+});
+```
+
+A mock is usually a stand-in whose caching is beside the point, so an inline
+`eslint-disable-next-line` on the method is equally appropriate.
+
+Only the factory — the registrar's second argument — declines. A method in the
+module specifier position, inside a `jest.fn` callback, or anywhere else in the
+file is fixed as usual, and a declining factory never claims the import: the
+injected `import { Memoize } from '@blumintinc/typescript-memoize';` rides on
+the first violation that does fix.
+
 ## When Not To Use It
 
 - Methods whose results must always be fresh (e.g., real-time data or mutation calls).

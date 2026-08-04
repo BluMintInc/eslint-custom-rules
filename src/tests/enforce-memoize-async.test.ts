@@ -2217,3 +2217,474 @@ class Example {
     ],
   },
 );
+
+// Issue #1697: a jest registrar's module factory is hoisted above the file's
+// imports, and babel-plugin-jest-hoist rejects a factory that reads an
+// out-of-scope binding whose name does not begin with `mock`. The injected
+// `import { Memoize }` is therefore unreachable from inside one, and the
+// emitted decorator takes the whole suite down at transform time. The fix
+// declines inside a factory while the report stands.
+ruleTesterTs.run(
+  'enforce-memoize-async: jest mock factories (issue #1697)',
+  enforceMemoizeAsync,
+  {
+    valid: [
+      // A factory method that already carries the decorator is not this rule's
+      // business either way.
+      {
+        name: 'an already decorated method inside a factory reports nothing',
+        code: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+jest.mock('../FirestoreFetcher', () => {
+  class FirestoreFetcherMock {
+    @Memoize()
+    public async fetch() {
+      return [];
+    }
+  }
+  return { FirestoreFetcher: FirestoreFetcherMock };
+});
+`,
+      },
+      // The guard withholds the fix, not the exemptions that precede the
+      // report: a two-parameter method inside a factory is still unreported.
+      {
+        name: 'a multi-parameter method inside a factory reports nothing',
+        code: `
+jest.mock('../FirestoreFetcher', () => {
+  class FirestoreFetcherMock {
+    public async fetch(collection: string, id: string) {
+      return [collection, id];
+    }
+  }
+  return { FirestoreFetcher: FirestoreFetcherMock };
+});
+`,
+      },
+      {
+        name: 'a Promise<void> method inside a factory reports nothing',
+        code: `
+jest.mock('../Notifier', () => {
+  class NotifierMock {
+    public async notify(): Promise<void> {
+      return undefined;
+    }
+  }
+  return { Notifier: NotifierMock };
+});
+`,
+      },
+    ],
+    invalid: [
+      // The issue's verified minimal repro.
+      {
+        name: 'a class in a jest.mock factory reports without a fix',
+        filename: '/repo/functions/src/util/x.test.ts',
+        code: `
+jest.mock('../FirestoreFetcher', () => {
+  class FirestoreFetcherMock {
+    public async fetch() {
+      return [];
+    }
+  }
+  return { FirestoreFetcher: FirestoreFetcherMock };
+});
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: null,
+      },
+      {
+        name: 'a jest.doMock factory withholds the fix',
+        code: `
+jest.doMock('../FirestoreFetcher', () => {
+  class FirestoreFetcherMock {
+    public async fetch() {
+      return [];
+    }
+  }
+  return { FirestoreFetcher: FirestoreFetcherMock };
+});
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: null,
+      },
+      {
+        name: 'a jest.setMock factory withholds the fix',
+        code: `
+jest.setMock('../FirestoreFetcher', () => {
+  class FirestoreFetcherMock {
+    public async fetch() {
+      return [];
+    }
+  }
+  return { FirestoreFetcher: FirestoreFetcherMock };
+});
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: null,
+      },
+      {
+        // The ancestor walk has to reach the factory from arbitrary depth, not
+        // just from a class statement directly in the factory body.
+        name: 'a class expression inside the returned object literal withholds the fix',
+        code: `
+jest.mock('../FirestoreFetcher', () => {
+  return {
+    FirestoreFetcher: class {
+      public async fetch() {
+        return [];
+      }
+    },
+  };
+});
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: null,
+      },
+      {
+        name: 'a concise arrow factory withholds the fix',
+        code: `
+jest.mock('../FirestoreFetcher', () => ({
+  FirestoreFetcher: class {
+    public async fetch() {
+      return [];
+    }
+  },
+}));
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: null,
+      },
+      {
+        name: 'a function-expression factory withholds the fix',
+        code: `
+jest.mock('../FirestoreFetcher', function () {
+  class FirestoreFetcherMock {
+    public async fetch() {
+      return [];
+    }
+  }
+  return { FirestoreFetcher: FirestoreFetcherMock };
+});
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: null,
+      },
+      {
+        // Every violation inside factories means no violation claims the import
+        // carrier, so the file gains neither decorator nor import.
+        name: 'two factories in one file both withhold their fix',
+        code: `
+jest.mock('../FirestoreFetcher', () => {
+  class FirestoreFetcherMock {
+    public async fetch() {
+      return [];
+    }
+  }
+  return { FirestoreFetcher: FirestoreFetcherMock };
+});
+jest.mock('../DocumentFetcher', () => {
+  class DocumentFetcherMock {
+    public async read() {
+      return {};
+    }
+  }
+  return { DocumentFetcher: DocumentFetcherMock };
+});
+`,
+        errors: [
+          { messageId: 'requireMemoize' as const },
+          { messageId: 'requireMemoize' as const },
+        ],
+        output: null,
+      },
+      {
+        // The control that proves the guard is scoped to the factory rather
+        // than to test files: a method outside every factory still fixes, and
+        // still carries the import for the file.
+        name: 'a method outside the factory in the same file still fixes',
+        filename: '/repo/functions/src/util/x.test.ts',
+        code: `
+jest.mock('../FirestoreFetcher', () => ({ FirestoreFetcher: jest.fn() }));
+
+export class Loader {
+  public async load() {
+    return 1;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+jest.mock('../FirestoreFetcher', () => ({ FirestoreFetcher: jest.fn() }));
+
+export class Loader {
+  @Memoize()
+  public async load() {
+    return 1;
+  }
+}
+`,
+      },
+      {
+        // A declining factory violation must not consume the import carrier:
+        // the surviving violation still gets both decorator and import.
+        name: 'a declining factory violation passes the import carrier on',
+        code: `
+jest.mock('../FirestoreFetcher', () => {
+  class FirestoreFetcherMock {
+    public async fetch() {
+      return [];
+    }
+  }
+  return { FirestoreFetcher: FirestoreFetcherMock };
+});
+
+export class Loader {
+  public async load() {
+    return 1;
+  }
+}
+`,
+        errors: [
+          { messageId: 'requireMemoize' as const },
+          { messageId: 'requireMemoize' as const },
+        ],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+jest.mock('../FirestoreFetcher', () => {
+  class FirestoreFetcherMock {
+    public async fetch() {
+      return [];
+    }
+  }
+  return { FirestoreFetcher: FirestoreFetcherMock };
+});
+
+export class Loader {
+  @Memoize()
+  public async load() {
+    return 1;
+  }
+}
+`,
+      },
+      {
+        // The module specifier is evaluated in place rather than hoisted with
+        // the factory, so a class there keeps its access to the file's imports.
+        name: 'a class in the mock specifier position still fixes',
+        code: `
+jest.mock(
+  resolveModule(
+    class Locator {
+      public async path() {
+        return './FirestoreFetcher';
+      }
+    },
+  ),
+  () => ({}),
+);
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+jest.mock(
+  resolveModule(
+    class Locator {
+      @Memoize()
+      public async path() {
+        return './FirestoreFetcher';
+      }
+    },
+  ),
+  () => ({}),
+);
+`,
+      },
+      {
+        // `jest.fn` is not a registrar: its callback is never hoisted, so a
+        // class inside it fixes like any other.
+        name: 'a factory-shaped callback outside a registrar still fixes',
+        code: `
+const build = jest.fn(() => {
+  class Stub {
+    public async fetch() {
+      return [];
+    }
+  }
+  return Stub;
+});
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+const build = jest.fn(() => {
+  class Stub {
+    @Memoize()
+    public async fetch() {
+      return [];
+    }
+  }
+  return Stub;
+});
+`,
+      },
+      {
+        // Only `jest`'s own registrars hoist, so a same-named method on another
+        // object registers nothing and its factory keeps the imports.
+        name: 'a mock-shaped call on another object still fixes',
+        code: `
+notJest.mock('../FirestoreFetcher', () => {
+  class FirestoreFetcherMock {
+    public async fetch() {
+      return [];
+    }
+  }
+  return { FirestoreFetcher: FirestoreFetcherMock };
+});
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+notJest.mock('../FirestoreFetcher', () => {
+  class FirestoreFetcherMock {
+    @Memoize()
+    public async fetch() {
+      return [];
+    }
+  }
+  return { FirestoreFetcher: FirestoreFetcherMock };
+});
+`,
+      },
+      {
+        // A test file with no factory at all is untouched by the guard.
+        name: 'a plain class in a test file still fixes',
+        filename: '/repo/functions/src/util/x.test.ts',
+        code: `
+export class Loader {
+  public async load() {
+    return 1;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  @Memoize()
+  public async load() {
+    return 1;
+  }
+}
+`,
+      },
+    ],
+  },
+);
+
+// Issue #1697: RuleTester applies a single fix pass, while `eslint --fix`
+// re-lints until the output settles. These cases run the real multi-pass fixer
+// over the reported repro and assert the invariant the bug violated: no
+// `Memoize` reference is ever written inside a hoisted jest factory, and no
+// import rides on a fix that never lands.
+describe('enforce-memoize-async: hoisted jest factories (issue #1697)', () => {
+  const TEST_FILENAME = 'ErrorIncidentResolver.test.ts';
+
+  const lintTest = (code: string) =>
+    createLinter().verifyAndFix(code, LINT_CONFIG, TEST_FILENAME).output;
+
+  const lintTestMessages = (code: string) =>
+    createLinter().verify(code, LINT_CONFIG, TEST_FILENAME);
+
+  const REPRO = `jest.mock('../FirestoreFetcher', () => {
+  class FirestoreFetcherMock {
+    public async fetch() {
+      return [];
+    }
+  }
+  return { FirestoreFetcher: FirestoreFetcherMock };
+});
+`;
+
+  it('leaves the reported repro untouched across every pass', () => {
+    const output = lintTest(REPRO);
+
+    expect(output).toBe(REPRO);
+    expect(output).not.toContain('Memoize');
+  });
+
+  it('still reports the violation it declines to fix', () => {
+    const messages = lintTestMessages(REPRO);
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].ruleId).toBe(RULE_ID);
+  });
+
+  it('drops the fix from the report rather than the report itself', () => {
+    // Report count unchanged, fixable count down: the same violation outside a
+    // factory still arrives with a fix attached.
+    expect(lintTestMessages(REPRO)[0].fix).toBeUndefined();
+
+    const outside = lintTestMessages(`export class Loader {
+  public async load() {
+    return 1;
+  }
+}
+`);
+    expect(outside).toHaveLength(1);
+    expect(outside[0].fix).toBeDefined();
+  });
+
+  it('decorates a sibling outside the factory without touching the factory', () => {
+    const output = lintTest(`${REPRO}
+export class Loader {
+  public async load() {
+    return 1;
+  }
+}
+`);
+
+    expect(output.match(/@Memoize\(\)/g)).toHaveLength(1);
+    expect(
+      output.match(
+        /import \{ Memoize \} from '@blumintinc\/typescript-memoize';/g,
+      ),
+    ).toHaveLength(1);
+    // The decorator landed on the outside class, never inside the factory.
+    expect(output).toContain(`  @Memoize()
+  public async load() {`);
+    expect(output).toContain(`    public async fetch() {`);
+  });
+
+  it('adds no import when every violation sits inside a factory', () => {
+    const output = lintTest(`${REPRO}jest.mock('../DocumentFetcher', () => {
+  class DocumentFetcherMock {
+    public async read() {
+      return {};
+    }
+  }
+  return { DocumentFetcher: DocumentFetcherMock };
+});
+`);
+
+    expect(output).not.toContain('@blumintinc/typescript-memoize');
+    expect(output).not.toContain('@Memoize');
+  });
+
+  it('never emits a decorator without its import', () => {
+    const output = lintTest(`${REPRO}
+export class Loader {
+  public async load() {
+    return 1;
+  }
+}
+`);
+
+    if (/@Memoize\(\)/.test(output)) {
+      expect(output).toContain(
+        "import { Memoize } from '@blumintinc/typescript-memoize';",
+      );
+    }
+  });
+});
