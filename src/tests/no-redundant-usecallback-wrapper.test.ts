@@ -137,6 +137,216 @@ function C() {
       { assumeAllUseAreMemoized: boolean },
     ],
   },
+  // preventDefault() is the reason the wrapper exists, so the wrapper is not
+  // redundant: handing `signIn` to React directly drops the call and hands the
+  // event to a callback that takes no arguments. The rule's remedy ("pass the
+  // hook callback directly") cannot preserve either behaviour.
+  {
+    code: `import { useCallback } from 'react';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const onClick = useCallback((e) => {
+    e.preventDefault();
+    return signIn();
+  }, [signIn]);
+  return <button onClick={onClick}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+  },
+  // stopPropagation() suppresses bubbling the same way, and the hand-off loses
+  // it just as completely.
+  {
+    code: `import { useCallback } from 'react';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const onClick = useCallback((e) => {
+    e.stopPropagation();
+    return signIn();
+  }, [signIn]);
+  return <button onClick={onClick}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+  },
+  // stopImmediatePropagation() likewise.
+  {
+    code: `import { useCallback } from 'react';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const onClick = useCallback((e) => {
+    e.stopImmediatePropagation();
+    return signIn();
+  }, [signIn]);
+  return <button onClick={onClick}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+  },
+  // The delegate call being an expression statement rather than a return makes
+  // no difference: the suppression call still disappears with the wrapper.
+  {
+    code: `import { useCallback } from 'react';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const onClick = useCallback((e) => {
+    e.preventDefault();
+    signIn();
+  }, [signIn]);
+  return <button onClick={onClick}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+  },
+  // A destructured event parameter reaches preventDefault through an alias.
+  {
+    code: `import { useCallback } from 'react';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const onClick = useCallback(({ nativeEvent: evt }) => {
+    evt.preventDefault();
+    return signIn();
+  }, [signIn]);
+  return <button onClick={onClick}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+  },
+  // Destructuring the method itself off the event leaves a bare call, which is
+  // the same load-bearing statement without a receiver.
+  {
+    code: `import { useCallback } from 'react';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const onClick = useCallback(({ preventDefault }) => {
+    preventDefault();
+    return signIn();
+  }, [signIn]);
+  return <button onClick={onClick}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+  },
+  // The receiver need not be a parameter. A captured event is suppressed just
+  // as effectively, and collapsing the wrapper deletes the call either way.
+  {
+    code: `import { useCallback } from 'react';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C({ pendingEvent }) {
+  const { signIn } = useAuthSubmit();
+  const onClick = useCallback(() => {
+    pendingEvent.preventDefault();
+    return signIn();
+  }, [signIn, pendingEvent]);
+  return <button onClick={onClick}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+  },
+  // Nor need the receiver be a plain identifier.
+  {
+    code: `import { useCallback } from 'react';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const onClick = useCallback((e) => {
+    e.nativeEvent.stopPropagation();
+    return signIn();
+  }, [signIn]);
+  return <button onClick={onClick}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+  },
+  // An optionally invoked suppression call still runs whenever the method is
+  // present, so the wrapper still carries behaviour.
+  {
+    code: `import { useCallback } from 'react';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const onClick = useCallback((e) => {
+    e?.preventDefault?.();
+    return signIn();
+  }, [signIn]);
+  return <button onClick={onClick}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+  },
+  // Statement order does not make the suppression call droppable.
+  {
+    code: `import { useCallback } from 'react';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const onClick = useCallback((e) => {
+    signIn();
+    e.stopPropagation();
+  }, [signIn]);
+  return <button onClick={onClick}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+  },
+  // The same body written as a sequence expression carries the same behaviour.
+  {
+    code: `import { useCallback } from 'react';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const onClick = useCallback((e) => (e.preventDefault(), signIn()), [signIn]);
+  return <button onClick={onClick}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+  },
+  // A suppression call inside a member wrapper is equally load-bearing, and
+  // member wrappers are reported (without a fix) when nothing else intervenes.
+  {
+    code: `import { useCallback } from 'react';
+import { useSomething } from 'x';
+
+function C() {
+  const svc = useSomething();
+  const onClick = useCallback((e) => {
+    e.preventDefault();
+    return svc.handle();
+  }, [svc]);
+  return <button onClick={onClick}/>;
+}`,
+    options: [{ memoizedHookNames: ['useSomething'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+  },
 ];
 
 const invalid = [
@@ -186,15 +396,14 @@ function C() {
   return <button onClick={handle}/>;
 }`,
   },
-  // Block body with preventDefault then call: no args => auto-fix
+  // Block body whose single statement returns the memoized callback: auto-fix
   {
     code: `import { useCallback } from 'react';
 import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
 
 function C() {
   const { signIn } = useAuthSubmit();
-  const onClick = useCallback((e) => {
-    e.preventDefault();
+  const onClick = useCallback(() => {
     return signIn();
   }, [signIn]);
   return <button onClick={onClick}/>;
@@ -211,6 +420,74 @@ function C() {
   const onClick = signIn;
   return <button onClick={onClick}/>;
 }`,
+  },
+  // Block body whose single statement calls the memoized callback: auto-fix
+  {
+    code: `import { useCallback } from 'react';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const onClick = useCallback(() => {
+    signIn();
+  }, [signIn]);
+  return <button onClick={onClick}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+    errors: [redundantError('signIn')],
+    output: `import { useCallback } from 'react';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const onClick = signIn;
+  return <button onClick={onClick}/>;
+}`,
+  },
+  // Function expression wrappers collapse like arrow wrappers do
+  {
+    code: `import { useCallback } from 'react';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const onClick = useCallback(function () {
+    return signIn();
+  }, [signIn]);
+  return <button onClick={onClick}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+    errors: [redundantError('signIn')],
+    output: `import { useCallback } from 'react';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const onClick = signIn;
+  return <button onClick={onClick}/>;
+}`,
+  },
+  // Block body returning a hook object member: report only (no fix)
+  {
+    code: `import { useCallback } from 'react';
+import { useSomething } from 'x';
+
+function C() {
+  const svc = useSomething();
+  const click = useCallback(() => {
+    return svc.handle();
+  }, [svc]);
+  return <button onClick={click}/>;
+}`,
+    options: [{ memoizedHookNames: ['useSomething'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+    errors: [redundantError('svc.handle')],
+    output: null,
   },
   // Member on hook object: const a = useX(); useCallback(() => a.do(), [a])
   // Recognize hook via options; report only (no fix)

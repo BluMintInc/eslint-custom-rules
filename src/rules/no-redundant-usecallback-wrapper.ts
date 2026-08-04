@@ -39,73 +39,38 @@ function isKnownHookCallee(
   return false;
 }
 
-function isPreventDefaultCall(
-  stmt: TSESTree.Statement,
-  params: string[],
-): boolean {
+const EVENT_SUPPRESSION_METHODS = new Set([
+  'preventDefault',
+  'stopPropagation',
+  'stopImmediatePropagation',
+]);
+
+/**
+ * A wrapper that suppresses the event carries behaviour the rule's own remedy
+ * cannot preserve: passing the memoized callback directly both drops the
+ * suppression call and hands React's event to a callback that took no
+ * arguments. Such a wrapper is not redundant, so the receiver is deliberately
+ * unconstrained — deleting `x.preventDefault()` changes behaviour whether `x`
+ * is a parameter, a captured value or a nested member.
+ */
+function isEventSuppressionCall(stmt: TSESTree.Statement): boolean {
   if (stmt.type !== AST_NODE_TYPES.ExpressionStatement) return false;
-  const expr = stmt.expression;
-  if (expr.type !== AST_NODE_TYPES.CallExpression) return false;
-  if (expr.callee.type !== AST_NODE_TYPES.MemberExpression) return false;
-  const member = expr.callee;
+  const expr = unwrapChainExpression<TSESTree.Expression>(stmt.expression);
+  if (!expr || expr.type !== AST_NODE_TYPES.CallExpression) return false;
+  const callee = unwrapChainExpression<TSESTree.Expression>(expr.callee);
+  if (!callee) return false;
+  // A destructured `({ preventDefault })` reaches the method without a receiver.
+  if (callee.type === AST_NODE_TYPES.Identifier) {
+    return EVENT_SUPPRESSION_METHODS.has(callee.name);
+  }
   if (
-    member.object.type === AST_NODE_TYPES.Identifier &&
-    params.includes(member.object.name) &&
-    member.property.type === AST_NODE_TYPES.Identifier &&
-    (member.property.name === 'preventDefault' ||
-      member.property.name === 'stopPropagation' ||
-      member.property.name === 'stopImmediatePropagation')
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    !callee.computed &&
+    callee.property.type === AST_NODE_TYPES.Identifier
   ) {
-    return true;
+    return EVENT_SUPPRESSION_METHODS.has(callee.property.name);
   }
   return false;
-}
-
-function getParams(
-  node: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
-): string[] {
-  const names = new Set<string>();
-  for (const p of node.params) {
-    if (p.type === AST_NODE_TYPES.Identifier) {
-      names.add(p.name);
-    } else if (p.type === AST_NODE_TYPES.ObjectPattern) {
-      for (const prop of p.properties) {
-        if (prop.type === AST_NODE_TYPES.Property) {
-          // Collect bound identifier names (aliases/defaults)
-          if (prop.value.type === AST_NODE_TYPES.Identifier) {
-            names.add(prop.value.name);
-          } else if (
-            prop.value.type === AST_NODE_TYPES.AssignmentPattern &&
-            prop.value.left.type === AST_NODE_TYPES.Identifier
-          ) {
-            names.add(prop.value.left.name);
-          }
-        } else if (prop.type === AST_NODE_TYPES.RestElement) {
-          if (prop.argument.type === AST_NODE_TYPES.Identifier) {
-            names.add(prop.argument.name);
-          }
-        }
-      }
-    } else if (p.type === AST_NODE_TYPES.ArrayPattern) {
-      for (const element of p.elements) {
-        if (!element) continue;
-        if (element.type === AST_NODE_TYPES.Identifier) {
-          names.add(element.name);
-        } else if (
-          element.type === AST_NODE_TYPES.AssignmentPattern &&
-          element.left.type === AST_NODE_TYPES.Identifier
-        ) {
-          names.add(element.left.name);
-        } else if (
-          element.type === AST_NODE_TYPES.RestElement &&
-          element.argument.type === AST_NODE_TYPES.Identifier
-        ) {
-          names.add(element.argument.name);
-        }
-      }
-    }
-  }
-  return Array.from(names);
 }
 
 function isIdentifierOrMemberOn(
@@ -278,7 +243,6 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
               unwrappedArg.type === AST_NODE_TYPES.FunctionExpression)
           ) {
             const fn = unwrappedArg;
-            const params = getParams(fn);
 
             // Handle implicit return: () => memoizedFn()
             if (
@@ -328,27 +292,23 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
               return;
             }
 
-            // Handle block body: () => { [maybe e.preventDefault()]; return memoizedFn(); }
+            // Handle block body: () => { return memoizedFn(); }
             if (fn.body && fn.body.type === AST_NODE_TYPES.BlockStatement) {
               const stmts = fn.body.body.filter(Boolean);
+              // An event-suppression call disqualifies the wrapper outright: no
+              // spelling of "pass the callback directly" keeps it, so reporting
+              // here would prescribe a remedy that does not exist.
+              if (stmts.some(isEventSuppressionCall)) return;
               if (stmts.length >= 1 && stmts.length <= 2) {
-                let idx = 0;
+                const first = stmts[0];
                 if (
-                  stmts.length === 2 &&
-                  isPreventDefaultCall(stmts[0], params)
-                ) {
-                  idx = 1;
-                }
-
-                const last = stmts[idx];
-                if (
-                  last.type === AST_NODE_TYPES.ReturnStatement ||
-                  last.type === AST_NODE_TYPES.ExpressionStatement
+                  first.type === AST_NODE_TYPES.ReturnStatement ||
+                  first.type === AST_NODE_TYPES.ExpressionStatement
                 ) {
                   const expr =
-                    last.type === AST_NODE_TYPES.ReturnStatement
-                      ? last.argument
-                      : last.expression;
+                    first.type === AST_NODE_TYPES.ReturnStatement
+                      ? first.argument
+                      : first.expression;
                   if (expr && expr.type === AST_NODE_TYPES.CallExpression) {
                     const callee = unwrapChainExpression<TSESTree.Expression>(
                       expr.callee,
