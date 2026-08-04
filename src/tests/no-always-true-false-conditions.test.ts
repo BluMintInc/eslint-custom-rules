@@ -548,6 +548,221 @@ switch (null) {
 `,
     errors: [expectAlwaysTrue('value')],
   },
+  // "as const" makes the case value more certain, not less
+  {
+    code: `
+const value = "a" as const;
+switch ("a") {
+  case value:
+    doSomething();
+    break;
+}
+`,
+    errors: [expectAlwaysTrue('value')],
+  },
+  // A "satisfies" annotation leaves the case value untouched
+  {
+    code: `
+const value = "b" satisfies string;
+switch ("a") {
+  case value:
+    doSomething();
+    break;
+}
+`,
+    errors: [expectAlwaysFalse('value')],
+  },
+  // A non-null assertion leaves the case value untouched
+  {
+    code: `
+const value = "a"!;
+switch ("a") {
+  case value:
+    doSomething();
+    break;
+}
+`,
+    errors: [expectAlwaysTrue('value')],
+  },
+  // An angle-bracket assertion leaves the case value untouched
+  {
+    code: `
+const value = <string>"a";
+switch ("a") {
+  case value:
+    doSomething();
+    break;
+}
+`,
+    errors: [expectAlwaysTrue('value')],
+  },
+  // Stacked assertions still resolve to the literal underneath
+  {
+    code: `
+const value = ("a" as const) satisfies string;
+switch ("a") {
+  case value:
+    doSomething();
+    break;
+}
+`,
+    errors: [expectAlwaysTrue('value')],
+  },
+  // "as const" around a compared literal
+  {
+    code: `
+if (("a" as const) === "a") {
+  doSomething();
+}
+`,
+    errors: [expectAlwaysTrue('("a" as const) === "a"')],
+  },
+  // "satisfies" around a compared literal
+  {
+    code: `
+if (("a" satisfies string) === "b") {
+  doSomething();
+}
+`,
+    errors: [expectAlwaysFalse('("a" satisfies string) === "b"')],
+  },
+  // Assertions around numeric operands still fold
+  {
+    code: `
+if ((2 as const) > (1 as number)) {
+  doSomething();
+}
+`,
+    errors: [expectAlwaysTrue('(2 as const) > (1 as number)')],
+  },
+  // An asserted object literal is still an object literal
+  {
+    code: `
+if ({ a: 1 } as const) {
+  doSomething();
+}
+`,
+    errors: [expectAlwaysTrue('{ a: 1 } as const')],
+  },
+  // Optional chaining resolves regardless of how the binding is named
+  {
+    code: `
+const thing = { prop: "value" };
+if (thing?.prop) {
+  doSomething();
+}
+`,
+    errors: [expectAlwaysTrue('thing?.prop')],
+  },
+  // Optional chaining resolves regardless of how the property is named
+  {
+    code: `
+const data = { items: [1, 2, 3] };
+if (data?.items) {
+  doSomething();
+}
+`,
+    errors: [expectAlwaysTrue('data?.items')],
+  },
+  // A resolved property holding a falsy literal is always false
+  {
+    code: `
+const flags = { enabled: "" };
+if (flags?.enabled) {
+  doSomething();
+}
+`,
+    errors: [expectAlwaysFalse('flags?.enabled')],
+  },
+  // "as const" does not hide the object literal behind the binding
+  {
+    code: `
+const config = { enabled: true } as const;
+if (config?.enabled) {
+  doSomething();
+}
+`,
+    errors: [expectAlwaysTrue('config?.enabled')],
+  },
+  // A literal computed key resolves like a static one
+  {
+    code: `
+const settings = { mode: "dark" };
+if (settings?.["mode"]) {
+  doSomething();
+}
+`,
+    errors: [expectAlwaysTrue('settings?.["mode"]')],
+  },
+  // A quoted key in the object literal resolves too
+  {
+    code: `
+const settings = { "mode": "dark" };
+if (settings?.mode) {
+  doSomething();
+}
+`,
+    errors: [expectAlwaysTrue('settings?.mode')],
+  },
+  // The last declaration of a duplicated key wins
+  {
+    code: `
+const settings = { mode: "dark", ["mode"]: "" };
+if (settings?.mode) {
+  doSomething();
+}
+`,
+    errors: [expectAlwaysFalse('settings?.mode')],
+  },
+  // A binding declared in an enclosing scope resolves too
+  {
+    code: `
+const feature = { flag: true };
+function render() {
+  if (feature?.flag) {
+    doSomething();
+  }
+}
+`,
+    errors: [expectAlwaysTrue('feature?.flag')],
+  },
+  // An inline object literal resolves through the same path
+  {
+    code: `
+if ({ prop: "value" }?.prop) {
+  doSomething();
+}
+`,
+    errors: [expectAlwaysTrue('{ prop: "value" }?.prop')],
+  },
+  // A property holding a nested object literal is always truthy
+  {
+    code: `
+const registry = { entries: { first: 1 } };
+if (registry?.entries) {
+  doSomething();
+}
+`,
+    errors: [expectAlwaysTrue('registry?.entries')],
+  },
+  // A property holding an empty template literal is always falsy
+  {
+    code: `
+const labels = { title: \`\` };
+while (labels?.title) {
+  doSomething();
+}
+`,
+    errors: [expectAlwaysFalse('labels?.title')],
+  },
+  // The optional chain resolves in a ternary test as well
+  {
+    code: `
+const thing = { prop: 0 };
+const result = thing?.prop ? "yes" : "no";
+`,
+    errors: [expectAlwaysFalse('thing?.prop')],
+  },
 ];
 
 const invalidRest = [
@@ -1147,6 +1362,130 @@ ruleTesterTs.run(
       // Non-numeric Math arguments stay unresolved
       `
     if (Math.max('1', '2') === 0) {
+      doSomething();
+    }
+    `,
+
+      // Optional chaining guards a binding that really can be undefined
+      `
+    let thing: { prop: string } | undefined;
+    if (thing?.prop) {
+      doSomething();
+    }
+    `,
+
+      // A declared binding carries no initializer to resolve
+      `
+    declare const thing: { prop: string } | undefined;
+    if (thing?.prop) {
+      doSomething();
+    }
+    `,
+
+      // A call result is not an object literal
+      `
+    const thing = getThing();
+    if (thing?.prop) {
+      doSomething();
+    }
+    `,
+
+      // A property absent from the literal can still come from the prototype
+      `
+    const thing = { other: 1 };
+    if (thing?.prop) {
+      doSomething();
+    }
+    `,
+
+      // A spread can contribute or overwrite the property
+      `
+    const thing = { ...base, prop: 'value' };
+    if (thing?.prop) {
+      doSomething();
+    }
+    `,
+
+      // A key computed at runtime hides which property is read
+      `
+    const thing = { prop: 'value' };
+    if (thing?.[key]) {
+      doSomething();
+    }
+    `,
+
+      // An accessor returns whatever it likes
+      `
+    const thing = { get prop() { return compute(); } };
+    if (thing?.prop) {
+      doSomething();
+    }
+    `,
+
+      // A shorthand property carries a runtime value
+      `
+    const thing = { prop };
+    if (thing?.prop) {
+      doSomething();
+    }
+    `,
+
+      // A property holding a call result stays unresolved
+      `
+    const thing = { prop: compute() };
+    if (thing?.prop) {
+      doSomething();
+    }
+    `,
+
+      // A const binds the reference, not the object: the property is rewritten
+      `
+    const thing = { prop: 'value' };
+    thing.prop = compute();
+    if (thing?.prop) {
+      doSomething();
+    }
+    `,
+
+      // The property is incremented before the check
+      `
+    const counters = { count: 1 };
+    counters.count++;
+    if (counters?.count) {
+      doSomething();
+    }
+    `,
+
+      // The property is deleted before the check
+      `
+    const thing = { prop: 'value' };
+    delete thing.prop;
+    if (thing?.prop) {
+      doSomething();
+    }
+    `,
+
+      // The object escapes to code that can mutate it
+      `
+    const thing = { prop: 'value' };
+    register(thing);
+    if (thing?.prop) {
+      doSomething();
+    }
+    `,
+
+      // A reassignable binding is not a constant
+      `
+    let thing = { prop: 'value' };
+    if (thing?.prop) {
+      doSomething();
+    }
+    `,
+
+      // An optional call is not a property read the rule resolves
+      `
+    const thing = { prop: 'value' };
+    if (thing?.prop?.()) {
       doSomething();
     }
     `,

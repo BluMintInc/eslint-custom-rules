@@ -45,6 +45,38 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
     // Sentinel distinguishes "no const literal resolved" from valid literal values (including null/undefined)
     const NOT_FOUND = Symbol('literal-not-found');
 
+    const ASSERTION_EXPRESSION_TYPES = new Set<AST_NODE_TYPES>([
+      AST_NODE_TYPES.TSAsExpression,
+      AST_NODE_TYPES.TSSatisfiesExpression,
+      AST_NODE_TYPES.TSNonNullExpression,
+      AST_NODE_TYPES.TSTypeAssertion,
+    ]);
+
+    /**
+     * Strips type/non-null assertions from an expression. An assertion only
+     * describes a value, so the value behind it is exactly as knowable as the
+     * value itself — `"a" as const` is *more* certain than `"a"`, never less.
+     * Every resolution site strips them, otherwise a wrapper silently retires
+     * detection: sibling fixers add `as const` to module-scope constants, so a
+     * resolver that stopped at the wrapper would go blind on each constant they
+     * touch.
+     */
+    function unwrapAssertions(node: TSESTree.Node): TSESTree.Node {
+      let current = node;
+
+      while (ASSERTION_EXPRESSION_TYPES.has(current.type)) {
+        current = (
+          current as
+            | TSESTree.TSAsExpression
+            | TSESTree.TSSatisfiesExpression
+            | TSESTree.TSNonNullExpression
+            | TSESTree.TSTypeAssertion
+        ).expression;
+      }
+
+      return current;
+    }
+
     /**
      * Walks the current scope chain to locate a variable by name so identifier
      * lookups can resolve const initializers even when declared in parent scopes.
@@ -125,11 +157,105 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
 
       const initializer = definition.node.init;
 
-      if (initializer?.type === AST_NODE_TYPES.Literal) {
-        return initializer.value;
+      if (!initializer) {
+        return NOT_FOUND;
+      }
+
+      const value = unwrapAssertions(initializer);
+
+      if (value.type === AST_NODE_TYPES.Literal) {
+        return value.value;
       }
 
       return NOT_FOUND;
+    }
+
+    /**
+     * A const binding freezes the binding, not the object it points at, so a
+     * resolved object literal only stays constant while every reference merely
+     * reads a property off it. Writing through a member expression, or handing
+     * the object to anything that can retain and mutate it, makes the property
+     * values unknowable from the declaration alone.
+     */
+    function isPropertyReadReference(
+      reference: TSESLint.Scope.Reference,
+    ): boolean {
+      const { identifier } = reference;
+      const parent = identifier.parent;
+
+      if (!parent) {
+        return false;
+      }
+
+      // The declaration's own initialization write.
+      if (
+        parent.type === AST_NODE_TYPES.VariableDeclarator &&
+        parent.id === identifier
+      ) {
+        return true;
+      }
+
+      if (
+        parent.type !== AST_NODE_TYPES.MemberExpression ||
+        parent.object !== identifier
+      ) {
+        return false;
+      }
+
+      const access =
+        parent.parent?.type === AST_NODE_TYPES.ChainExpression
+          ? parent.parent.parent
+          : parent.parent;
+
+      if (!access) {
+        return true;
+      }
+
+      const writesTheProperty =
+        (access.type === AST_NODE_TYPES.AssignmentExpression &&
+          access.left === parent) ||
+        access.type === AST_NODE_TYPES.UpdateExpression ||
+        (access.type === AST_NODE_TYPES.UnaryExpression &&
+          access.operator === 'delete');
+
+      return !writesTheProperty;
+    }
+
+    /**
+     * Resolves an identifier to the object literal it is initialized with when
+     * declared as a const nothing can mutate. Returns undefined whenever the
+     * binding is absent, is not a const, is initialized with anything other
+     * than an object literal, or escapes to code that could rewrite it.
+     */
+    function resolveIdentifierObject(
+      identifier: TSESTree.Identifier,
+    ): TSESTree.ObjectExpression | undefined {
+      const variable = findVariableInScopes(identifier.name);
+
+      if (!variable) {
+        return undefined;
+      }
+
+      const definition = findConstIdentifierDefinition(
+        variable,
+        identifier.name,
+      );
+
+      if (!definition?.node.init) {
+        return undefined;
+      }
+
+      const initializer = unwrapAssertions(definition.node.init);
+
+      if (initializer.type !== AST_NODE_TYPES.ObjectExpression) {
+        return undefined;
+      }
+
+      if (!variable.references.every(isPropertyReadReference)) {
+        return undefined;
+      }
+
+      return initializer;
     }
 
     /**
@@ -150,6 +276,148 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
         default:
           return {};
       }
+    }
+
+    /**
+     * Classifies an expression that a constant declaration binds, so a resolved
+     * property value is judged by what it is rather than by where it was found.
+     * Anything whose value depends on runtime state stays unresolved.
+     */
+    function checkConstantValue(node: TSESTree.Node): ConditionResult {
+      const value = unwrapAssertions(node);
+
+      switch (value.type) {
+        case AST_NODE_TYPES.Literal:
+          // A regex literal is an object, and its `value` is unusable when the
+          // linting runtime cannot construct the pattern.
+          return 'regex' in value
+            ? { isTruthy: true }
+            : checkLiteralValue(value);
+        case AST_NODE_TYPES.ObjectExpression:
+        case AST_NODE_TYPES.ArrayExpression:
+        case AST_NODE_TYPES.ArrowFunctionExpression:
+        case AST_NODE_TYPES.FunctionExpression:
+        case AST_NODE_TYPES.ClassExpression:
+          return { isTruthy: true };
+        case AST_NODE_TYPES.TemplateLiteral:
+          return value.expressions.length === 0
+            ? value.quasis[0].value.raw === ''
+              ? { isFalsy: true }
+              : { isTruthy: true }
+            : {};
+        default:
+          return {};
+      }
+    }
+
+    /**
+     * Reads the property name a member expression accesses. Returns undefined
+     * when the key is computed from something other than a literal, since the
+     * accessed property is then unknown at lint time.
+     */
+    function memberPropertyName(
+      member: TSESTree.MemberExpression,
+    ): string | undefined {
+      if (member.computed) {
+        const key = unwrapAssertions(member.property);
+
+        return key.type === AST_NODE_TYPES.Literal &&
+          (typeof key.value === 'string' || typeof key.value === 'number')
+          ? String(key.value)
+          : undefined;
+      }
+
+      return member.property.type === AST_NODE_TYPES.Identifier
+        ? member.property.name
+        : undefined;
+    }
+
+    /**
+     * Reads the key an object literal property declares, mirroring the member
+     * access side so both are compared as strings.
+     */
+    function propertyKeyName(property: TSESTree.Property): string | undefined {
+      const { key } = property;
+
+      if (
+        key.type === AST_NODE_TYPES.Literal &&
+        (typeof key.value === 'string' || typeof key.value === 'number')
+      ) {
+        return String(key.value);
+      }
+
+      return !property.computed && key.type === AST_NODE_TYPES.Identifier
+        ? key.name
+        : undefined;
+    }
+
+    /**
+     * Evaluates a property read against a resolved object literal. The result
+     * stays empty whenever the literal's shape hides the answer — a spread, a
+     * key computed at runtime, an accessor — and whenever the property is
+     * absent, because a missing own property can still resolve through the
+     * prototype chain (`config.toString`) or through declaration merging.
+     */
+    function checkObjectPropertyAccess(
+      objectExpression: TSESTree.ObjectExpression,
+      member: TSESTree.MemberExpression,
+    ): ConditionResult {
+      const propertyName = memberPropertyName(member);
+
+      if (propertyName === undefined) {
+        return {};
+      }
+
+      let resolvedValue: TSESTree.Node | undefined;
+
+      for (const property of objectExpression.properties) {
+        if (property.type !== AST_NODE_TYPES.Property) {
+          // A spread can contribute or overwrite any key.
+          return {};
+        }
+
+        const keyName = propertyKeyName(property);
+
+        if (keyName === undefined) {
+          return {};
+        }
+
+        if (keyName === propertyName) {
+          if (property.kind !== 'init') {
+            // An accessor returns whatever it likes.
+            return {};
+          }
+
+          // A later duplicate key wins.
+          resolvedValue = property.value;
+        }
+      }
+
+      return resolvedValue ? checkConstantValue(resolvedValue) : {};
+    }
+
+    /**
+     * Evaluates a member access whose object the rule can pin to an object
+     * literal, whether the literal is written inline or reached through a const
+     * binding. Optional chaining off such an object behaves like plain access,
+     * because the object is known not to be nullish.
+     */
+    function checkMemberAccess(
+      member: TSESTree.MemberExpression,
+    ): ConditionResult {
+      const object = unwrapAssertions(member.object);
+
+      if (object.type === AST_NODE_TYPES.ObjectExpression) {
+        return checkObjectPropertyAccess(object, member);
+      }
+
+      if (object.type === AST_NODE_TYPES.Identifier) {
+        const resolved = resolveIdentifierObject(object);
+
+        return resolved ? checkObjectPropertyAccess(resolved, member) : {};
+      }
+
+      return {};
     }
 
     const MATH_FOLDABLE_METHODS = new Set(['max', 'min']);
@@ -195,14 +463,16 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
      * Returns undefined when the operand depends on runtime values.
      */
     function resolveNumericOperand(node: TSESTree.Node): number | undefined {
+      const operand = unwrapAssertions(node);
+
       if (
-        node.type === AST_NODE_TYPES.Literal &&
-        typeof node.value === 'number'
+        operand.type === AST_NODE_TYPES.Literal &&
+        typeof operand.value === 'number'
       ) {
-        return node.value;
+        return operand.value;
       }
 
-      return evaluateMathMinMaxCall(node);
+      return evaluateMathMinMaxCall(operand);
     }
 
     function compareNumericValues(
@@ -248,15 +518,19 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
     function checkBinaryExpression(
       node: TSESTree.BinaryExpression,
     ): ConditionResult {
+      // An assertion around an operand leaves the compared value untouched.
+      const left = unwrapAssertions(node.left);
+      const right = unwrapAssertions(node.right);
+
       // Check for bitwise operations
       if (node.operator === '&') {
         if (
-          node.left.type === AST_NODE_TYPES.Literal &&
-          node.right.type === AST_NODE_TYPES.Literal &&
-          typeof node.left.value === 'number' &&
-          typeof node.right.value === 'number'
+          left.type === AST_NODE_TYPES.Literal &&
+          right.type === AST_NODE_TYPES.Literal &&
+          typeof left.value === 'number' &&
+          typeof right.value === 'number'
         ) {
-          const result = node.left.value & node.right.value;
+          const result = left.value & right.value;
           if (result === 0) {
             return { isFalsy: true };
           } else {
@@ -269,11 +543,11 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
       // it before abandoning the comparison. Bailing out unconditionally here
       // hid every folded-call comparison (Math.max(1, 2) === 0) from the rule.
       if (
-        node.left.type !== AST_NODE_TYPES.Literal ||
-        node.right.type !== AST_NODE_TYPES.Literal
+        left.type !== AST_NODE_TYPES.Literal ||
+        right.type !== AST_NODE_TYPES.Literal
       ) {
-        const resolvedLeft = resolveNumericOperand(node.left);
-        const resolvedRight = resolveNumericOperand(node.right);
+        const resolvedLeft = resolveNumericOperand(left);
+        const resolvedRight = resolveNumericOperand(right);
 
         if (resolvedLeft === undefined || resolvedRight === undefined) {
           return {};
@@ -282,8 +556,8 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
         return compareNumericValues(resolvedLeft, node.operator, resolvedRight);
       }
 
-      const leftValue = node.left.value;
-      const rightValue = node.right.value;
+      const leftValue = left.value;
+      const rightValue = right.value;
 
       // Skip if either value is null or undefined
       if (
@@ -502,20 +776,6 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
       }
 
       return {};
-    }
-
-    /**
-     * Check if a node is an "as const" expression
-     */
-    function isAsConstExpression(
-      node: TSESTree.Node,
-    ): node is TSESTree.TSAsExpression {
-      return (
-        node.type === AST_NODE_TYPES.TSAsExpression &&
-        node.typeAnnotation.type === AST_NODE_TYPES.TSTypeReference &&
-        node.typeAnnotation.typeName.type === AST_NODE_TYPES.Identifier &&
-        node.typeAnnotation.typeName.name === 'const'
-      );
     }
 
     /**
@@ -1133,6 +1393,12 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
         return {};
       }
 
+      // An assertion wrapper carries the same value as the expression inside it
+      const unwrapped = unwrapAssertions(node);
+      if (unwrapped !== node) {
+        return evaluateConstantExpression(unwrapped as TSESTree.Expression);
+      }
+
       // Check special constants and identifiers first
       const specialResult = checkSpecialValues(node);
       if (specialResult.isTruthy || specialResult.isFalsy) {
@@ -1229,14 +1495,6 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
           // void always produces undefined, which is falsy
           return { isFalsy: true };
         }
-      }
-
-      // "as const" expressions
-      if (
-        isAsConstExpression(node) &&
-        node.expression.type === AST_NODE_TYPES.Literal
-      ) {
-        return checkLiteralValue(node.expression);
       }
 
       // Special checks for const variables in tests
@@ -1364,48 +1622,18 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
         }
       }
 
-      // Handle optional chaining with literal objects
+      // Optional chaining off an object the rule can pin to an object literal.
+      // The guard the operator adds is dead there, and the property it reads is
+      // as knowable as the literal that declares it, whatever the binding and
+      // the property are named. Anything else — a binding initialized from a
+      // call, a parameter, a value that may legitimately be undefined — stays
+      // unresolved.
       if (
         node.type === AST_NODE_TYPES.ChainExpression &&
-        node.expression.type === AST_NODE_TYPES.MemberExpression
+        node.expression.type === AST_NODE_TYPES.MemberExpression &&
+        node.expression.optional
       ) {
-        if (node.expression.optional) {
-          // Handle object?.prop
-          if (
-            // Only consider it always truthy if it's a literal object expression
-            node.expression.object.type === AST_NODE_TYPES.ObjectExpression
-          ) {
-            // If we have a property access and we know the object is a literal object
-            return { isTruthy: true };
-          }
-
-          // Special case for identifiers that are explicitly defined in the same scope
-          // This is to handle test cases like `const obj = { prop: "value" }; if (obj?.prop) {}`
-          if (
-            node.expression.object.type === AST_NODE_TYPES.Identifier &&
-            node.expression.object.name === 'obj' &&
-            node.expression.property.type === AST_NODE_TYPES.Identifier &&
-            node.expression.property.name === 'prop'
-          ) {
-            // This is specifically for the test case "obj?.prop"
-            return { isTruthy: true };
-          }
-
-          // Special case for array length checks with optional chaining
-          // This handles cases like `filtered?.length` where filtered could be undefined
-          if (
-            node.expression.property.type === AST_NODE_TYPES.Identifier &&
-            node.expression.property.name === 'length'
-          ) {
-            // For array length checks with optional chaining, we can't determine
-            // if the condition is always truthy or falsy, so return empty result
-            return {};
-          }
-
-          // For other cases like arrays, identifiers, etc., we can't determine
-          // if the condition is always truthy or falsy, so return empty result
-          return {};
-        }
+        return checkMemberAccess(node.expression);
       }
 
       // Handle Object.keys().length
