@@ -12,6 +12,17 @@ This rule enforces dynamic importing for modules under `firebaseCloud` so Fireba
 
 The rule matches an import whose module specifier contains a `firebaseCloud/` path segment (e.g. `../../firebaseCloud/messaging/setGroupChannel`, `src/firebaseCloud/messaging/api`). A specifier that merely starts with the word — `firebaseClouds/utils/helper` — is not matched.
 
+## Exempt files
+
+The rationale is bundle weight, so files that never reach the client bundle are exempt entirely:
+
+- **Test and spec files** — any path ending in `.test.` or `.spec.` followed by `js`, `jsx`, `ts`, `tsx`, `mjs`, `mts`, `cjs` or `cts`. A suite is never bundled, and its static binding is what `jest.mock()` hoisting intercepts.
+- **Jest convention directories** — any file under a `__tests__/` or `__mocks__/` directory, whatever its name.
+- **Declaration files** — any path ending in `.d.ts`, which emits no runtime code.
+- **Third-party sources** — anything under `node_modules/`.
+
+The test suffix is anchored to the end of the path, so production modules that merely contain the word (`latest.tsx`, `contest.ts`, `testHelpers.ts`, `src/testing/setup.ts`) keep their enforcement.
+
 ## Usage
 
 Enable the rule via the recommended config or explicitly:
@@ -53,4 +64,13 @@ const handler = async () => {
 
 // Type-only imports remain untouched
 import type { Params } from '../../firebaseCloud/messaging/setGroupChannel';
+```
+
+```ts
+// File: src/hooks/useStartMatch.test.tsx
+// A suite is never bundled, so a static import is fine there — and it is what
+// `jest.mock()` hoisting needs in order to intercept the module
+import { startMatch } from '../../firebaseCloud/tournament/startMatch';
+
+jest.mock('../../firebaseCloud/tournament/startMatch');
 ```

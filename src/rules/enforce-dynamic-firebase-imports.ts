@@ -1,6 +1,33 @@
 import { TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
+const THIRD_PARTY_DIRECTORY = /(^|\/)node_modules(\/|$)/;
+
+// Anchored at the end of the path so multi-part suffixes such as
+// `useStartMatch.integration.test.ts` are recognized while production modules
+// that merely contain the word (`latest.tsx`, `contest.ts`, `testHelpers.ts`)
+// keep their enforcement.
+const TEST_FILE_SUFFIX = /\.(test|spec)\.[cm]?[jt]sx?$/;
+
+// Jest convention directories hold test-only modules regardless of file name.
+const TEST_FILE_DIRECTORY = /(^|\/)(__tests__|__mocks__)\//;
+
+/**
+ * The rule's rationale is bundle weight: a static import pulls Firebase into the
+ * initial client chunk. A suite, a Jest manual mock and a declaration file are
+ * never part of that chunk, so there is nothing to inflate and the rule has
+ * nothing to enforce there.
+ *
+ * The exemption is load-bearing rather than cosmetic because the rule is
+ * fixable: a suite's static binding is exactly what `jest.mock()` hoisting
+ * intercepts, and rewriting it emits a module-scope `await import(...)` that a
+ * CommonJS test transform cannot even parse (issue #1715).
+ */
+const isNeverBundled = (filename: string) =>
+  filename.endsWith('.d.ts') ||
+  TEST_FILE_SUFFIX.test(filename) ||
+  TEST_FILE_DIRECTORY.test(filename);
+
 const enforceFirebaseImports = createRule({
   name: 'enforce-dynamic-firebase-imports',
   meta: {
@@ -20,14 +47,22 @@ const enforceFirebaseImports = createRule({
   },
   defaultOptions: [],
   create(context) {
+    // Normalize Windows backslash separators so the forward-slash directory
+    // checks match on every platform. Without this, `getFilename()` returns
+    // `C:\repo\src\hooks\__tests__\Foo.ts` on Windows and the exemption
+    // silently fails there.
+    const filename = (context.getFilename?.() ?? '').replace(/\\/g, '/');
+
+    // `<input>`/`<text>` are the synthetic names RuleTester uses when a case
+    // declares no filename. They match none of the exemptions below, so a
+    // snippet keeps its enforcement — unlike a path-gated rule, this one has no
+    // include list to fall outside of.
+    if (THIRD_PARTY_DIRECTORY.test(filename) || isNeverBundled(filename)) {
+      return {};
+    }
+
     return {
       ImportDeclaration(node) {
-        // Skip third-party files
-        const filename = context.getFilename?.();
-        if (filename && /(^|[\\/])node_modules([\\/]|$)/.test(filename)) {
-          return;
-        }
-
         // Skip type-only import declarations
         if (node.importKind === 'type') {
           return;

@@ -62,6 +62,91 @@ ruleTester.run(
       {
         code: `import { type A, type B as BB } from '../../../../firebaseCloud/utils/types';`,
       },
+      // A test file is never part of the client bundle, so the rule's
+      // bundle-size rationale cannot apply to it. Jest also needs the static
+      // binding: `jest.mock()` hoisting only intercepts a module the suite
+      // imported statically, and the fixer's module-scope `await import(...)`
+      // does not parse under a CommonJS test transform.
+      {
+        code: `import { startMatch } from '../firebaseCloud/tournament/startMatch';`,
+        filename: 'src/hooks/useStartMatch.test.tsx',
+      },
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';`,
+        filename: 'src/hooks/useUserTransaction.spec.ts',
+      },
+      // Every test/spec extension the suffix accepts
+      {
+        code: `import { a } from '../../firebaseCloud/messaging/mod';`,
+        filename: 'src/utils/mod.test.ts',
+      },
+      {
+        code: `import { a } from '../../firebaseCloud/messaging/mod';`,
+        filename: 'src/components/Chat.spec.tsx',
+      },
+      {
+        code: `import { a } from '../../firebaseCloud/messaging/mod';`,
+        filename: 'src/legacy/mod.test.js',
+      },
+      {
+        code: `import { a } from '../../firebaseCloud/messaging/mod';`,
+        filename: 'src/legacy/mod.spec.jsx',
+      },
+      {
+        code: `import { a } from '../../firebaseCloud/messaging/mod';`,
+        filename: 'src/utils/mod.test.mts',
+      },
+      // Multi-part suffixes still end in `.test.<ext>`
+      {
+        code: `import { startMatch } from '../firebaseCloud/tournament/startMatch';`,
+        filename: 'src/hooks/useStartMatch.integration.test.ts',
+      },
+      // Jest convention directories hold test-only modules regardless of name
+      {
+        code: `import { startMatch } from '../../firebaseCloud/tournament/startMatch';`,
+        filename: 'src/hooks/__tests__/useStartMatch.tsx',
+      },
+      {
+        code: `import { startMatch } from '../../firebaseCloud/tournament/startMatch';`,
+        filename: 'src/hooks/__mocks__/startMatch.ts',
+      },
+      // Windows separators must not defeat the exemption
+      {
+        code: `import { startMatch } from '../firebaseCloud/tournament/startMatch';`,
+        filename: 'C:\\repo\\src\\hooks\\useStartMatch.test.tsx',
+      },
+      {
+        code: `import { startMatch } from '../../firebaseCloud/tournament/startMatch';`,
+        filename: 'C:\\repo\\src\\hooks\\__tests__\\useStartMatch.tsx',
+      },
+      // Absolute POSIX paths reach the same exemption
+      {
+        code: `import { startMatch } from '../firebaseCloud/tournament/startMatch';`,
+        filename: '/home/runner/project/src/hooks/useStartMatch.test.tsx',
+      },
+      // Declaration files emit no runtime code, so nothing is bundled
+      {
+        code: `import { Params } from '../firebaseCloud/messaging/setGroupChannel';`,
+        filename: 'src/types/firebaseCloud.d.ts',
+      },
+      // Every import shape is exempt inside a test file, not just named imports
+      {
+        code: `import helper from '../firebaseCloud/utils/helper';`,
+        filename: 'src/utils/helper.test.ts',
+      },
+      {
+        code: `import * as helper from '../firebaseCloud/utils/helper';`,
+        filename: 'src/utils/helper.test.ts',
+      },
+      {
+        code: `import '../firebaseCloud/utils/helper';`,
+        filename: 'src/utils/helper.test.ts',
+      },
+      // Third-party sources stay exempt
+      {
+        code: `import { a } from '../firebaseCloud/messaging/mod';`,
+        filename: 'node_modules/@blumint/pkg/dist/index.ts',
+      },
     ],
     invalid: [
       // Single named import
@@ -171,6 +256,81 @@ ruleTester.run(
         code: `import def, * as cloud from 'src/firebaseCloud/messaging/api';`,
         errors: [error('src/firebaseCloud/messaging/api')],
         output: `const cloud = await import('src/firebaseCloud/messaging/api'); const def = cloud.default;`,
+      },
+      // A production module beside an exempt test file still reports, so the
+      // test-file carve-out cannot silently widen
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';`,
+        filename: 'src/hooks/useUserTransaction.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `const { create } = await import('../firebaseCloud/transaction/create');`,
+      },
+      // Production modules whose names merely contain "test"/"spec"
+      {
+        code: `import { a } from '../firebaseCloud/messaging/mod';`,
+        filename: 'src/hooks/latest.tsx',
+        errors: [error('../firebaseCloud/messaging/mod')],
+        output: `const { a } = await import('../firebaseCloud/messaging/mod');`,
+      },
+      {
+        code: `import { a } from '../firebaseCloud/messaging/mod';`,
+        filename: 'src/components/contest.ts',
+        errors: [error('../firebaseCloud/messaging/mod')],
+        output: `const { a } = await import('../firebaseCloud/messaging/mod');`,
+      },
+      {
+        code: `import { a } from '../firebaseCloud/messaging/mod';`,
+        filename: 'src/utils/testHelpers.ts',
+        errors: [error('../firebaseCloud/messaging/mod')],
+        output: `const { a } = await import('../firebaseCloud/messaging/mod');`,
+      },
+      {
+        code: `import { a } from '../firebaseCloud/messaging/mod';`,
+        filename: 'src/testing/setup.ts',
+        errors: [error('../firebaseCloud/messaging/mod')],
+        output: `const { a } = await import('../firebaseCloud/messaging/mod');`,
+      },
+      // The suffix is anchored: a bare `spec.ts`/`test.ts` basename is a
+      // production module, not a suite
+      {
+        code: `import { a } from '../firebaseCloud/messaging/mod';`,
+        filename: 'src/spec.ts',
+        errors: [error('../firebaseCloud/messaging/mod')],
+        output: `const { a } = await import('../firebaseCloud/messaging/mod');`,
+      },
+      // `.test.` mid-name is not the file's suffix
+      {
+        code: `import { a } from '../firebaseCloud/messaging/mod';`,
+        filename: 'src/hooks/useStartMatch.test.helper.ts',
+        errors: [error('../firebaseCloud/messaging/mod')],
+        output: `const { a } = await import('../firebaseCloud/messaging/mod');`,
+      },
+      // Directories that merely start with the Jest convention names
+      {
+        code: `import { a } from '../firebaseCloud/messaging/mod';`,
+        filename: 'src/__tests__helpers/render.ts',
+        errors: [error('../firebaseCloud/messaging/mod')],
+        output: `const { a } = await import('../firebaseCloud/messaging/mod');`,
+      },
+      {
+        code: `import { a } from '../firebaseCloud/messaging/mod';`,
+        filename: 'src/mocks/startMatch.ts',
+        errors: [error('../firebaseCloud/messaging/mod')],
+        output: `const { a } = await import('../firebaseCloud/messaging/mod');`,
+      },
+      // `.d.tsx` is a component, not a declaration file
+      {
+        code: `import { a } from '../firebaseCloud/messaging/mod';`,
+        filename: 'src/components/Chat.d.tsx',
+        errors: [error('../firebaseCloud/messaging/mod')],
+        output: `const { a } = await import('../firebaseCloud/messaging/mod');`,
+      },
+      // A directory named `firebaseCloud.d.ts`-like does not exempt its members
+      {
+        code: `import { a } from '../firebaseCloud/messaging/mod';`,
+        filename: 'src/types/firebaseCloud.d.ts/index.ts',
+        errors: [error('../firebaseCloud/messaging/mod')],
+        output: `const { a } = await import('../firebaseCloud/messaging/mod');`,
       },
     ],
   },
