@@ -14,8 +14,32 @@ This rule requires every Firestore `DocumentReference`, `CollectionReference`, a
 - Calls on an already typed `CollectionReference<T>` may omit the generic on `collectionRef.doc(...)` because the collection supplies the document shape. This holds whether the collection is chained (`db.collection<T>('x').doc('y')`) or first stored in a `const`.
 - Resolving a stored collection is deliberately shallow: only a `const` whose initializer is a `collection<T>(...)` call, whose annotation is `CollectionReference<T>`, or which asserts that type is followed, and only one hop. An alias of an alias, a `let`, a parameter, or an import cannot be proven typed, so `doc(...)` on those still requires its own generic.
 - A class member reached as `this.member` or `this.member()` is resolved through its return type annotation when it has one, and otherwise through the expression it returns. See [Where the schema evidence must live](#where-the-schema-evidence-must-live).
-- Generics that use `any` or `{}` erase the schema and disable compile-time checks; nested `any`/`{}` are flagged when the rule can see them inline or via same-file types.
+- Generics that use `any` or `{}` erase the schema and disable compile-time checks; nested `any`/`{}` are flagged when the rule can see them inline or via same-file types. See [How a named generic is resolved](#how-a-named-generic-is-resolved).
 - Receivers that trace back to `@firebase/rules-unit-testing` are exempt. See [Compat Firestore from `@firebase/rules-unit-testing`](#compat-firestore-from-firebaserules-unit-testing).
+
+## How a named generic is resolved
+
+`DocumentReference<User>` is checked for a nested `any`/`{}` only when the rule can read the fields `User` declares. The name is resolved against the top-level declarations of the same file, in either spelling:
+
+```ts
+// Both are reported: the declared fields are read, and one of them is `any`.
+type User = { data: any };
+interface LegacyUser {
+  data: any;
+}
+```
+
+Both spellings count because `prefer-type-over-interface` ships in the same `recommended` config and is fixable: a single `eslint --fix` pass rewrites every interface into a type alias, so a lookup that reads interfaces alone resolves nothing on a codebase that follows the config.
+
+An alias resolves when it declares a type literal, including one wrapped in a single `Readonly<...>`. That wrapper preserves every field the document declares, and the type-argument recursion already looks through it when it is written at the reference itself (`DocumentReference<Readonly<{ data: any }>>`), so both spellings agree.
+
+Everything else stays **unresolved**, and an unresolved generic is never reported: the rule prefers a missed nested `any` to a report it cannot justify syntactically. Unresolved cases are
+
+- an alias **to** a union, an intersection, a mapped type, or another named or imported type (`type User = UserData`) — an intersection written at the reference (`DocumentReference<User & Timestamps>`) is still read, one side at a time;
+- a wrapper that can drop fields, such as `Omit<...>` or `Pick<...>`, whose members are not the document's members;
+- a declaration nested inside another statement — an exported declaration (`export type User = ...`, `export interface User { ... }`) sits inside its `export` statement, and a declaration inside a function, block, or namespace sits inside that;
+- a type declared in another file, which this rule does not open;
+- a named empty declaration (`type Empty = {}`, `interface Empty {}`), because the empty-object check targets the `{}` written at the reference.
 
 ## Where the schema evidence must live
 
@@ -128,12 +152,17 @@ const productDocRef: DocumentReference<any> = db.doc('products/123');
 // Using empty object type
 const auditLogDocRef: DocumentReference<{}> = db.doc('audit/123');
 
-// Nested `any` still erases the document type
-interface UserProfile {
+// Nested `any` still erases the document type, in either declaration spelling
+type UserProfile = {
   name: string;
   metadata: { audit: any };
-}
+};
 const userProfileDocRef: DocumentReference<UserProfile> = db.doc('users/123');
+
+interface LegacyProfile {
+  metadata: { audit: any };
+}
+const legacyProfileDocRef: DocumentReference<LegacyProfile> = db.doc('users/456');
 
 // Overriding a typed collection with an unsafe generic
 const customerCollection = db.collection<UserProfile>('customers');

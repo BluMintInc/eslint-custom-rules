@@ -59,15 +59,7 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
           if (!node.members || node.members.length === 0) {
             return true;
           }
-          return node.members.some((member) => {
-            if (
-              member.type === AST_NODE_TYPES.TSPropertySignature &&
-              member.typeAnnotation
-            ) {
-              return hasInvalidType(member.typeAnnotation.typeAnnotation);
-            }
-            return false;
-          });
+          return membersHaveInvalidType(node.members);
         case AST_NODE_TYPES.TSTypeReference:
           if (node.typeParameters) {
             return node.typeParameters.params.some(hasInvalidType);
@@ -80,22 +72,9 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
             }
             // Prevent infinite recursion
             typeCache.set(typeName, false);
-            const program = context.sourceCode.ast;
-            const interfaceDecl = program.body.find(
-              (n): n is TSESTree.TSInterfaceDeclaration =>
-                n.type === AST_NODE_TYPES.TSInterfaceDeclaration &&
-                n.id.name === typeName,
-            );
-            if (interfaceDecl) {
-              const result = interfaceDecl.body.body.some((member) => {
-                if (
-                  member.type === AST_NODE_TYPES.TSPropertySignature &&
-                  member.typeAnnotation
-                ) {
-                  return hasInvalidType(member.typeAnnotation.typeAnnotation);
-                }
-                return false;
-              });
+            const members = declaredMembersOf(typeName);
+            if (members) {
+              const result = membersHaveInvalidType(members);
               typeCache.set(typeName, result);
               return result;
             }
@@ -134,6 +113,92 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
         default:
           return false;
       }
+    }
+
+    function membersHaveInvalidType(members: TSESTree.TypeElement[]): boolean {
+      return members.some((member) => {
+        if (
+          member.type === AST_NODE_TYPES.TSPropertySignature &&
+          member.typeAnnotation
+        ) {
+          return hasInvalidType(member.typeAnnotation.typeAnnotation);
+        }
+        return false;
+      });
+    }
+
+    /**
+     * Wrappers an alias may place around its type literal without changing the
+     * fields the document declares. `Readonly<{...}>` written inline at the
+     * reference is already looked through by the type-argument recursion in
+     * `hasInvalidType`, so reading it here keeps the two spellings in agreement.
+     * A wrapper that drops fields, such as `Omit`, is excluded: its members are
+     * not the document's members, and checking them invents reports.
+     */
+    const FIELD_PRESERVING_WRAPPERS = new Set(['Readonly']);
+
+    /**
+     * Reads the type literal an alias declares, looking through at most one
+     * field-preserving wrapper. Anything else — a union, an intersection, a
+     * mapped type, a reference to another named or imported type — has no
+     * members this rule can read syntactically, and guessing at them is how
+     * false positives arrive, so it stays unresolved.
+     */
+    function aliasedTypeLiteral(
+      typeNode: TSESTree.TypeNode,
+    ): TSESTree.TSTypeLiteral | undefined {
+      if (typeNode.type === AST_NODE_TYPES.TSTypeLiteral) {
+        return typeNode;
+      }
+
+      if (
+        typeNode.type !== AST_NODE_TYPES.TSTypeReference ||
+        typeNode.typeName.type !== AST_NODE_TYPES.Identifier ||
+        !FIELD_PRESERVING_WRAPPERS.has(typeNode.typeName.name)
+      ) {
+        return undefined;
+      }
+
+      const wrapperArguments = typeNode.typeParameters?.params;
+      if (!wrapperArguments || wrapperArguments.length !== 1) {
+        return undefined;
+      }
+
+      const [wrapped] = wrapperArguments;
+      return wrapped.type === AST_NODE_TYPES.TSTypeLiteral
+        ? wrapped
+        : undefined;
+    }
+
+    /**
+     * Resolves a named generic to the members its declaration lists, reading an
+     * interface and a type alias alike.
+     *
+     * The alias spelling is not an extra convenience: `prefer-type-over-interface`
+     * ships in the same recommended config and is fixable, so a single
+     * `eslint --fix` pass rewrites every interface into a type alias. A lookup
+     * that reads interfaces alone therefore resolves nothing on a codebase that
+     * has run the config, and a nested `any` in a document schema goes
+     * unreported.
+     */
+    function declaredMembersOf(
+      typeName: string,
+    ): TSESTree.TypeElement[] | undefined {
+      for (const statement of context.sourceCode.ast.body) {
+        if (
+          statement.type === AST_NODE_TYPES.TSInterfaceDeclaration &&
+          statement.id.name === typeName
+        ) {
+          return statement.body.body;
+        }
+        if (
+          statement.type === AST_NODE_TYPES.TSTypeAliasDeclaration &&
+          statement.id.name === typeName
+        ) {
+          return aliasedTypeLiteral(statement.typeAnnotation)?.members;
+        }
+      }
+      return undefined;
     }
 
     function hasTypeAnnotation(node: TSESTree.Node): boolean {
