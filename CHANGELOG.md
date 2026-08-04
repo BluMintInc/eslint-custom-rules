@@ -1,3 +1,26 @@
+## [1.20.96](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.95...v1.20.96) (2026-08-04)
+
+
+### Bug Fixes
+
+* **enforce-css-media-queries:** exempt capability queries and report once per usage (closes [#1675](https://github.com/BluMintInc/eslint-custom-rules/issues/1675)) ([274bc25](https://github.com/BluMintInc/eslint-custom-rules/commit/274bc2500a69b7c73fdd61633b1cf38be797b351))
+* **enforce-exported-function-types:** read destructured props params and resolve memo(Identifier) components (closes [#1686](https://github.com/BluMintInc/eslint-custom-rules/issues/1686)) ([fb92fb9](https://github.com/BluMintInc/eslint-custom-rules/commit/fb92fb9c1e5bcbe0f0c6483f46514540c7e250a6))
+* **enforce-exported-function-types:** see arrow and memo/forwardRef component shapes, autofix the type export (closes [#1677](https://github.com/BluMintInc/eslint-custom-rules/issues/1677)) ([aadb608](https://github.com/BluMintInc/eslint-custom-rules/commit/aadb608fe746e025c3cee80c5079662ad379550a))
+* **enforce-firestore-doc-ref-generic:** resolve type-alias generics beside interfaces (closes [#1678](https://github.com/BluMintInc/eslint-custom-rules/issues/1678)) ([c7eeee0](https://github.com/BluMintInc/eslint-custom-rules/commit/c7eeee0f55b5d171938944a95fce5d726516e5ee))
+* **enforce-mui-rounded-icons:** rename the binding with the path it retargets (closes [#1674](https://github.com/BluMintInc/eslint-custom-rules/issues/1674)) ([9202ce9](https://github.com/BluMintInc/eslint-custom-rules/commit/9202ce95f2af3992490bab365473f48f009cc8b1))
+* **generic-starts-with-t:** exempt module augmentations where the name is upstream-owned (closes [#1676](https://github.com/BluMintInc/eslint-custom-rules/issues/1676)) ([592d69a](https://github.com/BluMintInc/eslint-custom-rules/commit/592d69a01f56e58fe5a584716d902e9a1463d51e))
+* **global-const-style:** exempt function-expression components and unwrap satisfies/non-null wrappers (closes [#1681](https://github.com/BluMintInc/eslint-custom-rules/issues/1681)) ([3fe9cae](https://github.com/BluMintInc/eslint-custom-rules/commit/3fe9caee91dd71777c620464f5d0fc627ac6bdd9))
+* **no-always-true-false-conditions:** resolve any const object in optional chains and climb assertion wrappers (closes [#1682](https://github.com/BluMintInc/eslint-custom-rules/issues/1682)) ([aa87199](https://github.com/BluMintInc/eslint-custom-rules/commit/aa87199fd5fb9177e1d67497c892d2f961fa11d1))
+* **no-unnecessary-verb-suffix:** read intersection-alias contracts constituent by constituent (closes [#1679](https://github.com/BluMintInc/eslint-custom-rules/issues/1679)) ([19dca8c](https://github.com/BluMintInc/eslint-custom-rules/commit/19dca8c46ed7630f90b86c1bbb8f3790733a96f7))
+* **parallelize-loop-awaits:** cover do-while, dedupe nested-loop reports, stop property keys vetoing (closes [#1688](https://github.com/BluMintInc/eslint-custom-rules/issues/1688)) ([4291d9a](https://github.com/BluMintInc/eslint-custom-rules/commit/4291d9a4910457dba079772bf0af5fac67a7d2be))
+* **parallelize-loop-awaits:** exempt test files, condition-coupled loops, and for-await-of (closes [#1687](https://github.com/BluMintInc/eslint-custom-rules/issues/1687)) ([85f590d](https://github.com/BluMintInc/eslint-custom-rules/commit/85f590dcc33ff3f7b033c7accd0d5d9636c50942))
+* **prefer-getter-over-parameterless-method:** skip methods bound by a heritage clause (closes [#1684](https://github.com/BluMintInc/eslint-custom-rules/issues/1684)) ([f408e25](https://github.com/BluMintInc/eslint-custom-rules/commit/f408e251f80c94346941074b9133283fc6362d16))
+* **prefer-type-alias-over-typeof-constant:** exempt only canonical alias derivations, not nested use sites (closes [#1680](https://github.com/BluMintInc/eslint-custom-rules/issues/1680)) ([5e6d7e2](https://github.com/BluMintInc/eslint-custom-rules/commit/5e6d7e20bd2aab9d008368c0cb738cbc4da3ccda))
+* **require-https-error:** name the codebase-owned HttpsError module, not a placeholder package (closes [#1685](https://github.com/BluMintInc/eslint-custom-rules/issues/1685)) ([4aae3dd](https://github.com/BluMintInc/eslint-custom-rules/commit/4aae3ddffc01c1d9e0d02ebb153094350e1cabc5))
+* **use-custom-link:** exempt the wrapper's implementation files (closes [#1673](https://github.com/BluMintInc/eslint-custom-rules/issues/1673)) ([8f19dbd](https://github.com/BluMintInc/eslint-custom-rules/commit/8f19dbd76ee3d8688df282c803aad2fdf0e51e0d))
+* **use-custom-memo:** exempt the wrapper module the rule points at (closes [#1671](https://github.com/BluMintInc/eslint-custom-rules/issues/1671)) ([3fd5e94](https://github.com/BluMintInc/eslint-custom-rules/commit/3fd5e945ccb4f1a9dab9c1ecb55953b949beef22))
+* **use-custom-router:** exempt the wrapper module the rule points at (closes [#1672](https://github.com/BluMintInc/eslint-custom-rules/issues/1672)) ([7732235](https://github.com/BluMintInc/eslint-custom-rules/commit/7732235649f129940e38929b8da7340e84875c42))
+
 ## [1.20.95](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.94...v1.20.95) (2026-08-03)
 
 
