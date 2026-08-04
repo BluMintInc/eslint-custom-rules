@@ -31,7 +31,7 @@
  */
 import fs from 'fs';
 import path from 'path';
-import { Linter } from 'eslint';
+import { Linter, Rule } from 'eslint';
 import * as tsParser from '@typescript-eslint/parser';
 import { harvestRuleTesterCases } from '../utils/harvestRuleTesterCases';
 
@@ -79,6 +79,57 @@ linter.defineParser('ts', tsParser as never);
 for (const [name, rule] of Object.entries(plugin.rules)) {
   linter.defineRule(PREFIX + name, rule as never);
 }
+
+/**
+ * Stand-in culprit for the positive control: renames a camelCase module-scope
+ * `export const` to SCREAMING_SNAKE, destroying
+ * `no-static-constants-in-dynamic-files`'s silence on the camelCase spelling.
+ *
+ * The control needs a fixer that provably destroys a REAL rule's exemption. A
+ * shipped rule cannot supply one and should not have to: every live destruction
+ * being fixed is the goal of this suite, so keying the control to one would make
+ * the detector go vacuous exactly when the config is healthiest. This double is
+ * registered on the linter but stays out of `FIX_CONFIG`, so it is invisible to
+ * the corpus scan and reachable only where a test opts into it.
+ */
+const CONTROL_RENAMER_ID = `${PREFIX}control-screaming-renamer`;
+const controlScreamingRenamer: Rule.RuleModule = {
+  meta: {
+    type: 'suggestion',
+    fixable: 'code',
+    schema: [],
+    messages: { rename: 'Rename "{{name}}" to SCREAMING_SNAKE_CASE.' },
+  },
+  create(context) {
+    return {
+      VariableDeclarator(node) {
+        const declaration = node.parent;
+        if (
+          declaration.type !== 'VariableDeclaration' ||
+          declaration.kind !== 'const' ||
+          declaration.parent.type !== 'ExportNamedDeclaration' ||
+          node.id.type !== 'Identifier' ||
+          !/^[a-z][A-Za-z0-9]*$/.test(node.id.name)
+        ) {
+          return;
+        }
+        const id = node.id;
+        // Converging on the first pass matters: `verifyAndFix` re-lints its own
+        // output, and a double that kept reporting would spin the control.
+        const renamed = id.name
+          .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+          .toUpperCase();
+        context.report({
+          node: id,
+          messageId: 'rename',
+          data: { name: id.name },
+          fix: (fixer) => fixer.replaceText(id, renamed),
+        });
+      },
+    };
+  },
+};
+linter.defineRule(CONTROL_RENAMER_ID, controlScreamingRenamer);
 
 const configFor = (
   rules: Record<string, unknown>,
@@ -206,14 +257,18 @@ const soloRules = (name: string, testCase: ValidCase) => ({
  * only one strips the carrier. Replaying each candidate alone is what makes the
  * baseline key (`<culprit> -> <victim>`) mean something, and it only runs for
  * the handful of cases that already came back as findings.
+ *
+ * `candidates` is the set replayed; it widens past the shipped config only for
+ * the positive control, which supplies its own culprit.
  */
 function attributeCulprits(
   victim: string,
   testCase: ValidCase,
   victimSolo: Record<string, unknown>,
+  candidates: Record<string, unknown> = FIX_CONFIG,
 ): string[] {
   const culprits: string[] = [];
-  for (const [candidateId, severity] of Object.entries(FIX_CONFIG)) {
+  for (const [candidateId, severity] of Object.entries(candidates)) {
     if (candidateId === PREFIX + victim) continue;
     let fixedAlone;
     try {
@@ -312,9 +367,13 @@ const pairKey = (finding: Finding) =>
  * reproducing also fails, so an exemption cannot rot into a shield for the next
  * regression.
  *
- * Prefer fixing over listing. The three destructions this gate found on its
- * first run were each fixed rather than baselined (#1690, #1691, #1692), which
- * is why the sole entry below is the one that is not a defect at all.
+ * Prefer fixing over listing. Every destruction this gate has found was fixed
+ * rather than baselined (#1690, #1691, #1692), and the lone entry it once
+ * carried — `global-const-style -> no-static-constants-in-dynamic-files`, the
+ * #1599 pair — stopped reproducing when the renamer began withholding the
+ * rename for every exported declaration (#1700), so the config destroys no
+ * exemption at all. The baseline is empty by achievement, not by omission:
+ * anything that appears here fails until it is fixed or justified in writing.
  *
  * The dominant shape on this axis — `no-explicit-return-type` deleting the
  * return annotation another rule reads as its exemption carrier (6 of the 12
@@ -323,18 +382,7 @@ const pairKey = (finding: Finding) =>
  * declines when they yield no verdict, so no annotation has to survive for its
  * exemption to hold. Reach for that before making a fixer decline.
  */
-export const EXEMPTION_DESTROYED_BASELINE: Record<string, string> = {
-  // Resolved by design, not deferred — the one entry here that is NOT a defect.
-  // `global-const-style` renames the camelCase module-scope const to UPPER_SNAKE
-  // and stamps `as const`, which is what makes it visible to
-  // `no-static-constants-in-dynamic-files` — and that rule's verdict on the
-  // result is correct: an `as const` literal in a `.dynamic` file IS static
-  // configuration. Its documented remedy (move the constant to a non-dynamic
-  // module and import it) is a stable fixed point under both rules, pinned by
-  // the fixed-point test in `no-static-constants-in-dynamic-files.test.ts`.
-  'global-const-style -> no-static-constants-in-dynamic-files':
-    'the rename makes a genuinely-static const in a .dynamic file visible; the second verdict is correct and its remedy converges (#1599)',
-};
+export const EXEMPTION_DESTROYED_BASELINE: Record<string, string> = {};
 
 const observedPairs = new Set(findings.map(pairKey));
 
@@ -436,8 +484,40 @@ describe('the exemption closure guard is load-bearing', () => {
   });
 
   it('detects a destroyed exemption (positive control)', () => {
-    // The #1599 shape, hard-coded so the detector stays proven even if the
-    // fixture that produces it organically is edited away.
+    // The #1599 shape — a camelCase constant a `.dynamic` module exports, which
+    // the victim rule is silent on until something SCREAMS the name. Its
+    // culprit is the planted double rather than `global-const-style`, which
+    // withholds the rename for exported declarations (#1700): the detector must
+    // stay proven when no shipped rule destroys anything.
+    const planted: ValidCase = {
+      code: "export const apiUrl = 'https://api.example.com';\n",
+      filename: 'src/config/settings.dynamic.ts',
+      origin: 'planted control',
+    };
+    const victim = 'no-static-constants-in-dynamic-files';
+    const solo = soloRules(victim, planted);
+    const withCulprit = { ...FIX_CONFIG, [CONTROL_RENAMER_ID]: 'error' };
+
+    expect(verify(planted.code, solo, planted)).toEqual([]);
+    const fixed = linter.verifyAndFix(
+      planted.code,
+      configFor(withCulprit, planted.parserOptions),
+      { filename: planted.filename },
+    );
+    expect(fixed.output).not.toBe(planted.code);
+    expect((verify(fixed.output, solo, planted) || []).length).toBeGreaterThan(
+      0,
+    );
+    expect(attributeCulprits(victim, planted, solo, withCulprit)).toEqual([
+      CONTROL_RENAMER_ID.slice(PREFIX.length),
+    ]);
+  });
+
+  it('holds the shipped config responsible for the same shape (control)', () => {
+    // The other half of the control: with only the shipped rules, that same
+    // snippet must come out of `--fix` still exporting `apiUrl`. This is what
+    // turns the planted culprit above into a statement about the detector
+    // rather than a way to skip testing the config.
     const planted: ValidCase = {
       code: "export const apiUrl = 'https://api.example.com';\n",
       filename: 'src/config/settings.dynamic.ts',
@@ -446,19 +526,13 @@ describe('the exemption closure guard is load-bearing', () => {
     const victim = 'no-static-constants-in-dynamic-files';
     const solo = soloRules(victim, planted);
 
-    expect(verify(planted.code, solo, planted)).toEqual([]);
     const fixed = linter.verifyAndFix(
       planted.code,
       configFor(FIX_CONFIG, planted.parserOptions),
       { filename: planted.filename },
     );
-    expect(fixed.output).not.toBe(planted.code);
-    expect((verify(fixed.output, solo, planted) || []).length).toBeGreaterThan(
-      0,
-    );
-    expect(attributeCulprits(victim, planted, solo)).toContain(
-      'global-const-style',
-    );
+    expect(fixed.output).toContain('apiUrl');
+    expect((verify(fixed.output, solo, planted) || []).length).toBe(0);
   });
 
   it('stays silent when the fix preserves the exemption (negative control)', () => {

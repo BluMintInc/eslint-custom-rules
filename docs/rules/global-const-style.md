@@ -227,9 +227,24 @@ const userID = 1 as const;            const USER_ID = 1 as const;
 When a safe rename cannot be guaranteed, the violation is still reported but the
 fix is withheld (report-only) rather than risk changing behavior. That happens
 when the new name would collide with or shadow an existing binding, or when the
-symbol crosses a file boundary — an inline `export const` with in-file uses, or
-a re-export such as `export { fooBar }` — where a single-file fixer cannot reach
-the importers.
+symbol crosses a file boundary — **any** exported declaration, whether an inline
+`export const` or a re-export such as `export { fooBar }` — where a single-file
+fixer cannot reach the importers.
+
+An exported name is a contract spelled out in other files, so the rename is
+withheld regardless of whether the declaring file also uses the name: a
+constants module with no local use sites is the most exposed shape, not the
+safest one. The `as const` fix still lands on exported declarations, because it
+never touches the export name.
+
+```ts
+// Before                                // After --fix
+export const retryConfig = { a: 3 };     export const retryConfig = { a: 3 } as const;
+const retryConfig = { a: 3 };            const RETRY_CONFIG = { a: 3 } as const;
+```
+
+Rename an exported constant by hand, together with its importers (an editor's
+rename-symbol refactor covers the whole project).
 
 ## When Not To Use It
 

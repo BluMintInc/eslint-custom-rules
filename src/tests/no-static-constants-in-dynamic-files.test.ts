@@ -183,13 +183,17 @@ ruleTesterTs.run(RULE_NAME, rule, {
 });
 
 // Both rules ship in the recommended config and global-const-style is fixable,
-// so a single `eslint --fix` renames a module-level `apiUrl` to `API_URL` and
-// this rule then reports it. #1599 asked whether that is a false positive. It is
-// not: the constant was misplaced before the rename too, and the rename only
-// made it legible. What makes the pair sound is that this rule's own remedy —
-// "move this constant to a non-dynamic module and import it" — converges. These
-// tests pin that, so neither rule's fixer nor its filter can drift the pair into
-// a genuinely unresolvable state.
+// so the pair has to compose. This rule keys on a SCREAMING_SNAKE export name,
+// which is exactly what the renamer's fix used to produce — #1599 asked whether
+// the resulting report is a false positive (it is not: the constant was
+// misplaced before the rename too, and the rename only made it legible).
+// global-const-style withholds the rename for every exported declaration
+// (#1700), so `--fix` can no longer manufacture the report at all; a
+// SCREAMING_SNAKE export in a `.dynamic` file now only ever comes from an
+// author. These tests pin both halves — the renamer leaves the export name
+// alone, and this rule's own remedy ("move the constant to a non-dynamic module
+// and import it") is a fixed point — so neither rule's fixer nor its filter can
+// drift the pair into a state that cannot be resolved by hand.
 describe('no-static-constants-in-dynamic-files with global-const-style --fix', () => {
   const TARGET_ID = '@blumintinc/blumint/no-static-constants-in-dynamic-files';
   const RENAMER_ID = '@blumintinc/blumint/global-const-style';
@@ -221,7 +225,7 @@ describe('no-static-constants-in-dynamic-files with global-const-style --fix', (
 
   const bothRules = { [TARGET_ID]: 'error', [RENAMER_ID]: 'error' } as const;
 
-  it('reports only after the rename, and the rename is what does it', () => {
+  it('keys on the SCREAMING name, which the renamer no longer produces', () => {
     const linter = makeLinter();
     const countOn = (code: string) =>
       linter.verify(code, configFor({ [TARGET_ID]: 'error' }), DYNAMIC_FILE)
@@ -241,15 +245,32 @@ describe('no-static-constants-in-dynamic-files with global-const-style --fix', (
       configFor({ [RENAMER_ID]: 'error' }),
       DYNAMIC_FILE,
     );
-    // Without this the test passes vacuously whenever the renamer stops firing.
-    expect(fixed.output).toContain('API_URL');
+    // The renamer withholds the rename for an exported declaration (#1700), so
+    // the export name survives `--fix` and this rule stays silent on the
+    // output. Pinning the `as const` half keeps the case from passing
+    // vacuously whenever the renamer stops firing altogether.
+    expect(fixed.output).toBe(
+      `export const apiUrl = 'https://api.example.com' as const;`,
+    );
     expect(
       linter.verify(
         fixed.output,
         configFor({ [TARGET_ID]: 'error' }),
         DYNAMIC_FILE,
       ),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
+    // The rename violation is still REPORTED on that output — withholding the
+    // fix must not weaken detection, or an author would never learn the name
+    // needs changing.
+    expect(
+      linter
+        .verify(
+          fixed.output,
+          configFor({ [RENAMER_ID]: 'error' }),
+          DYNAMIC_FILE,
+        )
+        .map((message) => message.messageId),
+    ).toEqual(['upperSnakeCase']);
   });
 
   it('converges once the constant moves to a non-dynamic module', () => {
@@ -300,7 +321,15 @@ describe('no-static-constants-in-dynamic-files with global-const-style --fix', (
       configFor(bothRules),
       'config.ts',
     );
-    expect(fixed.output).toContain('API_URL');
-    expect(fixed.messages).toHaveLength(0);
+    // Only the `as const` half lands, in this file as in a `.dynamic` one, so
+    // the constant keeps the name its importers use. This rule contributes
+    // nothing here — the residual message is the renamer's report-only
+    // violation, which an author resolves with a project-wide rename.
+    expect(fixed.output).toBe(
+      `export const apiUrl = 'https://api.example.com' as const;`,
+    );
+    expect(fixed.messages.map((message) => message.ruleId)).toEqual([
+      RENAMER_ID,
+    ]);
   });
 });

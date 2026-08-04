@@ -22,6 +22,14 @@ ruleTesterTs.run('global-const-style', rule, {
       code: `export const getServerSideProps = { revalidate: 60 } as const;`,
       filename: 'pages/index.ts',
     },
+    // Issue #1700: withholding the rename FIX for every exported declaration
+    // must not absorb the reserved-export exemption, which suppresses the
+    // REPORT. A reserved export stays silent rather than carrying a permanent,
+    // unfixable violation.
+    {
+      code: `export const middleware = { matcher: ['/'] } as const;`,
+      filename: 'middleware.ts',
+    },
     // Valid global constants with UPPER_SNAKE_CASE and as const in TypeScript
     {
       code: 'const API_ENDPOINT = "https://api.example.com" as const;',
@@ -577,7 +585,10 @@ ruleTesterTs.run('global-const-style', rule, {
       output: 'const CONFIG = { timeout: 1000 } as const;',
     },
     // Issue #1257: an exported name that is NOT a Next.js reserved export is
-    // still flagged and autofixed — the exemption is scoped to the allowlist.
+    // still flagged — the reserved-export exemption is scoped to the allowlist
+    // and suppresses only the report, never the detection.
+    // Issue #1700: the rename fix is withheld for any exported declaration,
+    // because its importers live in files this fixer cannot reach.
     {
       code: 'export const appConfig = { timeout: 1000 } as const;',
       filename: 'pages/api/example.ts',
@@ -590,7 +601,7 @@ ruleTesterTs.run('global-const-style', rule, {
           },
         },
       ],
-      output: 'export const APP_CONFIG = { timeout: 1000 } as const;',
+      output: null,
     },
     // Missing UPPER_SNAKE_CASE and as const in TypeScript
     {
@@ -970,6 +981,8 @@ ruleTesterTs.run('global-const-style', rule, {
     },
     // Issue #1418 control: the rule's core case — a literal configuration
     // value — must keep firing, so a clean scan is trustworthy.
+    // Issue #1700: both reports still land; only the export-renaming half of
+    // the fix is withheld, so `as const` is applied on its own.
     {
       code: 'export const maxRetries = 3;',
       filename: 'test.ts',
@@ -980,7 +993,7 @@ ruleTesterTs.run('global-const-style', rule, {
           data: { name: 'maxRetries', suggestedName: 'MAX_RETRIES' },
         },
       ],
-      output: 'export const MAX_RETRIES = 3 as const;',
+      output: 'export const maxRetries = 3 as const;',
     },
     // Issue #1418: `undefined`/`NaN`/`Infinity` parse as identifiers but denote
     // primitive values, not a binding being aliased, so the naming check still
@@ -1273,6 +1286,62 @@ ruleTesterTs.run('global-const-style', rule, {
         },
       ],
       output: 'const SOME_CONFIG = { a: 1 } as const;',
+    },
+    // invalid: a bare exported const is reported but NOT renamed — its importers
+    // live in other files a single-file fixer cannot reach.
+    {
+      code: 'export const retryConfig = { attempts: 3 };',
+      filename: 'test.ts',
+      errors: [
+        { messageId: 'asConst' },
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'retryConfig', suggestedName: 'RETRY_CONFIG' },
+        },
+      ],
+      output: 'export const retryConfig = { attempts: 3 } as const;',
+    },
+    // invalid: the non-exported twin still renames — proves the guard is scoped to
+    // exports and is not a blanket amnesty.
+    {
+      code: 'const retryConfig = { attempts: 3 };',
+      filename: 'test.ts',
+      errors: [
+        { messageId: 'asConst' },
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'retryConfig', suggestedName: 'RETRY_CONFIG' },
+        },
+      ],
+      output: 'const RETRY_CONFIG = { attempts: 3 } as const;',
+    },
+    // Issue #1700: the withheld rename is a fix-level decision, so a violation
+    // an exported declaration can never have autofixed is still reported —
+    // detection must not weaken alongside the fix.
+    {
+      code: 'export const _disabled = true;',
+      filename: 'functions/src/handler.f.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: '_disabled', suggestedName: 'DISABLED' },
+        },
+      ],
+      output: null,
+    },
+    // Issue #1700: the reserved-export exemption is still gated on the
+    // declaration being exported, so a local `getStaticProps` remains a plain
+    // constant that is both reported and renamed.
+    {
+      code: 'const getStaticProps = { revalidate: 60 } as const;',
+      filename: 'pages/index.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'getStaticProps', suggestedName: 'GET_STATIC_PROPS' },
+        },
+      ],
+      output: 'const GET_STATIC_PROPS = { revalidate: 60 } as const;',
     },
   ],
 });
