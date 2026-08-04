@@ -20,6 +20,37 @@ The rule ignores:
 
 - `set`/`setDoc` calls that already include `{ merge: true }`.
 - Non-Firestore `update` methods (e.g., `createHash().update()`).
+- `update()` on a Realtime Database batch manager — see below.
+
+### Realtime Database receivers
+
+Realtime Database's batch manager is held under the same `batchManager` field
+name as the Firestore one, so the field name alone does not identify a Firestore
+write. `RealtimeBatchManager` supports no batched `set` at all: its positional
+`update(path, data)` **is** the write path, and Realtime Database's `update`
+already merges shallowly, which makes `{ merge: true }` meaningless there.
+Rewriting such a call emits a method that does not exist (TS2339).
+
+Two syntactic signals take a `batchManager.update(…)` call out of the rule's
+scope. Either one is enough:
+
+1. **The receiver resolves in-file to `RealtimeBatchManager`** — a field or
+   variable initialized with `new RealtimeBatchManager()`, or a type annotation
+   naming the class (`RealtimeBatchManager`, `Readonly<RealtimeBatchManager>`,
+   `realtimeDb.RealtimeBatchManager`) on the field, the variable, or a
+   constructor parameter, including one the constructor only forwards to
+   `super()`. A superclass declared in the same file counts too, since a subclass
+   inherits the field.
+2. **The data argument is a primitive literal** — a boolean, number, string,
+   template literal, or one of those behind an assertion. Firestore's update
+   data is an object of field updates, so a primitive in that position proves the
+   call is not Firestore's. This is the only evidence available to a subclass
+   that inherits the field from another module. A call with no data argument has
+   nothing in that position, so only signal 1 answers for it.
+
+Evidence about a differently named member, or about a different class under the
+`batchManager` name (`new BatchManager()`), exempts nothing: those calls report
+and fix as before.
 
 ### Autofix
 
@@ -77,6 +108,26 @@ await docRef.set({ name: 'Ada' }, { merge: true });
 await setDoc(docRef, { active: true }, { merge: true });
 await transaction.set(userRef, { visits: visits + 1 }, { merge: true });
 batchManager.batch.set({ ref: docRef, data: { score: 10 }, merge: true });
+```
+
+```ts
+import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+
+export class MessageProcessor {
+  protected readonly batchManager = new RealtimeBatchManager();
+
+  protected setPulsate(path: string) {
+    // Realtime Database: update() is the write path, and there is no set()
+    this.batchManager.update(path, true);
+  }
+}
+
+export class ReadMessageProcessor extends MessageProcessor {
+  protected resetCount(path: string) {
+    // A primitive data argument identifies the receiver on its own
+    this.batchManager.update(path, 0);
+  }
+}
 ```
 
 ## When Not To Use It

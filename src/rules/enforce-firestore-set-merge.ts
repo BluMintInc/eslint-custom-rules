@@ -14,6 +14,16 @@ const FIRESTORE_MODULES = new Set(['firebase/firestore', 'firebase-admin']);
 const UPDATE_DOC = 'updateDoc';
 const SET_DOC = 'setDoc';
 const MERGE_ARGUMENT = ', { merge: true }';
+const BATCH_MANAGER = 'batchManager';
+/**
+ * Realtime Database's batch manager is held under the same `batchManager` field
+ * name as the Firestore one, yet it exposes no `set` method at all — its
+ * positional `update(path, data)` is the only write path it has, and RTDB's
+ * update already merges shallowly. Rewriting one of its calls emits a method
+ * that does not exist (TS2339), so a receiver proven to be this class is out of
+ * the rule's scope entirely.
+ */
+const REALTIME_BATCH_MANAGER = 'RealtimeBatchManager';
 
 /**
  * Where a firestore export enters the file: the entry inside `import { … }`, or
@@ -109,6 +119,156 @@ function bindsFirestoreExport(
   );
 }
 
+/** The rightmost segment of a type name, so `realtimeDb.X` reads like a bare `X`. */
+function typeNameOf(node: TSESTree.EntityName): string | null {
+  if (node.type === AST_NODE_TYPES.Identifier) {
+    return node.name;
+  }
+  if (node.type === AST_NODE_TYPES.TSQualifiedName) {
+    return typeNameOf(node.right);
+  }
+  return null;
+}
+
+/**
+ * Whether a type annotation names the Realtime Database batch manager. Wrappers
+ * that preserve the instance type — `Readonly<…>`, a union, an intersection —
+ * are looked through, because the field they annotate still holds the class.
+ */
+function isRealtimeType(node: TSESTree.TypeNode | undefined | null): boolean {
+  if (!node) {
+    return false;
+  }
+  switch (node.type) {
+    case AST_NODE_TYPES.TSTypeReference:
+      return (
+        typeNameOf(node.typeName) === REALTIME_BATCH_MANAGER ||
+        (node.typeParameters?.params ?? []).some(isRealtimeType)
+      );
+    case AST_NODE_TYPES.TSUnionType:
+    case AST_NODE_TYPES.TSIntersectionType:
+      return node.types.some(isRealtimeType);
+    default:
+      return false;
+  }
+}
+
+function isRealtimeAnnotation(
+  annotation: TSESTree.TSTypeAnnotation | undefined,
+): boolean {
+  return isRealtimeType(annotation?.typeAnnotation);
+}
+
+/** Whether an initializer constructs the Realtime Database batch manager. */
+function isRealtimeInstance(node: TSESTree.Node | null | undefined): boolean {
+  if (node?.type !== AST_NODE_TYPES.NewExpression) {
+    return false;
+  }
+  const { callee } = node;
+  if (callee.type === AST_NODE_TYPES.Identifier) {
+    return callee.name === REALTIME_BATCH_MANAGER;
+  }
+  return (
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    !callee.computed &&
+    callee.property.type === AST_NODE_TYPES.Identifier &&
+    callee.property.name === REALTIME_BATCH_MANAGER
+  );
+}
+
+/**
+ * Whether a parameter binds `name` to the Realtime batch manager. A parameter
+ * property declares the field outright; a plain constructor parameter of the
+ * same name is the evidence a subclass carries when it forwards the manager to a
+ * `super()` that stores it.
+ */
+function parameterBindsRealtime(
+  param: TSESTree.Parameter,
+  name: string,
+): boolean {
+  const declared =
+    param.type === AST_NODE_TYPES.TSParameterProperty ? param.parameter : param;
+  const identifier =
+    declared.type === AST_NODE_TYPES.AssignmentPattern
+      ? declared.left
+      : declared;
+  const initializer =
+    declared.type === AST_NODE_TYPES.AssignmentPattern ? declared.right : null;
+  return (
+    identifier.type === AST_NODE_TYPES.Identifier &&
+    identifier.name === name &&
+    (isRealtimeAnnotation(identifier.typeAnnotation) ||
+      isRealtimeInstance(initializer))
+  );
+}
+
+/** Whether a class member identifies `name` as the Realtime batch manager. */
+function memberBindsRealtime(
+  member: TSESTree.ClassElement,
+  name: string,
+): boolean {
+  if (member.type === AST_NODE_TYPES.PropertyDefinition) {
+    return (
+      !member.computed &&
+      member.key.type === AST_NODE_TYPES.Identifier &&
+      member.key.name === name &&
+      (isRealtimeInstance(member.value) ||
+        isRealtimeAnnotation(member.typeAnnotation))
+    );
+  }
+  return (
+    member.type === AST_NODE_TYPES.MethodDefinition &&
+    member.kind === 'constructor' &&
+    member.value.params.some((param) => parameterBindsRealtime(param, name))
+  );
+}
+
+/** Strips assertions, which change a literal's type but not its value. */
+function unwrapAssertions(node: TSESTree.Node): TSESTree.Node {
+  if (
+    node.type === AST_NODE_TYPES.TSAsExpression ||
+    node.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+    node.type === AST_NODE_TYPES.TSTypeAssertion ||
+    node.type === AST_NODE_TYPES.TSNonNullExpression
+  ) {
+    return unwrapAssertions(node.expression);
+  }
+  return node;
+}
+
+/**
+ * Whether an expression evaluates to a primitive value on its face. Firestore's
+ * update data is an object of field updates, so a primitive in the data
+ * position proves the call is not Firestore's — the only signal available where
+ * the receiver is inherited from another module.
+ */
+function isPrimitiveLiteral(node: TSESTree.Node | undefined): boolean {
+  if (!node) {
+    return false;
+  }
+  const expression = unwrapAssertions(node);
+  // A template literal evaluates to a string however it interpolates.
+  if (expression.type === AST_NODE_TYPES.TemplateLiteral) {
+    return true;
+  }
+  if (
+    expression.type === AST_NODE_TYPES.UnaryExpression &&
+    (expression.operator === '-' || expression.operator === '+')
+  ) {
+    return isPrimitiveLiteral(expression.argument);
+  }
+  if (expression.type !== AST_NODE_TYPES.Literal) {
+    return false;
+  }
+  const { value } = expression;
+  return (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    typeof value === 'bigint'
+  );
+}
+
 export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
   name: 'enforce-firestore-set-merge',
   meta: {
@@ -143,6 +303,139 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
     const isReportSuppressed = createSuppressionChecker(context);
     let plannedSetDocBinding = false;
 
+    /**
+     * Top-level classes by name, so a field inherited from a superclass declared
+     * in the same file resolves to the declaration that carries its evidence.
+     */
+    let topLevelClasses: Map<string, TSESTree.ClassBody> | null = null;
+    function classBodiesByName(): Map<string, TSESTree.ClassBody> {
+      if (topLevelClasses) {
+        return topLevelClasses;
+      }
+      topLevelClasses = new Map();
+      for (const statement of sourceCode.ast.body) {
+        const declaration =
+          statement.type === AST_NODE_TYPES.ExportNamedDeclaration ||
+          statement.type === AST_NODE_TYPES.ExportDefaultDeclaration
+            ? statement.declaration
+            : statement;
+        if (
+          declaration?.type === AST_NODE_TYPES.ClassDeclaration &&
+          declaration.id
+        ) {
+          topLevelClasses.set(declaration.id.name, declaration.body);
+          continue;
+        }
+        if (declaration?.type === AST_NODE_TYPES.VariableDeclaration) {
+          for (const declarator of declaration.declarations) {
+            if (
+              declarator.id.type === AST_NODE_TYPES.Identifier &&
+              declarator.init?.type === AST_NODE_TYPES.ClassExpression
+            ) {
+              topLevelClasses.set(declarator.id.name, declarator.init.body);
+            }
+          }
+        }
+      }
+      return topLevelClasses;
+    }
+
+    function enclosingClassBody(
+      node: TSESTree.Node,
+    ): TSESTree.ClassBody | null {
+      let current: TSESTree.Node | undefined = node.parent;
+      while (current) {
+        if (current.type === AST_NODE_TYPES.ClassBody) {
+          return current;
+        }
+        current = current.parent;
+      }
+      return null;
+    }
+
+    /** Follows `extends` in-file, since a subclass inherits its field's type. */
+    function classBindsRealtime(
+      body: TSESTree.ClassBody,
+      name: string,
+      seen: Set<TSESTree.ClassBody>,
+    ): boolean {
+      if (seen.has(body)) {
+        return false;
+      }
+      seen.add(body);
+      if (body.body.some((member) => memberBindsRealtime(member, name))) {
+        return true;
+      }
+      const declaration = body.parent;
+      const superClass =
+        declaration?.type === AST_NODE_TYPES.ClassDeclaration ||
+        declaration?.type === AST_NODE_TYPES.ClassExpression
+          ? declaration.superClass
+          : null;
+      if (superClass?.type !== AST_NODE_TYPES.Identifier) {
+        return false;
+      }
+      const superBody = classBodiesByName().get(superClass.name);
+      return superBody ? classBindsRealtime(superBody, name, seen) : false;
+    }
+
+    function identifierBindsRealtime(identifier: TSESTree.Identifier): boolean {
+      const scope = ASTHelpers.getScope(context, identifier);
+      const variable = ASTHelpers.findVariableInScope(scope, identifier.name);
+      return (variable?.defs ?? []).some((def) => {
+        const declaredName: TSESTree.Node = def.name;
+        return (
+          (declaredName.type === AST_NODE_TYPES.Identifier &&
+            isRealtimeAnnotation(declaredName.typeAnnotation)) ||
+          (def.node.type === AST_NODE_TYPES.VariableDeclarator &&
+            isRealtimeInstance(def.node.init))
+        );
+      });
+    }
+
+    /**
+     * Whether the file itself proves the receiver holds a RealtimeBatchManager:
+     * `this.batchManager` against the class (or an in-file superclass) that
+     * declares the field, and a plain identifier against its binding.
+     */
+    function receiverBindsRealtime(
+      node: TSESTree.CallExpression,
+      receiver: TSESTree.Node,
+    ): boolean {
+      if (receiver.type === AST_NODE_TYPES.Identifier) {
+        return identifierBindsRealtime(receiver);
+      }
+      if (
+        receiver.type !== AST_NODE_TYPES.MemberExpression ||
+        receiver.computed ||
+        receiver.property.type !== AST_NODE_TYPES.Identifier ||
+        receiver.object.type !== AST_NODE_TYPES.ThisExpression
+      ) {
+        return false;
+      }
+      const body = enclosingClassBody(node);
+      return body
+        ? classBindsRealtime(body, receiver.property.name, new Set())
+        : false;
+    }
+
+    /**
+     * Either syntactic signal puts a `batchManager.update(…)` call outside the
+     * rule: the receiver resolves in-file to the Realtime Database manager, or
+     * the data argument is a primitive literal, which Firestore's object of
+     * field updates can never be. A call with no data argument has nothing in
+     * that position, so only the receiver can answer for it.
+     */
+    function isRealtimeBatchUpdate(
+      node: TSESTree.CallExpression,
+      receiver: TSESTree.Node,
+    ): boolean {
+      return (
+        isPrimitiveLiteral(node.arguments[1]) ||
+        receiverBindsRealtime(node, receiver)
+      );
+    }
+
     function isFirestoreUpdateCall(node: TSESTree.CallExpression): boolean {
       // Check if it's a set() call with merge: true
       if (node.callee.type === AST_NODE_TYPES.MemberExpression) {
@@ -170,13 +463,15 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
           if (property.name === 'update') {
             const object = node.callee.object;
 
-            // Check for BatchManager update calls
+            // Check for BatchManager update calls. The Realtime Database
+            // manager answers to the same field name without a `set` method, so
+            // its calls are not Firestore operations at all.
             if (
               object.type === AST_NODE_TYPES.MemberExpression &&
               object.property.type === AST_NODE_TYPES.Identifier &&
-              object.property.name === 'batchManager'
+              object.property.name === BATCH_MANAGER
             ) {
-              return true;
+              return !isRealtimeBatchUpdate(node, object);
             }
 
             if (object.type === AST_NODE_TYPES.CallExpression) {
