@@ -881,6 +881,149 @@ ruleTesterTs.run(
         ],
         output: `function Component() { return (loading ?? error) && <Spinner />; }`,
       },
+
+      // ===== REGRESSION TESTS FOR ISSUE #1720 =====
+      // Source parens are not part of an operand's range, so replacing the whole
+      // LogicalExpression drops exactly the parens `??` makes mandatory. Every
+      // operand that is itself a LogicalExpression must come back parenthesized.
+      {
+        code: `const value = (a || b) || c;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a || b', right: 'c' },
+          },
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `const value = (a || b) ?? c;`,
+      },
+      {
+        code: `const value = (a && b) || c;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a && b', right: 'c' },
+          },
+        ],
+        output: `const value = (a && b) ?? c;`,
+      },
+      {
+        code: `const value = a || (b && c);`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b && c' },
+          },
+        ],
+        output: `const value = a ?? (b && c);`,
+      },
+      {
+        code: `const value = a || (b || c);`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b || c' },
+          },
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'b', right: 'c' },
+          },
+        ],
+        output: `const value = a ?? (b || c);`,
+      },
+      // A `||` chain converts one link per pass, because the links share a range
+      // and only the innermost fix survives. The converted link is parenthesized
+      // so the half-converted chain still parses.
+      {
+        code: `const value = a || b || c;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a || b', right: 'c' },
+          },
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `const value = (a ?? b) || c;`,
+      },
+      {
+        code: `const value = a || b || c || d;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a || b || c', right: 'd' },
+          },
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a || b', right: 'c' },
+          },
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `const value = (a ?? b) || c || d;`,
+      },
+      {
+        code: `const value = (a || b) || (c || d);`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a || b', right: 'c || d' },
+          },
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'c', right: 'd' },
+          },
+        ],
+        output: `const value = (a || b) ?? (c || d);`,
+      },
+      // An operand that is already `??` needs no parens for legality, but keeping
+      // them is harmless and preserves the author's grouping verbatim.
+      {
+        code: `const value = (a ?? b) || c;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a ?? b', right: 'c' },
+          },
+        ],
+        output: `const value = (a ?? b) ?? c;`,
+      },
+      {
+        code: `const value = a || (b ?? c);`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b ?? c' },
+          },
+        ],
+        output: `const value = a ?? (b ?? c);`,
+      },
+      // Shape taken from a real consumer site
+      // (functions/src/util/propagation/PropagationHandlerBuilderRtdb.ts).
+      {
+        code: `const value = ('k' in strategy && strategy.k) || !!strategy.t;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: {
+              left: `'k' in strategy && strategy.k`,
+              right: '!!strategy.t',
+            },
+          },
+        ],
+        output: `const value = ('k' in strategy && strategy.k) ?? !!strategy.t;`,
+      },
     ],
   },
 );
@@ -933,5 +1076,86 @@ describe('prefer-nullish-coalescing-boolean-props without TypeScript parser serv
     expect(messages).toHaveLength(1);
     expect(messages[0].messageId).toBe('preferNullishCoalescing');
     expect(messages[0].fatal).toBeUndefined();
+  });
+});
+
+// ===== REGRESSION TESTS FOR ISSUE #1720 =====
+// The defect is in the *emitted program*, not in any single report: `??` cannot
+// share an expression with an unparenthesized `&&`/`||`, so a per-report
+// `output:` comparison passes while `--fix` writes source that does not parse.
+// These cases assert the whole fixed program re-parses.
+describe('prefer-nullish-coalescing-boolean-props emits parseable code', () => {
+  const RULE_ID = '@blumintinc/blumint/prefer-nullish-coalescing-boolean-props';
+
+  const fixAll = (code: string) => {
+    const linter = new Linter();
+    linter.defineRule(
+      RULE_ID,
+      preferNullishCoalescingBooleanProps as unknown as Rule.RuleModule,
+    );
+    return linter.verifyAndFix(
+      code,
+      {
+        parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+        rules: { [RULE_ID]: 'error' },
+      },
+      'example.js',
+    );
+  };
+
+  const LOGICAL_OPERAND_CASES = [
+    `const value = (a || b) || c;`,
+    `const value = (a && b) || c;`,
+    `const value = a || (b && c);`,
+    `const value = a || (b || c);`,
+    `const value = a || b || c;`,
+    `const value = a || b || c || d;`,
+    `const value = (a || b) || (c || d);`,
+    `const value = (a ?? b) || c;`,
+    `const value = a || (b ?? c);`,
+    `const value = x && (a || b);`,
+    `const value = cond ? (a || b) || c : d;`,
+    `const value = g((a && b) || c, other);`,
+    `const value = () => (a || b) || c;`,
+    `const value = ('k' in strategy && strategy.k) || !!strategy.t;`,
+    // Partial-chain shape from a real consumer site (src/middleware.ts).
+    `async function middleware(request) {
+  return (
+    adsRedirectMiddleware(request) ||
+    withPrependUtc(request)(
+      parkingMiddleware(request) ||
+        gameMiddleware(request) ||
+        deduceIsItemMiddleware(request) ||
+        (await resolveUsernameSlugMiddleware(request)) ||
+        profileMiddleware(request) ||
+        (await shortenedUrlMiddleware(request)) ||
+        (await rejectUnauthenticatedMiddleware(request)) ||
+        NextResponse.next(),
+    )
+  );
+}`,
+  ];
+
+  it.each(LOGICAL_OPERAND_CASES)(
+    'produces output that re-parses: %s',
+    (code) => {
+      const { output, messages } = fixAll(code);
+      const fatal = messages.filter((message) => message.fatal);
+      expect({ code, output, fatal }).toEqual({ code, output, fatal: [] });
+    },
+  );
+
+  // Non-vacuity: the assertion above only means something if the fixer actually
+  // rewrote these inputs. A rule that reported nothing would pass it trivially.
+  it('rewrites every logical-operand case it is handed', () => {
+    const unfixed = LOGICAL_OPERAND_CASES.filter((code) => !fixAll(code).fixed);
+    expect(unfixed).toEqual([]);
+  });
+
+  // Positive control: the exact string the pre-fix fixer emitted must be seen as
+  // a fatal parse error, proving the harness can detect the defect it guards.
+  it('detects a mixed ?? / || program as a fatal parse error', () => {
+    const { messages } = fixAll('const value = a || b ?? c;');
+    expect(messages.some((message) => message.fatal)).toBe(true);
   });
 });
