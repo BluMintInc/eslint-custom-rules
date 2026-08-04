@@ -1,3 +1,13 @@
+## [1.20.105](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.104...v1.20.105) (2026-08-04)
+
+
+### Bug Fixes
+
+* **enforce-dynamic-firebase-imports:** exempt never-bundled files (closes [#1715](https://github.com/BluMintInc/eslint-custom-rules/issues/1715)) ([81017db](https://github.com/BluMintInc/eslint-custom-rules/commit/81017dba9830b1090f0740d3184d59468a5ff881))
+* **enforce-dynamic-firebase-imports:** relocate the dynamic import to its call site (closes [#1716](https://github.com/BluMintInc/eslint-custom-rules/issues/1716)) ([6024f18](https://github.com/BluMintInc/eslint-custom-rules/commit/6024f18263420e1e16a0ec37ad98c44e77770e58))
+* **enforce-empty-object-check:** exempt constructable types, not just callable ones (closes [#1718](https://github.com/BluMintInc/eslint-custom-rules/issues/1718)) ([34f6c75](https://github.com/BluMintInc/eslint-custom-rules/commit/34f6c754b9473d30f7980e015c303daee81ae849))
+* **memoize-root-level-hocs:** require component evidence, not just a with[A-Z] name (closes [#1717](https://github.com/BluMintInc/eslint-custom-rules/issues/1717)) ([a39838f](https://github.com/BluMintInc/eslint-custom-rules/commit/a39838f20770d6c2d687859623d7384ff3b993fc))
+
 ## [1.20.104](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.103...v1.20.104) (2026-08-04)
 
 

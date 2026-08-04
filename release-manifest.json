@@ -1,5 +1,36 @@
 [
   {
+    "version": "1.20.105",
+    "date": "2026-08-04T22:42:11.381Z",
+    "rules": [
+      {
+        "name": "enforce-dynamic-firebase-imports",
+        "changeType": "fix",
+        "issues": [
+          1715,
+          1716
+        ],
+        "summary": "relocate the dynamic import to its call site (closes #1716); exempt never-bundled files (closes #1715)"
+      },
+      {
+        "name": "enforce-empty-object-check",
+        "changeType": "fix",
+        "issues": [
+          1718
+        ],
+        "summary": "exempt constructable types, not just callable ones (closes #1718)"
+      },
+      {
+        "name": "memoize-root-level-hocs",
+        "changeType": "fix",
+        "issues": [
+          1717
+        ],
+        "summary": "require component evidence, not just a with[A-Z] name (closes #1717)"
+      }
+    ]
+  },
+  {
     "version": "1.20.104",
     "date": "2026-08-04T20:46:47.102Z",
     "rules": [
