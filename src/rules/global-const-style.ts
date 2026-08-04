@@ -26,6 +26,38 @@ const toUpperSnakeCase = (name: string): string =>
     .toUpperCase()
     .replace(/^_/, '');
 
+// `x as T`, `<T>x`, `x satisfies T` and `x!` annotate or assert an expression
+// without contributing a value of their own, so a check that classifies the
+// *shape* of an initializer must look through all four alike. Recognizing only
+// some of them makes the rule's carve-outs depend on which type syntax an
+// author happened to reach for: a React component written
+// `memo(Foo) satisfies ComponentType` or `memo(Foo)!` read as opaque
+// expressions and were renamed to UPPER_SNAKE_CASE while `memo(Foo) as FC` was
+// exempt (Issue #1681).
+const VALUE_WRAPPER_TYPES = new Set([
+  AST_NODE_TYPES.TSAsExpression,
+  AST_NODE_TYPES.TSTypeAssertion,
+  AST_NODE_TYPES.TSSatisfiesExpression,
+  AST_NODE_TYPES.TSNonNullExpression,
+]);
+
+type ValueWrapper =
+  | TSESTree.TSAsExpression
+  | TSESTree.TSTypeAssertion
+  | TSESTree.TSSatisfiesExpression
+  | TSESTree.TSNonNullExpression;
+
+const isValueWrapper = (node: TSESTree.Node): node is ValueWrapper =>
+  VALUE_WRAPPER_TYPES.has(node.type);
+
+const unwrapValueWrappers = (node: TSESTree.Node): TSESTree.Node => {
+  let target: TSESTree.Node = node;
+  while (isValueWrapper(target)) {
+    target = target.expression;
+  }
+  return target;
+};
+
 // Jest mock handles produced by an `as` cast to a `jest.Mock*` type are
 // stateful test doubles that are reassigned/mutated through
 // `.mockImplementation()`, `.mockReturnValue()`, etc. They are not immutable
@@ -42,11 +74,9 @@ const JEST_MOCK_TYPE_NAMES = new Set([
 // `jest.Mocked<...>` / `jest.MockedClass<...>`. The match is kept deliberately
 // narrow — a qualified `jest.<MockType>` type reference — so unrelated `as`
 // casts keep triggering the rename check.
-const isJestMockCast = (node: TSESTree.Node): boolean => {
-  if (node.type !== AST_NODE_TYPES.TSAsExpression) {
-    return false;
-  }
-  const typeAnnotation = node.typeAnnotation;
+const isJestMockTypeReference = (
+  typeAnnotation: TSESTree.TypeNode,
+): boolean => {
   if (typeAnnotation.type !== AST_NODE_TYPES.TSTypeReference) {
     return false;
   }
@@ -59,6 +89,52 @@ const isJestMockCast = (node: TSESTree.Node): boolean => {
     JEST_MOCK_TYPE_NAMES.has(typeName.right.name)
   );
 };
+
+// The cast can sit anywhere in a wrapper chain (`(foo as jest.Mock)!`,
+// `foo as jest.Mock satisfies unknown`), so the whole chain is scanned rather
+// than the outermost node alone — a mock handle stays a mock handle whatever is
+// wrapped around the cast.
+const isJestMockCast = (node: TSESTree.Node): boolean => {
+  let current: TSESTree.Node = node;
+  while (isValueWrapper(current)) {
+    if (
+      current.type === AST_NODE_TYPES.TSAsExpression &&
+      isJestMockTypeReference(current.typeAnnotation)
+    ) {
+      return true;
+    }
+    current = current.expression;
+  }
+  return false;
+};
+
+// React's component factories, called bare (`memo(Foo)`) or through a namespace
+// import (`React.memo(Foo)`).
+const COMPONENT_FACTORY_NAMES = new Set(['forwardRef', 'memo']);
+
+const isComponentFactoryCall = (node: TSESTree.Node): boolean => {
+  if (node.type !== AST_NODE_TYPES.CallExpression) {
+    return false;
+  }
+  const { callee } = node;
+  if (callee.type === AST_NODE_TYPES.Identifier) {
+    return COMPONENT_FACTORY_NAMES.has(callee.name);
+  }
+  return (
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    !callee.computed &&
+    callee.property.type === AST_NODE_TYPES.Identifier &&
+    COMPONENT_FACTORY_NAMES.has(callee.property.name)
+  );
+};
+
+// A function value is a component, hook or helper, never the module-level
+// configuration value this rule governs. The two spellings are interchangeable
+// at a declaration site, so `const Row = function (props) {...}` is exempt on
+// the same terms as `const Row = (props) => {...}` (Issue #1681).
+const isFunctionValue = (node: TSESTree.Node): boolean =>
+  node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+  node.type === AST_NODE_TYPES.FunctionExpression;
 
 /**
  * Walks the scope chain upward from `scope` (inclusive) and reports whether
@@ -169,7 +245,16 @@ export default createRule<[], MessageIds>({
       context.getFilename().endsWith('.ts') ||
       context.getFilename().endsWith('.tsx');
 
-    const unwrapAssertions = (node: TSESTree.Node): TSESTree.Node => {
+    /**
+     * Strips `as`/`<T>` casts only, and is deliberately narrower than
+     * `unwrapValueWrappers`. The two carve-outs below — dynamic values and
+     * binding aliases — silence the rule entirely, so widening them to see
+     * through `!`/`satisfies` would newly exempt `const value = getValue()!`
+     * and `const alias = other!` from the rename check. That is a detection
+     * change of its own, distinct from the wrapper-blind component exemption
+     * `unwrapValueWrappers` cures (Issue #1681).
+     */
+    const unwrapCasts = (node: TSESTree.Node): TSESTree.Node => {
       let target = node;
       while (
         target.type === AST_NODE_TYPES.TSTypeAssertion ||
@@ -181,7 +266,7 @@ export default createRule<[], MessageIds>({
     };
 
     const isDynamicValue = (node: TSESTree.Node): boolean => {
-      const target = unwrapAssertions(node);
+      const target = unwrapCasts(node);
 
       if (
         target.type === AST_NODE_TYPES.CallExpression ||
@@ -212,13 +297,13 @@ export default createRule<[], MessageIds>({
      * such a re-export is preserving a name importers depend on and a
      * single-file fixer cannot rewrite them (Issue #1418).
      *
-     * The check unwraps assertions so a type-pinned alias (`x as Foo`,
+     * The check unwraps casts so a type-pinned alias (`x as Foo`,
      * `x as const`) is treated the same as the bare form. A `MemberExpression`
      * (`Foo.bar`) is deliberately not covered — it keeps whatever behavior
      * `isDynamicValue` already gives it.
      */
     const isBindingAlias = (node: TSESTree.Node): boolean => {
-      const target = unwrapAssertions(node);
+      const target = unwrapCasts(node);
 
       return (
         target.type === AST_NODE_TYPES.Identifier &&
@@ -227,7 +312,7 @@ export default createRule<[], MessageIds>({
     };
 
     const describeValueKind = (node: TSESTree.Node): string => {
-      const target = unwrapAssertions(node);
+      const target = unwrapValueWrappers(node);
 
       if (target.type === AST_NODE_TYPES.ArrayExpression) {
         return 'an array literal';
@@ -256,13 +341,16 @@ export default createRule<[], MessageIds>({
           return;
         }
 
-        // Skip if any declaration is a function component, arrow function, forwardRef, or memo
+        // Skip if any declaration is a function value (component, hook or
+        // helper) or a `memo`/`forwardRef` component factory call. The
+        // initializer is classified through any type wrappers, so the pinned
+        // forms (`… as FC`, `… satisfies ComponentType`, `…!`) are exempt on
+        // the same terms as the bare expression they wrap.
         const shouldSkip = node.declarations.some((declaration) => {
           if (declaration.id.type !== AST_NODE_TYPES.Identifier) {
             return false;
           }
 
-          const name = declaration.id.name;
           const init = declaration.init;
 
           // Skip if no initializer
@@ -270,38 +358,9 @@ export default createRule<[], MessageIds>({
             return false;
           }
 
-          // Skip function components (uppercase name + arrow function)
-          if (
-            /^[A-Z]/.test(name) &&
-            init.type === AST_NODE_TYPES.ArrowFunctionExpression
-          ) {
-            return true;
-          }
+          const target = unwrapValueWrappers(init);
 
-          // Skip any arrow function
-          if (init.type === AST_NODE_TYPES.ArrowFunctionExpression) {
-            return true;
-          }
-
-          // Skip forwardRef and memo calls
-          if (init.type === AST_NODE_TYPES.CallExpression) {
-            if (init.callee.type === AST_NODE_TYPES.Identifier) {
-              return ['forwardRef', 'memo'].includes(init.callee.name);
-            }
-          }
-
-          // Skip type assertions on forwardRef and memo calls
-          if (init.type === AST_NODE_TYPES.TSAsExpression) {
-            const expression = init.expression;
-            if (
-              expression.type === AST_NODE_TYPES.CallExpression &&
-              expression.callee.type === AST_NODE_TYPES.Identifier
-            ) {
-              return ['forwardRef', 'memo'].includes(expression.callee.name);
-            }
-          }
-
-          return false;
+          return isFunctionValue(target) || isComponentFactoryCall(target);
         });
 
         if (shouldSkip) {
@@ -332,19 +391,21 @@ export default createRule<[], MessageIds>({
 
           // Only check for as const in TypeScript files
           if (isTypeScript) {
+            // An `as const` anywhere in the wrapper chain already freezes the
+            // value, including when a later wrapper hides it
+            // (`{...} as const satisfies Config`, `({...} as const)!`).
             const hasAsConstAssertion = (node: TSESTree.Node): boolean => {
-              let current: TSESTree.Node | undefined = node;
+              let current: TSESTree.Node = node;
 
-              while (
-                current &&
-                (current.type === AST_NODE_TYPES.TSAsExpression ||
-                  current.type === AST_NODE_TYPES.TSTypeAssertion)
-              ) {
-                const { typeAnnotation } = current;
+              while (isValueWrapper(current)) {
                 if (
-                  typeAnnotation?.type === AST_NODE_TYPES.TSTypeReference &&
-                  typeAnnotation.typeName.type === AST_NODE_TYPES.Identifier &&
-                  typeAnnotation.typeName.name === 'const'
+                  (current.type === AST_NODE_TYPES.TSAsExpression ||
+                    current.type === AST_NODE_TYPES.TSTypeAssertion) &&
+                  current.typeAnnotation.type ===
+                    AST_NODE_TYPES.TSTypeReference &&
+                  current.typeAnnotation.typeName.type ===
+                    AST_NODE_TYPES.Identifier &&
+                  current.typeAnnotation.typeName.name === 'const'
                 ) {
                   return true;
                 }
@@ -360,15 +421,16 @@ export default createRule<[], MessageIds>({
                 return false;
               }
 
-              const target = unwrapAssertions(node);
+              const target = unwrapValueWrappers(node);
 
-              // Skip an initializer already wrapped in a non-`const` assertion
-              // (`{...} as T`, `<T>{...}`, `{...} as unknown as T`). A `const`
-              // assertion may only be applied to a literal, so appending one
-              // after an assertion chain is TS1355 — the same failure mode the
-              // regex/null/boolean carve-outs below exist for. Such a cast is
-              // also the author pinning the type deliberately, exactly like the
-              // `id.typeAnnotation` case skipped next.
+              // Skip an initializer already wrapped in a non-`const` type
+              // wrapper (`{...} as T`, `<T>{...}`, `{...} as unknown as T`,
+              // `{...} satisfies T`, `{...}!`). A `const` assertion may only be
+              // applied to a literal, so appending one after such a chain is
+              // TS1355 — the same failure mode the regex/null/boolean carve-outs
+              // below exist for. Such a wrapper is also the author pinning the
+              // type deliberately, exactly like the `id.typeAnnotation` case
+              // skipped next.
               if (target !== node) {
                 return false;
               }

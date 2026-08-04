@@ -49,33 +49,81 @@ const DEFAULT_TIMEOUT = 1000 * 60;
 // Destructuring (not affected by this rule)
 const { apiUrl, maxRetries } = config;
 
-// React components and hooks at module scope (not affected)
+// React components and hooks at module scope (not affected), in either
+// function spelling and however their type is pinned
 const MyComponent = () => null;
+const Row = function (props) {
+  return null;
+};
 const memoized = memo(MyComponent);
+const MemoizedRow = memo(Row) satisfies ComponentType;
 
 // Next.js reserved export names (not renamed — the literal export name is a
 // framework contract; renaming `config` would silently break the API route)
 export const config = { api: { bodyParser: { sizeLimit: '16kb' } } } as const;
 ```
 
-### Initializers that already carry a type assertion
+### Function values and React components
 
-An initializer wrapped in a non-`const` assertion is exempt from the `as const`
-requirement:
+Neither half of the rule applies to a `const` whose initializer is a function
+value or a React component factory call:
+
+```ts
+// Function values — arrow and function-expression spellings alike.
+const MyComponent = () => null;
+const Row = function (props) {
+  return null;
+};
+const useThing = function () {
+  return useState(0);
+};
+
+// `memo` / `forwardRef`, called bare or through a namespace import.
+const MemoizedRow = memo(Row);
+const ForwardedRow = React.forwardRef(RowRefless);
+```
+
+The initializer is classified through any type wrapper, so the exemption holds
+however the author pins the type — `as T`, `<T>`, `satisfies T` and `!` all wrap
+the same value:
+
+```ts
+const MemoizedRow = memo(Row) as FC;
+const MemoizedCell = memo(Cell) satisfies ComponentType;
+const MemoizedGrid = React.memo(Grid)!;
+```
+
+Renaming a component to `SCREAMING_SNAKE` fights the React naming convention and
+also hides the declaration from every component-keyed sibling rule, each of which
+recognizes a component by its PascalCase binding.
+
+A wrapper is looked through, never treated as a carve-out of its own, so a data
+constant keeps exactly the reports it carries without one:
+
+```ts
+// Still renamed to CONFIG / RETRY_DELAYS.
+const config = { a: 1 } satisfies Config;
+const retryDelays = [1, 2, 3] satisfies number[];
+```
+
+### Initializers that already carry a type wrapper
+
+An initializer wrapped in a non-`const` assertion, a `satisfies` clause, or a
+non-null assertion is exempt from the `as const` requirement:
 
 ```ts
 // Not flagged — the author has already pinned the type.
 const CONFIG = { a: 1 } as Foo;
 const PHONE_PROVIDER = { providerId: 'phone' } as unknown as UserProviderInfo;
 const THEME = <Theme>{ primary: '#000' };
+const LIMITS = { max: 10 } satisfies Limits;
 ```
 
 TypeScript permits a `const` assertion only on a literal, so appending one after
-an `as`-expression is a compile error (TS1355: *A 'const' assertion can only be
+such a wrapper is a compile error (TS1355: *A 'const' assertion can only be
 applied to references to enum members, or string, number, boolean, array, or
-object literals*). An `as X` cast is also the author pinning the type
-deliberately — the same intent as the explicit `id` annotation the rule already
-skips.
+object literals*). The wrapper is also the author pinning the type deliberately —
+the same intent as the explicit `id` annotation the rule already skips.
 
 To get both an exact literal type and a widening cast, put the `const`
 assertion on the literal itself, where it is legal:
@@ -112,7 +160,8 @@ mockedFetch.mockResolvedValue('ok');
 ```
 
 The exemption covers `jest.Mock`, `jest.MockedFunction`, `jest.Mocked`, and
-`jest.MockedClass` casts. These handles are reassigned through
+`jest.MockedClass` casts, wherever the cast sits in a wrapper chain
+(`(fetchData as jest.Mock)!`). These handles are reassigned through
 `.mockImplementation()`, `.mockReturnValue()`, etc. — they are not immutable
 module configuration, and the `mockedX` camelCase spelling is the established
 idiom, so renaming them to `UPPER_SNAKE_CASE` would fight the convention.
