@@ -76,6 +76,46 @@ const Parent = ({ title, ...props }: ParentProps) => (
 );
 ```
 
+### Union props types
+
+A union satisfies the requirement when **any** arm does — on either side of the
+relationship.
+
+On the **parent's** side, a discriminated union Props type composes as soon as
+one arm composes with a rendered child. Requiring every arm to compose with every
+child would flag the common shape where each arm renders a different control.
+
+On the **child's** side, composing with a *member* of the child's union props
+type composes with the child. `Pick<ChildChipProps, 'label'>` inherits exactly
+the surface the child accepts on that arm, so the anti-duplication guarantee
+holds just as it does for the union alias itself:
+
+```tsx
+type ChildSwitchProps = Readonly<{ variant?: 'switch'; label: string }>;
+type ChildChipProps = Readonly<{ variant: 'chip'; label: string }>;
+type ChildProps = ChildSwitchProps | ChildChipProps;
+
+const Child = (props: ChildProps) => <div>{props.label}</div>;
+
+// Composing with the chip arm composes with Child, as Pick<ChildProps, …> does.
+type ChipRowProps = Readonly<Pick<ChildChipProps, 'label'>>;
+
+const ChipRow = ({ label }: ChipRowProps) => (
+  <Child label={label} variant="chip" />
+);
+```
+
+The arms are read from wherever the child's props type is declared: the file
+under lint, or the sibling module the child is imported from — under the exported
+name or under any local rename (`import type { ChildChipProps as ChipProps }`).
+Arms spelled as a named type reference count, including those reached through a
+`Readonly<...>` wrapper or a nested union alias.
+
+Only the union's own arms count. A type that is merely declared alongside the
+child, and a fragment of one arm, say nothing about the surface the child
+accepts, so a parent composing with either still reports — as does a parent that
+composes with nothing at all.
+
 ### Zero-prop children
 
 Rendering a component that takes **no props** does not by itself require

@@ -1025,6 +1025,139 @@ export const SlotView = memo(function SlotViewUnmemoized({
 });
 `,
     },
+    // 60. Issue #1709: a child whose props are a union — composing with one
+    // MEMBER composes with the child's surface, the same way #1343 credits any
+    // arm on the parent side.
+    {
+      filename: 'src/components/MemberComposed.tsx',
+      code: `
+type ChildSwitchProps = Readonly<{ variant: 'switch'; label: string }>;
+type ChildChipProps = Readonly<{ variant: 'chip'; label: string }>;
+type ChildProps = ChildSwitchProps | ChildChipProps;
+const Child = (props: ChildProps) => <div>{props.label}</div>;
+type MemberComposedProps = Readonly<Pick<ChildChipProps, 'label'>>;
+export const MemberComposed = ({ label }: MemberComposedProps) => (
+  <Child label={label} variant="chip" />
+);
+`,
+    },
+    // 61. Issue #1709: the union ALIAS itself keeps composing — the negative
+    // control that isolates the defect to the member spelling.
+    {
+      filename: 'src/components/AliasComposed.tsx',
+      code: `
+type ChildSwitchProps = Readonly<{ variant: 'switch'; label: string }>;
+type ChildChipProps = Readonly<{ variant: 'chip'; label: string }>;
+type ChildProps = ChildSwitchProps | ChildChipProps;
+const Child = (props: ChildProps) => <div>{props.label}</div>;
+type AliasComposedProps = Readonly<Pick<ChildProps, 'label'>>;
+export const AliasComposed = ({ label }: AliasComposedProps) => (
+  <Child label={label} variant="chip" />
+);
+`,
+    },
+    // 62. Issue #1709, the real agora shape: the union lives in the SIBLING
+    // module that exports the child, so crediting the member requires resolving
+    // UnionChild.tsx off disk and enumerating UnionChildProps' arms.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { UnionChild } from './UnionChild';
+import type { UnionChildChipProps } from './UnionChild';
+
+type ChipRowProps = Readonly<Pick<UnionChildChipProps, 'label'>>;
+
+export const ChipRow = ({ label }: ChipRowProps) => (
+  <UnionChild label={label} variant="chip" />
+);
+`,
+    },
+    // 63. Issue #1709: the imported member renamed at the import site. The
+    // composition is written with the LOCAL spelling, which is the only name the
+    // parent file ever mentions.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { UnionChild } from './UnionChild';
+import type { UnionChildChipProps as ChipProps } from './UnionChild';
+
+type RenamedChipRowProps = Readonly<Pick<ChipProps, 'label'>>;
+
+export const RenamedChipRow = ({ label }: RenamedChipRowProps) => (
+  <UnionChild label={label} variant="chip" />
+);
+`,
+    },
+    // 64. Issue #1709: a memo-wrapped parent composing with a cross-file union
+    // member — the wrapper must not hide the composition.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { memo } from 'react';
+import { UnionChild } from './UnionChild';
+import type { UnionChildChipProps } from './UnionChild';
+
+type MemoChipRowProps = Readonly<Pick<UnionChildChipProps, 'label'>>;
+
+export const MemoChipRow = memo(function MemoChipRowUnmemoized({
+  label,
+}: MemoChipRowProps) {
+  return <UnionChild label={label} variant="chip" />;
+});
+`,
+    },
+    // 65. Issue #1709: the arms carry their own `Readonly<...>` wrapper. The
+    // wrapper adds no surface, so `Readonly<ChildChipProps>` is still the
+    // ChildChipProps arm.
+    {
+      filename: 'src/components/WrappedArmComposed.tsx',
+      code: `
+type ChildSwitchProps = { variant: 'switch'; label: string };
+type ChildChipProps = { variant: 'chip'; label: string };
+type ChildProps = Readonly<ChildSwitchProps> | Readonly<ChildChipProps>;
+const Child = (props: ChildProps) => <div>{props.label}</div>;
+type WrappedArmComposedProps = Readonly<Pick<ChildChipProps, 'label'>>;
+export const WrappedArmComposed = ({ label }: WrappedArmComposedProps) => (
+  <Child label={label} variant="chip" />
+);
+`,
+    },
+    // 66. Issue #1709: a nested union alias flattens into the enclosing union in
+    // TypeScript, so its arms are arms of the child's props type too.
+    {
+      filename: 'src/components/NestedArmComposed.tsx',
+      code: `
+type ChildChipProps = Readonly<{ variant: 'chip'; label: string }>;
+type ChildIconProps = Readonly<{ variant: 'icon'; label: string }>;
+type ChildToggleProps = ChildChipProps | ChildIconProps;
+type ChildSwitchProps = Readonly<{ variant: 'switch'; label: string }>;
+type ChildProps = ChildSwitchProps | ChildToggleProps;
+const Child = (props: ChildProps) => <div>{props.label}</div>;
+type NestedArmComposedProps = Readonly<Pick<ChildIconProps, 'label'>>;
+export const NestedArmComposed = ({ label }: NestedArmComposedProps) => (
+  <Child label={label} variant="icon" />
+);
+`,
+    },
+    // 67. Issue #1709: the union is reached through the child's parameter
+    // annotation rather than a {Child}Props alias, and through a Readonly
+    // wrapper on the way — the agora spelling of the child side.
+    {
+      filename: 'src/components/ParamUnionComposed.tsx',
+      code: `
+type ChildSwitchProps = Readonly<{ variant: 'switch'; label: string }>;
+type ChildChipProps = Readonly<{ variant: 'chip'; label: string }>;
+type ChildVariantProps = ChildSwitchProps | ChildChipProps;
+const Child = (props: Readonly<ChildVariantProps>) => <div>{props.label}</div>;
+type ParamUnionComposedProps = Readonly<Pick<ChildChipProps, 'label'>>;
+export const ParamUnionComposed = ({ label }: ParamUnionComposedProps) => (
+  <Child label={label} variant="chip" />
+);
+`,
+    },
   ],
 
   invalid: [
@@ -2031,6 +2164,110 @@ const RegistryPanel = ({ value }: RegistryPanelProps) => {
   const { Widget } = registry;
   return <Widget value={value} />;
 };
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 57. Issue #1709 regression guard: crediting union MEMBERS must not degrade
+    // into "any referenced type counts". This parent composes with nothing at
+    // all while the child's props are a union, so it still reports.
+    {
+      filename: 'src/components/NoComposition.tsx',
+      code: `
+type ChildSwitchProps = Readonly<{ variant: 'switch'; label: string }>;
+type ChildChipProps = Readonly<{ variant: 'chip'; label: string }>;
+type ChildProps = ChildSwitchProps | ChildChipProps;
+const Child = (props: ChildProps) => <div>{props.label}</div>;
+type NoCompositionProps = Readonly<{ label: string }>;
+export const NoComposition = ({ label }: NoCompositionProps) => (
+  <Child label={label} variant="chip" />
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 58. Issue #1709: composing with a named type that is NOT a member of the
+    // child's union proves nothing about the child's surface, so it reports.
+    // Distinguishes "a member of the union" from "any sibling alias in scope".
+    {
+      filename: 'src/components/StrangerComposed.tsx',
+      code: `
+type ChildSwitchProps = Readonly<{ variant: 'switch'; label: string }>;
+type ChildChipProps = Readonly<{ variant: 'chip'; label: string }>;
+type ChildProps = ChildSwitchProps | ChildChipProps;
+type UnrelatedProps = Readonly<{ label: string; href: string }>;
+const Child = (props: ChildProps) => <div>{props.label}</div>;
+type StrangerComposedProps = Readonly<Pick<UnrelatedProps, 'label'>>;
+export const StrangerComposed = ({ label }: StrangerComposedProps) => (
+  <Child label={label} variant="chip" />
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 59. Issue #1709: the cross-file mirror of the guard above — the sibling
+    // module really is resolved, and it really does hold a union, yet a parent
+    // composing with nothing still reports.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { UnionChild } from './UnionChild';
+
+type BareChipRowProps = Readonly<{ label: string }>;
+
+export const BareChipRow = ({ label }: BareChipRowProps) => (
+  <UnionChild label={label} variant="chip" />
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 60. Issue #1709: a type exported from the child's own module that is NOT
+    // an arm of the child's props union proves nothing about the child's
+    // surface, so co-location in the resolved module is not enough.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { UnionChild } from './UnionChild';
+import type { SoloChildProps } from './UnionChild';
+
+type StrangerChipRowProps = Readonly<Pick<SoloChildProps, 'label'>>;
+
+export const StrangerChipRow = ({ label }: StrangerChipRowProps) => (
+  <UnionChild label={label} variant="chip" />
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 61. Issue #1709: the resolved child's props are a single shape rather than
+    // a union, so there are no members to credit and the unrelated composition
+    // still reports.
+    {
+      filename: FIXTURE_FILENAME,
+      options: FIXTURE_OPTIONS,
+      code: `
+import { SoloChild } from './UnionChild';
+import type { UnionChildChipProps } from './UnionChild';
+
+type SoloRowProps = Readonly<Pick<UnionChildChipProps, 'label'>>;
+
+export const SoloRow = ({ label }: SoloRowProps) => (
+  <SoloChild label={label} />
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 62. Issue #1709: resolving TOWARDS a union must not name the aliases it
+    // passes through. `ChildProps` is a plain alias chain ending at an object
+    // type — there is no union and therefore no member to credit.
+    {
+      filename: 'src/components/ChainComposed.tsx',
+      code: `
+type ChildShapeProps = Readonly<{ variant: 'chip'; label: string }>;
+type ChildProps = ChildShapeProps;
+const Child = (props: ChildProps) => <div>{props.label}</div>;
+type ChainComposedProps = Readonly<Pick<ChildShapeProps, 'label'>>;
+export const ChainComposed = ({ label }: ChainComposedProps) => (
+  <Child label={label} variant="chip" />
+);
 `,
       errors: [{ messageId: 'missingPropsComposition' }],
     },
