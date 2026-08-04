@@ -1358,6 +1358,265 @@ ruleTesterTs.run(
         }
       `,
       },
+
+      // Alias twins of the interface controls above. Named-generic resolution
+      // reads both spellings, so a compliant schema stays silent whichever one
+      // it is written in.
+      // Nested alias referenced from another alias
+      {
+        code: `
+        type Address = {
+          street: string;
+          city: string;
+        };
+        type User = {
+          name: string;
+          addresses: Address[];
+        };
+        const userRef: DocumentReference<User> = db.collection('users').doc(userId);
+      `,
+      },
+      // Intersection of two aliases
+      {
+        code: `
+        type Timestamps = {
+          createdAt: Date;
+          updatedAt: Date;
+        };
+        type User = {
+          name: string;
+        };
+        const userRef: DocumentReference<User & Timestamps> = db.collection('users').doc(userId);
+      `,
+      },
+      // Alias carrying its own type parameter
+      {
+        code: `
+        type Collection<T> = {
+          data: T;
+        };
+        type User = {
+          name: string;
+        };
+        const ref: DocumentReference<Collection<User>> = db.collection('collections').doc(id);
+      `,
+      },
+      // Deeply nested object members
+      {
+        code: `
+        type User = {
+          name: string;
+          metadata: {
+            lastLogin: Date;
+            preferences: {
+              theme: 'light' | 'dark';
+              notifications: boolean;
+            };
+          };
+        };
+        const userRef: DocumentReference<User> = db.collection('users').doc(userId);
+      `,
+      },
+      // Optional properties
+      {
+        code: `
+        type User = {
+          name: string;
+          middleName?: string;
+        };
+        const userRef: DocumentReference<User> = db.collection('users').doc(userId);
+      `,
+      },
+      // Readonly applied at the reference
+      {
+        code: `
+        type User = {
+          readonly id: string;
+          name: string;
+        };
+        const userRef: DocumentReference<Readonly<User>> = db.collection('users').doc(userId);
+      `,
+      },
+      // Readonly applied inside the alias: one field-preserving wrapper is
+      // looked through, so the members are read and found compliant
+      {
+        code: `
+        type User = Readonly<{
+          name: string;
+          age: number;
+        }>;
+        const userRef: DocumentReference<User> = db.collection('users').doc(userId);
+      `,
+      },
+      // Alias on a class member annotation
+      {
+        code: `
+        type User = {
+          name: string;
+        };
+        class UserService {
+          private userRef: DocumentReference<User>;
+          constructor(id: string) {
+            this.userRef = db.collection('users').doc(id);
+          }
+        }
+      `,
+      },
+      // Alias on CollectionReference
+      {
+        code: `
+        type User = {
+          name: string;
+          age: number;
+        };
+        const usersCollection: CollectionReference<User> = db.collection('users');
+      `,
+      },
+      // Alias on CollectionGroup
+      {
+        code: `
+        type Product = {
+          name: string;
+          price: number;
+        };
+        const productsGroup: CollectionGroup<Product> = db.collectionGroup('products');
+      `,
+      },
+      // Alias supplied at the call site
+      {
+        code: `
+        type User = {
+          name: string;
+          age: number;
+        };
+        const userRef = db.collection<User>('users').doc<User>(userId);
+      `,
+      },
+      // Alias schema on a typed collection bound to a const, then .doc()
+      {
+        code: `
+        type UserData = {
+          name: string;
+        };
+        const typedUsersCollection = db.collection<UserData>('users');
+        const typedUserDoc = typedUsersCollection.doc('123');
+      `,
+      },
+      // Alias schema reached through a class member's returned expression
+      {
+        code: `
+        type Settings = {
+          theme: string;
+        };
+        class ConfigService {
+          private getSettingsCollection() {
+            return db.collection<Settings>('settings');
+          }
+
+          getSettingsDoc(id: string) {
+            return this.getSettingsCollection().doc(id);
+          }
+        }
+      `,
+      },
+      // A self-referential alias must terminate rather than recurse forever
+      {
+        code: `
+        type TreeNode = {
+          label: string;
+          child: TreeNode;
+        };
+        const nodeRef: DocumentReference<TreeNode> = db.collection('nodes').doc(id);
+      `,
+      },
+
+      // Boundaries of named-generic resolution. Each of these leaves the
+      // schema unresolved, which is silence by design: the rule prefers a
+      // missed nested `any` to a report it cannot justify syntactically.
+      // An alias to a union has no single member list to read
+      {
+        code: `
+        type User = { data: any } | { name: string };
+        const userRef: DocumentReference<User> = db.collection('users').doc(userId);
+      `,
+      },
+      // An alias to an imported type resolves to nothing in this file
+      {
+        code: `
+        import { UserData } from './types';
+        type User = UserData;
+        const userRef: DocumentReference<User> = db.collection('users').doc(userId);
+      `,
+      },
+      // A wrapper that can drop fields is not looked through: the members it
+      // is given are not the document's members
+      {
+        code: `
+        type BaseUser = {
+          name: string;
+          audit: any;
+        };
+        type PartialUser = Partial<BaseUser>;
+        const userRef: DocumentReference<PartialUser> = db.collection('users').doc(id);
+      `,
+      },
+      // An exported declaration is nested inside its export statement, which
+      // the top-level lookup does not descend into. Both spellings behave
+      // identically here.
+      {
+        code: `
+        export interface User {
+          data: any;
+        }
+        const userRef: DocumentReference<User> = db.collection('users').doc(userId);
+      `,
+      },
+      {
+        code: `
+        export type User = {
+          data: any;
+        };
+        const userRef: DocumentReference<User> = db.collection('users').doc(userId);
+      `,
+      },
+      // A declaration nested in a function body is likewise out of reach, in
+      // both spellings
+      {
+        code: `
+        function scope() {
+          interface User {
+            data: any;
+          }
+          const userRef: DocumentReference<User> = db.collection('users').doc('1');
+          return userRef;
+        }
+      `,
+      },
+      {
+        code: `
+        function scope() {
+          type User = {
+            data: any;
+          };
+          const userRef: DocumentReference<User> = db.collection('users').doc('1');
+          return userRef;
+        }
+      `,
+      },
+      // A named empty declaration is not the inline `{}` the invalid-generic
+      // check targets, so neither spelling reports it
+      {
+        code: `
+        interface Empty {}
+        const userRef: DocumentReference<Empty> = db.collection('users').doc(userId);
+      `,
+      },
+      {
+        code: `
+        type Empty = {};
+        const userRef: DocumentReference<Empty> = db.collection('users').doc(userId);
+      `,
+      },
     ],
     invalid: [
       // Missing generic type - DocumentReference
@@ -1441,6 +1700,18 @@ ruleTesterTs.run(
         interface User {
           data: any;
         }
+        const userRef: DocumentReference<User> = db.collection('users').doc(userId);
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      // The alias twin of the case above. `prefer-type-over-interface` ships in
+      // the same recommended config and is fixable, so this is the spelling a
+      // codebase running the config actually has.
+      {
+        code: `
+        type User = {
+          data: any;
+        };
         const userRef: DocumentReference<User> = db.collection('users').doc(userId);
       `,
         errors: [invalidGenericError('DocumentReference')],
@@ -2036,6 +2307,273 @@ ruleTesterTs.run(
         }
       `,
         errors: [missingGenericError('DocumentReference')],
+      },
+
+      // The issue's exact spelling, paired: the interface control fires and the
+      // alias must fire identically.
+      {
+        code: `
+        interface User {
+          data: any;
+        }
+        declare const ref: DocumentReference<User>;
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      {
+        code: `
+        type User = {
+          data: any;
+        };
+        declare const ref: DocumentReference<User>;
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      // An empty object as a member erases that field either way
+      {
+        code: `
+        interface User {
+          config: {};
+        }
+        const userRef: DocumentReference<User> = db.collection('users').doc(userId);
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      {
+        code: `
+        type User = {
+          config: {};
+        };
+        const userRef: DocumentReference<User> = db.collection('users').doc(userId);
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      // Resolution chains across aliases
+      {
+        code: `
+        type Audit = {
+          entries: any;
+        };
+        type User = {
+          name: string;
+          audit: Audit;
+        };
+        const userRef: DocumentReference<User> = db.collection('users').doc(userId);
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      // One field-preserving wrapper is looked through, so the erased field is
+      // still found
+      {
+        code: `
+        type User = Readonly<{
+          data: any;
+        }>;
+        const userRef: DocumentReference<User> = db.collection('users').doc(userId);
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      // A declaration is hoisted, so its position relative to the reference
+      // does not decide whether it resolves
+      {
+        code: `
+        const userRef: DocumentReference<User> = db.collection('users').doc(userId);
+        type User = {
+          data: any;
+        };
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      // A self-referential alias must terminate and still report the erased
+      // field beside the cycle
+      {
+        code: `
+        type TreeNode = {
+          child: TreeNode;
+          data: any;
+        };
+        const nodeRef: DocumentReference<TreeNode> = db.collection('nodes').doc(id);
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      // The alias reached through a call-site generic
+      {
+        code: `
+        type User = {
+          data: any;
+        };
+        const usersCollection = db.collection<User>('users');
+      `,
+        errors: [invalidGenericError('CollectionReference')],
+      },
+      {
+        code: `
+        type Product = {
+          price: any;
+        };
+        const productsGroup = db.collectionGroup<Product>('products');
+      `,
+        errors: [invalidGenericError('CollectionGroup')],
+      },
+      // A typed collection does not excuse an erased schema on .doc()
+      {
+        code: `
+        type UserData = {
+          name: string;
+        };
+        type AuditData = {
+          entries: any;
+        };
+        const userDoc = db.collection<UserData>('users').doc<AuditData>('123');
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      // Alias twins of the remaining interface-based invalid cases
+      {
+        code: `
+        type User = {
+          data: any;
+        };
+        class Service {
+          private ref: DocumentReference<User>;
+          constructor(id: string) {
+            this.ref = db.collection('users').doc(id);
+          }
+        }
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      {
+        code: `
+        type User = {
+          data: any;
+        };
+        function process(ref: DocumentReference<User>) {
+          return ref.get();
+        }
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      {
+        code: `
+        type User = {
+          data: any;
+        };
+        async function getRef(): Promise<DocumentReference<User>> {
+          return db.collection('users').doc(userId);
+        }
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      {
+        code: `
+        type Base = {
+          id: string;
+        };
+        const ref: DocumentReference<Base & any> = db.collection('users').doc(userId);
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      {
+        code: `
+        type User = {
+          name: string;
+        };
+        const ref: DocumentReference<User | {}> = db.collection('users').doc(userId);
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      {
+        code: `
+        type User = {
+          name: string;
+          age: number;
+        };
+        const usersCollection: CollectionReference<User> = db.collection<User>('users');
+        const userDoc = usersCollection.doc<any>('user123');
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      {
+        code: `
+        type Product = {
+          name: string;
+          price: number;
+        };
+        const productDoc = db.collection<Product>('products').doc<{}>('product123');
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      {
+        code: `
+        type UserData = {
+          name: string;
+        };
+        let usersCollection = db.collection<UserData>('users');
+        usersCollection = db.collection('users');
+        const userDoc = usersCollection.doc('123');
+      `,
+        errors: [
+          missingGenericError('CollectionReference'),
+          missingGenericError('DocumentReference'),
+        ],
+      },
+      {
+        code: `
+        type UserData = {
+          name: string;
+        };
+        const usersCollection = db.collection<UserData>('users');
+        const aliasCollection = usersCollection;
+        const userDoc = aliasCollection.doc('123');
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      {
+        code: `
+        type UserData = {
+          name: string;
+        };
+        const usersCollection = db.collection<UserData>('users');
+        function loadUser(id: string) {
+          const usersCollection = db.collection('users');
+          return usersCollection.doc(id);
+        }
+      `,
+        errors: [
+          missingGenericError('CollectionReference'),
+          missingGenericError('DocumentReference'),
+        ],
+      },
+      {
+        code: `
+        type UserData = {
+          name: string;
+        };
+        let usersCollection = db.collection<UserData>('users');
+        const userDoc = usersCollection.doc('123');
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      {
+        code: `
+        type UserData = {
+          name: string;
+        };
+        const { users } = getCollections<UserData>();
+        const userDoc = users.doc('123');
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      {
+        code: `
+        type UserData = {
+          name: string;
+        };
+        const usersCollection = db.collection<UserData>('users');
+        const userDoc = usersCollection.doc<any>('123');
+      `,
+        errors: [invalidGenericError('DocumentReference')],
       },
     ],
   },
