@@ -18,6 +18,25 @@ const NEXTJS_DATA_FUNCTIONS = new Set([
   'getStaticPaths',
 ]);
 
+/**
+ * Lexicalized verb-particle compounds whose head happens to be a disallowed
+ * prefix. "check in" names an operation exactly — its meaning is not the verb
+ * `check` applied to the object `in` — so the generic-prefix heuristic is
+ * measuring the wrong lexeme and reports a false positive.
+ *
+ * Entries are `<verb> <particle>` in lowercase and are matched against the
+ * first TWO camelCase segments, so derived names (checkInAndSet, checkOutTeam)
+ * inherit the exemption while `check` + object (checkUserPermissions) does not.
+ *
+ * Criterion for adding an entry: the verb+particle pair must be a *lexicalized*
+ * compound — a phrasal verb or domain noun whose meaning is not the sum of its
+ * parts (check in, check out) — and its head must be a disallowed prefix.
+ * A merely grammatical verb+particle sequence does NOT qualify: `getOutOfSync`,
+ * `updateInPlace`, and `processOutQueue` are compositional, so the generic verb
+ * still hides what the function does and the rule must keep reporting them.
+ */
+const COMPOUND_LEXEMES = new Set(['check in', 'check out']);
+
 const SUGGESTED_ALTERNATIVES = {
   get: ['fetch', 'retrieve', 'compute', 'derive'],
   update: ['modify', 'set', 'apply'],
@@ -58,6 +77,26 @@ function extractFirstWord(name: string): string {
   return firstWord;
 }
 
+/**
+ * The first two camelCase segments of a name, joined by a space
+ * (`checkInAndSet` -> `check in`).
+ *
+ * Whole-segment equality is load-bearing. `checkInput` segments as
+ * `check` + `Input`, so a substring test such as `name.startsWith('checkin')`
+ * would exempt it — along with checkInputValidation, CheckInputData and every
+ * other `check` + object name that merely begins with a particle's letters.
+ */
+function extractCompoundHead(name: string): string {
+  const firstWord = extractFirstWord(name);
+  const remainder = name.slice(firstWord.length);
+  const secondWord = remainder ? extractFirstWord(remainder) : '';
+  return `${firstWord} ${secondWord}`.toLowerCase();
+}
+
+function isCompoundLexeme(name: string): boolean {
+  return COMPOUND_LEXEMES.has(extractCompoundHead(name));
+}
+
 export const semanticFunctionPrefixes = createRule<[], MessageIds>({
   name: 'semantic-function-prefixes',
   meta: {
@@ -75,37 +114,39 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    function checkMethodName(node: TSESTree.MethodDefinition) {
-      // Skip getters and setters
-      if (node.kind === 'get' || node.kind === 'set') {
-        return;
-      }
-
-      const methodName =
-        node.key.type === AST_NODE_TYPES.Identifier ? node.key.name : '';
-      if (!methodName) return;
-
-      // Skip if method starts with 'is' (boolean check methods are okay)
-      if (methodName.startsWith('is')) return;
+    /**
+     * Single detection path for every visited shape. Methods and functions
+     * differ only in which node carries the report, so sharing the guards keeps
+     * an exemption from applying to one shape and not the other.
+     */
+    function reportIfGenericPrefix(
+      reportNode: TSESTree.Node,
+      functionName: string,
+    ) {
+      // Skip if the name starts with 'is' (boolean check functions are okay)
+      if (functionName.startsWith('is')) return;
 
       // Skip Next.js data-fetching functions
-      if (NEXTJS_DATA_FUNCTIONS.has(methodName)) return;
+      if (NEXTJS_DATA_FUNCTIONS.has(functionName)) return;
+
+      // Skip compound lexemes whose head merely coincides with a banned prefix
+      if (isCompoundLexeme(functionName)) return;
 
       // Extract first word from PascalCase/camelCase
-      const firstWord = extractFirstWord(methodName);
+      const firstWord = extractFirstWord(functionName);
 
       // Check for disallowed prefixes
       // Only flag if the disallowed word is used as a prefix (not the entire name)
       for (const prefix of DISALLOWED_PREFIXES) {
         if (
           firstWord.toLowerCase() === prefix.toLowerCase() &&
-          firstWord.length < methodName.length
+          firstWord.length < functionName.length
         ) {
           context.report({
-            node: node.key,
+            node: reportNode,
             messageId: 'avoidGenericPrefix',
             data: {
-              functionName: methodName,
+              functionName,
               prefix,
               alternatives:
                 SUGGESTED_ALTERNATIVES[
@@ -116,6 +157,19 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
           break;
         }
       }
+    }
+
+    function checkMethodName(node: TSESTree.MethodDefinition) {
+      // Skip getters and setters
+      if (node.kind === 'get' || node.kind === 'set') {
+        return;
+      }
+
+      const methodName =
+        node.key.type === AST_NODE_TYPES.Identifier ? node.key.name : '';
+      if (!methodName) return;
+
+      reportIfGenericPrefix(node.key, methodName);
     }
 
     function checkFunctionName(
@@ -142,37 +196,7 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
 
       if (!functionName) return;
 
-      // Skip if function starts with 'is' (boolean check functions are okay)
-      if (functionName.startsWith('is')) return;
-
-      // Skip Next.js data-fetching functions
-      if (NEXTJS_DATA_FUNCTIONS.has(functionName)) return;
-
-      // Extract first word from PascalCase/camelCase
-      const firstWord = extractFirstWord(functionName);
-
-      // Check for disallowed prefixes
-      // Only flag if the disallowed word is used as a prefix (not the entire name)
-      for (const prefix of DISALLOWED_PREFIXES) {
-        if (
-          firstWord.toLowerCase() === prefix.toLowerCase() &&
-          firstWord.length < functionName.length
-        ) {
-          context.report({
-            node: node.id || node,
-            messageId: 'avoidGenericPrefix',
-            data: {
-              functionName,
-              prefix,
-              alternatives:
-                SUGGESTED_ALTERNATIVES[
-                  prefix as keyof typeof SUGGESTED_ALTERNATIVES
-                ].join(', '),
-            },
-          });
-          break;
-        }
-      }
+      reportIfGenericPrefix(node.id || node, functionName);
     }
 
     return {

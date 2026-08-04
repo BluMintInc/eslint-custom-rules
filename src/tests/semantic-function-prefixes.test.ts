@@ -346,6 +346,50 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
     'function myCheckInput() {}',
     'function myManageState() {}',
     'function myProcessData() {}',
+
+    /**
+     * COMPOUND LEXEMES - `check in` / `check out` are lexicalized phrasal verbs,
+     * not the generic verb `check` applied to an object. The tournament domain
+     * uses them as first-class actions (isCheckedIn, checkedInCount, skipCheckIn).
+     */
+    'function checkIn() {}',
+    'function checkOut() {}',
+    'function checkInAndSet() {}',
+    'function checkOutTeam() {}',
+    'const checkIn = (memberId: string) => memberId;',
+    'const checkOut = (memberId: string) => memberId;',
+    `class TeamMutator {
+      public async checkInAndSet(memberId: string, isEntireTeam: boolean) {
+        return this.checkIn(memberId, isEntireTeam);
+      }
+      public checkIn(memberId: string, entireTeam: boolean) {
+        return { memberId, entireTeam };
+      }
+      public checkOut(memberId: string) {
+        return memberId;
+      }
+    }`,
+    /** Already passing - kept so the fix does not regress segmentation (#273). */
+    'function checksum() {}',
+    'function checkpoint() {}',
+    'function checkedIn() {}',
+    // The comparison is case-insensitive, so the exemption must be too
+    'function CheckIn() {}',
+    'function CheckOutTeam() {}',
+    'const CheckInAndSet = () => {};',
+    // Async/generator/export shapes of the compound lexeme
+    'export async function checkIn() {}',
+    'export const checkOutTeam = async () => {};',
+    'function* checkInAll() {}',
+    // Longer derived names still lead with the compound
+    'function checkInMemberToTournament() {}',
+    'function checkOutAllTeamMembers() {}',
+    `
+      class Registration {
+        static async checkInMember() {}
+        protected checkOutMember() {}
+      }
+    `,
   ],
   invalid: [
     // Basic invalid cases - functions with disallowed prefixes
@@ -710,6 +754,65 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
     {
       code: 'function ProcessFileData() {}',
       errors: [error('ProcessFileData', 'process')],
+    },
+
+    /**
+     * COMPOUND LEXEME CARVE-OUT - regression guards. The exemption is limited to
+     * the recognized compound; `check` + object is still the generic verb this
+     * rule exists to ban.
+     */
+    {
+      code: 'function checkUserPermissions() {}',
+      errors: [error('checkUserPermissions', 'check')],
+    },
+    {
+      code: 'const checkUserPermissions = (id: string) => !!id;',
+      errors: [error('checkUserPermissions', 'check')],
+    },
+    // Near-misses: the second segment merely STARTS with a particle. Matching on
+    // a lowercased substring instead of whole camelCase segments would silently
+    // exempt every one of these.
+    {
+      code: 'function checkInvites() {}',
+      errors: [error('checkInvites', 'check')],
+    },
+    {
+      code: 'function checkIntegrity() {}',
+      errors: [error('checkIntegrity', 'check')],
+    },
+    {
+      code: 'const checkOutdatedEntries = () => {}',
+      errors: [error('checkOutdatedEntries', 'check')],
+    },
+    {
+      code: 'function CheckInputSchema() {}',
+      errors: [error('CheckInputSchema', 'check')],
+    },
+    // A particle after a banned prefix is not by itself an exemption: only
+    // lexicalized compounds are allowlisted, and `get out` / `update in` are not.
+    {
+      code: 'function getOutOfSyncItems() {}',
+      errors: [error('getOutOfSyncItems', 'get')],
+    },
+    {
+      code: 'function updateInPlace() {}',
+      errors: [error('updateInPlace', 'update')],
+    },
+    {
+      code: 'const processOutQueue = () => {}',
+      errors: [error('processOutQueue', 'process')],
+    },
+    {
+      code: `
+        class Registration {
+          public async checkUserEligibility() {}
+          private checkOutdatedRoster() {}
+        }
+      `,
+      errors: [
+        error('checkUserEligibility', 'check'),
+        error('checkOutdatedRoster', 'check'),
+      ],
     },
   ],
 });
