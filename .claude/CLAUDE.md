@@ -43,6 +43,7 @@ eslint-custom-rules/
 │       ├── ASTHelpers.ts    # AST manipulation helpers
 │       ├── createRule.ts    # Rule creation utility
 │       ├── ruleTester.ts    # Test utility exports
+│       ├── harvestRuleTesterCases.ts  # Collects every fixture without running it
 │       └── graph/           # Class graph analysis utilities
 │           ├── ClassGraphBuilder.ts
 │           ├── ClassGraphSorter.ts
@@ -77,6 +78,7 @@ eslint-custom-rules/
 | `src/index.ts` | Rule exports and recommended config |
 | `src/utils/createRule.ts` | Rule creation helper |
 | `src/utils/ruleTester.ts` | Test utility exports (3 variants) |
+| `src/utils/harvestRuleTesterCases.ts` | Harvests every declared fixture without executing the suite |
 | `src/utils/ASTHelpers.ts` | AST manipulation helpers |
 | `src/utils/graph/` | Class graph analysis utilities |
 
@@ -117,6 +119,37 @@ import { ruleTesterJsx } from '../utils/ruleTester';
 // JSON rules (e.g., package.json validation)
 import { ruleTesterJson } from '../utils/ruleTester';
 ```
+
+### Harvesting the fixture corpus
+
+`harvestRuleTesterCases()` in `src/utils/harvestRuleTesterCases.ts` returns every
+`valid`/`invalid` case the suite declares **without executing any of them**. Use
+it to write a guard that must exercise real fixtures rather than documented
+snippets — a rule's `valid` list sits on its carve-out boundaries, which is where
+cross-rule composition defects live.
+
+```typescript
+import { harvestRuleTesterCases } from '../utils/harvestRuleTesterCases';
+
+const harvested = harvestRuleTesterCases();
+// Resolve the rule NAME by object identity, never from `suite.name`:
+// ~100 of the 311 suites pass a display name that is not a rule name.
+const nameByRule = new Map(
+  Object.entries(plugin.rules).map(([name, rule]) => [rule, name]),
+);
+```
+
+`src/tests/exemption-composition-closure.test.ts` is the reference consumer.
+Three constraints are load-bearing — read that file before writing another:
+
+* **Match rules by object identity**, not by the name passed to `run`. Name-keyed
+  matching silently drops every suite with a display name.
+* **Type-aware rules must be excluded.** A bare `Linter` has no program, so they
+  report nothing and manufacture a false clean rather than a finding.
+* **Assert non-vacuity.** Floors on cases considered, controls that stayed
+  silent, and inputs actually rewritten — plus a planted positive *and* negative
+  control. A composition guard whose corpus trips nothing passes forever while
+  asserting nothing.
 
 ### ASTHelpers Class
 
