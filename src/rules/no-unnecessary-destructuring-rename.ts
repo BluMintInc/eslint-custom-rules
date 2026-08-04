@@ -143,6 +143,59 @@ function getRenamedPropertyInfo(
   return null;
 }
 
+/**
+ * Node types that can sit between a renamed property and the declarator whose
+ * binding pattern it belongs to.
+ */
+const BINDING_PATTERN_TYPES = new Set<AST_NODE_TYPES>([
+  AST_NODE_TYPES.ObjectPattern,
+  AST_NODE_TYPES.ArrayPattern,
+  AST_NODE_TYPES.AssignmentPattern,
+  AST_NODE_TYPES.RestElement,
+  AST_NODE_TYPES.Property,
+]);
+
+/**
+ * Reports whether `pattern` destructures an `export const { … } = …`
+ * declaration.
+ *
+ * The alias of an exported destructuring IS the module's public export name, so
+ * collapsing `export const { id: renamedId }` to `export const { id }` renames
+ * the export. Every importer spells the old name out in a file this single-file
+ * fixer cannot reach, so the rewrite breaks them all (TS2305/TS2724) with no
+ * local symptom. The hazard therefore does not depend on how the declaring file
+ * uses the binding — a module that only re-publishes the value is the most
+ * exposed shape, not the safest. `global-const-style` and the shared rename
+ * fixer withhold their rewrites on the same grounds.
+ *
+ * The walk climbs the binding pattern rather than reading the property's
+ * immediate parent because the rename can be nested
+ * (`export const { user: { name: userName } } = data`). It stops at the first
+ * ancestor that is not part of a binding pattern, so a destructured parameter
+ * of an exported function answers false: that binding is function-local and
+ * never an export name.
+ */
+function isExportedDestructuringPattern(
+  pattern: TSESTree.ObjectPattern,
+): boolean {
+  let current: TSESTree.Node | undefined = pattern;
+
+  while (current && BINDING_PATTERN_TYPES.has(current.type)) {
+    current = current.parent;
+  }
+
+  if (!current || current.type !== AST_NODE_TYPES.VariableDeclarator) {
+    return false;
+  }
+
+  const declaration = current.parent;
+
+  return (
+    declaration?.type === AST_NODE_TYPES.VariableDeclaration &&
+    declaration.parent?.type === AST_NODE_TYPES.ExportNamedDeclaration
+  );
+}
+
 export const noUnnecessaryDestructuringRename = createRule<[], MessageIds>({
   name: 'no-unnecessary-destructuring-rename',
   meta: {
@@ -492,10 +545,17 @@ export const noUnnecessaryDestructuringRename = createRule<[], MessageIds>({
     function reportAndFixCandidates(
       candidatesByPattern: Map<TSESTree.ObjectPattern, ResolvedCandidate[]>,
     ): void {
-      for (const patternCandidates of candidatesByPattern.values()) {
+      for (const [pattern, patternCandidates] of candidatesByPattern) {
+        // The destructuring edit and the object-literal edit are one atomic
+        // batch — applying either alone leaves the file referencing a name that
+        // no longer binds — so an exported pattern withholds the whole batch and
+        // stays report-only. Every candidate in a group shares one pattern, so
+        // the export answer is a property of the group.
+        const withholdFix = isExportedDestructuringPattern(pattern);
+
         patternCandidates.forEach((candidate, index) => {
           const { propertyNode, originalName, aliasIdentifier } = candidate;
-          const isFixCarrier = index === 0;
+          const isFixCarrier = index === 0 && !withholdFix;
 
           context.report({
             node: propertyNode,

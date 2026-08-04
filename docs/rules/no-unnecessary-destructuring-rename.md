@@ -15,6 +15,39 @@ Renaming during object destructuring is useful when it resolves naming conflicts
 - Skips computed property names and aliases that are read more than once or participate in other expressions.
 - Stays silent — no report, not merely no fix — when using the original key would change which binding is read. See [When a name conflict suppresses the report](#when-a-name-conflict-suppresses-the-report).
 - Skips properties whose original key cannot be used as a binding identifier (for example reserved words), because the alias is required in those cases.
+- Reports but does not autofix an exported destructuring. See [When the fix is withheld](#when-the-fix-is-withheld).
+
+### When the fix is withheld
+
+The alias of an exported destructuring is the module's public export name, so collapsing it renames the export:
+
+```ts
+// Reported, but left alone by `--fix`: the module exports `renamedId`, and
+// dropping the alias would make it export `id` instead.
+export const { id: renamedId } = record;
+sendUpdate({ id: renamedId });
+```
+
+Every importer spells the old name out in a file a single-file fixer cannot reach, so the rewrite breaks them all (TS2305/TS2724) without any symptom in the file being fixed. The check climbs the whole binding pattern, so a nested rename is covered too:
+
+```ts
+// Also reported without a fix.
+export const {
+  user: { name: userName },
+} = data;
+const card = { name: userName };
+```
+
+The guard is scoped to export names. A destructuring that binds nothing exported — including a destructured parameter of an exported function, or a declaration inside an exported function's body — is still fixed:
+
+```ts
+// Fixed: the parameter binding is function-local.
+export function buildUpdate({ id: renamedId }: UpdateInput) {
+  return { id: renamedId };
+}
+```
+
+Resolve an exported case by hand: either rename the export deliberately across its importers, or reference the property directly.
 
 ### When a name conflict suppresses the report
 
