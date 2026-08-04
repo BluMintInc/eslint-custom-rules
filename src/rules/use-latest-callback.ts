@@ -457,6 +457,158 @@ const orphansLocalBinding = (
       ),
     );
 
+/**
+ * A hook, by React's naming convention. The convention is the only general
+ * signal available in one file: a custom hook's body may live anywhere, so no
+ * list of hook names (`useFirestore`, `useDocSnapshot`, ...) can be complete.
+ */
+const HOOK_NAME = /^use[A-Z]/;
+
+/**
+ * The name the naming convention applies to. A member callee
+ * (`hooks.useThing(...)`) carries it on the property, which is what the author
+ * reads as the hook's name.
+ */
+const calleeNameOf = (call: TSESTree.CallExpression): string | null => {
+  const { callee } = call;
+  if (callee.type === AST_NODE_TYPES.Identifier) {
+    return callee.name;
+  }
+  if (
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    !callee.computed &&
+    callee.property.type === AST_NODE_TYPES.Identifier
+  ) {
+    return callee.property.name;
+  }
+  return null;
+};
+
+const isHookCall = (call: TSESTree.CallExpression): boolean => {
+  const name = calleeNameOf(call);
+  return !!name && HOOK_NAME.test(name);
+};
+
+/** Wrappers a value passes through without its identity changing. */
+const TRANSPARENT_VALUE_WRAPPERS = new Set<AST_NODE_TYPES>([
+  AST_NODE_TYPES.TSAsExpression,
+  AST_NODE_TYPES.TSSatisfiesExpression,
+  AST_NODE_TYPES.TSNonNullExpression,
+  AST_NODE_TYPES.TSTypeAssertion,
+]);
+
+/**
+ * Whether the value written at `node` reaches a hook in a position where the
+ * hook can compare it between renders: an element of a dependency array handed
+ * to a hook (`useEffect(effect, [handler])`), or a direct argument of one — a
+ * custom hook is free to list an argument in a dependency array of its own, and
+ * `useFirestore(handler, initial)` does exactly that.
+ *
+ * Positions that use the value without keying anything on its identity do not
+ * qualify: calling it, spelling it as a JSX prop, or handing it to a plain
+ * function all read through to the latest closure a stable wrapper holds, so
+ * nothing observes the frozen reference.
+ */
+const feedsHookDependency = (node: TSESTree.Node): boolean => {
+  let value: TSESTree.Node = node;
+  let parent = value.parent;
+  while (parent) {
+    if (parent.type === AST_NODE_TYPES.CallExpression) {
+      return (
+        parent.arguments.some((argument) => argument === value) &&
+        isHookCall(parent)
+      );
+    }
+    // An array is followed out to whatever holds it, which is how an element of
+    // a dependency array is reached. Everything else — a JSX container, a
+    // property, a return, a function body — ends the walk, because the identity
+    // stops being an argument the hook itself receives.
+    if (
+      parent.type !== AST_NODE_TYPES.ArrayExpression &&
+      !TRANSPARENT_VALUE_WRAPPERS.has(parent.type)
+    ) {
+      return false;
+    }
+    value = parent;
+    parent = value.parent;
+  }
+  return false;
+};
+
+/**
+ * Whether the call's result changes identity between renders. An empty
+ * dependency array already pins it for the component's lifetime, so converting
+ * the call cannot change what any consumer observes. A missing array, or one
+ * spelled as a value this file cannot read, leaves a reference the author may
+ * be keying on.
+ */
+const identityCanChange = (call: TSESTree.CallExpression): boolean => {
+  const dependencies = call.arguments[1];
+  if (!dependencies) {
+    return true;
+  }
+  if (dependencies.type === AST_NODE_TYPES.ArrayExpression) {
+    return dependencies.elements.length > 0;
+  }
+  return true;
+};
+
+/** The declarator binding the call's result, seen through TS wrappers. */
+const declaratorOf = (
+  call: TSESTree.CallExpression,
+): TSESTree.VariableDeclarator | null => {
+  let value: TSESTree.Node = call;
+  let parent = value.parent;
+  while (parent && TRANSPARENT_VALUE_WRAPPERS.has(parent.type)) {
+    value = parent;
+    parent = value.parent;
+  }
+  return parent &&
+    parent.type === AST_NODE_TYPES.VariableDeclarator &&
+    parent.init === value
+    ? parent
+    : null;
+};
+
+/**
+ * Whether the callback's identity is load-bearing: it changes between renders
+ * AND something in this file keys a hook on it.
+ *
+ * `useLatestCallback` returns a permanently stable reference, so a hook that
+ * compares the callback across renders stops seeing it change. An effect keyed
+ * on the callback then fires once, ever — the callers that deliberately rebuild
+ * a handler so a fetch re-runs lose their refresh (issue #1711). No compliant
+ * remedy exists for such a site: rewriting it as `useMemo` is converted back to
+ * `useCallback` by `prefer-usecallback-over-usememo-for-functions`, so the
+ * violation is not reported at all rather than reported without a fix.
+ *
+ * A callback whose identity is exposed some other way — returned from a custom
+ * hook, stored on an object — keeps reporting: the consumer is out of this
+ * file's sight, and reporting is the direction that preserves the rule.
+ */
+const identityIsLoadBearing = (
+  context: Readonly<TSESLint.RuleContext<string, readonly unknown[]>>,
+  call: TSESTree.CallExpression,
+): boolean => {
+  if (!identityCanChange(call)) {
+    return false;
+  }
+
+  const declarator = declaratorOf(call);
+  // An unbound call is consumed where it is written, so its own position in the
+  // tree answers the question the references would.
+  if (!declarator) {
+    return feedsHookDependency(call);
+  }
+
+  return ASTHelpers.getDeclaredVariables(context, declarator).some((variable) =>
+    variable.references.some(
+      (reference) =>
+        reference.isRead() && feedsHookDependency(reference.identifier),
+    ),
+  );
+};
+
 export const useLatestCallback = createRule<Options, MessageIds>({
   name: 'use-latest-callback',
   meta: {
@@ -653,7 +805,10 @@ export const useLatestCallback = createRule<Options, MessageIds>({
             }
           }
 
-          if (!isJsxReturning) {
+          // A callback another hook keys on is left alone entirely — see
+          // identityIsLoadBearing for why the report itself is withheld rather
+          // than just its fix.
+          if (!isJsxReturning && !identityIsLoadBearing(context, node)) {
             const currentCallbackName =
               node.callee.type === AST_NODE_TYPES.Identifier
                 ? node.callee.name
