@@ -1,3 +1,14 @@
+## [1.20.101](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.100...v1.20.101) (2026-08-04)
+
+
+### Bug Fixes
+
+* **enforce-centralized-mock-firestore:** exempt the centralized module and exported declarations (closes [#1703](https://github.com/BluMintInc/eslint-custom-rules/issues/1703)) ([bfe533c](https://github.com/BluMintInc/eslint-custom-rules/commit/bfe533c26ba4a38f1cc53df31e25c41cf6c4adb5)), closes [1671-#1673](https://github.com/1671-/issues/1673) [#1387](https://github.com/BluMintInc/eslint-custom-rules/issues/1387)
+* **enforce-identifiable-firestore-type:** stay silent when the alias chain leaves the module (closes [#1705](https://github.com/BluMintInc/eslint-custom-rules/issues/1705)) ([b0d9c9b](https://github.com/BluMintInc/eslint-custom-rules/commit/b0d9c9b600fd3e1d2216789b2274cdb22f33b1e9))
+* **enforce-react-type-naming:** withhold the rename for every exported declaration (closes [#1701](https://github.com/BluMintInc/eslint-custom-rules/issues/1701)) ([3b0c47b](https://github.com/BluMintInc/eslint-custom-rules/commit/3b0c47b58af3cb82943bc5147a2973c7ff62befe))
+* **no-unnecessary-destructuring-rename:** withhold the fix on an exported pattern (closes [#1702](https://github.com/BluMintInc/eslint-custom-rules/issues/1702)) ([661d523](https://github.com/BluMintInc/eslint-custom-rules/commit/661d523ea47c8519cf71c1c5ee4742cf69dd2b8b))
+* **semantic-function-prefixes:** exempt the compound lexemes checkIn and checkOut (closes [#1704](https://github.com/BluMintInc/eslint-custom-rules/issues/1704)) ([48024ff](https://github.com/BluMintInc/eslint-custom-rules/commit/48024ff0952f4fd02e7453af05937fcdee62cc01))
+
 ## [1.20.100](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.99...v1.20.100) (2026-08-04)
 
 

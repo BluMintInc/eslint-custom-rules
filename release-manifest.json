@@ -1,5 +1,51 @@
 [
   {
+    "version": "1.20.101",
+    "date": "2026-08-04T16:47:09.253Z",
+    "rules": [
+      {
+        "name": "enforce-centralized-mock-firestore",
+        "changeType": "fix",
+        "issues": [
+          1703
+        ],
+        "summary": "exempt the centralized module and exported declarations (closes #1703)"
+      },
+      {
+        "name": "enforce-identifiable-firestore-type",
+        "changeType": "fix",
+        "issues": [
+          1705
+        ],
+        "summary": "stay silent when the alias chain leaves the module (closes #1705)"
+      },
+      {
+        "name": "enforce-react-type-naming",
+        "changeType": "fix",
+        "issues": [
+          1701
+        ],
+        "summary": "withhold the rename for every exported declaration (closes #1701)"
+      },
+      {
+        "name": "no-unnecessary-destructuring-rename",
+        "changeType": "fix",
+        "issues": [
+          1702
+        ],
+        "summary": "withhold the fix on an exported pattern (closes #1702)"
+      },
+      {
+        "name": "semantic-function-prefixes",
+        "changeType": "fix",
+        "issues": [
+          1704
+        ],
+        "summary": "exempt the compound lexemes checkIn and checkOut (closes #1704)"
+      }
+    ]
+  },
+  {
     "version": "1.20.100",
     "date": "2026-08-04T13:28:51.191Z",
     "rules": [
