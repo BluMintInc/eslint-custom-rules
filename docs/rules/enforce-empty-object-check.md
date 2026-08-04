@@ -10,6 +10,8 @@ Guard object existence checks against empty objects. `{}` is truthy in JavaScrip
 
 The rule treats `Object.keys(obj).length` comparisons to zero (`===`, `==`, `<=`, or the reversed form `0 >= ...`), `!Object.keys(obj).length`, or approved emptiness helpers as valid empty checks; other comparisons (for example `> 5` or `=== 10`) do not count.
 
+When TypeScript types are available, values that are not data objects are exempt: primitives, arrays and tuples, types with required properties, and **callable or constructable types**. A function type, a class reference, a `new (...) => T` (or `abstract new (...) => T`) signature, and React's `ComponentType` are behaviour, not data — their own enumerable keys are statics, so `Object.keys()` returns `[]` for a plain arrow-function component or a class with no static members even when a perfectly valid value was supplied. Adding the prescribed emptiness check to such a guard would invert it. A union is exempt only when no member is a data object, so a union that mixes a constructor with a payload type is still reported.
+
 ## Rule Details
 
 ### ❌ Incorrect
@@ -50,6 +52,23 @@ if (!config || Object.keys(config).length === 0) {
 // Using a helper counts as an emptiness check
 if (!payload || isEmpty(payload)) {
   handle(payload);
+}
+```
+
+Callable and constructable types keep a plain falsiness guard, because emptiness
+is meaningless for them:
+
+```ts
+type BuilderConstructor = new (id: string) => { build(): string };
+declare const BuilderClass: BuilderConstructor | undefined;
+
+function buildNotification(id: string) {
+  // Object.keys(BuilderClass) is [] for a class without statics, so an
+  // emptiness check here would throw on every valid builder.
+  if (!BuilderClass) {
+    throw new Error('no builder registered');
+  }
+  return new BuilderClass(id).build();
 }
 ```
 
