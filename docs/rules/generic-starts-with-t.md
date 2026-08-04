@@ -28,6 +28,40 @@ type GenericType<TParam1, TParam2> = [TParam1, TParam2];
 type GenericType<T> = T[];
 ```
 
+## Module augmentations are exempt
+
+Type parameters declared inside a module augmentation (`declare module 'pkg'`) or a global augmentation (`declare global`) are skipped. TypeScript requires every declaration of a merged entity to spell its type parameters identically — TS2428, "All declarations of 'X' must have identical type parameters" — so the name belongs to the upstream declaration, not to the author. Adding a `T` prefix there turns working code into a compile error.
+
+```typescript
+// Allowed: MUI declares BaseSelectProps<Value>, so the augmentation must
+// repeat that exact name.
+declare module '@mui/material/Select' {
+  interface BaseSelectProps<Value = unknown> {
+    displayEmpty?: boolean;
+  }
+}
+
+// Allowed: the signature merges into the upstream Window interface.
+declare global {
+  interface Window {
+    helper<Value>(v: Value): void;
+  }
+}
+```
+
+The exemption is scoped to the augmentation block, so declarations elsewhere in the same file still report.
+
+A namespace is not an augmentation. `namespace Utils {}`, `declare namespace Utils {}` and `declare module Foo {}` all declare names the author owns — nothing upstream constrains them — so their type parameters remain subject to the rule:
+
+```typescript
+// Reported: the author owns this name and can rename it freely.
+namespace Utils {
+  export interface Box<Item> {
+    item: Item;
+  }
+}
+```
+
 ## How to Fix
 
 - Rename generic parameters to start with `T`, preserving the rest of the name to keep intent clear (e.g., `Param` → `TParam`, `ResponseType` → `TResponseType`).
