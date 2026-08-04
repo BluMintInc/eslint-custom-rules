@@ -31,6 +31,27 @@ import { memo as CustomMemo } from 'src/util/memo';
 import * as React from 'react';
 ```
 
+## The wrapper module is exempt
+
+`src/util/memo` is the one module that has to import `memo` from `react` — it is
+the wrapper the rule points everything else at. The rule therefore never reports
+inside it, since the fix there would make the module import itself, and a
+self-import evaluates circularly: the wrapper exports `undefined` and every
+consumer of it breaks.
+
+```ts
+// src/util/memo.ts — not reported
+import { memo as reactMemo } from 'react';
+export const memo = reactMemo;
+```
+
+The exemption keys on the linted file's path with its extension (`.ts`, `.tsx`,
+`.js`, `.jsx`) stripped and its separators normalized, so an absolute path
+(`/repo/src/util/memo.ts`) identifies the wrapper as readily as a
+project-relative one. The match has to land on a path-segment boundary, so
+neighbours that merely share the prefix — `src/util/memoize.ts`,
+`src/util/memo.styles.ts`, `foo/notsrc/util/memo.ts` — are still reported.
+
 ## Autofix
 
 The surviving specifiers are re-emitted verbatim, so every part of a binding

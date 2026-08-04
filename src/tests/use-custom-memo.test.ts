@@ -31,6 +31,35 @@ ruleTesterTs.run('use-custom-memo', useCustomMemo, {
     {
       code: `import { memo } from 'preact/compat';`,
     },
+    // The wrapper module the rule points at cannot import itself: rewriting it
+    // would make it evaluate circularly and export `undefined` (#1671).
+    {
+      code: `import { memo as reactMemo } from 'react';\nexport const memo = reactMemo;`,
+      filename: 'src/util/memo.ts',
+    },
+    {
+      code: `import { memo as reactMemo } from 'react';\nexport const memo = reactMemo;`,
+      filename: '/repo/src/util/memo.tsx',
+    },
+    // The wrapper is exempt under every source extension it can ship as (#1671).
+    {
+      code: `import { memo } from 'react';`,
+      filename: 'src/util/memo.js',
+    },
+    {
+      code: `import { memo } from 'react';`,
+      filename: '/repo/src/util/memo.jsx',
+    },
+    // An extensionless path still identifies the wrapper (#1671).
+    {
+      code: `import { memo } from 'react';`,
+      filename: '/repo/src/util/memo',
+    },
+    // Windows separators name the same module as POSIX ones (#1671).
+    {
+      code: `import { memo } from 'react';`,
+      filename: 'C:\\repo\\src\\util\\memo.ts',
+    },
   ],
   invalid: [
     {
@@ -267,6 +296,51 @@ ruleTesterTs.run('use-custom-memo', useCustomMemo, {
     {
       code: `import { memo, useState } /* keep */ from 'react';`,
       output: `import { memo } from 'src/util/memo';\nimport { useState } /* keep */ from 'react';`,
+      errors: [{ messageId: 'useCustomMemo' }],
+    },
+    // A consumer of the wrapper is reported however the wrapper's own module is
+    // exempted (#1671).
+    {
+      code: `import { memo as reactMemo } from 'react';\nexport const memo = reactMemo;`,
+      output: `import { memo as reactMemo } from 'src/util/memo';\nexport const memo = reactMemo;`,
+      filename: 'src/components/Foo.tsx',
+      errors: [{ messageId: 'useCustomMemo' }],
+    },
+    // `notsrc` is a different segment from `src`, so the path names a different
+    // module and stays reportable (#1671).
+    {
+      code: `import { memo } from 'react';`,
+      output: `import { memo } from 'src/util/memo';`,
+      filename: 'foo/notsrc/util/memo.ts',
+      errors: [{ messageId: 'useCustomMemo' }],
+    },
+    // A sibling of the wrapper is not the wrapper: only the final extension is
+    // stripped, so `memo.styles` never reduces to `memo` (#1671).
+    {
+      code: `import { memo } from 'react';`,
+      output: `import { memo } from 'src/util/memo';`,
+      filename: 'src/util/memo.styles.ts',
+      errors: [{ messageId: 'useCustomMemo' }],
+    },
+    // A longer basename sharing the prefix is a different module (#1671).
+    {
+      code: `import { memo } from 'react';`,
+      output: `import { memo } from 'src/util/memo';`,
+      filename: 'src/util/memoize.ts',
+      errors: [{ messageId: 'useCustomMemo' }],
+    },
+    // The wrapper's own test file consumes the wrapper rather than defining it.
+    {
+      code: `import { memo } from 'react';`,
+      output: `import { memo } from 'src/util/memo';`,
+      filename: 'src/util/memo.test.ts',
+      errors: [{ messageId: 'useCustomMemo' }],
+    },
+    // A directory named `memo` under a different parent is unrelated (#1671).
+    {
+      code: `import { memo } from 'react';`,
+      output: `import { memo } from 'src/util/memo';`,
+      filename: 'src/utils/memo.ts',
       errors: [{ messageId: 'useCustomMemo' }],
     },
   ],
