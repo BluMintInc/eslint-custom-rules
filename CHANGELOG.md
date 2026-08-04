@@ -1,3 +1,11 @@
+## [1.20.103](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.102...v1.20.103) (2026-08-04)
+
+
+### Bug Fixes
+
+* **require-dynamic-firebase-imports:** drop the unreachable autofix declaration (closes [#1708](https://github.com/BluMintInc/eslint-custom-rules/issues/1708)) ([32bb45d](https://github.com/BluMintInc/eslint-custom-rules/commit/32bb45d3fe6db33968df5b7f0a293968f9098661))
+* **require-props-composition:** credit composition with a member of the child's props union (closes [#1709](https://github.com/BluMintInc/eslint-custom-rules/issues/1709)) ([784e5ad](https://github.com/BluMintInc/eslint-custom-rules/commit/784e5ad4df8165e619ebcec21ee6bce60f2c4009))
+
 ## [1.20.102](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.101...v1.20.102) (2026-08-04)
 
 

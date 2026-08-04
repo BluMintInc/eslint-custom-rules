@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.20.103",
+    "date": "2026-08-04T18:19:46.054Z",
+    "rules": [
+      {
+        "name": "require-dynamic-firebase-imports",
+        "changeType": "fix",
+        "issues": [
+          1708
+        ],
+        "summary": "drop the unreachable autofix declaration (closes #1708)"
+      },
+      {
+        "name": "require-props-composition",
+        "changeType": "fix",
+        "issues": [
+          1709
+        ],
+        "summary": "credit composition with a member of the child's props union (closes #1709)"
+      }
+    ]
+  },
+  {
     "version": "1.20.102",
     "date": "2026-08-04T17:20:02.924Z",
     "rules": [
