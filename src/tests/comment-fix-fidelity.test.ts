@@ -426,8 +426,9 @@ export const COMMENT_FIDELITY_BASELINE: Record<string, string> = {
     'marker sits inside the type alias the fixer replaces with a const array',
   'enforce-unique-cursor-headers :: COMMENT_LOST':
     'the rule exists to delete a duplicate header comment; the marker is inserted into the block it removes',
-  'enforce-dynamic-firebase-imports :: COMMENT_LOST':
-    'marker sits inside the static import the fixer converts to a dynamic one',
+  // The enforce-dynamic-firebase-imports entry is gone with #1716: the fixer no
+  // longer converts the static import where it stands, so no marker inside that
+  // import is consumed by it.
   'prefer-clone-deep :: COMMENT_LOST':
     'marker sits inside the object literal the fixer replaces with a cloneDeep call',
   'no-empty-dependency-use-callbacks :: COMMENT_LOST':

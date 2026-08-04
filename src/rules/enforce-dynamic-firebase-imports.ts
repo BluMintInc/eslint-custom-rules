@@ -1,5 +1,48 @@
-import { TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+
+type FunctionNode =
+  | TSESTree.ArrowFunctionExpression
+  | TSESTree.FunctionDeclaration
+  | TSESTree.FunctionExpression;
+
+const isFunctionNode = (node: TSESTree.Node): node is FunctionNode =>
+  node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+  node.type === AST_NODE_TYPES.FunctionDeclaration ||
+  node.type === AST_NODE_TYPES.FunctionExpression;
+
+/**
+ * Walks outward from a reference to the innermost `async` function whose block
+ * body contains it.
+ *
+ * A reference sitting in a *synchronous* callback nested inside an async
+ * function still resolves once the declaration heads the async body, because
+ * the callback cannot run before the first statement of the body it is created
+ * in — so the walk continues past non-async functions rather than giving up.
+ *
+ * The containment check is against the body rather than the function: a
+ * reference in a parameter default or a signature type annotation is evaluated
+ * before the body runs, so a declaration at the top of the body would come too
+ * late for it.
+ */
+const enclosingAsyncBodyOf = (
+  identifier: TSESTree.Identifier | TSESTree.JSXIdentifier,
+): FunctionNode | undefined => {
+  let current: TSESTree.Node | undefined = identifier.parent;
+  while (current) {
+    if (
+      isFunctionNode(current) &&
+      current.async &&
+      current.body.type === AST_NODE_TYPES.BlockStatement &&
+      identifier.range[0] >= current.body.range[0] &&
+      identifier.range[1] <= current.body.range[1]
+    ) {
+      return current;
+    }
+    current = current.parent;
+  }
+  return undefined;
+};
 
 const THIRD_PARTY_DIRECTORY = /(^|\/)node_modules(\/|$)/;
 
@@ -42,11 +85,12 @@ const enforceFirebaseImports = createRule({
     schema: [],
     messages: {
       noDynamicImport:
-        'Static import from firebaseCloud path "{{importPath}}" eagerly bundles Firebase code into the initial client chunk, which inflates startup time and prevents lazy loading. Replace it with an awaited dynamic import so the code only loads when invoked (e.g., `const module = await import(\'{{importPath}}\')` or destructure the exports you need).',
+        'Static import from firebaseCloud path "{{importPath}}" eagerly bundles Firebase code into the initial client chunk, which inflates startup time and prevents lazy loading. Load it at the call site instead, inside an async function body (e.g., `const { export } = await import(\'{{importPath}}\')`). Keep it out of module scope: a top-level `await import(...)` defers nothing and does not parse once the module is compiled to CommonJS.',
     },
   },
   defaultOptions: [],
   create(context) {
+    const sourceCode = context.getSourceCode();
     // Normalize Windows backslash separators so the forward-slash directory
     // checks match on every platform. Without this, `getFilename()` returns
     // `C:\repo\src\hooks\__tests__\Foo.ts` on Windows and the exemption
@@ -112,106 +156,195 @@ const enforceFirebaseImports = createRule({
             )
             .join(', ');
 
-        const buildReplacement = (
-          options: {
-            allowSideEffectFix?: boolean;
-          } = {},
-        ): string | null => {
-          const statements: string[] = [];
+        const destructureEntry = (spec: TSESTree.ImportSpecifier): string =>
+          spec.imported.name === spec.local.name
+            ? spec.local.name
+            : `${spec.imported.name}: ${spec.local.name}`;
 
-          if (typeOnlySpecifiers.length > 0) {
-            statements.push(
-              `import type { ${buildTypeNames()} } from '${importPath}';`,
-            );
-          }
-
+        const buildValueStatements = (): string[] => {
           if (namespaceSpecifier) {
             const nsLocal = namespaceSpecifier.local.name;
-            statements.push(
+            const statements = [
               `const ${nsLocal} = await import('${importPath}');`,
-            );
+            ];
 
             if (defaultSpecifier) {
-              const defLocal = defaultSpecifier.local.name;
-              statements.push(`const ${defLocal} = ${nsLocal}.default;`);
-            }
-
-            const destructureFromNamespace: string[] = [];
-            if (namedSpecifiers.length > 0) {
-              const destructureParts = namedSpecifiers.map((spec) => {
-                const imported = spec.imported.name;
-                const local = spec.local.name;
-                return imported === local ? imported : `${imported}: ${local}`;
-              });
-              destructureFromNamespace.push(...destructureParts);
-            }
-
-            if (destructureFromNamespace.length > 0) {
               statements.push(
-                `const { ${destructureFromNamespace.join(
+                `const ${defaultSpecifier.local.name} = ${nsLocal}.default;`,
+              );
+            }
+
+            if (namedSpecifiers.length > 0) {
+              statements.push(
+                `const { ${namedSpecifiers
+                  .map(destructureEntry)
+                  .join(', ')} } = ${nsLocal};`,
+              );
+            }
+
+            return statements;
+          }
+
+          const destructureParts = [
+            ...(defaultSpecifier
+              ? [`default: ${defaultSpecifier.local.name}`]
+              : []),
+            ...namedSpecifiers.map(destructureEntry),
+          ];
+
+          // A side-effect import binds nothing, so there is no declaration to
+          // relocate — the awaited call would have to stay at module scope.
+          return destructureParts.length > 0
+            ? [
+                `const { ${destructureParts.join(
                   ', ',
-                )} } = ${nsLocal};`,
-              );
+                )} } = await import('${importPath}');`,
+              ]
+            : [];
+        };
+
+        /**
+         * An `ImportDeclaration` only ever sits at module scope, so rewriting
+         * it in place can only ever produce a module-scope `await import(...)`
+         * — which defers nothing (the module still awaits it during
+         * evaluation) and does not even parse once the file is compiled to
+         * CommonJS, where top-level await does not exist (issue #1716).
+         *
+         * The rewrite is therefore only expressible when every value reference
+         * lives in one async function body: the declaration can then head that
+         * body, exactly the shape the codebase writes by hand. Anything else
+         * is a per-call-site refactor the fixer declines rather than corrupts.
+         */
+        const findRelocationTarget = (): FunctionNode | undefined => {
+          const valueLocalNames = new Set(
+            [
+              defaultSpecifier?.local.name,
+              namespaceSpecifier?.local.name,
+              ...namedSpecifiers.map((spec) => spec.local.name),
+            ].filter((name): name is string => name !== undefined),
+          );
+
+          const references = context
+            .getDeclaredVariables(node)
+            .filter((variable) => valueLocalNames.has(variable.name))
+            .flatMap((variable) => variable.references);
+
+          // Nothing reads the binding, so there is no call site to defer to.
+          if (references.length === 0) {
+            return undefined;
+          }
+
+          let target: FunctionNode | undefined;
+          for (const reference of references) {
+            const enclosing = enclosingAsyncBodyOf(reference.identifier);
+            if (!enclosing || (target && target !== enclosing)) {
+              return undefined;
             }
+            target = enclosing;
+          }
+          return target;
+        };
 
-            return statements.join(' ');
+        const indentationAt = (line: number): string =>
+          /^[ \t]*/.exec(sourceCode.lines[line - 1] ?? '')?.[0] ?? '';
+
+        /**
+         * Consumes the import's own trailing whitespace, and its line break
+         * when the import owns the line, so the removal strands neither a blank
+         * line nor the indentation of whatever shared the line with it.
+         * Anything that is not whitespace — a trailing comment, a statement —
+         * is left untouched.
+         */
+        const removalEnd = (): number => {
+          const text = sourceCode.getText();
+          let cursor = node.range[1];
+          while (
+            cursor < text.length &&
+            (text[cursor] === ' ' || text[cursor] === '\t')
+          ) {
+            cursor += 1;
+          }
+          if (text[cursor] === '\n') {
+            return cursor + 1;
+          }
+          if (text[cursor] === '\r' && text[cursor + 1] === '\n') {
+            return cursor + 2;
+          }
+          return cursor;
+        };
+
+        const buildFix: TSESLint.ReportFixFunction = (fixer) => {
+          const target = findRelocationTarget();
+          const statements = buildValueStatements();
+          if (!target || statements.length === 0) {
+            return null;
           }
 
-          const destructureParts: string[] = [];
+          const body = target.body as TSESTree.BlockStatement;
 
-          if (defaultSpecifier) {
-            const defLocal = defaultSpecifier.local.name;
-            destructureParts.push(`default: ${defLocal}`);
-          }
+          // A directive stops being a directive the moment a declaration
+          // precedes it, so `'use server'` on a server action would silently
+          // become a discarded string expression. The declaration goes after
+          // the whole prologue instead.
+          const prologueLength = body.body.findIndex(
+            (statement) =>
+              statement.type !== AST_NODE_TYPES.ExpressionStatement ||
+              statement.expression.type !== AST_NODE_TYPES.Literal ||
+              typeof statement.expression.value !== 'string',
+          );
+          const directives = body.body.slice(
+            0,
+            prologueLength === -1 ? body.body.length : prologueLength,
+          );
+          const lastDirective = directives[directives.length - 1];
+          const following = body.body[directives.length];
+          const anchorLine = lastDirective
+            ? lastDirective.loc.end.line
+            : body.loc.start.line;
+          const neighbour = following ?? lastDirective;
 
-          if (namedSpecifiers.length > 0) {
-            for (const spec of namedSpecifiers) {
-              const imported = spec.imported.name;
-              const local = spec.local.name;
-              destructureParts.push(
-                imported === local ? imported : `${imported}: ${local}`,
-              );
-            }
-          }
+          // A body written on one line keeps its shape; a multi-line body gets
+          // the declaration on its own line at the body's own indentation.
+          const insertion =
+            following && following.loc.start.line === anchorLine
+              ? ` ${statements.join(' ')}`
+              : statements
+                  .map((statement) => {
+                    const indent = neighbour
+                      ? indentationAt(neighbour.loc.start.line)
+                      : `${indentationAt(target.loc.start.line)}  `;
+                    return `\n${indent}${statement}`;
+                  })
+                  .join('');
 
-          if (destructureParts.length > 0) {
-            statements.push(
-              `const { ${destructureParts.join(
-                ', ',
-              )} } = await import('${importPath}');`,
-            );
-            return statements.join(' ');
-          }
-
-          if (node.specifiers.length === 0) {
-            return options.allowSideEffectFix !== false
-              ? `await import('${importPath}');`
-              : null;
-          }
-
-          return null;
+          return [
+            // Type-only specifiers are erased at compile time, so they stay
+            // where they are instead of riding along into the function body.
+            typeOnlySpecifiers.length > 0
+              ? fixer.replaceText(
+                  node,
+                  `import type { ${buildTypeNames()} } from '${importPath}';`,
+                )
+              : fixer.removeRange([node.range[0], removalEnd()]),
+            lastDirective
+              ? fixer.insertTextAfter(lastDirective, insertion)
+              : fixer.insertTextAfterRange(
+                  [body.range[0], body.range[0] + 1],
+                  insertion,
+                ),
+          ];
         };
 
         context.report({
           node,
           messageId: 'noDynamicImport',
           data: { importPath },
-          fix(fixer) {
-            const replacement = buildReplacement();
-            return replacement ? fixer.replaceText(node, replacement) : null;
-          },
+          fix: buildFix,
           suggest: [
             {
               messageId: 'noDynamicImport',
               data: { importPath },
-              fix(fixer) {
-                const replacement = buildReplacement({
-                  allowSideEffectFix: true,
-                });
-                return replacement
-                  ? fixer.replaceText(node, replacement)
-                  : null;
-              },
+              fix: buildFix,
             },
           ],
         });

@@ -719,8 +719,10 @@ export const FIX_INDUCED_BASELINE: Record<string, string> = {
 
   // --- The fix changes what a pre-existing line comment sits above.
   // Open question: should a fixer relocate or rewrite comments it strands?
-  'enforce-dynamic-firebase-imports -> prefer-block-comments-for-declarations':
-    'the static import becomes `const { x } = await import(...)`, so a line comment above the import now sits above a declaration',
+  //
+  // The enforce-dynamic-firebase-imports entry that sat here is gone with
+  // #1716: that fixer no longer rewrites the import in place, so no documented
+  // snippet reaches prefer-block-comments-for-declarations through it.
   'prefer-usecallback-over-usememo-for-functions -> prefer-block-comments-for-declarations':
     'the rewritten call is a declaration, so a line comment above it now needs to be a block comment',
 };
@@ -737,19 +739,12 @@ export const FIX_INDUCED_BASELINE: Record<string, string> = {
  * can rot.
  */
 export const SUGGESTION_INDUCED_BASELINE: Record<string, string> = {
-  // --- The suggestion hoists a declaration to module scope, and a rule that
-  // polices module scope then objects. #1478 shape 1, arriving through a
-  // suggestion instead of a fix; the design call there is a human one and is
-  // not re-litigated here.
-  'enforce-dynamic-firebase-imports (suggestion) -> global-const-style':
-    'the static import becomes a module-scope `const helper = await import(...)`, whose camelCase name global-const-style requires be UPPER_SNAKE_CASE (#1478 shape 1)',
-  'enforce-dynamic-firebase-imports (suggestion) -> export-if-in-doubt':
-    'the static import becomes a module-scope const, which export-if-in-doubt demands be exported (#1478 shape 1)',
-
-  // --- Same mechanism as the fix-path entry of the same name: this rule ships
-  // both a fixer and a suggestion, and they perform the same rewrite.
-  'enforce-dynamic-firebase-imports (suggestion) -> prefer-block-comments-for-declarations':
-    'the static import becomes `const { x } = await import(...)`, so a line comment above the import now sits above a declaration',
+  // --- #1478 shape 1 — a declaration hoisted to module scope, which the rules
+  // policing module scope then object to — used to arrive here through
+  // enforce-dynamic-firebase-imports' suggestion. #1716 removed the mechanism:
+  // that suggestion no longer rewrites the import where it stands, so it emits
+  // no module-scope const for global-const-style, export-if-in-doubt or
+  // prefer-block-comments-for-declarations to object to.
 
   // --- Resolved by design, not deferred: `--fix` under the full recommended
   // config rewrites the emitted `useCallback(fn, deps)` into
