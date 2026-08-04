@@ -1,3 +1,12 @@
+## [1.20.97](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.96...v1.20.97) (2026-08-04)
+
+
+### Bug Fixes
+
+* **enforce-boolean-naming-prefixes:** accept a digit or $ fused onto an UPPER_SNAKE prefix (closes [#1690](https://github.com/BluMintInc/eslint-custom-rules/issues/1690)) ([bb14743](https://github.com/BluMintInc/eslint-custom-rules/commit/bb147438d0012f865d6845c4bcdc424094697c47))
+* **enforce-boolean-naming-prefixes:** infer a callee's return from its body when the annotation is absent (closes [#1691](https://github.com/BluMintInc/eslint-custom-rules/issues/1691)) ([2239c23](https://github.com/BluMintInc/eslint-custom-rules/commit/2239c23a7e8287b15c9baa035883e6086597c260))
+* **enforce-positive-naming:** decline when a function's returns yield no verdict (closes [#1692](https://github.com/BluMintInc/eslint-custom-rules/issues/1692)) ([0ed6f2a](https://github.com/BluMintInc/eslint-custom-rules/commit/0ed6f2a377a00d82f3534e3e28e00b5424976c5e))
+
 ## [1.20.96](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.95...v1.20.96) (2026-08-04)
 
 
