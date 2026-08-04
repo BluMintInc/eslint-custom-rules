@@ -90,6 +90,30 @@ ruleTesterTs.run(
       }
       const label = shouldLabel('a');
       `,
+      // The same callee WITHOUT the annotation. `no-explicit-return-type` strips
+      // the annotation that used to carry this exemption, so the body has to
+      // carry it: a returned binding that is not boolean under this rule's own
+      // naming regime keeps the callee's name from deciding.
+      `
+      function shouldLabel(id: string) {
+        return id;
+      }
+      const label = shouldLabel('a');
+      `,
+      // Arrow form of the un-annotated callee
+      `
+      const shouldLabel = (id: string) => id;
+      const label = shouldLabel('a');
+      `,
+      // Un-annotated callee whose body forwards an opaque helper's result: the
+      // call cannot be shown to yield a boolean, so the rule declines to claim
+      // one (false negatives beat false positives).
+      `
+      function shouldThing(x: string) {
+        return compute(x);
+      }
+      const thing = shouldThing('a');
+      `,
       // Union of boolean and object: the call cannot be relied on to yield a
       // boolean, so the rule stays silent (prefer false negatives).
       `
@@ -299,6 +323,18 @@ ruleTesterTs.run(
           return id.length > 0;
         }
         const deletable = canDelete('a');
+        `,
+        errors: [{ messageId: 'missingBooleanPrefix' }],
+      },
+      // CRITICAL GUARD: dropping the annotation grants no amnesty. An
+      // un-annotated callee whose body demonstrably returns a boolean still
+      // makes the assigned variable a boolean.
+      {
+        code: `
+        function shouldRun(x: number) {
+          return x > 0;
+        }
+        const run = shouldRun(1);
         `,
         errors: [{ messageId: 'missingBooleanPrefix' }],
       },

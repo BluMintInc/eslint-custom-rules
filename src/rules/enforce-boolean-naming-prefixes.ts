@@ -1000,6 +1000,32 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         return 'nonBoolean';
       }
 
+      // A returned binding is governed by this very rule: a boolean variable,
+      // parameter or function must carry an approved prefix. So an unprefixed
+      // `id` — or the result of calling an unprefixed `compute(x)` — is not a
+      // boolean under the regime the rule enforces, and the callee's own name
+      // must not override that. Deciding here keeps the exemption in the body
+      // rather than in a return annotation, which `no-explicit-return-type`
+      // deletes (issue #1691).
+      //
+      // Member accesses (`source.flag`, `source.read()`) are deliberately
+      // excluded: property signatures are only enforced under
+      // `enforceForPropertySignatures` and third-party method names are outside
+      // this rule's reach, so an unprefixed member may legitimately yield a
+      // boolean and the callee's name keeps its say.
+      if (expression.type === AST_NODE_TYPES.Identifier) {
+        return identifierIsBoolean(expression) ? 'boolean' : 'nonBoolean';
+      }
+
+      if (
+        expression.type === AST_NODE_TYPES.CallExpression &&
+        expression.callee.type === AST_NODE_TYPES.Identifier
+      ) {
+        return callExpressionLooksBoolean(expression) === 'boolean'
+          ? 'boolean'
+          : 'nonBoolean';
+      }
+
       if (expression.type === AST_NODE_TYPES.UnaryExpression) {
         if (expression.operator === '!' || expression.operator === 'delete') {
           return 'boolean';
