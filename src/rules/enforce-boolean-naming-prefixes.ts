@@ -139,13 +139,28 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
 
         const nextChar = normalizedName.charAt(p.length);
 
-        // For SCREAMING_SNAKE_CASE or similar all-uppercase names,
-        // we require an underscore boundary.
+        // For SCREAMING_SNAKE_CASE or similar all-uppercase names the prefix must
+        // end at a separator, since case can no longer mark the word boundary
+        // (ISVALID stays unprefixed). Digits fused onto the prefix belong to that
+        // first segment rather than to the next word — ARE2_VALID is the
+        // UPPER_SNAKE spelling of are2Valid, which the camelCase branch below
+        // accepts — so a trailing digit run is consumed before the separator is
+        // examined, and the same separators the camelCase branch honours (`_`,
+        // `$`, end of name) close the segment. Only a digit run directly after
+        // the prefix qualifies: ARENA2_MAP still fails because a letter follows
+        // the prefix, and H2AS_ITEMS never reaches here because the prefix does
+        // not match the segment's start.
         const isAllUppercase =
           normalizedName === normalizedName.toUpperCase() &&
           /[a-z]/i.test(normalizedName);
         if (isAllUppercase) {
-          return nextChar === '_';
+          const afterPrefix = normalizedName
+            .slice(p.length)
+            .replace(/^\d+/, '');
+          const boundaryChar = afterPrefix.charAt(0);
+          return (
+            boundaryChar === '' || boundaryChar === '_' || boundaryChar === '$'
+          );
         }
 
         // For camelCase, the next char must be uppercase, a digit, or $
