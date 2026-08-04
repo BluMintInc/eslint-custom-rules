@@ -264,9 +264,19 @@ const at = (buffer, index: number) => buffer[index];
       `,
     },
     {
-      name: 'a number assertion inside an offset is unwrapped',
+      // The `: number` annotation on `index` is the whole proof: the assertion
+      // is read through and asserts nothing. The unannotated spelling of this
+      // very offset is an invalid case below.
+      name: 'a `: number` parameter stays proven under an assertion inside an offset',
       code: `
 const next = (buffer, index: number) => buffer[(index as number) + 1];
+      `,
+    },
+    {
+      // Issue #1712 FENCE, spelled with the typed receiver the report cites.
+      name: 'a typed buffer offset over a `: number` parameter stays exempt',
+      code: `
+const next = (buffer: Uint8Array, index: number) => buffer[(index as number) + 1];
       `,
     },
     {
@@ -383,6 +393,96 @@ const obj = { alpha: 1, beta: 2 };
 const id = 'alpha';
 // eslint-disable-next-line
 const first = obj[id];
+      `,
+    },
+    // ------------------------------------------------------------------
+    // Issue #1712: assertion and await wrappers are read through rather than
+    // treated as a key of their own, so every carve-out the rule already
+    // grants keeps applying to the value underneath.
+    // ------------------------------------------------------------------
+    {
+      name: 'an asserted assertSafe call needs no second validation',
+      code: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (m, k) => m[assertSafe(k) as string];
+      `,
+    },
+    {
+      name: 'a non-null asserted assertSafe call needs no second validation',
+      code: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (m, k) => m[assertSafe(k)!];
+      `,
+    },
+    {
+      name: 'an assertSafe-initialised binding stays exempt under an assertion',
+      code: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (m, rawKey) => {
+  const safeKey = assertSafe(rawKey);
+  return m[safeKey as string];
+};
+      `,
+    },
+    {
+      name: 'a string literal under a const assertion is still a literal',
+      code: `
+const read = (m) => m['key1' as const];
+      `,
+    },
+    {
+      name: 'a numeric literal under an assertion is still a literal',
+      code: `
+const read = (arr) => arr[0 as number];
+      `,
+    },
+    {
+      name: 'a `: number` parameter is proven through an assertion',
+      code: `
+const at = (map, index: number) => map[index as number];
+      `,
+    },
+    {
+      name: 'a `: number` parameter is proven through an await',
+      code: `
+const at = async (map, index: number) => map[await index];
+      `,
+    },
+    {
+      name: 'a Math call is proven numeric through an assertion',
+      code: `
+const sample = (palette, t) => palette[Math.floor(t * 255) as number];
+      `,
+    },
+    {
+      name: 'an array-ish receiver keeps its carve-out under an assertion',
+      code: `
+const read = (items, k) => items[k as string];
+      `,
+    },
+    {
+      name: 'a complex template literal keeps its carve-out under an assertion',
+      code: `
+const read = (m, id) => m[\`prefix_\${id}_suffix\` as string];
+      `,
+    },
+    {
+      // A bare identifier key in destructuring is never flagged, and reading
+      // through the assertion must not turn that carve-out into a report.
+      name: 'a bare identifier key in computed destructuring stays exempt under an assertion',
+      code: `
+const read = (obj, k) => {
+  const { [k as string]: value } = obj;
+  return value;
+};
+      `,
+    },
+    {
+      // The `in` visitor flags only String(...) and `${...}` operands, so an
+      // asserted bare identifier stays exempt there as well.
+      name: 'a bare identifier operand of `in` stays exempt under an assertion',
+      code: `
+const has = (obj, k) => (k as string) in obj;
       `,
     },
     {
@@ -1757,6 +1857,298 @@ const spy = jest.fn((i) => mockChips[i]);
 import { assertSafe } from 'functions/src/util/assertSafe';
 let mockChips: unknown[] = [];
 const spy = jest.fn((i) => mockChips[assertSafe(i)]);
+      `,
+    },
+    // ------------------------------------------------------------------
+    // Issue #1712: an assertion or an await around a computed key erases at
+    // run time, so what the wrapper holds is what names the property —
+    // `__proto__` and `constructor` included. The key is classified through
+    // the wrapper, and the fix wraps the written form so the assertion the
+    // author put there survives the rewrite.
+    // ------------------------------------------------------------------
+    // invalid — assertion wrappers must be unwrapped, not dropped
+    {
+      code: 'function f(m,k){ return m[k as string]; }',
+      errors: [{ messageId: 'useAssertSafe' }],
+      output: `import { assertSafe } from 'functions/src/util/assertSafe';
+function f(m,k){ return m[assertSafe(k as string)]; }`,
+    },
+    {
+      code: 'function f(m,k){ return m[k!]; }',
+      errors: [{ messageId: 'useAssertSafe' }],
+      output: `import { assertSafe } from 'functions/src/util/assertSafe';
+function f(m,k){ return m[assertSafe(k!)]; }`,
+    },
+    {
+      code: 'function f(m,k){ return m[k satisfies string]; }',
+      errors: [{ messageId: 'useAssertSafe' }],
+      output: `import { assertSafe } from 'functions/src/util/assertSafe';
+function f(m,k){ return m[assertSafe(k satisfies string)]; }`,
+    },
+    {
+      code: 'async function f(m,p){ return m[await p]; }',
+      errors: [{ messageId: 'useAssertSafe' }],
+      output: `import { assertSafe } from 'functions/src/util/assertSafe';
+async function f(m,p){ return m[assertSafe(await p)]; }`,
+    },
+    {
+      // The message names the key as it is written, wrapper included, so the
+      // remedy it prints is the edit the fixer makes.
+      name: 'the reported key is the written form, assertion included',
+      code: `
+const read = (m, k) => m[k as string];
+      `,
+      errors: [lintError('k as string')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (m, k) => m[assertSafe(k as string)];
+      `,
+    },
+    {
+      name: 'an angle-bracket type assertion is unwrapped',
+      code: `
+const read = (m, k) => m[<string>k];
+      `,
+      errors: [lintError('<string>k')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (m, k) => m[assertSafe(<string>k)];
+      `,
+    },
+    {
+      name: 'nested wrappers are peeled down to the identifier underneath',
+      code: `
+const read = (m, k) => m[(k as any)!];
+      `,
+      errors: [lintError('(k as any)!')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (m, k) => m[assertSafe((k as any)!)];
+      `,
+    },
+    {
+      name: 'three stacked wrappers are peeled in one pass',
+      code: `
+const read = (m, k) => m[((k as unknown) as string)!];
+      `,
+      errors: [lintError('((k as unknown) as string)!')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (m, k) => m[assertSafe(((k as unknown) as string)!)];
+      `,
+    },
+    {
+      name: 'a satisfies wrapper over an await is peeled',
+      code: `
+const read = async (m, p) => m[(await p) satisfies string];
+      `,
+      errors: [lintError('(await p) satisfies string')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = async (m, p) => m[assertSafe((await p) satisfies string)];
+      `,
+    },
+    {
+      // Issue #1712's table row: a bare `g()` key reports, so the asserted
+      // spelling of the same call must report too.
+      name: 'an assertion over a call expression is unwrapped',
+      code: `
+const read = (m, g) => m[g() as number];
+      `,
+      errors: [lintError('g() as number')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (m, g) => m[assertSafe(g() as number)];
+      `,
+    },
+    {
+      name: 'an assertion over a member expression key is unwrapped',
+      code: `
+const read = (m, source) => m[source.key as string];
+      `,
+      errors: [lintError('source.key as string')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (m, source) => m[assertSafe(source.key as string)];
+      `,
+    },
+    {
+      name: 'an awaited member expression key is unwrapped',
+      code: `
+const read = async (m, source) => m[await source.key];
+      `,
+      errors: [lintError('await source.key')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = async (m, source) => m[assertSafe(await source.key)];
+      `,
+    },
+    {
+      name: 'an assertion over a conditional key is unwrapped',
+      code: `
+const read = (m, flag, k) => m[(flag ? 'a' : k) as string];
+      `,
+      errors: [lintError("(flag ? 'a' : k) as string")],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (m, flag, k) => m[assertSafe((flag ? 'a' : k) as string)];
+      `,
+    },
+    {
+      // agora evidence for issue #1712: an asserted key on the write side of
+      // an assignment is the shape that pollutes a prototype.
+      name: 'a computed write through an assertion is reported',
+      code: `
+const toMap = (prev, deviceId, label) => {
+  prev[deviceId as string] = label;
+};
+      `,
+      errors: [lintError('deviceId as string')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const toMap = (prev, deviceId, label) => {
+  prev[assertSafe(deviceId as string)] = label;
+};
+      `,
+    },
+    {
+      name: 'an optional computed member through an assertion is reported',
+      code: `
+const read = (m, k) => m?.[k as string];
+      `,
+      errors: [lintError('k as string')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (m, k) => m?.[assertSafe(k as string)];
+      `,
+    },
+    {
+      name: 'a delete through an assertion is reported',
+      code: `
+const drop = (m, k) => {
+  delete m[k as string];
+};
+      `,
+      errors: [lintError('k as string')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const drop = (m, k) => {
+  delete m[assertSafe(k as string)];
+};
+      `,
+    },
+    {
+      name: 'a non-array-ish field indexed through an assertion is reported',
+      code: `
+const read = (table, key) => table.rows[key as string];
+      `,
+      errors: [lintError('key as string')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (table, key) => table.rows[assertSafe(key as string)];
+      `,
+    },
+    {
+      // The chained read from agora's toNoContentText.
+      name: 'an asserted key deep in a member chain is reported',
+      code: `
+const read = (data, variant) => data.users[variant as string].name;
+      `,
+      errors: [lintError('variant as string')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (data, variant) => data.users[assertSafe(variant as string)].name;
+      `,
+    },
+    {
+      // The String(...) conversion is kept rather than collapsed to its
+      // argument: the assertion the author wrote applies to the call's result,
+      // so deleting either half rewrites text the fixer does not own.
+      name: 'an asserted String(...) key keeps both the call and the assertion',
+      code: `
+const read = (m, id) => m[String(id) as string];
+      `,
+      errors: [lintError('String(id) as string')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (m, id) => m[assertSafe(String(id) as string)];
+      `,
+    },
+    {
+      name: 'an asserted template-literal key keeps the template',
+      code: `
+const read = (m, id) => m[\`\${id}\` as string];
+      `,
+      errors: [lintError('`${id}` as string')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (m, id) => m[assertSafe(\`\${id}\` as string)];
+      `,
+    },
+    {
+      name: 'an asserted String(...) key in computed destructuring is reported',
+      code: `
+const read = (obj, id) => {
+  const { [String(id) as string]: value } = obj;
+  return value;
+};
+      `,
+      errors: [lintError('String(id) as string')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (obj, id) => {
+  const { [assertSafe(String(id) as string)]: value } = obj;
+  return value;
+};
+      `,
+    },
+    {
+      name: 'an asserted String(...) operand of `in` is reported',
+      code: `
+const has = (obj, id) => (String(id) as string) in obj;
+      `,
+      errors: [lintError('String(id) as string')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const has = (obj, id) => (assertSafe(String(id) as string)) in obj;
+      `,
+    },
+    {
+      // FENCE for issue #1712: the assertion is not what exempts the offset.
+      // With no annotation on `index` the syntax proves nothing, so the key
+      // reports — the mirror of the valid case that pins the annotation.
+      name: 'an unannotated parameter under a number assertion stays unproven',
+      code: `
+const next = (buffer, index) => buffer[(index as number) + 1];
+      `,
+      errors: [lintError('(index as number) + 1')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const next = (buffer, index) => buffer[assertSafe((index as number) + 1)];
+      `,
+    },
+    {
+      name: 'an unannotated parameter asserted numeric on its own stays unproven',
+      code: `
+const at = (buffer, index) => buffer[index as number];
+      `,
+      errors: [lintError('index as number')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const at = (buffer, index) => buffer[assertSafe(index as number)];
+      `,
+    },
+    {
+      // The wrapped fix is idempotent: a second pass sees an assertSafe call
+      // at the key position and leaves it alone.
+      name: 'wrapped keys across one file take a single import and converge',
+      code: `
+const read = (m, k, id) => [m[k as string], m[id!]];
+      `,
+      errors: [lintError('k as string'), lintError('id!')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (m, k, id) => [m[assertSafe(k as string)], m[assertSafe(id!)]];
       `,
     },
   ],

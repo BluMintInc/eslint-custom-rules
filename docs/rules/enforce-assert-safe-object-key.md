@@ -25,6 +25,7 @@ const id = 'key1';
 console.log(obj[String(id)]);
 console.log(obj[`${id}`]);
 console.log(obj[id]);
+console.log(obj[id as string]); // an assertion erases; the lookup is unchanged
 ```
 
 #### ✅ Correct
@@ -37,6 +38,7 @@ const id = 'key1';
 
 console.log(obj[assertSafe(id)]);
 console.log(obj[assertSafe(`${id}_suffix`)]);
+console.log(obj[assertSafe(id as string)]);
 const hasKey = assertSafe(id) in obj;
 ```
 
@@ -118,6 +120,48 @@ obj[n];
 obj[a + b]; // `+` over unknown operands may concatenate strings
 obj[String(index)]; // an explicit string conversion is a string
 ```
+
+### Assertion and await wrappers are read through
+
+A type assertion erases at compile time and an `await` resolves to the value it
+holds, so neither changes the property a computed key names. `obj[id as string]`,
+`obj[id!]`, `obj[<string>id]`, `obj[id satisfies string]` and `obj[await id]`
+each look up exactly what `obj[id]` looks up — `__proto__` and `constructor`
+included. The rule peels those wrappers off, nested ones included
+(`obj[(id as any)!]`), and judges the expression underneath, so appending
+`as string` to a key is no way past the check.
+
+The numeric carve-out is read through in the same direction, and the proof still
+comes from the binding rather than from the assertion:
+
+```js
+// ✅ Exempt: the `: number` annotation on the parameter proves the offset
+// numeric, and the assertion around it is simply read through.
+const next = (buffer: Uint8Array, index: number) => buffer[(index as number) + 1];
+```
+
+```js
+// ❌ Reported: the very same assertion over a key nothing proves numeric.
+// An assertion asserts; it never proves.
+buffer[(index as number) + 1];
+```
+
+The fix wraps the key **as it is written**, so the assertion the author put there
+survives the rewrite:
+
+```js
+// ❌ Reported
+prev[deviceId as string] = label;
+
+// ✅ Fixed — the assertion is carried into the call, not deleted
+prev[assertSafe(deviceId as string)] = label;
+```
+
+`assertSafe` is identity-typed (`assertSafe<T extends PropertyKey>(key: T): T`),
+so wrapping the asserted expression preserves the key's type. Wrapping the
+expression *inside* the wrapper instead would move an `await` to the wrong side
+of the call: `await assertSafe(p)` validates the promise rather than the key it
+resolves to.
 
 ### Interaction with inline disable comments
 

@@ -139,6 +139,37 @@ function isInsideMockFactory(node: TSESTree.Node): boolean {
   return false;
 }
 
+/**
+ * Strips the wrappers that stand between a computed key and the value that
+ * actually names the property. `k as string`, `k satisfies string`, `<string>k`
+ * and `k!` erase at compile time, and `await k` resolves to the very same key,
+ * so every one of them leaves the run-time lookup untouched — including a lookup
+ * of `__proto__` or `constructor`. Reading the wrapper instead of what it holds
+ * classifies nothing and turns appending `as string` into a silent bypass of the
+ * guard, so the wrappers are peeled off before the key is judged.
+ *
+ * The peel repeats because the wrappers nest: `(x as any)!` is a non-null
+ * assertion over a type assertion.
+ */
+function unwrapKeyExpression(node: TSESTree.Node): TSESTree.Node {
+  let current = node;
+  for (;;) {
+    switch (current.type) {
+      case AST_NODE_TYPES.TSAsExpression:
+      case AST_NODE_TYPES.TSSatisfiesExpression:
+      case AST_NODE_TYPES.TSNonNullExpression:
+      case AST_NODE_TYPES.TSTypeAssertion:
+        current = current.expression;
+        break;
+      case AST_NODE_TYPES.AwaitExpression:
+        current = current.argument;
+        break;
+      default:
+        return current;
+    }
+  }
+}
+
 /** Names that read as a positional sequence rather than a keyed record. */
 const ARRAY_LIKE_NAME = /^(array|arr|items|elements|list|collection|data)s?$/i;
 
@@ -516,6 +547,31 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       });
 
     /**
+     * Reports a key whose written form may carry assertion or await wrappers.
+     *
+     * The report and the fix sit on the outermost written node, so the wrapper
+     * the author put there survives the rewrite: `m[assertSafe(k as string)]`
+     * rather than `m[assertSafe(k)]`, which would delete text the fixer does not
+     * own. `assertSafe` is identity-typed (`<T extends PropertyKey>(key: T): T`),
+     * so wrapping the asserted expression preserves the key's type, and wrapping
+     * an `await` keeps the validation on the resolved key rather than moving it
+     * onto the promise.
+     *
+     * A key written without a wrapper keeps the narrower argument the fix has
+     * always emitted: `String(id)` and `` `${id}` `` collapse to `id`, whose
+     * conversion assertSafe subsumes.
+     */
+    const reportWrittenKey = (
+      written: TSESTree.Node,
+      unwrapped: TSESTree.Node,
+      innerText: string,
+    ) =>
+      reportUseAssertSafe(
+        written,
+        written === unwrapped ? innerText : context.sourceCode.getText(written),
+      );
+
+    /**
      * Returns true when the identifier was initialized directly from an
      * assertSafe(...) call, e.g. `const safeKey = assertSafe(rawKey)`.
      * Only direct, single-step initializers count — transitive aliases
@@ -555,40 +611,42 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       node: TSESTree.Node,
       seen: Set<TSESLint.Scope.Variable> = new Set(),
     ): boolean => {
-      switch (node.type) {
+      // An assertion or an await around an operand leaves its run-time value
+      // alone, so the proof reads through to what the wrapper holds. The
+      // annotation on the binding underneath is what proves the key numeric —
+      // an assertion asserts and proves nothing on its own.
+      const target = unwrapKeyExpression(node);
+      switch (target.type) {
         case AST_NODE_TYPES.Literal:
-          return typeof node.value === 'number';
+          return typeof target.value === 'number';
         case AST_NODE_TYPES.UpdateExpression:
           return true;
         case AST_NODE_TYPES.UnaryExpression:
           return (
-            node.operator === '-' ||
-            node.operator === '+' ||
-            node.operator === '~'
+            target.operator === '-' ||
+            target.operator === '+' ||
+            target.operator === '~'
           );
         case AST_NODE_TYPES.BinaryExpression:
-          if (NUMERIC_BINARY_OPERATORS.has(node.operator)) {
+          if (NUMERIC_BINARY_OPERATORS.has(target.operator)) {
             return true;
           }
           return (
-            node.operator === '+' &&
-            isStaticallyNumeric(node.left, seen) &&
-            isStaticallyNumeric(node.right, seen)
+            target.operator === '+' &&
+            isStaticallyNumeric(target.left, seen) &&
+            isStaticallyNumeric(target.right, seen)
           );
         case AST_NODE_TYPES.CallExpression:
-          return isNumericCall(node);
+          return isNumericCall(target);
         case AST_NODE_TYPES.MemberExpression:
           // `.length` is a number on arrays, typed arrays and strings alike.
           return (
-            !node.computed &&
-            node.property.type === AST_NODE_TYPES.Identifier &&
-            node.property.name === 'length'
+            !target.computed &&
+            target.property.type === AST_NODE_TYPES.Identifier &&
+            target.property.name === 'length'
           );
-        case AST_NODE_TYPES.TSAsExpression:
-        case AST_NODE_TYPES.TSNonNullExpression:
-          return isStaticallyNumeric(node.expression, seen);
         case AST_NODE_TYPES.Identifier:
-          return isNumericIdentifier(node, seen);
+          return isNumericIdentifier(target, seen);
         default:
           return false;
       }
@@ -655,7 +713,8 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       // Handle computed property in object destructuring
       Property(node: TSESTree.Property) {
         if (node.computed && node.key) {
-          const key = node.key;
+          const written = node.key;
+          const key = unwrapKeyExpression(written);
 
           // Check for String(id) pattern
           if (
@@ -665,7 +724,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
           ) {
             const arg = key.arguments[0];
             const argText = context.sourceCode.getText(arg);
-            reportUseAssertSafe(key, argText);
+            reportWrittenKey(written, key, argText);
           }
 
           // Check for template literals like `${id}`
@@ -678,14 +737,15 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
           ) {
             const expr = key.expressions[0];
             const exprText = context.sourceCode.getText(expr);
-            reportUseAssertSafe(key, exprText);
+            reportWrittenKey(written, key, exprText);
           }
         }
       },
       // Handle binary expressions like 'key' in obj
       BinaryExpression(node: TSESTree.BinaryExpression) {
         if (node.operator === 'in') {
-          const left = node.left;
+          const written = node.left;
+          const left = unwrapKeyExpression(written);
 
           // Check for String(id) pattern
           if (
@@ -695,7 +755,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
           ) {
             const arg = left.arguments[0];
             const argText = context.sourceCode.getText(arg);
-            reportUseAssertSafe(left, argText);
+            reportWrittenKey(written, left, argText);
           }
 
           // Check for template literals like `${id}`
@@ -708,13 +768,17 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
           ) {
             const expr = left.expressions[0];
             const exprText = context.sourceCode.getText(expr);
-            reportUseAssertSafe(left, exprText);
+            reportWrittenKey(written, left, exprText);
           }
         }
       },
       MemberExpression(node: TSESTree.MemberExpression) {
         if (node.computed) {
-          const property = node.property;
+          const written = node.property;
+          // The written key may sit under assertion or await wrappers that erase
+          // at run time; what they hold is what names the property, so that is
+          // what the branches below classify.
+          const property = unwrapKeyExpression(written);
 
           // Skip if already using assertSafe
           if (
@@ -764,7 +828,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
           ) {
             const arg = property.arguments[0];
             const argText = context.sourceCode.getText(arg);
-            reportUseAssertSafe(property, argText);
+            reportWrittenKey(written, property, argText);
             return;
           }
 
@@ -790,7 +854,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
 
             const expr = property.expressions[0];
             const exprText = context.sourceCode.getText(expr);
-            reportUseAssertSafe(property, exprText);
+            reportWrittenKey(written, property, exprText);
             return;
           }
 
@@ -813,7 +877,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             }
 
             const propText = context.sourceCode.getText(property);
-            reportUseAssertSafe(property, propText);
+            reportWrittenKey(written, property, propText);
             return;
           }
 
@@ -825,7 +889,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             }
 
             const propText = context.sourceCode.getText(property);
-            reportUseAssertSafe(property, propText);
+            reportWrittenKey(written, property, propText);
             return;
           }
 
@@ -841,7 +905,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             }
 
             const propText = context.sourceCode.getText(property);
-            reportUseAssertSafe(property, propText);
+            reportWrittenKey(written, property, propText);
             return;
           }
 
@@ -860,7 +924,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             }
 
             const propText = context.sourceCode.getText(property);
-            reportUseAssertSafe(property, propText);
+            reportWrittenKey(written, property, propText);
             return;
           }
         }
