@@ -437,6 +437,129 @@ ruleTesterTs.run('parallelize-loop-awaits', parallelizeLoopAwaits, {
       }
       `,
     },
+
+    // A `do...while` test is re-evaluated after every iteration exactly as a
+    // `while` test is, so a call there couples the iteration count to what the
+    // iterations do and no Promise.all form exists. (#1688)
+    {
+      filename: 'src/drain.ts',
+      code: `
+      async function drainQueueDoWhile() {
+        do {
+          await drainNext(queue);
+        } while (queue.hasPending());
+      }
+      `,
+    },
+    // The lone-discarded-zero-argument-call exemption reaches `do...while` too:
+    // the loop passes nothing in and keeps nothing back, so the ordering it
+    // preserves lives inside the callee. (#1687, #1688)
+    {
+      filename: 'src/replay.ts',
+      code: `
+      async function replayCyclesDoWhile() {
+        do {
+          await runNextCycle();
+        } while (hasMore);
+      }
+      `,
+    },
+    // Every other barrier reaches `do...while` as well — a coordinator named in
+    // its body exempts it just as it does the other loop forms. (#1688)
+    {
+      filename: 'src/commit.ts',
+      code: `
+      async function batchedDoWhile() {
+        let index = 0;
+        do {
+          await batch.set(refs[index], values[index]);
+          index++;
+        } while (index < refs.length);
+      }
+      `,
+    },
+
+    // Shorthand carries the identifier as the property's VALUE, so `{ lock }`
+    // really does read a coordinator from the surrounding scope and keeps the
+    // loop exempt. (#1688)
+    {
+      filename: 'src/send.ts',
+      code: `
+      async function shorthandCoordinatorArgument() {
+        for (const item of items) {
+          await send({ lock, id: item.id });
+        }
+      }
+      `,
+    },
+    // A computed key is an expression, not a label, so it reads the coordinator
+    // too. (#1688)
+    {
+      filename: 'src/send.ts',
+      code: `
+      async function computedKeyCoordinatorArgument() {
+        for (const item of items) {
+          await send({ [lock]: true, id: item.id });
+        }
+      }
+      `,
+    },
+    // Shorthand destructuring binds a name the body then references, so the
+    // coordinator veto holds on the pattern side as well. (#1688)
+    {
+      filename: 'src/send.ts',
+      code: `
+      async function shorthandDestructuring() {
+        for (const item of items) {
+          const { lock } = item;
+          await send(item, lock);
+        }
+      }
+      `,
+    },
+    // A coordinator named at the loop-body level — not inside a callback —
+    // still vetoes, which is the control for the nested-function boundary the
+    // callback case exercises. (#1688)
+    {
+      filename: 'src/persist.ts',
+      code: `
+      async function coordinatorNameInBody() {
+        for (const item of items) {
+          await persist(item, buildBatch(item));
+        }
+      }
+      `,
+    },
+
+    // Because the innermost loop owns the report, an exemption that belongs to
+    // the inner loop is not circumvented by its enclosing loop: nothing here is
+    // reportable, and the outer loop does not claim the inner `for await...of`
+    // body's await. (#1688)
+    {
+      filename: 'src/stream.ts',
+      code: `
+      async function readEachStream() {
+        for (const stream of streams) {
+          for await (const chunk of stream) {
+            await handleChunk(chunk);
+          }
+        }
+      }
+      `,
+    },
+    // The same holds when the inner loop's own condition is coupled. (#1688)
+    {
+      filename: 'src/drain.ts',
+      code: `
+      async function drainEachQueue() {
+        for (const queue of queues) {
+          while (queue.hasPending()) {
+            await drainNext(queue);
+          }
+        }
+      }
+      `,
+    },
   ],
 
   invalid: [
@@ -576,19 +699,62 @@ ruleTesterTs.run('parallelize-loop-awaits', parallelizeLoopAwaits, {
       errors: [{ messageId: 'parallelizeLoopAwaits' }],
     },
 
-    // Nested loops: inner is parallelizable
+    // Nested loops: the inner loop is parallelizable and owns the single report.
+    // The outer loop names nothing a barrier recognizes, so only the innermost
+    // loop's claim on the await keeps this at one error, anchored at the inner
+    // await rather than reported once per enclosing loop. (#1688)
     {
       code: `
       async function innerLoopParallelizable() {
-        for (const batch of batches) {
-          doSomethingSync(batch);
-          for (const item of batch.items) {
+        for (const group of groups) {
+          doSomethingSync(group);
+          for (const item of group.items) {
             await processItem(item);
           }
         }
       }
       `,
-      errors: [{ messageId: 'parallelizeLoopAwaits' }],
+      errors: [{ messageId: 'parallelizeLoopAwaits', line: 6, column: 13 }],
+    },
+
+    // Each loop still answers for the await it owns: the outer loop reports its
+    // own await and the inner loop reports the inner one, two distinct
+    // locations rather than one await counted twice. (#1688)
+    {
+      code: `
+      async function bothLoopsParallelizable() {
+        for (const group of groups) {
+          await register(group);
+          for (const item of group.items) {
+            await processItem(item);
+          }
+        }
+      }
+      `,
+      errors: [
+        { messageId: 'parallelizeLoopAwaits', line: 4, column: 11 },
+        { messageId: 'parallelizeLoopAwaits', line: 6, column: 13 },
+      ],
+    },
+
+    // An outer await written AFTER the inner loop is still the outer loop's
+    // own, so skipping the inner loop's await does not cost the outer report.
+    // (#1688)
+    {
+      code: `
+      async function outerAwaitAfterInnerLoop() {
+        for (const group of groups) {
+          for (const item of group.items) {
+            await processItem(item);
+          }
+          await finalize(group);
+        }
+      }
+      `,
+      errors: [
+        { messageId: 'parallelizeLoopAwaits', line: 5, column: 13 },
+        { messageId: 'parallelizeLoopAwaits', line: 7, column: 11 },
+      ],
     },
 
     // Class method with independent for...of
@@ -813,6 +979,119 @@ ruleTesterTs.run('parallelize-loop-awaits', parallelizeLoopAwaits, {
         for (const item of items) {
           await ping();
           record(item);
+        }
+      }
+      `,
+      errors: [{ messageId: 'parallelizeLoopAwaits' }],
+    },
+
+    // `do...while` repeats a body per iteration exactly as the other four loop
+    // forms do, and an index-addressed await inside one is as parallelizable
+    // there as it is in the equivalent `while`. (#1688)
+    {
+      code: `
+      async function processQueueDoWhile() {
+        let index = 0;
+        do {
+          await processItem(items[index]);
+          index++;
+        } while (index < items.length);
+      }
+      `,
+      errors: [{ messageId: 'parallelizeLoopAwaits', line: 5, column: 11 }],
+    },
+    // A `do...while` over an iteration-drawn receiver reports the same as its
+    // `for...of` counterpart. (#1688)
+    {
+      code: `
+      async function drainDocsDoWhile() {
+        let cursor = 0;
+        do {
+          await docs[cursor].delete();
+          cursor++;
+        } while (cursor < docs.length);
+      }
+      `,
+      errors: [{ messageId: 'parallelizeLoopAwaits' }],
+    },
+    // A `do...while` nested in another loop leaves the report to the innermost
+    // loop, the same as every other loop form. (#1688)
+    {
+      code: `
+      async function nestedDoWhile() {
+        for (const group of groups) {
+          let index = 0;
+          do {
+            await processItem(group.items[index]);
+            index++;
+          } while (index < group.items.length);
+        }
+      }
+      `,
+      errors: [{ messageId: 'parallelizeLoopAwaits', line: 6, column: 13 }],
+    },
+
+    // A non-computed property KEY names a field of the payload and binds
+    // nothing, so `lock` here is a string in an object literal rather than a
+    // coordinator the iterations share, and the loop stays reportable. (#1688)
+    {
+      code: `
+      async function objectKeyLooksLikeCoordinator() {
+        for (const item of items) {
+          await send({ lock: true, id: item.id });
+        }
+      }
+      `,
+      errors: [{ messageId: 'parallelizeLoopAwaits' }],
+    },
+    // The same holds for a key that merely ends with a coordinator name, and
+    // for a nested object literal. (#1688)
+    {
+      code: `
+      async function nestedObjectKeyLooksLikeCoordinator() {
+        for (const item of items) {
+          await send({ payload: { advisoryLock: true }, transaction: item.id });
+        }
+      }
+      `,
+      errors: [{ messageId: 'parallelizeLoopAwaits' }],
+    },
+    // A key on a rate-limit name is a field too: `delay` as a payload field is
+    // not a call to a rate limiter. (#1688)
+    {
+      code: `
+      async function objectKeyLooksLikeRateLimit() {
+        for (const item of items) {
+          await enqueue({ delay: 1000, id: item.id });
+        }
+      }
+      `,
+      errors: [{ messageId: 'parallelizeLoopAwaits' }],
+    },
+
+    // Renamed destructuring binds `flagValue`; the `lock` before the colon is
+    // the SOURCE field's name on the iteration item, so it exempts nothing.
+    // (#1688)
+    {
+      code: `
+      async function renamedDestructuring() {
+        for (const item of items) {
+          const { lock: flagValue } = item;
+          await send(item, flagValue);
+        }
+      }
+      `,
+      errors: [{ messageId: 'parallelizeLoopAwaits' }],
+    },
+
+    // The nested-function boundary that `stopAtFunctions` draws is live: a
+    // coordinator name reachable only inside a callback describes that
+    // callback, not the loop, so the loop keeps its report. (#1688)
+    {
+      code: `
+      async function coordinatorNameOnlyInCallback() {
+        for (const item of items) {
+          await persist(item, () => buildBatch(item));
         }
       }
       `,
