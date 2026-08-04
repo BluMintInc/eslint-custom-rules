@@ -111,8 +111,14 @@ function collectReferencedTypeNames(
       if (mapped.typeAnnotation)
         collectReferencedTypeNames(mapped.typeAnnotation, acc);
       if (mapped.nameType) collectReferencedTypeNames(mapped.nameType, acc);
-      if ((mapped as any).typeParameter && (mapped as any).typeParameter.constraint) {
-        collectReferencedTypeNames((mapped as any).typeParameter.constraint, acc);
+      if (
+        (mapped as any).typeParameter &&
+        (mapped as any).typeParameter.constraint
+      ) {
+        collectReferencedTypeNames(
+          (mapped as any).typeParameter.constraint,
+          acc,
+        );
       }
       break;
     }
@@ -183,6 +189,68 @@ function collectReferencedTypeNames(
     }
   }
   return acc;
+}
+
+/**
+ * Type-level operators that keep a `typeof` query in the position where the
+ * alias derives its own type from the constant, rather than moving the query
+ * into a member, parameter or declaration slot. Unions, intersections, `keyof`,
+ * element extraction, array wrappers and utility application all still describe
+ * "this alias IS the constant's type", which is the remedy this rule asks for.
+ *
+ * Utility application belongs here for a convergence reason: the remedy for a
+ * reported `function f(x: Readonly<typeof CONST>)` is to name that type once as
+ * `type T = Readonly<typeof CONST>`. Reporting the extracted alias too would
+ * make the remedy its own violation, leaving that class of code with nowhere to
+ * land.
+ */
+function isAliasDerivationWrapper(
+  parent: TSESTree.Node,
+  child: TSESTree.Node,
+): boolean {
+  switch (parent.type) {
+    case AST_NODE_TYPES.TSUnionType:
+    case AST_NODE_TYPES.TSIntersectionType:
+    case AST_NODE_TYPES.TSTypeOperator:
+    case AST_NODE_TYPES.TSArrayType:
+    case AST_NODE_TYPES.TSTypeReference:
+    case AST_NODE_TYPES.TSTypeParameterInstantiation:
+      return true;
+    case AST_NODE_TYPES.TSIndexedAccessType:
+      // Only the object side derives from the constant. `Foo[typeof KEY]` reads
+      // the constant as a lookup key, which is a consumer position like any
+      // other annotation.
+      return (parent as TSESTree.TSIndexedAccessType).objectType === child;
+    default:
+      return isParenthesizedType(parent as TSESTree.TypeNode);
+  }
+}
+
+/**
+ * True when the query defines the alias itself — `type T = typeof CONST` and the
+ * derivation wrappers around it, such as `keyof typeof CONST`,
+ * `(typeof CONST)[number]` or `Readonly<typeof CONST>` (Issues #1117, #1175).
+ * A query sitting in a member, index signature, function-type parameter,
+ * conditional branch, mapped-type constraint or type-parameter default inside the
+ * alias body is a use site and stays reportable, matching what the same shape
+ * does outside an alias.
+ */
+function isCanonicalAliasDerivation(node: TSESTree.TSTypeQuery): boolean {
+  let child: TSESTree.Node = node;
+  let parent: TSESTree.Node | undefined = node.parent;
+
+  while (parent) {
+    if (parent.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
+      return parent.typeAnnotation === child;
+    }
+    if (!isAliasDerivationWrapper(parent, child)) {
+      return false;
+    }
+    child = parent;
+    parent = parent.parent;
+  }
+
+  return false;
 }
 
 /** Collects module-level consts and type aliases for quick lookup */
@@ -333,11 +401,12 @@ export const preferTypeAliasOverTypeofConstant: TSESLint.RuleModule<
 
         const ancestors = ASTHelpers.getAncestors(context, node);
 
-        // Skip if inside a type alias declaration (Issue #1117, #1175)
-        // This allows 'type T = typeof CONST' as the canonical way to define the alias.
-        if (
-          ancestors.some((a) => a.type === AST_NODE_TYPES.TSTypeAliasDeclaration)
-        ) {
+        // Skip the alias definition itself (Issue #1117, #1175), which is the
+        // canonical way to name the constant's type. The exemption covers the
+        // declared type of the alias and its derivation wrappers only; a query
+        // buried in an alias member is a use site and reports like the same
+        // shape written on an interface or a parameter (Issue #1680).
+        if (isCanonicalAliasDerivation(node)) {
           return;
         }
 

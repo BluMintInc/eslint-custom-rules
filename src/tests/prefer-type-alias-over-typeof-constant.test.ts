@@ -180,6 +180,116 @@ ruleTesterTs.run(
           'const OBJ: { [key: string]: T; get(id: T): T } = { a: { name: "a" }, get(id: T) { return id; } };',
         ].join('\n'),
       },
+      // Good: the alias IS the constant's type, the canonical remedy (Issue #1680)
+      {
+        code: [
+          'const CONFIG = { a: 1 } as const;',
+          'type Config = typeof CONFIG;',
+        ].join('\n'),
+      },
+      // Good: array of the derived type still defines the alias from the constant
+      {
+        code: [
+          'const CONFIG = { a: 1 } as const;',
+          'type Configs = (typeof CONFIG)[];',
+        ].join('\n'),
+      },
+      // Good: readonly array wrapper around the derived type
+      {
+        code: [
+          'const CONFIG = { a: 1 } as const;',
+          'type Configs = readonly (typeof CONFIG)[];',
+        ].join('\n'),
+      },
+      // Good: union of derivation wrappers (indexed access + keyof)
+      {
+        code: [
+          'const MESSAGES = ["a", "b"] as const;',
+          'const MAP = { A: 1 } as const;',
+          'type Either = (typeof MESSAGES)[number] | keyof typeof MAP;',
+        ].join('\n'),
+      },
+      // Good: `keyof typeof` inside an alias member mirrors the same shape
+      // outside an alias, which this rule also allows
+      {
+        code: [
+          'const MAP = { A: 1, B: 2 } as const;',
+          'type Props = { key: keyof typeof MAP };',
+        ].join('\n'),
+      },
+      // Good: alias member referencing a function constant is out of scope
+      {
+        code: ['const FN = () => {};', 'type Props = { fn: typeof FN };'].join(
+          '\n',
+        ),
+      },
+      // Good: alias member referencing an imported value is out of scope
+      {
+        code: [
+          "import { API_BASE } from './config';",
+          'type Props = { base: typeof API_BASE };',
+        ].join('\n'),
+        filename: 'src/props.ts',
+      },
+      // Good: alias member referencing a constant declared inside a function
+      {
+        code: [
+          'function f() {',
+          "  const LOCAL = 'x' as const;",
+          '  type Props = { s: typeof LOCAL };',
+          '  return null as unknown as Props;',
+          '}',
+        ].join('\n'),
+      },
+      // Good: utility application still names the constant's type. This is the
+      // convergence case: the remedy for the reported
+      // `function f(x: Readonly<typeof CONFIG>)` below is exactly this alias, so
+      // reporting it would make the remedy its own violation.
+      {
+        code: [
+          'const CONFIG = { a: 1 } as const;',
+          'type FrozenConfig = Readonly<typeof CONFIG>;',
+        ].join('\n'),
+      },
+      // Good: the same alias consumed by the shape that used to inline the query
+      {
+        code: [
+          'const CONFIG = { a: 1 } as const;',
+          'type FrozenConfig = Readonly<typeof CONFIG>;',
+          'function f(x: FrozenConfig) {}',
+        ].join('\n'),
+      },
+      // Good: user-defined utility over the constant
+      {
+        code: [
+          'type ValueOf<T> = T[keyof T];',
+          'const CHANNEL_IDS = { a: "1" } as const;',
+          'type ChannelId = ValueOf<typeof CHANNEL_IDS>;',
+        ].join('\n'),
+      },
+      // Good: derivation wrappers nested inside a utility argument
+      {
+        code: [
+          'type Registry = { alpha: number };',
+          'const BASENAMES = ["alpha"] as const;',
+          'type Extra = Exclude<keyof Registry, (typeof BASENAMES)[number]>;',
+        ].join('\n'),
+      },
+      // Good: nested utility application
+      {
+        code: [
+          'const MAX_DEPTH = 5 as const;',
+          'type ArrayOfLength<T> = readonly T[];',
+          'type Prev = Readonly<ArrayOfLength<typeof MAX_DEPTH>>;',
+        ].join('\n'),
+      },
+      // Good: top-level type argument, the alias still names the constant
+      {
+        code: [
+          'const CONFIG = { a: 1 } as const;',
+          'type Configs = Array<typeof CONFIG>;',
+        ].join('\n'),
+      },
     ],
     invalid: [
       // In function parameter
@@ -249,6 +359,136 @@ ruleTesterTs.run(
           'interface P { p: typeof C & string }',
         ].join('\n'),
         errors: [preferError('C', 'C')],
+      },
+      // Control for Issue #1680: parameter annotation keeps firing
+      {
+        code: [
+          'const CONFIG = { a: 1 } as const;',
+          'function f(s: typeof CONFIG) {}',
+        ].join('\n'),
+        errors: [preferError('CONFIG', 'Config')],
+      },
+      // Control for Issue #1680: interface member keeps firing
+      {
+        code: [
+          'const CONFIG = { a: 1 } as const;',
+          'interface Props { s: typeof CONFIG }',
+        ].join('\n'),
+        errors: [preferError('CONFIG', 'Config')],
+      },
+      // Issue #1680: the alias-shaped twin of the firing interface member
+      {
+        code: [
+          'const CONFIG = { a: 1 } as const;',
+          'type Props = { s: typeof CONFIG };',
+        ].join('\n'),
+        errors: [preferError('CONFIG', 'Config')],
+      },
+      // Issue #1680: member nested deeper inside the alias body
+      {
+        code: [
+          'const CONFIG = { a: 1 } as const;',
+          'type Props = { inner: { s: typeof CONFIG } };',
+        ].join('\n'),
+        errors: [preferError('CONFIG', 'Config')],
+      },
+      // Issue #1680: type argument inside an alias member
+      {
+        code: [
+          'const CONFIG = { a: 1 } as const;',
+          'type Props = { list: Array<typeof CONFIG> };',
+        ].join('\n'),
+        errors: [preferError('CONFIG', 'Config')],
+      },
+      // Issue #1680: utility transparency stops at a type literal, so a member
+      // inside a utility argument still reports
+      {
+        code: [
+          'const CONFIG = { a: 1 } as const;',
+          'type Wrapper<T> = { readonly value: T };',
+          'type Props = Wrapper<{ s: typeof CONFIG }>;',
+        ].join('\n'),
+        errors: [preferError('CONFIG', 'Config')],
+      },
+      // Issue #1680: the pre-remedy shape of the exempt
+      // `type FrozenConfig = Readonly<typeof CONFIG>` alias above. Extracting
+      // that alias is what silences this report, so the rule converges.
+      {
+        code: [
+          'const CONFIG = { a: 1 } as const;',
+          'function f(x: Readonly<typeof CONFIG>) {}',
+        ].join('\n'),
+        errors: [preferError('CONFIG', 'Config')],
+      },
+      // Issue #1680: type parameter default is a declaration slot, not the
+      // alias's own derived type
+      {
+        code: [
+          'const MAX_DEPTH = 5 as const;',
+          'type Paths<TDepth extends number = typeof MAX_DEPTH> = readonly TDepth[];',
+        ].join('\n'),
+        errors: [preferError('MAX_DEPTH', 'MaxDepth')],
+      },
+      // Issue #1680: mapped type constraint inside the alias body
+      {
+        code: [
+          "const SSR_KEY = 'rates' as const;",
+          'type WithRates = { [Key in typeof SSR_KEY]: number };',
+        ].join('\n'),
+        errors: [preferError('SSR_KEY', 'SsrKey')],
+      },
+      // Issue #1680: member of a union arm inside the alias body
+      {
+        code: [
+          'const CONFIG = { a: 1 } as const;',
+          'type Props = { s: typeof CONFIG } | number;',
+        ].join('\n'),
+        errors: [preferError('CONFIG', 'Config')],
+      },
+      // Issue #1680: index signature value inside the alias body
+      {
+        code: [
+          'const CONFIG = { a: 1 } as const;',
+          'type Props = { [key: string]: typeof CONFIG };',
+        ].join('\n'),
+        errors: [preferError('CONFIG', 'Config')],
+      },
+      // Issue #1680: function type parameter inside the alias body
+      {
+        code: [
+          'const CONFIG = { a: 1 } as const;',
+          'type Handler = (s: typeof CONFIG) => void;',
+        ].join('\n'),
+        errors: [preferError('CONFIG', 'Config')],
+      },
+      // Issue #1680: the constant is a lookup key, not the derived type
+      {
+        code: [
+          'type Box = { a: number };',
+          "const KEY = 'a' as const;",
+          'type Value = Box[typeof KEY];',
+        ].join('\n'),
+        errors: [preferError('KEY', 'Key')],
+      },
+      // Issue #1680: conditional type branch inside the alias body
+      {
+        code: [
+          'const CONFIG = { a: 1 } as const;',
+          'type Maybe<T> = T extends string ? typeof CONFIG : never;',
+        ].join('\n'),
+        errors: [preferError('CONFIG', 'Config')],
+      },
+      // Issue #1680: multiple members report once per use site
+      {
+        code: [
+          'const CONFIG = { a: 1 } as const;',
+          "const LABEL = 'x' as const;",
+          'type Props = { config: typeof CONFIG; label: typeof LABEL };',
+        ].join('\n'),
+        errors: [
+          preferError('CONFIG', 'Config'),
+          preferError('LABEL', 'Label'),
+        ],
       },
     ],
   },
