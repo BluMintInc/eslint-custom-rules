@@ -6,6 +6,15 @@ type MessageIds = 'missingType' | 'notExtendingIdentifiable';
 
 const TRANSPARENT_TYPE_NAMES = new Set(['Readonly', 'Resolve']);
 
+// A binding introduced by any of these declares a type whose shape lives in
+// another module. This rule is purely syntactic and reads a single file, so
+// such a type is opaque to it.
+const IMPORT_BINDING_NODE_TYPES = new Set<AST_NODE_TYPES>([
+  AST_NODE_TYPES.ImportSpecifier,
+  AST_NODE_TYPES.ImportDefaultSpecifier,
+  AST_NODE_TYPES.ImportNamespaceSpecifier,
+]);
+
 export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
   name: 'enforce-identifiable-firestore-type',
   meta: {
@@ -51,6 +60,10 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
     let matchingAliasNode: TSESTree.TSTypeAliasDeclaration | null = null;
     let matchingAliasInlineExported = false;
     let matchingAliasHasIdentifiable = false;
+    // Set when resolving the matching alias runs into a type that is declared
+    // in another module. Such a type is opaque to this single-file walk, so the
+    // absence of `Identifiable` is unproven rather than disproven.
+    let matchingAliasLeavesModule = false;
     const locallyExportedNames = new Set<string>();
 
     return {
@@ -59,6 +72,7 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
         matchingAliasNode = null;
         matchingAliasInlineExported = false;
         matchingAliasHasIdentifiable = false;
+        matchingAliasLeavesModule = false;
         locallyExportedNames.clear();
       },
       'Program:exit'(node) {
@@ -75,7 +89,15 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
               folderName,
             },
           });
-        } else if (!matchingAliasHasIdentifiable) {
+        } else if (
+          !matchingAliasHasIdentifiable &&
+          !matchingAliasLeavesModule
+        ) {
+          // A chain that leaves the module is unknowable here: the imported
+          // type may well intersect `Identifiable`, and reporting would demand
+          // a type-theoretically redundant `Identifiable &` to silence a claim
+          // the rule cannot substantiate. Staying silent trades a false
+          // positive for a false negative, which this repo prefers.
           context.report({
             node,
             messageId: 'notExtendingIdentifiable',
@@ -103,6 +125,32 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
           matchingAliasInlineExported =
             node.parent?.type === AST_NODE_TYPES.ExportNamedDeclaration;
 
+          // Raised by the resolution walk below whenever a referenced type name
+          // resolves to an imported binding, i.e. the alias chain ran out of
+          // this file. Scoped to this alias so an import that no chain ever
+          // reaches — an unrelated `Timestamp`, or a type argument the walk
+          // never descends into — grants no amnesty.
+          let leavesModule = false;
+
+          const isImportedBinding = (name: string): boolean => {
+            type ScopeType = ReturnType<typeof context.getScope>;
+            let scope: ScopeType | null = context.getScope();
+
+            while (scope) {
+              const variable = scope.variables.find(
+                (variableNode) => variableNode.name === name,
+              );
+              if (variable) {
+                return variable.defs.some((definition) =>
+                  IMPORT_BINDING_NODE_TYPES.has(definition.node.type),
+                );
+              }
+              scope = scope.upper as ScopeType | null;
+            }
+
+            return false;
+          };
+
           const findTypeAliasAnnotation = (
             typeName: string,
           ): TSESTree.Node | null => {
@@ -127,11 +175,49 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
                 ) {
                   return definition.node.typeAnnotation as TSESTree.TypeNode;
                 }
+
+                // The name is bound, but only to something this file cannot
+                // see through: an import. Record that the chain crossed the
+                // module boundary so the caller distinguishes "proved no
+                // Identifiable" from "could not look". A name with no binding
+                // at all (a lib global such as `Readonly` or `Map`) is left
+                // alone: those are known not to be Identifiable-bearing
+                // aliases, and treating them as unknown would silence the
+                // rule almost everywhere.
+                if (
+                  variable.defs.some((definition) =>
+                    IMPORT_BINDING_NODE_TYPES.has(definition.node.type),
+                  )
+                ) {
+                  leavesModule = true;
+                }
               }
               scope = scope.upper as ScopeType | null;
             }
 
             return null;
+          };
+
+          // `Types.Team` from `import * as Types from '../Team'` names a type
+          // in another module just as `Team` from a named import does, but it
+          // carries a TSQualifiedName that the walks below never resolve. The
+          // leftmost identifier is the namespace binding, so it answers the
+          // same question: did the chain leave this file?
+          const noteQualifiedNamespaceImport = (
+            qualifiedName: TSESTree.TSQualifiedName,
+          ): void => {
+            let left: TSESTree.EntityName = qualifiedName.left;
+
+            while (left.type === AST_NODE_TYPES.TSQualifiedName) {
+              left = left.left;
+            }
+
+            if (
+              left.type === AST_NODE_TYPES.Identifier &&
+              isImportedBinding(left.name)
+            ) {
+              leavesModule = true;
+            }
           };
 
           type ParenthesizedTypeNode = {
@@ -339,6 +425,15 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
               return checkType(aliasAnnotation, visitedTypes);
             }
 
+            if (
+              resolvedType.type === AST_NODE_TYPES.TSTypeReference &&
+              resolvedType.typeName.type === AST_NODE_TYPES.TSQualifiedName
+            ) {
+              noteQualifiedNamespaceImport(resolvedType.typeName);
+
+              return false;
+            }
+
             if (resolvedType.type === AST_NODE_TYPES.TSIntersectionType) {
               return resolvedType.types.some((part) =>
                 checkType(part, new Set(visitedTypes)),
@@ -349,6 +444,7 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
           };
 
           matchingAliasHasIdentifiable = checkType(node.typeAnnotation);
+          matchingAliasLeavesModule = leavesModule;
         }
       },
     };

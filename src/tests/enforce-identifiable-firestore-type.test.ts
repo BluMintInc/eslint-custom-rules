@@ -178,6 +178,93 @@ ruleTesterTs.run(
       `,
         filename: 'functions/src/types/Connection/index.ts',
       },
+      // Issue #1705: the alias chain reaches Identifiable through an IMPORTED
+      // type. The rule reads one file, so it cannot see the imported type's
+      // shape; asserting the absence of Identifiable there is a claim it
+      // cannot substantiate, and the workaround it forces (`Identifiable &
+      // Team<TTime>`) is a type-theoretically redundant intersection.
+      /**
+       * The folder-matching alias reaches Identifiable through an IMPORTED
+       * alias. findTypeAliasAnnotation only inspects TSTypeAliasDeclaration
+       * defs in scope, so the chain dead-ends at the module boundary and the
+       * rule wrongly reports notExtendingIdentifiable.
+       */
+      {
+        code: `
+          import { Timestamp } from 'firebase-admin/firestore';
+          import { Team } from '../Team';
+
+          export type ParticipantTeam<TTime = Timestamp> = Team<TTime>;
+
+          export type Participant<TTime = Timestamp> = ParticipantTeam<TTime>;
+        `,
+        filename:
+          'functions/src/types/firestore/Tournament/Participant/index.ts',
+      },
+      /** The directly-imported form, with no local hop at all. */
+      {
+        code: `
+          import { Team } from '../Team';
+
+          export type Participant = Team;
+        `,
+        filename:
+          'functions/src/types/firestore/Tournament/Participant/index.ts',
+      },
+      // A type-only import is the same dead end.
+      {
+        code: `
+        import type { Team } from '../Team';
+
+        export type Participant = Team;
+      `,
+        filename:
+          'functions/src/types/firestore/Tournament/Participant/index.ts',
+      },
+      // A default import binds through ImportDefaultSpecifier rather than
+      // ImportSpecifier, and is equally opaque.
+      {
+        code: `
+        import Team from '../Team';
+
+        export type Participant = Team;
+      `,
+        filename:
+          'functions/src/types/firestore/Tournament/Participant/index.ts',
+      },
+      // The imported type may carry Identifiable underneath a transparent
+      // wrapper, so the wrapper must not turn the unknown back into a report.
+      {
+        code: `
+        import { Team } from '../Team';
+
+        export type Participant = Readonly<Team>;
+      `,
+        filename:
+          'functions/src/types/firestore/Tournament/Participant/index.ts',
+      },
+      // An intersection whose other branch is imported: the imported branch
+      // may be the one supplying id.
+      {
+        code: `
+        import { Team } from '../Team';
+
+        export type Participant = Team & { seed: number };
+      `,
+        filename:
+          'functions/src/types/firestore/Tournament/Participant/index.ts',
+      },
+      // A namespace-qualified reference names a type in another module too,
+      // even though it carries a TSQualifiedName rather than an Identifier.
+      {
+        code: `
+        import * as Types from '../Team';
+
+        export type Participant = Types.Team;
+      `,
+        filename:
+          'functions/src/types/firestore/Tournament/Participant/index.ts',
+      },
     ],
     invalid: [
       {
@@ -436,6 +523,88 @@ ruleTesterTs.run(
         export type Other = Identifiable & {
           userIdsConnected: string[];
         };
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+        errors: [
+          {
+            messageId: 'missingType',
+            data: { typeName: 'Connection', folderName: 'Connection' },
+          },
+        ],
+      },
+      // Issue #1705 regression guards. The amnesty granted to a chain that
+      // leaves the module must not widen into a blanket one: everything the
+      // rule can still resolve must keep reporting.
+      /** REGRESSION GUARD: the folder-name gate must still report. */
+      {
+        code: `
+          import { Identifiable } from '../../Identifiable';
+          export type Other = Identifiable & { userIdsConnected: string[] };
+        `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+        errors: [
+          {
+            messageId: 'missingType',
+            data: { typeName: 'Connection', folderName: 'Connection' },
+          },
+        ],
+      },
+      /**
+       * REGRESSION GUARD: a locally-declared alias that genuinely lacks
+       * Identifiable is fully resolvable, so it must still report.
+       */
+      {
+        code: `
+          type Base = { name: string };
+          export type Connection = Base;
+        `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+        errors: [{ messageId: 'notExtendingIdentifiable' }],
+      },
+      // The amnesty keys on the chain, not on the file: an import the chain
+      // never reaches leaves a fully local — and fully resolvable — chain
+      // reportable.
+      {
+        code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+
+        type Base = { dateCreated: Timestamp };
+        type Wrapped = Readonly<Base>;
+
+        export type Connection = Wrapped;
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+        errors: [
+          {
+            messageId: 'notExtendingIdentifiable',
+            data: { typeName: 'Connection' },
+          },
+        ],
+      },
+      // An imported type used only as a type argument of an unresolvable
+      // generic is never on the chain the rule walks, so it grants no amnesty.
+      {
+        code: `
+        import { Team } from '../Team';
+
+        export type Connection = Map<Team, string>;
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+        errors: [
+          {
+            messageId: 'notExtendingIdentifiable',
+            data: { typeName: 'Connection' },
+          },
+        ],
+      },
+      // The amnesty covers notExtendingIdentifiable only. An alias reaching an
+      // imported type still has to exist under the folder's name and be
+      // exported, so the folder-name gate reports independently.
+      {
+        code: `
+        import { Team } from '../Team';
+
+        type Connection = Team;
       `,
         filename: 'functions/src/types/firestore/Connection/index.ts',
         errors: [
