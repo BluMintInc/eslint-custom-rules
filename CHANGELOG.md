@@ -1,3 +1,12 @@
+## [1.20.99](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.98...v1.20.99) (2026-08-04)
+
+
+### Bug Fixes
+
+* **enforce-memoize-async:** decline the decorator inside a jest.mock factory (closes [#1697](https://github.com/BluMintInc/eslint-custom-rules/issues/1697)) ([2194a06](https://github.com/BluMintInc/eslint-custom-rules/commit/2194a069e99e87a31b6765998c9c8de24101a997))
+* **no-redundant-usecallback-wrapper:** require a single-statement body before collapsing (closes [#1699](https://github.com/BluMintInc/eslint-custom-rules/issues/1699)) ([700511e](https://github.com/BluMintInc/eslint-custom-rules/commit/700511ec3bd583ab57d0f2c8e9d81ca16f4cb0e3))
+* **no-redundant-usecallback-wrapper:** treat event suppression as disqualifying, not skippable (closes [#1696](https://github.com/BluMintInc/eslint-custom-rules/issues/1696)) ([181282d](https://github.com/BluMintInc/eslint-custom-rules/commit/181282dcf67bbacde7c7dc9a5c79470fa433d8f4))
+
 ## [1.20.98](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.97...v1.20.98) (2026-08-04)
 
 

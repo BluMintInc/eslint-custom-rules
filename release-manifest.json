@@ -1,5 +1,28 @@
 [
   {
+    "version": "1.20.99",
+    "date": "2026-08-04T12:38:33.934Z",
+    "rules": [
+      {
+        "name": "enforce-memoize-async",
+        "changeType": "fix",
+        "issues": [
+          1697
+        ],
+        "summary": "decline the decorator inside a jest.mock factory (closes #1697)"
+      },
+      {
+        "name": "no-redundant-usecallback-wrapper",
+        "changeType": "fix",
+        "issues": [
+          1696,
+          1699
+        ],
+        "summary": "require a single-statement body before collapsing (closes #1699); treat event suppression as disqualifying, not skippable (closes #1696)"
+      }
+    ]
+  },
+  {
     "version": "1.20.98",
     "date": "2026-08-04T10:58:56.821Z",
     "rules": [
