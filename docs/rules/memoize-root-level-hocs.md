@@ -12,6 +12,36 @@ Prevent creating Higher-Order Components (HOCs) at the root of a React component
 - Protects child components from losing local state when parent re-renders.
 - Makes dependencies explicit by requiring a `useMemo` dependency array.
 
+## What counts as an HOC call
+
+A name is only half the signal. The rule treats a call as HOC creation when
+**both** of the following hold:
+
+1. The callee is named `with` followed by an uppercase letter (`withRouter`,
+   `hocFactories.withPortal`, `maybeHocs?.withPortal`), or its name is listed in
+   `additionalHocNames`.
+2. The call passes something that is structurally a component. Any one of these
+   arguments qualifies — for a curried HOC such as `withStyles(styles)(Base)`,
+   the arguments of every call in the chain are considered:
+   - a capitalized identifier (`BaseComponent`) or a member expression ending in
+     a capitalized property (`Components.Base`), including behind a type
+     assertion (`BaseComponent as ComponentType`);
+   - an inline function that renders JSX
+     (`withPortal((props) => <Base {...props} />)`), or an inline class;
+   - another recognized HOC call (`withTracking(withAnalytics(Base))`);
+   - a lowercase identifier whose declaration in scope is itself one of the
+     signals above — a function returning JSX, a class, another HOC call, or an
+     alias of a capitalized binding.
+
+Requirement 2 is skipped for names given in `additionalHocNames`: configuring a
+name is a deliberate opt-in, so those calls are always treated as HOC creation.
+
+Consequently a helper that merely shares the `with[A-Z]` name shape but operates
+on plain values — `withOpacity(theme.palette.disabled.main, 0.3)`,
+`withFallback(tone, 'neutral')` — is not an HOC call and is never reported. A
+lowercase argument the scope cannot tie to a component (an import, a parameter,
+a global) proves nothing, so it does not make a call an HOC.
+
 ## Rule Details
 
 ### Examples of **incorrect** code for this rule:
@@ -66,6 +96,16 @@ function useCustomComponent() {
 function ReduxComponent() {
   const Connected = useMemo(() => connect(mapState)(BaseComponent), [mapState]);
   return <Connected />;
+}
+```
+
+```tsx
+// A string utility that only matches the with[A-Z] name shape: no argument is
+// a component, so nothing is wrapped and nothing needs memoizing.
+function DropIndicator() {
+  const theme = useTheme();
+  const background = withOpacity(theme.palette.disabled.main, 0.3);
+  return <div style={{ backgroundColor: background }} />;
 }
 ```
 

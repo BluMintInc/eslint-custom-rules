@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type Options = [
@@ -184,14 +184,7 @@ const getCallableIdentifierName = (
   return null;
 };
 
-const isHocIdentifier = (
-  name: string,
-  additionalHocs: Set<string>,
-): boolean => {
-  if (additionalHocs.has(name)) {
-    return true;
-  }
-
+const hasHocNameShape = (name: string): boolean => {
   if (!name.startsWith('with')) {
     return false;
   }
@@ -200,20 +193,209 @@ const isHocIdentifier = (
   return Boolean(suffix) && /^[A-Z]$/.test(suffix);
 };
 
-const findHocName = (
+/**
+ * Strips wrappers that carry no runtime meaning so a component argument stays
+ * recognizable behind `as`, `!`, `satisfies` and optional-chaining nodes.
+ */
+const unwrapExpression = (node: TSESTree.Node): TSESTree.Node => {
+  let current = node;
+  for (;;) {
+    if (
+      current.type === AST_NODE_TYPES.TSAsExpression ||
+      current.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+      current.type === AST_NODE_TYPES.TSNonNullExpression ||
+      current.type === AST_NODE_TYPES.TSTypeAssertion ||
+      current.type === AST_NODE_TYPES.TSInstantiationExpression ||
+      current.type === AST_NODE_TYPES.ChainExpression
+    ) {
+      current = current.expression;
+      continue;
+    }
+
+    return current;
+  }
+};
+
+type HocMatch = {
+  name: string;
+  /** True when the name comes from `additionalHocNames` rather than the `with[A-Z]` shape. */
+  configured: boolean;
+};
+
+/**
+ * State threaded through the structural checks.
+ *
+ * `visiting` breaks reference cycles: `const enhanced = withX(enhanced)` would
+ * otherwise make the evidence lookup for the argument re-enter the same call.
+ */
+type HocContext = {
+  additionalHocs: Set<string>;
+  resolveVariable: (
+    identifier: TSESTree.Identifier,
+  ) => TSESLint.Scope.Variable | null;
+  visiting: Set<TSESTree.Node>;
+};
+
+const findHocNameMatch = (
   node: TSESTree.CallExpression,
   additionalHocs: Set<string>,
-): string | null => {
+): HocMatch | null => {
   const identifier = getCallableIdentifierName(node.callee);
-  if (identifier && isHocIdentifier(identifier, additionalHocs)) {
-    return identifier;
+  if (identifier) {
+    if (additionalHocs.has(identifier)) {
+      return { name: identifier, configured: true };
+    }
+
+    if (hasHocNameShape(identifier)) {
+      return { name: identifier, configured: false };
+    }
   }
 
-  if (node.callee.type === AST_NODE_TYPES.CallExpression) {
-    return findHocName(node.callee, additionalHocs);
+  const callee = unwrapExpression(node.callee);
+  if (callee.type === AST_NODE_TYPES.CallExpression) {
+    return findHocNameMatch(callee, additionalHocs);
   }
 
   return null;
+};
+
+/**
+ * Collects the arguments of every call in a curried chain, so the component
+ * passed to `withStyles(styles)(Component)` still counts as evidence for the
+ * outer call even though it names the HOC through its callee.
+ */
+const collectCallChainArguments = (
+  node: TSESTree.CallExpression,
+): TSESTree.Node[] => {
+  const args: TSESTree.Node[] = [];
+  let current: TSESTree.Node = node;
+
+  while (current.type === AST_NODE_TYPES.CallExpression) {
+    args.push(...current.arguments);
+    current = unwrapExpression(current.callee);
+  }
+
+  return args;
+};
+
+/**
+ * A `with[A-Z]…` name alone says nothing: string utilities such as
+ * `withOpacity(color, 0.3)` share the shape. Reporting requires positive
+ * structural evidence that the call operates on a component.
+ */
+const isComponentEvidence = (node: TSESTree.Node, ctx: HocContext): boolean => {
+  const target = unwrapExpression(node);
+
+  if (ctx.visiting.has(target)) {
+    return false;
+  }
+
+  ctx.visiting.add(target);
+  try {
+    switch (target.type) {
+      case AST_NODE_TYPES.Identifier:
+        return (
+          isComponentName(target.name) || resolvesToComponentValue(target, ctx)
+        );
+      case AST_NODE_TYPES.MemberExpression:
+        return (
+          !target.computed &&
+          target.property.type === AST_NODE_TYPES.Identifier &&
+          isComponentName(target.property.name)
+        );
+      case AST_NODE_TYPES.ArrowFunctionExpression:
+      case AST_NODE_TYPES.FunctionExpression:
+      case AST_NODE_TYPES.FunctionDeclaration:
+        return containsJsx(getBodyNodeForJsxCheck(target));
+      case AST_NODE_TYPES.ClassExpression:
+      case AST_NODE_TYPES.ClassDeclaration:
+        return true;
+      case AST_NODE_TYPES.CallExpression:
+        return getHocName(target, ctx) !== null;
+      case AST_NODE_TYPES.ConditionalExpression:
+        return (
+          isComponentEvidence(target.consequent, ctx) ||
+          isComponentEvidence(target.alternate, ctx)
+        );
+      case AST_NODE_TYPES.LogicalExpression:
+        return (
+          isComponentEvidence(target.left, ctx) ||
+          isComponentEvidence(target.right, ctx)
+        );
+      case AST_NODE_TYPES.SpreadElement:
+        return isComponentEvidence(target.argument, ctx);
+      default:
+        return false;
+    }
+  } finally {
+    ctx.visiting.delete(target);
+  }
+};
+
+/**
+ * Resolves a lowercase argument through scope analysis rather than assuming it
+ * might be a component. Component bindings are conventionally capitalized, so a
+ * lowercase name only counts when its declaration proves it holds a component —
+ * which keeps `withPortal(build)` reported while leaving `withOpacity(color,
+ * 0.3)` alone. A binding the scope cannot resolve (an import, a parameter, a
+ * global) proves nothing and is therefore not evidence.
+ */
+const resolvesToComponentValue = (
+  identifier: TSESTree.Identifier,
+  ctx: HocContext,
+): boolean => {
+  const variable = ctx.resolveVariable(identifier);
+  if (!variable) {
+    return false;
+  }
+
+  return variable.defs.some((def) => {
+    const defNode = def.node;
+
+    if (defNode.type === AST_NODE_TYPES.VariableDeclarator) {
+      return (
+        defNode.id === def.name &&
+        Boolean(defNode.init) &&
+        isComponentEvidence(defNode.init as TSESTree.Node, ctx)
+      );
+    }
+
+    // A parameter definition shares its node with the enclosing function, so the
+    // function's own JSX must not be credited to the parameter.
+    if (defNode.type === AST_NODE_TYPES.FunctionDeclaration) {
+      return (
+        defNode.id === def.name && containsJsx(getBodyNodeForJsxCheck(defNode))
+      );
+    }
+
+    if (defNode.type === AST_NODE_TYPES.ClassDeclaration) {
+      return defNode.id === def.name;
+    }
+
+    return false;
+  });
+};
+
+const getHocName = (
+  node: TSESTree.CallExpression,
+  ctx: HocContext,
+): string | null => {
+  const match = findHocNameMatch(node, ctx.additionalHocs);
+  if (!match) {
+    return null;
+  }
+
+  // An explicitly configured name is a deliberate opt-in, so it is trusted
+  // without any structural confirmation.
+  if (match.configured) {
+    return match.name;
+  }
+
+  const hasEvidence = collectCallChainArguments(node).some((argument) =>
+    isComponentEvidence(argument, ctx),
+  );
+
+  return hasEvidence ? match.name : null;
 };
 
 /**
@@ -268,6 +450,48 @@ export const memoizeRootLevelHocs = createRule<Options, MessageIds>({
   defaultOptions,
   create(context, [options]) {
     const additionalHocs = new Set(options?.additionalHocNames ?? []);
+    const sourceCode = context.getSourceCode();
+
+    /**
+     * Walks outward to the nearest scope owning the identifier, then up the
+     * scope chain. Acquiring scopes from the node keeps resolution independent
+     * of where the traversal currently sits.
+     */
+    const resolveVariable = (
+      identifier: TSESTree.Identifier,
+    ): TSESLint.Scope.Variable | null => {
+      const { scopeManager } = sourceCode;
+      if (!scopeManager) {
+        return null;
+      }
+
+      let scope: TSESLint.Scope.Scope | null = null;
+      let current: TSESTree.Node | undefined = identifier;
+      while (current && !scope) {
+        scope = scopeManager.acquire(current, true);
+        current = current.parent as TSESTree.Node | undefined;
+      }
+
+      scope = scope ?? scopeManager.globalScope;
+
+      while (scope) {
+        const variable = scope.variables.find(
+          (candidate) => candidate.name === identifier.name,
+        );
+        if (variable) {
+          return variable;
+        }
+        scope = scope.upper;
+      }
+
+      return null;
+    };
+
+    const hocContext: HocContext = {
+      additionalHocs,
+      resolveVariable,
+      visiting: new Set<TSESTree.Node>(),
+    };
 
     const reportUnmemoizedHoc = (
       node: TSESTree.CallExpression,
@@ -288,10 +512,9 @@ export const memoizeRootLevelHocs = createRule<Options, MessageIds>({
       callExpr: TSESTree.CallExpression,
       contextInfo: { contextLabel: string },
     ) => {
-      const hocName = findHocName(callExpr, additionalHocs);
+      const hocName = getHocName(callExpr, hocContext);
       const parentCall = getParentCallExpression(callExpr);
-      const parentHocName =
-        parentCall && findHocName(parentCall, additionalHocs);
+      const parentHocName = parentCall && getHocName(parentCall, hocContext);
 
       if (hocName && !isPartOfHocChain(hocName, parentHocName)) {
         reportUnmemoizedHoc(callExpr, hocName, contextInfo);

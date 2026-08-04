@@ -101,6 +101,56 @@ ruleTesterJsx.run('memoize-root-level-hocs', memoizeRootLevelHocs, {
       return withPortal(Wrapped);
     }
     `,
+    // A string utility that merely matches the with[A-Z] name shape: no argument
+    // is a component, so the call is not an HOC creation.
+    `
+    const DropIndicator = () => {
+      const theme = useTheme();
+      const background = withOpacity(theme.palette.disabled.main, 0.3);
+      return <div style={{ backgroundColor: background }} />;
+    };
+    `,
+    `
+    function Badge({ tone }) {
+      const color = withAlpha('#ffffff', 0.5);
+      const label = withFallback(tone, 'neutral');
+      return <span style={{ color }}>{label}</span>;
+    }
+    `,
+    `
+    function Meter({ value }) {
+      const shade = withOpacity(palette.primary.main, 0.25);
+      const width = withScale(value, 2) * 100;
+      return (
+        <div
+          style={{ background: \`linear-gradient(\${shade}, transparent)\` }}
+          data-width={width}
+        />
+      );
+    }
+    `,
+    // A lowercase identifier argument that resolves to a plain value stays silent.
+    `
+    function Panel() {
+      const base = theme.palette.primary.main;
+      const background = withOpacity(base, 0.4);
+      return <div style={{ background }} />;
+    }
+    `,
+    // An imported lowercase binding resolves to an import, never to a component.
+    `
+    import { brandColor } from './tokens';
+    function Chip() {
+      const background = withOpacity(brandColor, 0.2);
+      return <div style={{ background }} />;
+    }
+    `,
+    `
+    function Spacer({ size }) {
+      const gap = withSpacing(size);
+      return <div style={{ gap }} />;
+    }
+    `,
   ],
   invalid: [
     {
@@ -223,6 +273,80 @@ ruleTesterJsx.run('memoize-root-level-hocs', memoizeRootLevelHocs, {
         return <Enhanced />;
       }
       `,
+      errors: [{ messageId: 'wrapHocInUseMemo' }],
+    },
+    // A capitalized identifier argument is the canonical component signal.
+    {
+      code: `
+      const Wrapper = () => {
+        const Enhanced = withTracking(BaseComponent);
+        return <Enhanced />;
+      };
+      `,
+      errors: [{ messageId: 'wrapHocInUseMemo' }],
+    },
+    {
+      code: `
+      function NamespacedComponent() {
+        const Enhanced = withTracking(Components.Base);
+        return <Enhanced />;
+      }
+      `,
+      errors: [{ messageId: 'wrapHocInUseMemo' }],
+    },
+    {
+      code: `
+      function InlineArrowArgument() {
+        const Enhanced = withPortal((props) => <BaseComponent {...props} />);
+        return <Enhanced />;
+      }
+      `,
+      errors: [{ messageId: 'wrapHocInUseMemo' }],
+    },
+    {
+      code: `
+      function InlineFunctionArgument() {
+        const Enhanced = withPortal(function Wrapped(props) {
+          return <BaseComponent {...props} />;
+        });
+        return <Enhanced />;
+      }
+      `,
+      errors: [{ messageId: 'wrapHocInUseMemo' }],
+    },
+    // A component argument hidden behind a type assertion is still a component.
+    {
+      code: `
+      function AssertedArgument() {
+        const Enhanced = withPortal(BaseComponent as ComponentType<Props>);
+        return <Enhanced />;
+      }
+      `,
+      errors: [{ messageId: 'wrapHocInUseMemo' }],
+    },
+    // A lowercase identifier that resolves to a JSX-returning function declaration.
+    {
+      code: `
+      function ResolvedDeclaration() {
+        function build(props) {
+          return <BaseComponent {...props} />;
+        }
+        const Enhanced = withPortal(build);
+        return <Enhanced />;
+      }
+      `,
+      errors: [{ messageId: 'wrapHocInUseMemo' }],
+    },
+    // A configured HOC name opts in explicitly, so its arguments are never
+    // second-guessed even when they look like plain values.
+    {
+      code: `
+      function ConfiguredHoc() {
+        const background = withOpacity(theme.palette.disabled.main, 0.3);
+        return <div style={{ backgroundColor: background }} />;
+      }
+      `,
+      options: [{ additionalHocNames: ['withOpacity'] }],
       errors: [{ messageId: 'wrapHocInUseMemo' }],
     },
   ],
