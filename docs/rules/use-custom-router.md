@@ -34,3 +34,25 @@ import { useRouter } from 'src/hooks/routing/useRouter';
 import { useRouter } from 'src/hooks/routing/useRouter';
 import { something } from 'next/router';
 ```
+
+## The wrapper module is exempt
+
+`src/hooks/routing/useRouter` is the one module that has to import `useRouter`
+from `next/router` — it is the wrapper the rule points everything else at. The
+rule therefore never reports inside it, since the fix there would make the module
+import itself, and a self-import evaluates circularly: the wrapper exports
+`undefined` and every consumer of it breaks.
+
+```typescript
+// src/hooks/routing/useRouter.tsx — not reported
+import { useRouter as originalUseRouter } from 'next/router';
+export const useRouter = () => originalUseRouter();
+```
+
+The exemption keys on the linted file's path with its extension (`.ts`, `.tsx`,
+`.js`, `.jsx`) stripped and its separators normalized, so an absolute path
+(`/repo/src/hooks/routing/useRouter.ts`) identifies the wrapper as readily as a
+project-relative one. The match has to land on a path-segment boundary, so
+neighbours that merely share the prefix — `src/hooks/routing/useRouterState.ts`,
+`src/hooks/routing/useRouter.helpers.ts`, `foo/notsrc/hooks/routing/useRouter.ts`
+— are still reported.
