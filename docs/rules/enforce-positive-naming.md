@@ -18,6 +18,7 @@ The rule ignores:
 - Non-TypeScript files, dotfiles, and config/rc files.
 - Words that incidentally contain these prefixes but are not negations (e.g., `index`, `display`, `input`), using curated exception lists to avoid false positives.
 - `is`/`has`-prefixed functions whose return shape is not boolean—e.g. validator predicates that return `string | true` (an error message on rejection, `true` on acceptance). The value is not a boolean and its negated name (`isNotBlank`, `isNonNegative`) is the domain-correct term, so renaming it would invert the predicate's meaning. Detected via an explicit non-boolean return-type annotation or a `return` yielding a string/number/object/array literal.
+- `is`/`has`-prefixed functions whose returns yield no syntactic verdict at all, such as `const isNotBlank = (value?: string) => validate(value)`. Only a function *proven* to return a boolean—a boolean literal, a negation, a comparison, `Boolean(...)`, or a `boolean` return-type annotation—is flagged on its name. This matters because [`no-explicit-return-type`](./no-explicit-return-type.md) is recommended and fixable: it deletes the `string | true` annotation that carries the exemption above, and inferring "boolean" from the name alone would then report a rename that inverts the validator's meaning. Preferring a false negative here is deliberate.
 
 ### Examples of **incorrect** code for this rule:
 

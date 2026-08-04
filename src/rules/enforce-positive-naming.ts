@@ -997,6 +997,93 @@ function isDefinitelyNonBooleanExpression(node: TSESTree.Node): boolean {
   }
 }
 
+// Operators whose result is always a boolean, regardless of operand types.
+const BOOLEAN_BINARY_OPERATORS = new Set([
+  '==',
+  '!=',
+  '===',
+  '!==',
+  '<',
+  '<=',
+  '>',
+  '>=',
+  'in',
+  'instanceof',
+]);
+
+/**
+ * Detects an expression that is definitively a boolean — a boolean literal, a
+ * negation, a comparison, or a branch/`Boolean()` call built from those. Opaque
+ * expressions (calls, identifiers, member accesses) yield no verdict here: they
+ * are the shapes a validator's body takes once its return annotation is gone,
+ * and assuming boolean for them is what produced the false positive in #1692.
+ */
+function isDefinitelyBooleanExpression(node: TSESTree.Node): boolean {
+  switch (node.type) {
+    case AST_NODE_TYPES.Literal:
+      return typeof node.value === 'boolean';
+    case AST_NODE_TYPES.UnaryExpression:
+      return node.operator === '!' || node.operator === 'delete';
+    case AST_NODE_TYPES.BinaryExpression:
+      return BOOLEAN_BINARY_OPERATORS.has(node.operator);
+    case AST_NODE_TYPES.LogicalExpression:
+      return (
+        isDefinitelyBooleanExpression(node.left) &&
+        isDefinitelyBooleanExpression(node.right)
+      );
+    case AST_NODE_TYPES.ConditionalExpression:
+      return (
+        isDefinitelyBooleanExpression(node.consequent) &&
+        isDefinitelyBooleanExpression(node.alternate)
+      );
+    case AST_NODE_TYPES.CallExpression:
+      // `Boolean(x)` is the one call whose result is boolean by construction.
+      return (
+        node.callee.type === AST_NODE_TYPES.Identifier &&
+        node.callee.name === 'Boolean'
+      );
+    case AST_NODE_TYPES.TSAsExpression:
+    case AST_NODE_TYPES.TSSatisfiesExpression:
+      // `x as boolean` asserts booleanness; `x as const` and other assertions
+      // say nothing, so the asserted expression decides.
+      return (
+        isBooleanOnlyType(node.typeAnnotation) ||
+        isDefinitelyBooleanExpression(node.expression)
+      );
+    case AST_NODE_TYPES.TSNonNullExpression:
+      return isDefinitelyBooleanExpression(node.expression);
+    default:
+      return false;
+  }
+}
+
+/**
+ * A return's booleanness as far as syntax can tell. `indeterminate` covers the
+ * opaque shapes — `validate(value)`, `this.cache`, a generic identifier — whose
+ * type only the type-checker knows.
+ */
+type ReturnKind = 'boolean' | 'nonBoolean' | 'indeterminate';
+
+function classifyExpression(node: TSESTree.Node): ReturnKind {
+  // A definitively non-boolean shape wins over a boolean one: a validator's
+  // `return 'Must not be blank'` proves the function is not a predicate even
+  // though its success path returns `true`.
+  if (isDefinitelyNonBooleanExpression(node)) return 'nonBoolean';
+  if (isDefinitelyBooleanExpression(node)) return 'boolean';
+  return 'indeterminate';
+}
+
+/**
+ * Combines the verdicts of a body's returns under the same precedence:
+ * non-boolean beats boolean, and boolean beats no verdict at all. An empty list
+ * (a body with no returns) is `indeterminate`.
+ */
+function combineReturnKinds(kinds: ReturnKind[]): ReturnKind {
+  if (kinds.includes('nonBoolean')) return 'nonBoolean';
+  if (kinds.includes('boolean')) return 'boolean';
+  return 'indeterminate';
+}
+
 /**
  * Yields the immediate AST-node children of `node`, skipping the `parent`
  * back-reference so traversal only walks downward.
@@ -1021,10 +1108,12 @@ function childNodesOf(node: TSESTree.Node): TSESTree.Node[] {
 }
 
 /**
- * Whether any `return` statement belonging to `fn`'s own body (not a nested
- * function's) yields a definitively non-boolean value.
+ * Classifies the `return` statements belonging to `fn`'s own body (not a nested
+ * function's). A bare `return;` carries no verdict, so it neither exempts the
+ * function nor keeps a sibling boolean return from deciding.
  */
-function blockReturnsNonBoolean(block: TSESTree.BlockStatement): boolean {
+function classifyBlockReturns(block: TSESTree.BlockStatement): ReturnKind {
+  const kinds: ReturnKind[] = [];
   const stack: TSESTree.Node[] = [block];
   while (stack.length > 0) {
     const current = stack.pop() as TSESTree.Node;
@@ -1037,48 +1126,60 @@ function blockReturnsNonBoolean(block: TSESTree.BlockStatement): boolean {
     ) {
       continue;
     }
-    if (
-      current.type === AST_NODE_TYPES.ReturnStatement &&
-      current.argument &&
-      isDefinitelyNonBooleanExpression(current.argument)
-    ) {
-      return true;
+    if (current.type === AST_NODE_TYPES.ReturnStatement && current.argument) {
+      kinds.push(classifyExpression(current.argument));
     }
     for (const child of childNodesOf(current)) {
       stack.push(child);
     }
   }
-  return false;
+  return combineReturnKinds(kinds);
 }
 
 /**
- * Whether a function backing an `is`/`has`-prefixed name actually returns a
- * non-boolean value — e.g. a validator predicate returning `string | true`. An
+ * The booleanness of a function backing an `is`/`has`-prefixed name. An
  * explicit return-type annotation is authoritative; otherwise the body's own
- * `return` statements (or the concise-arrow expression) are inspected.
+ * `return` statements (or the concise-arrow expression) decide.
  */
-function functionReturnsNonBoolean(fn: FunctionLikeNode): boolean {
+function classifyFunctionReturn(fn: FunctionLikeNode): ReturnKind {
   if (fn.returnType) {
-    return !isBooleanOnlyType(fn.returnType.typeAnnotation);
+    return isBooleanOnlyType(fn.returnType.typeAnnotation)
+      ? 'boolean'
+      : 'nonBoolean';
   }
   if (fn.body.type !== AST_NODE_TYPES.BlockStatement) {
-    return isDefinitelyNonBooleanExpression(fn.body);
+    return classifyExpression(fn.body);
   }
-  return blockReturnsNonBoolean(fn.body);
+  return classifyBlockReturns(fn.body);
 }
 
 /**
- * When a declarator/property value is a function, whether that function is a
- * non-boolean predicate that must be exempt from boolean negative-naming.
+ * Whether a function backing an `is`/`has`-prefixed name must be exempt from
+ * boolean negative-naming. Only a function proven to return a boolean is
+ * flagged: a validator predicate returning `string | true` is exempt, and so is
+ * one whose returns are syntactically opaque (`=> validate(value)`). That
+ * matters because `no-explicit-return-type` deletes the very annotation that
+ * spells the validator's non-boolean return, leaving nothing but the name to go
+ * on — and guessing "boolean" from the name alone reports a rename that inverts
+ * the predicate's meaning (#1692). Preferring a false negative here is the
+ * repository's stated trade-off.
  */
-function isNonBooleanFunctionValue(
+function isExemptFromBooleanNaming(fn: FunctionLikeNode): boolean {
+  return classifyFunctionReturn(fn) !== 'boolean';
+}
+
+/**
+ * When a declarator/property value is a function, whether that function is
+ * exempt from boolean negative-naming.
+ */
+function isExemptFunctionValue(
   node: TSESTree.Node | null | undefined,
 ): boolean {
   return (
     !!node &&
     (node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
       node.type === AST_NODE_TYPES.FunctionExpression) &&
-    functionReturnsNonBoolean(node)
+    isExemptFromBooleanNaming(node)
   );
 }
 
@@ -1356,7 +1457,7 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
       // with `is`/`has` but is not a boolean, so its domain-correct negation
       // ("isNotBlank") must not be flagged. The name heuristic alone cannot
       // tell them apart; the initializer's return shape can.
-      if (isNonBooleanFunctionValue(node.init)) return;
+      if (isExemptFunctionValue(node.init)) return;
 
       const variableName = node.id.name;
       const { isNegative, alternatives } =
@@ -1411,8 +1512,9 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
       if (!isBooleanLike(node.id || node)) return;
 
       // Skip validator predicates that return a non-boolean value (e.g.
-      // `string | true`), whose negation is the domain-correct term.
-      if (functionReturnsNonBoolean(node)) return;
+      // `string | true`), whose negation is the domain-correct term, and any
+      // function whose returns give no syntactic verdict.
+      if (isExemptFromBooleanNaming(node)) return;
 
       const { isNegative, alternatives } =
         hasBooleanNegativeNaming(functionName);
@@ -1439,7 +1541,7 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
       if (!isBooleanLike(node.key)) return;
 
       // Skip validator predicates returning a non-boolean value.
-      if (isNonBooleanFunctionValue(node.value)) return;
+      if (isExemptFunctionValue(node.value)) return;
 
       const methodName = node.key.name;
       const { isNegative, alternatives } = hasBooleanNegativeNaming(methodName);
@@ -1466,7 +1568,7 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
       if (!isBooleanLike(node.key)) return;
 
       // Skip validator predicates returning a non-boolean value.
-      if (isNonBooleanFunctionValue(node.value)) return;
+      if (isExemptFunctionValue(node.value)) return;
 
       const propertyName = node.key.name;
       const { isNegative, alternatives } =
