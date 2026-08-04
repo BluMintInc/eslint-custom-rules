@@ -85,6 +85,56 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
         },
       };
     `,
+    // Valid case: hit-slop written with the `inset` shorthand — the same overlay
+    // as the longhand cases above, so it earns the same exemption
+    `
+      const style = {
+        '&::before': { content: '""', position: 'absolute', inset: '-8px' },
+      };
+    `,
+    // Valid case: hit-slop derived from a named constant — the leading literal
+    // '-' fixes the direction whatever the interpolation resolves to
+    `
+      const HIT_SLOP = 8;
+      const style = {
+        '&::before': { content: '""', position: 'absolute', inset: \`-\${HIT_SLOP}px\` },
+      };
+    `,
+    // Valid case: negative numeric shorthand
+    `
+      const style = {
+        '&::before': { content: '""', position: 'absolute', inset: -8 },
+      };
+    `,
+    // Valid case: two-value shorthand where both components extend outward
+    `
+      const style = {
+        '&::after': { content: '""', position: 'absolute', inset: '-8px -4px' },
+      };
+    `,
+    // Valid case: logical-property spellings carry the same sign semantics
+    `
+      const style = {
+        '&::before': {
+          content: '""',
+          position: 'absolute',
+          insetInline: '-8px',
+          insetBlock: '-4px',
+        },
+      };
+    `,
+    // Valid case: a CSS function is not statically classifiable, so it neither
+    // grants nor revokes the exemption the negative offset earns
+    `
+      const style = {
+        '&::before': {
+          content: '""',
+          position: 'absolute',
+          top: '-8px',
+          bottom: 'calc(100% - 8px)',
+        },
+      };
+    `,
     // Valid case: pseudo-element with position: absolute and pointer-events: none
     {
       code: `
@@ -1048,6 +1098,91 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
             width: '100%',
             height: '100%', pointerEvents: 'none'
           }
+        };
+      `,
+    },
+    // Invalid case: full-cover overlay via the shorthand — zero is not outward,
+    // so the deliberately interactive stretched-link pattern stays flagged and
+    // keeps the inline disable as its escape hatch
+    {
+      code: `
+        const style = {
+          '&::after': { content: '""', position: 'absolute', inset: 0, zIndex: 0 }
+        };
+      `,
+      errors: [pointerEventsError('::after')],
+      output: `
+        const style = {
+          '&::after': { content: '""', position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none' }
+        };
+      `,
+    },
+    // Invalid case: mixed shorthand — the positive component reaches inside the
+    // origin box horizontally, so the overlay can occlude the control
+    {
+      code: `
+        const style = {
+          '&::before': { content: '""', position: 'absolute', inset: '-8px 4px' }
+        };
+      `,
+      errors: [pointerEventsError('::before')],
+      output: `
+        const style = {
+          '&::before': { content: '""', position: 'absolute', inset: '-8px 4px', pointerEvents: 'none' }
+        };
+      `,
+    },
+    // Invalid case: a positive shorthand pulls every edge inside the origin box
+    {
+      code: `
+        const style = {
+          '&::before': { content: '""', position: 'absolute', inset: '8px' }
+        };
+      `,
+      errors: [pointerEventsError('::before')],
+      output: `
+        const style = {
+          '&::before': { content: '""', position: 'absolute', inset: '8px', pointerEvents: 'none' }
+        };
+      `,
+    },
+    // Invalid case: a positive logical-property offset outranks a negative one
+    {
+      code: `
+        const style = {
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            insetInline: '-8px',
+            insetBlock: '8px'
+          }
+        };
+      `,
+      errors: [pointerEventsError('::before')],
+      output: `
+        const style = {
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            insetInline: '-8px',
+            insetBlock: '8px', pointerEvents: 'none'
+          }
+        };
+      `,
+    },
+    // Invalid case: an opaque interpolation does not buy the exemption
+    {
+      code: `
+        const X = 4;
+        const style = {
+          '&::before': { content: '""', position: 'absolute', inset: \`\${X}px\` }
+        };
+      `,
+      errors: [pointerEventsError('::before')],
+      output: `
+        const X = 4;
+        const style = {
+          '&::before': { content: '""', position: 'absolute', inset: \`\${X}px\`, pointerEvents: 'none' }
         };
       `,
     },

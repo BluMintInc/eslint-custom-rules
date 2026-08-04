@@ -31,8 +31,19 @@ function isPointerEventsProperty(propertyName: string): boolean {
 
 /**
  * The inset offsets that position a pseudo-element relative to its origin box.
+ * The `inset` shorthand and its logical-property spellings carry the same sign
+ * semantics as the longhands, so an overlay must not change verdict on spelling
+ * alone.
  */
-const INSET_PROPERTIES = new Set(['top', 'right', 'bottom', 'left']);
+const INSET_PROPERTIES = new Set([
+  'top',
+  'right',
+  'bottom',
+  'left',
+  'inset',
+  'insetInline',
+  'insetBlock',
+]);
 
 type OffsetSign = 'positive' | 'negative' | 'zero' | 'unknown';
 
@@ -50,11 +61,32 @@ function classifyOffsetString(raw: string): OffsetSign {
 }
 
 /**
- * Classifies an inset offset property value (top/right/bottom/left) as a
- * positive, negative, zero, or unknown length. Only the shapes that can be
- * resolved statically are classified; variables, member expressions, template
- * literals, and calls are treated as unknown and never counted toward the
- * hit-slop exemption.
+ * Classifies a value that may carry several space-separated lengths, as the
+ * `inset` shorthand does (up to four). A positive component anywhere outranks a
+ * negative one: it pulls an edge inside the origin box, where the overlay can
+ * occlude the control.
+ */
+function classifyOffsetComponents(raw: string): OffsetSign {
+  // A CSS function such as calc() or var() embeds whitespace inside a single
+  // component, so splitting on whitespace would misread its parts as lengths.
+  if (raw.includes('(')) return 'unknown';
+
+  const signs = raw
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(classifyOffsetString);
+  if (signs.length === 0) return 'unknown';
+  if (signs.includes('positive')) return 'positive';
+  if (signs.includes('negative')) return 'negative';
+  return signs.every((sign) => sign === 'zero') ? 'zero' : 'unknown';
+}
+
+/**
+ * Classifies an inset offset property value as a positive, negative, zero, or
+ * unknown length. Only the shapes that can be resolved statically are
+ * classified; variables, member expressions, and calls are treated as unknown
+ * and never counted toward the hit-slop exemption.
  */
 function classifyOffsetValue(value: TSESTree.Node): OffsetSign {
   if (value.type === AST_NODE_TYPES.Literal) {
@@ -63,9 +95,18 @@ function classifyOffsetValue(value: TSESTree.Node): OffsetSign {
       return value.value < 0 ? 'negative' : 'positive';
     }
     if (typeof value.value === 'string') {
-      return classifyOffsetString(value.value);
+      return classifyOffsetComponents(value.value);
     }
     return 'unknown';
+  }
+
+  // An offset derived from a named constant states its direction in the leading
+  // literal text, whatever the interpolation resolves to: an interpolated
+  // negative would render `--8px`, which is not a valid length. Every other
+  // interpolation stays opaque and earns no exemption.
+  if (value.type === AST_NODE_TYPES.TemplateLiteral) {
+    const leading = value.quasis[0]?.value.raw.trim() ?? '';
+    return leading.startsWith('-') ? 'negative' : 'unknown';
   }
 
   // Negative numeric literals parse as `-` UnaryExpression over a number.
