@@ -33,6 +33,41 @@ import Link from 'src/components/Link';
 import { default as NextLink } from 'src/components/Link';
 ```
 
+## The wrapper's implementation files are exempt
+
+Two modules have to keep importing `next/link`, so the rule never reports inside
+them:
+
+- `src/components/Link` — the module the fixer points every other import at.
+  Rewriting it makes it import itself, and a self-import evaluates circularly, so
+  the wrapper exports `undefined` and every consumer of it breaks.
+- Any `NextLinkComposed.{ts,tsx,js,jsx}` — the component from MUI's documented
+  Next.js integration that `src/components/Link` renders. Rewriting it
+  manufactures the module cycle `Link → NextLinkComposed → Link`, and with it
+  infinite render recursion.
+
+```tsx
+// src/components/NextLinkComposed.tsx — not reported
+import Link from 'next/link';
+export const NextLinkComposed = Link;
+```
+
+```tsx
+// src/components/Link.tsx — not reported
+import Link from 'next/link';
+export default Link;
+```
+
+The exemption keys on the linted file's path with its extension (`.ts`, `.tsx`,
+`.js`, `.jsx`) stripped and its separators normalized, so an absolute path
+(`/repo/src/components/Link.tsx`) identifies the wrapper as readily as a
+project-relative one. The `src/components/Link` match has to land on a
+path-segment boundary and the integration component is matched by basename
+equality, so neighbours that merely share a prefix or suffix —
+`foo/notsrc/components/Link.tsx`, `src/components/LinkButton.tsx`,
+`src/components/MyNextLinkComposed.tsx`,
+`src/components/NextLinkComposed.stories.tsx` — are still reported.
+
 ## Why this matters
 
 - Design cohesion: The custom Link applies shared typography, colors, and spacing so navigation looks consistent across pages.
