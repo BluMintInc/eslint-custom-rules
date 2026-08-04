@@ -1,3 +1,5 @@
+import { Linter } from 'eslint';
+import * as tsParser from '@typescript-eslint/parser';
 import { ruleTesterTs } from '../utils/ruleTester';
 import rule, { RULE_NAME } from '../rules/require-dynamic-firebase-imports';
 
@@ -61,10 +63,76 @@ const firebase = (await import('firebase/app')).default;
 return firebase;
 };`,
     },
+    // Several named bindings destructured off one dynamic import
+    {
+      code: `async function signIn() {
+const { getAuth, signInWithEmailAndPassword } = await import('firebase/auth');
+return signInWithEmailAndPassword(getAuth());
+}`,
+    },
+    // Aliased destructuring off a dynamic import
+    {
+      code: `async function loadAuth() {
+const { getAuth: auth } = await import('firebase/auth');
+return auth();
+}`,
+    },
+    // The promise resolved by `import()` IS the module namespace object
+    {
+      code: `async function loadAuth() {
+const firebaseAuth = await import('firebase/auth');
+return firebaseAuth;
+}`,
+    },
+    // The namespace object exposes the default export under `default`
+    {
+      code: `async function loadApp() {
+const { default: firebase, initializeApp } = await import('firebase/app');
+return initializeApp(firebase);
+}`,
+    },
+    // Dynamic side-effect import
+    {
+      code: `async function setup() {
+await import('firebase/auth');
+}`,
+    },
+    // A dynamic import cannot supply types, so a static `import type` pairs
+    // with it at module scope
+    {
+      code: `import type { Firestore } from 'firebase/firestore';
+async function initFirestore() {
+const { getFirestore } = await import('firebase/firestore');
+const db: Firestore = getFirestore();
+return db;
+}`,
+    },
+    // Async class methods are valid await contexts
+    {
+      code: `class FirebaseLoader {
+async load() {
+const { getAuth } = await import('firebase/auth');
+return getAuth();
+}
+}`,
+    },
+    // The config module loads dynamically the same way
+    {
+      code: `async function loadConfig() {
+const firebaseConfig = (await import('../../config/firebase-client')).default;
+return firebaseConfig;
+}`,
+    },
+    // `.then()` is an equally valid dynamic form outside an async context
+    {
+      code: `const authPromise = import('firebase/auth').then((mod) => mod.getAuth());`,
+    },
   ],
   invalid: [
-    // Module-scope imports report but must NOT be autofixed: the rewrite
-    // would introduce top-level await
+    // A static `import` declaration is legal only at the top level of a module
+    // or namespace, so every reportable site is at module scope. The rule is
+    // report-only: the `await import()` rewrite would introduce top-level
+    // await, so `output` stays null throughout.
     {
       code: `import firebase from 'firebase/app';`,
       errors: [dynamicImportError('firebase/app')],
@@ -100,9 +168,22 @@ return firebase;
       errors: [dynamicImportError('firebase/auth')],
       output: null,
     },
-    // Module-scope mixed value + inline type import: report, no fix. The
-    // fixer previously destructured `Firestore` at runtime, stranding the
-    // type references (TS2749)
+    // Default combined with named specifiers
+    {
+      code: `import firebase, { initializeApp } from 'firebase/app';
+export const app = initializeApp(firebase);`,
+      errors: [dynamicImportError('firebase/app')],
+      output: null,
+    },
+    // Default combined with a namespace specifier
+    {
+      code: `import firebase, * as firebaseApp from 'firebase/app';
+export const both = { firebase, firebaseApp };`,
+      errors: [dynamicImportError('firebase/app')],
+      output: null,
+    },
+    // A single value specifier alongside inline type markers still loads the
+    // SDK at runtime, so the statement reports
     {
       code: `import { getFirestore, type Firestore } from 'firebase/firestore';
 let db: Firestore;
@@ -111,7 +192,23 @@ export { db };`,
       errors: [dynamicImportError('firebase/firestore')],
       output: null,
     },
-    // Module-scope value import used only in type position: report, no fix
+    // Multiple inline type specifiers do not excuse the one value specifier
+    {
+      code: `import { getAuth, type User as FirebaseUser, type Auth } from 'firebase/auth';
+export const auth: Auth = getAuth();
+export const user: FirebaseUser | null = auth.currentUser;`,
+      errors: [dynamicImportError('firebase/auth')],
+      output: null,
+    },
+    // A default import is a value binding even when every named specifier is
+    // type-only
+    {
+      code: `import firebase, { type FirebaseApp } from 'firebase/app';
+export const app: FirebaseApp = firebase.app();`,
+      errors: [dynamicImportError('firebase/app')],
+      output: null,
+    },
+    // A value import used only in type position still emits a runtime require
     {
       code: `import { OAuthCredential } from 'firebase/auth';
 export const connectWithCredential = async (credential: OAuthCredential) => {
@@ -121,302 +218,81 @@ return firebaseAuth.signInWithCredential(credential);
       errors: [dynamicImportError('firebase/auth')],
       output: null,
     },
-    // Import inside a synchronous function: `await` is invalid there, so
-    // report without fixing
+    // A compliant dynamic import elsewhere in the file does not excuse a
+    // static sibling
     {
-      code: `function loadAuth() {
-import { getAuth } from 'firebase/auth';
-return getAuth();
-}`,
-      errors: [dynamicImportError('firebase/auth')],
-      output: null,
-    },
-    // A sync function nested inside an async function still cannot host the
-    // await
-    {
-      code: `async function outer() {
-function inner() {
-import { getAuth } from 'firebase/auth';
-return getAuth();
-}
-return inner();
-}`,
-      errors: [dynamicImportError('firebase/auth')],
-      output: null,
-    },
-    // Inside an async function the rewrite is valid: named import
-    {
-      code: `async function loadAuth() {
-import { getAuth } from 'firebase/auth';
-return getAuth();
-}`,
-      errors: [dynamicImportError('firebase/auth')],
-      output: `async function loadAuth() {
+      code: `import { getFirestore } from 'firebase/firestore';
+export async function loadAuth() {
 const { getAuth } = await import('firebase/auth');
-return getAuth();
-}`,
-    },
-    // Multiple named imports inside an async function
-    {
-      code: `async function signIn() {
-import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
-return signInWithEmailAndPassword(getAuth());
-}`,
-      errors: [dynamicImportError('firebase/auth')],
-      output: `async function signIn() {
-const { getAuth, signInWithEmailAndPassword } = await import('firebase/auth');
-return signInWithEmailAndPassword(getAuth());
-}`,
-    },
-    // Aliased named import inside an async function
-    {
-      code: `async function loadAuth() {
-import { getAuth as auth } from 'firebase/auth';
-return auth();
-}`,
-      errors: [dynamicImportError('firebase/auth')],
-      output: `async function loadAuth() {
-const { getAuth: auth } = await import('firebase/auth');
-return auth();
-}`,
-    },
-    // Default import inside an async function
-    {
-      code: `async function loadFirebase() {
-import firebase from 'firebase/app';
-return firebase;
-}`,
-      errors: [dynamicImportError('firebase/app')],
-      output: `async function loadFirebase() {
-const firebase = (await import('firebase/app')).default;
-return firebase;
-}`,
-    },
-    // Namespace import inside an async function maps onto the module
-    // namespace object
-    {
-      code: `async function loadAuth() {
-import * as firebaseAuth from 'firebase/auth';
-return firebaseAuth;
-}`,
-      errors: [dynamicImportError('firebase/auth')],
-      output: `async function loadAuth() {
-const firebaseAuth = await import('firebase/auth');
-return firebaseAuth;
-}`,
-    },
-    // Default + named imports inside an async function
-    {
-      code: `async function loadApp() {
-import firebase, { initializeApp } from 'firebase/app';
-return initializeApp(firebase);
-}`,
-      errors: [dynamicImportError('firebase/app')],
-      output: `async function loadApp() {
-const { default: firebase, initializeApp } = await import('firebase/app');
-return initializeApp(firebase);
-}`,
-    },
-    // Default + namespace imports inside an async function
-    {
-      code: `async function loadApp() {
-import firebase, * as firebaseApp from 'firebase/app';
-return { firebase, firebaseApp };
-}`,
-      errors: [dynamicImportError('firebase/app')],
-      output: `async function loadApp() {
-const firebaseApp = await import('firebase/app'); const firebase = firebaseApp.default;
-return { firebase, firebaseApp };
-}`,
-    },
-    // Side-effect import inside an async function
-    {
-      code: `async function setup() {
-import 'firebase/auth';
-}`,
-      errors: [dynamicImportError('firebase/auth')],
-      output: `async function setup() {
-await import('firebase/auth');
-}`,
-    },
-    // Mixed value + inline type import inside an async function: value
-    // specifiers go dynamic, type specifiers hoist into a static
-    // `import type` at module scope
-    {
-      code: `async function initFirestore() {
-import { getFirestore, type Firestore } from 'firebase/firestore';
-const db: Firestore = getFirestore();
-return db;
+return { getAuth, getFirestore };
 }`,
       errors: [dynamicImportError('firebase/firestore')],
-      output: `import type { Firestore } from 'firebase/firestore';
-async function initFirestore() {
-const { getFirestore } = await import('firebase/firestore');
-const db: Firestore = getFirestore();
-return db;
-}`,
+      output: null,
     },
-    // Multiple inline type specifiers hoist together, preserving aliases
+    // Each static Firebase import reports independently
     {
-      code: `async function loadUser() {
-import { getAuth, type User as FirebaseUser, type Auth } from 'firebase/auth';
-const auth: Auth = getAuth();
-const user: FirebaseUser | null = auth.currentUser;
-return user;
-}`,
-      errors: [dynamicImportError('firebase/auth')],
-      output: `import type { User as FirebaseUser, Auth } from 'firebase/auth';
-async function loadUser() {
-const { getAuth } = await import('firebase/auth');
-const auth: Auth = getAuth();
-const user: FirebaseUser | null = auth.currentUser;
-return user;
-}`,
-    },
-    // Default import mixed with an inline type specifier inside an async
-    // function
-    {
-      code: `async function loadApp() {
-import firebase, { type FirebaseApp } from 'firebase/app';
-const app: FirebaseApp = firebase.app();
-return app;
-}`,
-      errors: [dynamicImportError('firebase/app')],
-      output: `import type { FirebaseApp } from 'firebase/app';
-async function loadApp() {
-const firebase = (await import('firebase/app')).default;
-const app: FirebaseApp = firebase.app();
-return app;
-}`,
-    },
-    // Async arrow function bodies are valid await contexts
-    {
-      code: `const loadFirestore = async () => {
+      code: `import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
-return getFirestore();
-};`,
-      errors: [dynamicImportError('firebase/firestore')],
-      output: `const loadFirestore = async () => {
-const { getFirestore } = await import('firebase/firestore');
-return getFirestore();
-};`,
+export const services = { getAuth, getFirestore };`,
+      errors: [
+        dynamicImportError('firebase/auth'),
+        dynamicImportError('firebase/firestore'),
+      ],
+      output: null,
     },
-    // Async class methods are valid await contexts
+    // Deeper relative paths to the config module still match
     {
-      code: `class FirebaseLoader {
-async load() {
-import { getAuth } from 'firebase/auth';
-return getAuth();
-}
-}`,
-      errors: [dynamicImportError('firebase/auth')],
-      output: `class FirebaseLoader {
-async load() {
-const { getAuth } = await import('firebase/auth');
-return getAuth();
-}
-}`,
-    },
-    // Firebase config imports rewrite inside async functions too
-    {
-      code: `async function loadConfig() {
-import firebaseConfig from '../../config/firebase-client';
-return firebaseConfig;
-}`,
-      errors: [dynamicImportError('../../config/firebase-client')],
-      output: `async function loadConfig() {
-const firebaseConfig = (await import('../../config/firebase-client')).default;
-return firebaseConfig;
-}`,
-    },
-    // A pre-existing module-scope `FirebaseApp` binding makes the hoisted
-    // `import type` a duplicate identifier (TS2440/TS2300), so the violation
-    // is reported without an autofix
-    {
-      code: `const FirebaseApp = undefined as unknown as never;
-async function loadApp() {
-import firebase, { type FirebaseApp } from 'firebase/app';
-const app: FirebaseApp = firebase.app();
-return app;
-}`,
-      errors: [dynamicImportError('firebase/app')],
-      output: `const FirebaseApp = undefined as unknown as never;
-async function loadApp() {
-import firebase, { type FirebaseApp } from 'firebase/app';
-const app: FirebaseApp = firebase.app();
-return app;
-}`,
-    },
-    // The guard checks the local name an aliased specifier binds, not the
-    // imported name: `type User as FirebaseUser` collides with `FirebaseUser`
-    {
-      code: `const FirebaseUser = undefined as unknown as never;
-async function loadUser() {
-import { getAuth, type User as FirebaseUser } from 'firebase/auth';
-const user: FirebaseUser | null = getAuth().currentUser;
-return user;
-}`,
-      errors: [dynamicImportError('firebase/auth')],
-      output: `const FirebaseUser = undefined as unknown as never;
-async function loadUser() {
-import { getAuth, type User as FirebaseUser } from 'firebase/auth';
-const user: FirebaseUser | null = getAuth().currentUser;
-return user;
-}`,
-    },
-    // A narrower-scope shadow raises no TypeScript diagnostic yet silently
-    // binds the hoisted type to the wrong declaration, so it declines too
-    {
-      code: `async function loadFirestore() {
-class Firestore {}
-import { getFirestore, type Firestore } from 'firebase/firestore';
-const db: Firestore = getFirestore();
-return db;
-}`,
-      errors: [dynamicImportError('firebase/firestore')],
-      output: `async function loadFirestore() {
-class Firestore {}
-import { getFirestore, type Firestore } from 'firebase/firestore';
-const db: Firestore = getFirestore();
-return db;
-}`,
-    },
-    // Only the colliding name matters for the whole-fix decline: a partial fix
-    // that applied the dynamic import but skipped the hoist would strand the
-    // type reference
-    {
-      code: `const Auth = undefined as unknown as never;
-async function loadAuth() {
-import { getAuth, type Auth, type User } from 'firebase/auth';
-const auth: Auth = getAuth();
-const user: User | null = auth.currentUser;
-return user;
-}`,
-      errors: [dynamicImportError('firebase/auth')],
-      output: `const Auth = undefined as unknown as never;
-async function loadAuth() {
-import { getAuth, type Auth, type User } from 'firebase/auth';
-const auth: Auth = getAuth();
-const user: User | null = auth.currentUser;
-return user;
-}`,
-    },
-    // An identical module-scope `import type` is the desired binding already:
-    // reuse it rather than inserting a duplicate declaration
-    {
-      code: `import type { Firestore } from 'firebase/firestore';
-async function initFirestore() {
-import { getFirestore, type Firestore } from 'firebase/firestore';
-const db: Firestore = getFirestore();
-return db;
-}`,
-      errors: [dynamicImportError('firebase/firestore')],
-      output: `import type { Firestore } from 'firebase/firestore';
-async function initFirestore() {
-const { getFirestore } = await import('firebase/firestore');
-const db: Firestore = getFirestore();
-return db;
-}`,
+      code: `import { firebaseApp } from '../../../config/firebase-client';
+export const app = firebaseApp;`,
+      errors: [dynamicImportError('../../../config/firebase-client')],
+      output: null,
     },
   ],
+});
+
+// The rule reports without ever offering a fix. A static `import` declaration
+// only parses inside a function because @typescript-eslint/parser is more
+// permissive than the compiler (TypeScript rejects that shape with TS1232), so
+// a fixer gated on an async enclosing function could never run on source that
+// compiles. Declaring `meta.fixable` there would advertise a `--fix` remedy
+// consumers can never receive, so both halves are asserted here.
+describe(`${RULE_NAME} is report-only`, () => {
+  const RULE_ID = `@blumintinc/blumint/${RULE_NAME}`;
+
+  const lint = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser('ts', tsParser as never);
+    linter.defineRule(RULE_ID, rule as never);
+    const messages = linter.verify(
+      code,
+      {
+        parser: 'ts',
+        parserOptions: { ecmaVersion: 2022, sourceType: 'module' },
+        rules: { [RULE_ID]: 'error' },
+      } as never,
+      { filename: 'file.ts' },
+    );
+    // A single-rule Linter also emits directive problems that carry no
+    // messageId; only real reports are of interest.
+    return messages.filter((message) => Boolean(message.messageId));
+  };
+
+  it('declares no fixable capability', () => {
+    expect(rule.meta.fixable).toBeUndefined();
+  });
+
+  it('attaches no fix to a module-scope import', () => {
+    const reports = lint(`import firebase from 'firebase/app';`);
+    expect(reports).toHaveLength(1);
+    expect(reports[0].fix).toBeUndefined();
+  });
+
+  it('attaches no fix to an import nested in an async function', () => {
+    const reports = lint(`async function loadAuth() {
+import { getAuth } from 'firebase/auth';
+return getAuth();
+}`);
+    expect(reports).toHaveLength(1);
+    expect(reports[0].fix).toBeUndefined();
+  });
 });

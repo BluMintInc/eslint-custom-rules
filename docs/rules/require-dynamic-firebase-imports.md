@@ -2,8 +2,6 @@
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
-
 <!-- end auto-generated rule header -->
 
 Static Firebase imports keep the SDK in every bundle, even on routes that never touch Firebase. This rule enforces dynamic imports so Firebase loads lazily, keeping initial bundles smaller and avoiding runtime issues when the SDK initializes in environments without `window`.
@@ -14,10 +12,14 @@ Use `await import()` for Firebase runtime imports (such as `firebase/app`, `fire
 
 `await import()` must run in an async context; wrap the call in an async function or use `import('firebase/auth').then(...)` instead of static runtime imports.
 
-The fixer rewrites static Firebase imports to an equivalent dynamic import, preserving default imports, namespace imports, named imports, aliases, and side-effect imports. Two safety limits apply:
+## Why there is no autofix
 
-* **Type specifiers never move into the runtime destructuring.** A dynamic import cannot supply types, and dropping the `type` marker would turn type references into dangling value bindings (`TS2749`). In a mixed import, value specifiers become the `await import()` destructuring while type specifiers are hoisted into a static `import type { ... }` at module scope, which costs nothing at runtime.
-* **The fixer only applies inside an async function.** Rewriting a module-scope import would introduce top-level await, converting a synchronous module into an async one (and breaking build targets without top-level await support). Module-scope Firebase imports are reported without an autofix; restructure the code so Firebase loads inside the async code path that needs it.
+The rule reports without offering a `--fix`. A static `import` declaration is legal only at the top level of a module or namespace, so every violation sits at module scope, where the `await import()` replacement would introduce top-level await — silently converting a synchronous module into an async one and breaking build targets that lack top-level await support.
+
+The remedy is a restructuring, not a text substitution: move the import into the async code path that actually needs Firebase. Two details matter when you do that by hand:
+
+* **Type specifiers must not move into the runtime destructuring.** A dynamic import cannot supply types, and dropping the `type` marker turns type references into dangling value bindings (`TS2749`). In a mixed import, keep the type specifiers in a static `import type { ... }` at module scope — it is erased at compile time and costs nothing at runtime — and destructure only the value specifiers off the `await import()`.
+* **The `await` binds to the nearest enclosing function.** A synchronous helper nested inside an async function cannot host the dynamic import; the call has to live in the async function itself, or the helper has to become async too.
 
 ### Examples
 
