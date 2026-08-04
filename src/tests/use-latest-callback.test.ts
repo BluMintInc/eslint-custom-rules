@@ -145,6 +145,204 @@ function MyComponent() {
   return 'hello';
 }`,
     },
+    // -----------------------------------------------------------------------
+    // Issue #1711: the callback's identity is load-bearing. useLatestCallback
+    // returns a permanently stable reference, so a hook keyed on the callback
+    // stops seeing it change and its effect fires once, ever. These sites are
+    // exempt from the rule entirely — no compliant remedy exists, since the
+    // useMemo rewrite is converted back by
+    // prefer-usecallback-over-usememo-for-functions.
+    // -----------------------------------------------------------------------
+    // valid after the fix — callback identity is consumed by another hook
+    {
+      code: `
+    import { useCallback } from 'react';
+    import { useFirestore } from './useFirestore';
+    export const useTokenHits = (ids) => {
+      const handler = useCallback((snap) => snap.filter((h) => ids.includes(h.id)), [ids]);
+      return useFirestore(handler, []);
+    };
+  `,
+    },
+    // The result sits in another hook's dependency array.
+    {
+      code: `import { useCallback, useEffect } from 'react';
+
+export const useThing = (id) => {
+  const handler = useCallback(() => {
+    fetchOne(id);
+  }, [id]);
+
+  useEffect(() => {
+    handler();
+  }, [handler]);
+};`,
+    },
+    // Alongside other dependencies in that array.
+    {
+      code: `import { useCallback, useEffect } from 'react';
+
+export const useThing = (id, other) => {
+  const handler = useCallback(() => {
+    fetchOne(id);
+  }, [id]);
+
+  useEffect(() => {
+    handler();
+  }, [other, handler]);
+};`,
+    },
+    // A useMemo dependency array keys a computed value on the identity.
+    {
+      code: `import { useCallback, useMemo } from 'react';
+
+export const useThing = (id) => {
+  const handler = useCallback(() => {
+    return read(id);
+  }, [id]);
+
+  return useMemo(() => ({ handler }), [handler]);
+};`,
+    },
+    // A third-party comparison hook counts the same way.
+    {
+      code: `import { useCallback } from 'react';
+import useDeepCompareEffect from 'use-deep-compare-effect';
+
+export const useThing = (query) => {
+  const handler = useCallback(() => {
+    run(query);
+  }, [query]);
+
+  useDeepCompareEffect(() => {
+    handler();
+  }, [handler]);
+};`,
+    },
+    // Another useCallback's dependency array: that call may itself be blocked
+    // from conversion (a JSX-returning callback), leaving it keyed on a frozen
+    // reference.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (id) => {
+  const handler = useCallback(() => {
+    return read(id);
+  }, [id]);
+
+  const render = useCallback(() => <Row onSelect={handler} />, [handler]);
+
+  return render;
+};`,
+    },
+    // A custom hook takes the callback as an argument — it is free to list that
+    // argument in a dependency array of its own, as useFirestore does.
+    {
+      code: `import { useCallback } from 'react';
+import { useSubscription } from './useSubscription';
+
+export const useThing = (topic) => {
+  const handler = useCallback((message) => {
+    receive(topic, message);
+  }, [topic]);
+
+  useSubscription(handler);
+};`,
+    },
+    // The hook reached through a member expression, where the property carries
+    // the name the convention applies to.
+    {
+      code: `import { useCallback } from 'react';
+import { api } from './api';
+
+export const useThing = (topic) => {
+  const handler = useCallback((message) => {
+    receive(topic, message);
+  }, [topic]);
+
+  api.useSubscription(handler);
+};`,
+    },
+    // A deeper member path resolves to the same property name.
+    {
+      code: `import { useCallback } from 'react';
+import { lib } from './lib';
+
+export const useThing = (topic) => {
+  const handler = useCallback((message) => {
+    receive(topic, message);
+  }, [topic]);
+
+  lib.hooks.useSubscription(handler);
+};`,
+    },
+    // A call with no dependency array at all is rebuilt on every render, so its
+    // identity is exactly what the consuming hook is keyed on.
+    {
+      code: `import { useCallback } from 'react';
+import { useFirestore } from './useFirestore';
+
+export const useThing = (ids) => {
+  const handler = useCallback((snap) => {
+    return snap.filter((hit) => ids.includes(hit.id));
+  });
+
+  return useFirestore(handler, []);
+};`,
+    },
+    // A dependency array spelled as a value this file cannot read may hold
+    // anything, so the identity is treated as changing.
+    {
+      code: `import { useCallback } from 'react';
+import { useFirestore } from './useFirestore';
+
+export const useThing = (ids, deps) => {
+  const handler = useCallback((snap) => {
+    return snap.filter((hit) => ids.includes(hit.id));
+  }, deps);
+
+  return useFirestore(handler, []);
+};`,
+    },
+    // A type assertion passes the identity through unchanged.
+    {
+      code: `import { useCallback } from 'react';
+import { useFirestore } from './useFirestore';
+
+export const useThing = (ids: string[]) => {
+  const handler = useCallback((snap: Snap) => {
+    return snap.filter((hit) => ids.includes(hit.id));
+  }, [ids]) as FirestoreHandler;
+
+  return useFirestore(handler, []);
+};`,
+    },
+    // The call handed straight to the hook, with no binding in between.
+    {
+      code: `import { useCallback } from 'react';
+import { useFirestore } from './useFirestore';
+
+export const useThing = (ids) => {
+  return useFirestore(
+    useCallback((snap) => snap.filter((hit) => ids.includes(hit.id)), [ids]),
+    [],
+  );
+};`,
+    },
+    // Reached through the React namespace, which changes nothing about the
+    // identity the consuming hook holds.
+    {
+      code: `import React from 'react';
+import { useFirestore } from './useFirestore';
+
+export const useThing = (ids) => {
+  const handler = React.useCallback((snap) => {
+    return snap.filter((hit) => ids.includes(hit.id));
+  }, [ids]);
+
+  return useFirestore(handler, []);
+};`,
+    },
   ],
   invalid: [
     // Basic case: useCallback with empty dependency array
@@ -2534,6 +2732,345 @@ export const useThing = () => {
 };`,
       errors: errors(),
     },
+
+    // -----------------------------------------------------------------------
+    // The other side of the issue #1711 carve-out: sites whose identity nothing
+    // keys on still convert. Narrowing further than these shapes would hand the
+    // rule's whole purpose to an exemption.
+    // -----------------------------------------------------------------------
+    // An empty dependency array pins the identity already, so handing the
+    // result to a custom hook changes nothing the hook can observe.
+    {
+      code: `import { useCallback } from 'react';
+import { useFirestore } from './useFirestore';
+
+export const useThing = () => {
+  const handler = useCallback((snap) => {
+    return snap.length;
+  }, []);
+
+  return useFirestore(handler, []);
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { useFirestore } from './useFirestore';
+
+export const useThing = () => {
+  const handler = useLatestCallback((snap) => {
+    return snap.length;
+  });
+
+  return useFirestore(handler, []);
+};`,
+      errors: errors(),
+    },
+    // The same for an empty-deps result listed in another hook's dependencies.
+    {
+      code: `import { useCallback, useEffect } from 'react';
+
+export const useThing = () => {
+  const handler = useCallback(() => {
+    save();
+  }, []);
+
+  useEffect(() => {
+    handler();
+  }, [handler]);
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { useEffect } from 'react';
+
+export const useThing = () => {
+  const handler = useLatestCallback(() => {
+    save();
+  });
+
+  useEffect(() => {
+    handler();
+  }, [handler]);
+};`,
+      errors: errors(),
+    },
+    // A JSX prop reads the callback, it does not compare it: React invokes what
+    // the stable wrapper holds, which is always the latest closure.
+    {
+      code: `import { useCallback } from 'react';
+
+export const Thing = ({ id }) => {
+  const handler = useCallback(() => {
+    save(id);
+  }, [id]);
+
+  return <button onClick={handler}>Save</button>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const Thing = ({ id }) => {
+  const handler = useLatestCallback(() => {
+    save(id);
+  });
+
+  return <button onClick={handler}>Save</button>;
+};`,
+      errors: errors(),
+    },
+    // Direct invocation reads the callback through the same wrapper.
+    {
+      code: `import { useCallback, useEffect } from 'react';
+
+export const useThing = (id) => {
+  const handler = useCallback(() => {
+    save(id);
+  }, [id]);
+
+  useEffect(() => {
+    handler();
+  }, []);
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { useEffect } from 'react';
+
+export const useThing = (id) => {
+  const handler = useLatestCallback(() => {
+    save(id);
+  });
+
+  useEffect(() => {
+    handler();
+  }, []);
+};`,
+      errors: errors(),
+    },
+    // A plain function holds the callback to call it later, and keys nothing on
+    // which reference it received.
+    {
+      code: `import { useCallback, useEffect } from 'react';
+
+export const useThing = (id) => {
+  const handler = useCallback(() => {
+    save(id);
+  }, [id]);
+
+  useEffect(() => {
+    const timer = setTimeout(handler, 0);
+    return () => clearTimeout(timer);
+  }, []);
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { useEffect } from 'react';
+
+export const useThing = (id) => {
+  const handler = useLatestCallback(() => {
+    save(id);
+  });
+
+  useEffect(() => {
+    const timer = setTimeout(handler, 0);
+    return () => clearTimeout(timer);
+  }, []);
+};`,
+      errors: errors(),
+    },
+    // A dependency-array-shaped argument to a plain function is not a hook's
+    // dependency array: the convention is what identifies one.
+    {
+      code: `import { useCallback } from 'react';
+import { register } from './register';
+
+export const useThing = (id) => {
+  const handler = useCallback(() => {
+    save(id);
+  }, [id]);
+
+  register(handler, [handler]);
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { register } from './register';
+
+export const useThing = (id) => {
+  const handler = useLatestCallback(() => {
+    save(id);
+  });
+
+  register(handler, [handler]);
+};`,
+      errors: errors(),
+    },
+    // `useful` is not a hook: the convention needs the capital that starts the
+    // noun, and a rule that dropped it would exempt half the standard library.
+    {
+      code: `import { useCallback } from 'react';
+import { useful, user } from './helpers';
+
+export const useThing = (id) => {
+  const handler = useCallback(() => {
+    save(id);
+  }, [id]);
+
+  useful(handler);
+  user.subscribe(handler);
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { useful, user } from './helpers';
+
+export const useThing = (id) => {
+  const handler = useLatestCallback(() => {
+    save(id);
+  });
+
+  useful(handler);
+  user.subscribe(handler);
+};`,
+      errors: errors(),
+    },
+    // An object handed to a hook is rebuilt every render, so the hook cannot be
+    // keyed on the callback through it. The carve-out stays at the argument the
+    // hook actually receives.
+    {
+      code: `import { useCallback } from 'react';
+import { useOptions } from './useOptions';
+
+export const useThing = (id) => {
+  const handler = useCallback(() => {
+    save(id);
+  }, [id]);
+
+  useOptions({ onDone: handler });
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { useOptions } from './useOptions';
+
+export const useThing = (id) => {
+  const handler = useLatestCallback(() => {
+    save(id);
+  });
+
+  useOptions({ onDone: handler });
+};`,
+      errors: errors(),
+    },
+    // Returning the callback keeps reporting: the consumer sits outside this
+    // file, so nothing here shows the identity is compared. The carve-out is
+    // scoped to consumption this file can actually read, and reporting is the
+    // direction that preserves the rule (issue #1711).
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (id) => {
+  const handler = useCallback(() => {
+    save(id);
+  }, [id]);
+
+  return { handler };
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (id) => {
+  const handler = useLatestCallback(() => {
+    save(id);
+  });
+
+  return { handler };
+};`,
+      errors: errors(),
+    },
+    // Nothing reads the result at all.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (id) => {
+  const handler = useCallback(() => {
+    save(id);
+  }, [id]);
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (id) => {
+  const handler = useLatestCallback(() => {
+    save(id);
+  });
+};`,
+      errors: errors(),
+    },
+    // The binding in the dependency array is a different one of the same name,
+    // so name matching would exempt a site nothing keys on.
+    {
+      code: `import { useCallback, useEffect } from 'react';
+
+export const useOuter = (id) => {
+  const handler = useCallback(() => {
+    save(id);
+  }, [id]);
+
+  return <Row onSelect={handler} />;
+};
+
+export const useInner = () => {
+  const handler = useThrottled();
+
+  useEffect(() => {
+    handler();
+  }, [handler]);
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { useEffect } from 'react';
+
+export const useOuter = (id) => {
+  const handler = useLatestCallback(() => {
+    save(id);
+  });
+
+  return <Row onSelect={handler} />;
+};
+
+export const useInner = () => {
+  const handler = useThrottled();
+
+  useEffect(() => {
+    handler();
+  }, [handler]);
+};`,
+      errors: errors(),
+    },
+    // An exempt call sitting beside a convertible one converts only the latter,
+    // and the react import survives because the exempt call still needs it.
+    {
+      code: `import { useCallback, useEffect } from 'react';
+
+export const useThing = (id) => {
+  const subscribed = useCallback(() => {
+    read(id);
+  }, [id]);
+
+  const pressed = useCallback(() => {
+    save(id);
+  }, [id]);
+
+  useEffect(() => {
+    subscribed();
+  }, [subscribed]);
+
+  return <button onClick={pressed}>Save</button>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { useCallback, useEffect } from 'react';
+
+export const useThing = (id) => {
+  const subscribed = useCallback(() => {
+    read(id);
+  }, [id]);
+
+  const pressed = useLatestCallback(() => {
+    save(id);
+  });
+
+  useEffect(() => {
+    subscribed();
+  }, [subscribed]);
+
+  return <button onClick={pressed}>Save</button>;
+};`,
+      errors: errors(),
+    },
   ],
 });
 
@@ -2811,6 +3348,9 @@ describe('use-latest-callback: no orphaned bindings after --fix (issue #1652)', 
     );
   };
 
+  // The effect calls `handle` without listing it: a site whose identity another
+  // hook keys on is exempt from this rule entirely (issue #1711), so listing it
+  // would silence the very report this test measures the fix of.
   const lengthDependency = `import { useEffect, useCallback } from 'react';
 
 export const useThing = ({ items }: { items: string[] }) => {
@@ -2827,7 +3367,7 @@ export const useThing = ({ items }: { items: string[] }) => {
 
   useEffect(() => {
     handle();
-  }, [handle]);
+  }, []);
 
   return handle;
 };

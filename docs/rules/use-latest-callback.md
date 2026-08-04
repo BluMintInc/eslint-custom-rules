@@ -20,6 +20,7 @@ This rule:
 - Splices only the `useCallback` specifier and its separating comma out of the `react` import, so the rest of the declaration — its layout, its quote style, and every comment in it — is preserved. A comment that belongs to the removed specifier is left behind rather than deleted, because a trailing comment can be an eslint directive that governs the **next** line and dropping it would change which rules report on the file. The whole declaration is replaced only when `useCallback` is its sole specifier, in which case no comment inside it can govern anything that remains.
 - Emits the import rewrite and every call-site conversion as **one atomic fix** on a single report. When another rule's fix conflicts with any part of it in the same `--fix` pass, ESLint defers the whole conversion to the next pass instead of applying half of it, so the `useCallback` import can never be removed while a `useCallback(...)` call remains.
 - Withholds the fix when dropping the dependency array would leave a binding declared inside the component or hook with no reader left — see [Dependencies nothing else reads](#dependencies-nothing-else-reads).
+- Leaves a callback whose identity another hook keys on alone entirely — see [When the callback identity is load-bearing](#when-the-callback-identity-is-load-bearing).
 - Keeps the rewritten call on one line only while that line fits the print width, and breaks the argument list open past it — see [Print width](#print-width).
 - Skips files in `node_modules` for performance so third-party code is untouched.
 
@@ -192,6 +193,63 @@ Two things never withhold the fix:
   not settled by this file — it can be exported, re-exported, or read from
   another module — and the hoisted declarations this guard exists for are
   written inside the hook.
+
+### When the callback identity is load-bearing
+
+`useLatestCallback` returns a **permanently stable** reference. That is the point
+of it, and it is also why a callback another hook keys on is exempt from this
+rule entirely. A hook that compares the callback between renders stops seeing it
+change, so the effect it guards fires **once, ever** — with the first render's
+values, forever.
+
+```ts
+// Exempt: useFirestore lists `handler` in its own effect's dependencies, so the
+// fetch re-runs exactly when `ids` changes. A frozen `handler` fetches once and
+// the UI keeps that first result.
+const handler = useCallback(
+  (snap) => snap.filter((hit) => ids.includes(hit.id)),
+  [ids],
+);
+const state = useFirestore(handler, INITIAL);
+```
+
+Such a site is not reported at all, rather than reported without a fix, because
+no compliant remedy exists: rewriting it as `useMemo(() => fn, deps)` is
+converted straight back to `useCallback` by
+`prefer-usecallback-over-usememo-for-functions`, and that fixpoint is the same
+frozen identity with nothing left reporting it.
+
+Two conditions must both hold for the exemption:
+
+1. The call's identity **changes between renders** — its dependency array is
+   non-empty, absent, or spelled as a value this file cannot read. An **empty**
+   array already pins the identity for the component's lifetime, so converting
+   the call cannot change what any consumer observes; such a call converts even
+   when it is handed straight to a hook.
+2. The identity reaches a hook **in this file**: the result is an element of an
+   array argument of a call named `useSomething`, or a direct argument of one.
+   The naming convention is the signal, because a custom hook's body may live in
+   any module and no list of hook names can be complete. A member callee counts
+   through its property name, so `hooks.useThing(handler)` reads as a hook.
+
+Every other use keeps reporting, because nothing there compares the reference —
+a stable wrapper invokes the latest closure, so the callback's behaviour is
+unchanged:
+
+| Use of the result | Reported |
+| :-- | :-- |
+| `<Button onClick={handler} />` | yes — React calls what the wrapper holds |
+| `handler()` | yes |
+| `setTimeout(handler, 0)` | yes — a plain function keys nothing on identity |
+| `useOptions({ onDone: handler })` | yes — the object is rebuilt every render |
+| `return handler` | yes — see below |
+| `useEffect(effect, [handler])` | no |
+| `useFirestore(handler, initial)` | no |
+
+Returning the callback keeps reporting deliberately. A custom hook that returns
+one hands the identity to consumers this file cannot read, so nothing here shows
+that anything compares it — and an exemption for every returned callback would
+cover most custom hooks, which is the rule's own subject.
 
 ### ❌ Incorrect
 
