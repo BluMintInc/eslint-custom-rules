@@ -248,9 +248,9 @@ function isNumericCall(node: TSESTree.CallExpression): boolean {
 }
 
 /**
- * A `: number` annotation on a binding name. Only parameters and variable
- * declarators carry one, and a declarator is judged from its writes, so this
- * effectively identifies a numeric parameter.
+ * A `: number` annotation on a binding name. Parameters and variable
+ * declarators are the bindings that carry one, and TypeScript checks every
+ * value that reaches such a binding against it.
  */
 function isNumberAnnotated(node: TSESTree.Node): boolean {
   return (
@@ -259,10 +259,93 @@ function isNumberAnnotated(node: TSESTree.Node): boolean {
   );
 }
 
+/** The types an assertion can launder any value through without complaint. */
+const LAUNDERING_ASSERTION_TYPES = new Set<AST_NODE_TYPES>([
+  AST_NODE_TYPES.TSAnyKeyword,
+  AST_NODE_TYPES.TSUnknownKeyword,
+]);
+
+/**
+ * An assertion naming `number` over the value it wraps — `f() as number`,
+ * `f() satisfies number`, `<number>f()`. An assertion to anything other than
+ * the `number` keyword — `as any`, `as unknown`, `as string`, `as const`, a
+ * union, a generic — is not this claim at all.
+ *
+ * The claim is only worth trusting because TypeScript checks it: `f() as number`
+ * is rejected unless the operand's type overlaps `number`. A step through `any`
+ * or `unknown` removes exactly that check, which is what makes
+ * `userInput as unknown as number` the idiom for asserting anything at all — so
+ * a chain carrying one proves nothing, and a string laundered through it would
+ * re-open the `__proto__` key this rule exists to stop.
+ */
+function assertsNumberType(node: TSESTree.Node): boolean {
+  if (
+    (node.type !== AST_NODE_TYPES.TSAsExpression &&
+      node.type !== AST_NODE_TYPES.TSSatisfiesExpression &&
+      node.type !== AST_NODE_TYPES.TSTypeAssertion) ||
+    node.typeAnnotation.type !== AST_NODE_TYPES.TSNumberKeyword
+  ) {
+    return false;
+  }
+  for (
+    let inner: TSESTree.Node = node.expression;
+    inner.type === AST_NODE_TYPES.TSAsExpression ||
+    inner.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+    inner.type === AST_NODE_TYPES.TSTypeAssertion;
+    inner = inner.expression
+  ) {
+    if (LAUNDERING_ASSERTION_TYPES.has(inner.typeAnnotation.type)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Whether the write is the initializer of a declaration that declares itself
+ * numeric — either by annotating the binding name (`const k: number =
+ * rankOf(id)`, `(index: number = rankOf(id)) =>`) or by asserting the
+ * initializing value (`const k = rankOf(id) as number`). TypeScript rejects a
+ * non-numeric value under either spelling, so on a TypeScript source both are
+ * syntactic proof that the value is a number — the same trust a
+ * `(index: number) =>` parameter already earns. Without them an author whose
+ * index comes from a call has no compliant spelling at all, because the shape
+ * of a call proves nothing on its own.
+ *
+ * The proof covers the initializer alone. A later assignment is a separate
+ * statement and is where a value out of a `catch` binding or an `any`-typed
+ * source enters the binding, so every other write still has to prove itself by
+ * its own shape — including a `for (k of xs)` binding, whose write expression
+ * is the iterated value rather than an initializer.
+ */
+function initializesNumericDeclaration(writeExpr: TSESTree.Node): boolean {
+  const site = writeExpr.parent;
+  switch (site?.type) {
+    case AST_NODE_TYPES.VariableDeclarator:
+      // A destructuring pattern takes the initializer apart before binding, so
+      // an assertion over the whole initializer describes the container rather
+      // than the element bound out of it: `const { a } = f() as number` says
+      // nothing about `a`.
+      return (
+        site.id.type === AST_NODE_TYPES.Identifier &&
+        (isNumberAnnotated(site.id) || assertsNumberType(writeExpr))
+      );
+    // A parameter default is checked against the parameter's own annotation the
+    // same way a declarator's initializer is checked against its own. That
+    // annotation is also what admits the parameter as a numeric binding at all,
+    // so an assertion on the default decides nothing here.
+    case AST_NODE_TYPES.AssignmentPattern:
+      return isNumberAnnotated(site.left);
+    default:
+      return false;
+  }
+}
+
 /**
  * Whether the definition can hold a number: a declarator (whose value is proven
- * by its writes) or a parameter annotated `: number`. Anything else — an
- * import, a function or class name, a catch binding — is not.
+ * by its declaration site and its writes) or a parameter annotated `: number`.
+ * Anything else — an import, a function or class name, a catch binding — is
+ * not.
  */
 function definesNumericBinding(def: TSESLint.Scope.Definition): boolean {
   return (
@@ -692,6 +775,9 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
           assignment?.type === AST_NODE_TYPES.AssignmentExpression &&
           NUMERIC_ASSIGNMENT_OPERATORS.has(assignment.operator)
         ) {
+          return true;
+        }
+        if (initializesNumericDeclaration(writeExpr)) {
           return true;
         }
         return isStaticallyNumeric(writeExpr, nextSeen);
