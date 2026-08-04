@@ -99,6 +99,16 @@ const { signIn } = useAuthSubmit();
 const onClick = useCallback(() => signIn(username), [signIn, username]);
 ```
 
+```tsx
+// eslint-options: {"assumeAllUseAreMemoized": true}
+// Suppressing the event is behaviour the hand-off cannot preserve
+const { signIn } = useAuthSubmit();
+const onClick = useCallback((e) => {
+  e.preventDefault();
+  return signIn();
+}, [signIn]);
+```
+
 ## Invalid
 
 `useAuthSubmit` and `useSomething` are only treated as returning memoized callbacks once the rule is told so. Each example below therefore declares `assumeAllUseAreMemoized: true`; naming the hooks in `memoizedHookNames` produces the same reports.
@@ -137,4 +147,5 @@ Where safe, the rule removes the redundant `useCallback` wrapper and passes the 
 - Identifies callbacks destructured from hook results.
 - Allows substantial logic in wrappers.
 - Allows wrappers that transform parameters or supply arguments.
+- Allows wrappers that call `preventDefault`, `stopPropagation` or `stopImmediatePropagation`: passing the memoized callback directly drops the suppression call and hands the event to a callback that took no arguments, so the wrapper is doing work.
 - Detects object member calls from hook results and avoids unsafe auto-fixes.
