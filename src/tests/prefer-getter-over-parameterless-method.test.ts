@@ -312,6 +312,104 @@ ruleTesterTs.run(
       // returns a value, so it IS a getter candidate and is tested as invalid below.
       // (This valid case shows a throw inside an arrow that is not top-level.)
       // NOTE: the nested-throw method IS invalid (flagged) — see invalid section.
+
+      // Issue #1684 reproducer: the heritage type declares `count` as a METHOD,
+      // so `get count()` is TS2416 ("Type 'number' is not assignable to type
+      // '() => number'"). The rule's only remedy would not compile.
+      `
+      export interface Countable { count(): number; }
+      export class Counter implements Countable {
+        public count(): number { return 1; }
+      }
+      `,
+
+      // A same-file type alias is as binding as an interface.
+      `
+      type Countable = { count(): number };
+      class Counter implements Countable {
+        public count(): number { return 1; }
+      }
+      `,
+
+      // A function-typed member of the contract binds too: a getter returning
+      // the function's result is not assignable to the function type.
+      `
+      interface Handler { handle: () => number; }
+      class Handled implements Handler {
+        public handle(): number { return 1; }
+      }
+      `,
+
+      // Concrete implementation of an abstract member declared in a same-file
+      // base class. `ignoreAbstract` only ever skipped the abstract
+      // DECLARATION; the implementation is equally unconvertible.
+      `
+      abstract class BaseProcessor {
+        protected abstract computeStatus(): number;
+      }
+      class UserStatusProcessor extends BaseProcessor {
+        protected computeStatus(): number { return 1; }
+      }
+      `,
+
+      // The abstract declaration may sit several links up the extends chain.
+      `
+      abstract class Root { protected abstract deriveKey(): string; }
+      abstract class Middle extends Root {}
+      class Leaf extends Middle {
+        protected deriveKey(): string { return 'k'; }
+      }
+      `,
+
+      // An IMPORTED interface is unknowable from this file, so no method of the
+      // class can be proven convertible — the whole class is skipped. This is
+      // agora's DocumentSnapshotAdapter shape, whose contract lives in a
+      // third-party .d.ts and therefore has no remedy at all.
+      `
+      import { DocumentSnapshot } from '@google-cloud/firestore';
+      export class DocumentSnapshotAdapter implements DocumentSnapshot {
+        public data(): number { return 1; }
+        public getMetadata(): string { return 'm'; }
+      }
+      `,
+
+      // Likewise for an imported base class.
+      `
+      import { BaseAdapter } from './BaseAdapter';
+      export class ChildAdapter extends BaseAdapter {
+        public computeValue(): number { return 1; }
+      }
+      `,
+
+      // A same-file interface that itself extends an imported one is only
+      // partially knowable, so the class is skipped wholesale.
+      `
+      import { RemoteContract } from './remote';
+      interface LocalContract extends RemoteContract {
+        local(): number;
+      }
+      class Local implements LocalContract {
+        public local(): number { return 1; }
+        public getExtra(): number { return 2; }
+      }
+      `,
+
+      // A mixin base is an expression, not a resolvable declaration.
+      `
+      class Mixed extends withLogging(Base) {
+        public computeValue(): number { return 1; }
+      }
+      `,
+
+      // Mutually recursive interfaces resolve without looping.
+      `
+      interface Alpha extends Beta { alpha(): number; }
+      interface Beta extends Alpha { beta(): number; }
+      class Both implements Alpha {
+        public alpha(): number { return 1; }
+        public beta(): number { return 2; }
+      }
+      `,
     ],
     invalid: [
       {
@@ -1222,6 +1320,91 @@ ruleTesterTs.run(
           {
             messageId: 'preferGetter',
             data: { name: 'compute', suggestedName: 'compute' },
+          },
+        ],
+      },
+
+      // A class with NO heritage clause keeps the pre-#1684 behaviour: the
+      // control the heritage exemption must not silence.
+      {
+        code: `
+        class Counter {
+          public count(): number { return 1; }
+        }
+        `,
+        output: null,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'count', suggestedName: 'count' },
+          },
+        ],
+      },
+
+      // When every heritage reference resolves in-file the skip is PER METHOD:
+      // `count` is contract-bound and silent, but `getExtra` is the class's own
+      // invention, so it still reports — and, being `private`, is still fixed.
+      {
+        code: [
+          'interface Countable { count(): number; }',
+          'class Counter implements Countable {',
+          '  public count(): number { return 1; }',
+          '  private getExtra(): number { return 2; }',
+          '}',
+        ].join('\n'),
+        output: [
+          'interface Countable { count(): number; }',
+          'class Counter implements Countable {',
+          '  public count(): number { return 1; }',
+          '  private get extra(): number { return 2; }',
+          '}',
+        ].join('\n'),
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'getExtra', suggestedName: 'extra' },
+          },
+        ],
+      },
+
+      // A method a same-file base class does not declare is unconstrained.
+      {
+        code: `
+        class BaseReporter {
+          public summarize(): string { return 'base'; }
+        }
+        class DetailReporter extends BaseReporter {
+          public detail(): string { return 'detail'; }
+        }
+        `,
+        output: null,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'summarize', suggestedName: 'summarize' },
+          },
+          {
+            messageId: 'preferGetter',
+            data: { name: 'detail', suggestedName: 'detail' },
+          },
+        ],
+      },
+
+      // An `implements` clause constrains only the instance side, so a STATIC
+      // method sharing a contract member's name keeps reporting.
+      {
+        code: `
+        interface Countable { count(): number; }
+        class Counter implements Countable {
+          public count(): number { return 1; }
+          public static count(): number { return 2; }
+        }
+        `,
+        output: null,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'count', suggestedName: 'count' },
           },
         ],
       },
