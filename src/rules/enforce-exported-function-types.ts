@@ -9,7 +9,8 @@ type MessageIds =
 
 type ComponentFunction =
   | TSESTree.ArrowFunctionExpression
-  | TSESTree.FunctionExpression;
+  | TSESTree.FunctionExpression
+  | TSESTree.FunctionDeclaration;
 
 type UnwrappedComponent = {
   fn: ComponentFunction;
@@ -19,7 +20,19 @@ type UnwrappedComponent = {
    * when the component is anonymous (`export default memo((props: P) => ...)`).
    */
   isWrapped: boolean;
+  /**
+   * The binding a wrapper argument named (`memo(BannerUnmemoized)`). It is the
+   * only name an anonymous resolved function has, so it carries the
+   * capitalization signal for `export default memo(BannerUnmemoized)`.
+   */
+  resolvedName?: string;
 };
+
+/**
+ * Maps a module-scope binding name to the declaration or initializer it stands
+ * for, or `undefined` when the name belongs to another module.
+ */
+type ComponentResolver = (name: string) => TSESTree.Node | undefined;
 
 /**
  * `require-memo` rewrites `export function Banner(props: P)` into
@@ -50,16 +63,23 @@ function isComponentWrapperCallee(callee: TSESTree.Node): boolean {
 /**
  * Resolves the function that actually receives the props, peeling any nesting
  * of component wrappers (`memo(forwardRef(fn))`) along the way.
+ *
+ * `seen` records the binding names already followed, so mutually aliased
+ * declarations (`const A = memo(B); const B = memo(A);`) terminate instead of
+ * recursing forever.
  */
 function unwrapComponentFunction(
   node: TSESTree.Node | null | undefined,
+  resolveComponent: ComponentResolver,
   isWrapped = false,
+  seen: Set<string> = new Set(),
 ): UnwrappedComponent | undefined {
   if (!node) return undefined;
 
   if (
     node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-    node.type === AST_NODE_TYPES.FunctionExpression
+    node.type === AST_NODE_TYPES.FunctionExpression ||
+    node.type === AST_NODE_TYPES.FunctionDeclaration
   ) {
     return { fn: node, isWrapped };
   }
@@ -72,7 +92,27 @@ function unwrapComponentFunction(
     if (!firstArgument || firstArgument.type === AST_NODE_TYPES.SpreadElement) {
       return undefined;
     }
-    return unwrapComponentFunction(firstArgument, true);
+    return unwrapComponentFunction(firstArgument, resolveComponent, true, seen);
+  }
+
+  // `export const Banner = memo(BannerUnmemoized)` is the shape `require-memo`
+  // leaves behind most often, and the props it wraps live one hop away on the
+  // named declaration. Resolution is confined to wrapper arguments: a bare
+  // `export const Banner = Other` re-exports a value rather than declaring a
+  // component here.
+  if (isWrapped && node.type === AST_NODE_TYPES.Identifier) {
+    if (seen.has(node.name)) return undefined;
+    seen.add(node.name);
+
+    const component = unwrapComponentFunction(
+      resolveComponent(node.name),
+      resolveComponent,
+      true,
+      seen,
+    );
+    if (!component) return undefined;
+
+    return { ...component, resolvedName: component.resolvedName ?? node.name };
   }
 
   return undefined;
@@ -504,8 +544,9 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
       node: TSESTree.TypeNode,
       parentNode: TSESTree.Node,
       messageId: MessageIds,
+      typeParams?: Set<string>,
     ): void {
-      const typeNames = getTypeNames(node);
+      const typeNames = getTypeNames(node, typeParams);
       for (const typeName of typeNames) {
         if (
           typeName !== 'AnonymousType' &&
@@ -547,18 +588,106 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
     function checkComponentProps(fn: ComponentFunction): void {
       const [props] = fn.params;
       if (!props) return;
-      checkAndReportParameterType(props, 'missingExportedPropsType');
+
+      const typeParams = componentTypeParameters(fn);
+
+      // Destructuring the props changes nothing about the contract a consumer
+      // composes against, so `({ message }: BannerProps)` is read exactly like
+      // `(props: BannerProps)`. The widening stays on the props path: the
+      // parameter helper the other messageIds share keeps reading named
+      // parameters only.
+      if (props.type === AST_NODE_TYPES.ObjectPattern && props.typeAnnotation) {
+        checkAndReportType(
+          props.typeAnnotation.typeAnnotation,
+          props.typeAnnotation,
+          'missingExportedPropsType',
+          typeParams,
+        );
+        return;
+      }
+
+      checkAndReportParameterType(
+        props,
+        'missingExportedPropsType',
+        typeParams,
+      );
+    }
+
+    /**
+     * Collects the generic parameters a component may legitimately name in its
+     * props annotation (`memo(function ListUnmemoized<T>(props: ListProps<T>))`),
+     * which are contracts the module cannot export.
+     *
+     * Reading them off the function itself is what keeps the check correct for
+     * the shapes it reaches indirectly: `parent` links exist only for nodes
+     * ESLint has already traversed, so a component resolved through
+     * `memo(ListUnmemoized)` above its declaration has no ancestor chain to walk
+     * yet, and a function expression is no part of the ancestor walk to begin
+     * with. The ancestors are still unioned in for a component nested inside a
+     * generic function.
+     */
+    function componentTypeParameters(fn: ComponentFunction): Set<string> {
+      const typeParams = findTypeParameters(fn);
+      for (const param of fn.typeParameters?.params ?? []) {
+        if (param.type === AST_NODE_TYPES.TSTypeParameter) {
+          typeParams.add(param.name.name);
+        }
+      }
+      return typeParams;
+    }
+
+    /**
+     * Resolves a module-scope binding to the declaration or initializer it
+     * names, which is what turns `memo(BannerUnmemoized)` into the function
+     * carrying the props.
+     *
+     * A name with no module-scope declaration belongs to another module. Its
+     * props type is declared there and cannot be exported by editing this file,
+     * so an unresolved name leaves the component unchecked rather than guessing.
+     */
+    function findModuleScopeDeclaration(
+      name: string,
+    ): TSESTree.Node | undefined {
+      for (const statement of context.sourceCode.ast.body) {
+        const declaration =
+          statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
+          statement.declaration
+            ? statement.declaration
+            : statement;
+
+        if (
+          declaration.type === AST_NODE_TYPES.FunctionDeclaration &&
+          declaration.id?.name === name
+        ) {
+          return declaration;
+        }
+
+        if (declaration.type === AST_NODE_TYPES.VariableDeclaration) {
+          const declarator = declaration.declarations.find(
+            (candidate) =>
+              candidate.id.type === AST_NODE_TYPES.Identifier &&
+              candidate.id.name === name,
+          );
+          if (declarator?.init) {
+            return declarator.init;
+          }
+        }
+      }
+
+      return undefined;
     }
 
     function checkAndReportParameterType(
       param: TSESTree.Parameter,
       messageId: MessageIds,
+      typeParams?: Set<string>,
     ): void {
       if (param.type === AST_NODE_TYPES.Identifier && param.typeAnnotation) {
         checkAndReportType(
           param.typeAnnotation.typeAnnotation,
           param.typeAnnotation,
           messageId,
+          typeParams,
         );
       }
     }
@@ -700,8 +829,14 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
       FunctionDeclaration(node) {
         if (!isExported(node)) return;
 
-        // Skip React components
-        if (node.id?.name && /^[A-Z]/.test(node.id.name)) return;
+        // A component declaration takes the props path, which reads the first
+        // parameter however it is spelled. Routing it through the same helper
+        // as the expression and wrapper shapes is what keeps a destructured
+        // parameter from being visible in one shape and invisible in another.
+        if (node.id?.name && isComponentName(node.id.name)) {
+          checkComponentProps(node);
+          return;
+        }
 
         // Check return type
         if (node.returnType?.typeAnnotation) {
@@ -764,8 +899,9 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
 
       // Handle exported components written as an expression:
       // `export const Banner = (props: P) => ...`,
-      // `export const Banner = function (props: P) {...}` and any
-      // `memo`/`forwardRef` nesting around either form.
+      // `export const Banner = function (props: P) {...}`, any
+      // `memo`/`forwardRef` nesting around either form, and the wrappers whose
+      // argument names a same-file function (`memo(BannerUnmemoized)`).
       VariableDeclarator(node) {
         if (
           node.id.type !== AST_NODE_TYPES.Identifier ||
@@ -775,7 +911,10 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
           return;
         }
 
-        const component = unwrapComponentFunction(node.init);
+        const component = unwrapComponentFunction(
+          node.init,
+          findModuleScopeDeclaration,
+        );
         if (!component) return;
 
         checkComponentProps(component.fn);
@@ -785,10 +924,16 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
       // `export default function Banner(props: P)` form the declaration
       // visitors already cover.
       ExportDefaultDeclaration(node) {
-        const component = unwrapComponentFunction(node.declaration);
+        const component = unwrapComponentFunction(
+          node.declaration,
+          findModuleScopeDeclaration,
+        );
         if (!component) return;
 
-        const name = component.fn.id?.name;
+        // The binding a wrapper argument named outranks the inner function's
+        // own name: `export default memo(BannerUnmemoized)` is the component
+        // consumers see, whatever the resolved expression calls itself.
+        const name = component.resolvedName ?? component.fn.id?.name;
         // An anonymous default export is only recognizable as a component
         // through its wrapper, since there is no name to inspect.
         const isComponent =

@@ -401,7 +401,8 @@ ruleTesterJsx.run(
         const Banner = (props: BannerProps) => <div>{props.message}</div>;
       `,
       },
-      // Valid case: memo of an identifier exposes no parameter list
+      // Valid case: memo of an imported identifier, whose props type is
+      // declared in another module and cannot be exported from this file
       {
         code: `
         import { memo } from 'react';
@@ -410,13 +411,206 @@ ruleTesterJsx.run(
         export const Banner = memo(BannerUnmemoized);
       `,
       },
-      // Valid case: default export of a memoized identifier
+      // Valid case: default export of a memoized imported identifier
       {
         code: `
         import { memo } from 'react';
         import { BannerUnmemoized } from './BannerUnmemoized';
 
         export default memo(BannerUnmemoized);
+      `,
+      },
+      // Valid case: an unresolvable identifier stays silent even when the file
+      // declares a non-exported type of its own
+      {
+        code: `
+        import { memo } from 'react';
+        import { BannerUnmemoized } from './BannerUnmemoized';
+
+        type BannerProps = {
+          message: string;
+        };
+
+        export const Banner = memo(BannerUnmemoized);
+      `,
+      },
+      // Valid case: destructured props with an exported type
+      {
+        code: `
+        export type BannerProps = {
+          message: string;
+        };
+
+        export const Banner = ({ message }: BannerProps) => <div>{message}</div>;
+      `,
+      },
+      // Valid case: destructured props annotated with an inline literal, which
+      // names no contract a consumer could import
+      {
+        code: `
+        export const Banner = ({ message }: { message: string }) => <div>{message}</div>;
+      `,
+      },
+      // Valid case: destructured props with an imported type
+      {
+        code: `
+        import { memo } from 'react';
+        import { BannerProps } from './types';
+
+        export const Banner = memo(({ message }: BannerProps) => <div>{message}</div>);
+      `,
+      },
+      // Valid case: destructured props on a component that is not exported
+      {
+        code: `
+        type BannerProps = {
+          message: string;
+        };
+
+        const Banner = ({ message }: BannerProps) => <div>{message}</div>;
+      `,
+      },
+      // Valid case: a resolved identifier whose props type is exported
+      {
+        code: `
+        import { memo } from 'react';
+
+        export type BannerProps = {
+          message: string;
+        };
+
+        const BannerUnmemoized = (props: BannerProps) => <div>{props.message}</div>;
+
+        export const Banner = memo(BannerUnmemoized);
+      `,
+      },
+      // Valid case: a lowercase binding stays outside the props check whether
+      // the wrapper argument is a function or a name
+      {
+        code: `
+        import { memo } from 'react';
+
+        type ComputeInput = {
+          value: number;
+        };
+
+        function computeUnmemoized(input: ComputeInput) {
+          return input.value * 2;
+        }
+
+        export const compute = memo(computeUnmemoized);
+      `,
+      },
+      // Valid case: a resolved identifier that holds no function exposes no
+      // parameter list
+      {
+        code: `
+        import { memo } from 'react';
+
+        type BannerProps = {
+          message: string;
+        };
+
+        const BannerUnmemoized = createBanner<BannerProps>();
+
+        export const Banner = memo(BannerUnmemoized);
+      `,
+      },
+      // Valid case: a bare identifier re-exports a value rather than declaring
+      // a component here, so its props are the other declaration's concern
+      {
+        code: `
+        type BannerProps = {
+          message: string;
+        };
+
+        const BannerUnmemoized = (props: BannerProps) => <div>{props.message}</div>;
+
+        export const Banner = BannerUnmemoized;
+      `,
+      },
+      // Valid case: mutually aliased wrappers terminate instead of recursing
+      {
+        code: `
+        import { memo } from 'react';
+
+        const Alias = memo(Banner);
+
+        export const Banner = memo(Alias);
+      `,
+      },
+      // Valid case: destructured props with an exported type on a declaration
+      {
+        code: `
+        export type BannerProps = {
+          message: string;
+        };
+
+        export function Banner({ message }: BannerProps) {
+          return <div>{message}</div>;
+        }
+      `,
+      },
+      // Valid case: a lowercase declaration keeps its parameters outside the
+      // props check, so a destructured parameter stays unread there
+      {
+        code: `
+        type ComputeInput = {
+          value: number;
+        };
+
+        export function compute({ value }: ComputeInput) {
+          return value * 2;
+        }
+      `,
+      },
+      // Valid case: a generic function expression names its own type parameter
+      // in the props annotation, which no module can export
+      {
+        code: `
+        import { memo } from 'react';
+
+        export type ListProps<T> = {
+          items: T[];
+        };
+
+        export const List = memo(function ListUnmemoized<T>({ items }: ListProps<T>) {
+          return <div>{items.length}</div>;
+        });
+      `,
+      },
+      // Valid case: the type parameter of a component resolved through an
+      // identifier, whose declaration follows the export
+      {
+        code: `
+        import { memo } from 'react';
+
+        export type ListProps<T> = {
+          items: T[];
+        };
+
+        export const List = memo(ListUnmemoized);
+
+        function ListUnmemoized<T>({ items }: ListProps<T>) {
+          return <div>{items.length}</div>;
+        }
+      `,
+      },
+      // Valid case: the ref parameter stays outside the props contract when the
+      // props are destructured
+      {
+        code: `
+        import { forwardRef } from 'react';
+
+        export type BannerProps = {
+          message: string;
+        };
+
+        type BannerRef = HTMLDivElement;
+
+        export const Banner = forwardRef(({ message }: BannerProps, ref: Ref<BannerRef>) => (
+          <div ref={ref}>{message}</div>
+        ));
       `,
       },
       // Valid case: anonymous default export without a component wrapper stays
@@ -1049,6 +1243,528 @@ ruleTesterJsx.run(
         export const Banner = memo(function BannerUnmemoized(props: AmbientBannerProps) {
           return <div>{props.message}</div>;
         });
+      `,
+        output: null,
+        errors: [
+          {
+            messageId: 'missingExportedPropsType',
+            data: { typeName: 'AmbientBannerProps' },
+          },
+        ],
+      },
+      // Invalid case: destructured props on an arrow component
+      {
+        code: `
+        type BannerProps = {
+          message: string;
+        };
+
+        export const Banner = ({ message }: BannerProps) => <div>{message}</div>;
+      `,
+        output: `
+        export type BannerProps = {
+          message: string;
+        };
+
+        export const Banner = ({ message }: BannerProps) => <div>{message}</div>;
+      `,
+        errors: [
+          {
+            messageId: 'missingExportedPropsType',
+            data: { typeName: 'BannerProps' },
+          },
+        ],
+      },
+      // Invalid case: destructured props with a default value, which nests an
+      // assignment inside the pattern but leaves the annotation in place
+      {
+        code: `
+        type BannerProps = {
+          message?: string;
+        };
+
+        export const Banner = ({ message = 'hi' }: BannerProps) => <div>{message}</div>;
+      `,
+        output: `
+        export type BannerProps = {
+          message?: string;
+        };
+
+        export const Banner = ({ message = 'hi' }: BannerProps) => <div>{message}</div>;
+      `,
+        errors: [
+          {
+            messageId: 'missingExportedPropsType',
+            data: { typeName: 'BannerProps' },
+          },
+        ],
+      },
+      // Invalid case: destructured props inside the memoized function
+      // expression require-memo emits
+      {
+        code: `
+        import { memo } from 'react';
+
+        interface BannerProps {
+          message: string;
+        }
+
+        export const Banner = memo(function BannerUnmemoized({ message }: BannerProps) {
+          return <div>{message}</div>;
+        });
+      `,
+        output: `
+        import { memo } from 'react';
+
+        export interface BannerProps {
+          message: string;
+        }
+
+        export const Banner = memo(function BannerUnmemoized({ message }: BannerProps) {
+          return <div>{message}</div>;
+        });
+      `,
+        errors: [
+          {
+            messageId: 'missingExportedPropsType',
+            data: { typeName: 'BannerProps' },
+          },
+        ],
+      },
+      // Invalid case: destructured props carrying a generic argument report the
+      // wrapper and its argument, each pointing at its own declaration
+      {
+        code: `
+        import { memo } from 'react';
+
+        type ListProps<T> = {
+          items: T[];
+        };
+
+        type Item = {
+          id: string;
+        };
+
+        export const List = memo(({ items }: ListProps<Item>) => <div>{items.length}</div>);
+      `,
+        output: `
+        import { memo } from 'react';
+
+        export type ListProps<T> = {
+          items: T[];
+        };
+
+        export type Item = {
+          id: string;
+        };
+
+        export const List = memo(({ items }: ListProps<Item>) => <div>{items.length}</div>);
+      `,
+        errors: [
+          {
+            messageId: 'missingExportedPropsType',
+            data: { typeName: 'ListProps' },
+          },
+          {
+            messageId: 'missingExportedPropsType',
+            data: { typeName: 'Item' },
+          },
+        ],
+      },
+      // Invalid case: memo of an identifier naming a function declaration
+      {
+        code: `
+        import { memo } from 'react';
+
+        type BannerProps = {
+          message: string;
+        };
+
+        function BannerUnmemoized(props: BannerProps) {
+          return <div>{props.message}</div>;
+        }
+
+        export const Banner = memo(BannerUnmemoized);
+      `,
+        output: `
+        import { memo } from 'react';
+
+        export type BannerProps = {
+          message: string;
+        };
+
+        function BannerUnmemoized(props: BannerProps) {
+          return <div>{props.message}</div>;
+        }
+
+        export const Banner = memo(BannerUnmemoized);
+      `,
+        errors: [
+          {
+            messageId: 'missingExportedPropsType',
+            data: { typeName: 'BannerProps' },
+          },
+        ],
+      },
+      // Invalid case: memo of an identifier naming a const arrow
+      {
+        code: `
+        import { memo } from 'react';
+
+        type BannerProps = {
+          message: string;
+        };
+
+        const BannerUnmemoized = (props: BannerProps) => <div>{props.message}</div>;
+
+        export const Banner = memo(BannerUnmemoized);
+      `,
+        output: `
+        import { memo } from 'react';
+
+        export type BannerProps = {
+          message: string;
+        };
+
+        const BannerUnmemoized = (props: BannerProps) => <div>{props.message}</div>;
+
+        export const Banner = memo(BannerUnmemoized);
+      `,
+        errors: [
+          {
+            messageId: 'missingExportedPropsType',
+            data: { typeName: 'BannerProps' },
+          },
+        ],
+      },
+      // Invalid case: memo of an identifier whose resolved props are
+      // destructured, composing both indirections
+      {
+        code: `
+        import { memo } from 'react';
+
+        type BannerProps = {
+          message: string;
+        };
+
+        const BannerUnmemoized = ({ message }: BannerProps) => <div>{message}</div>;
+
+        export const Banner = memo(BannerUnmemoized);
+      `,
+        output: `
+        import { memo } from 'react';
+
+        export type BannerProps = {
+          message: string;
+        };
+
+        const BannerUnmemoized = ({ message }: BannerProps) => <div>{message}</div>;
+
+        export const Banner = memo(BannerUnmemoized);
+      `,
+        errors: [
+          {
+            messageId: 'missingExportedPropsType',
+            data: { typeName: 'BannerProps' },
+          },
+        ],
+      },
+      // Invalid case: memo wrapped around forwardRef of an identifier
+      {
+        code: `
+        import { forwardRef, memo } from 'react';
+
+        type BannerProps = {
+          message: string;
+        };
+
+        function BannerUnwrapped(props: BannerProps, ref: Ref<HTMLDivElement>) {
+          return <div ref={ref}>{props.message}</div>;
+        }
+
+        export const Banner = memo(forwardRef(BannerUnwrapped));
+      `,
+        output: `
+        import { forwardRef, memo } from 'react';
+
+        export type BannerProps = {
+          message: string;
+        };
+
+        function BannerUnwrapped(props: BannerProps, ref: Ref<HTMLDivElement>) {
+          return <div ref={ref}>{props.message}</div>;
+        }
+
+        export const Banner = memo(forwardRef(BannerUnwrapped));
+      `,
+        errors: [
+          {
+            messageId: 'missingExportedPropsType',
+            data: { typeName: 'BannerProps' },
+          },
+        ],
+      },
+      // Invalid case: an identifier naming a declaration that is itself wrapped
+      {
+        code: `
+        import { forwardRef, memo } from 'react';
+
+        type BannerProps = {
+          message: string;
+        };
+
+        const BannerUnmemoized = forwardRef(({ message }: BannerProps, ref) => (
+          <div ref={ref}>{message}</div>
+        ));
+
+        export const Banner = memo(BannerUnmemoized);
+      `,
+        output: `
+        import { forwardRef, memo } from 'react';
+
+        export type BannerProps = {
+          message: string;
+        };
+
+        const BannerUnmemoized = forwardRef(({ message }: BannerProps, ref) => (
+          <div ref={ref}>{message}</div>
+        ));
+
+        export const Banner = memo(BannerUnmemoized);
+      `,
+        errors: [
+          {
+            messageId: 'missingExportedPropsType',
+            data: { typeName: 'BannerProps' },
+          },
+        ],
+      },
+      // Invalid case: namespaced React.memo of an identifier
+      {
+        code: `
+        import React from 'react';
+
+        type BannerProps = {
+          message: string;
+        };
+
+        const BannerUnmemoized = (props: BannerProps) => <div>{props.message}</div>;
+
+        export const Banner = React.memo(BannerUnmemoized);
+      `,
+        output: `
+        import React from 'react';
+
+        export type BannerProps = {
+          message: string;
+        };
+
+        const BannerUnmemoized = (props: BannerProps) => <div>{props.message}</div>;
+
+        export const Banner = React.memo(BannerUnmemoized);
+      `,
+        errors: [
+          {
+            messageId: 'missingExportedPropsType',
+            data: { typeName: 'BannerProps' },
+          },
+        ],
+      },
+      // Invalid case: default export of a memoized identifier, whose
+      // capitalized binding is the only evidence of component-hood
+      {
+        code: `
+        import { memo } from 'react';
+
+        type BannerProps = {
+          message: string;
+        };
+
+        const BannerUnmemoized = ({ message }: BannerProps) => <div>{message}</div>;
+
+        export default memo(BannerUnmemoized);
+      `,
+        output: `
+        import { memo } from 'react';
+
+        export type BannerProps = {
+          message: string;
+        };
+
+        const BannerUnmemoized = ({ message }: BannerProps) => <div>{message}</div>;
+
+        export default memo(BannerUnmemoized);
+      `,
+        errors: [
+          {
+            messageId: 'missingExportedPropsType',
+            data: { typeName: 'BannerProps' },
+          },
+        ],
+      },
+      // Invalid case: an exported declaration reached through a wrapper reports
+      // once, since both paths land on the same annotation
+      {
+        code: `
+        import { memo } from 'react';
+
+        type BannerProps = {
+          message: string;
+        };
+
+        export function BannerUnmemoized(props: BannerProps) {
+          return <div>{props.message}</div>;
+        }
+
+        export const Banner = memo(BannerUnmemoized);
+      `,
+        output: `
+        import { memo } from 'react';
+
+        export type BannerProps = {
+          message: string;
+        };
+
+        export function BannerUnmemoized(props: BannerProps) {
+          return <div>{props.message}</div>;
+        }
+
+        export const Banner = memo(BannerUnmemoized);
+      `,
+        errors: [
+          {
+            messageId: 'missingExportedPropsType',
+            data: { typeName: 'BannerProps' },
+          },
+        ],
+      },
+      // Invalid case: destructured props on a component declaration
+      {
+        code: `
+        type BannerProps = {
+          message: string;
+        };
+
+        export function Banner({ message }: BannerProps) {
+          return <div>{message}</div>;
+        }
+      `,
+        output: `
+        export type BannerProps = {
+          message: string;
+        };
+
+        export function Banner({ message }: BannerProps) {
+          return <div>{message}</div>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'missingExportedPropsType',
+            data: { typeName: 'BannerProps' },
+          },
+        ],
+      },
+      // Invalid case: destructured props on a default-exported declaration
+      {
+        code: `
+        type BannerProps = {
+          message: string;
+        };
+
+        export default function Banner({ message }: BannerProps) {
+          return <div>{message}</div>;
+        }
+      `,
+        output: `
+        export type BannerProps = {
+          message: string;
+        };
+
+        export default function Banner({ message }: BannerProps) {
+          return <div>{message}</div>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'missingExportedPropsType',
+            data: { typeName: 'BannerProps' },
+          },
+        ],
+      },
+      // Invalid case: a generic component reports its non-exported props type
+      // while its own type parameter stays out of the report
+      {
+        code: `
+        import { memo } from 'react';
+
+        type ListProps<T> = {
+          items: T[];
+        };
+
+        export const List = memo(function ListUnmemoized<T>({ items }: ListProps<T>) {
+          return <div>{items.length}</div>;
+        });
+      `,
+        output: `
+        import { memo } from 'react';
+
+        export type ListProps<T> = {
+          items: T[];
+        };
+
+        export const List = memo(function ListUnmemoized<T>({ items }: ListProps<T>) {
+          return <div>{items.length}</div>;
+        });
+      `,
+        errors: [
+          {
+            messageId: 'missingExportedPropsType',
+            data: { typeName: 'ListProps' },
+          },
+        ],
+      },
+      // Invalid case: a component resolved through an identifier declared below
+      // the export reports its props type, with no ancestor chain to walk
+      {
+        code: `
+        import { memo } from 'react';
+
+        type ListProps<T> = {
+          items: T[];
+        };
+
+        export const List = memo(ListUnmemoized);
+
+        function ListUnmemoized<T>({ items }: ListProps<T>) {
+          return <div>{items.length}</div>;
+        }
+      `,
+        output: `
+        import { memo } from 'react';
+
+        export type ListProps<T> = {
+          items: T[];
+        };
+
+        export const List = memo(ListUnmemoized);
+
+        function ListUnmemoized<T>({ items }: ListProps<T>) {
+          return <div>{items.length}</div>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'missingExportedPropsType',
+            data: { typeName: 'ListProps' },
+          },
+        ],
+      },
+      // Invalid case: destructured props whose type has no local declaration
+      // are reported without a fix
+      {
+        code: `
+        export const Banner = ({ message }: AmbientBannerProps) => <div>{message}</div>;
       `,
         output: null,
         errors: [
