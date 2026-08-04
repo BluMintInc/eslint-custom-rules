@@ -1,3 +1,12 @@
+## [1.20.98](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.97...v1.20.98) (2026-08-04)
+
+
+### Bug Fixes
+
+* **enforce-centralized-mock-firestore:** place the import by anchor instead of rewriting the Program (closes [#1695](https://github.com/BluMintInc/eslint-custom-rules/issues/1695)) ([cace94d](https://github.com/BluMintInc/eslint-custom-rules/commit/cace94d60102796e0c9d33ec204b47bc7945375b))
+* **enforce-centralized-mock-firestore:** retire declarations by range, not by line index (closes [#1694](https://github.com/BluMintInc/eslint-custom-rules/issues/1694)) ([83af9c5](https://github.com/BluMintInc/eslint-custom-rules/commit/83af9c5245de68f7c63cdfec075a7e5501b651ab))
+* **enforce-microdiff:** rewrite the comparison in place instead of the whole body (closes [#1693](https://github.com/BluMintInc/eslint-custom-rules/issues/1693)) ([bbdc4d6](https://github.com/BluMintInc/eslint-custom-rules/commit/bbdc4d683d3d47d7ea0e9b1ccdc4e595c751c7a6))
+
 ## [1.20.97](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.96...v1.20.97) (2026-08-04)
 
 

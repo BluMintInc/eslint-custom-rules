@@ -1,5 +1,28 @@
 [
   {
+    "version": "1.20.98",
+    "date": "2026-08-04T10:58:56.821Z",
+    "rules": [
+      {
+        "name": "enforce-centralized-mock-firestore",
+        "changeType": "fix",
+        "issues": [
+          1694,
+          1695
+        ],
+        "summary": "place the import by anchor instead of rewriting the Program (closes #1695); retire declarations by range, not by line index (closes #1694)"
+      },
+      {
+        "name": "enforce-microdiff",
+        "changeType": "fix",
+        "issues": [
+          1693
+        ],
+        "summary": "rewrite the comparison in place instead of the whole body (closes #1693)"
+      }
+    ]
+  },
+  {
     "version": "1.20.97",
     "date": "2026-08-04T08:50:14.394Z",
     "rules": [
