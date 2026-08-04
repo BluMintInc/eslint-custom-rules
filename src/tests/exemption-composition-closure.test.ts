@@ -305,11 +305,16 @@ const pairKey = (finding: Finding) =>
  * Exemptions the shipped config destroys today, keyed
  * `<culprit fixer> -> <rule whose exemption it destroyed>`.
  *
- * MOST ENTRIES ARE OPEN DEFECTS WITH A FILED ISSUE, NOT ACCEPTED BEHAVIOUR.
- * Every entry must carry the issue that accepted it, so an entry is a record of
- * a triaged, tracked contradiction rather than a way to make a build green.
- * Anything unlisted fails, and a listed pair that stops reproducing also fails,
- * so the exemption cannot rot into a shield for the next regression.
+ * AN ENTRY IS NOT A WAY TO MAKE A BUILD GREEN. It records either a
+ * contradiction someone verified is acceptable, or an open defect that is
+ * tracked — and every entry carries the issue that settled it, so which of the
+ * two it is stays legible. Anything unlisted fails, and a listed pair that stops
+ * reproducing also fails, so an exemption cannot rot into a shield for the next
+ * regression.
+ *
+ * Prefer fixing over listing. The three destructions this gate found on its
+ * first run were each fixed rather than baselined (#1690, #1691, #1692), which
+ * is why the sole entry below is the one that is not a defect at all.
  *
  * The dominant shape on this axis — `no-explicit-return-type` deleting the
  * return annotation another rule reads as its exemption carrier (6 of the 12
