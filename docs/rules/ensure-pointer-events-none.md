@@ -32,10 +32,14 @@ A pseudo-element whose inset offsets only **extend beyond** the origin element's
 The rule treats an object-literal pseudo-element style as a hit-slop extension (and does **not** flag it) when all of the following hold:
 
 - it sets `position: 'absolute'` or `'fixed'`, and
-- at least one of the inset offsets `top`/`right`/`bottom`/`left` is a clearly-negative length, and
+- at least one inset offset is a clearly-negative length, and
 - none of the parseable inset offsets is positive (zero and negative are allowed).
 
-This distinguishes a hit-slop (extends outward) from a full-cover overlay such as `{ top: 0, right: 0, bottom: 0, left: 0 }` (all zero → still flagged) or an inward positive-offset overlay (still flagged).
+The inset offsets are the longhands `top`/`right`/`bottom`/`left`, the `inset` shorthand, and the logical spellings `insetInline`/`insetBlock`. A shorthand carries up to four space-separated lengths, and each component is classified separately: a positive component anywhere outranks a negative one, because it pulls an edge inside the origin box where the overlay can occlude the control. So the verdict does not depend on whether an overlay is spelled longhand or shorthand.
+
+An offset derived from a named constant — `` inset: `-${HIT_SLOP}px` `` — counts as negative because the leading literal `-` states the direction whatever the interpolation resolves to (an interpolated negative would render `--8px`, which is not a valid length). Any other interpolation, such as `` inset: `${SIZE}px` ``, stays opaque and earns no exemption.
+
+This distinguishes a hit-slop (extends outward) from a full-cover overlay such as `{ top: 0, right: 0, bottom: 0, left: 0 }` or `{ inset: 0 }` (all zero → still flagged) or an inward positive-offset overlay (still flagged).
 
 ```tsx
 // Not flagged: hit-slop extends the button's tappable area outward
@@ -50,7 +54,20 @@ const buttonStyles = {
     right: 0,
   },
 };
+
+// Not flagged: the same overlay written with the shorthand
+const HIT_SLOP = 8;
+const iconButtonStyles = {
+  position: 'relative',
+  '&::before': {
+    content: '""',
+    position: 'absolute',
+    inset: `-${HIT_SLOP}px`,
+  },
+};
 ```
+
+A full-cover overlay that is *deliberately* interactive — the Bootstrap-style stretched link, `{ position: 'absolute', inset: 0 }` — is indistinguishable from a decorative full-cover overlay, so it stays flagged. Set `pointerEvents: 'auto'` or disable the rule inline at that site to record the intent.
 
 If a positioned pseudo-element is genuinely interactive for another reason, the `pointerEvents: 'auto'` opt-out remains available and documents that intent explicitly.
 
