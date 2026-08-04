@@ -1,5 +1,133 @@
 [
   {
+    "version": "1.20.96",
+    "date": "2026-08-04T07:23:58.552Z",
+    "rules": [
+      {
+        "name": "enforce-css-media-queries",
+        "changeType": "fix",
+        "issues": [
+          1675
+        ],
+        "summary": "exempt capability queries and report once per usage (closes #1675)"
+      },
+      {
+        "name": "enforce-exported-function-types",
+        "changeType": "fix",
+        "issues": [
+          1677,
+          1686
+        ],
+        "summary": "read destructured props params and resolve memo(Identifier) components (closes #1686); see arrow and memo/forwardRef component shapes, autofix the type export (closes #1677)"
+      },
+      {
+        "name": "enforce-firestore-doc-ref-generic",
+        "changeType": "fix",
+        "issues": [
+          1678
+        ],
+        "summary": "resolve type-alias generics beside interfaces (closes #1678)"
+      },
+      {
+        "name": "enforce-mui-rounded-icons",
+        "changeType": "fix",
+        "issues": [
+          1674
+        ],
+        "summary": "rename the binding with the path it retargets (closes #1674)"
+      },
+      {
+        "name": "generic-starts-with-t",
+        "changeType": "fix",
+        "issues": [
+          1676
+        ],
+        "summary": "exempt module augmentations where the name is upstream-owned (closes #1676)"
+      },
+      {
+        "name": "global-const-style",
+        "changeType": "fix",
+        "issues": [
+          1681
+        ],
+        "summary": "exempt function-expression components and unwrap satisfies/non-null wrappers (closes #1681)"
+      },
+      {
+        "name": "no-always-true-false-conditions",
+        "changeType": "fix",
+        "issues": [
+          1682
+        ],
+        "summary": "resolve any const object in optional chains and climb assertion wrappers (closes #1682)"
+      },
+      {
+        "name": "no-unnecessary-verb-suffix",
+        "changeType": "fix",
+        "issues": [
+          1679
+        ],
+        "summary": "read intersection-alias contracts constituent by constituent (closes #1679)"
+      },
+      {
+        "name": "parallelize-loop-awaits",
+        "changeType": "fix",
+        "issues": [
+          1687,
+          1688
+        ],
+        "summary": "cover do-while, dedupe nested-loop reports, stop property keys vetoing (closes #1688); exempt test files, condition-coupled loops, and for-await-of (closes #1687)"
+      },
+      {
+        "name": "prefer-getter-over-parameterless-method",
+        "changeType": "fix",
+        "issues": [
+          1684
+        ],
+        "summary": "skip methods bound by a heritage clause (closes #1684)"
+      },
+      {
+        "name": "prefer-type-alias-over-typeof-constant",
+        "changeType": "fix",
+        "issues": [
+          1680
+        ],
+        "summary": "exempt only canonical alias derivations, not nested use sites (closes #1680)"
+      },
+      {
+        "name": "require-https-error",
+        "changeType": "fix",
+        "issues": [
+          1685
+        ],
+        "summary": "name the codebase-owned HttpsError module, not a placeholder package (closes #1685)"
+      },
+      {
+        "name": "use-custom-link",
+        "changeType": "fix",
+        "issues": [
+          1673
+        ],
+        "summary": "exempt the wrapper's implementation files (closes #1673)"
+      },
+      {
+        "name": "use-custom-memo",
+        "changeType": "fix",
+        "issues": [
+          1671
+        ],
+        "summary": "exempt the wrapper module the rule points at (closes #1671)"
+      },
+      {
+        "name": "use-custom-router",
+        "changeType": "fix",
+        "issues": [
+          1672
+        ],
+        "summary": "exempt the wrapper module the rule points at (closes #1672)"
+      }
+    ]
+  },
+  {
     "version": "1.20.95",
     "date": "2026-08-03T23:44:33.733Z",
     "rules": [
