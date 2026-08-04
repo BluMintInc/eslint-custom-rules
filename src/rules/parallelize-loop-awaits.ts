@@ -63,7 +63,16 @@ type LoopNode =
   | TSESTree.ForOfStatement
   | TSESTree.ForInStatement
   | TSESTree.ForStatement
-  | TSESTree.WhileStatement;
+  | TSESTree.WhileStatement
+  | TSESTree.DoWhileStatement;
+
+const LOOP_NODE_TYPES = new Set<AST_NODE_TYPES>([
+  AST_NODE_TYPES.ForOfStatement,
+  AST_NODE_TYPES.ForInStatement,
+  AST_NODE_TYPES.ForStatement,
+  AST_NODE_TYPES.WhileStatement,
+  AST_NODE_TYPES.DoWhileStatement,
+]);
 
 export const parallelizeLoopAwaits = createRule<Options, MessageIds>({
   name: 'parallelize-loop-awaits',
@@ -137,16 +146,15 @@ export const parallelizeLoopAwaits = createRule<Options, MessageIds>({
     }
 
     /**
-     * Recursively collects all identifier names referenced in a node.
-     * Does not cross nested function boundaries.
+     * Recursively collects the names a node REFERENCES. With `stopAtFunctions`
+     * the walk halts at a nested function, so a name written inside a callback
+     * describes that callback's scope rather than the surrounding loop's.
      */
     function collectIdentifiers(
       node: TSESTree.Node,
       names: Set<string>,
       stopAtFunctions = false,
     ): void {
-      if (stopAtFunctions && node.type !== node.type) return; // no-op placeholder
-
       if (node.type === AST_NODE_TYPES.Identifier) {
         names.add(node.name);
         return;
@@ -159,6 +167,21 @@ export const parallelizeLoopAwaits = createRule<Options, MessageIds>({
           node.type === AST_NODE_TYPES.FunctionExpression ||
           node.type === AST_NODE_TYPES.ArrowFunctionExpression)
       ) {
+        return;
+      }
+
+      // A non-computed property key is a label, not a reference: the `lock` in
+      // `await send({ lock: true })` names a field of the payload and binds
+      // nothing, so letting it reach the coordinator match would exempt the loop
+      // on the strength of a string. A computed key (`{ [lock]: true }`) is an
+      // expression that really does read the surrounding scope, and shorthand
+      // (`{ lock }`) carries the same identifier as its VALUE, so both keep
+      // their say. (#1688)
+      if (node.type === AST_NODE_TYPES.Property) {
+        if (node.computed) {
+          collectIdentifiers(node.key, names, stopAtFunctions);
+        }
+        collectIdentifiers(node.value, names, stopAtFunctions);
         return;
       }
 
@@ -611,9 +634,9 @@ export const parallelizeLoopAwaits = createRule<Options, MessageIds>({
     }
 
     /**
-     * Walks the loop body looking for the first AwaitExpression that is NOT
-     * inside a nested async function (a different async scope). Returns the
-     * first such AwaitExpression found, or null if none exists.
+     * Walks the loop body looking for the first AwaitExpression that belongs to
+     * THIS loop — one that sits in neither a nested function nor a nested loop.
+     * Returns the first such AwaitExpression found, or null if none exists.
      */
     function findDirectAwait(
       node: TSESTree.Node,
@@ -627,6 +650,15 @@ export const parallelizeLoopAwaits = createRule<Options, MessageIds>({
           node.type === AST_NODE_TYPES.FunctionExpression ||
           node.type === AST_NODE_TYPES.ArrowFunctionExpression)
       ) {
+        return null;
+      }
+
+      // An await inside a nested loop belongs to that loop, which gets its own
+      // visit and its own verdict. Claiming it here would anchor a second report
+      // on the very same await, and would judge it against the wrong body: the
+      // enclosing loop's barriers say nothing about whether the inner
+      // iterations can run together. The innermost loop owns the report. (#1688)
+      if (!isRoot && LOOP_NODE_TYPES.has(node.type)) {
         return null;
       }
 
@@ -710,10 +742,14 @@ export const parallelizeLoopAwaits = createRule<Options, MessageIds>({
      * clauses re-evaluated on every iteration count; a `for` loop's `init` and a
      * `for...of` loop's `right` run once, so a call there says nothing about
      * cross-iteration coupling (`for (const [k, v] of map.entries())` keeps its
-     * enforcement). (#1687)
+     * enforcement). A `do...while` test is re-evaluated exactly like a `while`
+     * test, so it carries the same meaning. (#1687, #1688)
      */
     function isConditionCoupled(loopNode: LoopNode): boolean {
-      if (loopNode.type === AST_NODE_TYPES.WhileStatement) {
+      if (
+        loopNode.type === AST_NODE_TYPES.WhileStatement ||
+        loopNode.type === AST_NODE_TYPES.DoWhileStatement
+      ) {
         return containsCallExpression(loopNode.test);
       }
 
@@ -729,15 +765,17 @@ export const parallelizeLoopAwaits = createRule<Options, MessageIds>({
 
     /**
      * Collects every identifier named in the loop's head — the `for...of`/
-     * `for...in` left and right, or the `for` init, test and update. These are
-     * the names an iteration can hand to the body.
+     * `for...in` left and right, the `for` init, test and update, or the
+     * `while`/`do...while` test. These are the names an iteration can hand to
+     * the body.
      */
     function collectLoopHeadIdentifiers(loopNode: LoopNode): Set<string> {
       const names = new Set<string>();
       const clauses: (TSESTree.Node | null)[] =
         loopNode.type === AST_NODE_TYPES.ForStatement
           ? [loopNode.init, loopNode.test, loopNode.update]
-          : loopNode.type === AST_NODE_TYPES.WhileStatement
+          : loopNode.type === AST_NODE_TYPES.WhileStatement ||
+            loopNode.type === AST_NODE_TYPES.DoWhileStatement
           ? [loopNode.test]
           : [loopNode.left, loopNode.right];
 
@@ -862,43 +900,24 @@ export const parallelizeLoopAwaits = createRule<Options, MessageIds>({
       return awaitExpr;
     }
 
+    function checkLoop(loopNode: LoopNode): void {
+      const awaitExpr = analyzeLoop(loopNode);
+      if (awaitExpr) {
+        context.report({
+          node: awaitExpr,
+          messageId: 'parallelizeLoopAwaits',
+        });
+      }
+    }
+
     return {
-      ForOfStatement(node) {
-        const awaitExpr = analyzeLoop(node);
-        if (awaitExpr) {
-          context.report({
-            node: awaitExpr,
-            messageId: 'parallelizeLoopAwaits',
-          });
-        }
-      },
-      ForInStatement(node) {
-        const awaitExpr = analyzeLoop(node);
-        if (awaitExpr) {
-          context.report({
-            node: awaitExpr,
-            messageId: 'parallelizeLoopAwaits',
-          });
-        }
-      },
-      ForStatement(node) {
-        const awaitExpr = analyzeLoop(node);
-        if (awaitExpr) {
-          context.report({
-            node: awaitExpr,
-            messageId: 'parallelizeLoopAwaits',
-          });
-        }
-      },
-      WhileStatement(node) {
-        const awaitExpr = analyzeLoop(node);
-        if (awaitExpr) {
-          context.report({
-            node: awaitExpr,
-            messageId: 'parallelizeLoopAwaits',
-          });
-        }
-      },
+      ForOfStatement: checkLoop,
+      ForInStatement: checkLoop,
+      ForStatement: checkLoop,
+      WhileStatement: checkLoop,
+      // A `do...while` repeats one body per iteration exactly as the other four
+      // forms do; it is the same target and earns the same analysis. (#1688)
+      DoWhileStatement: checkLoop,
     };
   },
 });
