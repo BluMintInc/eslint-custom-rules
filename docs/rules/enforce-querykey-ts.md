@@ -16,7 +16,9 @@ As BluMint transitions to centralized router state management with the new query
 
 1. **Targets the `key` property** in objects passed to the `useRouterState` hook
 1. **Ensures that key parameters** are imported from `src/util/routing/queryKeys.ts` and use the `QUERY_KEY_*` constants
+1. **Accepts an approved re-export** of those constants — the `constants` barrel re-exports queryKeys.ts, so a `QUERY_KEY_*` taken from it is the same constant under a shorter path
 1. **Allows for computed values or variables** that are derived from the imported constants
+1. **Allows a key produced by a call**, since a return value is opaque to a syntactic check
 1. **Provides auto-fix suggestions** when possible to replace string literals with appropriate constant imports
 
 ## Examples
@@ -140,6 +142,22 @@ function Component({ tournamentId }) {
   return <div>{tournament}</div>;
 }
 
+// A call's return value is opaque, whatever the factory is named and whether
+// the call is passed straight to the key or bound to a variable first
+function ComponentFromFactory() {
+  const derivedKey = buildQueryKey('match-session');
+  const [value] = useRouterState({ key: derivedKey });
+  return <div>{value}</div>;
+}
+
+// Constants taken from an approved re-export of queryKeys.ts
+import { QUERY_KEY_ATTEMPT } from 'src/constants';
+
+function ComponentFromBarrel() {
+  const [attempt] = useRouterState({ key: QUERY_KEY_ATTEMPT });
+  return <div>{attempt}</div>;
+}
+
 // Variables derived from query key constants
 import { QUERY_KEY_USER } from 'src/util/routing/queryKeys';
 
@@ -188,12 +206,30 @@ const [notification] = useRouterState({ key: QUERY_KEY_NOTIFICATION });
 const [channel] = useRouterState({ key: QUERY_KEY_CHANNEL });
 ```
 
+### 4. Keys produced by a call
+
+A return value is opaque to a syntactic check, so a key that comes from a call is
+left alone whatever the factory is named — passed straight to `key`, reached
+through an object, or bound to a variable first.
+
+```typescript
+const derivedKey = buildQueryKey('match-session');
+const [session] = useRouterState({ key: derivedKey });
+
+const [inline] = useRouterState({ key: queryKeyUtils.buildQueryKey('match') });
+```
+
+The allowance covers the call, not the text wrapped around it: a template
+literal that carries static content of its own names a key of its own and is
+still reported.
+
 ## Valid Import Sources
 
 The rule recognizes the following import sources as valid:
 
 - `src/util/routing/queryKeys`
 - `@/util/routing/queryKeys`, for a consumer that declares that alias
+- `util/routing/queryKeys`
 - `./util/routing/queryKeys`
 - `../util/routing/queryKeys`
 - `../../util/routing/queryKeys`
@@ -203,9 +239,21 @@ The rule recognizes the following import sources as valid:
 - A relative specifier that resolves to that module from the linted file, even
   when its text hides the directory names (`./queryKeys` from a sibling,
   `../../routing/queryKeys` from two levels below `src/util`)
+- The `constants` barrel, which re-exports those constants: `constants`,
+  `constants/index`, and the same two under any root that names them —
+  `src/constants`, `@/constants`, `./constants`, `../../constants`
+
+The barrel spellings are exactly the ones
+[`prefer-global-router-state-key`](./prefer-global-router-state-key.md)
+recognizes as an approved re-export. Both rules police the same `key`, so a
+source one of them accepts is accepted here too; otherwise one rule's advertised
+remedy would be the other's violation.
 
 Recognition is deliberately wider than emission: every form above is accepted on
-an existing import, but the fixer writes only the forms in the table below.
+an existing import, but the fixer writes only the forms in the table below. An
+existing import of an approved re-export is the exception — it is proof of a path
+that resolves for that file, so a substituted constant joins that import rather
+than opening a second one.
 
 ## Auto-fix Capability
 
@@ -275,4 +323,6 @@ This rule should not be disabled as it's part of BluMint's architectural transit
 
 ## Related Rules
 
-- [`prefer-global-router-state-key`](./prefer-global-router-state-key.md) - A more general rule that discourages string literals but doesn't enforce specific imports
+- [`prefer-global-router-state-key`](./prefer-global-router-state-key.md) — polices the same `useRouterState` key and enforces the same import sources: it reports `invalidQueryKeySource` for a key variable sourced from anywhere other than queryKeys.ts or an approved re-export, and autofixes string literals the same way.
+
+  The carve-outs the two rules share are kept identical — call results, function parameters, and the set of approved sources — so a key that one rule's carve-out allows is not reported by the other. Each still reaches shapes the other leaves alone: that rule also reports a member expression passed as the key, where this rule reports only string-literal expressions and bare identifiers; this rule also reports a template literal that carries static content of its own, which that rule accepts as long as one of its expressions is a valid key.

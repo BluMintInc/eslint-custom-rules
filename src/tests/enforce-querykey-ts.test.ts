@@ -447,6 +447,237 @@ export const useGroupIdMap = () => {
         }
       `,
     },
+
+    // ------------------------------------------------------------------
+    // Regression #1714: this rule and prefer-global-router-state-key police the
+    // same call, so a shape one of them blesses must not be the other's
+    // violation. The two cases below are the sibling's own documented positions:
+    // its "What the rule allows" example (docs/rules/prefer-global-router-state-key.md)
+    // and the approved re-export its message advertises.
+    // ------------------------------------------------------------------
+
+    // 33. The sibling's documented factory example, verbatim.
+    {
+      name: "the sibling's documented buildQueryKey example stays allowed",
+      code: `
+        const derivedKey = buildQueryKey('match-session');
+        const [value] = useRouterState({ key: derivedKey });
+      `,
+    },
+
+    // 34. The constants barrel is an approved re-export of queryKeys.ts, which
+    // the sibling accepts (prefer-global-router-state-key.ts:139-143).
+    {
+      name: 'a QUERY_KEY_* constant from the constants barrel is allowed',
+      code: `
+        import { QUERY_KEY_ATTEMPT } from 'src/constants';
+
+        function Component() {
+          const [attempt] = useRouterState({ key: QUERY_KEY_ATTEMPT });
+          return <div>{attempt}</div>;
+        }
+      `,
+    },
+
+    // 35. #1714: a call handed straight to the key is opaque too, whatever the
+    // factory is named.
+    {
+      name: 'a call passed directly as the key is allowed',
+      code: `
+        function Component() {
+          const [value] = useRouterState({ key: buildQueryKey('match-session') });
+          return <div>{value}</div>;
+        }
+      `,
+    },
+
+    // 36. #1714: the factory reached through an object is still a call.
+    {
+      name: 'a member-expression factory is allowed',
+      code: `
+        import { queryKeyUtils } from './queryKeyUtils';
+
+        function Component() {
+          const [value] = useRouterState({ key: queryKeyUtils.buildQueryKey('match') });
+          return <div>{value}</div>;
+        }
+      `,
+    },
+
+    // 37. #1714: an argument list says nothing about the return value, so a
+    // zero-argument call is opaque like any other.
+    {
+      name: 'a call with no arguments is allowed',
+      code: `
+        function Component() {
+          const derivedKey = resolveKey();
+          const [value] = useRouterState({ key: derivedKey });
+          return <div>{value}</div>;
+        }
+      `,
+    },
+
+    // 38. #1714: an awaited call reaches the key as an await expression, which
+    // exposes no static string either.
+    {
+      name: 'an awaited call is allowed',
+      code: `
+        async function useLoadedKey() {
+          const [value] = useRouterState({ key: await buildQueryKey('match') });
+          return value;
+        }
+      `,
+    },
+
+    // 39. #1714: the carve-out survives an assignment chain, since each link
+    // resolves to the call at its end.
+    {
+      name: 'a call reached through an assignment chain is allowed',
+      code: `
+        function Component() {
+          const baseKey = buildQueryKey('match');
+          const derivedKey = baseKey;
+          const [value] = useRouterState({ key: derivedKey });
+          return <div>{value}</div>;
+        }
+      `,
+    },
+
+    // 40. #1714: a call interpolated into a separator-only template carries the
+    // whole key.
+    {
+      name: 'a call inside a separator-only template literal is allowed',
+      code: `
+        function Component({ id }) {
+          const [value] = useRouterState({ key: \`\${buildQueryKey('match')}-\${id}\` });
+          return <div>{value}</div>;
+        }
+      `,
+    },
+
+    // 41. #1714: both branches of a ternary may be calls.
+    {
+      name: 'a ternary between two calls is allowed',
+      code: `
+        function Component({ isAdmin }) {
+          const [value] = useRouterState({
+            key: isAdmin ? buildAdminKey() : buildUserKey()
+          });
+          return <div>{value}</div>;
+        }
+      `,
+    },
+
+    // 42. #1714: every spelling of the constants barrel's root names the same
+    // approved re-export, which is what the sibling recognizes.
+    {
+      name: 'the bare constants specifier is allowed',
+      code: `
+        import { QUERY_KEY_ATTEMPT } from 'constants';
+
+        function Component() {
+          const [attempt] = useRouterState({ key: QUERY_KEY_ATTEMPT });
+          return <div>{attempt}</div>;
+        }
+      `,
+    },
+    {
+      name: 'the constants barrel named by its index file is allowed',
+      code: `
+        import { QUERY_KEY_ATTEMPT } from 'constants/index';
+
+        function Component() {
+          const [attempt] = useRouterState({ key: QUERY_KEY_ATTEMPT });
+          return <div>{attempt}</div>;
+        }
+      `,
+    },
+    {
+      name: 'src/constants/index is allowed',
+      code: `
+        import { QUERY_KEY_ATTEMPT } from 'src/constants/index';
+
+        function Component() {
+          const [attempt] = useRouterState({ key: QUERY_KEY_ATTEMPT });
+          return <div>{attempt}</div>;
+        }
+      `,
+    },
+    {
+      name: 'the aliased constants specifier is allowed',
+      code: `
+        import { QUERY_KEY_ATTEMPT } from '@/constants';
+
+        function Component() {
+          const [attempt] = useRouterState({ key: QUERY_KEY_ATTEMPT });
+          return <div>{attempt}</div>;
+        }
+      `,
+    },
+    {
+      name: 'a relative path to the constants barrel is allowed',
+      code: `
+        import { QUERY_KEY_ATTEMPT } from './constants';
+
+        function Component() {
+          const [attempt] = useRouterState({ key: QUERY_KEY_ATTEMPT });
+          return <div>{attempt}</div>;
+        }
+      `,
+    },
+    {
+      name: 'a deeper relative path to the constants barrel is allowed',
+      code: `
+        import { QUERY_KEY_ATTEMPT } from '../../constants';
+
+        function Component() {
+          const [attempt] = useRouterState({ key: QUERY_KEY_ATTEMPT });
+          return <div>{attempt}</div>;
+        }
+      `,
+    },
+
+    // 43. #1714: an alias of a re-exported constant is the same binding under
+    // another name.
+    {
+      name: 'an aliased constant from the constants barrel is allowed',
+      code: `
+        import { QUERY_KEY_ATTEMPT as ATTEMPT_KEY } from 'src/constants';
+
+        function Component() {
+          const [attempt] = useRouterState({ key: ATTEMPT_KEY });
+          return <div>{attempt}</div>;
+        }
+      `,
+    },
+
+    // 44. #1714: the module's own root-relative spelling, which the sibling
+    // accepts as well.
+    {
+      name: 'the root-relative queryKeys specifier is allowed',
+      code: `
+        import { QUERY_KEY_ATTEMPT } from 'util/routing/queryKeys';
+
+        function Component() {
+          const [attempt] = useRouterState({ key: QUERY_KEY_ATTEMPT });
+          return <div>{attempt}</div>;
+        }
+      `,
+    },
+
+    // 45. #1714: a variable derived from a re-exported constant rides on it.
+    {
+      name: 'a variable derived from a re-exported constant is allowed',
+      code: `
+        import { QUERY_KEY_ATTEMPT } from 'src/constants';
+
+        function Component() {
+          const attemptKey = QUERY_KEY_ATTEMPT;
+          const [attempt] = useRouterState({ key: attemptKey });
+          return <div>{attempt}</div>;
+        }
+      `,
+    },
   ],
 
   invalid: [
@@ -1552,6 +1783,106 @@ export const useProfileKey = () => {
           return <div>{match}{same}</div>;
         }
       `,
+    },
+
+    // ------------------------------------------------------------------
+    // Regression #1714: aligning this rule's carve-outs with
+    // prefer-global-router-state-key widens what is accepted, so the boundary
+    // of that widening is fenced here. A source that merely resembles the
+    // approved re-export, a non-`QUERY_KEY_*` name taken from it, and a static
+    // template around a call all stay reportable.
+    // ------------------------------------------------------------------
+
+    // 56. The barrel is approved, the naming convention still is not.
+    {
+      name: 'a non-QUERY_KEY name from the constants barrel still reports',
+      code: `
+        import { ATTEMPT_KEY } from 'src/constants';
+
+        function Component() {
+          const [attempt] = useRouterState({ key: ATTEMPT_KEY });
+          return <div>{attempt}</div>;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'enforceQueryKeyConstant',
+          data: { variableName: 'ATTEMPT_KEY' },
+        },
+      ],
+    },
+
+    // 57. A module beneath the barrel is not the barrel — the sibling's own
+    // documented incorrect example.
+    {
+      name: 'a module below the constants barrel still reports',
+      code: `
+        import { USER_PROFILE_KEY } from 'src/constants/other';
+
+        function Component() {
+          const [value] = useRouterState({ key: USER_PROFILE_KEY });
+          return <div>{value}</div>;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'enforceQueryKeyConstant',
+          data: { variableName: 'USER_PROFILE_KEY' },
+        },
+      ],
+    },
+
+    // 58. Matching is on the whole specifier, not a prefix of it.
+    {
+      name: 'a specifier that merely starts with constants still reports',
+      code: `
+        import { QUERY_KEY_ATTEMPT } from 'src/constantsy';
+
+        function Component() {
+          const [attempt] = useRouterState({ key: QUERY_KEY_ATTEMPT });
+          return <div>{attempt}</div>;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'enforceQueryKeyConstant',
+          data: { variableName: 'QUERY_KEY_ATTEMPT' },
+        },
+      ],
+    },
+
+    // 59. The call carve-out covers the call, not the text wrapped around it:
+    // a template with its own static content still names a key of its own.
+    {
+      name: 'static template content around a call still reports',
+      code: `
+        function Component() {
+          const [value] = useRouterState({ key: \`user-profile-\${buildQueryKey('match')}\` });
+          return <div>{value}</div>;
+        }
+      `,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+    },
+
+    // 60. The barrel is proof of a path that resolves for this file, so a
+    // substituted constant joins that import instead of opening a second one.
+    {
+      name: 'the fix extends an existing constants-barrel import',
+      code: `import { QUERY_KEY_ATTEMPT } from 'src/constants';
+
+function Component() {
+  const [attempt] = useRouterState({ key: QUERY_KEY_ATTEMPT });
+  const [match] = useRouterState({ key: 'match-view' });
+  return [attempt, match];
+}`,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: `import { QUERY_KEY_ATTEMPT, QUERY_KEY_MATCH_VIEW } from 'src/constants';
+
+function Component() {
+  const [attempt] = useRouterState({ key: QUERY_KEY_ATTEMPT });
+  const [match] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
+  return [attempt, match];
+}`,
     },
   ],
 });
