@@ -84,6 +84,222 @@ ruleTesterTs.run('enforce-firestore-set-merge', enforceFirestoreSetMerge, {
         });
       `,
     },
+    // Issue #1710: Realtime Database's batch manager is stored under the same
+    // `batchManager` field name as the Firestore one, yet it has no `set` method
+    // at all — its positional `update(path, data)` is the only write path. The
+    // field's initializer names the class, which puts the call out of scope.
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        export class MessageProcessor {
+          protected readonly batchManager = new RealtimeBatchManager();
+          protected setChannelGroupPulsate(path: string) {
+            this.batchManager.update(path, true);
+          }
+        }
+      `,
+    },
+    // A constructor parameter property carries the same evidence in its type
+    // annotation, wrapped in `Readonly<…>`.
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        export class Erc20TokenRateSyncer {
+          constructor(
+            private readonly batchManager: Readonly<RealtimeBatchManager>,
+          ) {}
+          public sync(path: string, rate: { usd: number }) {
+            this.batchManager.update(path, rate);
+          }
+        }
+      `,
+    },
+    // A bare annotation on the field, with the instance handed in elsewhere.
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        export class NativeTokenRateSyncer {
+          private batchManager: RealtimeBatchManager;
+          constructor(batchManager: RealtimeBatchManager) {
+            this.batchManager = batchManager;
+          }
+          public sync(path: string, rate: { usd: number }) {
+            this.batchManager.update(path, rate);
+          }
+        }
+      `,
+    },
+    // A qualified type name reads as its rightmost segment.
+    {
+      code: `
+        import * as realtimeDb from '../realtimeDb';
+        export class QualifiedSyncer {
+          constructor(private readonly batchManager: realtimeDb.RealtimeBatchManager) {}
+          public sync(path: string, rate: { usd: number }) {
+            this.batchManager.update(path, rate);
+          }
+        }
+      `,
+    },
+    // A plain constructor parameter handed to a superclass declared elsewhere
+    // is the only local evidence the agora syncers carry.
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        export class Erc20TokenRateSyncer extends BaseTokenRateSyncer {
+          constructor(batchManager: Readonly<RealtimeBatchManager>) {
+            super(batchManager, 'ERC20');
+          }
+          protected async writePrice(path: string, price: { usd: number }) {
+            await this.batchManager.update(path, price);
+          }
+        }
+      `,
+    },
+    // An intersection still holds the instance type.
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        export class InstrumentedSyncer {
+          constructor(private readonly batchManager: RealtimeBatchManager & Logged) {}
+          public sync(path: string, rate: { usd: number }) {
+            this.batchManager.update(path, rate);
+          }
+        }
+      `,
+    },
+    // A namespaced constructor names the same class.
+    {
+      code: `
+        import * as realtimeDb from '../realtimeDb';
+        export class NamespacedSyncer {
+          private readonly batchManager = new realtimeDb.RealtimeBatchManager();
+          public sync(path: string, rate: { usd: number }) {
+            this.batchManager.update(path, rate);
+          }
+        }
+      `,
+    },
+    // A defaulted constructor parameter property declares the field too.
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        export class DefaultedSyncer {
+          constructor(private readonly batchManager = new RealtimeBatchManager()) {}
+          public sync(path: string, rate: { usd: number }) {
+            this.batchManager.update(path, rate);
+          }
+        }
+      `,
+    },
+    // A superclass bound to a class expression resolves the same way.
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        const BaseProcessor = class {
+          protected readonly batchManager = new RealtimeBatchManager();
+        };
+        export class PulsateProcessor extends BaseProcessor {
+          public pulsate(path: string, counts: { unread: number }) {
+            this.batchManager.update(path, counts);
+          }
+        }
+      `,
+    },
+    // A subclass inherits the field, so the evidence lives on the superclass.
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        class MessageProcessor {
+          protected readonly batchManager = new RealtimeBatchManager();
+        }
+        export class ReadMessageProcessor extends MessageProcessor {
+          public markRead(path: string, counts: { unread: number }) {
+            this.batchManager.update(path, counts);
+          }
+        }
+      `,
+    },
+    // A bare receiver is not a member expression, so it never reaches the batch
+    // manager branch at all; its binding resolves the same way if it ever does.
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        const batchManager = new RealtimeBatchManager();
+        export async function bump(path: string) {
+          await batchManager.update(path, { count: 1 });
+        }
+      `,
+    },
+    // Firestore's update data is an object of field updates, so a primitive
+    // literal in the data position is proof on its own — which is all a
+    // subclass has when it inherits the field from a sibling module.
+    {
+      code: `
+        export class ReadMessageProcessor extends MessageProcessor {
+          public resetCount(path: string) {
+            this.batchManager.update(path, 0);
+          }
+        }
+      `,
+    },
+    {
+      code: `
+        export class ReadMessageProcessor extends MessageProcessor {
+          public clearFlag(path: string) {
+            this.batchManager.update(path, false);
+          }
+        }
+      `,
+    },
+    {
+      code: `
+        export class ReadMessageProcessor extends MessageProcessor {
+          public setStatus(path: string) {
+            this.batchManager.update(path, 'read');
+          }
+        }
+      `,
+    },
+    // A template literal evaluates to a string however it interpolates.
+    {
+      code: `
+        export class ReadMessageProcessor extends MessageProcessor {
+          public setStatus(path: string) {
+            this.batchManager.update(path, \`read\`);
+          }
+        }
+      `,
+    },
+    {
+      code: `
+        export class ReadMessageProcessor extends MessageProcessor {
+          public setStatus(path: string, state: string) {
+            this.batchManager.update(path, \`read-\${state}\`);
+          }
+        }
+      `,
+    },
+    // An assertion wrapping the literal does not change what it evaluates to.
+    {
+      code: `
+        export class ReadMessageProcessor extends MessageProcessor {
+          public resetCount(path: string) {
+            this.batchManager.update(path, 0 as const);
+          }
+        }
+      `,
+    },
+    // A signed numeric literal is still a numeric literal.
+    {
+      code: `
+        export class ReadMessageProcessor extends MessageProcessor {
+          public decrement(path: string) {
+            this.batchManager.update(path, -1);
+          }
+        }
+      `,
+    },
   ],
   invalid: [
     // Invalid cases using update
@@ -540,6 +756,144 @@ export async function save(args) {
           merge: true,
         });
       `,
+    },
+    // Issue #1710 negative space: the exemption keys on the RealtimeBatchManager
+    // name, not on the mere presence of an initializer, so the Firestore
+    // BatchManager under the same field name still reports and still fixes.
+    {
+      code: `
+        import { BatchManager } from '../firestore/BatchManager';
+        export class NotificationSyncer {
+          private readonly batchManager = new BatchManager();
+          public sync(notificationRef, updates) {
+            this.batchManager.update(notificationRef, updates);
+          }
+        }
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        import { BatchManager } from '../firestore/BatchManager';
+        export class NotificationSyncer {
+          private readonly batchManager = new BatchManager();
+          public sync(notificationRef, updates) {
+            this.batchManager.set({
+          ref: notificationRef,
+          data: updates,
+          merge: true,
+        });
+          }
+        }
+      `,
+    },
+    // An unrelated class under the same field name is no evidence either.
+    {
+      code: `
+        export class NotificationSyncer {
+          private readonly batchManager = new SomethingElse();
+          public sync(notificationRef, updates) {
+            this.batchManager.update(notificationRef, updates);
+          }
+        }
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        export class NotificationSyncer {
+          private readonly batchManager = new SomethingElse();
+          public sync(notificationRef, updates) {
+            this.batchManager.set({
+          ref: notificationRef,
+          data: updates,
+          merge: true,
+        });
+          }
+        }
+      `,
+    },
+    // The evidence has to be about the receiver's own member: a
+    // RealtimeBatchManager held under a different name exempts nothing.
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        export class MixedSyncer {
+          private readonly realtime = new RealtimeBatchManager();
+          private readonly batchManager = new BatchManager();
+          public sync(notificationRef, updates) {
+            this.batchManager.update(notificationRef, updates);
+          }
+        }
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        export class MixedSyncer {
+          private readonly realtime = new RealtimeBatchManager();
+          private readonly batchManager = new BatchManager();
+          public sync(notificationRef, updates) {
+            this.batchManager.set({
+          ref: notificationRef,
+          data: updates,
+          merge: true,
+        });
+          }
+        }
+      `,
+    },
+    // Evidence is read from the receiver's own class and its ancestors: an
+    // unrelated class holding a RealtimeBatchManager exempts nothing.
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        class RealtimeProcessor {
+          protected readonly batchManager = new RealtimeBatchManager();
+        }
+        export class FirestoreSyncer {
+          private readonly batchManager = new BatchManager();
+          public sync(notificationRef, updates) {
+            this.batchManager.update(notificationRef, updates);
+          }
+        }
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        class RealtimeProcessor {
+          protected readonly batchManager = new RealtimeBatchManager();
+        }
+        export class FirestoreSyncer {
+          private readonly batchManager = new BatchManager();
+          public sync(notificationRef, updates) {
+            this.batchManager.set({
+          ref: notificationRef,
+          data: updates,
+          merge: true,
+        });
+          }
+        }
+      `,
+    },
+    // A primitive nested inside the data object is not a primitive data
+    // argument: the object is exactly the Firestore shape.
+    {
+      code: `
+        this.batchManager.update(notificationRef, { unread: 0 });
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        this.batchManager.set({
+          ref: notificationRef,
+          data: { unread: 0 },
+          merge: true,
+        });
+      `,
+    },
+    // A call with no data argument has nothing in the data position, so the
+    // primitive-literal signal cannot read the reference as data.
+    {
+      code: `
+        this.batchManager.update('notifications/1');
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: null,
     },
   ],
 });
