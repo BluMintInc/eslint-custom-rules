@@ -13,7 +13,7 @@ Using the proprietary `HttpsError` keeps Cloud Functions responses consistent: c
 - Reports `throw new Error(...)` so Cloud Functions do not return an unstructured 500 response.
 - Reports any use of `firebase-admin`’s `HttpsError`, including aliased imports and `https.HttpsError`, because it skips the proprietary wrapper and its logging/sanitization behavior.
 - Reports the forbidden `firebase-admin` `HttpsError` both when it is imported (to block unused but disallowed dependencies) and again when it is thrown, so runtime usage is always flagged.
-- Allows throwing the proprietary `HttpsError` (for example from `@our-company/errors`) or other project-specific error types.
+- Allows throwing the proprietary `HttpsError` — the wrapper module this repository owns, such as a shared `util/errors/HttpsError` imported by path — or other project-specific error types. Any import source other than `firebase-admin` satisfies the rule; there is no package to install.
 
 ## Examples
 
@@ -50,7 +50,7 @@ throw new firebaseHttps.HttpsError('permission-denied', 'Not allowed');
 
 ```ts
 // Uses the proprietary HttpsError so responses include structured status and logs
-import { HttpsError } from '@our-company/errors';
+import { HttpsError } from '../util/errors/HttpsError';
 
 throw new HttpsError('INVALID_ARGUMENT', 'Provide a user id before saving');
 ```
@@ -75,6 +75,6 @@ describe('exampleGuard', () => {
 ## How to Fix
 
 - Replace `throw new Error(...)` with the proprietary `HttpsError` and supply the canonical status code plus a client-safe message.
-- Replace any `firebase-admin` `HttpsError` import (direct or via `https`) with the proprietary `HttpsError` from `@our-company/errors`.
+- Replace any `firebase-admin` `HttpsError` import (direct or via `https`) with an import of this repository's own `HttpsError` module — a shared `util/errors/HttpsError`, imported by relative path. The rule prescribes no npm package: it accepts every source except `firebase-admin`.
 - Keep this enforcement scoped to `functions/src` so other packages can define their own error handling.
 - Leave `throw new Error(...)` alone in `*.test.*` / `*.spec.*` files and in `__tests__/` or `__mocks__/` modules: swapping in `HttpsError` there adds no client-facing benefit and obscures the intent of the fixture.
