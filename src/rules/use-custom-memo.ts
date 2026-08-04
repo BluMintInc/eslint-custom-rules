@@ -10,6 +10,31 @@ type MessageIds = 'useCustomMemo';
 
 const MEMO_MODULE = `'src/util/memo'`;
 
+/** `MEMO_MODULE` carries the quotes the fixer emits; a path never does. */
+const MEMO_MODULE_PATH = MEMO_MODULE.slice(1, -1);
+
+const SOURCE_EXTENSION = /\.(?:ts|tsx|js|jsx)$/;
+
+/**
+ * The module the fixer points every `memo` import at is the one module that must
+ * keep importing `memo` from `react`: rewriting it makes it import itself, and a
+ * self-import evaluates circularly, so the wrapper exports `undefined` and every
+ * consumer of it breaks.
+ *
+ * The linted path is matched by suffix because it reaches the rule in whatever
+ * form the caller used — absolute (`/repo/src/util/memo.ts`) or project-relative
+ * (`src/util/memo.ts`). The suffix has to land on a path-segment boundary,
+ * otherwise `notsrc/util/memo.ts` — an unrelated module — would be exempted too.
+ */
+const isMemoModule = (filename: string): boolean => {
+  const normalized = filename.replace(/\\/g, '/').replace(SOURCE_EXTENSION, '');
+  if (!normalized.endsWith(MEMO_MODULE_PATH)) {
+    return false;
+  }
+  const suffixStart = normalized.length - MEMO_MODULE_PATH.length;
+  return suffixStart === 0 || normalized[suffixStart - 1] === '/';
+};
+
 type Range = [number, number];
 
 const isComment = (
@@ -232,6 +257,15 @@ export const useCustomMemo = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
+    // A processor hands the rule a virtual filename for an extracted code block;
+    // the physical path is the one that identifies the module on disk.
+    const filename = context.getPhysicalFilename
+      ? context.getPhysicalFilename()
+      : context.getFilename();
+    if (isMemoModule(filename)) {
+      return {};
+    }
+
     return {
       ImportDeclaration(node: TSESTree.ImportDeclaration) {
         if (node.source.value !== 'react') {
