@@ -18,6 +18,23 @@ Generic prefixes such as `get`, `update`, `check`, `manage`, `process`, or `do` 
 - Keep boolean checks starting with `is` and Next.js data functions (`getServerSideProps`, `getStaticProps`, `getStaticPaths`) as-is; the rule already exempts them.
 - Ensure the first word of PascalCase/camelCase names expresses the function's behavior rather than a placeholder verb.
 
+## Compound lexemes
+
+A generic prefix is only generic when it is a standalone verb applied to an object. When the banned word is the head of a lexicalized verb-particle compound, it names the operation exactly: `checkIn` is the phrasal verb *to check in*, not the verb `check` applied to `In`. Renaming it to `validateIn` would be strictly less meaningful, so the rule exempts these.
+
+The exempt compounds are `check in` and `check out`. The rule matches them against the first **two** camelCase segments, so derived names inherit the exemption:
+
+| Name | First two segments | Reported |
+| --- | --- | --- |
+| `checkIn`, `checkOut` | `check in` / `check out` | no |
+| `checkInAndSet`, `checkOutTeam` | `check in` / `check out` | no |
+| `checkInput`, `checkOutdatedEntries` | `check input` / `check outdated` | **yes** |
+| `checkUserPermissions` | `check user` | **yes** |
+
+Matching is on whole camelCase segments and is case-insensitive, so `CheckInAndSet` is exempt while `CheckInputSchema` is still reported — a name that merely *begins with* the letters of a particle is not a compound.
+
+A grammatical verb-particle sequence is not enough on its own; the pair must be lexicalized (its meaning is not the sum of its parts). `getOutOfSyncItems`, `updateInPlace`, and `processOutQueue` are compositional, so the generic verb still hides what the function does and they remain reported.
+
 ## Examples
 
 ### ✅ Correct
@@ -36,6 +53,7 @@ class FormService {
 ```ts
 function getUserProfile() {}
 const updateSettings = () => {}
+function checkUserPermissions() {}
 class FormService {
   processPayload() {}
 }
@@ -53,6 +71,18 @@ function isUserLoggedIn() {}
 class Page {
   static getStaticProps() {
     return { props: {} };
+  }
+}
+
+class TeamMutator {
+  public async checkInAndSet(memberId: string, isEntireTeam: boolean) {
+    return this.checkIn(memberId, isEntireTeam);
+  }
+  public checkIn(memberId: string, entireTeam: boolean) {
+    return { memberId, entireTeam };
+  }
+  public checkOut(memberId: string) {
+    return memberId;
   }
 }
 ```
