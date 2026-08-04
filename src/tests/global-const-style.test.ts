@@ -128,6 +128,115 @@ ruleTesterTs.run('global-const-style', rule, {
       },
     },
 
+    // Issue #1681: the component exemption classifies the initializer through
+    // any type wrapper, and a function expression counts as a function value
+    // exactly like an arrow. The shapes below were renamed to SCREAMING_SNAKE,
+    // which also blinds every component-keyed sibling rule
+    // (semantic-function-prefixes, no-render-function-components,
+    // react-memoize-literals) — a SCREAMING_SNAKE binding no longer reads as a
+    // component to them.
+    {
+      code: 'const Row = function (props) { return <div/>; };',
+      filename: 'Row.tsx',
+      parserOptions: { ecmaFeatures: { jsx: true }, ecmaVersion: 2020 },
+    },
+    {
+      code: 'const M = memo(() => <div/>) satisfies unknown;',
+      filename: 'M.tsx',
+      parserOptions: { ecmaFeatures: { jsx: true }, ecmaVersion: 2020 },
+    },
+    {
+      code: 'const M2 = memo(() => <div/>)!;',
+      filename: 'M2.tsx',
+      parserOptions: { ecmaFeatures: { jsx: true }, ecmaVersion: 2020 },
+    },
+    // Issue #1681: a single capital letter already satisfies the
+    // UPPER_SNAKE_CASE regex, so `M`/`M2` above cannot fire whatever the rule
+    // does. These multi-character names are the ones that actually regressed
+    // and are what pins the exemption.
+    {
+      code: 'const MemoizedRow = memo(() => <div/>) satisfies unknown;',
+      filename: 'MemoizedRow.tsx',
+      parserOptions: { ecmaFeatures: { jsx: true }, ecmaVersion: 2020 },
+    },
+    {
+      code: 'const MemoizedCell = memo(() => <div/>)!;',
+      filename: 'MemoizedCell.tsx',
+      parserOptions: { ecmaFeatures: { jsx: true }, ecmaVersion: 2020 },
+    },
+    {
+      code: 'const ForwardedRow = forwardRef((props, ref) => <div ref={ref}/>) satisfies unknown;',
+      filename: 'ForwardedRow.tsx',
+      parserOptions: { ecmaFeatures: { jsx: true }, ecmaVersion: 2020 },
+    },
+    // Issue #1681: a namespace-imported factory (`React.memo`) is the same
+    // component construction as the bare call.
+    {
+      code: 'const MemoizedList = React.memo(function Foo() { return <div/>; }) satisfies ComponentType;',
+      filename: 'MemoizedList.tsx',
+      parserOptions: { ecmaFeatures: { jsx: true }, ecmaVersion: 2020 },
+    },
+    {
+      code: 'const MemoizedGrid = React.memo(function Foo() { return <div/>; })!;',
+      filename: 'MemoizedGrid.tsx',
+      parserOptions: { ecmaFeatures: { jsx: true }, ecmaVersion: 2020 },
+    },
+    // Issue #1681: controls — these shapes are exempt with or without the
+    // wrapper-aware classification, and must stay that way.
+    {
+      code: 'const A = () => <div/>;',
+      filename: 'A.tsx',
+      parserOptions: { ecmaFeatures: { jsx: true }, ecmaVersion: 2020 },
+    },
+    {
+      code: 'const B = memo(() => <div/>);',
+      filename: 'B.tsx',
+      parserOptions: { ecmaFeatures: { jsx: true }, ecmaVersion: 2020 },
+    },
+    {
+      code: 'const C = memo(() => <div/>) as FC;',
+      filename: 'C.tsx',
+      parserOptions: { ecmaFeatures: { jsx: true }, ecmaVersion: 2020 },
+    },
+    // Issue #1681: an assertion-wrapped bare arrow is a function value too, so
+    // the wrapper no longer defeats the arrow exemption.
+    {
+      code: 'const MemoizedItem = (() => <div/>) as FC;',
+      filename: 'MemoizedItem.tsx',
+      parserOptions: { ecmaFeatures: { jsx: true }, ecmaVersion: 2020 },
+    },
+    // Issue #1681: hooks take the same path as components — every function
+    // value is exempt regardless of its name — so the function-expression
+    // spelling of a hook mirrors the arrow spelling.
+    {
+      code: 'const useThing = function () { return useState(0); };',
+      filename: 'useThing.ts',
+    },
+    {
+      code: 'const useThing = () => useState(0);',
+      filename: 'useThing.ts',
+    },
+    // Issue #1681: a plain module-level helper written as a function
+    // expression is a function value, not module configuration, on the same
+    // terms as its arrow equivalent.
+    {
+      code: 'const toSlug = function (value) { return value.trim(); };',
+      filename: 'toSlug.ts',
+    },
+    {
+      code: 'const toSlug = function toSlugImpl(value) { return value.trim(); };',
+      filename: 'toSlug.ts',
+    },
+    // Issue #1681: the exemption for a jest mock handle is likewise keyed on
+    // the `as jest.Mock*` cast wherever it sits in the wrapper chain.
+    {
+      code: 'const mockedFetch = (fetchThing as jest.Mock)!;',
+      filename: 'test.ts',
+    },
+    {
+      code: 'const mockedSend = (sendThing as jest.MockedFunction<typeof sendThing>) satisfies unknown;',
+      filename: 'test.ts',
+    },
     // Dynamic values should be ignored
     {
       code: 'const API_VERSION = getVersion();',
@@ -1086,6 +1195,84 @@ ruleTesterTs.run('global-const-style', rule, {
         },
       ],
       output: 'const PRIVATE_THING = 1 as const;',
+    },
+    // Issue #1681 over-exemption guards: looking through `satisfies`/`!` must
+    // expose the wrapped value to the rule's regular checks, never exempt a
+    // declaration for being wrapped. A data constant keeps exactly the reports
+    // it carries without the wrapper.
+    {
+      code: 'const config = { a: 1 } satisfies Config;',
+      filename: 'settings.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'config', suggestedName: 'CONFIG' },
+        },
+      ],
+      output: 'const CONFIG = { a: 1 } satisfies Config;',
+    },
+    {
+      code: 'const value = getValue()!;',
+      filename: 'settings.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'value', suggestedName: 'VALUE' },
+        },
+      ],
+      output: 'const VALUE = getValue()!;',
+    },
+    {
+      code: 'const maxRetries = 3!;',
+      filename: 'settings.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'maxRetries', suggestedName: 'MAX_RETRIES' },
+        },
+      ],
+      output: 'const MAX_RETRIES = 3!;',
+    },
+    {
+      code: 'const retryDelays = [1, 2, 3] satisfies number[];',
+      filename: 'settings.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'retryDelays', suggestedName: 'RETRY_DELAYS' },
+        },
+      ],
+      output: 'const RETRY_DELAYS = [1, 2, 3] satisfies number[];',
+    },
+    // Issue #1681: the component carve-out stays keyed on the factory name, so
+    // an unrelated call wrapped the same way is still a constant declaration.
+    {
+      code: 'const themeTokens = buildTokens() satisfies Tokens;',
+      filename: 'settings.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'themeTokens', suggestedName: 'THEME_TOKENS' },
+        },
+      ],
+      output: 'const THEME_TOKENS = buildTokens() satisfies Tokens;',
+    },
+    // Issue #1681: a plain camelCase data constant is untouched by the wrapper
+    // handling and keeps firing both reports.
+    {
+      code: 'const someConfig = { a: 1 };',
+      filename: 'settings.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'someConfig', valueKind: 'an object literal' },
+        },
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'someConfig', suggestedName: 'SOME_CONFIG' },
+        },
+      ],
+      output: 'const SOME_CONFIG = { a: 1 } as const;',
     },
   ],
 });
