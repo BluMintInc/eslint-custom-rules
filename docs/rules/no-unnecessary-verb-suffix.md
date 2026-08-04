@@ -241,6 +241,52 @@ resolvable contract keeps firing, while a contract imported from another module
 is unreadable to this rule and exempts the member — a deliberate false negative
 in preference to a false positive.
 
+#### How far a contract is readable
+
+Contract resolution is syntactic, so a contract counts only as far as this file
+can read it. A type literal lists its members outright; an **intersection**
+contributes every constituent's members, and each constituent is read in turn —
+a literal directly, a reference by following it to the interface, type alias or
+class the file declares. A constituent whose members cannot be read (a reference
+resolving to another module, a mapped or conditional type, a namespaced name)
+leaves the question open, and an open question exempts the member: the name may
+well belong to the part this file cannot see. A union is unreadable for a
+different reason — a value satisfies one branch, so no branch describes the
+implementer.
+
+```ts
+type Base = { limit: (count: number) => void };
+
+// Read through: both constituents resolve and neither declares the member,
+// so the name is the class author's
+type QueryLike = Base & { count: number };
+class FakeQuery implements QueryLike {
+  count = 0;
+  filterUsersBy(role: string) {} // Reported
+}
+
+// Read through: the literal constituent declares the member, so the contract
+// owns the name
+type SortableQuery = Base & { filterUsersBy: (role: string) => void };
+class ContractQuery implements SortableQuery {
+  filterUsersBy(role: string) {} // Exempt
+}
+
+// Unreadable constituent: the imported half may declare the member
+import type { Sortable } from './Sortable';
+type ImportedQuery = Sortable & { limit: (count: number) => void };
+class PartialQuery implements ImportedQuery {
+  filterUsersBy(role: string) {} // Exempt
+}
+```
+
+Reading intersections keeps a contract equally visible before and after
+`prefer-type-over-interface`, which ships in the same recommended config and
+rewrites `interface S extends Base { … }` into `type S = Base & { … }` by
+`--fix`. Treating every intersection as opaque would let that one `eslint --fix`
+pass retire this check for every contract written as an interface with a
+heritage clause.
+
 The following still fire, because none of them pins the name to a type:
 
 ```ts

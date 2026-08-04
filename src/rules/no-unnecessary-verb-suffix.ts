@@ -543,13 +543,7 @@ function contractCoversName(
 
   const alias = index.typeAliases.get(typeName);
   if (alias) {
-    // An alias to anything but a type literal (an intersection, a mapped type,
-    // a reference to an imported type) hides its member list from a syntactic
-    // reader, so it is treated as unreadable.
-    return (
-      alias.typeAnnotation.type !== AST_NODE_TYPES.TSTypeLiteral ||
-      membersDeclareName(alias.typeAnnotation.members, memberName)
-    );
+    return aliasCoversName(alias.typeAnnotation, memberName, index, visited);
   }
 
   const classDeclaration = index.classes.get(typeName);
@@ -563,6 +557,77 @@ function contractCoversName(
   // Nothing under this name in the file: the contract lives in another module
   // and its members are unreadable here.
   return true;
+}
+
+/**
+ * Reports whether the type an alias names accounts for `memberName`.
+ *
+ * A type literal lists its members outright. An intersection is readable as far
+ * as its constituents are, which matters because `prefer-type-over-interface`
+ * ships in the same recommended config and rewrites
+ * `interface S extends Base { … }` to `type S = Base & { … }` by `--fix`:
+ * treating every non-literal alias as unreadable would let that sibling fix
+ * retire the member check for every contract written as an interface with a
+ * heritage clause (#1679). Anything else — a union, a mapped or conditional
+ * type, a reference whose target lives in another module — hides its member
+ * list from a syntactic reader and stays unreadable, so the member keeps its
+ * exemption.
+ */
+function aliasCoversName(
+  typeNode: TSESTree.TypeNode,
+  memberName: string,
+  index: DeclarationIndex,
+  visited: Set<string>,
+): boolean {
+  switch (typeNode.type) {
+    case AST_NODE_TYPES.TSTypeLiteral:
+      return membersDeclareName(typeNode.members, memberName);
+    case AST_NODE_TYPES.TSIntersectionType:
+      return intersectionCoversName(typeNode, memberName, index, visited);
+    default:
+      return true;
+  }
+}
+
+/**
+ * Reports whether an intersection accounts for `memberName`. An intersection
+ * contributes every member of every constituent, so one constituent declaring
+ * the name settles the question — and a constituent whose members cannot be
+ * read settles it too, in the exempting direction: the name may well be that
+ * hidden part's, and this plugin prefers a false negative over a false positive
+ * (#1350). The member is only left to the class author when every constituent
+ * is readable and none of them declares it.
+ */
+function intersectionCoversName(
+  intersection: TSESTree.TSIntersectionType,
+  memberName: string,
+  index: DeclarationIndex,
+  visited: Set<string>,
+): boolean {
+  return intersection.types.some((constituent) =>
+    constituentCoversName(constituent, memberName, index, visited),
+  );
+}
+
+/**
+ * Answers `intersectionCoversName` for one constituent. A reference is followed
+ * through the file's declarations by the same resolver a heritage clause uses,
+ * so a contract split across a local base and an inline literal reads as a
+ * whole; a reference the file does not declare, and a qualified or otherwise
+ * opaque constituent, count as unreadable.
+ */
+function constituentCoversName(
+  typeNode: TSESTree.TypeNode,
+  memberName: string,
+  index: DeclarationIndex,
+  visited: Set<string>,
+): boolean {
+  if (typeNode.type === AST_NODE_TYPES.TSTypeReference) {
+    return typeNode.typeName.type === AST_NODE_TYPES.Identifier
+      ? contractCoversName(typeNode.typeName.name, memberName, index, visited)
+      : true;
+  }
+  return aliasCoversName(typeNode, memberName, index, visited);
 }
 
 function heritageCoversName(

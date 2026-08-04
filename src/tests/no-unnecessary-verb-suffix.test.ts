@@ -2,6 +2,7 @@ import { Linter, Rule } from 'eslint';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { noUnnecessaryVerbSuffix } from '../rules/no-unnecessary-verb-suffix';
 import { enforceObjectLiteralAsConst } from '../rules/enforce-object-literal-as-const';
+import { preferTypeOverInterface } from '../rules/prefer-type-over-interface';
 
 ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
   valid: [
@@ -422,13 +423,98 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
     orderBy(field: string) {}
   };
 `,
-    // C where the contract is an alias to something other than a type literal,
-    // whose member list cannot be read syntactically.
+    // C where the contract is an intersection alias: the reference constituent
+    // resolves in file and declares the member.
     `
   interface Sortable {
     orderBy: (field: string) => void;
   }
   type QueryLike = Sortable & { limit: (count: number) => void };
+  class FakeQuery implements QueryLike {
+    orderBy(field: string) {}
+  }
+`,
+    // C where an intersection constituent is a type literal declaring the
+    // member: an intersection contributes every constituent's members, so the
+    // name is the contract's (#1679).
+    `
+  type Base = { limit: (count: number) => void };
+  type QueryLike = Base & { orderBy: (field: string) => void };
+  class FakeQuery implements QueryLike {
+    orderBy(field: string) {}
+  }
+`,
+    // C via a plain type-literal alias declaring the member — the control the
+    // intersection cases above are read against.
+    `
+  type QueryLike = { filterUsersBy: (role: string) => void };
+  class FakeQuery implements QueryLike {
+    filterUsersBy(role: string) {}
+  }
+`,
+    // C where every intersection constituent is an imported reference: nothing
+    // about the contract is readable here.
+    `
+  import type { Sortable } from './Sortable';
+  import type { Limitable } from './Limitable';
+  type QueryLike = Sortable & Limitable;
+  class FakeQuery implements QueryLike {
+    orderBy(field: string) {}
+  }
+`,
+    // C where the member is absent from the readable constituent but an
+    // imported one remains: the name may be declared in the part this file
+    // cannot see, so the answer is indeterminate and the exemption stands.
+    `
+  import type { Sortable } from './Sortable';
+  type QueryLike = Sortable & { limit: (count: number) => void };
+  class FakeQuery implements QueryLike {
+    orderBy(field: string) {}
+  }
+`,
+    // C where a constituent is a mapped type, whose members are produced rather
+    // than listed.
+    `
+  type Fields = { limit: number };
+  type QueryLike = { [K in keyof Fields]: Fields[K] } & {
+    page: (index: number) => void;
+  };
+  class FakeQuery implements QueryLike {
+    orderBy(field: string) {}
+  }
+`,
+    // C where a constituent applies a utility type the file does not declare.
+    `
+  type Fields = { limit: (count: number) => void };
+  type QueryLike = Partial<Fields> & { page: (index: number) => void };
+  class FakeQuery implements QueryLike {
+    orderBy(field: string) {}
+  }
+`,
+    // C where a constituent is a namespaced reference, which cannot be
+    // followed.
+    `
+  type QueryLike = firestore.Sortable & { limit: (count: number) => void };
+  class FakeQuery implements QueryLike {
+    orderBy(field: string) {}
+  }
+`,
+    // C where the contract is a union: a value satisfies one branch, so no
+    // branch's member list describes the implementer.
+    `
+  type QueryLike =
+    | { limit: (count: number) => void }
+    | { page: (index: number) => void };
+  class FakeQuery implements QueryLike {
+    orderBy(field: string) {}
+  }
+`,
+    // C through a chain of intersection aliases: the member sits in the
+    // innermost constituent.
+    `
+  type Sortable = { orderBy: (field: string) => void };
+  type Inner = Sortable & { limit: (count: number) => void };
+  type QueryLike = Inner & { page: (index: number) => void };
   class FakeQuery implements QueryLike {
     orderBy(field: string) {}
   }
@@ -1871,6 +1957,115 @@ function lineAt(lines: string[], index: number) {
   `,
       errors: [{ messageId: 'unnecessaryVerbSuffix' }],
     },
+    // === #1679: `prefer-type-over-interface` ships in the same recommended
+    // config and rewrites `interface S extends Base { … }` to
+    // `type S = Base & { … }` by `--fix`. An intersection contract must read
+    // exactly as the interface it replaces, or that sibling fix retires the
+    // member check for every contract declared with a heritage clause. ===
+    // The pre-fix interface shape, paired with its rewrite below: the contract
+    // declares the member, so its own signature is reported and the class
+    // member conforming to it is not.
+    {
+      code: `
+    import type { Base } from './Base';
+    interface S extends Base {
+      filterUsersBy(role: string): void;
+    }
+    class Q implements S {
+      filterUsersBy(role: string) {}
+    }
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // The same contract as an intersection alias reports the same one member.
+    {
+      code: `
+    import type { Base } from './Base';
+    type S = Base & {
+      filterUsersBy(role: string): void;
+    };
+    class Q implements S {
+      filterUsersBy(role: string) {}
+    }
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // The rewrite of a contract that declares neither the member nor anything
+    // unreadable: every constituent resolves in file, so the class member is
+    // the author's own and stays reported.
+    {
+      code: `
+    type Base = {
+      limit: (count: number) => void;
+    };
+    type QueryLike = Base & {
+      count: number;
+    };
+    class FakeQuery implements QueryLike {
+      count = 0;
+      filterUsersBy(role: string) {}
+    }
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // Two type-literal constituents, neither declaring the member.
+    {
+      code: `
+    type QueryLike = {
+      limit: (count: number) => void;
+    } & {
+      page: (index: number) => void;
+    };
+    class FakeQuery implements QueryLike {
+      filterUsersBy(role: string) {}
+    }
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // An intersection whose reference constituent is an in-file interface that
+    // does not declare the member.
+    {
+      code: `
+    interface Sortable {
+      sort: (field: string) => void;
+    }
+    type QueryLike = Sortable & {
+      limit: (count: number) => void;
+    };
+    class FakeQuery implements QueryLike {
+      filterUsersBy(role: string) {}
+    }
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // A chain of intersection aliases, all readable, none declaring the member.
+    {
+      code: `
+    type Sortable = { sort: (field: string) => void };
+    type Inner = Sortable & { limit: (count: number) => void };
+    type QueryLike = Inner & { page: (index: number) => void };
+    class FakeQuery implements QueryLike {
+      filterUsersBy(role: string) {}
+    }
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
+    // The intersection reached through a superclass rather than an `implements`
+    // clause.
+    {
+      code: `
+    type Sortable = { sort: (field: string) => void };
+    type QueryLike = Sortable & { limit: (count: number) => void };
+    class BaseQuery implements QueryLike {
+      sort(field: string) {}
+      limit(count: number) {}
+    }
+    class FakeQuery extends BaseQuery {
+      filterUsersBy(role: string) {}
+    }
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+    },
     // A resolvable in-file interface declares the member only in the nested
     // literal's position; the outer object's own extra member stays reported.
     {
@@ -2535,4 +2730,125 @@ describe('no-unnecessary-verb-suffix after enforce-object-literal-as-const --fix
       ),
     ).toHaveLength(1);
   });
+});
+
+// `prefer-type-over-interface` ships in the same recommended config and is
+// fixable, so one `eslint --fix` pass turns every `interface S extends Base`
+// contract into `type S = Base & { … }`. Reading a contract's members must
+// survive that rewrite unchanged, or the member check silently retires itself
+// across the whole codebase the first time the config is applied (#1679).
+describe('no-unnecessary-verb-suffix after prefer-type-over-interface --fix', () => {
+  const VICTIM_ID = '@blumintinc/blumint/no-unnecessary-verb-suffix';
+  const CULPRIT_ID = '@blumintinc/blumint/prefer-type-over-interface';
+  const FILENAME = 'x.ts';
+
+  const CONTRACT_SOURCES: Record<string, { source: string; reports: number }> =
+    {
+      // The class adds a suffixed member its contract never declares: the name is
+      // the author's, and the report must survive the rewrite.
+      'member outside the contract': {
+        source: [
+          'interface Base {',
+          '  limit(count: number): void;',
+          '}',
+          'interface QueryLike extends Base {',
+          '  count: number;',
+          '}',
+          'class FakeQuery implements QueryLike {',
+          '  count = 0;',
+          '  filterUsersBy(role: string) {}',
+          '}',
+          '',
+        ].join('\n'),
+        reports: 1,
+      },
+      // The contract declares the suffixed member: its own declaration is
+      // reported, the conforming class member is not — one report either side.
+      'member declared by the contract': {
+        source: [
+          'interface Base {',
+          '  limit(count: number): void;',
+          '}',
+          'interface QueryLike extends Base {',
+          '  filterUsersBy(role: string): void;',
+          '}',
+          'class FakeQuery implements QueryLike {',
+          '  filterUsersBy(role: string) {}',
+          '}',
+          '',
+        ].join('\n'),
+        reports: 1,
+      },
+      // A contract whose base lives in another module stays unreadable on both
+      // sides of the rewrite, so the class member keeps its exemption.
+      'member behind an imported base': {
+        source: [
+          "import type { Base } from './Base';",
+          'interface QueryLike extends Base {',
+          '  count: number;',
+          '}',
+          'class FakeQuery implements QueryLike {',
+          '  count = 0;',
+          '  filterUsersBy(role: string) {}',
+          '}',
+          '',
+        ].join('\n'),
+        reports: 0,
+      },
+    };
+
+  const makeLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      VICTIM_ID,
+      noUnnecessaryVerbSuffix as unknown as Rule.RuleModule,
+    );
+    linter.defineRule(
+      CULPRIT_ID,
+      preferTypeOverInterface as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const configFor = (rules: Linter.RulesRecord): Linter.Config => ({
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2022 as const,
+      sourceType: 'module' as const,
+    },
+    rules,
+  });
+
+  it.each(Object.keys(CONTRACT_SOURCES))(
+    'reports the same on a %s once the sibling fixer rewrites the contract',
+    (label) => {
+      const linter = makeLinter();
+      const { source, reports } = CONTRACT_SOURCES[label];
+
+      expect(
+        linter.verify(source, configFor({ [VICTIM_ID]: 'error' }), FILENAME),
+      ).toHaveLength(reports);
+
+      const fixed = linter.verifyAndFix(
+        source,
+        configFor({ [CULPRIT_ID]: 'error' }),
+        FILENAME,
+      );
+      // Without this assertion the test passes vacuously whenever the sibling
+      // fixer stops emitting an intersection for this shape.
+      expect(fixed.output).toContain('type QueryLike = Base & {');
+      expect(
+        linter.verify(
+          fixed.output,
+          configFor({ [VICTIM_ID]: 'error' }),
+          FILENAME,
+        ),
+      ).toHaveLength(reports);
+    },
+  );
 });
