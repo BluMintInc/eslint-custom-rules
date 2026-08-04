@@ -28,6 +28,14 @@ lines it happens to touch:
 - A declaration that cannot be excised without malforming the construct around
   it, such as a `for (const mockFirestore of …)` head, is reported without an
   autofix instead of being cut anyway.
+- An **exported** declaration — `export const mockFirestore = …`, one binding of
+  an exported multi-declarator `const`, or an `export const` inside a namespace
+  — is reported without an autofix. Retiring it would drop the name from the
+  module's export surface, and the importers that spell it out live in files a
+  single-file fixer cannot reach. Collapse such a mock by hand: redirect the
+  importers first, then delete the export. A class property is exempt from this
+  restriction because it belongs to its class rather than to the module, so
+  `export default class { mockFirestore = … }` is still fixed.
 
 The injected import is placed below whatever opens the file, and the text above
 it is emitted exactly once:
@@ -40,6 +48,17 @@ it is emitted exactly once:
 - A suppression bound to the line under it, such as
   `eslint-disable-next-line`, is never split from its subject by the import.
 - An existing import block is where the new import joins.
+
+### The centralized module itself
+
+`__test-utils__/mockFirestore.ts` is exempt: its local definition is the
+canonical mock this rule sends every other file to, so reporting it would ask
+the module to import itself, and the fix would delete the very implementation
+the rest of the codebase imports. The exemption is keyed on the module's path
+segments (`__test-utils__/mockFirestore`, matched at a path-segment boundary
+under any source extension), so neighbours such as
+`__test-utils__/mockFirestore.test.ts`, `__test-utils__/mockAuth.ts`, and
+`not__test-utils__/mockFirestore.ts` stay reported and fixed.
 
 ### Examples of **incorrect** code for this rule:
 
@@ -76,6 +95,20 @@ describe('test suite', () => {
 });
 ```
 
+Exporting the local mock does not make it acceptable — it multiplies the drift
+across every file that imports it. This is reported without an autofix, since
+the fixer cannot rewrite those importers:
+
+```js
+export const mockFirestore = jest.fn();
+
+beforeEach(() => {
+  mockFirestore({
+    'some/path': [{ id: 'test' }],
+  });
+});
+```
+
 ### Examples of **correct** code for this rule:
 
 ```js
@@ -96,6 +129,13 @@ beforeEach(() => {
     'some/path': [{ id: 'test' }],
   });
 });
+```
+
+The centralized module defines the mock it exports:
+
+```js
+// File: __test-utils__/mockFirestore.ts
+export const mockFirestore = jest.fn();
 ```
 
 ## When Not To Use It
