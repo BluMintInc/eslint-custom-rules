@@ -12,6 +12,23 @@ If a file defines or re-exports a local `mockFirestore` instead of importing it 
 
 If you define a local `mockFirestore`, your tests diverge from the canonical behavior. When Firestore data shapes or helper APIs change, scattered mocks silently drift and break only in the suites that forget to update, while the centralized mock absorbs the change once. This rule reports any file where you declare, destructure, or reference a local `mockFirestore` (including renames and `this.mockFirestore`) instead of importing from the shared path, and the fixer rewrites the file to import the shared mock and swap local references to it.
 
+### Autofix behavior
+
+The fixer retires each local declaration by its own source range, never by the
+lines it happens to touch:
+
+- A declaration that is the sole occupant of its line takes the whole line with
+  it.
+- A declaration sharing its line with anything else surrenders only its own
+  characters. A neighbouring statement stays bound, and a trailing comment —
+  including an `eslint-disable-line` directive, which governs which rules report
+  on that line — is left in place rather than deleted.
+- A declarator sharing a `const` with live siblings loses only itself and the
+  comma binding it to them.
+- A declaration that cannot be excised without malforming the construct around
+  it, such as a `for (const mockFirestore of …)` head, is reported without an
+  autofix instead of being cut anyway.
+
 ### Examples of **incorrect** code for this rule:
 
 ```js
