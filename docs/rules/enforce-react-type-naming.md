@@ -73,10 +73,10 @@ semantics-preserving rename is impossible:
 - **Collision** — the target name is already bound in the declaration scope, or a
   binding of that name sits between a reference and the declaration, or the
   declaration's scope subtree already uses the target name for something else.
-- **Export with in-file references** — `export const Content: ReactNode = …` used
-  elsewhere in the file. Renaming would change a cross-file contract whose
-  importers a single-file fixer cannot reach. (A bare exported declaration with
-  no other in-file reference does still rename.)
+- **Exported declaration** — `export const Content: ReactNode = …`. The name is a
+  cross-file contract whose importers a single-file fixer cannot reach. The
+  hazard lives in those other files, so it applies to a bare `export const` with
+  no in-file use site just as much as to one referenced locally.
 - **Re-export specifier** — `export { Content }` binds the public export name to
   that identifier, so rewriting it would rename the export itself.
 
