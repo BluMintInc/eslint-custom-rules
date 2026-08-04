@@ -1,3 +1,14 @@
+## [1.20.104](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.103...v1.20.104) (2026-08-04)
+
+
+### Bug Fixes
+
+* **enforce-assert-safe-object-key:** honour the declaration site as a numeric proof (closes [#1713](https://github.com/BluMintInc/eslint-custom-rules/issues/1713)) ([e4e8b89](https://github.com/BluMintInc/eslint-custom-rules/commit/e4e8b890ff5b05d577509e5f2bd3680b20603d93)), closes [#1554](https://github.com/BluMintInc/eslint-custom-rules/issues/1554)
+* **enforce-assert-safe-object-key:** read computed keys through assertion and await wrappers (closes [#1712](https://github.com/BluMintInc/eslint-custom-rules/issues/1712)) ([6b26409](https://github.com/BluMintInc/eslint-custom-rules/commit/6b264092e3cf415788c38567c2b91d1c88286802))
+* **enforce-firestore-set-merge:** exempt Realtime Database receivers from the batchManager name match (closes [#1710](https://github.com/BluMintInc/eslint-custom-rules/issues/1710)) ([891a140](https://github.com/BluMintInc/eslint-custom-rules/commit/891a14099cb645e0eb6d9650dac67946f1ce16f6))
+* **enforce-querykey-ts:** accept the key shapes prefer-global-router-state-key blesses (closes [#1714](https://github.com/BluMintInc/eslint-custom-rules/issues/1714)) ([6a84255](https://github.com/BluMintInc/eslint-custom-rules/commit/6a8425526444f270ea02c6d06b408fe7bc59dcf4))
+* **use-latest-callback:** exempt callbacks whose identity another hook keys on (closes [#1711](https://github.com/BluMintInc/eslint-custom-rules/issues/1711)) ([3a5b36f](https://github.com/BluMintInc/eslint-custom-rules/commit/3a5b36f578fc174f02f4b8472cf2270b5634e5bd))
+
 ## [1.20.103](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.102...v1.20.103) (2026-08-04)
 
 

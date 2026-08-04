@@ -1,5 +1,44 @@
 [
   {
+    "version": "1.20.104",
+    "date": "2026-08-04T20:46:47.102Z",
+    "rules": [
+      {
+        "name": "enforce-assert-safe-object-key",
+        "changeType": "fix",
+        "issues": [
+          1712,
+          1713
+        ],
+        "summary": "honour the declaration site as a numeric proof (closes #1713); read computed keys through assertion and await wrappers (closes #1712)"
+      },
+      {
+        "name": "enforce-firestore-set-merge",
+        "changeType": "fix",
+        "issues": [
+          1710
+        ],
+        "summary": "exempt Realtime Database receivers from the batchManager name match (closes #1710)"
+      },
+      {
+        "name": "enforce-querykey-ts",
+        "changeType": "fix",
+        "issues": [
+          1714
+        ],
+        "summary": "accept the key shapes prefer-global-router-state-key blesses (closes #1714)"
+      },
+      {
+        "name": "use-latest-callback",
+        "changeType": "fix",
+        "issues": [
+          1711
+        ],
+        "summary": "exempt callbacks whose identity another hook keys on (closes #1711)"
+      }
+    ]
+  },
+  {
     "version": "1.20.103",
     "date": "2026-08-04T18:19:46.054Z",
     "rules": [
