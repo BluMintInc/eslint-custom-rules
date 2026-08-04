@@ -6,8 +6,32 @@ type Options = [
   {
     coordinatorPatterns?: string[];
     rateLimitedPatterns?: string[];
+    ignoreTestFiles?: boolean;
   },
 ];
+
+// Anchored at the end of the path so multi-part suffixes such as
+// `EventRegistry.integration.test.ts` are recognized while production modules
+// that merely contain the word (`testHelpers.ts`, `latest.ts`, `contest/Thing.ts`)
+// keep their enforcement.
+const TEST_FILE_SUFFIX = /\.(test|spec)\.[cm]?[jt]sx?$/;
+
+// Jest convention directories hold test-only modules regardless of file name.
+const TEST_FILE_DIRECTORY = /(^|\/)(__tests__|__mocks__)\//;
+
+/**
+ * A test suite serves no requests and is not latency-critical, so the rule's
+ * rationale — that sequential awaits make network and I/O latency add up — does
+ * not apply to it. A loop in a suite instead replays one entrypoint to exercise
+ * behavior that accumulates across calls: each iteration must observe the state
+ * the previous iteration stored, and that state usually lives in a mock closure
+ * the loop body never names. The dependency is a side effect rather than a
+ * value, so it is invisible to every syntactic barrier below, and
+ * `Promise.all` would let all iterations observe the same initial state
+ * (issues #1395, #1687).
+ */
+const isTestFile = (filename: string) =>
+  TEST_FILE_SUFFIX.test(filename) || TEST_FILE_DIRECTORY.test(filename);
 
 const DEFAULT_COORDINATOR_PATTERNS = [
   'batchManager',
@@ -31,6 +55,7 @@ const defaultOptions: Options = [
   {
     coordinatorPatterns: DEFAULT_COORDINATOR_PATTERNS,
     rateLimitedPatterns: DEFAULT_RATE_LIMITED_PATTERNS,
+    ignoreTestFiles: true,
   },
 ];
 
@@ -64,6 +89,16 @@ export const parallelizeLoopAwaits = createRule<Options, MessageIds>({
             items: { type: 'string' },
             default: DEFAULT_RATE_LIMITED_PATTERNS,
           },
+          // Deliberately carries no schema `default`. ESLint validates rule
+          // options with an ajv instance configured `useDefaults: true`, which
+          // writes schema defaults INTO the supplied options object before
+          // `defaultOptions` are merged, so a schema default here would decide
+          // the value for every consumer who passes an options object at all.
+          // `defaultOptions` plus the `?? true` read below is the single source
+          // of truth.
+          ignoreTestFiles: {
+            type: 'boolean',
+          },
         },
         additionalProperties: false,
       },
@@ -75,6 +110,15 @@ export const parallelizeLoopAwaits = createRule<Options, MessageIds>({
   },
   defaultOptions,
   create(context, [options]) {
+    // Normalize Windows backslash separators so the forward-slash directory
+    // check matches on every platform. Without this, `getFilename()` returns
+    // `C:\repo\src\__tests__\Foo.ts` on Windows and the exemption silently
+    // fails there.
+    const filename = context.getFilename().replace(/\\/g, '/');
+    if ((options?.ignoreTestFiles ?? true) && isTestFile(filename)) {
+      return {};
+    }
+
     const coordinatorPatterns =
       options?.coordinatorPatterns ?? DEFAULT_COORDINATOR_PATTERNS;
     const rateLimitedPatterns =
@@ -618,12 +662,171 @@ export const parallelizeLoopAwaits = createRule<Options, MessageIds>({
     }
 
     /**
+     * Reports whether a node contains a CallExpression anywhere inside it.
+     * Nested functions are deliberately traversed: a call written inside a
+     * callback in a loop clause (`items.some(() => check())`) still makes the
+     * clause's value depend on invoking something.
+     */
+    function containsCallExpression(node: TSESTree.Node): boolean {
+      if (node.type === AST_NODE_TYPES.CallExpression) {
+        return true;
+      }
+
+      for (const key in node) {
+        if (
+          key === 'parent' ||
+          key === 'range' ||
+          key === 'loc' ||
+          key === 'type'
+        )
+          continue;
+        const child = (node as unknown as Record<string, unknown>)[key];
+        if (child && typeof child === 'object') {
+          if (Array.isArray(child)) {
+            for (const item of child) {
+              if (item && typeof item === 'object' && 'type' in item) {
+                if (containsCallExpression(item as TSESTree.Node)) return true;
+              }
+            }
+          } else if ('type' in (child as object)) {
+            if (containsCallExpression(child as TSESTree.Node)) return true;
+          }
+        }
+      }
+
+      return false;
+    }
+
+    /**
+     * Reports whether the loop's own continuation machinery invokes a
+     * function — a call in a `while` test, or in a `for` test or update clause.
+     *
+     * Such a loop runs until an observation comes back a certain way, so the
+     * iteration count is a function of what each iteration does:
+     * `while (!hasSettled()) { await tick(); }` and
+     * `for (let i = 0; i < 100 && !findTimer(); i += 1)` both re-read state the
+     * awaited work advances. `Promise.all` has to know the iteration count up
+     * front, so there is no parallel form of these loops at all. Only the
+     * clauses re-evaluated on every iteration count; a `for` loop's `init` and a
+     * `for...of` loop's `right` run once, so a call there says nothing about
+     * cross-iteration coupling (`for (const [k, v] of map.entries())` keeps its
+     * enforcement). (#1687)
+     */
+    function isConditionCoupled(loopNode: LoopNode): boolean {
+      if (loopNode.type === AST_NODE_TYPES.WhileStatement) {
+        return containsCallExpression(loopNode.test);
+      }
+
+      if (loopNode.type === AST_NODE_TYPES.ForStatement) {
+        return (
+          (!!loopNode.test && containsCallExpression(loopNode.test)) ||
+          (!!loopNode.update && containsCallExpression(loopNode.update))
+        );
+      }
+
+      return false;
+    }
+
+    /**
+     * Collects every identifier named in the loop's head — the `for...of`/
+     * `for...in` left and right, or the `for` init, test and update. These are
+     * the names an iteration can hand to the body.
+     */
+    function collectLoopHeadIdentifiers(loopNode: LoopNode): Set<string> {
+      const names = new Set<string>();
+      const clauses: (TSESTree.Node | null)[] =
+        loopNode.type === AST_NODE_TYPES.ForStatement
+          ? [loopNode.init, loopNode.test, loopNode.update]
+          : loopNode.type === AST_NODE_TYPES.WhileStatement
+          ? [loopNode.test]
+          : [loopNode.left, loopNode.right];
+
+      for (const clause of clauses) {
+        if (clause) collectIdentifiers(clause, names, false);
+      }
+      return names;
+    }
+
+    /**
+     * Reports whether the loop body is a single discarded `await` of a call
+     * that consumes nothing the iteration produces, e.g.
+     * `for (let i = 0; i < 21; i += 1) { await postSuggestion(); }`.
+     *
+     * Such a loop passes nothing from the iteration into the call and keeps
+     * nothing the call returns, so the only reason to write it is an ordered
+     * side effect the callee owns — replaying one entrypoint so each run
+     * observes what the previous run stored. Every barrier below reads syntax
+     * inside the body, and this body has none to read: no assignment, no
+     * binding, no control flow, and no identifier but the callee. Reporting it
+     * would be a verdict passed on zero evidence, and the plugin prefers a
+     * false negative to a false positive.
+     *
+     * A call that names anything from the loop head is excluded, because that
+     * name IS the evidence: `for (const doc of snap.docs) { await
+     * doc.ref.delete(); }` takes no arguments either, yet each iteration
+     * addresses its own document and the loop is exactly the shape the rule
+     * exists to flag. (#1687)
+     */
+    function isBareDiscardedZeroArgCall(loopNode: LoopNode): boolean {
+      const { body } = loopNode;
+      const statements =
+        body.type === AST_NODE_TYPES.BlockStatement ? body.body : [body];
+      if (statements.length !== 1) return false;
+
+      const [statement] = statements;
+      if (statement.type !== AST_NODE_TYPES.ExpressionStatement) return false;
+      if (statement.expression.type !== AST_NODE_TYPES.AwaitExpression) {
+        return false;
+      }
+
+      const { argument } = statement.expression;
+      const callExpr =
+        argument.type === AST_NODE_TYPES.ChainExpression
+          ? argument.expression
+          : argument;
+
+      if (
+        callExpr.type !== AST_NODE_TYPES.CallExpression ||
+        callExpr.arguments.length !== 0
+      ) {
+        return false;
+      }
+
+      const headNames = collectLoopHeadIdentifiers(loopNode);
+      const callNames = new Set<string>();
+      collectIdentifiers(callExpr, callNames, false);
+      for (const name of callNames) {
+        if (headNames.has(name)) return false;
+      }
+
+      return true;
+    }
+
+    /**
      * Central analysis for a loop node. Returns the AwaitExpression to
      * report on, or null if the loop should not be flagged.
      */
     function analyzeLoop(loopNode: LoopNode): TSESTree.AwaitExpression | null {
       const body = loopNode.body;
       if (!body) return null;
+
+      // Exclusion: `for await (const x of stream)` consumes an async iterable,
+      // which the language pulls one value at a time; the sequencing is the
+      // construct's meaning rather than an oversight.
+      if (
+        loopNode.type === AST_NODE_TYPES.ForOfStatement &&
+        loopNode.await === true
+      ) {
+        return null;
+      }
+
+      // Exclusion: the loop's continuation condition or update invokes a
+      // function, so how many iterations run depends on what they do
+      if (isConditionCoupled(loopNode)) return null;
+
+      // Exclusion: the body is a lone discarded await of a zero-argument call,
+      // which carries no evidence either way
+      if (isBareDiscardedZeroArgCall(loopNode)) return null;
 
       // Find an await directly inside the loop body (not in nested async fns)
       const awaitExpr = findDirectAwait(body, true);

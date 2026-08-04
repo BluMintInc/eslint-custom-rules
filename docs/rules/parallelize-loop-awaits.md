@@ -36,6 +36,12 @@ for (const key in obj) {
 for (let i = 0; i < items.length; i++) {
   await processItem(items[i]); // flagged
 }
+
+// Zero arguments, but the receiver comes from the iteration, so each pass
+// addresses its own document
+for (const doc of snapshot.docs) {
+  await doc.ref.delete(); // flagged
+}
 ```
 
 ### Examples of **correct** code
@@ -89,6 +95,27 @@ for (const item of items) {
   }
 }
 
+// Condition coupling: the loop runs until an observation comes back a certain
+// way, so the iteration count is a function of what the iterations do
+while (!hasSettled()) {
+  await Promise.resolve();
+}
+for (let tick = 0; tick < 100 && !findBackoffTimer(); tick += 1) {
+  await Promise.resolve();
+}
+
+// `for await...of` pulls one value at a time by definition
+for await (const chunk of stream) {
+  await handleChunk(chunk);
+}
+
+// A lone discarded await of a call that names nothing from the loop head: the
+// loop passes nothing in and keeps nothing back, so it exists only for an
+// ordered side effect owned by the callee
+for (let occurrence = 0; occurrence < 21; occurrence += 1) {
+  await postAutomationSuggestion();
+}
+
 // Sequential execution intentional — suppressed with reason.
 // The report is anchored to the `await`, so the comment goes directly above it;
 // placing it above the `for` suppresses nothing.
@@ -111,6 +138,20 @@ The rule does **not** flag the following patterns:
 | Accumulator / pagination patterns: a variable declared outside the loop is assigned inside the loop body | Detected via assignment target analysis |
 | Cross-iteration await dependency: result of one `await` is passed to a later `await` in the same loop body | Detected via data-flow analysis on identifier names |
 | `await` inside a nested async function within the loop body | Not flagged; the `await` belongs to the inner function's async scope |
+| Test files (`*.test.*`, `*.spec.*`, and anything under `__tests__/` or `__mocks__/`) | Filename check, controlled by the [`ignoreTestFiles`](#options) option |
+| Condition coupling: a `while` test, or a `for` test or update clause, that invokes a function | Detected syntactically on the loop's own clauses (not its body) |
+| `for await (const x of stream)` | Detected via `ForOfStatement.await` |
+| A loop body that is a lone discarded `await` of a zero-argument call naming nothing from the loop head | Detected syntactically on the body's single statement |
+
+### Why the loop's own clauses matter
+
+Every barrier in the upper half of the table reads syntax inside the loop body, which inverts the rule's confidence: the smaller the body, the less evidence there is, and the more certainly the rule would report. The lower half reads the loop's structure instead.
+
+A loop whose continuation condition calls a function runs until an observation comes back a certain way — `while (!hasSettled())` re-reads state that the awaited work advances. `Promise.all(items.map(...))` has to know the iteration count up front, so no parallel form of such a loop exists. Only clauses re-evaluated on every iteration count: a `for` loop's `init` and a `for...of` loop's right-hand side run once, so `for (const [key, value] of map.entries())` keeps its enforcement.
+
+A body that is a bare `await f();` — zero arguments, discarded result — passes nothing from the iteration into the call and keeps nothing the call returns. Its ordering constraint lives inside the callee, where no syntactic analysis of the loop can see it, so the rule declines to adjudicate rather than report on no evidence. A call that names something from the loop head is excluded from this exemption, because that name is the evidence: `for (const doc of snapshot.docs) { await doc.ref.delete(); }` takes no arguments either, yet each iteration addresses its own document, and the rule keeps flagging it.
+
+Test files get the same treatment for the reason accepted in [#1395](https://github.com/BluMintInc/eslint-custom-rules/issues/1395) for `parallelize-async-operations`: a suite serves no requests and is not latency-critical, so the latency rationale does not apply, while its loops routinely replay one entrypoint so each call observes the state the previous call stored — usually in a mock closure the loop body never names. Set `ignoreTestFiles: false` to enforce the rule inside test files anyway.
 
 ## Options
 
@@ -126,6 +167,11 @@ The rule does **not** flag the following patterns:
   // When any identifier exactly matches one of these (case-insensitive),
   // sequential execution is assumed intentional.
   rateLimitedPatterns: string[]; // default: see below
+
+  // Skip files whose name ends in `.test.*`/`.spec.*` or that live under a
+  // `__tests__/` or `__mocks__/` directory. Set to false to enforce the rule
+  // inside test files as well.
+  ignoreTestFiles: boolean; // default: true
 }
 ```
 
@@ -152,6 +198,7 @@ The rule does **not** flag the following patterns:
         'throttle',
         'rateLimit',
       ],
+      ignoreTestFiles: true,
     },
   ],
 }
@@ -184,6 +231,7 @@ The rule does **not** flag the following patterns:
         'rateLimit',
         'wait',       // custom: treat "wait" as a rate-limiting call
       ],
+      ignoreTestFiles: false, // custom: enforce inside test files too
     },
   ],
 }
