@@ -522,16 +522,17 @@ export default createRule<[], MessageIds>({
                   return null;
                 }
 
-                // Exported symbols with in-file use sites are cross-file
-                // contracts whose importers a single-file fixer cannot reach;
-                // rewriting the local sites alone would still leave the export
-                // renamed and importers broken. Report-only. (A bare exported
-                // declaration with no extra references keeps the historical
-                // rename behavior — nothing to orphan in-file.)
-                const hasExtraReferences = declaredVariable.references.some(
-                  (ref) => ref.identifier !== idNode,
-                );
-                if (isExported && hasExtraReferences) {
+                // An exported binding's name is a cross-file contract: every
+                // importer spells it out in a file this single-file fixer
+                // cannot reach, so renaming the declaration breaks them all
+                // (TS2724/TS2305, an unresolved JSX element, a `jest.mock`
+                // factory key). The hazard lives entirely in those other files,
+                // so it does not depend on whether the declaring file also uses
+                // the name — a constants module with no local use sites is the
+                // most exposed shape, not the safest. Report-only; the sibling
+                // `as const` fix still applies because it never touches the
+                // export name.
+                if (isExported) {
                   return null;
                 }
 
