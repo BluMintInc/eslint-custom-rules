@@ -6,7 +6,7 @@
 
 <!-- end auto-generated rule header -->
 
-> **What is auto-fixed:** only the `handle` prefix removal on functions, methods and object properties. **Callback prop renames are reported but never auto-fixed** — see [Why prop renames are not auto-fixed](#why-prop-renames-are-not-auto-fixed).
+> **What is auto-fixed:** only the `handle` prefix removal on functions, methods and object members the file itself owns. **Callback prop renames are reported but never auto-fixed** — see [Why prop renames are not auto-fixed](#why-prop-renames-are-not-auto-fixed) — and neither are destructuring keys, shorthand bindings, members of an exported or returned object literal, or any rename that would emit a reserved word; see [Renames the autofix withholds](#renames-the-autofix-withholds).
 
 Callback naming should communicate intent at call sites. This rule enforces two conventions:
 
@@ -85,6 +85,24 @@ class Modal {
   get isOpen() { return this.visible; } // getter allowed
 }
 ```
+
+Destructuring another module's API — the `handle` prefix belongs to the property being read, not to this file, so nothing is reported:
+
+```tsx
+const { handleDelete: streamDeleteMessage } = useMessage('handleDelete');
+const { handleClick } = props;
+```
+
+### Renames the autofix withholds
+
+The rename is applied only where the file owns every site it must touch. Elsewhere the violation is reported and the rewrite is left to an editor rename or a codemod:
+
+- **A destructuring key.** In `const { handleDelete: streamDeleteMessage } = useMessage('handleDelete')` the key names a property of the object being destructured — someone else's API — so rewriting it changes _which property is read_ and strands every reader of the old name. Keys in a pattern are therefore not reported at all. When a pattern binds a prefixed key to a local name that also carries the prefix, the **local** name is reported instead, and renaming it moves every reference with the declaration (withheld when the binding is exported or the new name is already taken).
+- **A shorthand binding.** `const { handleClick } = props` is a single token serving as both the foreign property name and the local name, so no in-place edit can change one without the other; it is left alone. A shorthand in an object literal (`const api = { handleClick }`) is reported, but rewriting it would rename the member _and_ re-point it at a binding that need not exist, so no fix is offered.
+- **A member of an exported or returned object literal.** `export const api = { handleOpenThread: openThread }` and `return { handleOpenThread: openThread }` are read by name in files a single-file fixer cannot edit, exactly as a JSX prop is.
+- **A member the file reads by name.** `const o = { handleClick: fn }; o.handleClick()` — and the destructuring form `const { handleClick } = o` — has readers the rename would have to move with it, so the member keeps its name.
+- **A rename that would collide with a sibling member.** `{ click: a, handleClick: b }` and `class C { click() {} handleClick() {} }` would collapse to two members of the same name, silently discarding one.
+- **A rename that would emit a reserved word.** `handleDelete` → `delete`, `handleNew` → `new`, `handleReturn` → `return`, `handleTrue` → `true`: none of those is a legal binding name, so `const delete = fn` and `const { delete } = api` do not even parse. The report is kept and the fix withheld rather than emitting a keyword — including in member positions where a keyword happens to be legal, because the rule cannot see whether the member is later destructured into a binding.
 
 ## When Not To Use It
 
