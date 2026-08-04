@@ -268,6 +268,104 @@ ruleTester.run(
         const card = { name: name };
         `,
       },
+
+      // An exported destructuring rename is reported but NOT rewritten -- the
+      // alias is this module's public export name.
+      {
+        code: 'export const { id: renamedId } = record;\nsendUpdate({ id: renamedId });',
+        errors: [{ messageId: 'unnecessaryDestructuringRename' }],
+        output: null,
+      },
+
+      // The non-exported twin still fixes -- the guard is scoped, not a blanket
+      // amnesty.
+      {
+        code: 'const { id: renamedId } = record;\nsendUpdate({ id: renamedId });',
+        errors: [{ messageId: 'unnecessaryDestructuringRename' }],
+        output: 'const { id } = record;\nsendUpdate({ id: id });',
+      },
+
+      // Exported rename inside a nullish-coalescing initializer: reported,
+      // unfixed.
+      {
+        code: `
+        export const { token: authToken } = session ?? {};
+        sendAuth({ token: authToken });
+        `,
+        errors: [{ messageId: 'unnecessaryDestructuringRename' }],
+        output: null,
+      },
+
+      // Exported rename whose object literal carries a type annotation.
+      {
+        code: `
+        export const { nextMatchId: nextId } = afterData ?? {};
+        const resultSummaryUpdate: UpdateData<ResultSummary> = {
+          nextMatchId: nextId,
+        };
+        `,
+        errors: [{ messageId: 'unnecessaryDestructuringRename' }],
+        output: null,
+      },
+
+      // Every renamed property of an exported pattern loses its fix, not just
+      // the fix carrier.
+      {
+        code: `
+        export const { firstName: fname, lastName: lname } = author;
+        const payload = { firstName: fname, lastName: lname };
+        `,
+        errors: [
+          { messageId: 'unnecessaryDestructuringRename' },
+          { messageId: 'unnecessaryDestructuringRename' },
+        ],
+        output: null,
+      },
+
+      // A nested rename resolves its export status from the enclosing
+      // declaration, not from the property's immediate parent.
+      {
+        code: `
+        export const { user: { name: userName } } = data;
+        const card = { name: userName };
+        `,
+        errors: [{ messageId: 'unnecessaryDestructuringRename' }],
+        output: null,
+      },
+
+      // A destructured parameter of an exported function is function-local, so
+      // it keeps its fix.
+      {
+        code: `
+        export function buildUpdate({ id: renamedId }: UpdateInput) {
+          return { id: renamedId };
+        }
+        `,
+        errors: [{ messageId: 'unnecessaryDestructuringRename' }],
+        output: `
+        export function buildUpdate({ id }: UpdateInput) {
+          return { id: id };
+        }
+        `,
+      },
+
+      // A block-scoped declaration inside an exported function binds no export
+      // name, so it keeps its fix.
+      {
+        code: `
+        export const buildUpdate = () => {
+          const { nextMatchId: nextId } = afterData ?? {};
+          return { nextMatchId: nextId };
+        };
+        `,
+        errors: [{ messageId: 'unnecessaryDestructuringRename' }],
+        output: `
+        export const buildUpdate = () => {
+          const { nextMatchId } = afterData ?? {};
+          return { nextMatchId: nextMatchId };
+        };
+        `,
+      },
     ],
   },
 );
