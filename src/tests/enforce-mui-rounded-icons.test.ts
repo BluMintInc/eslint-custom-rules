@@ -1,4 +1,4 @@
-import { ruleTesterTs } from '../utils/ruleTester';
+import { ruleTesterJsx, ruleTesterTs } from '../utils/ruleTester';
 import { enforceMuiRoundedIcons } from '../rules/enforce-mui-rounded-icons';
 
 ruleTesterTs.run('enforce-mui-rounded-icons', enforceMuiRoundedIcons, {
@@ -93,6 +93,31 @@ ruleTesterTs.run('enforce-mui-rounded-icons', enforceMuiRoundedIcons, {
         import AddLinkIcon from '@mui/icons-material/AddLinkRounded';
       `,
     },
+    // Issue #1674: the fixed forms below are the outputs the invalid cases
+    // expect. Reporting nothing on them is what makes the fix idempotent — a
+    // second `--fix` pass has nothing left to change.
+    {
+      code: `
+import NotificationsActiveRounded from '@mui/icons-material/NotificationsActiveRounded';
+export const x = NotificationsActiveRounded;
+`,
+    },
+    {
+      code: `
+import PersonRounded from '@mui/icons-material/PersonRounded';
+const icons = { PersonRounded };
+export { PersonRounded };
+`,
+    },
+    {
+      code: `import { LogoutRounded as LogoutRounded } from '@mui/icons-material';`,
+    },
+    {
+      code: `
+import { PersonRounded } from '@mui/icons-material';
+export const x = PersonRounded;
+`,
+    },
   ],
   invalid: [
     {
@@ -151,16 +176,17 @@ ruleTesterTs.run('enforce-mui-rounded-icons', enforceMuiRoundedIcons, {
     },
     // Issue #1502: the barrel import form bypassed the rule entirely.
     {
-      // Renaming the binding would require rewriting every reference, so the
-      // unaliased barrel form is reported without a fix.
+      // Issue #1674: the unaliased barrel form spells the imported name and the
+      // local binding with one token, so the fix renames the binding. With no
+      // reference to rewrite, the single token moves.
       code: `import { Logout } from '@mui/icons-material';`,
       errors: [{ messageId: 'enforceRoundedVariant' }],
-      output: null,
+      output: `import { LogoutRounded } from '@mui/icons-material';`,
     },
     {
       code: `import { AddReactionOutlined } from '@mui/icons-material';`,
       errors: [{ messageId: 'enforceRoundedVariant' }],
-      output: null,
+      output: `import { AddReactionRounded } from '@mui/icons-material';`,
     },
     {
       // Aliased: only the imported name changes, so the local binding (and
@@ -170,17 +196,19 @@ ruleTesterTs.run('enforce-mui-rounded-icons', enforceMuiRoundedIcons, {
       output: `import { LogoutRounded as LogoutIcon } from '@mui/icons-material';`,
     },
     {
-      // A redundant alias is not a real alias: the local name still carries the
-      // non-Rounded icon name, so no fix is offered.
+      // A redundant alias is not a real alias: the local name carries the
+      // non-Rounded icon name too, so both tokens move. Each keeps its own
+      // range, which leaves the redundancy the source already had rather than
+      // collapsing a span that may hold comments.
       code: `import { Logout as Logout } from '@mui/icons-material';`,
       errors: [{ messageId: 'enforceRoundedVariant' }],
-      output: null,
+      output: `import { LogoutRounded as LogoutRounded } from '@mui/icons-material';`,
     },
     {
       // The type specifier is exempt; the value specifier is not.
       code: `import { type SvgIconComponent, Logout } from '@mui/icons-material';`,
       errors: [{ messageId: 'enforceRoundedVariant' }],
-      output: null,
+      output: `import { type SvgIconComponent, LogoutRounded } from '@mui/icons-material';`,
     },
     {
       // Only the non-Rounded, non-brand specifiers are reported.
@@ -189,7 +217,7 @@ ruleTesterTs.run('enforce-mui-rounded-icons', enforceMuiRoundedIcons, {
         { messageId: 'enforceRoundedVariant' },
         { messageId: 'enforceRoundedVariant' },
       ],
-      output: null,
+      output: `import { LogoutRounded, PersonRounded, GitHub, AddLinkRounded } from '@mui/icons-material';`,
     },
     {
       // Variant suffixes map to the Rounded variant of the BASE icon here too.
@@ -208,9 +236,10 @@ ruleTesterTs.run('enforce-mui-rounded-icons', enforceMuiRoundedIcons, {
       output: `import { MailOutlineRounded as MailIcon } from '@mui/icons-material';`,
     },
     {
-      // A binding reached through shorthand properties and re-exports is
-      // exactly why the unaliased form is not auto-fixed: renaming it here
-      // would have to rewrite all three sites.
+      // A binding reached through shorthand properties and re-exports cannot be
+      // renamed: the shorthand token is both key and value, and the export
+      // specifier is a cross-file contract. The unaliased barrel form has no
+      // rename-free fix, so it is reported without one.
       code: `
         import { Logout } from '@mui/icons-material';
         const icons = { Logout };
@@ -220,13 +249,14 @@ ruleTesterTs.run('enforce-mui-rounded-icons', enforceMuiRoundedIcons, {
       output: null,
     },
     {
-      // Only the aliased specifier is fixable; both are still reported.
+      // Both specifiers are fixable: the aliased one by its imported name, the
+      // bare one by renaming its binding.
       code: `import { Logout as LogoutIcon, Person } from '@mui/icons-material';`,
       errors: [
         { messageId: 'enforceRoundedVariant' },
         { messageId: 'enforceRoundedVariant' },
       ],
-      output: `import { LogoutRounded as LogoutIcon, Person } from '@mui/icons-material';`,
+      output: `import { LogoutRounded as LogoutIcon, PersonRounded } from '@mui/icons-material';`,
     },
     {
       // A default import alongside named specifiers.
@@ -253,6 +283,267 @@ ruleTesterTs.run('enforce-mui-rounded-icons', enforceMuiRoundedIcons, {
       `,
     },
     {
+      // Issue #1674 repro: the binding must not keep the variant name the fix
+      // just removed from the path.
+      code: `
+import NotificationsActiveOutlined from '@mui/icons-material/NotificationsActiveOutlined';
+export const x = NotificationsActiveOutlined;
+`,
+      errors: [{ messageId: 'enforceRoundedVariant' }],
+      output: `
+import NotificationsActiveRounded from '@mui/icons-material/NotificationsActiveRounded';
+export const x = NotificationsActiveRounded;
+`,
+    },
+    {
+      // Issue #1674: nothing references the binding, so the rename is the
+      // declaration alone.
+      code: `import PersonOutlined from '@mui/icons-material/PersonOutlined';`,
+      errors: [{ messageId: 'enforceRoundedVariant' }],
+      output: `import PersonRounded from '@mui/icons-material/PersonRounded';`,
+    },
+    {
+      // A binding repeating a suffix-free icon name is renamed on the same
+      // terms: the name still describes the glyph the path names.
+      code: `
+import Logout from '@mui/icons-material/Logout';
+export const x = Logout;
+`,
+      errors: [{ messageId: 'enforceRoundedVariant' }],
+      output: `
+import LogoutRounded from '@mui/icons-material/LogoutRounded';
+export const x = LogoutRounded;
+`,
+    },
+    {
+      // Every reference moves, wherever it sits: nested scopes, type positions
+      // and the default export included.
+      code: `
+import PersonOutlined from '@mui/icons-material/PersonOutlined';
+type Rendered = typeof PersonOutlined;
+function render(): Rendered {
+  const local = PersonOutlined;
+  return local;
+}
+export default PersonOutlined;
+`,
+      errors: [{ messageId: 'enforceRoundedVariant' }],
+      output: `
+import PersonRounded from '@mui/icons-material/PersonRounded';
+type Rendered = typeof PersonRounded;
+function render(): Rendered {
+  const local = PersonRounded;
+  return local;
+}
+export default PersonRounded;
+`,
+    },
+    // Issue #1674 safety conditions: each of these keeps the path-only fix.
+    {
+      // A hand-chosen alias names the icon's role, not its variant, so it is
+      // left alone.
+      code: `
+import BellIcon from '@mui/icons-material/NotificationsActiveOutlined';
+export const x = BellIcon;
+`,
+      errors: [{ messageId: 'enforceRoundedVariant' }],
+      output: `
+import BellIcon from '@mui/icons-material/NotificationsActiveRounded';
+export const x = BellIcon;
+`,
+    },
+    {
+      // A re-exported binding is part of the module's public API, which a
+      // single-file rename cannot carry to the importers.
+      code: `
+import NotificationsActiveOutlined from '@mui/icons-material/NotificationsActiveOutlined';
+export { NotificationsActiveOutlined };
+`,
+      errors: [{ messageId: 'enforceRoundedVariant' }],
+      output: `
+import NotificationsActiveOutlined from '@mui/icons-material/NotificationsActiveRounded';
+export { NotificationsActiveOutlined };
+`,
+    },
+    {
+      // An aliased re-export names the same public contract.
+      code: `
+import NotificationsActiveOutlined from '@mui/icons-material/NotificationsActiveOutlined';
+export { NotificationsActiveOutlined as Bell };
+`,
+      errors: [{ messageId: 'enforceRoundedVariant' }],
+      output: `
+import NotificationsActiveOutlined from '@mui/icons-material/NotificationsActiveRounded';
+export { NotificationsActiveOutlined as Bell };
+`,
+    },
+    {
+      // The Rounded name is already bound, so renaming onto it would redeclare
+      // it.
+      code: `
+import NotificationsActiveOutlined from '@mui/icons-material/NotificationsActiveOutlined';
+const NotificationsActiveRounded = 1;
+export const x = [NotificationsActiveOutlined, NotificationsActiveRounded];
+`,
+      errors: [{ messageId: 'enforceRoundedVariant' }],
+      output: `
+import NotificationsActiveOutlined from '@mui/icons-material/NotificationsActiveRounded';
+const NotificationsActiveRounded = 1;
+export const x = [NotificationsActiveOutlined, NotificationsActiveRounded];
+`,
+    },
+    {
+      // The Rounded name is bound in a nested scope, where the renamed binding
+      // would be shadowed.
+      code: `
+import PersonOutlined from '@mui/icons-material/PersonOutlined';
+function render() {
+  const PersonRounded = 1;
+  return PersonRounded;
+}
+export const x = [PersonOutlined, render];
+`,
+      errors: [{ messageId: 'enforceRoundedVariant' }],
+      output: `
+import PersonOutlined from '@mui/icons-material/PersonRounded';
+function render() {
+  const PersonRounded = 1;
+  return PersonRounded;
+}
+export const x = [PersonOutlined, render];
+`,
+    },
+    {
+      // A shorthand property is one token serving as both key and value:
+      // renaming it would silently rename the key too.
+      code: `
+import NotificationsActiveOutlined from '@mui/icons-material/NotificationsActiveOutlined';
+const o = { NotificationsActiveOutlined };
+export const x = o;
+`,
+      errors: [{ messageId: 'enforceRoundedVariant' }],
+      output: `
+import NotificationsActiveOutlined from '@mui/icons-material/NotificationsActiveRounded';
+const o = { NotificationsActiveOutlined };
+export const x = o;
+`,
+    },
+    {
+      // An explicit key is not shorthand, so only the value moves.
+      code: `
+import NotificationsActiveOutlined from '@mui/icons-material/NotificationsActiveOutlined';
+export const o = { bell: NotificationsActiveOutlined };
+`,
+      errors: [{ messageId: 'enforceRoundedVariant' }],
+      output: `
+import NotificationsActiveRounded from '@mui/icons-material/NotificationsActiveRounded';
+export const o = { bell: NotificationsActiveRounded };
+`,
+    },
+    {
+      // Two variants of one icon both retarget to the same Rounded name, so
+      // renaming both bindings would declare that name twice.
+      code: `
+import PersonOutlined from '@mui/icons-material/PersonOutlined';
+import PersonSharp from '@mui/icons-material/PersonSharp';
+export const x = [PersonOutlined, PersonSharp];
+`,
+      errors: [
+        { messageId: 'enforceRoundedVariant' },
+        { messageId: 'enforceRoundedVariant' },
+      ],
+      output: `
+import PersonOutlined from '@mui/icons-material/PersonRounded';
+import PersonSharp from '@mui/icons-material/PersonRounded';
+export const x = [PersonOutlined, PersonSharp];
+`,
+    },
+    {
+      // Two renames in one file: each report carries its own path change plus
+      // its own reference rewrites, so ESLint merges each report into a range
+      // spanning its import and its last reference. Those ranges overlap, so a
+      // single pass lands one report's fix and `--fix` converges on the next
+      // pass (this pins the first pass).
+      code: `
+import PersonOutlined from '@mui/icons-material/PersonOutlined';
+import LogoutOutlined from '@mui/icons-material/LogoutOutlined';
+export const x = [PersonOutlined, LogoutOutlined];
+`,
+      errors: [
+        { messageId: 'enforceRoundedVariant' },
+        { messageId: 'enforceRoundedVariant' },
+      ],
+      output: `
+import PersonRounded from '@mui/icons-material/PersonRounded';
+import LogoutOutlined from '@mui/icons-material/LogoutOutlined';
+export const x = [PersonRounded, LogoutOutlined];
+`,
+    },
+    {
+      // A side-effect import binds nothing, so only the path moves.
+      code: `import '@mui/icons-material/PersonOutlined';`,
+      errors: [{ messageId: 'enforceRoundedVariant' }],
+      output: `import '@mui/icons-material/PersonRounded';`,
+    },
+    {
+      // A namespace binding names the module, not the icon, so it is left
+      // alone.
+      code: `
+import * as PersonOutlined from '@mui/icons-material/PersonOutlined';
+export const x = PersonOutlined;
+`,
+      errors: [{ messageId: 'enforceRoundedVariant' }],
+      output: `
+import * as PersonOutlined from '@mui/icons-material/PersonRounded';
+export const x = PersonOutlined;
+`,
+    },
+    // Issue #1674: the unaliased barrel form renames its binding on the same
+    // terms as the deep form.
+    {
+      code: `
+import { PersonOutlined } from '@mui/icons-material';
+export const x = PersonOutlined;
+`,
+      errors: [{ messageId: 'enforceRoundedVariant' }],
+      output: `
+import { PersonRounded } from '@mui/icons-material';
+export const x = PersonRounded;
+`,
+    },
+    {
+      // Re-export: the barrel form declines for the same public-API reason, and
+      // has no rename-free fix to fall back on.
+      code: `
+import { PersonOutlined } from '@mui/icons-material';
+export { PersonOutlined };
+`,
+      errors: [{ messageId: 'enforceRoundedVariant' }],
+      output: null,
+    },
+    {
+      // Collision: the barrel form declines too.
+      code: `
+import { PersonOutlined } from '@mui/icons-material';
+const PersonRounded = 1;
+export const x = [PersonOutlined, PersonRounded];
+`,
+      errors: [{ messageId: 'enforceRoundedVariant' }],
+      output: null,
+    },
+    {
+      // Contested target: two barrel specifiers claiming one Rounded name.
+      code: `
+import { PersonOutlined, PersonSharp } from '@mui/icons-material';
+export const x = [PersonOutlined, PersonSharp];
+`,
+      errors: [
+        { messageId: 'enforceRoundedVariant' },
+        { messageId: 'enforceRoundedVariant' },
+      ],
+      output: null,
+    },
+    {
       // Both import forms in one file.
       code: `
         import PersonIcon from '@mui/icons-material/Person';
@@ -266,6 +557,134 @@ ruleTesterTs.run('enforce-mui-rounded-icons', enforceMuiRoundedIcons, {
         import PersonIcon from '@mui/icons-material/PersonRounded';
         import { LogoutRounded as LogoutIcon } from '@mui/icons-material';
       `,
+    },
+  ],
+});
+
+/**
+ * Issue #1674: an icon binding is overwhelmingly used as a JSX element, and the
+ * scope manager exposes those uses differently — the opening tag's name is a
+ * reference while the closing tag's is not — so the rename is pinned against
+ * real JSX rather than expression positions alone.
+ */
+ruleTesterJsx.run('enforce-mui-rounded-icons (jsx)', enforceMuiRoundedIcons, {
+  valid: [
+    {
+      code: `
+import PersonRounded from '@mui/icons-material/PersonRounded';
+export const Icon = () => <PersonRounded fontSize="small" />;
+`,
+    },
+    {
+      // The fixed form of the closing-tag case below: idempotent.
+      code: `
+import PersonRounded from '@mui/icons-material/PersonRounded';
+export const Icon = () => <PersonRounded></PersonRounded>;
+`,
+    },
+  ],
+  invalid: [
+    {
+      // The binding is renamed in JSX and in a plain expression alike.
+      code: `
+import PersonOutlined from '@mui/icons-material/PersonOutlined';
+export const Icon = () => <PersonOutlined fontSize="small" />;
+export const raw = PersonOutlined;
+`,
+      errors: [{ messageId: 'enforceRoundedVariant' }],
+      output: `
+import PersonRounded from '@mui/icons-material/PersonRounded';
+export const Icon = () => <PersonRounded fontSize="small" />;
+export const raw = PersonRounded;
+`,
+    },
+    {
+      // A closing tag must move with its opening tag or the element stops
+      // parsing.
+      code: `
+import PersonOutlined from '@mui/icons-material/PersonOutlined';
+export const Icon = () => <PersonOutlined>{'label'}</PersonOutlined>;
+`,
+      errors: [{ messageId: 'enforceRoundedVariant' }],
+      output: `
+import PersonRounded from '@mui/icons-material/PersonRounded';
+export const Icon = () => <PersonRounded>{'label'}</PersonRounded>;
+`,
+    },
+    {
+      // Nested elements each carry their own closing tag.
+      code: `
+import PersonOutlined from '@mui/icons-material/PersonOutlined';
+export const Icons = () => (
+  <div>
+    <PersonOutlined />
+    <PersonOutlined color="primary"></PersonOutlined>
+  </div>
+);
+`,
+      errors: [{ messageId: 'enforceRoundedVariant' }],
+      output: `
+import PersonRounded from '@mui/icons-material/PersonRounded';
+export const Icons = () => (
+  <div>
+    <PersonRounded />
+    <PersonRounded color="primary"></PersonRounded>
+  </div>
+);
+`,
+    },
+    {
+      // Passed as a prop value rather than rendered.
+      code: `
+import PersonOutlined from '@mui/icons-material/PersonOutlined';
+export const Row = () => <Item icon={PersonOutlined} />;
+`,
+      errors: [{ messageId: 'enforceRoundedVariant' }],
+      output: `
+import PersonRounded from '@mui/icons-material/PersonRounded';
+export const Row = () => <Item icon={PersonRounded} />;
+`,
+    },
+    {
+      // A compound tag name reaches the binding through a member expression,
+      // whose closing half the scope manager does not expose, so the rename is
+      // declined and the path alone moves.
+      code: `
+import PersonOutlined from '@mui/icons-material/PersonOutlined';
+export const Icon = () => <PersonOutlined.Sub></PersonOutlined.Sub>;
+`,
+      errors: [{ messageId: 'enforceRoundedVariant' }],
+      output: `
+import PersonOutlined from '@mui/icons-material/PersonRounded';
+export const Icon = () => <PersonOutlined.Sub></PersonOutlined.Sub>;
+`,
+    },
+    {
+      // A JSX-rendered binding from the barrel form renames the same way.
+      code: `
+import { PersonOutlined } from '@mui/icons-material';
+export const Icon = () => <PersonOutlined />;
+`,
+      errors: [{ messageId: 'enforceRoundedVariant' }],
+      output: `
+import { PersonRounded } from '@mui/icons-material';
+export const Icon = () => <PersonRounded />;
+`,
+    },
+    {
+      // A shorthand property still declines even when the other reference is
+      // JSX: the whole rename is refused, not the shorthand site alone.
+      code: `
+import PersonOutlined from '@mui/icons-material/PersonOutlined';
+const registry = { PersonOutlined };
+export const Icon = () => <PersonOutlined registry={registry} />;
+`,
+      errors: [{ messageId: 'enforceRoundedVariant' }],
+      output: `
+import PersonOutlined from '@mui/icons-material/PersonRounded';
+const registry = { PersonOutlined };
+export const Icon = () => <PersonOutlined registry={registry} />;
+`,
     },
   ],
 });

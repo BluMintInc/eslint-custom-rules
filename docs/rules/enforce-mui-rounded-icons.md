@@ -35,11 +35,28 @@ Imports from any other package, and dynamic `import()` expressions whose specifi
 
 | Form | Fixed? |
 | --- | --- |
-| `import LogoutIcon from '@mui/icons-material/Logout'` | Yes — the module specifier becomes `'@mui/icons-material/LogoutRounded'`. |
+| `import LogoutIcon from '@mui/icons-material/Logout'` | Yes — the module specifier becomes `'@mui/icons-material/LogoutRounded'`. The binding names the icon's role rather than its variant, so it stays as it is. |
+| `import PersonOutlined from '@mui/icons-material/PersonOutlined'` | Yes — the module specifier becomes `'@mui/icons-material/PersonRounded'` **and** the binding becomes `PersonRounded`, along with every reference to it. |
 | `import { Logout as LogoutIcon } from '@mui/icons-material'` | Yes — only the **imported** name becomes `LogoutRounded`; the local binding `LogoutIcon` and every reference to it are untouched. |
-| `import { Logout } from '@mui/icons-material'` | **No** — reported without a fix. |
+| `import { Logout } from '@mui/icons-material'` | Yes — the single token spells both the imported name and the binding, so it becomes `LogoutRounded` together with every reference to it. |
 
-The unaliased barrel form is deliberately left unfixed: there the imported name *is* the local binding, so changing it renames the binding, and a correct rename would have to rewrite every reference — including shorthand properties (`{ Logout }`), re-exports (`export { Logout }`) and JSX usage. Reporting without a fix is preferred over a fix that can corrupt code. Rewrite it by hand, either to `import { LogoutRounded } from '@mui/icons-material'` with its references updated, or to the deep form `import LogoutIcon from '@mui/icons-material/LogoutRounded'`.
+#### The binding moves with the icon
+
+A binding that repeats the icon name describes the glyph it renders. Retargeting the module while leaving that name behind produces code that compiles and lies: `import PersonOutlined from '@mui/icons-material/PersonRounded'` renders the Rounded glyph under the Outlined name, and every reader of the diff sees the wrong variant. So whenever the name being replaced is also the local binding, the fix renames the binding and each in-file reference to it — JSX tags (both halves of `<PersonOutlined></PersonOutlined>`), type positions, prop values and plain expressions alike. The module change and the rename are emitted as one fix, so the binding can never move without the retarget that motivates it, or the reverse.
+
+Only name tokens are rewritten, resolved through the scope manager rather than by matching text, so an unrelated identifier that happens to share the name is left alone.
+
+#### When the rename is declined
+
+Where the rename cannot be applied in full, the fix falls back to changing the module path alone — and the unaliased barrel form, which has no path to change apart from the binding, is reported without a fix. The rename is declined when:
+
+- **The binding is an alias.** `import BellIcon from '@mui/icons-material/NotificationsActiveOutlined'` names the icon's role, not its variant, so it is a deliberate choice the fix has no standing to overwrite. Only a binding equal to the icon name being replaced is renamed.
+- **The binding is re-exported.** `export { PersonOutlined }` (aliased or not) makes the name part of the module's public API, and a single-file fix cannot rewrite the importers that name it.
+- **The new name is already taken.** A binding, or a use of that name in any scope the rename reaches, would be redeclared or shadowed. Two variants of one icon in the same file — `PersonOutlined` and `PersonSharp`, both retargeting to `PersonRounded` — contest the same name, so neither binding is renamed.
+- **A reference is an object shorthand.** `{ PersonOutlined }` is a single token serving as both the property key and its value; renaming it would rename the key too, and expanding it to `PersonOutlined: PersonRounded` reshapes source well beyond the import.
+- **A JSX tag names the binding through a compound name.** `<PersonOutlined.Sub />` reaches the binding through a member expression whose closing half the scope manager does not expose, so the two tags cannot be kept in sync.
+
+A file holding several renameable icon imports converges over successive `--fix` passes: each report owns a range spanning its import and its last reference, and ESLint applies one of a pair of overlapping ranges per pass.
 
 ### Examples of incorrect code
 
@@ -61,7 +78,15 @@ import PhoneIcon from '@mui/icons-material/PhoneTwoTone';
 ```
 
 ```ts
-// The barrel form is checked too; this one is reported without a fix
+// The binding repeats the icon name, so it is renamed with the path:
+// import NotificationsActiveRounded from '@mui/icons-material/NotificationsActiveRounded';
+// export const bell = NotificationsActiveRounded;
+import NotificationsActiveOutlined from '@mui/icons-material/NotificationsActiveOutlined';
+export const bell = NotificationsActiveOutlined;
+```
+
+```ts
+// The barrel form is checked too; the single token becomes LogoutRounded
 import { Logout } from '@mui/icons-material';
 ```
 
@@ -99,6 +124,12 @@ import XIcon from '@mui/icons-material/X';
 ```ts
 // The barrel form, naming Rounded icons
 import { LogoutRounded, PersonRounded } from '@mui/icons-material';
+```
+
+```ts
+// A binding matching its Rounded icon is what the fix converges on
+import NotificationsActiveRounded from '@mui/icons-material/NotificationsActiveRounded';
+export const bell = NotificationsActiveRounded;
 ```
 
 ```ts
