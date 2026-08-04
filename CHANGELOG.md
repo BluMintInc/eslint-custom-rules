@@ -1,3 +1,10 @@
+## [1.20.102](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.101...v1.20.102) (2026-08-04)
+
+
+### Bug Fixes
+
+* **ensure-pointer-events-none:** extend the hit-slop carve-out to the inset shorthand (closes [#1707](https://github.com/BluMintInc/eslint-custom-rules/issues/1707)) ([502c413](https://github.com/BluMintInc/eslint-custom-rules/commit/502c4139edd97ec394883bce42ce3da4f095a8c0))
+
 ## [1.20.101](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.100...v1.20.101) (2026-08-04)
 
 

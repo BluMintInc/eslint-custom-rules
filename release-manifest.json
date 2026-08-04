@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.102",
+    "date": "2026-08-04T17:20:02.924Z",
+    "rules": [
+      {
+        "name": "ensure-pointer-events-none",
+        "changeType": "fix",
+        "issues": [
+          1707
+        ],
+        "summary": "extend the hit-slop carve-out to the inset shorthand (closes #1707)"
+      }
+    ]
+  },
+  {
     "version": "1.20.101",
     "date": "2026-08-04T16:47:09.253Z",
     "rules": [
