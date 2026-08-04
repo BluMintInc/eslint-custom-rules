@@ -1,5 +1,13 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import {
+  ImportInsertionAnchor,
+  ImportInsertionSource,
+  importAnchorIndent,
+  importAnchorLineStart,
+  importInsertionAnchor,
+  insertAtImportAnchor,
+} from '../utils/importInsertion';
 
 type MessageIds = 'useCentralizedMockFirestore';
 
@@ -161,13 +169,39 @@ function mergeEdits(edits: SourceEdit[]): SourceEdit[] {
   return merged;
 }
 
-function applyEdits(text: string, edits: SourceEdit[]): string {
-  let result = text;
-  for (let index = edits.length - 1; index >= 0; index--) {
-    const { start, end, text: replacement } = edits[index];
-    result = result.slice(0, start) + replacement + result.slice(end);
-  }
-  return result;
+function editOffset(anchor: ImportInsertionAnchor): number {
+  return anchor.kind === 'before' ? anchor.target.range[0] : anchor.index;
+}
+
+/**
+ * Where the import may be spliced in given the edits retiring the local mock.
+ *
+ * Widening to the anchor's line start is what lets the emitted
+ * `${indent}import …\n` leave the displaced statement on the indentation it
+ * already had, but that is sound only while whitespace is all that precedes
+ * the anchor: a `'use client';` sharing the anchor's line would be demoted by
+ * an insertion at column 0. When the resulting position still falls inside a
+ * retirement — the anchor statement is itself the declaration being retired,
+ * and the retirement claims the indentation ahead of it — the insertion moves
+ * to that edit's start, since ESLint rejects a fix nested inside another.
+ */
+function importPlacement(
+  sourceCode: ImportInsertionSource,
+  anchor: ImportInsertionAnchor,
+  edits: SourceEdit[],
+): ImportInsertionAnchor {
+  const anchorStart = editOffset(anchor);
+  const lineStart = sourceCode.text.lastIndexOf('\n', anchorStart - 1) + 1;
+  const placement = /^[ \t]*$/.test(
+    sourceCode.text.slice(lineStart, anchorStart),
+  )
+    ? importAnchorLineStart(sourceCode, anchor)
+    : anchor;
+  const offset = editOffset(placement);
+  const enclosing = edits.find(
+    (edit) => edit.start < offset && offset < edit.end,
+  );
+  return enclosing ? { kind: 'index', index: enclosing.start } : placement;
 }
 
 export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
@@ -360,14 +394,6 @@ export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
             },
             fix(fixer) {
               const originalText = sourceCode.getText();
-              const lines = originalText.split('\n');
-
-              // Find the indentation of the code
-              const indentMatch = lines[0].match(/^(\s*)/);
-              const indent = indentMatch ? indentMatch[1] : '';
-
-              // Create the import statement
-              const importLine = `${indent}import { mockFirestore } from '${MOCK_FIRESTORE_PATH}';`;
 
               // Retire each declaration by its own character range. Line
               // indices would take every other occupant of those lines with
@@ -423,20 +449,36 @@ export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
                   ),
               );
 
-              const fixedText = applyEdits(
-                originalText,
-                mergeEdits([...removals, ...survivingReplacements]),
+              const edits = mergeEdits([...removals, ...survivingReplacements]);
+
+              // Every edit is bounded to the characters it owns. Rebuilding
+              // the file and writing it over the `Program` node instead would
+              // emit whatever precedes `Program.range[0]` — a header comment,
+              // a `@ts-nocheck`, a license block — a second time, and would
+              // claim a fix range spanning the file, which wins every pass-1
+              // fixer race and suppresses sibling rules' fixes.
+              const fixes = edits.map(({ start, end, text }) =>
+                fixer.replaceTextRange([start, end], text),
               );
 
-              const result = hasCentralizedImport
-                ? fixedText
-                : `${importLine}\n${fixedText}`;
+              if (!hasCentralizedImport) {
+                // The shared anchor keeps the import below the file's
+                // prologue: spliced above a `'use client'` / `'use server'`
+                // directive it demotes the directive to a plain expression,
+                // and above a `#!` shebang it leaves the file unparseable.
+                const anchor = importInsertionAnchor(sourceCode);
+                const indent = importAnchorIndent(sourceCode, anchor);
+                fixes.push(
+                  insertAtImportAnchor(
+                    sourceCode,
+                    fixer,
+                    importPlacement(sourceCode, anchor, edits),
+                    `${indent}import { mockFirestore } from '${MOCK_FIRESTORE_PATH}';\n`,
+                  ),
+                );
+              }
 
-              // One replacement of the whole program, since the import belongs
-              // above every statement while the removals sit anywhere below
-              // it. Every edit folded into `result` is bounded to its own
-              // node, so the text between them is reproduced verbatim.
-              return fixer.replaceText(sourceCode.ast, result);
+              return fixes;
             },
           });
         }
