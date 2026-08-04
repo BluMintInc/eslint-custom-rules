@@ -25,15 +25,20 @@ A component counts however it is written:
 - `export const Banner = (props: BannerProps) => ...`
 - `export const Banner = function (props: BannerProps) { ... }`
 - `export const Banner = memo(...)`, `React.memo(...)`, `forwardRef(...)`, `React.forwardRef(...)`, and any nesting of those (`memo(forwardRef(fn))`) around a function expression or arrow
+- `export const Banner = memo(BannerUnmemoized)`, where the wrapper argument names a function declared in the same file, through any nesting of wrappers (`memo(forwardRef(BannerUnmemoized))`)
 - the `export default` form of each of those
 
-Covering the wrapped shapes is what keeps the check alive: [`require-memo`](./require-memo.md) rewrites `export function Banner(props: BannerProps)` into `export const Banner = memo(function BannerUnmemoized(props: BannerProps) {...})`, so a check that reads only the declaration form goes blind on every component that rule's fixer touches.
+The props annotation is read off a named parameter (`props: BannerProps`) and off a destructured one (`({ message }: BannerProps)`) alike: destructuring changes how the component reads its props, not the contract consumers compose against.
 
-Two boundaries keep the check on props:
+Covering the wrapped shapes is what keeps the check alive: [`require-memo`](./require-memo.md) rewrites `export function Banner(props: BannerProps)` into `export const Banner = memo(function BannerUnmemoized(props: BannerProps) {...})`, so a check that reads only the declaration form goes blind on every component that rule's fixer touches. The same holds for the argument spelled as a name, which is how a memoized component reaches the export once its implementation is hoisted to its own declaration.
 
-- A capitalized name marks a component. `export const useBanner = (config: BannerConfig) => ...` stays a plain exported function, and a `memo` call wrapping a lowercase-named function stays outside the props check.
+Boundaries that keep the check on props:
+
+- A capitalized name marks a component. `export const useBanner = (config: BannerConfig) => ...` stays a plain exported function, and a `memo` call wrapping a lowercase-named function or binding stays outside the props check.
 - Only the first parameter carries props. The ref `forwardRef` passes as the second argument is no part of the contract a consumer composes against.
-- The annotation is read off a named parameter (`props: BannerProps`). A destructured parameter — `({ message }: BannerProps)` — is left alone here, as in every other check this rule performs.
+- A wrapper argument that names an import (`memo(BannerUnmemoized)` for a component from another module) resolves to nothing local. Its props type is declared elsewhere and cannot be exported from this file, so the component is left alone.
+- A generic parameter the component itself declares (`memo(function ListUnmemoized<T>({ items }: ListProps<T>))`) is no exportable contract, so only `ListProps` is checked.
+- An inline literal annotation (`({ message }: { message: string })`) names no type, so there is nothing to export.
 
 ## Fixer
 
@@ -71,7 +76,13 @@ export const NotificationBanner = memo(function NotificationBannerUnmemoized(
 
 type AlertProps = { message: string };
 
-export const Alert = (props: AlertProps) => <div>{props.message}</div>;
+export const Alert = ({ message }: AlertProps) => <div>{message}</div>;
+
+type BadgeProps = { label: string };
+
+const BadgeUnmemoized = ({ label }: BadgeProps) => <div>{label}</div>;
+
+export const Badge = memo(BadgeUnmemoized);
 
 type Result = { value: string };
 
@@ -103,7 +114,13 @@ export const NotificationBanner = memo(function NotificationBannerUnmemoized(
 
 export type AlertProps = { message: string };
 
-export const Alert = (props: AlertProps) => <div>{props.message}</div>;
+export const Alert = ({ message }: AlertProps) => <div>{message}</div>;
+
+export type BadgeProps = { label: string };
+
+const BadgeUnmemoized = ({ label }: BadgeProps) => <div>{label}</div>;
+
+export const Badge = memo(BadgeUnmemoized);
 
 export type Result = { value: string };
 
