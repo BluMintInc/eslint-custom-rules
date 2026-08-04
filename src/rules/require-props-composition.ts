@@ -643,10 +643,12 @@ const DEFAULT_BINDING = 'default';
  */
 const moduleResolutionCache = new Map<string, string | null>();
 const propLessBindingCache = new Map<string, StampedVerdict>();
+const unionMemberCache = new Map<string, StampedMembers>();
 
 type FileStamp = { mtimeMs: number; size: number };
 type ResolvedModule = FileStamp & { filePath: string };
 type StampedVerdict = FileStamp & { propLess: boolean };
+type StampedMembers = FileStamp & { members: string[] };
 
 /**
  * Stat a candidate path, returning its identity stamp when it is a file. The
@@ -1128,6 +1130,215 @@ function getDependencyPropsSourceType(
   return null;
 }
 
+/**
+ * Name one arm of a union, and flatten whatever the arm turns out to be.
+ *
+ * Only an arm spelled as a type *reference* yields a name: an inline object arm
+ * has no name a parent could compose with, and an intersection arm's members
+ * describe a fragment of the arm rather than the arm itself. A named arm is
+ * followed to its definition too, because an alias of a union flattens into the
+ * enclosing union in TypeScript, so its own arms are arms here.
+ */
+function collectUnionArmNames(
+  arm: TSESTree.TypeNode,
+  program: TSESTree.Program,
+  seenAliases: Set<string>,
+  into: Set<string>,
+): void {
+  if (arm.type === AST_NODE_TYPES.TSUnionType) {
+    for (const nested of arm.types) {
+      collectUnionArmNames(nested, program, seenAliases, into);
+    }
+    return;
+  }
+  if (arm.type !== AST_NODE_TYPES.TSTypeReference) {
+    return;
+  }
+
+  const name = getTypeReferenceName(arm);
+  if (name === 'Readonly') {
+    // A `Readonly<X>` arm is the X arm: the wrapper adds no surface of its own.
+    const inner = arm.typeParameters?.params[0];
+    if (inner) {
+      collectUnionArmNames(inner, program, seenAliases, into);
+    }
+    return;
+  }
+  if (!name || seenAliases.has(name)) {
+    return;
+  }
+
+  into.add(name);
+  const alias = findPropsTypeAliasByName(program, name);
+  if (alias) {
+    const nextSeen = new Set(seenAliases);
+    nextSeen.add(name);
+    collectUnionArmNames(alias.typeAnnotation, program, nextSeen, into);
+  }
+}
+
+/**
+ * Collect the named arms of a props type that resolves to a union, following
+ * `Readonly<...>` wrappers and named-alias indirection within `program` to reach
+ * it. A props type that is not a union contributes nothing, so a single-shape
+ * child keeps demanding composition with its own name.
+ *
+ * Resolving *to* the union never names anything on the way: only an arm of a
+ * real union is a member, so an alias chain that ends at a single object type
+ * credits none of the names it passed through.
+ */
+function collectUnionMemberNames(
+  typeNode: TSESTree.TypeNode | null,
+  program: TSESTree.Program,
+  seenAliases: Set<string> = new Set<string>(),
+  into: Set<string> = new Set<string>(),
+): Set<string> {
+  if (!typeNode) {
+    return into;
+  }
+
+  if (typeNode.type === AST_NODE_TYPES.TSUnionType) {
+    for (const arm of typeNode.types) {
+      collectUnionArmNames(arm, program, seenAliases, into);
+    }
+    return into;
+  }
+
+  if (typeNode.type === AST_NODE_TYPES.TSTypeReference) {
+    const name = getTypeReferenceName(typeNode);
+    if (name === 'Readonly') {
+      const inner = typeNode.typeParameters?.params[0];
+      if (inner) {
+        collectUnionMemberNames(inner, program, seenAliases, into);
+      }
+      return into;
+    }
+    if (name && !seenAliases.has(name)) {
+      const alias = findPropsTypeAliasByName(program, name);
+      if (alias) {
+        const nextSeen = new Set(seenAliases);
+        nextSeen.add(name);
+        collectUnionMemberNames(alias.typeAnnotation, program, nextSeen, into);
+      }
+    }
+  }
+
+  return into;
+}
+
+/**
+ * The props type node a module exports alongside `binding`: its
+ * `{Binding}Props` alias when one exists, otherwise the exported component's
+ * own first-parameter annotation. Mirrors getDependencyPropsSourceType for a
+ * foreign program, resolving the export's local name first so
+ * `const X = …; export { X as Y }` reads X's props type.
+ */
+function getExportedPropsSourceType(
+  program: TSESTree.Program,
+  binding: string,
+): TSESTree.TypeNode | null {
+  if (binding === DEFAULT_BINDING) {
+    const fn = findDefaultExportFunction(program);
+    return fn ? getFirstParamTypeNode(fn) : null;
+  }
+  const local = findExportedLocalName(program, binding);
+  return local === null ? null : getDependencyPropsSourceType(program, local);
+}
+
+/**
+ * The union arms of a dependency's props type as declared in the sibling module
+ * it is imported from. Resolution mirrors isPropLessImportedComponent — a
+ * relative specifier, a file that exists on disk, no shadowing declaration
+ * inside the rendering component — so anything the parse cannot decide yields
+ * no members and the composition requirement stands.
+ */
+function getImportedDependencyUnionMembers(
+  program: TSESTree.Program,
+  localName: string,
+  filename: string,
+  componentRoot: TSESTree.Node,
+  cwd: string,
+): string[] {
+  const relativeImport = findRelativeImport(program, localName);
+  if (!relativeImport) {
+    return [];
+  }
+  if (isNameDeclaredWithin(componentRoot, localName)) {
+    return [];
+  }
+
+  try {
+    const absolute = path.isAbsolute(filename)
+      ? filename
+      : path.resolve(cwd, filename);
+    const resolved = resolveRelativeModule(
+      path.dirname(absolute),
+      relativeImport.source,
+    );
+    if (!resolved) {
+      return [];
+    }
+
+    const cacheKey = JSON.stringify([
+      resolved.filePath,
+      relativeImport.binding,
+    ]);
+    const cached = unionMemberCache.get(cacheKey);
+    if (
+      cached !== undefined &&
+      cached.mtimeMs === resolved.mtimeMs &&
+      cached.size === resolved.size
+    ) {
+      return cached.members;
+    }
+
+    const childProgram = parseModuleProgram(resolved.filePath);
+    const members = childProgram
+      ? Array.from(
+          collectUnionMemberNames(
+            getExportedPropsSourceType(childProgram, relativeImport.binding),
+            childProgram,
+          ),
+        )
+      : [];
+    unionMemberCache.set(cacheKey, {
+      mtimeMs: resolved.mtimeMs,
+      size: resolved.size,
+      members,
+    });
+    return members;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Every name the file under lint can use to reference an imported type: the
+ * exported name itself plus each `import { Exported as Local }` rename of it.
+ * A union member declared in a sibling module is written with the local
+ * spelling at the composition site.
+ */
+function collectImportSpellings(
+  program: TSESTree.Program,
+  importedName: string,
+): string[] {
+  const spellings = [importedName];
+  for (const stmt of program.body) {
+    if (stmt.type !== AST_NODE_TYPES.ImportDeclaration) continue;
+    for (const specifier of stmt.specifiers) {
+      if (
+        specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+        specifier.imported.type === AST_NODE_TYPES.Identifier &&
+        specifier.imported.name === importedName &&
+        specifier.local.name !== importedName
+      ) {
+        spellings.push(specifier.local.name);
+      }
+    }
+  }
+  return spellings;
+}
+
 export const requirePropsComposition = createRule<Options, MessageIds>({
   name: 'require-props-composition',
   meta: {
@@ -1273,6 +1484,45 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
       },
     };
 
+    /**
+     * Whether the parent's props type composes with a member of `dep`'s props
+     * union. Both spellings the member can take are tried: the in-file
+     * declaration, and the sibling module's export (under the exported name and
+     * under any local rename the parent imports it as).
+     *
+     * A dependency whose props type is not a union yields no members, so this
+     * never credits a parent that composes with nothing.
+     */
+    function composesWithUnionMember(
+      dep: string,
+      propsTypeNode: TSESTree.TypeNode,
+      prog: TSESTree.Program,
+      componentRoot: TSESTree.Node,
+    ): boolean {
+      const localMembers = collectUnionMemberNames(
+        getDependencyPropsSourceType(prog, dep),
+        prog,
+      );
+      for (const member of localMembers) {
+        if (typeNodeComposesWithProps(propsTypeNode, member, prog)) {
+          return true;
+        }
+      }
+
+      const importedMembers = getImportedDependencyUnionMembers(
+        prog,
+        dep,
+        rawFilename,
+        componentRoot,
+        cwd,
+      );
+      return importedMembers.some((member) =>
+        collectImportSpellings(prog, member).some((spelling) =>
+          typeNodeComposesWithProps(propsTypeNode, spelling, prog),
+        ),
+      );
+    }
+
     function checkComponentWithProgram(
       componentName: string,
       funcNode:
@@ -1359,6 +1609,28 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
           composedWith.add(dep);
         } else {
           missingComposition.push(dep);
+        }
+      }
+
+      // A child whose props type is a union is composed by composing with any
+      // one of its MEMBERS: `Pick<ChipToggleProps, 'label'>` inherits exactly
+      // the surface the child accepts on that arm, so the DRY guarantee holds
+      // just as it does for the union alias itself. This mirrors on the child
+      // side the `.some` rule issue #1343 established on the parent side.
+      //
+      // Deferred behind the whole cheap pass because resolving a sibling
+      // module's members reads it off disk: a file that already composes never
+      // pays for it.
+      if (
+        missingComposition.length > 0 &&
+        (requireAllDependencies || composedWith.size === 0)
+      ) {
+        for (let index = missingComposition.length - 1; index >= 0; index--) {
+          const dep = missingComposition[index];
+          if (composesWithUnionMember(dep, propsTypeNode, prog, funcNode)) {
+            composedWith.add(dep);
+            missingComposition.splice(index, 1);
+          }
         }
       }
 
