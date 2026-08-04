@@ -137,6 +137,126 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
         tsconfigRootDir,
       },
     },
+    /**
+     * A construct-signature-only type carries no data: `Object.keys()` of a class
+     * is `[]` unless it declares statics, so the prescribed emptiness check would
+     * invert the guard. The name deliberately ends with an object-like suffix, so
+     * the naming fallback would report it — only real type information exempts it,
+     * which keeps this case from passing vacuously if type-aware parsing is lost.
+     */
+    {
+      code: `
+        interface BuilderConstructor {
+          new (id: string): { build(): string };
+        }
+        declare const builderConfig: BuilderConstructor | undefined;
+        if (!builderConfig) {
+          throw new Error('no builder registered');
+        }
+        `,
+      filename: path.join(
+        tsconfigRootDir,
+        'src/tests/fixtures/type-aware-object.ts',
+      ),
+      parserOptions: {
+        project: './tsconfig.json',
+        tsconfigRootDir,
+      },
+    },
+    /**
+     * The `ComponentType` shape: a union of a call-signature type and a
+     * construct-signature type. A union counts as an object when ANY member does,
+     * so the constructor member alone used to poison the whole union.
+     */
+    {
+      code: `
+        type ViewProps = { id: string };
+        type FunctionComponentLike = (props: ViewProps) => unknown;
+        interface ComponentClassLike {
+          new (props: ViewProps): { render(): unknown };
+          displayName?: string;
+        }
+        type ComponentTypeLike = FunctionComponentLike | ComponentClassLike;
+        declare const TokenView: ComponentTypeLike | undefined;
+        if (!TokenView) {
+          throw new Error('missing view');
+        }
+        `,
+      filename: path.join(
+        tsconfigRootDir,
+        'src/tests/fixtures/type-aware-object.ts',
+      ),
+      parserOptions: {
+        project: './tsconfig.json',
+        tsconfigRootDir,
+      },
+    },
+    {
+      code: `
+        type FallbackProps = { id: string };
+        interface RendererClass {
+          new (props: FallbackProps): { render(): unknown };
+        }
+        type Renderer = ((props: FallbackProps) => unknown) | RendererClass;
+        declare const rendererOptions: Renderer | undefined;
+        if (!rendererOptions) {
+          throw new Error('missing renderer');
+        }
+        `,
+      filename: path.join(
+        tsconfigRootDir,
+        'src/tests/fixtures/type-aware-object.ts',
+      ),
+      parserOptions: {
+        project: './tsconfig.json',
+        tsconfigRootDir,
+      },
+    },
+    /**
+     * A class reference is exempt as well. It reaches `non-object` through the
+     * required `prototype` property the checker puts on every `typeof Class`, so
+     * this case guards the documented behaviour rather than the construct-signature
+     * branch — the branch is what covers the constructor interfaces above, which
+     * carry no properties at all.
+     */
+    {
+      code: `
+        class NotificationBuilder {
+          build() {
+            return 'notification';
+          }
+        }
+        declare const BuilderClass: typeof NotificationBuilder | undefined;
+        if (!BuilderClass) {
+          throw new Error('no builder registered');
+        }
+        `,
+      filename: path.join(
+        tsconfigRootDir,
+        'src/tests/fixtures/type-aware-object.ts',
+      ),
+      parserOptions: {
+        project: './tsconfig.json',
+        tsconfigRootDir,
+      },
+    },
+    {
+      code: `
+        type StrategyConstructor = abstract new (id: string) => { run(): void };
+        declare const strategyConfig: StrategyConstructor | undefined;
+        if (!strategyConfig) {
+          throw new Error('no strategy registered');
+        }
+        `,
+      filename: path.join(
+        tsconfigRootDir,
+        'src/tests/fixtures/type-aware-object.ts',
+      ),
+      parserOptions: {
+        project: './tsconfig.json',
+        tsconfigRootDir,
+      },
+    },
   ],
   invalid: [
     {
@@ -580,6 +700,98 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
         const islandData = fetchIsland();
         if ((!islandData || Object.keys(islandData).length === 0)) {
           return islandData;
+        }
+        `,
+    },
+    /**
+     * Negative controls for the callable/constructable carve-out. Both names are
+     * outside the naming heuristic, so the report can only come from the type
+     * analysis: a data object stays an object even when every property is
+     * optional, and a union keeps reporting as long as one member is a data
+     * object.
+     */
+    {
+      code: `
+        declare const incoming: { a?: string } | undefined;
+        if (!incoming) {
+          throw new Error('missing payload');
+        }
+        `,
+      filename: path.join(
+        tsconfigRootDir,
+        'src/tests/fixtures/type-aware-object.ts',
+      ),
+      parserOptions: {
+        project: './tsconfig.json',
+        tsconfigRootDir,
+      },
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'incoming' } },
+      ],
+      output: `
+        declare const incoming: { a?: string } | undefined;
+        if ((!incoming || Object.keys(incoming).length === 0)) {
+          throw new Error('missing payload');
+        }
+        `,
+    },
+    {
+      code: `
+        type OptionalOnly = { retries?: number; verbose?: boolean };
+        declare const banner: OptionalOnly | undefined;
+        if (!banner) {
+          throw new Error('missing banner');
+        }
+        `,
+      filename: path.join(
+        tsconfigRootDir,
+        'src/tests/fixtures/type-aware-object.ts',
+      ),
+      parserOptions: {
+        project: './tsconfig.json',
+        tsconfigRootDir,
+      },
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'banner' } },
+      ],
+      output: `
+        type OptionalOnly = { retries?: number; verbose?: boolean };
+        declare const banner: OptionalOnly | undefined;
+        if ((!banner || Object.keys(banner).length === 0)) {
+          throw new Error('missing banner');
+        }
+        `,
+    },
+    {
+      code: `
+        interface WidgetConstructor {
+          new (): { render(): void };
+        }
+        type WidgetSlot = WidgetConstructor | { fallback?: string };
+        declare const slot: WidgetSlot | undefined;
+        if (!slot) {
+          throw new Error('missing slot');
+        }
+        `,
+      filename: path.join(
+        tsconfigRootDir,
+        'src/tests/fixtures/type-aware-object.ts',
+      ),
+      parserOptions: {
+        project: './tsconfig.json',
+        tsconfigRootDir,
+      },
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'slot' } },
+      ],
+      output: `
+        interface WidgetConstructor {
+          new (): { render(): void };
+        }
+        type WidgetSlot = WidgetConstructor | { fallback?: string };
+        declare const slot: WidgetSlot | undefined;
+        if ((!slot || Object.keys(slot).length === 0)) {
+          throw new Error('missing slot');
         }
         `,
     },

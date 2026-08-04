@@ -244,6 +244,21 @@ function isObjectLikeType(
     return 'non-object';
   }
 
+  /**
+   * A construct-signature-only type — a class reference, a `…Constructor<P>`
+   * interface, the `ComponentClass` half of `ComponentType` — carries behaviour,
+   * not data. Its own properties are statics, so `Object.keys()` is `[]` for a
+   * plain class or component even when a valid value was supplied, and the
+   * emptiness check this rule prescribes would invert the guard rather than
+   * harden it. Unions reach this branch through the recursive call above, which
+   * matters because a union counts as an object when ANY member does: without
+   * this, the constructor half alone classified a whole `ComponentType` union as
+   * a data object.
+   */
+  if (type.getConstructSignatures().length > 0) {
+    return 'non-object';
+  }
+
   if (hasRequiredProperties(type, checker)) {
     return 'non-object';
   }
