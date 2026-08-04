@@ -299,7 +299,11 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
               // spelling of "pass the callback directly" keeps it, so reporting
               // here would prescribe a remedy that does not exist.
               if (stmts.some(isEventSuppressionCall)) return;
-              if (stmts.length >= 1 && stmts.length <= 2) {
+              // Exactly one statement. A wrapper that sequences a second call is
+              // doing work the delegate alone does not, so collapsing it would
+              // drop that call — only the branch's own statement is ever read,
+              // so a wider count silently discards whatever it did not look at.
+              if (stmts.length === 1) {
                 const first = stmts[0];
                 if (
                   first.type === AST_NODE_TYPES.ReturnStatement ||
