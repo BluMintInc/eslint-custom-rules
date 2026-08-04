@@ -31,10 +31,14 @@ export = createRule({
     },
     schema: [],
     messages: {
+      // The remedy names the module SHAPE, never a package name: the proprietary
+      // wrapper lives inside the consuming repository (a shared
+      // util/errors/HttpsError), so prescribing an npm specifier sends the
+      // reader to install something that does not exist (issue #1685).
       useHttpsError:
-        'Throwing "{{constructorName}}" in Cloud Functions returns a generic 500 and drops the structured status code clients rely on. Throw the proprietary HttpsError instead so responses include the correct status, sanitized message, and logging context.',
+        'Throwing "{{constructorName}}" in Cloud Functions returns a generic 500 and drops the structured status code clients rely on. Throw the proprietary HttpsError instead so responses include the correct status, sanitized message, and logging context. Import it from the proprietary HttpsError module this codebase owns, such as a shared util/errors/HttpsError, rather than from firebase-admin.',
       useProprietaryHttpsError:
-        '{{reference}} comes from {{source}} and bypasses our proprietary HttpsError wrapper, so responses skip standardized status codes, logging, and client-safe payloads. Import and throw HttpsError from @our-company/errors to keep errors consistent.',
+        '{{reference}} comes from {{source}} and bypasses our proprietary HttpsError wrapper, so responses skip standardized status codes, logging, and client-safe payloads. Import HttpsError from the proprietary HttpsError module this codebase owns, such as a shared util/errors/HttpsError, and throw that to keep errors consistent.',
     },
   },
   defaultOptions: [],

@@ -5,19 +5,31 @@ import requireHttpsError from '../rules/require-https-error';
 type MessageIds = 'useHttpsError' | 'useProprietaryHttpsError';
 
 const useHttpsErrorMessage =
-  'Throwing "Error" in Cloud Functions returns a generic 500 and drops the structured status code clients rely on. Throw the proprietary HttpsError instead so responses include the correct status, sanitized message, and logging context.';
+  'Throwing "Error" in Cloud Functions returns a generic 500 and drops the structured status code clients rely on. Throw the proprietary HttpsError instead so responses include the correct status, sanitized message, and logging context. Import it from the proprietary HttpsError module this codebase owns, such as a shared util/errors/HttpsError, rather than from firebase-admin.';
 
 const proprietaryMessage = (reference: string, source: string) =>
-  `${reference} comes from ${source} and bypasses our proprietary HttpsError wrapper, so responses skip standardized status codes, logging, and client-safe payloads. Import and throw HttpsError from @our-company/errors to keep errors consistent.`;
+  `${reference} comes from ${source} and bypasses our proprietary HttpsError wrapper, so responses skip standardized status codes, logging, and client-safe payloads. Import HttpsError from the proprietary HttpsError module this codebase owns, such as a shared util/errors/HttpsError, and throw that to keep errors consistent.`;
 
 const expectMessage = (message: string) =>
   ({ message } as unknown as TSESLint.TestCaseError<MessageIds>);
 
 ruleTesterTs.run('require-https-error', requireHttpsError, {
   valid: [
-    // Should allow throw new HttpsError
+    // Issue #1685: the remedy the message prescribes must itself be compliant.
+    // The proprietary wrapper is a module inside the repository, so a relative
+    // import of it is the shape the message points at.
     {
-      code: 'import { HttpsError } from "@our-company/errors"; throw new HttpsError("INVALID_ARGUMENT", "test error");',
+      code: 'import { HttpsError } from "../util/errors/HttpsError"; throw new HttpsError("INVALID_ARGUMENT", "test error");',
+      filename: 'functions/src/callable/test.ts',
+    },
+    {
+      code: 'import { HttpsError } from "../../util/errors/HttpsError"; throw new HttpsError("failed-precondition", "test error");',
+      filename: 'functions/src/callable/tournament/respondToPending.f.ts',
+    },
+    // A non-relative self-owned specifier is equally compliant: the rule keys
+    // off the forbidden firebase-admin sources, not off a prescribed package.
+    {
+      code: 'import { HttpsError } from "functions/src/util/errors/HttpsError"; throw new HttpsError("INVALID_ARGUMENT", "test error");',
       filename: 'functions/src/test.ts',
     },
     // Should allow throw new CustomError in functions/src
@@ -325,4 +337,30 @@ throw new functionsHttps.HttpsError("failed-precondition", "test error");
       ],
     },
   ],
+});
+
+/**
+ * Issue #1685: the remedy shipped as `@our-company/errors`, a template
+ * placeholder that resolves to an npm 404 and exists in no consumer. A reader
+ * following it installs nothing and goes hunting. The rule accepts ANY source
+ * that is not firebase-admin, so the guidance must describe the proprietary
+ * module the repository owns rather than name a package.
+ */
+describe('remedy text points at a real module (issue #1685)', () => {
+  const messages = Object.values(requireHttpsError.meta.messages) as string[];
+
+  it('covers every message the rule can emit', () => {
+    expect(messages).toHaveLength(2);
+  });
+
+  it.each(messages)('names no npm package as the import source: %s', (text) => {
+    // A scoped specifier is how the placeholder shipped; a bare one ("from
+    // some-errors-pkg") is the same mistake without the scope.
+    expect(text).not.toMatch(/@[\w.-]+\/[\w.-]+/);
+    expect(text).not.toMatch(/\bnpm install\b/);
+  });
+
+  it.each(messages)('describes the proprietary module instead: %s', (text) => {
+    expect(text).toContain('util/errors/HttpsError');
+  });
 });
