@@ -3,6 +3,31 @@ import { createRule } from '../utils/createRule';
 
 type MessageIds = 'useCustomRouter';
 
+const ROUTER_MODULE_PATH = 'src/hooks/routing/useRouter';
+
+const SOURCE_EXTENSION = /\.(?:ts|tsx|js|jsx)$/;
+
+/**
+ * The module the fixer points every `useRouter` import at is the one module that
+ * must keep importing `useRouter` from `next/router`: rewriting it makes it
+ * import itself, and a self-import evaluates circularly, so the wrapper exports
+ * `undefined` and every consumer of it breaks.
+ *
+ * The linted path is matched by suffix because it reaches the rule in whatever
+ * form the caller used — absolute (`/repo/src/hooks/routing/useRouter.ts`) or
+ * project-relative (`src/hooks/routing/useRouter.ts`). The suffix has to land on
+ * a path-segment boundary, otherwise `notsrc/hooks/routing/useRouter.ts` — an
+ * unrelated module — would be exempted too.
+ */
+const isRouterModule = (filename: string): boolean => {
+  const normalized = filename.replace(/\\/g, '/').replace(SOURCE_EXTENSION, '');
+  if (!normalized.endsWith(ROUTER_MODULE_PATH)) {
+    return false;
+  }
+  const suffixStart = normalized.length - ROUTER_MODULE_PATH.length;
+  return suffixStart === 0 || normalized[suffixStart - 1] === '/';
+};
+
 export const useCustomRouter = createRule<[], MessageIds>({
   name: 'use-custom-router',
   meta: {
@@ -21,6 +46,15 @@ export const useCustomRouter = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
+    // A processor hands the rule a virtual filename for an extracted code block;
+    // the physical path is the one that identifies the module on disk.
+    const filename = context.getPhysicalFilename
+      ? context.getPhysicalFilename()
+      : context.getFilename();
+    if (isRouterModule(filename)) {
+      return {};
+    }
+
     return {
       ImportDeclaration(node: TSESTree.ImportDeclaration) {
         if (node.source.value === 'next/router') {
@@ -59,7 +93,7 @@ export const useCustomRouter = createRule<[], MessageIds>({
                           ? `useRouter as ${s.local.name}`
                           : 'useRouter',
                       )
-                      .join(', ')} } from 'src/hooks/routing/useRouter';`,
+                      .join(', ')} } from '${ROUTER_MODULE_PATH}';`,
                   );
                 } else {
                   // Create a new import for useRouter and keep other imports
@@ -69,7 +103,7 @@ export const useCustomRouter = createRule<[], MessageIds>({
                         ? `useRouter as ${s.local.name}`
                         : 'useRouter',
                     )
-                    .join(', ')} } from 'src/hooks/routing/useRouter';\n`;
+                    .join(', ')} } from '${ROUTER_MODULE_PATH}';\n`;
 
                   const otherImports = `import { ${otherSpecifiers
                     .map((s) => s.local.name)
