@@ -1,6 +1,8 @@
 import {
   AST_NODE_TYPES,
+  AST_TOKEN_TYPES,
   TSESTree,
+  TSESLint,
   ParserServices,
   ESLintUtils,
 } from '@typescript-eslint/utils';
@@ -621,6 +623,64 @@ function couldBeNullish(
   return true;
 }
 
+/**
+ * ECMAScript forbids `??` from sharing an expression with an unparenthesized
+ * `&&`/`||`. Source-level parentheses are not part of an ESTree node's range,
+ * so rewriting a whole LogicalExpression drops the parens around its operands —
+ * exactly the ones the operator swap makes mandatory. Re-adding them around any
+ * logical operand is unconditionally safe: the sub-expression was already
+ * evaluated as a unit, so redundant parens cannot change semantics.
+ */
+function parenthesizeLogical(
+  text: string,
+  operand: TSESTree.Expression | TSESTree.PrivateIdentifier,
+): string {
+  return operand.type === AST_NODE_TYPES.LogicalExpression ? `(${text})` : text;
+}
+
+/**
+ * Detects parentheses that wrap the node itself. They live outside the node's
+ * range, so a `replaceText` of the node preserves them and the rewrite needs no
+ * parens of its own.
+ */
+function isParenthesized(
+  node: TSESTree.Node,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+): boolean {
+  const before = sourceCode.getTokenBefore(node);
+  const after = sourceCode.getTokenAfter(node);
+  return (
+    !!before &&
+    !!after &&
+    before.type === AST_TOKEN_TYPES.Punctuator &&
+    before.value === '(' &&
+    after.type === AST_TOKEN_TYPES.Punctuator &&
+    after.value === ')'
+  );
+}
+
+/**
+ * A partially converted chain (`a ?? b || c`) is a syntax error just like an
+ * unparenthesized operand. Only one fix per overlapping range survives a pass,
+ * so converting one link of a `||` chain always leaves the sibling links
+ * untouched; parenthesizing the rewritten link keeps the emitted program
+ * parseable while later passes convert the remaining links.
+ */
+function needsSelfParens(
+  node: TSESTree.LogicalExpression,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+): boolean {
+  const { parent } = node;
+  if (
+    !parent ||
+    parent.type !== AST_NODE_TYPES.LogicalExpression ||
+    parent.operator === '??'
+  ) {
+    return false;
+  }
+  return !isParenthesized(node, sourceCode);
+}
+
 export const preferNullishCoalescingBooleanProps = createRule<[], MessageIds>({
   name: 'prefer-nullish-coalescing-boolean-props',
   meta: {
@@ -678,7 +738,16 @@ export const preferNullishCoalescingBooleanProps = createRule<[], MessageIds>({
                 right: rightText,
               },
               fix(fixer) {
-                return fixer.replaceText(node, `${leftText} ?? ${rightText}`);
+                const replacement = `${parenthesizeLogical(
+                  leftText,
+                  node.left,
+                )} ?? ${parenthesizeLogical(rightText, node.right)}`;
+                return fixer.replaceText(
+                  node,
+                  needsSelfParens(node, sourceCode)
+                    ? `(${replacement})`
+                    : replacement,
+                );
               },
             });
           }

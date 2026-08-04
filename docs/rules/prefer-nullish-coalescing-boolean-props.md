@@ -18,6 +18,10 @@ This rule keeps logical OR (`||`) available inside boolean contexts (JSX boolean
 
 **How to fix**: Replace `left || right` with `left ?? right` unless the expression is strictly boolean. The fixer applies this automatically.
 
+**Parentheses around logical operands are preserved**: ECMAScript rejects `??` sharing an expression with an unparenthesized `&&` or `||`, so the fixer parenthesizes any operand that is itself a logical expression — `(a && b) || c` becomes `(a && b) ?? c`, never the unparseable `a && b ?? c`.
+
+**Long `||` chains convert one link per pass**: the links of `a || b || c` overlap, so a single `--fix` pass rewrites the innermost link and parenthesizes it (`(a ?? b) || c`) to keep the half-converted chain parseable. The remaining links are reported again and convert on subsequent passes, which `eslint --fix` runs automatically.
+
 ### Examples of correct code
 
 Boolean props keep logical OR:
@@ -63,6 +67,12 @@ const placeholder = text ?? 'Enter text';
 const { title = data.title ?? 'Untitled' } = props;
 ```
 
+A logical operand keeps its parentheses, which `??` requires:
+
+```ts
+const config = (overrides.theme && overrides.theme.dark) ?? defaults.dark;
+```
+
 ### Examples of incorrect code
 
 ```tsx
@@ -75,6 +85,11 @@ function Component() {
 // Template literals and nested expressions
 const str = `Hello ${name || 'World'}`;
 const result = (data.field || defaultField).toString();
+```
+
+```ts
+// A logical operand: the fix keeps the parentheses `??` requires
+const config = (overrides.theme && overrides.theme.dark) || defaults.dark;
 ```
 
 These cases should use `??` so the fallback only applies when the left side is `null` or `undefined`.
