@@ -1001,16 +1001,195 @@ export function hasConfigChanged(oldConfig: object, newConfig: object): boolean 
 
 export function outer() {
   function hasConfigChanged(oldConfig, newConfig) {
-  return diff(oldConfig, newConfig).length > 0;
-}
+    return diff(oldConfig, newConfig).length > 0;
+  }
   return hasConfigChanged;
 }`,
     },
     {
-      // A destructured parameter binds no single name to pass to `diff`, so the
-      // report stands without a fix.
+      // The comparison names what to diff, so a parameter that binds no single
+      // name is no obstacle: the operands come from the operands.
       code: `function hasConfigChanged({ current }, newConfig) {
   return JSON.stringify(current) !== JSON.stringify(newConfig);
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: `import diff from '@blumintinc/microdiff';
+
+function hasConfigChanged({ current }, newConfig) {
+  return diff(current, newConfig).length > 0;
+}`,
+    },
+    {
+      // Every statement the comparison shares the body with survives: a body
+      // re-emitted from the signature drops the side effect silently.
+      code: `function hasConfigChanged(oldConfig, newConfig) {
+  recordComparison(oldConfig, newConfig);
+  return JSON.stringify(oldConfig) !== JSON.stringify(newConfig);
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: `import diff from '@blumintinc/microdiff';
+
+function hasConfigChanged(oldConfig, newConfig) {
+  recordComparison(oldConfig, newConfig);
+  return diff(oldConfig, newConfig).length > 0;
+}`,
+    },
+    {
+      // A comparison of two properties stays a comparison of those properties.
+      // Operands read off the signature widen it to the whole objects, which
+      // reports changes the source never asked about.
+      code: `function hasConfigChanged(oldConfig, newConfig) {
+  return JSON.stringify(oldConfig.settings) !== JSON.stringify(newConfig.settings);
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: `import diff from '@blumintinc/microdiff';
+
+function hasConfigChanged(oldConfig, newConfig) {
+  return diff(oldConfig.settings, newConfig.settings).length > 0;
+}`,
+    },
+    {
+      // A guard clause, a side effect and a local all outlive the rewrite, and
+      // the comparison's right operand is the local rather than the parameter.
+      code: `function hasConfigChanged(oldConfig, newConfig) {
+  recordComparison(oldConfig, newConfig);
+  if (!oldConfig) {
+    return true;
+  }
+  const normalized = normalize(newConfig);
+  return JSON.stringify(oldConfig) !== JSON.stringify(normalized);
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: `import diff from '@blumintinc/microdiff';
+
+function hasConfigChanged(oldConfig, newConfig) {
+  recordComparison(oldConfig, newConfig);
+  if (!oldConfig) {
+    return true;
+  }
+  const normalized = normalize(newConfig);
+  return diff(oldConfig, normalized).length > 0;
+}`,
+    },
+    {
+      // Comments the body carries are outside the replaced range, so both the
+      // leading one and the one trailing the comparison survive.
+      code: `function hasConfigChanged(oldConfig, newConfig) {
+  // Structural comparison, not a reference check.
+  return JSON.stringify(oldConfig) !== JSON.stringify(newConfig); // deep
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: `import diff from '@blumintinc/microdiff';
+
+function hasConfigChanged(oldConfig, newConfig) {
+  // Structural comparison, not a reference check.
+  return diff(oldConfig, newConfig).length > 0; // deep
+}`,
+    },
+    {
+      // The sense comes off the comparison's own operator, so an `===` body
+      // reached through an unrelated `!==` still inverts correctly.
+      code: `function hasConfigChanged(oldConfig, newConfig) {
+  if (oldConfig.id !== newConfig.id) {
+    return true;
+  }
+  return JSON.stringify(oldConfig) === JSON.stringify(newConfig);
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: `import diff from '@blumintinc/microdiff';
+
+function hasConfigChanged(oldConfig, newConfig) {
+  if (oldConfig.id !== newConfig.id) {
+    return true;
+  }
+  return diff(oldConfig, newConfig).length === 0;
+}`,
+    },
+    {
+      // The comparison need not be the returned expression: rewriting it in
+      // place leaves the assignment and the return it feeds alone.
+      code: `function hasConfigChanged(oldConfig, newConfig) {
+  const changed = JSON.stringify(oldConfig) !== JSON.stringify(newConfig);
+  return changed;
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: `import diff from '@blumintinc/microdiff';
+
+function hasConfigChanged(oldConfig, newConfig) {
+  const changed = diff(oldConfig, newConfig).length > 0;
+  return changed;
+}`,
+    },
+    {
+      // The signature keeps its annotations and its `export` while the body
+      // keeps its guard: only the comparison's own range is replaced.
+      code: `export function hasConfigChanged(oldConfig: object, newConfig: object): boolean {
+  if (!oldConfig) {
+    return true;
+  }
+  return JSON.stringify(oldConfig) !== JSON.stringify(newConfig);
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: `import diff from '@blumintinc/microdiff';
+
+export function hasConfigChanged(oldConfig: object, newConfig: object): boolean {
+  if (!oldConfig) {
+    return true;
+  }
+  return diff(oldConfig, newConfig).length > 0;
+}`,
+    },
+    {
+      // Two comparisons leave the rule no way to tell which one the result
+      // depends on, so the report stands without a fix.
+      code: `function hasConfigChanged(oldConfig, newConfig) {
+  if (JSON.stringify(oldConfig.a) !== JSON.stringify(newConfig.a)) {
+    return true;
+  }
+  return JSON.stringify(oldConfig.b) !== JSON.stringify(newConfig.b);
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: null,
+    },
+    {
+      // A comparison split across a local has no single expression to replace,
+      // so the body is left for the author.
+      code: `function hasConfigChanged(oldConfig, newConfig) {
+  const serialized = JSON.stringify(oldConfig);
+  return serialized !== JSON.stringify(newConfig);
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: null,
+    },
+    {
+      // A zero-argument `JSON.stringify()` supplies no operand, so there is
+      // nothing to hand `diff`.
+      code: `declare const JSON: { stringify: (value?: unknown) => string };
+
+function hasConfigChanged(oldConfig, newConfig) {
+  return JSON.stringify() !== JSON.stringify(newConfig);
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: null,
+    },
+    {
+      // A comparison inside a callback sits in a scope the emit guard never
+      // inspects — a parameter named `diff` there would capture the rewrite —
+      // so the walk stops at the function boundary and the fix is declined.
+      code: `function hasConfigChanged(oldConfig, newConfig) {
+  return newConfig.entries.some((entry, index) =>
+    JSON.stringify(oldConfig.entries[index]) !== JSON.stringify(entry),
+  );
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: null,
+    },
+    {
+      // The parameter shadow still blocks the emit, and the surviving body is
+      // the original one rather than a re-emitted single return.
+      code: `function hasConfigChanged(diff, newConfig) {
+  recordComparison(diff, newConfig);
+  return JSON.stringify(diff) !== JSON.stringify(newConfig);
 }`,
       errors: [{ messageId: 'enforceMicrodiff' }],
       output: null,
@@ -1111,7 +1290,9 @@ function hasConfigChanged(oldConfig, newConfig) {
     },
     {
       // The control for the three cases above: an existing import is the anchor,
-      // and the directive in front of it still comes first.
+      // and the directive in front of it still comes first. The normalized left
+      // operand rides through as well, since the rewrite reads the comparison
+      // rather than the signature.
       code: `'use client';
 import { formatConfig } from './formatConfig';
 
@@ -1124,7 +1305,7 @@ import diff from '@blumintinc/microdiff';
 import { formatConfig } from './formatConfig';
 
 function hasConfigChanged(oldConfig, newConfig) {
-  return diff(oldConfig, newConfig).length > 0;
+  return diff(formatConfig(oldConfig), newConfig).length > 0;
 }`,
     },
   ],

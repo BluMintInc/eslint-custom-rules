@@ -112,6 +112,25 @@ import deepDiff from 'deep-diff';
 export const f = (oldConfig) => deepDiff(oldConfig);
 ```
 
+### `JSON.stringify` comparisons are rewritten in place
+
+A `JSON.stringify(x) !== JSON.stringify(y)` comparison becomes `diff(x, y).length > 0`; `===` becomes `.length === 0`. The operands are the comparison's own, and only the comparison's range is replaced, so the enclosing body keeps every statement it shares with it — side effects, guard clauses, locals, and the comments around them:
+
+```ts
+import diff from '@blumintinc/microdiff';
+
+function hasConfigChanged(oldConfig, newConfig) {
+  recordComparison(oldConfig, newConfig);
+  if (!oldConfig) {
+    return true;
+  }
+  // A comparison of two properties stays a comparison of those properties.
+  return diff(oldConfig.settings, newConfig.settings).length > 0;
+}
+```
+
+The fix is declined, leaving the report for the author, when the body holds no such comparison or more than one — there is either nothing to rewrite or no way to tell which comparison the answer turns on — and when either `JSON.stringify` call has no argument to pass on. A comparison inside a nested callback is left alone too, since the check that `diff` is emittable inspects the reported function's scope rather than the callback's.
+
 ### lodash's difference family is report-only
 
 `_.difference`, `_.differenceBy`, and `_.differenceWith` are reported but never rewritten. lodash returns the elements of the first array that have no match in the second — a subset of the input — while `diff(a, b)` returns a structural change list of `{type, path, value}` records. The two do not compute the same thing, and lodash's third argument (an iteratee or comparator) has no counterpart in microdiff's signature, whose third parameter is an options object. Any mechanical rewrite would change what the surrounding code receives, so the conversion is left to the author.

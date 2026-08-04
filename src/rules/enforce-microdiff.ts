@@ -246,6 +246,121 @@ function isRewrittenCallee(identifier: TSESTree.Node): boolean {
 }
 
 /**
+ * The node types that open a scope of their own. The body walk stops at them
+ * because the emitted `diff` is only checked against the reported function's
+ * scope: a comparison inside a callback whose parameter is named `diff` would
+ * be rewritten into a call on that parameter, with no diagnostic to show for
+ * it.
+ */
+const FUNCTION_NODE_TYPES = new Set<string>([
+  AST_NODE_TYPES.ArrowFunctionExpression,
+  AST_NODE_TYPES.FunctionDeclaration,
+  AST_NODE_TYPES.FunctionExpression,
+]);
+
+/**
+ * Whether an expression is a call of `JSON.stringify`. The callee's shape
+ * decides rather than the source text, so a `stringify` read off anything but
+ * `JSON` — a local serializer bound under the same property name — keeps its
+ * call site.
+ */
+function isJsonStringify(node: TSESTree.Node): node is TSESTree.CallExpression {
+  return (
+    node.type === AST_NODE_TYPES.CallExpression &&
+    node.callee.type === AST_NODE_TYPES.MemberExpression &&
+    node.callee.object.type === AST_NODE_TYPES.Identifier &&
+    node.callee.object.name === 'JSON' &&
+    node.callee.property.type === AST_NODE_TYPES.Identifier &&
+    node.callee.property.name === 'stringify'
+  );
+}
+
+/**
+ * A `JSON.stringify(x) === JSON.stringify(y)` comparison broken into the parts
+ * a `diff` call is built from: the two operands, and whether an empty change
+ * list is the truthy answer.
+ */
+type StringifyComparison = {
+  node: TSESTree.BinaryExpression;
+  left: TSESTree.Node;
+  right: TSESTree.Node;
+  isEqual: boolean;
+};
+
+/**
+ * The stringify comparison an expression makes, or null for every other
+ * expression.
+ *
+ * A zero-argument `JSON.stringify()` yields null. The indexed argument read is
+ * typed non-optional, so nothing else forces the check, and there is no operand
+ * to hand `diff`.
+ */
+function toStringifyComparison(
+  node: TSESTree.Node,
+): StringifyComparison | null {
+  if (
+    node.type !== AST_NODE_TYPES.BinaryExpression ||
+    (node.operator !== '===' && node.operator !== '!==')
+  ) {
+    return null;
+  }
+  if (!isJsonStringify(node.left) || !isJsonStringify(node.right)) {
+    return null;
+  }
+  const left = node.left.arguments[0];
+  const right = node.right.arguments[0];
+  if (!left || !right) {
+    return null;
+  }
+  return { node, left, right, isEqual: node.operator === '===' };
+}
+
+/**
+ * Every stringify comparison `body` makes in its own scope, nested functions
+ * excluded.
+ *
+ * A rewrite driven by the enclosing function's parameter list answers a
+ * question the source never asked: `JSON.stringify(a.settings) !==
+ * JSON.stringify(b.settings)` compares two properties, and the signature's
+ * operands widen that to the whole objects. Reading the comparison itself is
+ * also what makes a destructuring parameter a non-issue, since the operands
+ * name what to diff whatever the signature binds.
+ */
+function collectStringifyComparisons(
+  body: TSESTree.Node,
+): StringifyComparison[] {
+  const comparisons: StringifyComparison[] = [];
+  const pending: TSESTree.Node[] = [body];
+  while (pending.length > 0) {
+    const current = pending.pop() as TSESTree.Node;
+    if (current !== body && FUNCTION_NODE_TYPES.has(current.type)) {
+      continue;
+    }
+    const comparison = toStringifyComparison(current);
+    if (comparison) {
+      comparisons.push(comparison);
+    }
+    for (const key in current) {
+      // The parent link closes a cycle over every node in the file.
+      if (key === 'parent') {
+        continue;
+      }
+      const value = (current as unknown as Record<string, unknown>)[key];
+      if (Array.isArray(value)) {
+        value.forEach((child) => {
+          if (ASTHelpers.isNode(child)) {
+            pending.push(child);
+          }
+        });
+      } else if (ASTHelpers.isNode(value)) {
+        pending.push(value);
+      }
+    }
+  }
+  return comparisons;
+}
+
+/**
  * Whether a bare `diff` written at `scope` reaches microdiff's function.
  * Resolving through the scope chain catches both failure modes: a module-scope
  * binding that the inserted import redeclares (TS2440, or TS2300 against
@@ -434,6 +549,18 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
         anchor,
         `${MICRODIFF_IMPORT}${separator}`,
       );
+    }
+
+    /**
+     * The microdiff form of a stringify comparison: a change list whose
+     * emptiness carries the sense of the operator it replaces, so `===` becomes
+     * `.length === 0` and `!==` becomes `.length > 0`.
+     */
+    function buildDiffComparison(comparison: StringifyComparison): string {
+      const left = sourceCode.getText(comparison.left);
+      const right = sourceCode.getText(comparison.right);
+      const emptiness = comparison.isEqual ? '.length === 0' : '.length > 0';
+      return `${DIFF_NAME}(${left}, ${right})${emptiness}`;
     }
 
     // Add a specific set to track which import names are used
@@ -695,63 +822,37 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
         }
 
         // Check for JSON.stringify comparison pattern
+        const comparison = toStringifyComparison(node);
         if (
-          (node.operator === '===' || node.operator === '!==') &&
-          node.left.type === AST_NODE_TYPES.CallExpression &&
-          node.right.type === AST_NODE_TYPES.CallExpression
+          !comparison ||
+          !isObjectOrArrayType(comparison.left) ||
+          !isObjectOrArrayType(comparison.right)
         ) {
-          const isJsonStringify = (expr: TSESTree.CallExpression) => {
-            return (
-              expr.callee.type === AST_NODE_TYPES.MemberExpression &&
-              expr.callee.object.type === AST_NODE_TYPES.Identifier &&
-              expr.callee.object.name === 'JSON' &&
-              expr.callee.property.type === AST_NODE_TYPES.Identifier &&
-              expr.callee.property.name === 'stringify'
-            );
-          };
-
-          if (isJsonStringify(node.left) && isJsonStringify(node.right)) {
-            const leftArg = node.left.arguments[0];
-            const rightArg = node.right.arguments[0];
-
-            // A zero-argument JSON.stringify() leaves these undefined. The
-            // indexed read is typed non-optional, so nothing forces the check.
-            if (!leftArg || !rightArg) {
-              return;
-            }
-
-            if (isObjectOrArrayType(leftArg) && isObjectOrArrayType(rightArg)) {
-              reportedNodes.add(node);
-              const isEqual = node.operator === '===';
-
-              context.report({
-                node,
-                messageId: 'enforceMicrodiff',
-                fix(fixer) {
-                  if (!canEmitDiffAt(node)) {
-                    return null;
-                  }
-
-                  const compareFix = fixer.replaceText(
-                    node,
-                    `${DIFF_NAME}(${sourceCode.getText(
-                      leftArg,
-                    )}, ${sourceCode.getText(rightArg)})${
-                      isEqual ? '.length === 0' : '.length > 0'
-                    }`,
-                  );
-
-                  // The comparison this rewrites almost always sits inside a
-                  // function, and the `diff` it emits needs an import whatever
-                  // encloses it. Deciding on the enclosing node left every
-                  // nested comparison calling a `diff` nothing bound.
-                  const importFix = buildMicrodiffImportFix(fixer);
-                  return importFix ? [importFix, compareFix] : compareFix;
-                },
-              });
-            }
-          }
+          return;
         }
+
+        reportedNodes.add(node);
+        context.report({
+          node,
+          messageId: 'enforceMicrodiff',
+          fix(fixer) {
+            if (!canEmitDiffAt(node)) {
+              return null;
+            }
+
+            const compareFix = fixer.replaceText(
+              node,
+              buildDiffComparison(comparison),
+            );
+
+            // The comparison this rewrites almost always sits inside a
+            // function, and the `diff` it emits needs an import whatever
+            // encloses it. Deciding on the enclosing node left every nested
+            // comparison calling a `diff` nothing bound.
+            const importFix = buildMicrodiffImportFix(fixer);
+            return importFix ? [importFix, compareFix] : compareFix;
+          },
+        });
       },
 
       // Check for custom deep comparison functions
@@ -789,34 +890,32 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
               bodyText.includes('!==')
             ) {
               reportedNodes.add(node);
-              // The operands are the parameter *names*, not the text of the
-              // parameters: a typed parameter's text carries its annotation,
-              // and `diff(oldConfig: Config, ...)` does not parse. A parameter
-              // that binds no single name — a destructuring or rest pattern —
-              // has no operand to pass, so the report stands without a fix.
-              const [firstParam, secondParam] = node.params;
-              const operands =
-                firstParam.type === AST_NODE_TYPES.Identifier &&
-                secondParam.type === AST_NODE_TYPES.Identifier
-                  ? ([firstParam.name, secondParam.name] as const)
-                  : null;
+              // Exactly one comparison is the condition for a fix. With none
+              // there is no expression to rewrite, and with several the rule
+              // cannot tell which one the function's answer turns on, so the
+              // report stands on its own.
+              const comparisons = collectStringifyComparisons(body);
+              const comparison =
+                comparisons.length === 1 ? comparisons[0] : null;
 
               context.report({
                 node,
                 messageId: 'enforceMicrodiff',
                 fix(fixer) {
-                  if (!operands || !canEmitDiffAt(node)) {
+                  if (!comparison || !canEmitDiffAt(node)) {
                     return null;
                   }
 
-                  // Only the body is rewritten, so the signature keeps its type
-                  // annotations, its modifiers, and any `export` in front of
-                  // it. Replacing the declaration wholesale used to drop those
-                  // and, when it prefixed the import, put an `import` inside
-                  // whatever enclosed the function.
+                  // Only the comparison's own range is rewritten. The signature
+                  // keeps its type annotations, its modifiers and any `export`
+                  // in front of it, and the body keeps everything the
+                  // comparison shares it with: side effects, guard clauses,
+                  // locals, and the comments around them. Re-emitting the body
+                  // as a single return drops all of that silently — the fix
+                  // compiles, so nothing downstream flags the loss.
                   const bodyFix = fixer.replaceText(
-                    body,
-                    `{\n  return ${DIFF_NAME}(${operands[0]}, ${operands[1]}).length > 0;\n}`,
+                    comparison.node,
+                    buildDiffComparison(comparison),
                   );
 
                   const importFix = buildMicrodiffImportFix(fixer);
