@@ -78,8 +78,8 @@ property name:
   (`-`, `*`, `/`, `%`, `**`, `<<`, `>>`, `>>>`, `&`, `|`, `^`), `Number(...)`,
   `parseInt(...)`, `parseFloat(...)`, any `Math.*` call, `.length`, and `+` when
   **both** sides are themselves numeric. An identifier qualifies when the
-  binding it resolves to proves it: a `: number` parameter, or a variable whose
-  every write keeps it numeric.
+  binding it resolves to proves it: a `: number` parameter, a variable whose
+  every write keeps it numeric, or a binding **declared** numeric (below).
 
 ```js
 // ✅ Exempt: the key cannot name a property.
@@ -119,6 +119,59 @@ obj[n];
 
 obj[a + b]; // `+` over unknown operands may concatenate strings
 obj[String(index)]; // an explicit string conversion is a string
+```
+
+#### The declaration site is a numeric proof
+
+A value produced by a call has no numeric shape to read, so the only thing that
+can prove it is the type its declaration gives it. TypeScript rejects a
+non-numeric value under either spelling of that declaration, which makes both a
+syntactic proof — the same trust a `(index: number)` parameter earns:
+
+- **`: number` on the binding name** — `const rank: number = rankOf(id)`,
+  `let cursor: number = seek()`, `(index: number = compute()) => …`.
+- **`number` asserted on the initializing value** — `const rank = rankOf(id) as
+  number`, `rankOf(id) satisfies number`, `<number>rankOf(id)`.
+
+```js
+// ✅ Exempt: the declaration is what proves the key numeric.
+const rank: number = this.rankOfRecipient(toId);
+placements[rank];
+
+const index = raw.offset as number;
+buffer[index];
+```
+
+The proof is exact and it is local:
+
+- Only the `number` keyword counts. `as any`, `as unknown`, `as string`,
+  `as const`, a generic such as `Wrapped<number>` and a union such as
+  `number | string` all leave the key reported, because none of them rules out a
+  property name.
+- An assertion that reaches `number` **through `any` or `unknown`** proves
+  nothing either. `raw as number` is worth trusting only because TypeScript
+  rejects it unless `raw` could be a number; a step through `any` or `unknown`
+  removes exactly that check, which is what makes `raw as unknown as number` the
+  idiom for asserting anything at all. It compiles for a `raw` holding
+  `'__proto__'`, so `buffer[index]` stays reported.
+- The proof covers the **initializer** only. A later assignment is a separate
+  statement — and it is where a value out of a `catch` binding or an `any`-typed
+  source enters the binding — so every other write still has to prove itself.
+- A destructuring pattern takes its initializer apart before binding, so neither
+  an annotation on the pattern nor an assertion over the whole initializer says
+  anything about the element bound out of it.
+
+```js
+// ❌ Still reported: the declaration proves none of these keys numeric.
+const index = compute() as string; // an assertion naming another type
+obj[index];
+
+let cursor: number = compute();
+cursor = userInput; // a write the annotation's proof does not reach
+obj[cursor];
+
+const { offset }: { offset: number } = source; // the pattern carries the type
+obj[offset];
 ```
 
 ### Assertion and await wrappers are read through

@@ -498,6 +498,109 @@ const name = 'voice';
 RESULTS[assertSafe(name)] = 1;
       `,
     },
+    // ------------------------------------------------------------------
+    // Issue #1713: the declaration site is a numeric proof of its own. A
+    // binding initialized from a call has no numeric shape to read, so the
+    // declared type is the only thing that can prove it — and TypeScript
+    // rejects a non-numeric value under either spelling, which is the same
+    // trust a `(index: number)` parameter already earns.
+    // ------------------------------------------------------------------
+    {
+      code: 'declare function g(): number; const k: number = g(); function f(m){ return m[k]; }',
+    },
+    {
+      code: 'declare function g(): number; const k = g() as number; function f(m){ return m[k]; }',
+    },
+    {
+      // The spelling the agora sites cited by issue #1713 reach for: a rank
+      // derived across a method boundary, declared numeric where it is bound.
+      name: 'a `: number` const initialized from a method call is numeric',
+      code: `
+class Payouts {
+  rankFor(placements, toId) {
+    const rank: number = this.rankOfRecipient(toId);
+    return placements[rank];
+  }
+}
+      `,
+    },
+    {
+      name: 'a `satisfies number` initializer is numeric',
+      code: `
+const at = (buffer, raw) => {
+  const index = raw.offset satisfies number;
+  return buffer[index];
+};
+      `,
+    },
+    {
+      name: 'an angle-bracket number assertion on an initializer is numeric',
+      code: `
+const at = (buffer, raw) => {
+  const index = <number>raw.offset;
+  return buffer[index];
+};
+      `,
+    },
+    {
+      // Parentheses are not nodes, so the assertion is still the initializer.
+      name: 'a parenthesized number assertion on an initializer is numeric',
+      code: `
+const at = (buffer, compute) => {
+  const index = (compute() as number);
+  return buffer[index];
+};
+      `,
+    },
+    {
+      // The declaration proves the initializer; the later write proves itself.
+      name: 'an annotated let whose every later write is numeric stays numeric',
+      code: `
+const at = (buffer, compute) => {
+  let index: number = compute();
+  index = 3;
+  return buffer[index];
+};
+      `,
+    },
+    {
+      name: 'a declared numeric binding stays numeric inside an offset',
+      code: `
+const at = (buffer, compute) => {
+  const index: number = compute();
+  return buffer[index + 1];
+};
+      `,
+    },
+    {
+      name: 'a declared numeric binding is numeric through an alias',
+      code: `
+const at = (buffer, compute) => {
+  const index: number = compute();
+  const cursor = index;
+  return buffer[cursor];
+};
+      `,
+    },
+    {
+      // Issue #1713 meets issue #1712: the assertion at the key position is
+      // read through and proves nothing, and the binding underneath is what
+      // carries the proof — so the key needs no validation whatever the
+      // wrapper claims.
+      name: 'a declared numeric binding stays numeric under an asserted key',
+      code: `
+const at = (buffer, compute) => {
+  const index: number = compute();
+  return buffer[index as any];
+};
+      `,
+    },
+    {
+      name: 'a `: number` parameter default initialized from a call is numeric',
+      code: `
+const at = (buffer, index: number = compute()) => buffer[index];
+      `,
+    },
   ],
   invalid: [
     {
@@ -1107,6 +1210,340 @@ const read = (map, key: string) => map[key];
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const read = (map, key: string) => map[assertSafe(key)];
+      `,
+    },
+    // ------------------------------------------------------------------
+    // Issue #1713 FENCE: only the `number` keyword at the declaration site
+    // proves anything, and it proves it of the initializer alone. A type that
+    // admits a string, an assertion naming another type, and every write that
+    // is not the initializer all keep reporting.
+    // ------------------------------------------------------------------
+    {
+      name: 'an `as any` initializer proves nothing',
+      code: `
+const at = (buffer, raw) => {
+  const index = raw as any;
+  return buffer[index];
+};
+      `,
+      errors: [lintError('index')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const at = (buffer, raw) => {
+  const index = raw as any;
+  return buffer[assertSafe(index)];
+};
+      `,
+    },
+    {
+      name: 'an `as unknown` initializer proves nothing',
+      code: `
+const at = (buffer, raw) => {
+  const index = raw as unknown;
+  return buffer[index];
+};
+      `,
+      errors: [lintError('index')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const at = (buffer, raw) => {
+  const index = raw as unknown;
+  return buffer[assertSafe(index)];
+};
+      `,
+    },
+    {
+      // The declaration-site proof is worth trusting only because TypeScript
+      // checks it, and a step through `unknown` is precisely how an author
+      // switches that check off — `raw as unknown as number` compiles for a
+      // `raw` holding '__proto__'. Trusting it would hand the rule's own
+      // subject a one-token bypass.
+      name: 'a double assertion through unknown proves nothing',
+      code: `
+const at = (buffer, raw) => {
+  const index = raw as unknown as number;
+  return buffer[index];
+};
+      `,
+      errors: [lintError('index')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const at = (buffer, raw) => {
+  const index = raw as unknown as number;
+  return buffer[assertSafe(index)];
+};
+      `,
+    },
+    {
+      name: 'a double assertion through any proves nothing',
+      code: `
+const at = (buffer, raw) => {
+  const index = raw as any as number;
+  return buffer[index];
+};
+      `,
+      errors: [lintError('index')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const at = (buffer, raw) => {
+  const index = raw as any as number;
+  return buffer[assertSafe(index)];
+};
+      `,
+    },
+    {
+      name: 'an `as string` initializer proves nothing',
+      code: `
+const at = (buffer, raw) => {
+  const index = raw as string;
+  return buffer[index];
+};
+      `,
+      errors: [lintError('index')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const at = (buffer, raw) => {
+  const index = raw as string;
+  return buffer[assertSafe(index)];
+};
+      `,
+    },
+    {
+      // `as const` narrows to whatever the operand already was, which for a
+      // call is unknowable from the syntax.
+      name: 'an `as const` initializer proves nothing',
+      code: `
+const at = (buffer, compute) => {
+  const index = compute() as const;
+  return buffer[index];
+};
+      `,
+      errors: [lintError('index')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const at = (buffer, compute) => {
+  const index = compute() as const;
+  return buffer[assertSafe(index)];
+};
+      `,
+    },
+    {
+      name: 'a `number | string` annotation admits a string key',
+      code: `
+const at = (buffer, compute) => {
+  const index: number | string = compute();
+  return buffer[index];
+};
+      `,
+      errors: [lintError('index')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const at = (buffer, compute) => {
+  const index: number | string = compute();
+  return buffer[assertSafe(index)];
+};
+      `,
+    },
+    {
+      name: 'an `: any` annotation admits a string key',
+      code: `
+const at = (buffer, compute) => {
+  const index: any = compute();
+  return buffer[index];
+};
+      `,
+      errors: [lintError('index')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const at = (buffer, compute) => {
+  const index: any = compute();
+  return buffer[assertSafe(index)];
+};
+      `,
+    },
+    {
+      // A generic naming `number` inside it is not the `number` keyword.
+      name: 'a generic annotation over number proves nothing',
+      code: `
+const at = (buffer, compute) => {
+  const index: Wrapped<number> = compute();
+  return buffer[index];
+};
+      `,
+      errors: [lintError('index')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const at = (buffer, compute) => {
+  const index: Wrapped<number> = compute();
+  return buffer[assertSafe(index)];
+};
+      `,
+    },
+    {
+      // The annotation covers the initializer; a later assignment is a
+      // separate statement and proves itself or nothing.
+      name: 'an annotated let reassigned from outside input is not numeric',
+      code: `
+const at = (buffer, compute) => {
+  let index: number = compute();
+  index = userInput;
+  return buffer[index];
+};
+      `,
+      errors: [lintError('index')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const at = (buffer, compute) => {
+  let index: number = compute();
+  index = userInput;
+  return buffer[assertSafe(index)];
+};
+      `,
+    },
+    {
+      // A thrown value is typed `any` under the default compiler settings, so
+      // the annotation stops TypeScript from checking this write at all.
+      name: 'an annotated let written from a catch binding is not numeric',
+      code: `
+const at = (buffer, compute) => {
+  let index: number = compute();
+  try {
+    compute();
+  } catch (error) {
+    index = error;
+  }
+  return buffer[index];
+};
+      `,
+      errors: [lintError('index')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const at = (buffer, compute) => {
+  let index: number = compute();
+  try {
+    compute();
+  } catch (error) {
+    index = error;
+  }
+  return buffer[assertSafe(index)];
+};
+      `,
+    },
+    {
+      name: 'an asserted initializer reassigned from outside input is not numeric',
+      code: `
+const at = (buffer, compute) => {
+  let index = compute() as number;
+  index = userInput;
+  return buffer[index];
+};
+      `,
+      errors: [lintError('index')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const at = (buffer, compute) => {
+  let index = compute() as number;
+  index = userInput;
+  return buffer[assertSafe(index)];
+};
+      `,
+    },
+    {
+      // A for-of write expression is the iterated value, not an initializer,
+      // so the annotation's proof does not reach it.
+      name: 'an annotated let rebound by for-of is not numeric',
+      code: `
+const at = (buffer, keys) => {
+  let index: number = 0;
+  for (index of keys) {
+    return buffer[index];
+  }
+};
+      `,
+      errors: [lintError('index')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const at = (buffer, keys) => {
+  let index: number = 0;
+  for (index of keys) {
+    return buffer[assertSafe(index)];
+  }
+};
+      `,
+    },
+    {
+      // The annotation sits on the pattern, not on the element bound out of
+      // it, so it says nothing about the element.
+      name: 'a destructured element under a numeric pattern annotation is not numeric',
+      code: `
+const at = (buffer, source) => {
+  const { index }: { index: number } = source;
+  return buffer[index];
+};
+      `,
+      errors: [lintError('index')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const at = (buffer, source) => {
+  const { index }: { index: number } = source;
+  return buffer[assertSafe(index)];
+};
+      `,
+    },
+    {
+      // The assertion describes the container the pattern takes apart.
+      name: 'a destructured element out of a number-asserted initializer is not numeric',
+      code: `
+const at = (buffer, source) => {
+  const { index } = source as number;
+  return buffer[index];
+};
+      `,
+      errors: [lintError('index')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const at = (buffer, source) => {
+  const { index } = source as number;
+  return buffer[assertSafe(index)];
+};
+      `,
+    },
+    {
+      name: 'a redeclaration dropping the annotation is not numeric',
+      code: `
+function at(buffer, compute) {
+  var index: number = compute();
+  var index = 'key1';
+  return buffer[index];
+}
+      `,
+      errors: [lintError('index')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+function at(buffer, compute) {
+  var index: number = compute();
+  var index = 'key1';
+  return buffer[assertSafe(index)];
+}
+      `,
+    },
+    {
+      // Issue #1713 meets issue #1712 from the other side: an assertion at the
+      // key position never launders an unproven binding, whatever it names.
+      name: 'an unproven binding stays reported under a number-asserted key',
+      code: `
+const at = (buffer, compute) => {
+  const index = compute();
+  return buffer[index as number];
+};
+      `,
+      errors: [lintError('index as number')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const at = (buffer, compute) => {
+  const index = compute();
+  return buffer[assertSafe(index as number)];
+};
       `,
     },
     {
