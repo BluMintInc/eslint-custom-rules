@@ -213,11 +213,12 @@ export const buildVariableRenameFixes = ({
   );
 
   // An exported symbol is a cross-file contract whose importers a single-file
-  // fixer cannot reach. Rewriting the local use sites alone still renames the
-  // export and breaks every importer, so decline. (A bare exported declaration
-  // with no other in-file reference keeps the rename: there is nothing to
-  // orphan locally, matching the established behavior in `global-const-style`.)
-  if (references.length > 0 && isExportedDeclaration(declarationId)) {
+  // fixer cannot reach. Renaming the declaration breaks every importer, so
+  // decline. (The hazard lives entirely in those other files, so it does not
+  // depend on whether the declaring file also uses the name: a bare
+  // `export const` with no in-file reference is the most exposed shape, not the
+  // safest one. `global-const-style` withholds its rename on the same grounds.)
+  if (isExportedDeclaration(declarationId)) {
     return null;
   }
 

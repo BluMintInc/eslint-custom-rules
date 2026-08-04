@@ -345,8 +345,8 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
       output: null,
     },
 
-    // A bare exported declaration has no in-file use site to orphan, so the
-    // rename still applies (annotation intact).
+    // A bare exported declaration is the most exposed shape, not the safest:
+    // its importers all spell the name in files this fixer cannot reach.
     {
       code: 'export const Content: ReactNode = null;',
       errors: [
@@ -358,7 +358,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
           },
         },
       ],
-      output: 'export const content: ReactNode = null;',
+      output: null,
     },
 
     // A re-export specifier binds the public export name to this identifier;
@@ -391,6 +391,19 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
         },
       ],
       output: 'export function render(child: ReactNode) { return child; }',
+    },
+
+    // The non-exported twin of the bare `export const` above still renames:
+    // the guard is scoped to the export contract, not blanket.
+    {
+      code: 'const Content: ReactNode = null;',
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: { type: 'ReactNode', suggestion: 'content' },
+        },
+      ],
+      output: 'const content: ReactNode = null;',
     },
 
     // Invalid uppercase names for ReactNode
