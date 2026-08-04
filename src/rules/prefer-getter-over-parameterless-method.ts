@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type OptionShape = {
@@ -208,6 +208,323 @@ function hasOverloadSignatures(node: MethodLikeDefinition): boolean {
 
     return !hasBody && key.name === targetName;
   });
+}
+
+type ClassLikeNode = TSESTree.ClassDeclaration | TSESTree.ClassExpression;
+
+/**
+ * Member names a class inherits an obligation for, split by the side of the
+ * class they live on: an `implements` clause constrains only the instance side,
+ * while `extends` constrains both. `resolved` goes false as soon as any part of
+ * the contract chain leaves the file (an imported/global/qualified reference, a
+ * mixin call, a mapped or conditional type), because the members of that part
+ * are unknowable from a single file.
+ */
+type ContractMembers = {
+  instance: Set<string>;
+  staticSide: Set<string>;
+  resolved: boolean;
+};
+
+type HeritageContract =
+  | { status: 'none' }
+  | { status: 'unresolvable' }
+  | { status: 'resolved'; members: ContractMembers };
+
+function getClassOf(node: MethodLikeDefinition): ClassLikeNode | null {
+  const classBody = node.parent;
+  if (!classBody || classBody.type !== AST_NODE_TYPES.ClassBody) {
+    return null;
+  }
+
+  const classNode = classBody.parent;
+  if (
+    classNode &&
+    (classNode.type === AST_NODE_TYPES.ClassDeclaration ||
+      classNode.type === AST_NODE_TYPES.ClassExpression)
+  ) {
+    return classNode;
+  }
+
+  return null;
+}
+
+/**
+ * A member typed as a function is as binding as a method signature: a getter
+ * returning the function's *result* is not assignable to the function type, so
+ * such a member is a contract match too.
+ */
+function isFunctionTypeNode(node: TSESTree.Node | undefined | null): boolean {
+  if (!node) return false;
+
+  switch (node.type) {
+    case AST_NODE_TYPES.TSFunctionType:
+    case AST_NODE_TYPES.TSConstructorType:
+      return true;
+    case AST_NODE_TYPES.TSUnionType:
+    case AST_NODE_TYPES.TSIntersectionType:
+      return node.types.some(isFunctionTypeNode);
+    default:
+      return false;
+  }
+}
+
+function knownMemberName(
+  key: TSESTree.Node | undefined,
+  computed: boolean | undefined,
+): string | null {
+  if (!key || computed) return null;
+  if (key.type === AST_NODE_TYPES.Identifier) return key.name;
+  if (key.type === AST_NODE_TYPES.Literal && typeof key.value === 'string') {
+    return key.value;
+  }
+  return null;
+}
+
+function findVariableInScopeChain(
+  scope: TSESLint.Scope.Scope | null,
+  name: string,
+): TSESLint.Scope.Variable | null {
+  let current = scope;
+  while (current) {
+    const variable = current.variables.find((entry) => entry.name === name);
+    if (variable) {
+      return variable;
+    }
+    current = current.upper;
+  }
+  return null;
+}
+
+function collectTypeElementMembers(
+  elements: TSESTree.TypeElement[],
+  out: ContractMembers,
+) {
+  for (const element of elements) {
+    if (element.type === AST_NODE_TYPES.TSMethodSignature) {
+      // A `get`/`set` signature already describes property access, so a getter
+      // implementation satisfies it — only call signatures bind.
+      if (element.kind === 'get' || element.kind === 'set') continue;
+      const name = knownMemberName(element.key, element.computed);
+      if (name) out.instance.add(name);
+      continue;
+    }
+
+    if (
+      element.type === AST_NODE_TYPES.TSPropertySignature &&
+      isFunctionTypeNode(element.typeAnnotation?.typeAnnotation)
+    ) {
+      const name = knownMemberName(element.key, element.computed);
+      if (name) out.instance.add(name);
+    }
+  }
+}
+
+function collectClassContractMembers(
+  classNode: ClassLikeNode,
+  out: ContractMembers,
+) {
+  for (const member of classNode.body.body) {
+    if (member.type === AST_NODE_TYPES.StaticBlock) continue;
+
+    const isStatic = (member as { static?: boolean }).static ?? false;
+    const target = isStatic ? out.staticSide : out.instance;
+
+    if (
+      member.type === AST_NODE_TYPES.MethodDefinition ||
+      member.type === AST_NODE_TYPES.TSAbstractMethodDefinition
+    ) {
+      if (member.kind !== 'method') continue;
+      const name = knownMemberName(member.key, member.computed);
+      if (name) target.add(name);
+      continue;
+    }
+
+    if (
+      (member.type === AST_NODE_TYPES.PropertyDefinition ||
+        member.type === AST_NODE_TYPES.TSAbstractPropertyDefinition) &&
+      isFunctionTypeNode(member.typeAnnotation?.typeAnnotation)
+    ) {
+      const name = knownMemberName(member.key, member.computed);
+      if (name) target.add(name);
+    }
+  }
+}
+
+function collectContractFromName(
+  name: string,
+  scope: TSESLint.Scope.Scope | null,
+  seen: Set<string>,
+  out: ContractMembers,
+) {
+  if (seen.has(name)) return;
+  seen.add(name);
+
+  const variable = findVariableInScopeChain(scope, name);
+  // No binding at all (a global/ambient type) or a binding with no declaration
+  // node (a lib type) leaves the contract unknowable from this file.
+  if (!variable || variable.defs.length === 0) {
+    out.resolved = false;
+    return;
+  }
+
+  for (const def of variable.defs) {
+    const declaration = def.node;
+    switch (declaration.type) {
+      case AST_NODE_TYPES.TSInterfaceDeclaration:
+        collectContractFromInterface(declaration, scope, seen, out);
+        break;
+      case AST_NODE_TYPES.TSTypeAliasDeclaration:
+        collectContractFromTypeNode(
+          declaration.typeAnnotation,
+          scope,
+          seen,
+          out,
+        );
+        break;
+      case AST_NODE_TYPES.ClassDeclaration:
+      case AST_NODE_TYPES.ClassExpression:
+        collectContractFromClass(declaration, scope, seen, out);
+        break;
+      default:
+        // An import binding, an enum, a value — nothing whose members this file
+        // can enumerate.
+        out.resolved = false;
+    }
+  }
+}
+
+function collectContractFromHeritage(
+  heritage: TSESTree.TSClassImplements | TSESTree.TSInterfaceHeritage,
+  scope: TSESLint.Scope.Scope | null,
+  seen: Set<string>,
+  out: ContractMembers,
+) {
+  // A qualified reference (`ns.Type`) names a declaration this lookup cannot
+  // reach, so the contract stays unresolved.
+  if (heritage.expression.type !== AST_NODE_TYPES.Identifier) {
+    out.resolved = false;
+    return;
+  }
+  collectContractFromName(heritage.expression.name, scope, seen, out);
+}
+
+function collectContractFromInterface(
+  declaration: TSESTree.TSInterfaceDeclaration,
+  scope: TSESLint.Scope.Scope | null,
+  seen: Set<string>,
+  out: ContractMembers,
+) {
+  collectTypeElementMembers(declaration.body.body, out);
+
+  for (const heritage of [
+    ...(declaration.extends ?? []),
+    ...(declaration.implements ?? []),
+  ]) {
+    collectContractFromHeritage(heritage, scope, seen, out);
+  }
+}
+
+function collectContractFromClass(
+  declaration: ClassLikeNode,
+  scope: TSESLint.Scope.Scope | null,
+  seen: Set<string>,
+  out: ContractMembers,
+) {
+  collectClassContractMembers(declaration, out);
+
+  if (declaration.superClass) {
+    if (declaration.superClass.type === AST_NODE_TYPES.Identifier) {
+      collectContractFromName(declaration.superClass.name, scope, seen, out);
+    } else {
+      // A mixin call or member expression base class: unknowable members.
+      out.resolved = false;
+    }
+  }
+
+  for (const heritage of declaration.implements ?? []) {
+    collectContractFromHeritage(heritage, scope, seen, out);
+  }
+}
+
+function collectContractFromTypeNode(
+  typeNode: TSESTree.TypeNode,
+  scope: TSESLint.Scope.Scope | null,
+  seen: Set<string>,
+  out: ContractMembers,
+) {
+  switch (typeNode.type) {
+    case AST_NODE_TYPES.TSTypeLiteral:
+      collectTypeElementMembers(typeNode.members, out);
+      return;
+    case AST_NODE_TYPES.TSIntersectionType:
+      for (const part of typeNode.types) {
+        collectContractFromTypeNode(part, scope, seen, out);
+      }
+      return;
+    case AST_NODE_TYPES.TSTypeReference:
+      if (typeNode.typeName.type === AST_NODE_TYPES.Identifier) {
+        collectContractFromName(typeNode.typeName.name, scope, seen, out);
+        return;
+      }
+      out.resolved = false;
+      return;
+    default:
+      // Mapped, conditional, indexed-access and utility-type shapes describe
+      // members this rule cannot enumerate syntactically.
+      out.resolved = false;
+  }
+}
+
+/**
+ * Resolves what the class's `extends`/`implements` clauses oblige its members
+ * to look like, using only declarations visible in the file being linted.
+ */
+function resolveHeritageContract(
+  classNode: ClassLikeNode,
+  scope: TSESLint.Scope.Scope | null,
+): HeritageContract {
+  const heritageNames: string[] = [];
+  let hasOpaqueHeritage = false;
+
+  if (classNode.superClass) {
+    if (classNode.superClass.type === AST_NODE_TYPES.Identifier) {
+      heritageNames.push(classNode.superClass.name);
+    } else {
+      hasOpaqueHeritage = true;
+    }
+  }
+
+  for (const implemented of classNode.implements ?? []) {
+    if (implemented.expression.type === AST_NODE_TYPES.Identifier) {
+      heritageNames.push(implemented.expression.name);
+    } else {
+      hasOpaqueHeritage = true;
+    }
+  }
+
+  if (!heritageNames.length && !hasOpaqueHeritage) {
+    return { status: 'none' };
+  }
+
+  if (hasOpaqueHeritage) {
+    return { status: 'unresolvable' };
+  }
+
+  const members: ContractMembers = {
+    instance: new Set<string>(),
+    staticSide: new Set<string>(),
+    resolved: true,
+  };
+  const seen = new Set<string>();
+
+  for (const name of heritageNames) {
+    collectContractFromName(name, scope, seen, members);
+  }
+
+  return members.resolved
+    ? { status: 'resolved', members }
+    : { status: 'unresolvable' };
 }
 
 export const preferGetterOverParameterlessMethod = createRule<
@@ -763,6 +1080,39 @@ export const preferGetterOverParameterlessMethod = createRule<
       }
     }
 
+    const heritageContracts = new WeakMap<TSESTree.Node, HeritageContract>();
+
+    /**
+     * A method that satisfies an `implements` clause or overrides a base-class
+     * member cannot become a getter: the heritage type declares a *method*, so
+     * the conversion the rule prescribes is a TS2416/TS2417 compile error. When
+     * every heritage reference resolves in-file the exemption is per method —
+     * only names the contract declares are spared. When any reference leaves
+     * the file (an import, a global, a third-party `.d.ts`, a mixin call) the
+     * contract's members are unknowable, so no method of that class can be
+     * proven safe and the whole class is spared: a false negative is preferable
+     * to prescribing a remedy that does not compile.
+     */
+    function isConstrainedByHeritage(node: MethodLikeDefinition): boolean {
+      const classNode = getClassOf(node);
+      if (!classNode) return false;
+
+      let contract = heritageContracts.get(classNode);
+      if (!contract) {
+        contract = resolveHeritageContract(classNode, context.getScope());
+        heritageContracts.set(classNode, contract);
+      }
+
+      if (contract.status === 'none') return false;
+      if (contract.status === 'unresolvable') return true;
+
+      const name = (node.key as TSESTree.Identifier).name;
+      const isStatic = (node as { static?: boolean }).static ?? false;
+      return isStatic
+        ? contract.members.staticSide.has(name)
+        : contract.members.instance.has(name);
+    }
+
     const callUsedNamesByClass = new WeakMap<TSESTree.ClassBody, Set<string>>();
     const callUsedNamesInFile = new Set<string>();
     const candidates: Array<{
@@ -839,6 +1189,7 @@ export const preferGetterOverParameterlessMethod = createRule<
         }
         if ((node as unknown as { override?: boolean }).override) return;
         if (!node.value.body) return;
+        if (isConstrainedByHeritage(node)) return;
 
         const name = node.key.name;
         if (ignoredMethods.has(name)) return;

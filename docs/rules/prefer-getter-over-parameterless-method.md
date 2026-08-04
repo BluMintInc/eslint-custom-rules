@@ -23,6 +23,30 @@ The fixer is also withheld when mutations are detected (assignments, `delete`, `
 
 Implementations that accompany overload signatures are skipped entirely because getters cannot have overload declarations; leaving those signatures in place would produce invalid TypeScript.
 
+### Methods bound by a heritage clause
+
+A method that satisfies an `implements` clause or overrides a base-class member cannot become a getter: the heritage type declares a *method*, so the conversion is a `TS2416`/`TS2417` compile error (`Type 'number' is not assignable to type '() => number'`). The rule therefore never reports such a method:
+
+```ts
+export interface Countable {
+  count(): number;
+}
+
+export class Counter implements Countable {
+  public count(): number {
+    return 1;
+  }
+}
+```
+
+The exemption is resolved from the file under lint alone, and its breadth depends on how much of the contract that file can see:
+
+- **Every heritage reference resolves in-file** — the skip is per method. The rule walks each `implements`/`extends` reference to its same-file declaration (interface, type alias to a type literal or intersection, or class), follows those declarations' own `extends`/`implements` chains, and spares only the methods whose names the contract declares. A method the class invents itself still reports. A contract member declared as a method binds, and so does one typed as a function (`handler: () => number`), because a getter returning that function's result is not assignable to the function type. An `implements` clause constrains only the instance side, so a `static` method sharing a contract member's name still reports.
+- **Any heritage reference leaves the file** — an imported or global type, a third-party `.d.ts`, a qualified name (`ns.Contract`), a utility type (`Pick<Full, 'data'>`), or a mixin base (`extends withLogging(Base)`) — the contract's members are unknowable, so no method of that class can be proven convertible and every method of the class is skipped. Reporting them would prescribe a remedy that does not compile and, for a third-party contract, one the developer cannot apply at all.
+- **No heritage clause at all** — the class is analyzed exactly as before.
+
+This subsumes the abstract case: a concrete method implementing an abstract member declared by a same-file base class is contract-bound (however many links up the `extends` chain the declaration sits), so it is skipped too. The `ignoreAbstract` option covers only the abstract *declaration* itself.
+
 ### Default Options
 
 ```json
@@ -73,7 +97,7 @@ Implementations that accompany overload signatures are skipped entirely because 
 - `factoryMethods` (string[]): builder/factory terminal method names that are exempt (never converted), because they are imperative actions whose external callers would break as getters. Default `['build', 'create', 'make']`. (Independently, a parameterless method whose body can `throw` at the top level is always exempt — a getter must be a pure, non-throwing property read.)
 - `ignoreAsync` (boolean): skip `async` methods. Default `true`.
 - `ignoreVoidReturn` (boolean): skip methods that only return `void`/`undefined`. Default `true`. Explicit `void`/`undefined` return types are always treated as non-value-returning and are not auto-fixed.
-- `ignoreAbstract` (boolean): skip abstract methods. Default `true`.
+- `ignoreAbstract` (boolean): skip abstract method declarations. Default `true`. Concrete implementations of an abstract member are exempt regardless of this option, under the heritage-clause rule above.
 - `respectJsDocSideEffects` (boolean): skip methods when the JSDoc block mentions side effects or mutation (including `@sideEffect`/`@mutates` tags and side-effect phrases anywhere in the block, @returns included). Default `true`.
 - `minBodyLines` (number): require at least this many body lines before reporting. Default `0`.
 
