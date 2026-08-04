@@ -325,12 +325,13 @@ export const EXEMPTION_DESTROYED_BASELINE: Record<string, string> = {
 
   // --- `no-explicit-return-type` deletes the return annotation that another
   // rule reads as its exemption carrier. The dominant shape on this axis: 6 of
-  // the 12 findings that opened it (#1595, #1596) were this, and both below are
-  // further instances. Open question is the same each time: should the fixer
-  // decline when the annotation is load-bearing for another rule, or should the
-  // reader infer from the body instead of falling back to a name heuristic?
-  'no-explicit-return-type -> enforce-boolean-naming-prefixes':
-    "stripping a callee's non-boolean return annotation collapses the callee-return-type exemption, so a boolean-ish callee name drives a missingBooleanPrefix report on the assigned variable (#1691)",
+  // the 12 findings that opened it (#1595, #1596) were this, and the entry
+  // below is a further instance. The open question is the same each time:
+  // should the fixer decline when the annotation is load-bearing for another
+  // rule, or should the reader infer from the body instead of falling back to a
+  // name heuristic? `enforce-boolean-naming-prefixes` answers it on the reader
+  // side (#1691): it classifies a callee's returns from the body, so no
+  // annotation has to survive for its exemption to hold.
   'no-explicit-return-type -> enforce-positive-naming':
     "stripping a validator's `string | true` return annotation leaves an opaque body, so the negatively-named validator is read as a boolean predicate and reported (#1692)",
 };

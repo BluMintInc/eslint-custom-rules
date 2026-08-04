@@ -235,6 +235,23 @@ The declaration is consulted only to *suppress* a report, never to create one, a
 - Callees you import from another module, receive as parameters, or never declare in the file stay under the name heuristic, so cross-module predicates such as `const completed = isTaskFinished();` remain flagged.
 - Return shapes that are not conclusively boolean also suppress the report, because the rule prefers false negatives over false positives. This covers unions such as `boolean | Verdict`, bodies whose branches mix booleans and objects, named return types (a `type Flag = boolean` alias reads as non-boolean), and `async`/generator callees, whose calls yield a promise or an iterator rather than the boolean produced inside the body.
 - Boolean contracts still count as boolean: an explicit `: boolean` return type, a type predicate (`value is string`), comparisons, negations, and ternaries between boolean literals.
+- A return type annotation is not required for the suppression — the body carries it on its own, so removing the annotation (as `no-explicit-return-type` does) changes nothing. A callee that returns a binding this rule already governs is read as non-boolean, because under the rule's own regime a boolean variable and a boolean-returning function both carry an approved prefix:
+
+```ts
+// Not flagged — `id` carries no boolean prefix, so the return is not a boolean.
+function shouldLabel(id: string) { return id; }
+const label = shouldLabel('a');
+
+// Not flagged — `compute` carries no boolean prefix, so its result is not a boolean.
+function shouldThing(x: string) { return compute(x); }
+const thing = shouldThing('a');
+
+// Still flagged — the body demonstrably returns a boolean.
+function shouldRun(x: number) { return x > 0; }
+const run = shouldRun(1); // → rename to shouldRun / isRunning
+```
+
+  Property reads are the exception: property names are only enforced under [`enforceForPropertySignatures`](#enforceforpropertysignatures), so an unprefixed property may legitimately hold a boolean and the callee's name keeps its say (`function canRead(source: { flag: unknown }) { return source.flag; }` leaves `const readOutcome = canRead(input);` flagged).
 
 #### Private/Internal Properties with Underscore Prefix
 
