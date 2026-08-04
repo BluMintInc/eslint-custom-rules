@@ -1,3 +1,10 @@
+## [1.20.100](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.99...v1.20.100) (2026-08-04)
+
+
+### Bug Fixes
+
+* **global-const-style:** withhold the rename for every exported declaration (closes [#1700](https://github.com/BluMintInc/eslint-custom-rules/issues/1700)) ([e2909cc](https://github.com/BluMintInc/eslint-custom-rules/commit/e2909ccc367b74a8f649e1e77d7706078f20ffe5))
+
 ## [1.20.99](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.98...v1.20.99) (2026-08-04)
 
 
