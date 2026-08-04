@@ -29,6 +29,27 @@ const SRC_TIER_SEGMENT = '/src/';
  */
 const ALIASED_QUERY_KEYS_MODULE = '@/util/routing/queryKeys';
 
+/**
+ * queryKeys.ts is also reachable through the constants barrel, which
+ * `prefer-global-router-state-key` accepts as an approved re-export
+ * (prefer-global-router-state-key.ts:139-143) and whose messages advertise it.
+ * Both rules police the same `useRouterState` key and both ship as `error` in
+ * the recommended config, so a source one of them blesses must not be the
+ * other's violation (#1714).
+ */
+const APPROVED_REEXPORT_SOURCES = new Set(['constants', 'constants/index']);
+
+/**
+ * Reduce a specifier to the module it names, dropping the roots that are all
+ * spellings of the same location: the `@/` and `src/` aliases, and any run of
+ * relative steps. Mirrors the sibling's normalization
+ * (prefer-global-router-state-key.ts:149-151) so `src/constants` and
+ * `../constants` are recognized as the same approved re-export that `constants`
+ * is.
+ */
+const normalizeSpecifier = (source: string) =>
+  source.replace(/^@\/|^src\//, '').replace(/^(\.\/|\.\.\/)+/, '');
+
 const toPosixPath = (filePath: string) => filePath.replace(/\\/g, '/');
 
 const ensureRelativeSpecifier = (specifier: string) =>
@@ -155,8 +176,6 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
       QUERY_KEYS_MODULE,
     ]);
 
-    const allowedQueryKeyFactories = new Set(['makeQueryKey', 'getQueryKey']);
-
     const sourceCode = context.getSourceCode();
 
     /**
@@ -198,6 +217,18 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
       if (
         validQueryKeySources.has(source) ||
         source.endsWith(`/${QUERY_KEYS_SUFFIX}`)
+      ) {
+        return true;
+      }
+
+      // The approved re-export and the root-relative spelling of the module
+      // itself are recognized under every alias of their root, which is what the
+      // sibling rule accepts; recognizing less makes its advertised remedy this
+      // rule's violation (#1714).
+      const normalized = normalizeSpecifier(source);
+      if (
+        APPROVED_REEXPORT_SOURCES.has(normalized) ||
+        normalized === QUERY_KEYS_SUFFIX
       ) {
         return true;
       }
@@ -565,20 +596,14 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
         );
       }
 
-      // Allow function calls that might return query keys
+      // A call's return value is opaque to a syntactic check, so every call is
+      // allowed rather than guessed at — the position
+      // `prefer-global-router-state-key` takes and documents. Enumerating
+      // factory names instead reported whichever spelling the enumeration
+      // missed, including the `buildQueryKey` of the sibling's own documented
+      // remedy (#1714).
       if (node.type === AST_NODE_TYPES.CallExpression) {
-        const callee = node.callee;
-        if (callee.type === AST_NODE_TYPES.Identifier) {
-          return allowedQueryKeyFactories.has(callee.name);
-        }
-        if (
-          callee.type === AST_NODE_TYPES.MemberExpression &&
-          !callee.computed &&
-          callee.property.type === AST_NODE_TYPES.Identifier
-        ) {
-          return allowedQueryKeyFactories.has(callee.property.name);
-        }
-        return false;
+        return true;
       }
 
       return false;
