@@ -29,6 +29,18 @@ lines it happens to touch:
   it, such as a `for (const mockFirestore of …)` head, is reported without an
   autofix instead of being cut anyway.
 
+The injected import is placed below whatever opens the file, and the text above
+it is emitted exactly once:
+
+- A `'use client'` / `'use server'` directive stays the first statement, so the
+  file keeps the meaning the directive gives it.
+- A `#!` shebang stays at character 0, so the file keeps parsing.
+- A header comment — a license block, a `@ts-nocheck`, an `eslint-disable`
+  block — keeps leading the file, and the import goes below it.
+- A suppression bound to the line under it, such as
+  `eslint-disable-next-line`, is never split from its subject by the import.
+- An existing import block is where the new import joins.
+
 ### Examples of **incorrect** code for this rule:
 
 ```js

@@ -131,7 +131,6 @@ beforeEach(() => { mocks.mockFirestore({}); });`,
         output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
-
         beforeEach(() => {
           mockFirestore({
             'some/path': [{ id: 'test' }],
@@ -153,7 +152,6 @@ beforeEach(() => { mocks.mockFirestore({}); });`,
         errors: [ERROR],
         output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
-
 
         beforeEach(() => {
           mockFirestore({
@@ -177,7 +175,6 @@ beforeEach(() => { mocks.mockFirestore({}); });`,
         errors: [ERROR],
         output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
-
         const myMockFirestore = jest.fn();
 
         beforeEach(() => {
@@ -202,7 +199,6 @@ beforeEach(() => { mocks.mockFirestore({}); });`,
         output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
-
         beforeEach(() => {
           mockFirestore({
             'some/path': [{ id: 'test' }],
@@ -226,7 +222,6 @@ beforeEach(() => { mocks.mockFirestore({}); });`,
         errors: [ERROR],
         output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
-
         class TestClass {
 
           beforeEach() {
@@ -254,7 +249,6 @@ beforeEach(() => { mocks.mockFirestore({}); });`,
         output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
-
         describe('test suite', () => {
           beforeEach(() => {
             mockFirestore({
@@ -280,7 +274,6 @@ beforeEach(() => { mocks.mockFirestore({}); });`,
         errors: [ERROR],
         output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
-
         async function setupTests() {
 
           beforeEach(() => {
@@ -309,7 +302,6 @@ beforeEach(() => { mocks.mockFirestore({}); });`,
         errors: [ERROR],
         output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
-
         const mockFirestore1 = jest.fn();
         const mockFirestore2 = jest.fn();
 
@@ -344,7 +336,6 @@ beforeEach(() => { mocks.mockFirestore({}); });`,
         errors: [ERROR],
         output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
-
 
         describe('test suite', () => {
           beforeEach(() => {
@@ -638,6 +629,154 @@ namespace Mocks {
 beforeEach(() => { mockFirestore({}); });`,
         errors: [ERROR],
         output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+beforeEach(() => { mockFirestore({}); });`,
+      },
+
+      // ---------------------------------------------------------------------
+      // The import lands below whatever opens the file, and the text above it
+      // is emitted exactly once. A duplicated header, a demoted directive or a
+      // displaced shebang all change what the file means.
+      // ---------------------------------------------------------------------
+
+      // A leading line comment survives once, with the import below it
+      {
+        code: `// header comment
+const mockFirestore = jest.fn();
+beforeEach(() => {
+  mockFirestore({ 'some/path': [{ id: 'test' }] });
+});`,
+        errors: [ERROR],
+        output: `// header comment
+import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+beforeEach(() => {
+  mockFirestore({ 'some/path': [{ id: 'test' }] });
+});`,
+      },
+      // A license header block comment is emitted once
+      {
+        code: `/**
+ * Copyright (c) BluMint.
+ */
+const mockFirestore = jest.fn();
+beforeEach(() => { mockFirestore({}); });`,
+        errors: [ERROR],
+        output: `/**
+ * Copyright (c) BluMint.
+ */
+import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+beforeEach(() => { mockFirestore({}); });`,
+      },
+      // A leading @ts-nocheck keeps governing the file: it only does so while
+      // it leads, so the injected import goes below it
+      {
+        code: `// @ts-nocheck
+const mockFirestore = jest.fn();
+beforeEach(() => { mockFirestore({}); });`,
+        errors: [ERROR],
+        output: `// @ts-nocheck
+import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+beforeEach(() => { mockFirestore({}); });`,
+      },
+      // A 'use client' directive stays the first statement, or the file stops
+      // being a client component
+      {
+        code: `'use client';
+const mockFirestore = jest.fn();
+beforeEach(() => { mockFirestore({ 'some/path': [{ id: 'test' }] }); });`,
+        errors: [ERROR],
+        output: `'use client';
+import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+beforeEach(() => { mockFirestore({ 'some/path': [{ id: 'test' }] }); });`,
+      },
+      // ...and so does 'use server'
+      {
+        code: `'use server';
+const mockFirestore = jest.fn();
+beforeEach(() => { mockFirestore({}); });`,
+        errors: [ERROR],
+        output: `'use server';
+import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+beforeEach(() => { mockFirestore({}); });`,
+      },
+      // A directive above the file's only statement
+      {
+        code: `'use client';
+const mockFirestore = jest.fn();`,
+        errors: [ERROR],
+        output: `'use client';
+import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+`,
+      },
+      // A shebang must stay at character 0 or the file stops parsing
+      {
+        code: `#!/usr/bin/env node
+const mockFirestore = jest.fn();
+beforeEach(() => { mockFirestore({}); });`,
+        errors: [ERROR],
+        output: `#!/usr/bin/env node
+import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+beforeEach(() => { mockFirestore({}); });`,
+      },
+      // An existing import block is where the new import joins
+      {
+        code: `import { buildFixture } from './fixtures';
+
+const mockFirestore = jest.fn();
+beforeEach(() => { mockFirestore(buildFixture()); });`,
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+import { buildFixture } from './fixtures';
+
+beforeEach(() => { mockFirestore(buildFixture()); });`,
+      },
+      // ...below the trivia that leads the file, not above it
+      {
+        code: `// tooling header
+import { buildFixture } from './fixtures';
+const mockFirestore = jest.fn();
+beforeEach(() => { mockFirestore(buildFixture()); });`,
+        errors: [ERROR],
+        output: `// tooling header
+import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+import { buildFixture } from './fixtures';
+beforeEach(() => { mockFirestore(buildFixture()); });`,
+      },
+      // A directive sharing the retired declaration's line: the import cannot
+      // take that line's start without displacing the directive, so it lands
+      // straight after it
+      {
+        code: `'use client'; const mockFirestore = jest.fn();
+beforeEach(() => { mockFirestore({}); });`,
+        errors: [ERROR],
+        output: `'use client';
+import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+
+beforeEach(() => { mockFirestore({}); });`,
+      },
+      // An indented file whose anchor is the retired declaration: the import
+      // takes over the indentation the declaration held
+      {
+        code: `
+        const mockFirestore = jest.fn(); const keepMe = 1;
+        beforeEach(() => { mockFirestore({}); use(keepMe); });
+      `,
+        errors: [ERROR],
+        output: `
+        import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+        const keepMe = 1;
+        beforeEach(() => { mockFirestore({}); use(keepMe); });
+      `,
+      },
+      // A suppression bound to the retired declaration's line: the import goes
+      // above it rather than between the directive and the line it covers,
+      // which would silently retarget the suppression at the import
+      {
+        code: `// eslint-disable-next-line no-undef
+const mockFirestore = jest.fn();
+beforeEach(() => { mockFirestore({}); });`,
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+// eslint-disable-next-line no-undef
 beforeEach(() => { mockFirestore({}); });`,
       },
     ],
