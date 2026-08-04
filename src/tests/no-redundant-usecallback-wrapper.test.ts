@@ -347,6 +347,59 @@ function C() {
       { memoizedHookNames: string[] },
     ],
   },
+  // A wrapper that sequences a second call is not redundant: the delegate alone
+  // does not perform it, so collapsing the wrapper would drop it.
+  {
+    code: `import { useCallback } from 'react';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const onClick = useCallback(() => {
+    signIn();
+    setOpen(true);
+  }, [signIn]);
+  return <button onClick={onClick}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+  },
+  // The same holds when the delegate is returned rather than called for effect.
+  {
+    code: `import { useCallback } from 'react';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const onClick = useCallback(() => {
+    track('click');
+    return signIn();
+  }, [signIn]);
+  return <button onClick={onClick}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+  },
+  // A trailing statement after the delegate is unreachable but still text the
+  // fix would delete, so the wrapper stays untouched.
+  {
+    code: `import { useCallback } from 'react';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const onClick = useCallback(() => {
+    return signIn();
+    console.log('unreachable');
+  }, [signIn]);
+  return <button onClick={onClick}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+  },
 ];
 
 const invalid = [

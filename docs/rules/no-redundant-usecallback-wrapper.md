@@ -148,4 +148,5 @@ Where safe, the rule removes the redundant `useCallback` wrapper and passes the 
 - Allows substantial logic in wrappers.
 - Allows wrappers that transform parameters or supply arguments.
 - Allows wrappers that call `preventDefault`, `stopPropagation` or `stopImmediatePropagation`: passing the memoized callback directly drops the suppression call and hands the event to a callback that took no arguments, so the wrapper is doing work.
+- Allows a wrapper whose body sequences a second statement: the memoized callback alone does not perform it, so collapsing the wrapper would drop it.
 - Detects object member calls from hook results and avoids unsafe auto-fixes.
