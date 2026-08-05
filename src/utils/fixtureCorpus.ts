@@ -1,6 +1,10 @@
 import fs from 'fs';
 import path from 'path';
-import { harvestRuleTesterCases } from './harvestRuleTesterCases';
+import { Linter } from 'eslint';
+import {
+  harvestRuleTesterCases,
+  HarvestResult,
+} from './harvestRuleTesterCases';
 
 /**
  * The fixture corpus every fixer guard probes, keyed by RULE NAME.
@@ -20,10 +24,30 @@ import { harvestRuleTesterCases } from './harvestRuleTesterCases';
  */
 
 /* eslint-disable @typescript-eslint/no-var-requires */
-const plugin = require('../index') as { rules: Record<string, unknown> };
+const plugin = require('../index') as {
+  rules: Record<string, { meta?: { hasSuggestions?: boolean } }>;
+};
 /* eslint-enable @typescript-eslint/no-var-requires */
 
 const RULES_DIR = path.join(__dirname, '..', 'rules');
+
+let rawHarvest: HarvestResult | null = null;
+
+/**
+ * The one harvest a module registry gets.
+ *
+ * A second `harvestRuleTesterCases()` call in the same registry returns ZERO
+ * suites: the suite files are already in the require cache, so requiring them
+ * again re-executes nothing and their `run` calls never fire, while
+ * `filesLoaded` still counts every file. A guard that harvests twice therefore
+ * runs its second corpus over nothing and reports a clean sweep. Every consumer
+ * — including one that wants both the raw suites and the adapted corpus below —
+ * goes through this.
+ */
+export function harvestOnce(): HarvestResult {
+  if (!rawHarvest) rawHarvest = harvestRuleTesterCases();
+  return rawHarvest;
+}
 
 /**
  * Which array a snippet came out of. A fixer must converge, type-check and
@@ -178,6 +202,72 @@ export const parserOptionsFor = (testCase: FixtureCase) => {
   };
 };
 
+/**
+ * Rules that offer suggestions. `--fix` never applies one, so a guard driving
+ * `verifyAndFix` (or reading a fixture's `output`) probes the fix channel
+ * exclusively and every transform these rules emit stays unexamined (#1733).
+ */
+export const suggestionRuleNames = Object.entries(plugin.rules)
+  .filter(([, rule]) => rule?.meta?.hasSuggestions)
+  .map(([name]) => name)
+  .sort();
+
+export type SuggestionEdit = {
+  /** Stable identity within one lint of one source, `<report>:<suggestion>`. */
+  slot: string;
+  /** Which rule offered it, so a multi-rule lint still names the culprit. */
+  ruleId: string;
+  messageId: string;
+  desc: string;
+  /** The source with THIS suggestion applied, and nothing else. */
+  output: string;
+};
+
+const applyEdit = (
+  text: string,
+  fix: { range: readonly number[]; text: string },
+) => text.slice(0, fix.range[0]) + fix.text + text.slice(fix.range[1]);
+
+/**
+ * Every state a user can reach by accepting ONE suggestion from `messages`.
+ *
+ * Three semantics are load-bearing, and each is a way the probe would otherwise
+ * judge a suggestion against a state nobody can produce:
+ *   - ALONE. Each edit lands on the untouched source. Accepting two suggestions
+ *     from one report is not reachable — the first rewrite invalidates the
+ *     second's ranges — and neither is feeding the result back through a fix
+ *     loop, which is what `verifyAndFix` would do.
+ *   - ONE STEP. The output is a single accepted suggestion, not a fixed point.
+ *     A suggestion is an offer, so the contract is progress, not closure.
+ *   - A `fix()` returning `null` is a DECLINE, not a defect. ESLint drops those
+ *     silently before the message is built, so they never arrive here; an edit
+ *     that changes nothing is discarded for the same reason.
+ */
+export function suggestionEditsOf(
+  code: string,
+  messages: readonly Linter.LintMessage[],
+  /** Restricts to one rule; omitted, every reporting rule contributes. */
+  ruleId?: string,
+): SuggestionEdit[] {
+  const edits: SuggestionEdit[] = [];
+  messages.forEach((message, messageIndex) => {
+    if (ruleId && message.ruleId !== ruleId) return;
+    (message.suggestions || []).forEach((suggestion, suggestionIndex) => {
+      if (!suggestion.fix) return;
+      const output = applyEdit(code, suggestion.fix);
+      if (output === code) return;
+      edits.push({
+        slot: `${messageIndex}:${suggestionIndex}`,
+        ruleId: message.ruleId || '',
+        messageId: message.messageId || message.message,
+        desc: suggestion.desc,
+        output,
+      });
+    });
+  });
+  return edits;
+}
+
 /** A case's options must reach the FIX pass, or the finding is a fabrication. */
 export const severityWithOptions = (testCase: FixtureCase) =>
   testCase.options && testCase.options.length
@@ -219,7 +309,7 @@ let cached: FixtureCorpus | null = null;
 export function harvestFixtureCorpus(): FixtureCorpus {
   if (cached) return cached;
 
-  const harvested = harvestRuleTesterCases();
+  const harvested = harvestOnce();
   const byRule = new Map<string, FixtureCase[]>();
   const suitesDropped: string[] = [];
   const suitesNonTs: string[] = [];

@@ -24,6 +24,11 @@
  *   3. Re-lint the output with that rule ALONE. A report that exists only after
  *      the config's autofixes is an exemption the config destroyed.
  *
+ * And, for the channel `--fix` never touches (#1733), the same three steps with
+ * step 2 replaced by ONE accepted suggestion. A suggestion strips a carrier as
+ * effectively as a fixer does, with less recourse: nothing re-runs afterwards,
+ * so the consumer is left holding the destroyed exemption.
+ *
  * Corpus: the suite's own `valid` fixtures, harvested without executing them
  * (see `harvestRuleTesterCases`). They are the right corpus precisely because a
  * `valid` list is written to sit on the rule's carve-out boundaries — which is
@@ -33,7 +38,11 @@ import fs from 'fs';
 import path from 'path';
 import { Linter, Rule } from 'eslint';
 import * as tsParser from '@typescript-eslint/parser';
-import { harvestRuleTesterCases } from '../utils/harvestRuleTesterCases';
+import {
+  harvestOnce,
+  suggestionEditsOf,
+  suggestionRuleNames,
+} from '../utils/fixtureCorpus';
 
 /* eslint-disable @typescript-eslint/no-var-requires */
 const plugin = require('../index') as {
@@ -131,6 +140,73 @@ const controlScreamingRenamer: Rule.RuleModule = {
 };
 linter.defineRule(CONTROL_RENAMER_ID, controlScreamingRenamer);
 
+/**
+ * The same double offered through `suggest`, and its opposite.
+ *
+ * `verifyAndFix` never applies either, so they are reachable only through the
+ * suggestion channel — which is what makes them a statement about that channel
+ * rather than about the fix loop. Both stay out of `FIX_CONFIG` and
+ * `CULPRIT_SUGGESTERS`, so the corpus scan cannot see them.
+ */
+const CONTROL_SUGGESTER_ID = `${PREFIX}control-screaming-suggester`;
+const CONTROL_SAFE_SUGGESTER_ID = `${PREFIX}control-initializer-suggester`;
+
+const suggestingDouble = (
+  edit: (node: any, fixer: any) => unknown,
+): Rule.RuleModule => ({
+  meta: {
+    type: 'suggestion',
+    hasSuggestions: true,
+    schema: [],
+    messages: { report: 'Rewrite "{{name}}".', suggest: 'Rewrite it.' },
+  },
+  create(context) {
+    return {
+      VariableDeclarator(node) {
+        const declaration = node.parent;
+        if (
+          declaration.type !== 'VariableDeclaration' ||
+          declaration.kind !== 'const' ||
+          declaration.parent.type !== 'ExportNamedDeclaration' ||
+          node.id.type !== 'Identifier' ||
+          !/^[a-z][A-Za-z0-9]*$/.test(node.id.name)
+        ) {
+          return;
+        }
+        context.report({
+          node: node.id,
+          messageId: 'report',
+          data: { name: node.id.name },
+          suggest: [
+            {
+              messageId: 'suggest',
+              fix: (fixer) => edit(node, fixer) as never,
+            },
+          ],
+        });
+      },
+    };
+  },
+});
+
+linter.defineRule(
+  CONTROL_SUGGESTER_ID,
+  suggestingDouble((node, fixer) =>
+    fixer.replaceText(
+      node.id,
+      (node.id.name as string)
+        .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+        .toUpperCase(),
+    ),
+  ),
+);
+linter.defineRule(
+  CONTROL_SAFE_SUGGESTER_ID,
+  suggestingDouble((node, fixer) =>
+    fixer.replaceText(node.init, "'https://api.example.test'"),
+  ),
+);
+
 const configFor = (
   rules: Record<string, unknown>,
   parserOptions: unknown,
@@ -167,7 +243,7 @@ for (const [name, rule] of Object.entries(plugin.rules)) {
   ruleNameByIdentity.set(rule, name);
 }
 
-const harvested = harvestRuleTesterCases();
+const harvested = harvestOnce();
 
 /**
  * The JSON and markdown testers parse a different language entirely, so their
@@ -214,6 +290,8 @@ type Finding = {
   victim: string;
   /** Rules individually sufficient to destroy it, or [] if none is alone. */
   culprits: string[];
+  /** Which transform destroyed it; a suggestion is never applied by `--fix`. */
+  channel: 'fix' | 'suggestion';
   messageIds: string[];
   filename: string;
   origin: string;
@@ -227,7 +305,29 @@ const stats = {
   controlSilent: 0,
   rewritten: 0,
   skippedFatal: 0,
+  suggestionsApplied: 0,
 };
+
+/**
+ * The suggestion-bearing rules, offered as culprits.
+ *
+ * Not filtered to `FIX_CONFIG`: two of the seven ship outside the recommended
+ * config, and an editor offers a suggestion from whichever rules the consumer
+ * enabled. Excluding them would leave their transforms unexamined for the sake
+ * of a distinction that does not hold on a consumer's machine.
+ */
+const CULPRIT_SUGGESTERS: Record<string, unknown> = Object.fromEntries(
+  suggestionRuleNames.map((rule) => [PREFIX + rule, 'error']),
+);
+
+/** Per-rule non-vacuity for the suggestion channel; a total would hide a zero. */
+const suggestionApplied = new Map<string, number>(
+  suggestionRuleNames.map((rule) => [rule, 0]),
+);
+/** Separated from `applied`, so "never fired" and "fired, declined" stay apart. */
+const suggestionReported = new Map<string, number>(
+  suggestionRuleNames.map((rule) => [rule, 0]),
+);
 
 const verify = (
   code: string,
@@ -288,6 +388,62 @@ function attributeCulprits(
   return culprits;
 }
 
+/**
+ * The suggestion channel, for one case the victim is silent on.
+ *
+ * Each suggestion is applied ALONE to the untouched fixture: never composed
+ * with a sibling suggestion, and never fed back through `verifyAndFix`. Both
+ * would judge the rule against a state no editor can produce — ESLint hands a
+ * consumer one suggestion at a time and applies none of them itself — and
+ * composing them would also make it impossible to say which one stripped the
+ * carrier. That single application is the whole probe: one step, not a fixed
+ * point.
+ */
+function suggestionFindingsFor(
+  victim: string,
+  testCase: ValidCase,
+  victimSolo: Record<string, unknown>,
+  /** Widened past the shipped rules only by a control, which plants its own. */
+  culprits: Record<string, unknown> = CULPRIT_SUGGESTERS,
+): Finding[] {
+  const offered = verify(testCase.code, culprits, testCase);
+  if (!offered || offered.some((message) => message.fatal)) return [];
+  for (const message of offered) {
+    const rule = (message.ruleId || '').slice(PREFIX.length);
+    if (suggestionReported.has(rule)) {
+      suggestionReported.set(rule, (suggestionReported.get(rule) || 0) + 1);
+    }
+  }
+
+  const findings: Finding[] = [];
+  for (const edit of suggestionEditsOf(testCase.code, offered)) {
+    const culprit = edit.ruleId.slice(PREFIX.length);
+    suggestionApplied.set(culprit, (suggestionApplied.get(culprit) || 0) + 1);
+    stats.suggestionsApplied++;
+    // A rule reporting on its own suggestion's output is convergence, which
+    // `fixer-convergence` owns; this axis is about the OTHER rule's silence.
+    if (culprit === victim) continue;
+
+    const after = verify(edit.output, victimSolo, testCase);
+    if (!after || after.some((message) => message.fatal)) continue;
+    if (after.length === 0) continue;
+    findings.push({
+      victim,
+      // Attribution is direct: exactly one suggestion, from one rule, applied.
+      culprits: [culprit],
+      channel: 'suggestion',
+      messageIds: [
+        ...new Set(after.map((message) => message.messageId ?? '?')),
+      ],
+      filename: testCase.filename,
+      origin: testCase.origin,
+      before: testCase.code,
+      after: edit.output,
+    });
+  }
+  return findings;
+}
+
 function collectFindings(): Finding[] {
   const findings: Finding[] = [];
 
@@ -305,6 +461,8 @@ function collectFindings(): Finding[] {
       // Only a case the rule is genuinely silent on has an exemption to destroy.
       if (before.length > 0) continue;
       stats.controlSilent++;
+
+      findings.push(...suggestionFindingsFor(name, testCase, victimSolo));
 
       /**
        * A case's options must reach the FIX pass too. Applying them only to the
@@ -335,6 +493,7 @@ function collectFindings(): Finding[] {
       findings.push({
         victim: name,
         culprits: attributeCulprits(name, testCase, victimSolo),
+        channel: 'fix',
         messageIds: [
           ...new Set(after.map((message) => message.messageId ?? '?')),
         ],
@@ -350,11 +509,78 @@ function collectFindings(): Finding[] {
 
 const findings = collectFindings();
 
-/** `<culprit> -> <victim>`, matching `FIX_INDUCED_BASELINE`'s key shape. */
-const pairKey = (finding: Finding) =>
-  finding.culprits.length === 1
-    ? `${finding.culprits[0]} -> ${finding.victim}`
-    : `(unattributed) -> ${finding.victim}`;
+/**
+ * Why a rule's suggestions never entered this corpus, derived from the run
+ * rather than asserted by hand so an entry cannot claim a reason the corpus
+ * contradicts.
+ */
+const SUGGESTION_REASONS = {
+  neverReports:
+    'reports on no valid fixture in this corpus, so it offers no suggestion to accept',
+  reportsWithoutSuggestion:
+    'reports on valid fixtures here but attaches no suggestion to those reports',
+} as const;
+
+/**
+ * Suggestion-bearing rules this corpus cannot reach, with the reason the run
+ * itself produces.
+ *
+ * Enforced BOTH ways below: a rule that stops being exercised must be added
+ * here consciously, and an entry that stops reproducing must be deleted. A
+ * one-way list would let a rule go dark under a reason that no longer holds,
+ * which is the hole #1732 records and #1733 repeats for this channel.
+ *
+ * A rule lands here because the substrate is the OTHER rules' `valid` fixtures
+ * — the code a rule promises silence on — and nothing stops these two rules
+ * being exercised elsewhere: `comment-fix-fidelity`, `export-surface-integrity`
+ * and `cjs-emission-closure` all probe their suggestions over their own
+ * fixtures.
+ */
+const UNREACHED_SUGGESTION_CULPRITS: Record<string, string> = {
+  'enforce-dynamic-firebase-imports': SUGGESTION_REASONS.neverReports,
+  'no-excessive-parent-chain': SUGGESTION_REASONS.neverReports,
+};
+
+const observedUnreachedCulprits = Object.fromEntries(
+  suggestionRuleNames
+    .filter((rule) => (suggestionApplied.get(rule) || 0) === 0)
+    .map((rule) => [
+      rule,
+      (suggestionReported.get(rule) || 0) === 0
+        ? SUGGESTION_REASONS.neverReports
+        : SUGGESTION_REASONS.reportsWithoutSuggestion,
+    ]),
+);
+
+/**
+ * Printed per rule with its reason, not merely asserted in aggregate: a rule
+ * contributing nothing reads as "this channel is clean" when the truth may be
+ * that the corpus never reached it.
+ */
+console.log(
+  [
+    `[exemption-composition] suggestion channel: ${stats.suggestionsApplied} ` +
+      `suggestion(s) applied over ${stats.controlSilent} silent fixture(s)`,
+    ...suggestionRuleNames.map(
+      (rule) =>
+        `    ${rule}: ${suggestionApplied.get(rule) || 0} applied, ` +
+        `${suggestionReported.get(rule) || 0} report(s) offered`,
+    ),
+  ].join('\n'),
+);
+
+/**
+ * `<culprit> -> <victim>`, matching `FIX_INDUCED_BASELINE`'s key shape, with the
+ * channel spelled out for a suggestion so one channel's justification can never
+ * be read as covering the other's regression.
+ */
+const pairKey = (finding: Finding) => {
+  const culprit =
+    finding.culprits.length === 1 ? finding.culprits[0] : '(unattributed)';
+  return finding.channel === 'suggestion'
+    ? `${culprit} (suggestion) -> ${finding.victim}`
+    : `${culprit} -> ${finding.victim}`;
+};
 
 /**
  * Exemptions the shipped config destroys today, keyed
@@ -382,7 +608,25 @@ const pairKey = (finding: Finding) =>
  * declines when they yield no verdict, so no annotation has to survive for its
  * exemption to hold. Reach for that before making a fixer decline.
  */
-export const EXEMPTION_DESTROYED_BASELINE: Record<string, string> = {};
+export const EXEMPTION_DESTROYED_BASELINE: Record<string, string> = {
+  /**
+   * The suggestion is deliberately incomplete: it injects a
+   * `__TODO_MEMOIZATION_DEPENDENCIES__` placeholder precisely so a developer
+   * cannot ship an accidental empty dependency array — and a comment-only array
+   * is syntactically empty, which is what `enforce-global-constants` rejects.
+   * The report lives exactly as long as the placeholder does.
+   *
+   * Verified on the fixture that reaches it here
+   * (`enforce-global-constants.test.ts`'s `const { a: a1, b: b1 } = { a, b }`):
+   * with the placeholder, `useGlobalConstant` is reported once; with the real
+   * dependencies `[a, b]` written in, the rule is silent again, as it is on the
+   * untouched fixture. The same contradiction is adjudicated for the same
+   * reason in `recommended-config-fix-closure`'s SUGGESTION_INDUCED_BASELINE
+   * (#1600, #1601); this corpus reaches it from the victim's own carve-out.
+   */
+  'react-memoize-literals (suggestion) -> enforce-global-constants':
+    "the emitted `[/* __TODO_MEMOIZATION_DEPENDENCIES__ */]` is a syntactically empty dependency array until the developer fills it in, which is the suggestion's stated contract; with real dependencies the report disappears (#1601)",
+};
 
 const observedPairs = new Set(findings.map(pairKey));
 
@@ -414,12 +658,13 @@ describe('the recommended config is closed under its own exemptions', () => {
             ].join('\n'),
           ),
           '',
-          'A sibling fixer rewrote away the carrier this rule keys its exemption',
-          'off, so `eslint --fix` turns code the rule promises silence on into a',
-          'violation. Make the fixer preserve the carrier, teach the rule to see',
-          'the rewritten shape, or — if the contradiction needs a product call —',
-          'add the pair to EXEMPTION_DESTROYED_BASELINE with the reason and its',
-          'issue link, referencing #1562.',
+          'A sibling transform rewrote away the carrier this rule keys its',
+          'exemption off, so `eslint --fix` — or a single accepted suggestion,',
+          'after which nothing re-runs at all — turns code the rule promises',
+          'silence on into a violation. Make the transform preserve the carrier,',
+          'teach the rule to see the rewritten shape, or — if the contradiction',
+          'needs a product call — add the pair to EXEMPTION_DESTROYED_BASELINE',
+          'with the reason and its issue link, referencing #1562.',
         ].join('\n'),
       );
     }
@@ -483,6 +728,18 @@ describe('the exemption closure guard is load-bearing', () => {
     expect(stats.rewritten).toBeGreaterThanOrEqual(1500);
   });
 
+  /**
+   * Per-rule floor for the suggestion channel. An aggregate would let one
+   * prolific rule stand in for a rule that stopped emitting entirely, and a
+   * rule with zero applied suggestions was not tested on this channel at all —
+   * which is the state #1733 records for all seven of them.
+   */
+  it('accounts for every suggestion-bearing rule, unreached ones by reason', () => {
+    expect(suggestionRuleNames.length).toBeGreaterThanOrEqual(7);
+    expect(observedUnreachedCulprits).toEqual(UNREACHED_SUGGESTION_CULPRITS);
+    expect(stats.suggestionsApplied).toBeGreaterThanOrEqual(40);
+  });
+
   it('detects a destroyed exemption (positive control)', () => {
     // The #1599 shape — a camelCase constant a `.dynamic` module exports, which
     // the victim rule is silent on until something SCREAMS the name. Its
@@ -533,6 +790,58 @@ describe('the exemption closure guard is load-bearing', () => {
     );
     expect(fixed.output).toContain('apiUrl');
     expect((verify(fixed.output, solo, planted) || []).length).toBe(0);
+  });
+
+  it('detects an exemption destroyed by a SUGGESTION (positive control)', () => {
+    // The same #1599 shape, reached through the channel `--fix` never touches:
+    // the control offers the rename as a suggestion, so `verifyAndFix` leaves
+    // the file untouched and only an accepting consumer sees the destruction.
+    const planted: ValidCase = {
+      code: "export const apiUrl = 'https://api.example.com';\n",
+      filename: 'src/config/settings.dynamic.ts',
+      origin: 'planted control',
+    };
+    const victim = 'no-static-constants-in-dynamic-files';
+    const solo = soloRules(victim, planted);
+
+    expect(verify(planted.code, solo, planted)).toEqual([]);
+    // The fix channel must stay blind to it, or the control proves nothing
+    // about the suggestion channel specifically.
+    const fixed = linter.verifyAndFix(
+      planted.code,
+      configFor({ [CONTROL_SUGGESTER_ID]: 'error' }, planted.parserOptions),
+      { filename: planted.filename },
+    );
+    expect(fixed.output).toBe(planted.code);
+
+    const found = suggestionFindingsFor(victim, planted, solo, {
+      [CONTROL_SUGGESTER_ID]: 'error',
+    });
+    expect(found.map((finding) => pairKey(finding))).toEqual([
+      `${CONTROL_SUGGESTER_ID.slice(PREFIX.length)} (suggestion) -> ${victim}`,
+    ]);
+  });
+
+  it('stays silent when an accepted suggestion preserves it (negative control)', () => {
+    // Same pipeline, same trigger, a suggestion that rewrites the INITIALIZER
+    // and leaves the name alone. A green corpus means nothing if the detector
+    // fires on every rewrite it is handed.
+    const planted: ValidCase = {
+      code: "export const apiUrl = 'https://api.example.com';\n",
+      filename: 'src/config/settings.dynamic.ts',
+      origin: 'planted control',
+    };
+    const victim = 'no-static-constants-in-dynamic-files';
+    const solo = soloRules(victim, planted);
+    const before = stats.suggestionsApplied;
+
+    const found = suggestionFindingsFor(victim, planted, solo, {
+      [CONTROL_SAFE_SUGGESTER_ID]: 'error',
+    });
+    // A control whose suggestion never reached the detector would prove nothing
+    // about either polarity.
+    expect(stats.suggestionsApplied).toBe(before + 1);
+    expect(found).toEqual([]);
   });
 
   it('stays silent when the fix preserves the exemption (negative control)', () => {
