@@ -29,6 +29,25 @@ A mixed query is a breakpoint: `(hover: hover) and (min-width: 600px)` names a l
 
 The rule reads the query from a string literal, from a template literal with no interpolations, and from an in-file `const` binding holding either of those (an `as const` annotation is followed through). An argument it cannot resolve to a string — an imported constant, a function call, a template with interpolations, a reassignable `let` — reports, because nothing proves the query is free of layout. An unrecognized feature reports for the same reason.
 
+### Breakpoints that never reach a style are exempt
+
+The same principle reaches a second axis. A hook such as `useMobile` carries no query at all, so nothing about its argument can prove it free of layout — but its *result* can. When the value a media hook returns never reaches a style, the prescribed fix does not exist: no `@media` rule and no class name can select a Popover's `anchorOrigin`, a Snackbar's anchor position, or a transition's `timeout`.
+
+The rule therefore traces the value from the call to the places it is consumed and exempts the call only when every one of them is a destination CSS cannot express. These are the style destinations — a value reaching any of them keeps reporting, wherever it also goes:
+
+`sx`, `style`, `className`, `classes`, `css` — as a JSX attribute (`sx={{ ... }}`, ``className={`panel ${…}`}``) or as an object property (`const props = { sx: { … } }`).
+
+The trace follows conditionals, template literals, objects and arrays the value is nested in, spreads, `as const`, and any number of intermediate `const` bindings. Everything else is unresolved and therefore reported, because an unseen destination may well be a stylesheet:
+
+- a value returned from the component or hook, or exported;
+- a value assigned to a binding declared outside the function, or held in a `let`;
+- a value passed to a function (`clsx(isMobile && 'stack')` comes back out as a class name);
+- a value spread into props (`{...(isMobile ? A : B)}`), which may carry `sx`;
+- a value deciding which markup renders (`{isMobile ? <Compact /> : <Wide />}`), which a class name can do;
+- a binding nothing reads, which proves no more than a query naming no feature does.
+
+Known limitation: a value handed to a child component through an ordinary prop is exempt even if the child applies it to a class, because the trace stops at this file's props. That false negative is the accepted price of an analysis that stays inside one file — the alternative is the unactionable report this exemption removes.
+
 ### One report per usage
 
 A single usage earns a single report, and therefore a single `eslint-disable` comment. When a file calls the imported hook, the report lands on the call: a breakpoint query reports at the call and the import stays silent, and a file whose every call is exempt gets no report at all, import included. An import with no call in the file — unused, re-exported, passed around as a value, or read under a name the rule does not track — has no call to carry the report, so the import keeps its own.
@@ -116,6 +135,29 @@ function Component() {
 }
 ```
 
+```jsx
+// A breakpoint reaching `sx` has a CSS remedy, whatever else it drives
+import Box from '@mui/material/Box';
+import { useMobile } from '../hooks/useMobile';
+
+function Panel() {
+  const isMobile = useMobile();
+  return <Box sx={{ display: isMobile ? 'none' : 'block' }} />;
+}
+```
+
+```jsx
+// A call hides where the value goes, and here it comes back out as a class name
+import clsx from 'clsx';
+import { useMobile } from '../hooks/useMobile';
+
+function Panel() {
+  const isMobile = useMobile();
+  const classes = clsx(isMobile && 'stack');
+  return <div className={classes}>Content</div>;
+}
+```
+
 ### Examples of **correct** code for this rule:
 
 ```jsx
@@ -178,6 +220,32 @@ function Component() {
   const isLandscape = useMediaQuery('(orientation: landscape)');
   const prefersDark = useMediaQuery('(prefers-color-scheme: dark)');
   return <Player rotate={isLandscape} mode={prefersDark ? 'dark' : 'light'} />;
+}
+```
+
+```jsx
+// A breakpoint reaching only a JS-only prop: no @media rule and no class name
+// can select an anchorOrigin object, so the report would carry no remedy
+import Popover from '@mui/material/Popover';
+import { useMobile } from '../hooks/useMobile';
+
+function CrewDock() {
+  const isMobile = useMobile();
+  const anchorOrigin = isMobile
+    ? { vertical: 'bottom', horizontal: 'center' }
+    : { vertical: 'top', horizontal: 'right' };
+  return <Popover anchorOrigin={anchorOrigin} open />;
+}
+```
+
+```jsx
+// A transition duration is a JavaScript value that no stylesheet can supply
+import Fade from '@mui/material/Fade';
+import { useMobile } from '../hooks/useMobile';
+
+function Reveal() {
+  const isMobile = useMobile();
+  return <Fade timeout={isMobile ? 0 : 300} />;
 }
 ```
 
