@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 type Options = [
   {
@@ -12,6 +13,87 @@ type MessageIds = 'redundantWrapper';
 
 const LATEST_CALLBACK_MODULE = 'use-latest-callback';
 const LATEST_CALLBACK_HOOK = 'useLatestCallback';
+const MEMO_HOOK = 'useMemo';
+
+/**
+ * Type-level wrappers carry no runtime value, so a callback that leaves a
+ * memoizing call through a cast is the same callback. Reading through them keeps
+ * the proof from depending on whether the author spelled an annotation.
+ */
+const TYPE_ONLY_WRAPPERS = new Set<AST_NODE_TYPES>([
+  AST_NODE_TYPES.TSAsExpression,
+  AST_NODE_TYPES.TSSatisfiesExpression,
+  AST_NODE_TYPES.TSNonNullExpression,
+  AST_NODE_TYPES.TSTypeAssertion,
+  AST_NODE_TYPES.TSInstantiationExpression,
+]);
+
+function unwrapValueExpression(node: TSESTree.Node): TSESTree.Node {
+  let current: TSESTree.Node = node;
+  while (
+    current.type === AST_NODE_TYPES.ChainExpression ||
+    TYPE_ONLY_WRAPPERS.has(current.type)
+  ) {
+    current = (current as unknown as { expression: TSESTree.Node }).expression;
+  }
+  return current;
+}
+
+/**
+ * The bare name a callee resolves to, collapsing the namespaced spelling so
+ * `React.useCallback` and `useCallback` answer alike.
+ */
+function calleeNameOf(callee: TSESTree.Node): string | null {
+  const unwrapped = unwrapValueExpression(callee);
+  if (unwrapped.type === AST_NODE_TYPES.Identifier) {
+    return unwrapped.name;
+  }
+  if (
+    unwrapped.type === AST_NODE_TYPES.MemberExpression &&
+    !unwrapped.computed &&
+    unwrapped.property.type === AST_NODE_TYPES.Identifier
+  ) {
+    return unwrapped.property.name;
+  }
+  return null;
+}
+
+function isFunctionLiteral(node: TSESTree.Node): boolean {
+  return (
+    node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+    node.type === AST_NODE_TYPES.FunctionExpression
+  );
+}
+
+/**
+ * Whether a `useMemo` factory demonstrably yields a function.
+ *
+ * `useMemo` memoizes any value, so its result is a memoized *callback* only when
+ * the factory produces one. Only a factory that hands back a function literal
+ * proves that in-source; a factory returning a call result, a conditional or a
+ * value assembled across several statements might yield anything, and this rule
+ * prefers a false negative to guessing.
+ */
+function producesFunction(factory: TSESTree.Node | undefined): boolean {
+  if (!factory || !isFunctionLiteral(factory)) {
+    return false;
+  }
+  const fn = factory as
+    | TSESTree.ArrowFunctionExpression
+    | TSESTree.FunctionExpression;
+  if (fn.body.type !== AST_NODE_TYPES.BlockStatement) {
+    return isFunctionLiteral(unwrapValueExpression(fn.body));
+  }
+  const statements = fn.body.body;
+  if (statements.length !== 1) {
+    return false;
+  }
+  const [only] = statements;
+  if (only.type !== AST_NODE_TYPES.ReturnStatement || !only.argument) {
+    return false;
+  }
+  return isFunctionLiteral(unwrapValueExpression(only.argument));
+}
 
 function isHookLikeName(name: string): boolean {
   return name.startsWith('use');
@@ -182,6 +264,76 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
       return null;
     };
 
+    /**
+     * Whether the binding this identifier resolves to holds a callback whose
+     * memoization is visible in this very file.
+     *
+     * `memoizedHookNames` exists for callbacks whose stability only the consumer
+     * knows about. A `const` initialized from `useCallback`, `useLatestCallback`
+     * or a `useMemo` that yields a function needs no such knowledge: the
+     * memoizing call sits in the same source, so wrapping its result is provably
+     * redundant and the rule reports it under the default options — without
+     * which the rule can report nothing at all in a config that does not set
+     * `memoizedHookNames`.
+     *
+     * The binding is resolved through scope analysis rather than matched by
+     * name, because a name set cannot tell the memoized `inner` of one component
+     * from the `inner` prop of the next, and would report the prop — the wrapper
+     * that is the only thing making it stable.
+     */
+    const isLocallyMemoizedCallback = (
+      identifier: TSESTree.Identifier,
+      wrapperCall: TSESTree.CallExpression,
+    ): boolean => {
+      const variable = ASTHelpers.findVariableInScope(
+        ASTHelpers.getScope(context, identifier),
+        identifier.name,
+      );
+      if (!variable || variable.defs.length !== 1) {
+        return false;
+      }
+      const declarator = variable.defs[0].node;
+      if (
+        declarator.type !== AST_NODE_TYPES.VariableDeclarator ||
+        declarator.id.type !== AST_NODE_TYPES.Identifier ||
+        !declarator.init
+      ) {
+        return false;
+      }
+      // A rebindable declaration breaks the proof: the value read at the wrapper
+      // need not be the one the memoizing call produced.
+      const declaration = declarator.parent;
+      if (
+        declaration?.type !== AST_NODE_TYPES.VariableDeclaration ||
+        declaration.kind !== 'const'
+      ) {
+        return false;
+      }
+      // A wrapper sitting inside the initializer it reads is self-referential,
+      // and collapsing it would emit `const x = x`.
+      if (
+        wrapperCall.range[0] >= declarator.range[0] &&
+        wrapperCall.range[1] <= declarator.range[1]
+      ) {
+        return false;
+      }
+      const init = unwrapValueExpression(declarator.init);
+      if (init.type !== AST_NODE_TYPES.CallExpression) {
+        return false;
+      }
+      const initName = calleeNameOf(init.callee);
+      if (!initName) {
+        return false;
+      }
+      // Every wrapper this rule reports is itself a memoizing call, so the same
+      // set answers both questions: what makes a callback stable, and what
+      // redundantly re-wraps one that already is.
+      if (wrapperNames.has(initName)) {
+        return true;
+      }
+      return initName === MEMO_HOOK && producesFunction(init.arguments[0]);
+    };
+
     // Track identifiers coming from hook-like calls
     const hookReturnObjects = new Set<string>(); // variables assigned to a hook call result (object or function)
     const hookReturnProps = new Set<string>(); // properties destructured from a hook call result
@@ -272,7 +424,8 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
             if (
               (unwrappedArg.type === AST_NODE_TYPES.Identifier &&
                 (hookReturnProps.has(unwrappedArg.name) ||
-                  hookReturnObjects.has(unwrappedArg.name))) ||
+                  hookReturnObjects.has(unwrappedArg.name) ||
+                  isLocallyMemoizedCallback(unwrappedArg, node))) ||
               (unwrappedArg.type === AST_NODE_TYPES.MemberExpression &&
                 unwrappedArg.object.type === AST_NODE_TYPES.Identifier &&
                 hookReturnObjects.has(unwrappedArg.object.name))
@@ -331,7 +484,8 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
                     )) ||
                   (callee &&
                     callee.type === AST_NODE_TYPES.Identifier &&
-                    hookReturnProps.has(callee.name))
+                    (hookReturnProps.has(callee.name) ||
+                      isLocallyMemoizedCallback(callee, node)))
                 ) {
                   if (bodyExpr.arguments.length > 0) {
                     // Passing any arguments: treat as non-redundant (avoid false positives)
@@ -393,7 +547,8 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
                     const isHookProp =
                       callee &&
                       callee.type === AST_NODE_TYPES.Identifier &&
-                      hookReturnProps.has(callee.name);
+                      (hookReturnProps.has(callee.name) ||
+                        isLocallyMemoizedCallback(callee, node));
                     const isHookObjMember =
                       callee &&
                       callee.type === AST_NODE_TYPES.MemberExpression &&
