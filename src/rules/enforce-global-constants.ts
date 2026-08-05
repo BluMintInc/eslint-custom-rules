@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { afterShebang } from '../utils/shebang';
 import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds = 'useGlobalConstant' | 'extractDefaultToGlobalConstant';
@@ -380,7 +381,10 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
               );
             } else {
               const body = program.body;
-              let insertPos = 0;
+              // A shebang has to stay at character 0 or the file stops parsing
+              // (TS18026), so it bounds the insertion the same way the
+              // directive prologue below does.
+              let insertPos = afterShebang(text);
               let afterDirectiveIdx = -1;
               for (let i = 0; i < body.length; i++) {
                 const stmt = body[i];
