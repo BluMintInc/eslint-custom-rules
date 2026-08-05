@@ -34,6 +34,13 @@ function loop() {
     console.log(items[i]);
   }
 }
+
+function renderList() {
+  function buildFallback() { // ❌ a helper that reads nothing from this scope
+    return 'unknown';
+  }
+  return buildFallback();
+}
 ```
 
 ### Examples of correct code
@@ -57,5 +64,19 @@ function loopInline() {
   for (let i = 2 as const; i < items.length; i += 2 as const) {
     console.log(items[i]);
   }
+}
+```
+
+A nested helper is reported only when it reads **nothing** from the scope that
+encloses it. A reference through JSX counts as a read, so a component defined
+inside a factory that renders one of the factory's own bindings stays where it
+is — hoisting it would not compile:
+
+```tsx
+function withBadge(Component) {
+  function Badged(props) {
+    return <Component {...props} />; // ✅ reads `Component` from the factory
+  }
+  return Badged;
 }
 ```

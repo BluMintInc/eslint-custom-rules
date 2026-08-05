@@ -253,6 +253,121 @@ export class ASTHelpers {
         // Handle type constraints and literals
         return false;
 
+      /**
+       * Loops, switches and the remaining compound forms. Every node type this
+       * switch omits falls to `default: false` — "references nothing" — so an
+       * omission is not a missed detection but an inverted answer: a function
+       * whose only dependencies sit inside a `for` body reads as free-standing.
+       */
+      case 'ForStatement':
+        return (
+          this.declarationIncludesIdentifier((node as any).init) ||
+          this.declarationIncludesIdentifier((node as any).test) ||
+          this.declarationIncludesIdentifier((node as any).update) ||
+          this.declarationIncludesIdentifier((node as any).body)
+        );
+      case 'ForOfStatement':
+      case 'ForInStatement':
+        return (
+          this.declarationIncludesIdentifier((node as any).left) ||
+          this.declarationIncludesIdentifier((node as any).right) ||
+          this.declarationIncludesIdentifier((node as any).body)
+        );
+      case 'WhileStatement':
+      case 'DoWhileStatement':
+        return (
+          this.declarationIncludesIdentifier((node as any).test) ||
+          this.declarationIncludesIdentifier((node as any).body)
+        );
+      case 'SwitchStatement':
+        return (
+          this.declarationIncludesIdentifier((node as any).discriminant) ||
+          (node as any).cases.some((switchCase: any) =>
+            this.declarationIncludesIdentifier(switchCase),
+          )
+        );
+      case 'SwitchCase':
+        return (
+          this.declarationIncludesIdentifier((node as any).test) ||
+          (node as any).consequent.some((statement: any) =>
+            this.declarationIncludesIdentifier(statement),
+          )
+        );
+      case 'LabeledStatement':
+        return this.declarationIncludesIdentifier((node as any).body);
+      case 'SequenceExpression':
+        return (node as any).expressions.some((expression: any) =>
+          this.declarationIncludesIdentifier(expression),
+        );
+      case 'TaggedTemplateExpression':
+        return (
+          this.declarationIncludesIdentifier((node as any).tag) ||
+          this.declarationIncludesIdentifier((node as any).quasi)
+        );
+      case 'YieldExpression':
+        return this.declarationIncludesIdentifier((node as any).argument);
+      case 'ClassDeclaration':
+      case 'ClassExpression':
+        return (
+          this.declarationIncludesIdentifier((node as any).superClass) ||
+          this.declarationIncludesIdentifier((node as any).body)
+        );
+      case 'ClassBody':
+        return (node as any).body.some((member: any) =>
+          this.declarationIncludesIdentifier(member),
+        );
+      case 'MethodDefinition':
+      case 'PropertyDefinition':
+        return (
+          ((node as any).computed &&
+            this.declarationIncludesIdentifier((node as any).key)) ||
+          this.declarationIncludesIdentifier((node as any).value)
+        );
+      case 'ExportNamedDeclaration':
+      case 'ExportDefaultDeclaration':
+        return this.declarationIncludesIdentifier((node as any).declaration);
+
+      /**
+       * JSX subtrees carry references like any other expression. Without these
+       * cases a component that renders `<Component />` or `<div x={value} />`
+       * reads as depending on nothing, so a caller asking "can this be hoisted
+       * out of its enclosing scope?" gets `true` for a closure that cannot be.
+       */
+      case 'JSXElement':
+        return (
+          this.declarationIncludesIdentifier((node as any).openingElement) ||
+          (node as any).children.some((child: any) =>
+            this.declarationIncludesIdentifier(child),
+          )
+        );
+      case 'JSXFragment':
+        return (node as any).children.some((child: any) =>
+          this.declarationIncludesIdentifier(child),
+        );
+      case 'JSXOpeningElement':
+        return (
+          this.declarationIncludesIdentifier((node as any).name) ||
+          (node as any).attributes.some((attribute: any) =>
+            this.declarationIncludesIdentifier(attribute),
+          )
+        );
+      case 'JSXIdentifier':
+        // A lowercase tag is an intrinsic element (`div`), not a binding; an
+        // capitalized one resolves to a component in scope.
+        return !/^[a-z]/.test((node as any).name);
+      case 'JSXMemberExpression':
+        // `<Foo.Bar />` references `Foo`.
+        return true;
+      case 'JSXAttribute':
+        return this.declarationIncludesIdentifier((node as any).value);
+      case 'JSXSpreadAttribute':
+      case 'JSXSpreadChild':
+        return this.declarationIncludesIdentifier(
+          (node as any).argument ?? (node as any).expression,
+        );
+      case 'JSXExpressionContainer':
+        return this.declarationIncludesIdentifier((node as any).expression);
+
       default:
         return false;
     }

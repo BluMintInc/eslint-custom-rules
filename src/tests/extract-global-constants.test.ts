@@ -34,6 +34,130 @@ const parserOptions = {
 
 ruleTesterJsx.run('extract-global-constants', extractGlobalConstants, {
   valid: withParserOptions(parserOptions, [
+    /**
+     * A nested helper that closes over its enclosing scope cannot be hoisted
+     * (issue #1755). `declarationIncludesIdentifier` decides this, and every
+     * node type it fails to walk falls through to "references nothing" — an
+     * inverted answer, not a missed one — so each construct below is pinned.
+     */
+    {
+      code: `
+        function outer(dep) {
+          function inner() {
+            return dep();
+          }
+          return inner;
+        }
+      `,
+    },
+    // Referenced only through JSX: element name, attribute, spread, child.
+    {
+      code: `
+        function outer(Comp) {
+          function inner() {
+            return <Comp />;
+          }
+          return inner;
+        }
+      `,
+    },
+    {
+      code: `
+        function outer(value) {
+          function inner() {
+            return <div x={value} />;
+          }
+          return inner;
+        }
+      `,
+    },
+    {
+      code: `
+        function outer(props) {
+          function inner() {
+            return <div {...props} />;
+          }
+          return inner;
+        }
+      `,
+    },
+    {
+      code: `
+        function outer(value) {
+          function inner() {
+            return <>{value}</>;
+          }
+          return inner;
+        }
+      `,
+    },
+    {
+      code: `
+        function outer(Namespaced) {
+          function inner() {
+            return <Namespaced.Item />;
+          }
+          return inner;
+        }
+      `,
+    },
+    // Referenced only inside a loop or switch body.
+    {
+      code: `
+        function outer(items) {
+          function inner() {
+            for (const item of items) {
+              consume(item);
+            }
+          }
+          return inner;
+        }
+      `,
+    },
+    {
+      code: `
+        function outer(flag) {
+          function inner() {
+            while (flag) {
+              break;
+            }
+          }
+          return inner;
+        }
+      `,
+    },
+    {
+      code: `
+        function outer(dep) {
+          function inner() {
+            switch (1) {
+              case 1:
+                return dep();
+            }
+          }
+          return inner;
+        }
+      `,
+    },
+    {
+      code: `
+        function outer(Base) {
+          function inner() {
+            class Derived extends Base {}
+            return Derived;
+          }
+          return inner;
+        }
+      `,
+    },
+    // Already at module scope: nothing to hoist.
+    {
+      code: `
+        function topLevel() {
+          return 1;
+        }
+      `,
+    },
     // Should allow mutable array initialization inside functions
     {
       code: `
@@ -782,6 +906,46 @@ ruleTesterJsx.run('extract-global-constants', extractGlobalConstants, {
     },
   ]),
   invalid: withParserOptions(parserOptions, [
+    /**
+     * The "functions" half of this rule (issue #1755). Its guard tested
+     * `node.parent.type` against function types, but a FunctionDeclaration is a
+     * Statement whose parent is always a statement container, so the branch was
+     * unsatisfiable and no nested helper could ever be reported.
+     */
+    {
+      code: `
+        function outer() {
+          function inner() {
+            return 1;
+          }
+          return inner();
+        }
+      `,
+      errors: [buildExtractError('inner')],
+    },
+    {
+      code: `
+        const outer = () => {
+          function inner() {
+            return 1;
+          }
+          return inner();
+        };
+      `,
+      errors: [buildExtractError('inner')],
+    },
+    // An intrinsic element is not a binding, so this closes over nothing.
+    {
+      code: `
+        function outer() {
+          function inner() {
+            return <div />;
+          }
+          return inner();
+        }
+      `,
+      errors: [buildExtractError('inner')],
+    },
     // Should flag immutable string constants
     {
       code: `
