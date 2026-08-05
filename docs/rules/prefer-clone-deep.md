@@ -15,8 +15,8 @@ Chained spreads only clone one level of an object. Every deeper property still p
 ### What the rule flags
 
 The rule targets one specific shape: a hand-written **partial deep copy**. A
-literal is reported when it spreads a base **and** separately spreads a
-**sub-path of that same base**:
+literal is reported when it spreads a base **and** contains a nested literal
+whose **every** spread is a **sub-path of that same base**:
 
 ```ts
 { ...base, a: { ...base.a, x: 1 } }
@@ -40,9 +40,19 @@ const map = { bottomLeft: { ...OVERLAY_SX, bottom: 4 }, topRight: { ...OVERLAY_S
 // ✅ an ordinary two-source merge
 const options = { operation, details: { ...baseDetails, ...banDetails } };
 
+// ✅ defaults under caller overrides — `sx` is a NEW object built from two
+// sources, so it aliases neither of them, whichever order they are spread in
+const merged = { ...props, sx: { ...DEFAULT_SX, ...props?.sx } };
+
 // ❌ a partial copy — `base.a` is copied by hand, `base.b` is not
 const patched = { ...base, a: { ...base.a, x: 1 } };
 ```
+
+A nested literal is judged by **all** of its sources at once: one source that is
+not a sub-path of a spread base makes the literal a merge rather than a copy.
+Sibling literals are judged independently, so
+`{ ...a, merged: { ...DEFAULTS, ...a.merged }, pure: { ...a.pure, v: 1 } }` is
+still reported for `pure`.
 
 Re-spreading the *exact* same path (`{ ...a, x: { ...a } }`) is also left alone:
 that is a redundant copy rather than a partial one, and the rule prefers false

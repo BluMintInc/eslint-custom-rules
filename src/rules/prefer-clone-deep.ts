@@ -117,10 +117,14 @@ export const preferCloneDeep = createRule<[], MessageIds>({
      *
      * Merging unrelated sources copies nothing twice and is safe, which is why
      * shapes such as `{ ...a, nested: { ...b } }`, MUI `sx` style maps and
-     * static config maps must not be flagged (#1371). A spread of the exact
-     * same path (`{ ...a, x: { ...a } }`) is deliberately excluded as well: it
-     * is a redundant copy rather than a partial one, and this repo prefers
-     * false negatives over false positives.
+     * static config maps must not be flagged (#1371). That verdict depends on
+     * ALL of a literal's sources, not on any one of them: `{ ...props, sx: {
+     * ...DEFAULT_SX, ...props.sx } }` builds `sx` fresh out of two sources and
+     * aliases neither, so it is a merge even though one source happens to be a
+     * sub-path of the base (#1745). A spread of the exact same path
+     * (`{ ...a, x: { ...a } }`) is deliberately excluded as well: it is a
+     * redundant copy rather than a partial one, and this repo prefers false
+     * negatives over false positives.
      */
     function isPartialDeepCopy(node: TSESTree.ObjectExpression): boolean {
       const cached = partialDeepCopyCache.get(node);
@@ -131,15 +135,22 @@ export const preferCloneDeep = createRule<[], MessageIds>({
       let hasFunction = false;
       let hasSymbol = false;
       const basePaths = new Set<string>();
-      const nestedPaths: string[] = [];
+      // Spread paths kept grouped by the literal that writes them, because a
+      // literal is classified by its sources as a set: flattening them loses
+      // the co-spread relation the merge exemption is stated over.
+      const nestedGroups: string[][] = [];
 
-      function visit(current: TSESTree.Node, depth = 0): void {
+      function visit(
+        current: TSESTree.Node,
+        depth = 0,
+        group: string[] = [],
+      ): void {
         if (current.type === AST_NODE_TYPES.SpreadElement) {
           const path = accessPathOf(current.argument);
           if (depth === 0) {
             basePaths.add(path);
           } else {
-            nestedPaths.push(path);
+            group.push(path);
           }
         } else if (
           current.type === AST_NODE_TYPES.FunctionExpression ||
@@ -169,28 +180,42 @@ export const preferCloneDeep = createRule<[], MessageIds>({
         // `...spread` at depth 0, where it names a base rather than a
         // hand-copied sub-path.
         if (current.type === AST_NODE_TYPES.ObjectExpression) {
-          current.properties.forEach((prop) => visit(prop, depth));
+          // Every literal owns the spreads written directly inside it. The
+          // root's spreads name bases instead, so only descendants contribute
+          // a group.
+          const ownGroup: string[] = [];
+          if (current !== node) {
+            nestedGroups.push(ownGroup);
+          }
+          current.properties.forEach((prop) => visit(prop, depth, ownGroup));
         } else if (current.type === AST_NODE_TYPES.Property) {
-          visit(current.value, depth + 1);
+          visit(current.value, depth + 1, group);
         } else if (current.type === AST_NODE_TYPES.SpreadElement) {
-          visit(current.argument, depth);
+          visit(current.argument, depth, group);
         }
       }
 
       visit(node);
+
+      // The separators guard against a sibling whose name merely starts with a
+      // base's name (`abc.x` is not a sub-path of `ab`).
+      const isBaseSubPath = (nested: string): boolean =>
+        [...basePaths].some(
+          (base) =>
+            nested.startsWith(`${base}.`) || nested.startsWith(`${base}[`),
+        );
 
       // cloneDeep cannot faithfully reproduce functions or symbol keys, so
       // their presence suppresses the report regardless of the copy shape.
       const result =
         !hasFunction &&
         !hasSymbol &&
-        nestedPaths.some((nested) =>
-          // The separators guard against a sibling whose name merely starts
-          // with a base's name (`abc.x` is not a sub-path of `ab`).
-          [...basePaths].some(
-            (base) =>
-              nested.startsWith(`${base}.`) || nested.startsWith(`${base}[`),
-          ),
+        // A nested literal is a hand-written partial copy only when EVERY
+        // source it spreads is a sub-path of a spread base. One foreign source
+        // makes the literal a fresh merge of both, which aliases nothing and is
+        // not expressible as cloneDeep overrides.
+        nestedGroups.some(
+          (group) => group.length > 0 && group.every(isBaseSubPath),
         );
 
       partialDeepCopyCache.set(node, result);
