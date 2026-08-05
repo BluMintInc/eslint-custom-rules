@@ -1,7 +1,15 @@
-import fs from 'fs';
 import path from 'path';
 import { Linter } from 'eslint';
 import * as ts from 'typescript';
+import {
+  FALLBACK_FILENAMES,
+  FixtureCase,
+  defaultFilenameFor,
+  harvestFixtureCorpus,
+  parserOptionsFor,
+  severityWithOptions,
+  typeAwareRuleNames,
+} from '../utils/fixtureCorpus';
 
 // Using require to avoid test build-time ESM interop issues; the test runner
 // only needs the plugin object shape (rules), not types.
@@ -13,7 +21,6 @@ const plugin = require('..') as {
 const tsParser = require('@typescript-eslint/parser');
 
 const PREFIX = '@blumintinc/blumint/';
-const TESTS_DIR = __dirname;
 
 /**
  * An autofix must not turn compiling code into non-compiling code.
@@ -39,6 +46,15 @@ const TESTS_DIR = __dirname;
  * applied ALONE to the untouched snippet rather than run through
  * `verifyAndFix`. Composing two suggestions from one report would compile a
  * file no consumer can produce.
+ *
+ * The corpus is the suite's OWN `RuleTester` cases, captured by
+ * `harvestFixtureCorpus` with their `options`, `filename` and `parserOptions`
+ * attached. Text-parsing the test files for string literals — what this guard
+ * did until #1732 — reported `310 case(s) unharvestable (interpolated)` in its
+ * own accounting: a suite that assembles every case from a shared prelude
+ * (`no-usememo-for-pass-by-value`) yielded ONE snippet where it declares 105
+ * cases, and the snippets that did survive arrived stripped of the options
+ * their fixer is gated on.
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -380,17 +396,6 @@ declare const module: any;
 
 const VIRTUAL_DIR = '/virtual-fixer-corpus';
 
-/** A rule that gates on file location needs a filename it accepts. */
-const FILENAMES = [
-  '/repo/src/components/Widget.tsx',
-  '/repo/src/util/helper.ts',
-  '/repo/src/util/helper.test.ts',
-  '/repo/src/__tests__/helper.test.ts',
-  '/repo/functions/src/util/helper.test.ts',
-  '/repo/functions/src/callable/handler.ts',
-  '/repo/src/pages/index.tsx',
-];
-
 /**
  * Compiling every snippet separately would build one program per pair and cost
  * a lib load each time. The corpus is flat and every file is its own module, so
@@ -523,108 +528,44 @@ const introducedDiagnostics = (before: string[], after: string[]) => {
   });
 };
 
-const parse = (text: string, filePath: string) => {
-  try {
-    return tsParser.parseForESLint(text, {
-      ecmaVersion: 2022,
-      sourceType: 'module',
-      ecmaFeatures: { jsx: filePath.endsWith('.tsx') },
-      loc: true,
-      range: true,
-      comment: true,
-      tokens: true,
-      filePath,
-    });
-  } catch {
-    return null;
-  }
-};
-
-const walkAst = (node: any, visit: (n: any) => void) => {
-  if (!node || typeof node.type !== 'string') return;
-  visit(node);
-  for (const k of Object.keys(node)) {
-    if (k === 'parent') continue;
-    const v = node[k];
-    if (Array.isArray(v)) v.forEach((c) => walkAst(c, visit));
-    else if (v && typeof v === 'object' && typeof v.type === 'string') {
-      walkAst(v, visit);
-    }
-  }
-};
-
-/**
- * Every rule ships cases whose whole purpose is to make it fire, so the
- * triggers already exist — harvest them instead of inventing a synthetic input
- * per rule. Any string or no-substitution template literal is a candidate; one
- * that makes the rule fire is usable regardless of which array it came from,
- * and an `output` string doubles as an already-fixed input.
- *
- * A template literal with substitutions is not reconstructable here, so it is
- * counted rather than dropped in silence: a test file that assembles every case
- * from a shared prelude (`${typedPrelude}\n...`) is invisible to this harvest,
- * and that is a property of the harness, not evidence the rule has no trigger.
- */
-const harvestSnippets = (testFile: string) => {
-  const parsed = parse(fs.readFileSync(testFile, 'utf8'), testFile);
-  if (!parsed) return { snippets: [] as string[], interpolated: 0 };
-  const snippets: string[] = [];
-  const seen = new Set<string>();
-  let interpolated = 0;
-  const push = (s: unknown) => {
-    if (typeof s !== 'string') return;
-    // Shorter than this is a messageId or a rule name, not a snippet.
-    if (s.length < 25 || !/[;{(=<]/.test(s)) return;
-    if (seen.has(s)) return;
-    seen.add(s);
-    snippets.push(s);
-  };
-  walkAst(parsed.ast, (node: any) => {
-    if (node.type === 'Literal') push(node.value);
-    if (node.type !== 'TemplateLiteral') return;
-    if (node.expressions.length === 0) {
-      push(node.quasis.map((q: any) => q.value.cooked).join(''));
-      return;
-    }
-    const width = node.quasis.reduce(
-      (total: number, q: any) => total + q.value.cooked.length,
-      0,
-    );
-    if (width >= 25) interpolated++;
-  });
-  return { snippets, interpolated };
-};
-
 const linter = new Linter();
 for (const [name, rule] of Object.entries(plugin.rules)) {
   linter.defineRule(PREFIX + name, rule as never);
 }
 linter.defineParser('ts', tsParser);
 
-const configFor = (ruleId: string): Linter.Config =>
+/**
+ * The case's own options reach the fix pass. An option-gated fixer is
+ * unreachable on defaults — #1461's autofix only exists once `headerTemplate`
+ * is set — so a corpus that dropped them could not reach it at all, and a
+ * corpus that applied them to only one side would manufacture findings.
+ */
+const configFor = (ruleId: string, testCase: FixtureCase): Linter.Config =>
   ({
     parser: 'ts',
-    parserOptions: {
-      ecmaVersion: 2022,
-      sourceType: 'module',
-      ecmaFeatures: { jsx: true },
-    },
-    rules: { [ruleId]: 'error' },
+    parserOptions: parserOptionsFor(testCase),
+    rules: { [ruleId]: severityWithOptions(testCase) },
   } as Linter.Config);
 
 /**
  * `verifyAndFix`, not a single fix application: what a developer runs is the
  * fix loop, and that is the text that has to compile.
  */
-const fixWith = (ruleId: string, snippet: string) => {
-  for (const filename of FILENAMES) {
+const fixWith = (
+  ruleId: string,
+  testCase: FixtureCase,
+  filenames: string[],
+) => {
+  for (const filename of filenames) {
     let result;
     try {
-      result = linter.verifyAndFix(snippet, configFor(ruleId), { filename });
+      result = linter.verifyAndFix(testCase.code, configFor(ruleId, testCase), {
+        filename,
+      });
     } catch {
       continue;
     }
-    if (result && result.output && result.output !== snippet) {
+    if (result && result.output && result.output !== testCase.code) {
       return { output: result.output, filename };
     }
   }
@@ -644,11 +585,17 @@ const applyEdit = (
  * would compile a state no editor can produce, so a diagnostic found there
  * would be unactionable.
  */
-const suggestWith = (ruleId: string, snippet: string) => {
-  for (const filename of FILENAMES) {
+const suggestWith = (
+  ruleId: string,
+  testCase: FixtureCase,
+  filenames: string[],
+) => {
+  for (const filename of filenames) {
     let messages;
     try {
-      messages = linter.verify(snippet, configFor(ruleId), { filename });
+      messages = linter.verify(testCase.code, configFor(ruleId, testCase), {
+        filename,
+      });
     } catch {
       continue;
     }
@@ -658,8 +605,8 @@ const suggestWith = (ruleId: string, snippet: string) => {
       if (message.ruleId !== ruleId) continue;
       for (const suggestion of message.suggestions || []) {
         if (!suggestion.fix) continue;
-        const output = applyEdit(snippet, suggestion.fix);
-        if (output !== snippet) outputs.push(output);
+        const output = applyEdit(testCase.code, suggestion.fix);
+        if (output !== testCase.code) outputs.push(output);
       }
     }
     if (outputs.length) return { outputs, filename };
@@ -672,6 +619,9 @@ type Pair = {
   name: string;
   before: string;
   after: string;
+  /** Declaring suite and probed path, so a finding is reproducible by hand. */
+  origin: string;
+  filename: string;
 };
 
 /**
@@ -944,18 +894,30 @@ for (const control of CONTROLS) {
 }
 
 /**
- * The cap counts *fix pairs*, not harvested snippets, and every snippet a rule
- * offers is scanned until that many pairs exist.
+ * The cap counts *fix pairs*, not harvested cases, and every case a rule offers
+ * is scanned until that many pairs exist.
  *
- * Capping the harvest instead silently excluded rules (#1527). Snippets come out
+ * Capping the harvest instead silently excluded rules (#1527). Cases come out
  * in test-file order, `valid` cases first, and a rule with more than the cap's
  * worth of them spent its whole budget before reaching a single trigger — so it
  * contributed nothing and was listed as a rule with no fixable trigger,
  * indistinguishable from one that genuinely has none. `enforce-object-literal-
  * as-const` was the proof: 122 snippets, the first 30 all `valid`, and its
  * TS4104 defect (#1526) sat outside the window the guard could ever see.
+ *
+ * At 30 the cap was still dropping a tail — its own accounting printed `1,999 of
+ * 8,069 harvested snippets unscanned` across 37 rules (#1732). What paid for
+ * lifting it is probing each case under the filename it was WRITTEN for instead
+ * of re-probing every one under seven invented paths: measured over the same
+ * corpus, the fan-out yields 8,433 fix pairs across 81 rules where the authentic
+ * filename yields 2,652 across the same 81, so the fan-out was spending 3.2x the
+ * budget to compile near-duplicates of pairs it already had. The largest rule
+ * contributes 117 pairs, so this bound is slack today and exists only to keep a
+ * future fixture explosion from turning two TypeScript programs into an
+ * unbounded cost — and if it ever binds, exactly what it dropped is printed
+ * below and asserted, never silently discarded.
  */
-const MAX_PAIRS_PER_RULE = 30;
+const MAX_PAIRS_PER_RULE = 150;
 
 /**
  * A snippet that declares into the *shared* scope — `declare global`, or an
@@ -982,19 +944,61 @@ const suggestionRules = Object.entries(plugin.rules)
   .map(([name]) => name)
   .sort();
 
+const corpus = harvestFixtureCorpus();
+
+/** The `declare`-free subset of a rule's fixtures, plus what that cost. */
+const casesFor = (rule: string) => {
+  const all = corpus.byRule.get(rule) || [];
+  const usable = all.filter(
+    (testCase) => !DECLARES_INTO_SHARED_SCOPE.test(testCase.code),
+  );
+  return { total: all.length, usable, dropped: all.length - usable.length };
+};
+
 /**
- * Why a rule's fixer went unprobed, established by re-running the rule over the
- * same snippets: a rule that never reports on its own test corpus is a different
- * (and more surprising) fact than one that reports and declines to fix.
+ * Reasons a rule contributes no asserted pair, each established by the run
+ * itself. Which one holds is information: a rule that never reports on its own
+ * fixtures is a different (and more surprising) fact than one that reports and
+ * declines to fix, and both differ from one whose every fixture is already
+ * ill-typed before anything touches it.
  */
-const noFixReasonFor = (ruleId: string, snippets: string[]) => {
+const REASONS = {
+  noFixtures: 'declares no fixture this TypeScript harness can lint',
+  sharedScope: 'every one of its fixtures declares into the shared scope',
+  typeAware:
+    'is type-aware, and a bare Linter has no program, so its fixer is unreachable here',
+  neverReports: 'never reports on any of its own fixtures',
+  reportsWithoutFix: 'reports on its own fixtures but never offers a fix',
+  fixDiscarded: 'offers a fix that the fix loop then discards',
+  illTypedInput: 'every one of its pairs starts from an input that fails tsc',
+} as const;
+
+type Reason = typeof REASONS[keyof typeof REASONS];
+
+const filenamesFor = (testCase: FixtureCase) => [defaultFilenameFor(testCase)];
+
+/**
+ * Second-chance filenames, for a case whose author declared none. Running this
+ * for every case is what the fan-out did; running it only where the rule is
+ * otherwise unreached keeps the reason honest without paying for the rest.
+ */
+const fallbackFilenamesFor = (testCase: FixtureCase) =>
+  testCase.filename ? [] : FALLBACK_FILENAMES;
+
+const noFixReasonFor = (rule: string, cases: FixtureCase[]): Reason => {
+  const ruleId = PREFIX + rule;
   let reported = false;
   let offeredFix = false;
-  for (const snippet of snippets) {
-    for (const filename of FILENAMES) {
+  for (const testCase of cases) {
+    for (const filename of [
+      ...filenamesFor(testCase),
+      ...fallbackFilenamesFor(testCase),
+    ]) {
       let messages;
       try {
-        messages = linter.verify(snippet, configFor(ruleId), { filename });
+        messages = linter.verify(testCase.code, configFor(ruleId, testCase), {
+          filename,
+        });
       } catch {
         continue;
       }
@@ -1006,84 +1010,82 @@ const noFixReasonFor = (ruleId: string, snippets: string[]) => {
       }
     }
   }
-  if (offeredFix) return 'offers a fix that the fix loop then discards';
-  if (reported) return 'reports on its own snippets but never offers a fix';
-  return 'never reports on any of its own snippets, under any probed filename';
+  if (offeredFix) return REASONS.fixDiscarded;
+  if (typeAwareRuleNames.has(rule)) return REASONS.typeAware;
+  if (reported) return REASONS.reportsWithoutFix;
+  return REASONS.neverReports;
 };
 
 const coverage = {
-  noTestFile: [] as string[],
-  noSnippets: [] as string[],
+  noFixtures: [] as string[],
   neverFixed: [] as string[],
   illTypedInput: [] as string[],
   covered: [] as string[],
-  unscannedTail: [] as string[],
+  cappedTail: [] as string[],
 };
-const explanation = new Map<string, string>();
+const explanation = new Map<string, Reason>();
+const detail = new Map<string, string>();
 
 const pairs: Pair[] = [];
 let harvested = 0;
-let unscanned = 0;
+let capped = 0;
 let sharedScopeDropped = 0;
-let interpolatedSkipped = 0;
 
 for (const rule of fixableRules) {
-  const testFile = path.join(TESTS_DIR, `${rule}.test.ts`);
-  if (!fs.existsSync(testFile)) {
-    coverage.noTestFile.push(rule);
-    explanation.set(rule, `no ${rule}.test.ts to harvest triggers from`);
-    continue;
-  }
-  const harvest = harvestSnippets(testFile);
-  interpolatedSkipped += harvest.interpolated;
-  const snippets = harvest.snippets.filter(
-    (snippet) => !DECLARES_INTO_SHARED_SCOPE.test(snippet),
-  );
-  sharedScopeDropped += harvest.snippets.length - snippets.length;
-  if (!snippets.length) {
-    coverage.noSnippets.push(rule);
+  const { total, usable, dropped } = casesFor(rule);
+  sharedScopeDropped += dropped;
+  if (!usable.length) {
+    coverage.noFixtures.push(rule);
     explanation.set(
       rule,
-      `its test file yields no corpusable snippet (${harvest.snippets.length} ` +
-        `literal(s) harvested, ${
-          harvest.snippets.length - snippets.length
-        } declaring into the shared scope, ${
-          harvest.interpolated
-        } case(s) assembled by interpolation and so unharvestable)`,
+      total === 0 ? REASONS.noFixtures : REASONS.sharedScope,
+    );
+    detail.set(
+      rule,
+      `${total} case(s) harvested, ${dropped} declaring into the shared scope`,
     );
     continue;
   }
-  harvested += snippets.length;
+  harvested += usable.length;
+
   let fixed = 0;
-  let scanned = 0;
-  for (const snippet of snippets) {
-    if (fixed >= MAX_PAIRS_PER_RULE) break;
-    scanned++;
-    const result = fixWith(PREFIX + rule, snippet);
-    if (!result) continue;
+  let skipped = 0;
+  const collect = (testCase: FixtureCase, filenames: string[]) => {
+    if (!filenames.length) return;
+    if (fixed >= MAX_PAIRS_PER_RULE) {
+      skipped++;
+      return;
+    }
+    const result = fixWith(PREFIX + rule, testCase, filenames);
+    if (!result) return;
     pairs.push({
       rule,
       name: `${rule}__${fixed}.${
         result.filename.endsWith('.tsx') ? 'tsx' : 'ts'
       }`,
-      before: snippet,
+      before: testCase.code,
       after: result.output,
+      origin: testCase.origin,
+      filename: result.filename,
     });
     fixed++;
+  };
+
+  for (const testCase of usable) collect(testCase, filenamesFor(testCase));
+  if (!fixed) {
+    for (const testCase of usable) {
+      collect(testCase, fallbackFilenamesFor(testCase));
+    }
   }
-  if (scanned < snippets.length) {
-    coverage.unscannedTail.push(`${rule} ${snippets.length - scanned}`);
-    unscanned += snippets.length - scanned;
+
+  if (skipped) {
+    coverage.cappedTail.push(`${rule} ${skipped}`);
+    capped += skipped;
   }
   if (!fixed) {
     coverage.neverFixed.push(rule);
-    explanation.set(
-      rule,
-      `${snippets.length} snippets scanned; ${noFixReasonFor(
-        PREFIX + rule,
-        snippets,
-      )}`,
-    );
+    explanation.set(rule, noFixReasonFor(rule, usable));
+    detail.set(rule, `${usable.length} case(s) scanned`);
   }
 }
 
@@ -1094,26 +1096,19 @@ for (const rule of fixableRules) {
  * compilations rather than one impossible composite.
  */
 const suggestionPairs: Pair[] = [];
-const suggestionExplanation = new Map<string, string>();
+const suggestionExplanation = new Map<string, Reason>();
 
 for (const rule of suggestionRules) {
-  const testFile = path.join(TESTS_DIR, `${rule}.test.ts`);
-  if (!fs.existsSync(testFile)) {
-    suggestionExplanation.set(
-      rule,
-      `no ${rule}.test.ts to harvest triggers from`,
-    );
+  const { usable } = casesFor(rule);
+  if (!usable.length) {
+    suggestionExplanation.set(rule, REASONS.noFixtures);
     continue;
   }
-  const harvest = harvestSnippets(testFile);
-  const snippets = harvest.snippets.filter(
-    (snippet) => !DECLARES_INTO_SHARED_SCOPE.test(snippet),
-  );
   let emitted = 0;
-  for (const snippet of snippets) {
-    if (emitted >= MAX_PAIRS_PER_RULE) break;
-    const result = suggestWith(PREFIX + rule, snippet);
-    if (!result) continue;
+  const collect = (testCase: FixtureCase, filenames: string[]) => {
+    if (!filenames.length || emitted >= MAX_PAIRS_PER_RULE) return;
+    const result = suggestWith(PREFIX + rule, testCase, filenames);
+    if (!result) return;
     for (const output of result.outputs) {
       if (emitted >= MAX_PAIRS_PER_RULE) break;
       suggestionPairs.push({
@@ -1121,28 +1116,44 @@ for (const rule of suggestionRules) {
         name: `${rule}__s${emitted}.${
           result.filename.endsWith('.tsx') ? 'tsx' : 'ts'
         }`,
-        before: snippet,
+        before: testCase.code,
         after: output,
+        origin: testCase.origin,
+        filename: result.filename,
       });
       emitted++;
+    }
+  };
+  for (const testCase of usable) collect(testCase, filenamesFor(testCase));
+  if (!emitted) {
+    for (const testCase of usable) {
+      collect(testCase, fallbackFilenamesFor(testCase));
     }
   }
   if (!emitted) {
     suggestionExplanation.set(
       rule,
-      `${snippets.length} snippets scanned; the rule offered no suggestion ` +
-        `under any probed filename`,
+      typeAwareRuleNames.has(rule) ? REASONS.typeAware : REASONS.neverReports,
     );
   }
 }
 
+/** A planted control is not a harvested fixture, but it is probed as one. */
+const plantedCase = (code: string): FixtureCase => ({
+  code,
+  tester: 'ruleTesterTs',
+  origin: 'planted control',
+  bucket: 'valid',
+});
+
 const controlPairs: Pair[] = [];
 for (const control of CONTROLS) {
   const id = `control/${control.name}`;
+  const testCase = plantedCase(control.code);
   const output =
     control.kind === 'suggestion'
-      ? (suggestWith(id, control.code)?.outputs || [])[0]
-      : fixWith(id, control.code)?.output;
+      ? (suggestWith(id, testCase, FALLBACK_FILENAMES)?.outputs || [])[0]
+      : fixWith(id, testCase, FALLBACK_FILENAMES)?.output;
   // A control whose transform never fires would make its assertion vacuous, so
   // it is carried through as an empty pair and fails loudly below.
   controlPairs.push({
@@ -1150,6 +1161,8 @@ for (const control of CONTROLS) {
     name: `${control.name}.ts`,
     before: control.code,
     after: output ?? control.code,
+    origin: 'planted control',
+    filename: FALLBACK_FILENAMES[1],
   });
 }
 
@@ -1201,14 +1214,14 @@ for (const rule of fixableRules) {
   if (explanation.has(rule)) continue;
   const rulePairs = pairs.filter((pair) => pair.rule === rule);
   coverage.illTypedInput.push(rule);
-  explanation.set(
+  explanation.set(rule, REASONS.illTypedInput);
+  detail.set(
     rule,
-    `all ${rulePairs.length} fix pairs start from an input that does not ` +
-      `type-check, e.g. ${
-        rulePairs
-          .flatMap((pair) => beforeDiagnostics.get(pair.name) || [])
-          .find((diagnostic) => !missingNameOf(diagnostic)) || 'unknown'
-      }`,
+    `all ${rulePairs.length} fix pairs, e.g. ${
+      rulePairs
+        .flatMap((pair) => beforeDiagnostics.get(pair.name) || [])
+        .find((diagnostic) => !missingNameOf(diagnostic)) || 'unknown'
+    }`,
   );
 }
 
@@ -1217,6 +1230,51 @@ for (const rule of fixableRules) findingsByRule.set(rule, []);
 for (const pair of assertedPairs) {
   const added = introducedFor(pair);
   if (added.length) findingsByRule.get(pair.rule)!.push({ ...pair, added });
+}
+
+/** `<rule> <the TS codes the fix introduced>`, one key per defect shape. */
+const findingKey = (finding: Pair & { added: string[] }) =>
+  `${finding.rule} ${[
+    ...new Set(finding.added.map((d) => d.slice(0, d.indexOf(':')))),
+  ]
+    .sort()
+    .join('+')}`;
+
+/**
+ * Type-unsafe fixes the corpus reaches today, keyed `<rule> <TS code>` with the
+ * number of pairs that reproduce it.
+ *
+ * AN ENTRY IS NOT A WAY TO MAKE A BUILD GREEN. It records a defect that is
+ * tracked elsewhere, and the count is part of the key's meaning: a second pair
+ * reaching the same shape is a new instance and fails here, exactly as an
+ * unlisted shape does. A listed shape that stops reproducing fails too, so the
+ * entry cannot rot into a shield for the next regression.
+ *
+ * Prefer fixing over listing.
+ */
+const TYPE_UNSAFE_BASELINE: Record<string, { pairs: number; note: string }> = {
+  'enforce-memoize-async TS1206': {
+    pairs: 1,
+    note:
+      'The fixer decorates a method of a class EXPRESSION (`jest.mock(' +
+      'resolveModule(class Locator { … }))`), and TypeScript accepts a ' +
+      'decorator only inside a class DECLARATION under experimentalDecorators ' +
+      '— verified against tsc 5.0.3: the same member decorated inside `class ' +
+      'C {}` or `export default class {}` compiles, inside `const C = class ' +
+      "{}` or a call argument it is TS1206. The rule's own invalid fixture " +
+      'enshrines the broken output as its expectation, so RuleTester agrees ' +
+      'with it. Surfaced by #1732 lifting the 30-pair cap that hid the ' +
+      'fixture; the rule fix belongs in its own issue.',
+  },
+};
+
+const baselinedCounts = new Map<string, number>();
+for (const findings of findingsByRule.values()) {
+  for (const finding of findings) {
+    if (!(findingKey(finding) in TYPE_UNSAFE_BASELINE)) continue;
+    const key = findingKey(finding);
+    baselinedCounts.set(key, (baselinedCounts.get(key) || 0) + 1);
+  }
 }
 
 const assertedSuggestionPairs = suggestionPairs.filter(baselineCompiles);
@@ -1228,14 +1286,14 @@ for (const rule of suggestionRules) {
     continue;
   }
   const rulePairs = suggestionPairs.filter((pair) => pair.rule === rule);
-  suggestionExplanation.set(
-    rule,
-    `all ${rulePairs.length} suggestion pairs start from an input that does ` +
-      `not type-check, e.g. ${
-        rulePairs
-          .flatMap((pair) => beforeDiagnostics.get(pair.name) || [])
-          .find((diagnostic) => !missingNameOf(diagnostic)) || 'unknown'
-      }`,
+  suggestionExplanation.set(rule, REASONS.illTypedInput);
+  detail.set(
+    `suggestion:${rule}`,
+    `all ${rulePairs.length} suggestion pairs, e.g. ${
+      rulePairs
+        .flatMap((pair) => beforeDiagnostics.get(pair.name) || [])
+        .find((diagnostic) => !missingNameOf(diagnostic)) || 'unknown'
+    }`,
   );
 }
 
@@ -1261,6 +1319,7 @@ const controlOutcomes = controlPairs.map((pair) => ({
 const report = (finding: Pair & { added: string[] }, channel = 'after --fix') =>
   [
     `introduced: ${finding.added.join(' | ')}`,
+    `src/tests/${finding.origin} as ${finding.filename}`,
     '--- input (compiles) ---',
     finding.before,
     `--- ${channel} (does not) ---`,
@@ -1268,11 +1327,47 @@ const report = (finding: Pair & { added: string[] }, channel = 'after --fix') =>
   ].join('\n');
 
 const uncovered = [
-  ...coverage.noTestFile,
-  ...coverage.noSnippets,
+  ...coverage.noFixtures,
   ...coverage.neverFixed,
   ...coverage.illTypedInput,
 ].sort();
+
+/**
+ * Every fixable rule this corpus cannot type-check a fix for, with the reason
+ * the run itself produces.
+ *
+ * Enforced BOTH ways below, which a partition test alone is not: a rule that
+ * goes dark must be added here consciously, and an entry that stops reproducing
+ * must be deleted, since a stale one would silently absorb the next rule to
+ * fall out of the corpus.
+ */
+const UNCOVERED_FIXERS: Record<string, Reason> = {
+  // Its fixtures are markdown, declared under `ruleTesterMarkdown`.
+  'enforce-typescript-markdown-code-blocks': REASONS.noFixtures,
+  // Its fixtures are `package.json` bodies, declared under `ruleTesterJson`.
+  'no-unpinned-dependencies': REASONS.noFixtures,
+  // All 105 of its cases embed a `typedPrelude` that declares `module 'react'`,
+  // which would retype every other file in the shared program.
+  'no-usememo-for-pass-by-value': REASONS.sharedScope,
+};
+
+/**
+ * Same contract on the suggestion channel. Empty by achievement, not omission:
+ * `enforce-snapshot-state-narrowing` was here while the corpus was text-harvested
+ * (every pair started from a fragment whose shorthand properties had no binding,
+ * TS18004) and its real fixtures compile.
+ */
+const UNCOVERED_SUGGESTIONS: Record<string, Reason> = {};
+
+const observedUncovered = Object.fromEntries(
+  uncovered.map((rule) => [rule, explanation.get(rule)!]),
+);
+
+const observedUncoveredSuggestions = Object.fromEntries(
+  suggestionRules
+    .filter((rule) => !assertedSuggestionRules.has(rule))
+    .map((rule) => [rule, suggestionExplanation.get(rule)!]),
+);
 
 const heldOutByRule = coverage.covered
   .map((rule) => {
@@ -1294,25 +1389,28 @@ console.log(
     `[fixer-type-safety] asserted ${assertedPairs.length} of ${pairs.length} ` +
       `fix pairs across ${coverage.covered.length} of ${fixableRules.length} ` +
       `fixable rules`,
+    `  corpus: ${corpus.totalCases} cases from ${corpus.suitesUsed} suites, ` +
+      `${corpus.filesLoaded} files loaded, ${corpus.failures.length} failed`,
     `  uncovered (${uncovered.length}), each with its reason:`,
-    ...uncovered.map((rule) => `    ${rule}: ${explanation.get(rule)}`),
-    `  pair cap ${MAX_PAIRS_PER_RULE}/rule left ${unscanned} of ${harvested} ` +
-      `harvested snippets unscanned, in ${
-        coverage.unscannedTail.length
-      } rule(s) [unscanned tail]: ${
-        coverage.unscannedTail.join(', ') || 'none'
+    ...uncovered.map(
+      (rule) =>
+        `    ${rule}: ${explanation.get(rule)} [${detail.get(rule) || ''}]`,
+    ),
+    `  pair cap ${MAX_PAIRS_PER_RULE}/rule dropped ${capped} of ${harvested} ` +
+      `harvested cases, in ${coverage.cappedTail.length} rule(s) [dropped]: ${
+        coverage.cappedTail.join(', ') || 'none'
       }`,
-    `  ${sharedScopeDropped} snippet(s) dropped for declaring into the shared ` +
-      `scope, ${interpolatedSkipped} case(s) unharvestable (interpolated)`,
+    `  ${sharedScopeDropped} case(s) dropped for declaring into the shared scope`,
     `  ${
       pairs.length - assertedPairs.length
     } pair(s) held out for an input that does not type-check, in ${
       heldOutByRule.length
     } covered rule(s) [held/total]: ${heldOutByRule.join(', ') || 'none'}`,
     `  suggestion channel: asserted ${assertedSuggestionPairs.length} of ${suggestionPairs.length} pairs across ${assertedSuggestionRules.size} of ${suggestionRules.length} suggestion-emitting rules`,
-    ...suggestionRules
-      .filter((rule) => !assertedSuggestionRules.has(rule))
-      .map((rule) => `    ${rule}: ${suggestionExplanation.get(rule)}`),
+    ...Object.entries(observedUncoveredSuggestions).map(
+      ([rule, reason]) =>
+        `    ${rule}: ${reason} [${detail.get(`suggestion:${rule}`) || ''}]`,
+    ),
   ].join('\n'),
 );
 
@@ -1340,27 +1438,61 @@ describe('an autofix must not turn compiling code into non-compiling code', () =
    */
   it('compiles a meaningful share of the fixable rules', () => {
     expect(fixableRules.length).toBeGreaterThan(70);
-    expect(coverage.covered.length).toBeGreaterThanOrEqual(74);
-    expect(assertedPairs.length).toBeGreaterThanOrEqual(1300);
+    // Exact, not a floor: every rule below the count is named in
+    // UNCOVERED_FIXERS, so slack here would only re-open the hole it closes.
+    expect(coverage.covered.length).toBe(
+      fixableRules.length - Object.keys(UNCOVERED_FIXERS).length,
+    );
+    expect(assertedPairs.length).toBeGreaterThanOrEqual(1800);
+    expect(corpus.failures).toEqual([]);
   });
 
   /**
    * "Uncovered" must never be a silent bucket (#1527). Every fixable rule lands
-   * in exactly one bucket, and every rule outside `covered` carries a reason —
-   * so a rule the harness drops can never again read as a rule with no fixable
-   * trigger.
+   * in exactly one bucket, every rule outside `covered` carries a reason, and
+   * the reason it carries is the one recorded for it — so a rule the harness
+   * drops can never again read as a rule with no fixable trigger, and an
+   * exemption cannot outlive the fact that justified it (#1732).
    */
   it('accounts for every fixable rule, uncovered ones by reason', () => {
     expect([...coverage.covered, ...uncovered].sort()).toEqual(fixableRules);
-    expect(uncovered.filter((rule) => !explanation.get(rule))).toEqual([]);
+    expect(observedUncovered).toEqual(UNCOVERED_FIXERS);
+  });
+
+  /**
+   * A baselined defect must stay exactly as large as it was recorded, and a
+   * baseline that stops reproducing must be deleted — either half left
+   * unenforced would let the entry absorb the next regression silently.
+   */
+  it('reproduces every baselined type-unsafe fix, and no more of it', () => {
+    expect(Object.fromEntries(baselinedCounts)).toEqual(
+      Object.fromEntries(
+        Object.entries(TYPE_UNSAFE_BASELINE).map(([key, { pairs }]) => [
+          key,
+          pairs,
+        ]),
+      ),
+    );
   });
 
   it.each(fixableRules)('%s', (rule) => {
-    const findings = findingsByRule.get(rule)!;
+    const findings = findingsByRule
+      .get(rule)!
+      .filter((finding) => !(findingKey(finding) in TYPE_UNSAFE_BASELINE));
+    const problems: string[] = [];
+    // Without this, a rule that stopped contributing a pair asserts nothing.
+    if (!assertedByRule.has(rule) && !(rule in UNCOVERED_FIXERS)) {
+      problems.push(
+        `no fix of this rule was type-checked (${explanation.get(rule)}). ` +
+          `Restore a triggering fixture, or add the rule to UNCOVERED_FIXERS ` +
+          `with that reason.`,
+      );
+    }
     // A finding means the fix must decline instead; see #1521, #1522, #1523.
-    expect(
-      findings.length === 0 ? '' : findings.map((f) => report(f)).join('\n\n'),
-    ).toBe('');
+    if (findings.length) {
+      problems.push(findings.map((f) => report(f)).join('\n\n'));
+    }
+    expect(problems.join('\n\n')).toBe('');
   });
 });
 
@@ -1387,24 +1519,33 @@ describe('a suggestion must not turn compiling code into non-compiling code', ()
   /**
    * A rule with no ASSERTED pair is not a failure — every one of its inputs may
    * be ill-typed to begin with — but it must never be a silent bucket, for the
-   * same reason #1527 gave on the fix channel.
+   * same reason #1527 gave on the fix channel, and the reason it carries has to
+   * be the one recorded for it or the exemption outlives its justification.
    */
   it('accounts for every suggestion-emitting rule, unasserted ones by reason', () => {
-    const unasserted = suggestionRules.filter(
-      (rule) => !assertedSuggestionRules.has(rule),
-    );
-    expect(
-      unasserted.filter((rule) => !suggestionExplanation.get(rule)),
-    ).toEqual([]);
+    expect(observedUncoveredSuggestions).toEqual(UNCOVERED_SUGGESTIONS);
   });
 
   it.each(suggestionRules)('%s', (rule) => {
     const findings = suggestionFindingsByRule.get(rule)!;
+    const problems: string[] = [];
+    // Without this, a rule whose suggestions stopped compiling asserts nothing.
+    if (
+      !assertedSuggestionRules.has(rule) &&
+      !(rule in UNCOVERED_SUGGESTIONS)
+    ) {
+      problems.push(
+        `no suggestion of this rule was type-checked ` +
+          `(${suggestionExplanation.get(rule)}). Restore a triggering ` +
+          `fixture, or add the rule to UNCOVERED_SUGGESTIONS with that reason.`,
+      );
+    }
     // A finding means the suggestion must decline instead; see #1521.
-    expect(
-      findings.length === 0
-        ? ''
-        : findings.map((f) => report(f, 'after the suggestion')).join('\n\n'),
-    ).toBe('');
+    if (findings.length) {
+      problems.push(
+        findings.map((f) => report(f, 'after the suggestion')).join('\n\n'),
+      );
+    }
+    expect(problems.join('\n\n')).toBe('');
   });
 });

@@ -1,6 +1,13 @@
-import fs from 'fs';
-import path from 'path';
 import { Linter } from 'eslint';
+import {
+  FALLBACK_FILENAMES,
+  FixtureCase,
+  defaultFilenameFor,
+  harvestFixtureCorpus,
+  parserOptionsFor,
+  severityWithOptions,
+  typeAwareRuleNames,
+} from '../utils/fixtureCorpus';
 
 // Using require to avoid test build-time ESM interop issues; the test runner
 // only needs the plugin object shape (rules), not types.
@@ -12,7 +19,6 @@ const plugin = require('..') as {
 const tsParser = require('@typescript-eslint/parser');
 
 const PREFIX = '@blumintinc/blumint/';
-const TESTS_DIR = __dirname;
 
 /**
  * A fixer that imports or reuses a module-scope name and emits a reference to it
@@ -30,6 +36,13 @@ const TESTS_DIR = __dirname;
  * site and requires that no fixer's emitted reference resolves to it. Declining
  * the fix (reporting without fixing) satisfies it; so does emitting a reference
  * that still resolves to the module-scope binding.
+ *
+ * The corpus is the suite's OWN `RuleTester` cases, captured by
+ * `harvestFixtureCorpus` with their `options`, `filename` and `parserOptions`
+ * attached. Text-parsing the test files for string literals — what this guard
+ * did until #1732 — dropped every case a suite assembles by interpolation and
+ * stripped the configuration from the ones it kept, which is how a rule could
+ * be listed among 69 with no trigger while nothing of it had been probed.
  */
 
 /**
@@ -39,12 +52,6 @@ const TESTS_DIR = __dirname;
  * that range is the whole file for exactly the import-inserting rules this guard
  * exists to check. Report locations are used instead.
  */
-const FILENAMES = [
-  '/repo/src/components/Widget.tsx',
-  '/repo/src/util/helper.ts',
-  '/repo/src/util/helper.test.ts',
-  '/repo/functions/src/callable/handler.ts',
-];
 
 type Parsed = {
   ast: Record<string, unknown>;
@@ -59,15 +66,15 @@ for (const [name, rule] of Object.entries(plugin.rules)) {
 }
 linter.defineParser('ts', tsParser);
 
-const cfgFor = (rule: string): Linter.Config =>
+/**
+ * A case's options must reach the fix pass; an option-gated fixer is otherwise
+ * unreachable, and applying them to only one pass would manufacture a finding.
+ */
+const cfgFor = (rule: string, testCase: FixtureCase): Linter.Config =>
   ({
     parser: 'ts',
-    parserOptions: {
-      ecmaVersion: 2022,
-      sourceType: 'module',
-      ecmaFeatures: { jsx: true },
-    },
-    rules: { [PREFIX + rule]: 'error' },
+    parserOptions: parserOptionsFor(testCase),
+    rules: { [PREFIX + rule]: severityWithOptions(testCase) },
   } as Linter.Config);
 
 // A standalone parse throws on valid input unless given the full option set.
@@ -291,98 +298,95 @@ const offsetOf = (text: string, line: number, column: number) => {
   return off + (column - 1);
 };
 
-/**
- * Every rule ships invalid cases whose whole purpose is to make it fire, so the
- * triggers already exist — harvest them instead of inventing a synthetic input
- * per rule. Any string or no-substitution template literal is a candidate; one
- * that makes the rule fire is usable regardless of which array it came from.
- */
-const harvestSnippets = (testFile: string): string[] => {
-  const parsed = parse(fs.readFileSync(testFile, 'utf8'), testFile);
-  if (!parsed) return [];
-  const out: string[] = [];
-  const seen = new Set<string>();
-  const push = (s: unknown) => {
-    if (typeof s !== 'string') return;
-    // Shorter than this is a messageId or a rule name, not a snippet.
-    if (s.length < 25 || !/[;{(=<]/.test(s)) return;
-    if (seen.has(s)) return;
-    seen.add(s);
-    out.push(s);
-  };
-  walkAst(parsed.ast, (node: any) => {
-    if (node.type === 'Literal') push(node.value);
-    if (node.type === 'TemplateLiteral' && node.expressions.length === 0) {
-      push(node.quasis.map((q: any) => q.value.cooked).join(''));
-    }
-  });
-  return out;
-};
-
 type Trigger = {
-  code: string;
+  testCase: FixtureCase;
   filename: string;
   name: string;
   injectAt: number;
 };
 
-const triggersFor = (rule: string, snippets: string[]): Trigger[] => {
-  const triggers: Trigger[] = [];
-  for (const code of snippets) {
-    let got = false;
-    for (const filename of FILENAMES) {
-      let msgs;
-      try {
-        msgs = linter.verify(code, cfgFor(rule), { filename });
-      } catch {
-        continue;
-      }
-      const actionable = msgs.filter(
-        (m: any) => m.ruleId === PREFIX + rule && fixesOf(m).length,
-      );
-      if (!actionable.length) continue;
-      const beforeParsed = parse(code, filename);
-      if (!beforeParsed) continue;
-      const beforeCounts = nameCounts(beforeParsed.ast);
-      for (const m of actionable) {
-        const site = offsetOf(code, m.line, m.column);
-        const body = enclosingFunctionBody(beforeParsed.ast, site);
-        if (!body) continue; // reported at module level: no inner scope to shadow
-        for (const fix of fixesOf(m)) {
-          const patchedParsed = parse(applyFix(code, fix), filename);
-          if (!patchedParsed) continue;
-          const modAfter = moduleScope(
-            patchedParsed.scopeManager as any,
-          ).variables.map((v: any) => v.name);
-          for (const [name, n] of nameCounts(patchedParsed.ast)) {
-            if (n <= (beforeCounts.get(name) || 0)) continue;
-            // Only a name the module scope binds can be mis-resolved by a shadow.
-            if (!modAfter.includes(name)) continue;
-            triggers.push({ code, filename, name, injectAt: body.range[0] + 1 });
-            got = true;
-          }
-        }
-      }
-      if (got) break;
-    }
-  }
-  return triggers;
+/** What the run establishes about a rule, before any shadow is injected. */
+type Reach = {
+  reported: number;
+  actionable: number;
+  enclosed: number;
+  triggers: Trigger[];
 };
 
-type Capture = { name: string; detail: string; patched: string };
+const triggersFor = (
+  rule: string,
+  probes: Array<{ testCase: FixtureCase; filename: string }>,
+): Reach => {
+  const reach: Reach = {
+    reported: 0,
+    actionable: 0,
+    enclosed: 0,
+    triggers: [],
+  };
+  for (const { testCase, filename } of probes) {
+    const code = testCase.code;
+    let msgs;
+    try {
+      msgs = linter.verify(code, cfgFor(rule, testCase), { filename });
+    } catch {
+      continue;
+    }
+    const mine = msgs.filter((m: any) => m.ruleId === PREFIX + rule);
+    if (mine.length) reach.reported++;
+    const actionable = mine.filter((m: any) => fixesOf(m).length);
+    if (!actionable.length) continue;
+    reach.actionable++;
+    const beforeParsed = parse(code, filename);
+    if (!beforeParsed) continue;
+    const beforeCounts = nameCounts(beforeParsed.ast);
+    for (const m of actionable) {
+      const site = offsetOf(code, m.line, m.column);
+      const body = enclosingFunctionBody(beforeParsed.ast, site);
+      if (!body) continue; // reported at module level: no inner scope to shadow
+      reach.enclosed++;
+      for (const fix of fixesOf(m)) {
+        const patchedParsed = parse(applyFix(code, fix), filename);
+        if (!patchedParsed) continue;
+        const modAfter = moduleScope(
+          patchedParsed.scopeManager as any,
+        ).variables.map((v: any) => v.name);
+        for (const [name, n] of nameCounts(patchedParsed.ast)) {
+          if (n <= (beforeCounts.get(name) || 0)) continue;
+          // Only a name the module scope binds can be mis-resolved by a shadow.
+          if (!modAfter.includes(name)) continue;
+          reach.triggers.push({
+            testCase,
+            filename,
+            name,
+            injectAt: body.range[0] + 1,
+          });
+        }
+      }
+    }
+  }
+  return reach;
+};
+
+type Capture = {
+  name: string;
+  detail: string;
+  origin: string;
+  patched: string;
+};
 
 const capturesFor = (rule: string, triggers: Trigger[]) => {
   const captures: Capture[] = [];
   let probed = 0;
   const seen = new Set<string>();
   for (const t of triggers) {
-    const key = `${t.name}::${t.injectAt}::${t.code.slice(0, 80)}`;
+    const key = `${t.name}::${t.injectAt}::${t.testCase.code.slice(0, 80)}`;
     if (seen.has(key)) continue;
     seen.add(key);
 
+    const code = t.testCase.code;
     const decl = `const ${t.name} = undefined as unknown as never;\n`;
     const injected =
-      t.code.slice(0, t.injectAt) + '\n' + decl + t.code.slice(t.injectAt);
+      code.slice(0, t.injectAt) + '\n' + decl + code.slice(t.injectAt);
 
     const beforeParsed = parse(injected, t.filename);
     if (!beforeParsed) continue;
@@ -406,7 +410,9 @@ const capturesFor = (rule: string, triggers: Trigger[]) => {
 
     let msgs;
     try {
-      msgs = linter.verify(injected, cfgFor(rule), { filename: t.filename });
+      msgs = linter.verify(injected, cfgFor(rule, t.testCase), {
+        filename: t.filename,
+      });
     } catch {
       continue;
     }
@@ -420,6 +426,7 @@ const capturesFor = (rule: string, triggers: Trigger[]) => {
           captures.push({
             name: t.name,
             detail: `${before} -> ${after} uses of '${t.name}' resolve to the inner shadow`,
+            origin: `src/tests/${t.testCase.origin} as ${t.filename}`,
             patched,
           });
         }
@@ -429,28 +436,224 @@ const capturesFor = (rule: string, triggers: Trigger[]) => {
   return { captures, probed };
 };
 
+const corpus = harvestFixtureCorpus();
+
 const transformingRules = Object.keys(plugin.rules)
   .filter((r) => {
     const meta = plugin.rules[r].meta || {};
     return Boolean(meta.fixable) || Boolean(meta.hasSuggestions);
   })
-  .filter((r) => fs.existsSync(path.join(TESTS_DIR, `${r}.test.ts`)))
   .sort();
 
-const results = new Map<
-  string,
-  { triggers: number; probed: number; captures: Capture[] }
->();
+type RuleResult = {
+  cases: number;
+  reach: Reach;
+  probed: number;
+  captures: Capture[];
+};
+
+const results = new Map<string, RuleResult>();
 
 for (const rule of transformingRules) {
-  const snippets = harvestSnippets(path.join(TESTS_DIR, `${rule}.test.ts`));
-  const triggers = triggersFor(rule, snippets);
-  const { captures, probed } = capturesFor(rule, triggers);
-  results.set(rule, { triggers: triggers.length, probed, captures });
+  const cases = corpus.byRule.get(rule) || [];
+  let reach = triggersFor(
+    rule,
+    cases.map((testCase) => ({
+      testCase,
+      filename: defaultFilenameFor(testCase),
+    })),
+  );
+  /**
+   * Second chance only for a rule that reported NOTHING. Once a rule reports,
+   * the path it was probed under is not what decides whether its fix emits a
+   * reference, so re-probing the whole corpus under seven invented filenames
+   * would multiply the cost of the pass without changing an outcome — but a
+   * rule that never reported at all may simply have been handed a path it
+   * rejects, and that would be a false reason.
+   */
+  if (reach.reported === 0 && cases.length) {
+    reach = triggersFor(
+      rule,
+      cases.flatMap((testCase) =>
+        testCase.filename
+          ? []
+          : FALLBACK_FILENAMES.map((filename) => ({ testCase, filename })),
+      ),
+    );
+  }
+  const { captures, probed } = capturesFor(rule, reach.triggers);
+  results.set(rule, { cases: cases.length, reach, probed, captures });
 }
 
 const totalProbed = [...results.values()].reduce((a, r) => a + r.probed, 0);
+const totalTriggers = [...results.values()].reduce(
+  (a, r) => a + r.reach.triggers.length,
+  0,
+);
 const rulesProbed = [...results.values()].filter((r) => r.probed > 0).length;
+
+/**
+ * Why a rule's transforms were never put in front of a shadow. Derived from the
+ * run rather than asserted by hand, so an entry cannot claim a reason the
+ * corpus contradicts — and the reasons are deliberately distinct, because
+ * "emits no reference to a module-bound name" (the expected, healthy answer for
+ * a reordering or deleting fixer) and "never reports at all" (a broken corpus)
+ * are the two facts a single bucket would conflate.
+ */
+const REASONS = {
+  noFixtures: 'declares no fixture this TypeScript harness can lint',
+  typeAware:
+    'is type-aware, and a bare Linter has no program, so it reports nothing here',
+  neverReports: 'never reports on any of its own fixtures',
+  noTransform: 'reports on its own fixtures but offers no fix or suggestion',
+  noEnclosingBlock:
+    'reports only where no function block encloses the site, so no shadow can stand',
+  noModuleBoundReference:
+    'emits no new reference to a module-scope-bound name, so no shadow can capture one',
+  shadowNeverLanded:
+    'emits such a reference, but the injected declaration never shadowed it',
+} as const;
+
+type Reason = typeof REASONS[keyof typeof REASONS];
+
+/** Only meaningful for a rule with no probe; the branches narrow toward one. */
+const unprobedReasonFor = (rule: string): Reason => {
+  const { cases, reach } = results.get(rule)!;
+  if (cases === 0) return REASONS.noFixtures;
+  // Type-awareness outranks the report counts: a rule that asks the checker a
+  // question answers a different one without a program, so whatever it did or
+  // did not report here is not evidence about the rule.
+  if (reach.actionable === 0) {
+    if (typeAwareRuleNames.has(rule)) return REASONS.typeAware;
+    return reach.reported === 0 ? REASONS.neverReports : REASONS.noTransform;
+  }
+  if (reach.enclosed === 0) return REASONS.noEnclosingBlock;
+  if (reach.triggers.length === 0) return REASONS.noModuleBoundReference;
+  // Triggers existed, so the injection step is the only thing left that can
+  // have dropped them.
+  return REASONS.shadowNeverLanded;
+};
+
+const observedUnprobed = Object.fromEntries(
+  transformingRules
+    .filter((rule) => results.get(rule)!.probed === 0)
+    .map((rule) => [rule, unprobedReasonFor(rule)]),
+);
+
+/**
+ * Every transforming rule this corpus never puts in front of a shadow, with the
+ * reason the run produces for it.
+ *
+ * Most entries are `noModuleBoundReference`, and that is the healthy answer: a
+ * fixer that reorders members, deletes a wrapper, renames in place or rewrites
+ * an import specifier emits no reference at all, so there is nothing for an
+ * inner binding to capture. The list exists because the ALTERNATIVE readings —
+ * a rule that stopped reporting, a corpus that stopped carrying its triggers —
+ * are indistinguishable from that one until each rule is named with its reason.
+ */
+const UNPROBED_RULES: Record<string, Reason> = {
+  // Fixtures no TypeScript parser can lint: markdown and JSON testers.
+  'enforce-typescript-markdown-code-blocks': REASONS.noFixtures,
+  'no-unpinned-dependencies': REASONS.noFixtures,
+
+  // Type-aware: without a program it offers no transform at all.
+  'no-usememo-for-pass-by-value': REASONS.typeAware,
+
+  // Every report sits outside a function block — at module or class level,
+  // or in a concise arrow body — so there is nowhere to declare a shadow.
+  'enforce-date-ttime': REASONS.noEnclosingBlock,
+  'enforce-dynamic-firebase-imports': REASONS.noEnclosingBlock,
+  'enforce-firestore-rules-get-access': REASONS.noEnclosingBlock,
+  'enforce-m3-sentence-case': REASONS.noEnclosingBlock,
+  'enforce-memoize-getters': REASONS.noEnclosingBlock,
+  'enforce-mui-rounded-icons': REASONS.noEnclosingBlock,
+  'enforce-snapshot-state-narrowing': REASONS.noEnclosingBlock,
+  'enforce-unique-cursor-headers': REASONS.noEnclosingBlock,
+  'global-const-style': REASONS.noEnclosingBlock,
+  'jsdoc-above-field': REASONS.noEnclosingBlock,
+  'no-curly-brackets-around-commented-properties': REASONS.noEnclosingBlock,
+  'no-unnecessary-destructuring': REASONS.noEnclosingBlock,
+  'no-useless-usememo-primitives': REASONS.noEnclosingBlock,
+  'omit-index-html': REASONS.noEnclosingBlock,
+  'prefer-block-comments-for-declarations': REASONS.noEnclosingBlock,
+  'prefer-clone-deep': REASONS.noEnclosingBlock,
+  'prefer-fragment-component': REASONS.noEnclosingBlock,
+  'prefer-fragment-shorthand': REASONS.noEnclosingBlock,
+  'prefer-getter-over-parameterless-method': REASONS.noEnclosingBlock,
+  'prefer-next-dynamic': REASONS.noEnclosingBlock,
+  'require-memoize-jsx-returners': REASONS.noEnclosingBlock,
+  'sync-onwrite-name-func': REASONS.noEnclosingBlock,
+  'use-custom-link': REASONS.noEnclosingBlock,
+  'use-custom-memo': REASONS.noEnclosingBlock,
+  'use-custom-router': REASONS.noEnclosingBlock,
+
+  // The healthy majority: these fixers reorder, rename in place, delete a
+  // wrapper or rewrite an import specifier, and emit no reference at all.
+  'class-methods-read-top-to-bottom': REASONS.noModuleBoundReference,
+  'consistent-callback-naming': REASONS.noModuleBoundReference,
+  'enforce-centralized-mock-firestore': REASONS.noModuleBoundReference,
+  'enforce-early-destructuring': REASONS.noModuleBoundReference,
+  'enforce-empty-object-check': REASONS.noModuleBoundReference,
+  'enforce-exported-function-types': REASONS.noModuleBoundReference,
+  'enforce-fieldpath-syntax-in-docsetter': REASONS.noModuleBoundReference,
+  'enforce-id-capitalization': REASONS.noModuleBoundReference,
+  'enforce-object-literal-as-const': REASONS.noModuleBoundReference,
+  'enforce-props-argument-name': REASONS.noModuleBoundReference,
+  'enforce-props-naming-consistency': REASONS.noModuleBoundReference,
+  'enforce-react-type-naming': REASONS.noModuleBoundReference,
+  'ensure-pointer-events-none': REASONS.noModuleBoundReference,
+  'flatten-push-calls': REASONS.noModuleBoundReference,
+  'key-only-outermost-element': REASONS.noModuleBoundReference,
+  'logical-top-to-bottom-grouping': REASONS.noModuleBoundReference,
+  'no-class-instance-destructuring': REASONS.noModuleBoundReference,
+  'no-direct-function-state': REASONS.noModuleBoundReference,
+  'no-empty-dependency-use-callbacks': REASONS.noModuleBoundReference,
+  'no-entire-object-hook-deps': REASONS.noModuleBoundReference,
+  'no-excessive-parent-chain': REASONS.noModuleBoundReference,
+  'no-explicit-return-type': REASONS.noModuleBoundReference,
+  'no-firestore-jest-mock': REASONS.noModuleBoundReference,
+  'no-redundant-annotation-assertion': REASONS.noModuleBoundReference,
+  'no-redundant-param-types': REASONS.noModuleBoundReference,
+  'no-redundant-usecallback-wrapper': REASONS.noModuleBoundReference,
+  'no-unnecessary-destructuring-rename': REASONS.noModuleBoundReference,
+  'no-unused-usestate': REASONS.noModuleBoundReference,
+  'no-useless-fragment': REASONS.noModuleBoundReference,
+  'parallelize-async-operations': REASONS.noModuleBoundReference,
+  'prefer-destructuring-no-class': REASONS.noModuleBoundReference,
+  'prefer-document-flattening': REASONS.noModuleBoundReference,
+  'prefer-nullish-coalescing-boolean-props': REASONS.noModuleBoundReference,
+  'prefer-params-over-parent-id': REASONS.noModuleBoundReference,
+  'prefer-spread-over-reassembly': REASONS.noModuleBoundReference,
+  'prefer-sx-prop-over-system-props': REASONS.noModuleBoundReference,
+  'prefer-type-over-interface': REASONS.noModuleBoundReference,
+  'prefer-union-from-const-array': REASONS.noModuleBoundReference,
+  'prefer-url-tostring-over-tojson': REASONS.noModuleBoundReference,
+  'require-hooks-default-params': REASONS.noModuleBoundReference,
+  'vertically-group-related-functions': REASONS.noModuleBoundReference,
+};
+
+const reportOf = (captures: Capture[]) =>
+  captures
+    .map(
+      (c) => `${c.detail}\n${c.origin}\n--- patched output ---\n${c.patched}`,
+    )
+    .join('\n\n');
+
+console.log(
+  [
+    `[fixer-shadow-capture] ${rulesProbed} of ${transformingRules.length} ` +
+      `transforming rules probed; ${totalProbed} shadow injections from ` +
+      `${totalTriggers} emitted references`,
+    `  corpus: ${corpus.totalCases} cases from ${corpus.suitesUsed} suites, ` +
+      `${corpus.filesLoaded} files loaded, ${corpus.failures.length} failed`,
+    `  unprobed (${
+      Object.keys(observedUnprobed).length
+    }), each with its reason:`,
+    ...Object.entries(observedUnprobed).map(
+      ([rule, reason]) => `    ${rule}: ${reason}`,
+    ),
+  ].join('\n'),
+);
 
 describe('fixers must not emit a reference an inner shadow captures', () => {
   /**
@@ -463,18 +666,138 @@ describe('fixers must not emit a reference an inner shadow captures', () => {
    */
   it('exercises a meaningful number of transforming rules', () => {
     expect(transformingRules.length).toBeGreaterThan(80);
-    expect(rulesProbed).toBeGreaterThanOrEqual(15);
+    // Exact, not a floor: every unprobed rule is named below with the reason
+    // the run produced for it, so slack here would only hide a rule going dark.
+    expect(rulesProbed).toBe(
+      transformingRules.length - Object.keys(UNPROBED_RULES).length,
+    );
     expect(totalProbed).toBeGreaterThanOrEqual(400);
+    expect(corpus.failures).toEqual([]);
+  });
+
+  /**
+   * Every transforming rule is either probed or listed with the reason the run
+   * itself produced, enforced BOTH ways: a rule that stops being probed must be
+   * added consciously, and an entry whose reason stops holding must be deleted.
+   * Without this the per-rule assertion below is `expect('').toBe('')` for 69
+   * of the 90 rules and says nothing at all (#1732).
+   */
+  it('accounts for every transforming rule, unprobed ones by reason', () => {
+    expect(observedUnprobed).toEqual(UNPROBED_RULES);
   });
 
   it.each(transformingRules)('%s', (rule) => {
-    const { captures } = results.get(rule)!;
-    const report = captures
-      .map((c) => `${c.detail}\n--- patched output ---\n${c.patched}`)
-      .join('\n\n');
+    const { captures, probed } = results.get(rule)!;
+    const problems: string[] = [];
+    if (probed === 0 && !(rule in UNPROBED_RULES)) {
+      problems.push(
+        `no transform of this rule was put in front of a shadow ` +
+          `(${unprobedReasonFor(
+            rule,
+          )}). Restore a triggering fixture, or add the ` +
+          `rule to UNPROBED_RULES with that reason.`,
+      );
+    }
+    // A capture means the fix must decline instead; see #1455 / #1456.
+    if (captures.length) problems.push(reportOf(captures));
+    expect(problems.join('\n\n')).toBe('');
+  });
+});
+
+/**
+ * Planted fixers of both polarities, run through the same `triggersFor` /
+ * `capturesFor` the shipped rules go through.
+ *
+ * Every shipped rule is clean on this axis, so without a planted defect the
+ * detector is only ever observed returning nothing — and a harness that stopped
+ * detecting anything at all would read exactly the same way. The negative
+ * control is what keeps the positive one honest: it emits the SAME reference to
+ * the SAME module-bound name, but at module level where the injected shadow
+ * cannot reach it, so a detector that simply flagged every emitted name would
+ * fail it.
+ */
+const IMPORT_HELPER = "import { helper } from './helpers';\n";
+
+const controlRule = (emitAtModuleLevel: boolean) => ({
+  meta: {
+    type: 'problem' as const,
+    fixable: 'code' as const,
+    schema: [],
+    messages: { m: 'x' },
+  },
+  create(context: any) {
+    return {
+      CallExpression(node: any) {
+        if (node.callee.name !== 'render') return;
+        const program = context.getSourceCode().ast;
+        context.report({
+          node,
+          messageId: 'm',
+          fix: (fixer: any) => [
+            fixer.insertTextBefore(program.body[0], IMPORT_HELPER),
+            emitAtModuleLevel
+              ? fixer.insertTextAfter(
+                  program.body[program.body.length - 1],
+                  '\nexport const alias = helper;\n',
+                )
+              : fixer.replaceText(node.callee, 'helper'),
+          ],
+        });
+      },
+    };
+  },
+});
+
+const SHADOW_CONTROLS = [
+  {
+    name: 'control-shadow-captured',
+    expectCaptures: 1,
+    rule: controlRule(false),
+  },
+  {
+    name: 'control-shadow-uncaptured',
+    expectCaptures: 0,
+    rule: controlRule(true),
+  },
+];
+
+for (const control of SHADOW_CONTROLS) {
+  linter.defineRule(PREFIX + control.name, control.rule as never);
+}
+
+const CONTROL_CASE: FixtureCase = {
+  code: 'export function run() {\n  return render();\n}\n',
+  tester: 'ruleTesterTs',
+  origin: 'planted control',
+  bucket: 'valid',
+};
+
+describe('the shadow-capture detector is load-bearing', () => {
+  it.each(SHADOW_CONTROLS.map((c) => [c.name, c.expectCaptures] as const))(
+    'control %s yields %s capture(s)',
+    (name, expectCaptures) => {
+      const reach = triggersFor(name, [
+        { testCase: CONTROL_CASE, filename: 'file.ts' },
+      ]);
+      // A control whose fix never emitted a module-bound reference would never
+      // reach the injection step, and its zero would prove nothing.
+      expect(reach.triggers.length).toBeGreaterThan(0);
+      const { captures, probed } = capturesFor(name, reach.triggers);
+      expect(probed).toBeGreaterThan(0);
+      expect(captures.length).toBe(expectCaptures);
+    },
+  );
+
+  /**
+   * The corpus must carry the configuration each case was written for; a
+   * bare-snippet corpus cannot reach an option-gated or path-gated fixer.
+   */
+  it('carries options and filenames from the fixtures themselves', () => {
+    const cases = [...corpus.byRule.values()].flat();
+    expect(cases.filter((c) => c.options).length).toBeGreaterThanOrEqual(250);
+    expect(cases.filter((c) => c.filename).length).toBeGreaterThanOrEqual(1000);
     expect(
-      captures.length === 0 ? '' : report,
-      // A capture means the fix must decline instead; see #1455 / #1456.
-    ).toBe('');
+      (corpus.byRule.get('no-usememo-for-pass-by-value') || []).length,
+    ).toBeGreaterThanOrEqual(60);
   });
 });

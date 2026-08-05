@@ -1,6 +1,13 @@
-import fs from 'fs';
-import path from 'path';
 import { Linter } from 'eslint';
+import {
+  FALLBACK_FILENAMES,
+  FixtureCase,
+  defaultFilenameFor,
+  harvestFixtureCorpus,
+  parserOptionsFor,
+  severityWithOptions,
+  typeAwareRuleNames,
+} from '../utils/fixtureCorpus';
 
 // Using require to avoid test build-time ESM interop issues; the test runner
 // only needs the plugin object shape (rules), not types.
@@ -12,7 +19,6 @@ const plugin = require('..') as {
 const tsParser = require('@typescript-eslint/parser');
 
 const PREFIX = '@blumintinc/blumint/';
-const TESTS_DIR = __dirname;
 
 /**
  * A fixer must remove its own trigger. When it does not, ESLint's fix loop
@@ -41,168 +47,16 @@ const TESTS_DIR = __dirname;
  * one step of progress — the rule must not still report that same messageId at
  * the same count or higher on the output, which is what a suggestion that fails
  * to clear its own trigger looks like from the editor.
+ *
+ * The corpus is the suite's OWN `RuleTester` cases, captured by
+ * `harvestFixtureCorpus` with their `options`, `filename` and `parserOptions`
+ * attached. Text-parsing the test files for string literals — what this guard
+ * did until #1732 — silently dropped every case a suite assembles by
+ * interpolation and stripped the configuration from the ones it kept, so a rule
+ * could read as swept while nothing of it had been probed.
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-
-const parse = (text: string, filePath: string) => {
-  try {
-    return tsParser.parseForESLint(text, {
-      ecmaVersion: 2022,
-      sourceType: 'module',
-      ecmaFeatures: { jsx: true },
-      loc: true,
-      range: true,
-      comment: true,
-      tokens: true,
-      filePath,
-    });
-  } catch {
-    return null;
-  }
-};
-
-const walkAst = (node: any, visit: (n: any) => void) => {
-  if (!node || typeof node.type !== 'string') return;
-  visit(node);
-  for (const k of Object.keys(node)) {
-    if (k === 'parent') continue;
-    const v = node[k];
-    if (Array.isArray(v)) v.forEach((c) => walkAst(c, visit));
-    else if (v && typeof v === 'object' && typeof v.type === 'string') {
-      walkAst(v, visit);
-    }
-  }
-};
-
-const NOT_STATIC = Symbol('not-static');
-
-/**
- * Rule options are written as plain data, so evaluating the JSON-shaped subset
- * of expressions recovers them without executing the test file — which would
- * re-register every harvested suite with jest.
- */
-const staticValue = (node: any): any => {
-  if (!node) return NOT_STATIC;
-  switch (node.type) {
-    case 'Literal':
-      return node.value;
-    case 'TemplateLiteral':
-      return node.expressions.length === 0
-        ? node.quasis.map((q: any) => q.value.cooked).join('')
-        : NOT_STATIC;
-    case 'ArrayExpression': {
-      const out: any[] = [];
-      for (const el of node.elements) {
-        const v = staticValue(el);
-        if (v === NOT_STATIC) return NOT_STATIC;
-        out.push(v);
-      }
-      return out;
-    }
-    case 'ObjectExpression': {
-      const out: Record<string, any> = {};
-      for (const p of node.properties) {
-        if (p.type !== 'Property' || p.computed) return NOT_STATIC;
-        const key =
-          p.key.type === 'Identifier' ? p.key.name : staticValue(p.key);
-        if (key === NOT_STATIC || typeof key !== 'string') return NOT_STATIC;
-        const v = staticValue(p.value);
-        if (v === NOT_STATIC) return NOT_STATIC;
-        out[key] = v;
-      }
-      return out;
-    }
-    case 'UnaryExpression': {
-      const arg = staticValue(node.argument);
-      if (arg === NOT_STATIC) return NOT_STATIC;
-      if (node.operator === '-') return -arg;
-      if (node.operator === '+') return +arg;
-      if (node.operator === '!') return !arg;
-      return NOT_STATIC;
-    }
-    case 'Identifier':
-      return node.name === 'undefined' ? undefined : NOT_STATIC;
-    default:
-      return NOT_STATIC;
-  }
-};
-
-type HarvestedCase = { code: string; options?: any[]; filename?: string };
-
-const propOf = (node: any, name: string) =>
-  node.properties.find(
-    (p: any) =>
-      p.type === 'Property' &&
-      !p.computed &&
-      ((p.key.type === 'Identifier' && p.key.name === name) ||
-        (p.key.type === 'Literal' && p.key.value === name)),
-  );
-
-/**
- * Options must be harvested alongside the code, not just the code. An
- * option-gated fixer is unreachable on defaults — #1461's autofix only exists
- * once `headerTemplate` is set, so a bare-snippet corpus cannot reach it at all.
- */
-const harvestCases = (testFile: string): HarvestedCase[] => {
-  if (!fs.existsSync(testFile)) return [];
-  const parsed = parse(fs.readFileSync(testFile, 'utf8'), testFile);
-  if (!parsed) return [];
-  const out: HarvestedCase[] = [];
-  const seen = new Set<string>();
-
-  const push = (c: HarvestedCase) => {
-    const key = JSON.stringify([c.code, c.options, c.filename]);
-    if (seen.has(key)) return;
-    seen.add(key);
-    out.push(c);
-  };
-
-  walkAst(parsed.ast, (node: any) => {
-    if (node.type !== 'ObjectExpression') return;
-    const codeProp = propOf(node, 'code');
-    if (!codeProp) return;
-    const code = staticValue(codeProp.value);
-    if (code === NOT_STATIC || typeof code !== 'string') return;
-
-    const optionsProp = propOf(node, 'options');
-    let options: any[] | undefined;
-    if (optionsProp) {
-      const v = staticValue(optionsProp.value);
-      // A case whose options cannot be recovered would be probed under the
-      // wrong configuration, so drop it rather than probe a fiction.
-      if (v === NOT_STATIC || !Array.isArray(v)) return;
-      options = v;
-    }
-
-    const filenameProp = propOf(node, 'filename');
-    const filenameValue = filenameProp
-      ? staticValue(filenameProp.value)
-      : undefined;
-
-    push({
-      code,
-      options,
-      filename: typeof filenameValue === 'string' ? filenameValue : undefined,
-    });
-  });
-
-  // Cases written as bare strings still exercise the default-option path.
-  walkAst(parsed.ast, (node: any) => {
-    if (node.type !== 'ArrayExpression') return;
-    for (const el of node.elements || []) {
-      if (!el) continue;
-      const v = staticValue(el);
-      // Shorter than this is a messageId or a rule name, not a snippet.
-      if (typeof v !== 'string' || v.length < 25 || !/[;{(=<]/.test(v)) {
-        continue;
-      }
-      push({ code: v });
-    }
-  });
-
-  return out;
-};
 
 const linter = new Linter();
 for (const [name, rule] of Object.entries(plugin.rules)) {
@@ -210,18 +64,11 @@ for (const [name, rule] of Object.entries(plugin.rules)) {
 }
 linter.defineParser('ts', tsParser);
 
-const configFor = (rule: string, options?: any[]): Linter.Config =>
+const configFor = (rule: string, testCase: FixtureCase): Linter.Config =>
   ({
     parser: 'ts',
-    parserOptions: {
-      ecmaVersion: 2022,
-      sourceType: 'module',
-      ecmaFeatures: { jsx: true },
-    },
-    rules: {
-      [PREFIX + rule]:
-        options && options.length ? ['error', ...options] : 'error',
-    },
+    parserOptions: parserOptionsFor(testCase),
+    rules: { [PREFIX + rule]: severityWithOptions(testCase) },
   } as Linter.Config);
 
 type Finding = {
@@ -232,26 +79,47 @@ type Finding = {
     | 'suggestion-breaks-parse';
   detail: string;
   code: string;
-  options?: any[];
+  options?: readonly unknown[];
+  origin: string;
+  filename: string;
   output: string;
 };
 
+type CaseOutcome = {
+  reported: boolean;
+  /** A fix was offered, so convergence was genuinely exercised. */
+  checked: boolean;
+  finding: Finding | null;
+};
+
+const SILENT: CaseOutcome = { reported: false, checked: false, finding: null };
+
 const checkCase = (
   rule: string,
-  testCase: HarvestedCase,
+  testCase: FixtureCase,
   filename: string,
-): Finding | null => {
+): CaseOutcome => {
   const id = PREFIX + rule;
-  const config = configFor(rule, testCase.options);
+  const config = configFor(rule, testCase);
   let before: Linter.LintMessage[];
   try {
     before = linter.verify(testCase.code, config, { filename });
   } catch {
-    return null;
+    return SILENT;
   }
+  const mine = before.filter((m) => m.ruleId === id);
   // Nothing to converge unless this configuration actually offers a fix. This
   // also skips input that does not parse, which reports fatally and nothing else.
-  if (!before.some((m) => m.ruleId === id && m.fix)) return null;
+  if (!mine.some((m) => m.fix)) {
+    return { reported: mine.length > 0, checked: false, finding: null };
+  }
+
+  const context = {
+    code: testCase.code,
+    options: testCase.options,
+    origin: testCase.origin,
+    filename,
+  };
 
   let output: string;
   let after: Linter.LintMessage[];
@@ -260,40 +128,49 @@ const checkCase = (
     after = linter.verify(output, config, { filename });
   } catch (err) {
     return {
-      kind: 'fix-breaks-parse',
-      detail: `linting the fixed output threw: ${(err as Error).message}`,
-      code: testCase.code,
-      options: testCase.options,
-      output: '',
+      reported: true,
+      checked: true,
+      finding: {
+        kind: 'fix-breaks-parse',
+        detail: `linting the fixed output threw: ${(err as Error).message}`,
+        ...context,
+        output: '',
+      },
     };
   }
 
   const fatal = after.find((m) => m.fatal || m.ruleId === null);
   if (fatal) {
     return {
-      kind: 'fix-breaks-parse',
-      detail: fatal.message,
-      code: testCase.code,
-      options: testCase.options,
-      output,
+      reported: true,
+      checked: true,
+      finding: {
+        kind: 'fix-breaks-parse',
+        detail: fatal.message,
+        ...context,
+        output,
+      },
     };
   }
 
   const stillFixable = after.filter((m) => m.ruleId === id && m.fix);
   if (stillFixable.length > 0) {
     return {
-      kind: 'non-convergent',
-      detail: `${
-        stillFixable.length
-      } fixable message(s) survive the fix loop: ${stillFixable
-        .map((m) => m.messageId || m.message)
-        .join(', ')}`,
-      code: testCase.code,
-      options: testCase.options,
-      output,
+      reported: true,
+      checked: true,
+      finding: {
+        kind: 'non-convergent',
+        detail: `${
+          stillFixable.length
+        } fixable message(s) survive the fix loop: ${stillFixable
+          .map((m) => m.messageId || m.message)
+          .join(', ')}`,
+        ...context,
+        output,
+      },
     };
   }
-  return null;
+  return { reported: true, checked: true, finding: null };
 };
 
 const applyEdit = (
@@ -318,11 +195,11 @@ const keyOf = (message: Linter.LintMessage) =>
  */
 const checkSuggestions = (
   rule: string,
-  testCase: HarvestedCase,
+  testCase: FixtureCase,
   filename: string,
 ): { applied: number; findings: Finding[] } => {
   const id = PREFIX + rule;
-  const config = configFor(rule, testCase.options);
+  const config = configFor(rule, testCase);
   let before: Linter.LintMessage[];
   try {
     before = linter.verify(testCase.code, config, { filename });
@@ -337,6 +214,13 @@ const checkSuggestions = (
   for (const m of mine) {
     beforeCounts.set(keyOf(m), (beforeCounts.get(keyOf(m)) || 0) + 1);
   }
+
+  const context = {
+    code: testCase.code,
+    options: testCase.options,
+    origin: testCase.origin,
+    filename,
+  };
 
   const findings: Finding[] = [];
   let applied = 0;
@@ -356,8 +240,7 @@ const checkSuggestions = (
           detail: `linting the suggested output threw: ${
             (err as Error).message
           }`,
-          code: testCase.code,
-          options: testCase.options,
+          ...context,
           output,
         });
         continue;
@@ -368,8 +251,7 @@ const checkSuggestions = (
         findings.push({
           kind: 'suggestion-breaks-parse',
           detail: `"${suggestion.desc}" produced unparseable output: ${fatal.message}`,
-          code: testCase.code,
-          options: testCase.options,
+          ...context,
           output,
         });
         continue;
@@ -384,8 +266,7 @@ const checkSuggestions = (
         findings.push({
           kind: 'suggestion-non-convergent',
           detail: `"${suggestion.desc}" left ${key} reported ${stillReported} time(s), was ${wasReported}`,
-          code: testCase.code,
-          options: testCase.options,
+          ...context,
           output,
         });
       }
@@ -394,15 +275,7 @@ const checkSuggestions = (
   return { applied, findings };
 };
 
-/**
- * A rule that gates on file location needs a filename it accepts; cases that
- * carry their own use it instead.
- */
-const FILENAMES = [
-  '/repo/src/components/Widget.tsx',
-  '/repo/src/util/helper.ts',
-  '/repo/functions/src/callable/handler.ts',
-];
+const corpus = harvestFixtureCorpus();
 
 const fixableRules = Object.entries(plugin.rules)
   .filter(([, rule]) => rule && rule.meta && rule.meta.fixable)
@@ -414,27 +287,101 @@ const suggestionRules = Object.entries(plugin.rules)
   .map(([name]) => name)
   .sort();
 
-const results = new Map<string, { probed: number; findings: Finding[] }>();
-let totalProbed = 0;
+type RuleResult = {
+  cases: number;
+  probed: number;
+  reported: number;
+  /** Probes where a fix existed, which is the only non-vacuous count here. */
+  checked: number;
+  findings: Finding[];
+};
+
+const results = new Map<string, RuleResult>();
 
 for (const rule of fixableRules) {
-  const cases = harvestCases(path.join(TESTS_DIR, `${rule}.test.ts`));
-  const findings: Finding[] = [];
-  let probed = 0;
-  for (const testCase of cases) {
-    for (const filename of testCase.filename
-      ? [testCase.filename]
-      : FILENAMES) {
-      probed++;
-      const finding = checkCase(rule, testCase, filename);
-      if (finding) findings.push(finding);
+  const cases = corpus.byRule.get(rule) || [];
+  const result: RuleResult = {
+    cases: cases.length,
+    probed: 0,
+    reported: 0,
+    checked: 0,
+    findings: [],
+  };
+
+  const probe = (testCase: FixtureCase, filename: string) => {
+    result.probed++;
+    const outcome = checkCase(rule, testCase, filename);
+    if (outcome.reported) result.reported++;
+    if (outcome.checked) result.checked++;
+    if (outcome.finding) result.findings.push(outcome.finding);
+  };
+
+  for (const testCase of cases) probe(testCase, defaultFilenameFor(testCase));
+  // Second chance for a rule that nothing exercised: only then is re-probing
+  // under invented paths worth its cost (see FALLBACK_FILENAMES).
+  if (result.checked === 0) {
+    for (const testCase of cases) {
+      if (testCase.filename) continue;
+      for (const filename of FALLBACK_FILENAMES) probe(testCase, filename);
     }
   }
-  results.set(rule, { probed, findings });
-  totalProbed += probed;
+
+  results.set(rule, result);
 }
 
-const rulesProbed = [...results.values()].filter((r) => r.probed > 0).length;
+const totalProbed = [...results.values()].reduce((a, r) => a + r.probed, 0);
+const totalChecked = [...results.values()].reduce((a, r) => a + r.checked, 0);
+const rulesChecked = [...results.values()].filter((r) => r.checked > 0).length;
+
+/**
+ * Why a rule's fixer was never exercised. Derived from the run rather than
+ * asserted by hand, so an entry cannot claim a reason the corpus contradicts.
+ */
+const REASONS = {
+  noFixtures: 'declares no fixture this TypeScript harness can lint',
+  typeAware:
+    'is type-aware, and a bare Linter has no program, so its fixer is unreachable here',
+  neverReports: 'never reports on any of its own fixtures',
+  reportsWithoutFix: 'reports on its own fixtures but never offers a fix',
+} as const;
+
+type Reason = typeof REASONS[keyof typeof REASONS];
+
+const reasonFor = (rule: string): Reason => {
+  const result = results.get(rule)!;
+  if (result.cases === 0) return REASONS.noFixtures;
+  if (typeAwareRuleNames.has(rule)) return REASONS.typeAware;
+  if (result.reported === 0) return REASONS.neverReports;
+  return REASONS.reportsWithoutFix;
+};
+
+/**
+ * Every fixable rule whose fixer this corpus cannot reach, with the reason the
+ * run itself produces.
+ *
+ * Enforced BOTH ways below. A rule that stops being exercised must be added
+ * here consciously, and an entry that stops reproducing must be deleted — a
+ * one-way list would let a rule go dark under an entry written for a reason
+ * that no longer holds, which is the failure mode #1732 records: a floor of
+ * "70 of 84 probed" tolerated twelve more rules falling silent, and for a
+ * zero-probed rule the per-rule assertion below reduces to `expect('')
+ * .toBe('')`.
+ */
+const UNREACHED_FIXERS: Record<string, Reason> = {
+  // Its fixtures are markdown, declared under `ruleTesterMarkdown`.
+  'enforce-typescript-markdown-code-blocks': REASONS.noFixtures,
+  // Its fixtures are `package.json` bodies, declared under `ruleTesterJson`.
+  'no-unpinned-dependencies': REASONS.noFixtures,
+  // Reports 4 times without a checker and offers no fix; its fixtures declare
+  // `parserOptions.project`, which a bare Linter cannot honour.
+  'no-usememo-for-pass-by-value': REASONS.typeAware,
+};
+
+const observedUnreached = Object.fromEntries(
+  fixableRules
+    .filter((rule) => results.get(rule)!.checked === 0)
+    .map((rule) => [rule, reasonFor(rule)]),
+);
 
 /**
  * Kept in its own map rather than merged into `results`: a rule can declare
@@ -446,24 +393,24 @@ const suggestionResults = new Map<
   { applied: number; findings: Finding[] }
 >();
 
-const probeSuggestions = (rule: string) => {
-  const cases = harvestCases(path.join(TESTS_DIR, `${rule}.test.ts`));
+for (const rule of suggestionRules) {
+  const cases = corpus.byRule.get(rule) || [];
   const findings: Finding[] = [];
   let applied = 0;
-  for (const testCase of cases) {
-    for (const filename of testCase.filename
-      ? [testCase.filename]
-      : FILENAMES) {
-      const result = checkSuggestions(rule, testCase, filename);
-      applied += result.applied;
-      findings.push(...result.findings);
+  const probe = (testCase: FixtureCase, filename: string) => {
+    const result = checkSuggestions(rule, testCase, filename);
+    applied += result.applied;
+    findings.push(...result.findings);
+  };
+  for (const testCase of cases) probe(testCase, defaultFilenameFor(testCase));
+  // Same second chance the fix channel gets, and for the same reason.
+  if (applied === 0) {
+    for (const testCase of cases) {
+      if (testCase.filename) continue;
+      for (const filename of FALLBACK_FILENAMES) probe(testCase, filename);
     }
   }
-  return { applied, findings };
-};
-
-for (const rule of suggestionRules) {
-  suggestionResults.set(rule, probeSuggestions(rule));
+  suggestionResults.set(rule, { applied, findings });
 }
 
 const totalSuggestionsApplied = [...suggestionResults.values()].reduce(
@@ -475,11 +422,35 @@ const reportOf = (findings: Finding[]) =>
   findings
     .map(
       (f) =>
-        `[${f.kind}] ${f.detail}\noptions: ${JSON.stringify(
-          f.options,
-        )}\n--- input ---\n${f.code}\n--- after ---\n${f.output}`,
+        `[${f.kind}] ${f.detail}\nsrc/tests/${f.origin} as ${
+          f.filename
+        }\noptions: ${JSON.stringify(f.options)}\n--- input ---\n${
+          f.code
+        }\n--- after ---\n${f.output}`,
     )
     .join('\n\n');
+
+/**
+ * Printed per rule with its reason, not merely asserted: a rule that lands in
+ * an unlabelled bucket reads as "this rule has no fixable trigger" when the
+ * truth may be that the harness dropped it (#1526, #1732).
+ */
+console.log(
+  [
+    `[fixer-convergence] ${rulesChecked} of ${fixableRules.length} fixable ` +
+      `rules exercised; ${totalChecked} of ${totalProbed} probes offered a fix`,
+    `  corpus: ${corpus.totalCases} cases from ${corpus.suitesUsed} suites, ` +
+      `${corpus.filesLoaded} files loaded, ${corpus.failures.length} failed`,
+    `  unreached (${
+      Object.keys(observedUnreached).length
+    }), each with its reason:`,
+    ...Object.entries(observedUnreached).map(
+      ([rule, reason]) => `    ${rule}: ${reason}`,
+    ),
+    `  suggestion channel: ${totalSuggestionsApplied} suggestion(s) applied ` +
+      `across ${suggestionRules.length} rule(s)`,
+  ].join('\n'),
+);
 
 describe('fixers must converge under the multi-pass fix loop', () => {
   /**
@@ -488,15 +459,43 @@ describe('fixers must converge under the multi-pass fix loop', () => {
    */
   it('probes a meaningful share of the fixable rules', () => {
     expect(fixableRules.length).toBeGreaterThan(70);
-    expect(rulesProbed).toBeGreaterThanOrEqual(70);
-    expect(totalProbed).toBeGreaterThanOrEqual(8000);
+    // Exact, not a floor: the accounting test names every rule below this
+    // count, so slack here would just re-open the hole #1732 describes.
+    expect(rulesChecked).toBe(
+      fixableRules.length - Object.keys(UNREACHED_FIXERS).length,
+    );
+    expect(totalProbed).toBeGreaterThanOrEqual(7500);
+    expect(totalChecked).toBeGreaterThanOrEqual(2500);
+    expect(corpus.failures).toEqual([]);
+  });
+
+  it('accounts for every fixable rule, unreached ones by reason', () => {
+    expect(observedUnreached).toEqual(UNREACHED_FIXERS);
   });
 
   it.each(fixableRules)('%s', (rule) => {
-    const { findings } = results.get(rule)!;
+    const { checked, findings } = results.get(rule)!;
+    const problems: string[] = [];
+    // Without this, a rule the corpus stopped reaching asserts nothing at all.
+    if (checked === 0 && !(rule in UNREACHED_FIXERS)) {
+      problems.push(
+        `no fixture of this rule offered a fix, so convergence was never ` +
+          `exercised (${reasonFor(rule)}). Restore a triggering fixture, or ` +
+          `add the rule to UNREACHED_FIXERS with that reason.`,
+      );
+    }
     // A finding means the fix must decline instead; see #1461.
-    expect(findings.length === 0 ? '' : reportOf(findings)).toBe('');
+    if (findings.length) problems.push(reportOf(findings));
+    expect(problems.join('\n\n')).toBe('');
   });
+});
+
+/** A planted control is not a harvested fixture, but it is probed as one. */
+const plantedCase = (code: string): FixtureCase => ({
+  code,
+  tester: 'ruleTesterTs',
+  origin: 'planted control',
+  bucket: 'valid',
 });
 
 /**
@@ -611,6 +610,131 @@ for (const control of CONTROLS) {
   linter.defineRule(PREFIX + control.name, control.rule as never);
 }
 
+/**
+ * A planted NON-CONVERGENT fixer, run through `checkCase` itself. The fix
+ * channel's real rules are all convergent, so without this the fix-side
+ * detector is only ever observed returning null and a regression that broke it
+ * would read as a clean sweep.
+ */
+const FIX_CONTROLS: Array<{
+  name: string;
+  code: string;
+  expectKinds: Finding['kind'][];
+  rule: Record<string, any>;
+}> = [
+  {
+    name: 'control-fix-nonconvergent',
+    // Re-wraps its own output, so every pass of the loop finds the trigger again.
+    code: 'const value = compute();\n',
+    expectKinds: ['non-convergent'],
+    rule: {
+      meta: {
+        type: 'problem',
+        fixable: 'code',
+        schema: [],
+        messages: { m: 'x' },
+      },
+      create(context: any) {
+        return {
+          CallExpression(node: any) {
+            if (node.callee.name !== 'compute') return;
+            context.report({
+              node,
+              messageId: 'm',
+              fix: (f: any) => f.replaceText(node, `wrap(${'compute()'})`),
+            });
+          },
+        };
+      },
+    },
+  },
+  {
+    name: 'control-fix-breaks-parse',
+    code: 'const value = compute();\n',
+    expectKinds: ['fix-breaks-parse'],
+    rule: {
+      meta: {
+        type: 'problem',
+        fixable: 'code',
+        schema: [],
+        messages: { m: 'x' },
+      },
+      create(context: any) {
+        return {
+          CallExpression(node: any) {
+            if (node.callee.name !== 'compute') return;
+            context.report({
+              node,
+              messageId: 'm',
+              fix: (f: any) => f.replaceText(node, 'compute( ,'),
+            });
+          },
+        };
+      },
+    },
+  },
+  {
+    name: 'control-fix-convergent',
+    // Clears its own trigger on the first pass: must produce NO finding.
+    code: 'const value = compute();\n',
+    expectKinds: [],
+    rule: {
+      meta: {
+        type: 'problem',
+        fixable: 'code',
+        schema: [],
+        messages: { m: 'x' },
+      },
+      create(context: any) {
+        return {
+          CallExpression(node: any) {
+            if (node.callee.name !== 'compute') return;
+            context.report({
+              node,
+              messageId: 'm',
+              fix: (f: any) => f.replaceText(node.callee, 'computed'),
+            });
+          },
+        };
+      },
+    },
+  },
+];
+
+for (const control of FIX_CONTROLS) {
+  linter.defineRule(PREFIX + control.name, control.rule as never);
+}
+
+describe('the convergence detector is load-bearing', () => {
+  it.each(FIX_CONTROLS.map((c) => [c.name, c.expectKinds] as const))(
+    'control %s yields %s',
+    (name, expectKinds) => {
+      const control = FIX_CONTROLS.find((c) => c.name === name)!;
+      const outcome = checkCase(name, plantedCase(control.code), 'file.ts');
+      // A control whose fix never reached the harness would prove nothing.
+      expect(outcome.checked).toBe(true);
+      expect(outcome.finding ? [outcome.finding.kind] : []).toEqual(
+        expectKinds,
+      );
+    },
+  );
+
+  /**
+   * The corpus must carry the configuration each case was written for. A
+   * fixture whose fix only exists under its own options is the shape #1461
+   * lived in, and a corpus of bare snippets cannot reach it.
+   */
+  it('carries options and filenames from the fixtures themselves', () => {
+    const cases = [...corpus.byRule.values()].flat();
+    expect(cases.filter((c) => c.options).length).toBeGreaterThanOrEqual(250);
+    expect(cases.filter((c) => c.filename).length).toBeGreaterThanOrEqual(1000);
+    // Interpolated fixtures are the ones the text harvest could not see at all.
+    expect(
+      (corpus.byRule.get('no-usememo-for-pass-by-value') || []).length,
+    ).toBeGreaterThanOrEqual(60);
+  });
+});
+
 describe('suggestions must clear the trigger they are offered for', () => {
   it.each(CONTROLS.map((c) => [c.name, c.expectFindings] as const))(
     'control %s yields %s',
@@ -618,7 +742,7 @@ describe('suggestions must clear the trigger they are offered for', () => {
       const control = CONTROLS.find((c) => c.name === name)!;
       const { applied, findings } = checkSuggestions(
         name,
-        { code: control.code },
+        plantedCase(control.code),
         '/repo/src/util/helper.ts',
       );
       // A control whose suggestion never reached the harness would prove
@@ -643,7 +767,7 @@ describe('suggestions must clear the trigger they are offered for', () => {
         ]),
       ),
     ).toEqual(Object.fromEntries(suggestionRules.map((rule) => [rule, true])));
-    expect(totalSuggestionsApplied).toBeGreaterThanOrEqual(500);
+    expect(totalSuggestionsApplied).toBeGreaterThanOrEqual(250);
   });
 
   it.each(suggestionRules)('%s', (rule) => {
