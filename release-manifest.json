@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.20.107",
+    "date": "2026-08-05T05:11:58.347Z",
+    "rules": [
+      {
+        "name": "parallelize-async-operations",
+        "changeType": "fix",
+        "issues": [
+          1723
+        ],
+        "summary": "treat a callback's write to an outer binding as a dependency (closes #1723)"
+      },
+      {
+        "name": "parallelize-loop-awaits",
+        "changeType": "fix",
+        "issues": [
+          1724
+        ],
+        "summary": "see a callback's write to an outer binding (closes #1724)"
+      }
+    ]
+  },
+  {
     "version": "1.20.106",
     "date": "2026-08-05T01:12:16.076Z",
     "rules": [

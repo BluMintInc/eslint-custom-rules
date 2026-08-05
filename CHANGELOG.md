@@ -1,3 +1,11 @@
+## [1.20.107](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.106...v1.20.107) (2026-08-05)
+
+
+### Bug Fixes
+
+* **parallelize-async-operations:** treat a callback's write to an outer binding as a dependency (closes [#1723](https://github.com/BluMintInc/eslint-custom-rules/issues/1723)) ([6eb63d3](https://github.com/BluMintInc/eslint-custom-rules/commit/6eb63d369cb684f2ce14c1f2dd6ddec797d75a32)), closes [#10](https://github.com/BluMintInc/eslint-custom-rules/issues/10)
+* **parallelize-loop-awaits:** see a callback's write to an outer binding (closes [#1724](https://github.com/BluMintInc/eslint-custom-rules/issues/1724)) ([b46f061](https://github.com/BluMintInc/eslint-custom-rules/commit/b46f0613007288a2c0cb545d8a77c7a280603db9)), closes [#1723](https://github.com/BluMintInc/eslint-custom-rules/issues/1723)
+
 ## [1.20.106](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.105...v1.20.106) (2026-08-05)
 
 
