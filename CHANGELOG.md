@@ -1,3 +1,12 @@
+## [1.20.109](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.108...v1.20.109) (2026-08-05)
+
+
+### Bug Fixes
+
+* **firestore-transaction-reads-before-writes:** resolve a call-wrapped computed key (closes [#1728](https://github.com/BluMintInc/eslint-custom-rules/issues/1728)) ([6e70404](https://github.com/BluMintInc/eslint-custom-rules/commit/6e704040fbb4ab005fe43414ac5282e7513c591e))
+* **no-redundant-usecallback-wrapper:** see the useLatestCallback spelling (closes [#1726](https://github.com/BluMintInc/eslint-custom-rules/issues/1726)) ([4ed4935](https://github.com/BluMintInc/eslint-custom-rules/commit/4ed4935bfcc301240a2cc6bf169edf67d97eb072))
+* **require-server-timestamp-for-firestore-dates:** look through cast wrappers (closes [#1727](https://github.com/BluMintInc/eslint-custom-rules/issues/1727)) ([e47c239](https://github.com/BluMintInc/eslint-custom-rules/commit/e47c239946de71843b4dd36029fe57795599c59c))
+
 ## [1.20.108](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.107...v1.20.108) (2026-08-05)
 
 

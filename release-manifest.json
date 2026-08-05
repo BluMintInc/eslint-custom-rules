@@ -1,5 +1,35 @@
 [
   {
+    "version": "1.20.109",
+    "date": "2026-08-05T07:42:30.150Z",
+    "rules": [
+      {
+        "name": "firestore-transaction-reads-before-writes",
+        "changeType": "fix",
+        "issues": [
+          1728
+        ],
+        "summary": "resolve a call-wrapped computed key (closes #1728)"
+      },
+      {
+        "name": "no-redundant-usecallback-wrapper",
+        "changeType": "fix",
+        "issues": [
+          1726
+        ],
+        "summary": "see the useLatestCallback spelling (closes #1726)"
+      },
+      {
+        "name": "require-server-timestamp-for-firestore-dates",
+        "changeType": "fix",
+        "issues": [
+          1727
+        ],
+        "summary": "look through cast wrappers (closes #1727)"
+      }
+    ]
+  },
+  {
     "version": "1.20.108",
     "date": "2026-08-05T05:55:32.346Z",
     "rules": [
