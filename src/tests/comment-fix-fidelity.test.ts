@@ -31,7 +31,13 @@ import fs from 'fs';
 import path from 'path';
 import { Linter } from 'eslint';
 import * as tsParser from '@typescript-eslint/parser';
-import { harvestRuleTesterCases } from '../utils/harvestRuleTesterCases';
+import {
+  defaultFilenameFor,
+  harvestFixtureCorpus,
+  harvestOnce,
+  suggestionEditsOf,
+  suggestionRuleNames,
+} from '../utils/fixtureCorpus';
 
 /* eslint-disable @typescript-eslint/no-var-requires */
 const plugin = require('../index') as {
@@ -145,7 +151,13 @@ for (const [name, rule] of Object.entries(plugin.rules)) {
   ruleNameByIdentity.set(rule, name);
 }
 
-const harvested = harvestRuleTesterCases();
+/**
+ * Through the memoized accessor, because the suggestion corpus below reads the
+ * adapted view of the same harvest: a second raw harvest in this module registry
+ * returns zero suites (every suite file is already required, so no `run` call
+ * re-executes) and would silently empty whichever corpus asked for it second.
+ */
+const harvested = harvestOnce();
 const TS_TESTERS = new Set(['ruleTesterTs', 'ruleTesterJsx']);
 
 const casesByRule = new Map<string, InvalidCase[]>();
@@ -206,9 +218,20 @@ function appendTrailing(
   return lines.join('\n');
 }
 
+/**
+ * The suggestion kinds are the same three questions asked of a channel `--fix`
+ * never touches, and they are kept as separate kinds so a baseline entry can
+ * never be read as covering both channels of one rule.
+ */
 type Finding = {
   rule: string;
-  kind: 'PARSE_BREAK' | 'TRANSFORM_DIVERGED' | 'COMMENT_LOST';
+  kind:
+    | 'PARSE_BREAK'
+    | 'TRANSFORM_DIVERGED'
+    | 'COMMENT_LOST'
+    | 'SUGGESTION_PARSE_BREAK'
+    | 'SUGGESTION_TRANSFORM_DIVERGED'
+    | 'SUGGESTION_COMMENT_LOST';
   variantKind: string;
   origin: string;
   filename: string;
@@ -226,6 +249,14 @@ const stats = {
   comparisons: 0,
   rejectedNonNeutral: 0,
   rulesCompared: new Set<string>(),
+  /** Suggestion channel: one count per (variant, suggestion) pair compared. */
+  suggestionComparisons: 0,
+  /**
+   * Variants whose suggestion list did not line up with the baseline's. A
+   * comment changing WHICH reports appear is the neutrality-perturbation axis,
+   * not this one, so those pairs are dropped rather than judged here.
+   */
+  suggestionShapeMismatch: 0,
 };
 
 const soloRules = (name: string, testCase: InvalidCase) => ({
@@ -265,6 +296,44 @@ const fixOf = (
 };
 
 /**
+ * The provably comment-only variants of one source. Reported lines are where a
+ * transform edits, so they are where a rebuilt span shows up; the cap keeps one
+ * many-error fixture from dominating the run.
+ */
+function buildVariants(
+  code: string,
+  signature: string,
+  messages: { line?: number }[],
+): Variant[] {
+  const variants: Variant[] = [];
+  const addVariant = (kind: string, text: string | null) => {
+    if (text === null) return;
+    if (tokenSignature(text) !== signature) {
+      stats.rejectedNonNeutral++;
+      return;
+    }
+    variants.push({ kind, text });
+  };
+  addVariant('LEADING_BLOCK', `${BLOCK_MARKER}\n${code}`);
+  addVariant('LEADING_LINE', `${LINE_MARKER}\n${code}`);
+
+  const reportedLines = [
+    ...new Set(
+      messages
+        .map((message) => message.line)
+        .filter((line): line is number => Number.isInteger(line)),
+    ),
+  ].slice(0, 4);
+  for (const line of reportedLines) {
+    addVariant('BLOCK_ABOVE', insertLineBefore(code, line, BLOCK_MARKER));
+    addVariant('LINE_ABOVE', insertLineBefore(code, line, LINE_MARKER));
+    addVariant('TRAILING_BLOCK', appendTrailing(code, line, BLOCK_MARKER));
+    addVariant('TRAILING_LINE', appendTrailing(code, line, LINE_MARKER));
+  }
+  return variants;
+}
+
+/**
  * The comparison, for one case: fix the original, fix each provably-neutral
  * commented variant, and demand the two outputs agree once comments are removed.
  */
@@ -286,33 +355,7 @@ function compareCase(rule: string, tc: InvalidCase, into: Finding[]): void {
   if (baseSignature === null) return;
   if (baseFix.fixed) stats.baselineFixed++;
 
-  const variants: Variant[] = [];
-  const addVariant = (kind: string, text: string | null) => {
-    if (text === null) return;
-    if (tokenSignature(text) !== signature) {
-      stats.rejectedNonNeutral++;
-      return;
-    }
-    variants.push({ kind, text });
-  };
-  addVariant('LEADING_BLOCK', `${BLOCK_MARKER}\n${tc.code}`);
-  addVariant('LEADING_LINE', `${LINE_MARKER}\n${tc.code}`);
-
-  // Reported lines are where a fixer edits, so they are where a rebuilt span
-  // shows up. Capped so one many-error fixture cannot dominate the run.
-  const reportedLines = [
-    ...new Set(
-      base
-        .map((message) => message.line)
-        .filter((line): line is number => Number.isInteger(line)),
-    ),
-  ].slice(0, 4);
-  for (const line of reportedLines) {
-    addVariant('BLOCK_ABOVE', insertLineBefore(tc.code, line, BLOCK_MARKER));
-    addVariant('LINE_ABOVE', insertLineBefore(tc.code, line, LINE_MARKER));
-    addVariant('TRAILING_BLOCK', appendTrailing(tc.code, line, BLOCK_MARKER));
-    addVariant('TRAILING_LINE', appendTrailing(tc.code, line, LINE_MARKER));
-  }
+  const variants = buildVariants(tc.code, signature, base);
 
   for (const variant of variants) {
     const variantFix = fixOf(variant.text, solo, tc);
@@ -358,15 +401,142 @@ function compareCase(rule: string, tc: InvalidCase, into: Finding[]): void {
   }
 }
 
+/**
+ * The same question asked of the suggestion channel, which `--fix` never
+ * touches: a suggestion that rebuilds a span destroys a comment exactly as a
+ * fixer does, and the human accepting it has no way to see that it happened.
+ *
+ * Each suggestion is applied ALONE to the untouched source — never composed
+ * with a sibling suggestion, never through a fix loop — because that is the only
+ * state an editor can produce. Suggestions are paired between the baseline and
+ * the commented variant POSITIONALLY: with an identical non-comment token
+ * stream both lints must offer the same list, and a variant that offers a
+ * different one is a report-neutrality question rather than a fidelity one, so
+ * it is counted and dropped instead of judged here.
+ */
+function compareSuggestions(
+  rule: string,
+  tc: InvalidCase,
+  into: Finding[],
+): void {
+  const id = PREFIX + rule;
+  const solo = soloRules(rule, tc);
+
+  const signature = tokenSignature(tc.code);
+  if (signature === null) return;
+
+  const base = verify(tc.code, solo, tc);
+  if (!base || base.length === 0) return;
+  const baseEdits = suggestionEditsOf(tc.code, base, id);
+  if (baseEdits.length === 0) return;
+
+  for (const variant of buildVariants(tc.code, signature, base)) {
+    const variantMessages = verify(variant.text, solo, tc);
+    if (!variantMessages) continue;
+    const variantEdits = suggestionEditsOf(variant.text, variantMessages, id);
+    if (variantEdits.length !== baseEdits.length) {
+      stats.suggestionShapeMismatch++;
+      continue;
+    }
+
+    baseEdits.forEach((baseEdit, index) => {
+      const variantEdit = variantEdits[index];
+      stats.suggestionComparisons++;
+      suggestionComparedByRule.set(
+        rule,
+        (suggestionComparedByRule.get(rule) || 0) + 1,
+      );
+
+      const record = (kind: Finding['kind']) =>
+        into.push({
+          rule,
+          kind,
+          variantKind: variant.kind,
+          origin: tc.origin,
+          filename: tc.filename,
+          before: tc.code,
+          variant: variant.text,
+          baseOutput: baseEdit.output,
+          variantOutput: variantEdit.output,
+        });
+
+      const baseSignature = tokenSignature(baseEdit.output);
+      // An unparseable baseline output is `fixer-convergence`'s axis.
+      if (baseSignature === null) return;
+      const variantSignature = tokenSignature(variantEdit.output);
+      if (variantSignature === null) {
+        record('SUGGESTION_PARSE_BREAK');
+        return;
+      }
+      if (variantSignature !== baseSignature) {
+        record('SUGGESTION_TRANSFORM_DIVERGED');
+        return;
+      }
+      if (!variantEdit.output.includes(MARKER_TEXT)) {
+        record('SUGGESTION_COMMENT_LOST');
+        return;
+      }
+      const comments = commentsOf(variantEdit.output) || [];
+      if (!comments.some((comment) => comment.includes(MARKER_TEXT))) {
+        record('SUGGESTION_COMMENT_LOST');
+      }
+    });
+  }
+}
+
+/** Per-rule non-vacuity for the suggestion channel; a total would hide a zero. */
+const suggestionComparedByRule = new Map<string, number>(
+  suggestionRuleNames.map((rule) => [rule, 0]),
+);
+
+/**
+ * Suggestion-bearing rules carry their own corpus: only one of the seven is
+ * `meta.fixable`, so six of them are absent from `casesByRule` entirely and the
+ * fix channel's corpus cannot stand in for this one.
+ */
+const corpus = harvestFixtureCorpus();
+const suggestionCasesByRule = new Map<string, InvalidCase[]>(
+  suggestionRuleNames.map((rule) => [
+    rule,
+    (corpus.byRule.get(rule) || []).map((testCase) => ({
+      code: testCase.code,
+      filename: defaultFilenameFor(testCase),
+      options: testCase.options,
+      parserOptions: testCase.parserOptions,
+      origin: `src/tests/${testCase.origin}`,
+    })),
+  ]),
+);
+
 function collectFindings(): Finding[] {
   const findings: Finding[] = [];
   for (const [rule, cases] of casesByRule) {
     for (const testCase of cases) compareCase(rule, testCase, findings);
   }
+  for (const [rule, cases] of suggestionCasesByRule) {
+    for (const testCase of cases) compareSuggestions(rule, testCase, findings);
+  }
   return findings;
 }
 
 const findings = collectFindings();
+
+/**
+ * Printed per rule, not merely asserted in aggregate: a rule contributing zero
+ * comparisons was not tested on this channel, and a total hides that.
+ */
+console.log(
+  [
+    `[comment-fix-fidelity] suggestion channel: ${stats.suggestionComparisons} ` +
+      `(variant, suggestion) pair(s) compared, ` +
+      `${stats.suggestionShapeMismatch} dropped for a mismatched suggestion list`,
+    ...suggestionRuleNames.map(
+      (rule) =>
+        `    ${rule}: ${suggestionComparedByRule.get(rule) || 0} compared ` +
+        `over ${(suggestionCasesByRule.get(rule) || []).length} case(s)`,
+    ),
+  ].join('\n'),
+);
 const groupKey = (finding: Finding) => `${finding.rule} :: ${finding.kind}`;
 
 /**
@@ -388,6 +558,10 @@ const groupKey = (finding: Finding) => `${finding.rule} :: ${finding.kind}`;
  *     discriminator is a trailing same-line comment after the terminating token,
  *     which sits OUTSIDE the node's range — a fixer that drops one of those is
  *     writing text it does not own, and is a defect.
+ *
+ * The `SUGGESTION_*` kinds are separate keys on purpose: a rule's fixer and its
+ * suggestions are different transforms, so a reason verified for one can never
+ * be read as covering the other.
  */
 export const COMMENT_FIDELITY_BASELINE: Record<string, string> = {
   // DECLINE. The rule re-hosts each comment in the span onto the element it
@@ -453,7 +627,7 @@ describe('a fixer does not write text it does not own', () => {
       }
       throw new Error(
         [
-          `${byGroup.size} rule(s) change what --fix writes when a comment is added:`,
+          `${byGroup.size} rule(s) change what they write when a comment is added:`,
           ...[...byGroup.entries()].map(([key, hits]) =>
             [
               `  ${key} (${hits.length} case(s), variant ${hits[0].variantKind})`,
@@ -503,6 +677,86 @@ describe('a fixer does not write text it does not own', () => {
 });
 
 /**
+ * Planted suggestion doubles, driven through `compareSuggestions` itself.
+ *
+ * Both polarities are needed and neither can be keyed to a shipped rule: every
+ * live instance of this class is something the suite exists to eliminate, so a
+ * control tied to one goes vacuous exactly when the plugin is healthiest.
+ */
+const CONTROL_REBUILD_SUGGESTER = 'control-rebuild-suggester';
+const CONTROL_INPLACE_SUGGESTER = 'control-inplace-suggester';
+
+linter.defineRule(PREFIX + CONTROL_REBUILD_SUGGESTER, {
+  meta: {
+    type: 'problem',
+    hasSuggestions: true,
+    schema: [],
+    messages: { m: 'x', s: 'rebuild the call' },
+  },
+  create(context: never) {
+    const ctx = context as unknown as {
+      getSourceCode: () => { getText: (n?: unknown) => string };
+      report: (d: unknown) => void;
+    };
+    const src = ctx.getSourceCode();
+    return {
+      CallExpression(node: never) {
+        const call = node as unknown as {
+          callee: { name?: string };
+          arguments: unknown[];
+        };
+        if (call.callee.name !== 'rebuildMe') return;
+        const args = call.arguments
+          .map((argument) => src.getText(argument))
+          .join(', ');
+        ctx.report({
+          node,
+          messageId: 'm',
+          suggest: [
+            {
+              messageId: 's',
+              fix: (fixer: {
+                replaceText: (n: unknown, t: string) => unknown;
+              }) => fixer.replaceText(node, `rebuildMe(${args})`),
+            },
+          ],
+        });
+      },
+    };
+  },
+} as never);
+
+linter.defineRule(PREFIX + CONTROL_INPLACE_SUGGESTER, {
+  meta: {
+    type: 'problem',
+    hasSuggestions: true,
+    schema: [],
+    messages: { m: 'x', s: 'rename the binding' },
+  },
+  create(context: never) {
+    const ctx = context as unknown as { report: (d: unknown) => void };
+    return {
+      Identifier(node: never) {
+        const id = node as unknown as { name: string };
+        if (id.name !== 'renameMe') return;
+        ctx.report({
+          node,
+          messageId: 'm',
+          suggest: [
+            {
+              messageId: 's',
+              fix: (fixer: {
+                replaceText: (n: unknown, t: string) => unknown;
+              }) => fixer.replaceText(node, 'renamed'),
+            },
+          ],
+        });
+      },
+    };
+  },
+} as never);
+
+/**
  * Anti-vacuity controls. This guard compares two fix outputs, so a bug that
  * makes both sides equal — or that makes every fix fail — reads exactly like a
  * clean corpus.
@@ -527,6 +781,54 @@ describe('the comment fidelity guard is load-bearing', () => {
     // If the baseline never fixes anything there is no transform to compare.
     expect(stats.baselineFixed).toBeGreaterThanOrEqual(1000);
     expect(stats.comparisons).toBeGreaterThanOrEqual(5000);
+  });
+
+  /**
+   * Per-rule floor for the suggestion channel. Six of the seven suggestion
+   * rules are not `meta.fixable`, so before #1733 none of them entered this
+   * corpus at all; a rule with zero comparisons is untested here, and an
+   * aggregate floor would let one prolific rule cover for it.
+   */
+  it('compares suggestions from every suggestion-bearing rule', () => {
+    expect(suggestionRuleNames.length).toBeGreaterThanOrEqual(7);
+    // None of the seven is type-aware, so each is reachable under this bare
+    // Linter and none has a reason to be exempt.
+    expect(
+      suggestionRuleNames.filter(
+        (rule) => (suggestionComparedByRule.get(rule) || 0) < 1,
+      ),
+    ).toEqual([]);
+    expect(stats.suggestionComparisons).toBeGreaterThanOrEqual(500);
+  });
+
+  it('detects a suggestion that rebuilds a span (positive control)', () => {
+    // The #1693 shape offered through `suggest`: `--fix` never applies it, so
+    // the fix channel above cannot see this transform at all.
+    const planted: InvalidCase = {
+      code: 'rebuildMe(\n  1,\n);\n',
+      filename: 'x.ts',
+      origin: 'planted control',
+    };
+    const found: Finding[] = [];
+    compareSuggestions(CONTROL_REBUILD_SUGGESTER, planted, found);
+    expect(found.map((finding) => finding.kind)).toContain(
+      'SUGGESTION_COMMENT_LOST',
+    );
+  });
+
+  it('stays silent on a suggestion that edits in place (negative control)', () => {
+    const planted: InvalidCase = {
+      code: 'const renameMe = 1;\n',
+      filename: 'x.ts',
+      origin: 'planted control',
+    };
+    const before = stats.suggestionComparisons;
+    const found: Finding[] = [];
+    compareSuggestions(CONTROL_INPLACE_SUGGESTER, planted, found);
+    // A control whose suggestion never reached the comparison would prove
+    // nothing about either polarity.
+    expect(stats.suggestionComparisons).toBeGreaterThan(before);
+    expect(found).toEqual([]);
   });
 
   it('rejects perturbations that are not comment-only', () => {
