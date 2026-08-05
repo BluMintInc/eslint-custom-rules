@@ -139,3 +139,10 @@ still reported, so nothing goes unflagged; the reordering just has to be made by
 
 Disable this rule if you intentionally rely on non-linear ordering (e.g., staged startup logging for distributed tracing) or need to keep audit/compliance logging after initialization even when it breaks top-to-bottom grouping.
 
+
+## Shebang files
+
+A `#!` shebang belongs to the file rather than to the statement beneath it, so
+it is never part of a relocated statement's preamble: it stays on line 1 even
+when the first statement in the file is the one being moved. Anywhere else, `#!`
+is a syntax error (`TS18026`) and the file stops being executable.
