@@ -13,6 +13,39 @@ import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds = 'missingGeneric' | 'invalidGeneric';
 
+/** The Firestore reference types that carry a document-shape generic. */
+const REFERENCE_TYPE_NAMES = new Set([
+  'DocumentReference',
+  'CollectionReference',
+  'CollectionGroup',
+]);
+
+/**
+ * The final segment of a type reference's name, so `FirebaseFirestore.
+ * DocumentReference` is recognized as the same type as `DocumentReference`.
+ *
+ * The rightmost segment is the right granularity because the namespace is
+ * arbitrary — `FirebaseFirestore.`, `admin.firestore.` and any
+ * `import * as fs from 'firebase-admin/firestore'` alias all name these types —
+ * while the names themselves are specific enough that an unrelated module's
+ * `DocumentReference` is not a realistic collision.
+ */
+const referenceTypeNameOf = (
+  typeName: TSESTree.EntityName,
+): string | undefined => {
+  if (typeName.type === AST_NODE_TYPES.Identifier) {
+    return REFERENCE_TYPE_NAMES.has(typeName.name) ? typeName.name : undefined;
+  }
+  if (
+    typeName.type === AST_NODE_TYPES.TSQualifiedName &&
+    typeName.right.type === AST_NODE_TYPES.Identifier &&
+    REFERENCE_TYPE_NAMES.has(typeName.right.name)
+  ) {
+    return typeName.right.name;
+  }
+  return undefined;
+};
+
 /**
  * @type {import('eslint').Rule.RuleModule}
  */
@@ -867,11 +900,7 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
     function hasCollectionReferenceType(typeNode: TSESTree.TypeNode): boolean {
       if (
         typeNode.type === AST_NODE_TYPES.TSTypeReference &&
-        ((typeNode.typeName.type === AST_NODE_TYPES.Identifier &&
-          typeNode.typeName.name === 'CollectionReference') ||
-          (typeNode.typeName.type === AST_NODE_TYPES.TSQualifiedName &&
-            typeNode.typeName.right.type === AST_NODE_TYPES.Identifier &&
-            typeNode.typeName.right.name === 'CollectionReference')) &&
+        referenceTypeNameOf(typeNode.typeName) === 'CollectionReference' &&
         typeNode.typeParameters &&
         typeNode.typeParameters.params.length > 0
       ) {
@@ -1142,13 +1171,8 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
 
     return {
       TSTypeReference(node: TSESTree.TSTypeReference): void {
-        if (
-          node.typeName.type === AST_NODE_TYPES.Identifier &&
-          (node.typeName.name === 'DocumentReference' ||
-            node.typeName.name === 'CollectionReference' ||
-            node.typeName.name === 'CollectionGroup')
-        ) {
-          const typeName = node.typeName.name;
+        const typeName = referenceTypeNameOf(node.typeName);
+        if (typeName) {
           // Check if generic type argument is missing
           if (!node.typeParameters || node.typeParameters.params.length === 0) {
             context.report({

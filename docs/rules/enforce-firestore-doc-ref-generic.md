@@ -14,6 +14,7 @@ This rule requires every Firestore `DocumentReference`, `CollectionReference`, a
 - A class member reached as `this.member` or `this.member()` is resolved through its return type annotation when it has one, and otherwise through the expression it returns. See [Where the schema evidence must live](#where-the-schema-evidence-must-live).
 - Generics that use `any` or `{}` erase the schema and disable compile-time checks; nested `any`/`{}` are flagged when the rule can see them inline or via same-file types. See [How a named generic is resolved](#how-a-named-generic-is-resolved).
 - Receivers that trace back to `@firebase/rules-unit-testing` are exempt. See [Compat Firestore from `@firebase/rules-unit-testing`](#compat-firestore-from-firebaserules-unit-testing).
+- The reference type is recognized however it is namespaced. `FirebaseFirestore.DocumentReference`, `admin.firestore.DocumentReference` and a namespace-import alias such as `fs.DocumentReference` are the same type as the bare `DocumentReference` and are checked identically. Matching keys on the last segment of the name, because the namespace alias is chosen by the importer while `DocumentReference` / `CollectionReference` / `CollectionGroup` are specific enough that an unrelated module's type of the same name is not a realistic collision.
 
 ## How a named generic is resolved
 

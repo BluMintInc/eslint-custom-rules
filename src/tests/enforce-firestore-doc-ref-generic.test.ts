@@ -1619,8 +1619,55 @@ ruleTesterTs.run(
         const userRef: DocumentReference<Empty> = db.collection('users').doc(userId);
       `,
       },
+      // A properly-typed namespaced reference is as correct as the bare form —
+      // the #1754 widening must not turn agora's 7 existing qualified,
+      // correctly-generic references into reports.
+      {
+        code: `const userRef: FirebaseFirestore.DocumentReference<User> = db.collection('users').doc(userId);`,
+      },
+      {
+        code: `const usersCollection: admin.firestore.CollectionReference<User> = db.collection('users');`,
+      },
+      {
+        code: `const groupRef = doc as FirebaseFirestore.DocumentReference<TGroup>;`,
+      },
     ],
     invalid: [
+      /**
+       * Namespaced spellings of the same types (issue #1754). The namespace is
+       * arbitrary — `FirebaseFirestore.`, `admin.firestore.` and any
+       * `import * as fs from 'firebase-admin/firestore'` alias all name these
+       * types — so detection keys on the rightmost segment.
+       */
+      {
+        code: `const userRef: FirebaseFirestore.DocumentReference = db.collection('users').doc(userId);`,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      {
+        code: `const usersCollection: FirebaseFirestore.CollectionReference = db.collection('users');`,
+        errors: [missingGenericError('CollectionReference')],
+      },
+      {
+        code: `const productsGroup: FirebaseFirestore.CollectionGroup = db.collectionGroup('products');`,
+        errors: [missingGenericError('CollectionGroup')],
+      },
+      {
+        code: `const userRef: admin.firestore.DocumentReference = db.collection('users').doc(userId);`,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      {
+        code: `const userRef: FirebaseFirestore.DocumentReference<any> = db.collection('users').doc(userId);`,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      // The two shapes agora actually writes: a parameter, and an array of them.
+      {
+        code: `function handler(roundRef: FirebaseFirestore.DocumentReference) { return roundRef; }`,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      {
+        code: `function handler(refs: readonly FirebaseFirestore.DocumentReference[]) { return refs; }`,
+        errors: [missingGenericError('DocumentReference')],
+      },
       // Missing generic type - DocumentReference
       {
         code: `const userRef: DocumentReference = db.collection('users').doc(userId);`,
