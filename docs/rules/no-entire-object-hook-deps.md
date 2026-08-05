@@ -20,7 +20,15 @@
 - `useEffect`, `useMemo`, and `useCallback` dependency arrays.
 - Flags when you list an entire object even though the hook body only reads specific properties (including optional chaining paths).
 - Flags dependencies you put in a `useMemo`/`useCallback` array but never reference in the hook body.
-- Requires TypeScript with `parserOptions.project` so the rule can distinguish objects from primitives and arrays.
+- Requires TypeScript with `parserOptions.project` so the rule can distinguish objects from primitives and arrays, and methods from data properties.
+
+### Methods keep the whole object
+
+A member that resolves to a **method** — one declared on a class or an interface, such as `set.has`, `map.get`, `fn.call`, or your own `formatter.format` — is left alone: the entire object stays the dependency.
+
+Such a member is a reference to the **prototype's** function, which is one shared value across every instance of that type: `new Set().has === new Set().has`, and `f1.call === f2.call` for any two functions. Narrowing `[arrivalIds]` to `[arrivalIds.has]` would therefore pin a constant, so the hook would never invalidate again and would serve stale results forever — the opposite of the extra-render problem this rule exists to solve. The same reasoning already applied to built-in array and string methods (`items.map`, `path.split`), and with type information it covers `Map`, `Set`, `Promise`, `Date`, `Intl.*` and every class you write.
+
+A **function-valued data property** is different and still narrows. `userData.getName`, where the type is `{ getName?: () => string }`, is per-instance state: it genuinely changes when the object carrying it is rebuilt, so depending on it is both narrower and correct.
 
 ### Unread dependencies on `useEffect`
 
@@ -136,6 +144,29 @@ function useGuards(hooks) {
     return buildGuardMap(hooks);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- shouldShowHash detects changes to the mutable hooks map kept out of the array
   }, [shouldShowHash]);
+}
+```
+
+`format` lives on `RelativeTimeFormatter.prototype`, so it is the same reference for every formatter ever constructed. The formatter instance is what actually changes, so it stays the dependency:
+
+```typescript
+class RelativeTimeFormatter {
+  public format(date: Date): string {
+    return date.toISOString();
+  }
+}
+
+function Bucketed({
+  relativeFormatter,
+  date,
+}: {
+  relativeFormatter: RelativeTimeFormatter;
+  date: Date;
+}) {
+  const bucket = useMemo(() => {
+    return relativeFormatter.format(date);
+  }, [relativeFormatter, date]);
+  return <span>{bucket}</span>;
 }
 ```
 

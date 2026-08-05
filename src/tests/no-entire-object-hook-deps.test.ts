@@ -1,5 +1,8 @@
+import path from 'path';
+import { Linter } from 'eslint';
+import * as tsParser from '@typescript-eslint/parser';
 import { parse } from '@typescript-eslint/parser';
-import { ruleTesterJsx } from '../utils/ruleTester';
+import { ruleTesterJsx, withParserOptions } from '../utils/ruleTester';
 import { noEntireObjectHookDeps } from '../rules/no-entire-object-hook-deps';
 
 type MessageIds = 'avoidEntireObject' | 'removeUnusedDependency';
@@ -2371,4 +2374,214 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
       `,
     },
   ],
+});
+
+// why (issue #1721): a member that resolves to a method is a reference to the
+// *prototype's* function, which is the same value for every instance
+// (`new Set().has === new Set().has`). Narrowing a dependency to `set.has`
+// therefore pins a constant and the hook never invalidates again. Recognising
+// that needs the type checker, so these cases carry the full typed-program
+// parser configuration the shared JSX tester does not declare — the untyped
+// suite above cannot exercise this branch at all and would pass vacuously.
+const typedParserOptions = {
+  ecmaVersion: 2020,
+  sourceType: 'module',
+  ecmaFeatures: { jsx: true },
+  project: './tsconfig.json',
+  tsconfigRootDir: path.join(__dirname, '..', '..'),
+  createDefaultProgram: true,
+} as const;
+
+// why: the typed cases below are only meaningful if the type checker actually
+// resolved something. Without `parserOptions.project` the parser hands the rule
+// an isolated program in which `Set` — declared in lib.d.ts — resolves to no
+// symbol at all, so the method carve-out cannot fire and the rule still narrows
+// to `arrivalIds.has`. Asserting both halves on one snippet proves those cases
+// pass because type information was available, not because the rule went quiet
+// for some unrelated reason. The negative control also pins the gate itself: a
+// consumer without `project` keeps the pre-existing behaviour exactly.
+describe('no-entire-object-hook-deps method carve-out is type-driven (issue #1721)', () => {
+  const setMethodSnippet = `
+const Component = ({ arrivalIds, rows }: { arrivalIds: Set<string>; rows: { id: string }[] }) => {
+  const visible = useMemo(() => {
+    return rows.filter((row) => arrivalIds.has(row.id));
+  }, [rows, arrivalIds]);
+  return <div>{visible.length}</div>;
+};
+`;
+
+  const lint = (parserOptions: Record<string, unknown>) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      tsParser as unknown as Linter.ParserModule,
+    );
+    linter.defineRule(
+      'no-entire-object-hook-deps',
+      noEntireObjectHookDeps as unknown as Parameters<Linter['defineRule']>[1],
+    );
+    return linter
+      .verify(
+        setMethodSnippet,
+        {
+          parser: '@typescript-eslint/parser',
+          parserOptions,
+          rules: { 'no-entire-object-hook-deps': 'error' },
+        } as Linter.Config,
+        'src/components/TypeDrivenProbe.tsx',
+      )
+      .filter((message) => message.ruleId === 'no-entire-object-hook-deps');
+  };
+
+  it('narrows a Set method to a prototype reference without type information', () => {
+    const messages = lint({
+      ecmaVersion: 2020,
+      sourceType: 'module',
+      ecmaFeatures: { jsx: true },
+    });
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.fix?.text).toBe('arrivalIds.has');
+  });
+
+  it('keeps the whole Set once the type of `has` resolves', () => {
+    expect(lint(typedParserOptions)).toHaveLength(0);
+  });
+});
+
+ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
+  valid: withParserOptions(typedParserOptions, [
+    // Set.prototype.has — agora's ListNotifications.tsx:194 (arrivalIds).
+    {
+      filename: 'src/components/SetMethodDep.tsx',
+      code: `
+const Component = ({ arrivalIds, rows }: { arrivalIds: Set<string>; rows: { id: string }[] }) => {
+  const visible = useMemo(() => {
+    return rows.filter((row) => arrivalIds.has(row.id));
+  }, [rows, arrivalIds]);
+  return <div>{visible.length}</div>;
+};
+`,
+    },
+    // Map.prototype.get — agora's TeamsCarouselWrapper.tsx:68 (teamIndexMap).
+    {
+      filename: 'src/components/MapMethodDep.tsx',
+      code: `
+const Component = ({ teamIndexMap }: { teamIndexMap: Map<string, number> }) => {
+  const renderHit = useCallback((id: string) => {
+    return teamIndexMap.get(id) || 0;
+  }, [teamIndexMap]);
+  return <div>{renderHit('a')}</div>;
+};
+`,
+    },
+    // Function.prototype.call — agora's GliderComponent.tsx:167 (onLoad).
+    {
+      filename: 'src/components/FunctionCallDep.tsx',
+      code: `
+const Component = ({ onLoad }: { onLoad: (index: number) => void }) => {
+  const handleLoad = useCallback((index: number) => {
+    onLoad.call(null, index);
+  }, [onLoad]);
+  return <div>{handleLoad}</div>;
+};
+`,
+    },
+    // Function.prototype.bind / Function.prototype.apply are the same shared
+    // reference as .call, so they must be treated identically.
+    {
+      filename: 'src/components/FunctionBindDep.tsx',
+      code: `
+const Component = ({ onSelect }: { onSelect: (id: string) => void }) => {
+  const bound = useMemo(() => onSelect.bind(null), [onSelect]);
+  return <div>{bound}</div>;
+};
+`,
+    },
+    {
+      filename: 'src/components/FunctionApplyDep.tsx',
+      code: `
+const Component = ({ onSubmit }: { onSubmit: (id: string) => void }) => {
+  const submit = useCallback((id: string) => {
+    onSubmit.apply(null, [id]);
+  }, [onSubmit]);
+  return <div>{submit}</div>;
+};
+`,
+    },
+    // A user-defined class instance — agora's ListChronological.tsx:54
+    // (relativeFormatter). The hand-maintained ARRAY_METHODS/STRING_METHODS
+    // lists can never cover this; only the checker can.
+    {
+      filename: 'src/components/ClassMethodDep.tsx',
+      code: `
+class RelativeTimeFormatter {
+  public format(value: number): string {
+    return String(value);
+  }
+}
+const Component = ({ relativeFormatter, value }: { relativeFormatter: RelativeTimeFormatter; value: number }) => {
+  const label = useMemo(() => {
+    return relativeFormatter.format(value);
+  }, [relativeFormatter, value]);
+  return <span>{label}</span>;
+};
+`,
+    },
+    // A method read without calling it is the same shared reference.
+    {
+      filename: 'src/components/UncalledMethodDep.tsx',
+      code: `
+const Component = ({ registry }: { registry: Map<string, number> }) => {
+  const lookup = useMemo(() => {
+    const read = registry.get;
+    return read;
+  }, [registry]);
+  return <div>{lookup}</div>;
+};
+`,
+    },
+  ]),
+  invalid: withParserOptions(typedParserOptions, [
+    // Negative control: a plain data property must STILL narrow. Without this
+    // the method carve-out would be indistinguishable from disabling the rule
+    // whenever type information is available.
+    {
+      filename: 'src/components/DataPropertyDep.tsx',
+      code: `
+const Component = ({ user }: { user: { id: string; name: string } }) => {
+  const label = useMemo(() => user.id, [user]);
+  return <span>{label}</span>;
+};
+`,
+      errors: [avoid('user', 'user.id')],
+      output: `
+const Component = ({ user }: { user: { id: string; name: string } }) => {
+  const label = useMemo(() => user.id, [user.id]);
+  return <span>{label}</span>;
+};
+`,
+    },
+    // Negative control: a nested data property on a typed object narrows too,
+    // and a sibling dependency whose method is called keeps its whole object.
+    {
+      filename: 'src/components/MixedDep.tsx',
+      code: `
+const Component = ({ ids, user }: { ids: Set<string>; user: { id: string; name: string } }) => {
+  const label = useMemo(() => {
+    return ids.has(user.id) ? user.name : '';
+  }, [ids, user]);
+  return <span>{label}</span>;
+};
+`,
+      errors: [avoid('user', 'user.id, user.name')],
+      output: `
+const Component = ({ ids, user }: { ids: Set<string>; user: { id: string; name: string } }) => {
+  const label = useMemo(() => {
+    return ids.has(user.id) ? user.name : '';
+  }, [ids, user.id, user.name]);
+  return <span>{label}</span>;
+};
+`,
+    },
+  ]),
 });
