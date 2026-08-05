@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.115",
+    "date": "2026-08-05T18:41:41.153Z",
+    "rules": [
+      {
+        "name": "no-jsx-in-hooks",
+        "changeType": "fix",
+        "issues": [
+          1753
+        ],
+        "summary": "detect React-qualified JSX return types (closes #1753)"
+      }
+    ]
+  },
+  {
     "version": "1.20.114",
     "date": "2026-08-05T18:16:40.596Z",
     "rules": [

@@ -1,3 +1,10 @@
+## [1.20.115](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.114...v1.20.115) (2026-08-05)
+
+
+### Bug Fixes
+
+* **no-jsx-in-hooks:** detect React-qualified JSX return types (closes [#1753](https://github.com/BluMintInc/eslint-custom-rules/issues/1753)) ([728f09c](https://github.com/BluMintInc/eslint-custom-rules/commit/728f09c5c907d3f49dd852a220571e4c3627835c))
+
 ## [1.20.114](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.113...v1.20.114) (2026-08-05)
 
 
