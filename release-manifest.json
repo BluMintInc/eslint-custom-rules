@@ -1,5 +1,35 @@
 [
   {
+    "version": "1.20.112",
+    "date": "2026-08-05T16:17:08.283Z",
+    "rules": [
+      {
+        "name": "enforce-css-media-queries",
+        "changeType": "fix",
+        "issues": [
+          1746
+        ],
+        "summary": "exempt breakpoints that reach no style (closes #1746)"
+      },
+      {
+        "name": "no-uuidv4-base62-as-key",
+        "changeType": "fix",
+        "issues": [
+          1744
+        ],
+        "summary": "recognize the helper by module basename (closes #1744)"
+      },
+      {
+        "name": "prefer-clone-deep",
+        "changeType": "fix",
+        "issues": [
+          1745
+        ],
+        "summary": "classify a nested literal by all its sources (closes #1745)"
+      }
+    ]
+  },
+  {
     "version": "1.20.111",
     "date": "2026-08-05T13:37:20.101Z",
     "rules": [
