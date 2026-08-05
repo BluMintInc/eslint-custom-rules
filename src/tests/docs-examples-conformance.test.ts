@@ -1735,9 +1735,10 @@ export function silentNestedClaimsOf(
 /**
  * Nested statements that declare themselves a violation yet report nothing.
  *
- * Empty on purpose: the corpus holds 10 claim-carrying nested statements and
- * all 10 report. An entry here is a documented violation nobody enforces, so it
- * must name the issue that retires it rather than reading as an acquittal.
+ * Empty on purpose: the corpus holds 10 claim-carrying nested statements across
+ * 8 fences, and all 10 report. An entry here is a documented violation nobody
+ * enforces, so it must name the issue that retires it rather than reading as an
+ * acquittal.
  */
 export const SILENT_NESTED_CLAIMS: Record<string, string> = {};
 
@@ -1780,11 +1781,16 @@ export function auditNestedClaims(
 
 describe('claim-carrying statements inside declaration bodies must report (#1748)', () => {
   const silents: SilentStatement[] = [];
-  let firingFences = 0;
-  /** Firing fences contributing at least one nested statement — the REACH. */
-  let fencesWithNested = 0;
+  /** Firing fences whose interior this guard opens at all. */
+  let fencesExamined = 0;
+  /** Firing fences it actually ASSERTS on — those holding a claim. Not the same
+   * number, and the smaller one is the one that matters. */
+  let fencesAsserted = 0;
   let nestedTotal = 0;
   let claimCarrying = 0;
+  /** Examined fences whose top level offers the #1742 guard nothing to judge. */
+  let fencesBlindToTopLevel = 0;
+  let assertedBlindToTopLevel = 0;
 
   it('descends into declaration bodies the top-level guard cannot see', () => {
     for (const ruleName of ruleNames) {
@@ -1799,6 +1805,11 @@ describe('claim-carrying statements inside declaration bodies must report (#1748
         if (nested === null || nested.length === 0) continue;
         const lines = block.code.split('\n');
         const claimed = nested.filter((s) => claimsStatement(lines, s));
+        // Fences the #1742 guard is structurally blind to: their top level is
+        // one declaration, so it holds nothing that guard judges.
+        const top = topLevelStatements(block.code);
+        const blindToTopLevel =
+          top !== null && assertableStatements(top).length === 0;
 
         const hinted = filenameHint(block.code);
         const candidates = hinted
@@ -1838,10 +1849,14 @@ describe('claim-carrying statements inside declaration bodies must report (#1748
         // interior too would report one defect many times.
         if (bestLines === null || bestLines.length === 0) continue;
 
-        firingFences += 1;
-        fencesWithNested += 1;
+        fencesExamined += 1;
         nestedTotal += nested.length;
         claimCarrying += claimed.length;
+        if (claimed.length > 0) fencesAsserted += 1;
+        if (blindToTopLevel) {
+          fencesBlindToTopLevel += 1;
+          if (claimed.length > 0) assertedBlindToTopLevel += 1;
+        }
 
         for (const statement of claimed) {
           if (bestLines.some((l) => l >= statement.start && l <= statement.end))
@@ -1855,16 +1870,24 @@ describe('claim-carrying statements inside declaration bodies must report (#1748
       }
     }
 
-    // Coverage floors. Two units, per #1747: this guard ITERATES statements but
-    // its worth is the set of FENCES it reaches, and statements cluster, so a
-    // floor on one cannot see the other collapsing.
-    expect(firingFences).toBeGreaterThan(120);
-    expect(fencesWithNested).toBeGreaterThan(120);
+    // Coverage floors on the two units #1747 asks for. They must be units that
+    // can actually diverge: an earlier draft floored two counters incremented on
+    // the same line, which reads as two floors and is one.
+    //
+    // EXAMINED is how much interior the descent opens — it collapses if parsing
+    // or the walker breaks.
+    expect(fencesExamined).toBeGreaterThan(140);
     expect(nestedTotal).toBeGreaterThan(250);
-    // The claim filter is what makes this assertable — 193 of 311 nested
-    // statements are silent setup, so a blanket assertion is not viable. If this
-    // hits zero the filter has stopped matching and the suite asserts nothing.
+    // ASSERTED is what this guard actually bites on, and it is the smaller,
+    // load-bearing number: 10 claim-carrying statements across 8 fences. They
+    // diverge because claims cluster (one fence can hold three), so a floor on
+    // statements alone would hold while the set of fences producing them shrank.
     expect(claimCarrying).toBeGreaterThan(5);
+    expect(fencesAsserted).toBeGreaterThan(5);
+    // The claim filter is what makes this assertable at all — 193 of 311 nested
+    // statements are silent setup, so a blanket assertion would need an
+    // allowlist larger than the corpus it guards.
+    expect(claimCarrying).toBeLessThan(nestedTotal / 10);
 
     const problems = auditNestedClaims(silents, SILENT_NESTED_CLAIMS);
     if (problems.length > 0) {
@@ -1877,10 +1900,52 @@ describe('claim-carrying statements inside declaration bodies must report (#1748
     }
   });
 
-  it('reaches more fences than the top-level statement guard (#1747)', () => {
-    // The point of descending. `fencesWithStatements` in the #1742 suite is 91;
-    // if this drops to its level the descent has silently stopped happening.
-    expect(fencesWithNested).toBeGreaterThan(140);
+  it('opens interior the top-level guard is structurally blind to (#1747)', () => {
+    // What descending actually bought, stated honestly. It is NOT "reach rises
+    // 91 -> 149": the #1742 suite's 91 is fences it ASSERTS on, while 149 is
+    // merely fences this one OPENS. Comparing them flatters this guard.
+    //
+    // The true gain is the blind region #1747 named — fences whose entire top
+    // level is one declaration, so #1742 judges nothing in them. This guard is
+    // the only statement-level assertion that reaches inside those.
+    expect(fencesBlindToTopLevel).toBeGreaterThan(100);
+    expect(assertedBlindToTopLevel).toBeGreaterThan(0);
+    // Assertion reach is small by construction — 10 statements over 8 fences,
+    // the same order as the #1622 claim-segment guard's 7. This is a narrow,
+    // high-precision regression gate, not a broad sweep, and the floors above
+    // are what keep it from quietly becoming a no-op.
+    expect(fencesAsserted).toBeLessThan(fencesExamined / 5);
+  });
+
+  it('credits a claim inside a callback to the statement containing it', () => {
+    // Depth-1 is justified empirically, not by taste: collecting EVERY function
+    // body at any depth yields the same 10 claim-carrying statements over the
+    // same 8 fences, because no documented fence writes a claim inside a nested
+    // callback. Depth-1 is the simpler walker with identical corpus behaviour.
+    //
+    // The coarseness it accepts, recorded so nobody mistakes it for precision: a
+    // claim written about a line INSIDE a multi-line statement is credited to
+    // that whole statement, so a report landing anywhere in its span satisfies
+    // it. That is weaker than per-line attribution and stronger than the nothing
+    // this region had before.
+    const fence = [
+      'const Widget = () => {',
+      '  useEffect(() => {',
+      '    // ❌ flagged',
+      '    doThing();',
+      '  }, []);',
+      '};',
+    ].join('\n');
+    const nested = nestedStatements(fence);
+    // One statement, spanning the whole useEffect call — not the callback body.
+    expect(nested).toHaveLength(1);
+    expect(nested![0].start).toBe(2);
+    expect(nested![0].end).toBe(5);
+    // The interior claim makes the containing statement claimed…
+    expect(silentNestedClaimsOf(fence, []).map((s) => s.start)).toEqual([2]);
+    // …and a report anywhere inside its span clears it, including on the inner
+    // line the comment was really about.
+    expect(silentNestedClaimsOf(fence, [4])).toEqual([]);
   });
 
   it('catches a claimed statement buried in a component body (positive control)', () => {
