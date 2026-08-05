@@ -106,10 +106,111 @@ function typeNodeContainsLiteral(
   return false;
 }
 
+/**
+ * Resolves a type-alias name to the type it stands for, or `undefined` when the
+ * name is not declared in the scope chain the resolver was built for.
+ *
+ * A resolution carries its own resolver so that names referenced *inside* the
+ * alias body resolve from the scope the alias was declared in rather than from
+ * the scope that referenced it.
+ */
+type AliasResolver = (name: string) => AliasResolution | undefined;
+
+type AliasResolution = {
+  typeNode: TSESTree.TypeNode;
+  resolve: AliasResolver;
+};
+
+/** Statements a type alias can be a direct child of, innermost outward. */
+function statementsOf(node: TSESTree.Node): TSESTree.Node[] | undefined {
+  switch (node.type) {
+    case AST_NODE_TYPES.Program:
+    case AST_NODE_TYPES.BlockStatement:
+    case AST_NODE_TYPES.TSModuleBlock:
+    case AST_NODE_TYPES.StaticBlock:
+      return node.body as TSESTree.Node[];
+    case AST_NODE_TYPES.SwitchCase:
+      return node.consequent as TSESTree.Node[];
+    default:
+      return undefined;
+  }
+}
+
+/** The alias a statement declares, looking through `export`. */
+function aliasDeclarationNamed(
+  statement: TSESTree.Node,
+  name: string,
+): TSESTree.TSTypeAliasDeclaration | undefined {
+  const declared =
+    statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
+    statement.declaration
+      ? statement.declaration
+      : statement;
+  return declared.type === AST_NODE_TYPES.TSTypeAliasDeclaration &&
+    declared.id.name === name
+    ? declared
+    : undefined;
+}
+
+/**
+ * The statement lists enclosing a node, innermost outward.
+ *
+ * Collecting aliases from `Program.body` alone made two everyday spellings
+ * unresolvable — `export type Props = ...`, whose alias hides inside an
+ * `ExportNamedDeclaration`, and any alias declared inside a function, arrow or
+ * namespace. Since the alias map powers an *exemption*, an unresolvable name
+ * switched the exemption off and the rule reported, so the hole manufactured
+ * false positives rather than silence.
+ */
+function enclosingStatementLists(from: TSESTree.Node): TSESTree.Node[][] {
+  const lists: TSESTree.Node[][] = [];
+  let current: TSESTree.Node | undefined = from;
+  while (current) {
+    const statements = statementsOf(current);
+    if (statements) {
+      lists.push(statements);
+    }
+    current = current.parent as TSESTree.Node | undefined;
+  }
+  return lists;
+}
+
+/**
+ * Lexical alias lookup over pre-collected statement lists, innermost first, so
+ * an inner declaration shadows a same-named outer one.
+ *
+ * Resolution is by scope rather than by a map built during traversal because
+ * type aliases hoist: a component declared above its own props alias must still
+ * resolve it.
+ */
+function aliasResolverFrom(
+  lists: readonly TSESTree.Node[][],
+  startIndex = 0,
+): AliasResolver {
+  return (name) => {
+    for (let index = startIndex; index < lists.length; index += 1) {
+      for (const statement of lists[index]) {
+        const declaration = aliasDeclarationNamed(statement, name);
+        if (declaration) {
+          return {
+            typeNode: declaration.typeAnnotation,
+            resolve: aliasResolverFrom(lists, index),
+          };
+        }
+      }
+    }
+    return undefined;
+  };
+}
+
+function aliasResolverAt(from: TSESTree.Node): AliasResolver {
+  return aliasResolverFrom(enclosingStatementLists(from));
+}
+
 function typeNodeExcludesProperty(
   node: TSESTree.TypeNode,
   propertyName: string,
-  aliasMap?: Map<string, TSESTree.TypeNode>,
+  resolveAlias?: AliasResolver,
   seen: Set<string> = new Set(),
 ): boolean {
   if (node.type === AST_NODE_TYPES.TSTypeReference) {
@@ -122,7 +223,7 @@ function typeNodeExcludesProperty(
       const excluded = node.typeParameters.params[1];
       if (
         typeNodeContainsLiteral(excluded, propertyName) ||
-        typeNodeExcludesProperty(excluded, propertyName, aliasMap, seen)
+        typeNodeExcludesProperty(excluded, propertyName, resolveAlias, seen)
       ) {
         return true;
       }
@@ -130,31 +231,38 @@ function typeNodeExcludesProperty(
 
     if (node.typeParameters?.params) {
       return node.typeParameters.params.some((param) =>
-        typeNodeExcludesProperty(param, propertyName, aliasMap, seen),
+        typeNodeExcludesProperty(param, propertyName, resolveAlias, seen),
       );
     }
 
-    if (typeName && aliasMap?.has(typeName) && !seen.has(typeName)) {
-      seen.add(typeName);
-      const alias = aliasMap.get(typeName);
-      if (
-        alias &&
-        typeNodeExcludesProperty(alias, propertyName, aliasMap, seen)
-      ) {
-        return true;
+    if (typeName && resolveAlias && !seen.has(typeName)) {
+      const alias = resolveAlias(typeName);
+      if (alias) {
+        // Guarding before the recursion terminates a self-referential alias.
+        seen.add(typeName);
+        if (
+          typeNodeExcludesProperty(
+            alias.typeNode,
+            propertyName,
+            alias.resolve,
+            seen,
+          )
+        ) {
+          return true;
+        }
       }
     }
   }
 
   if (node.type === AST_NODE_TYPES.TSUnionType) {
     return node.types.every((typeNode) =>
-      typeNodeExcludesProperty(typeNode, propertyName, aliasMap, seen),
+      typeNodeExcludesProperty(typeNode, propertyName, resolveAlias, seen),
     );
   }
 
   if (node.type === AST_NODE_TYPES.TSIntersectionType) {
     return node.types.every((typeNode) =>
-      typeNodeExcludesProperty(typeNode, propertyName, aliasMap, seen),
+      typeNodeExcludesProperty(typeNode, propertyName, resolveAlias, seen),
     );
   }
 
@@ -164,13 +272,13 @@ function typeNodeExcludesProperty(
 function typeAnnotationExcludesProperty(
   annotation: TSESTree.TSTypeAnnotation | null | undefined,
   propertyName: string,
-  aliasMap?: Map<string, TSESTree.TypeNode>,
+  resolveAlias?: AliasResolver,
 ): boolean {
   if (!annotation) return false;
   return typeNodeExcludesProperty(
     annotation.typeAnnotation,
     propertyName,
-    aliasMap,
+    resolveAlias,
   );
 }
 
@@ -178,7 +286,7 @@ function collectRestBindingsFromPattern(
   pattern: TSESTree.ObjectPattern,
   ctx: FunctionContext,
   annotation: TSESTree.TSTypeAnnotation | null | undefined,
-  aliasMap?: Map<string, TSESTree.TypeNode>,
+  resolveAlias?: AliasResolver,
   sourceChildrenSourceId?: string,
 ): void {
   const childrenPresent = patternHasChildrenProperty(pattern);
@@ -194,7 +302,7 @@ function collectRestBindingsFromPattern(
         typeAnnotationExcludesProperty: typeAnnotationExcludesProperty(
           annotation,
           'children',
-          aliasMap,
+          resolveAlias,
         ),
         childrenSourceId: sourceChildrenSourceId ?? prop.argument.name,
       });
@@ -202,7 +310,7 @@ function collectRestBindingsFromPattern(
       prop.type === AST_NODE_TYPES.Property &&
       prop.value.type === AST_NODE_TYPES.ObjectPattern
     ) {
-      collectRestBindingsFromPattern(prop.value, ctx, null, aliasMap);
+      collectRestBindingsFromPattern(prop.value, ctx, null, resolveAlias);
     }
   }
 }
@@ -244,7 +352,7 @@ function recordChildrenValueBindingsFromPattern(
 function recordParamBindings(
   param: TSESTree.Parameter,
   ctx: FunctionContext,
-  aliasMap?: Map<string, TSESTree.TypeNode>,
+  resolveAlias?: AliasResolver,
 ) {
   if (param.type === AST_NODE_TYPES.Identifier) {
     ctx.propsLikeIdentifiers.add(param.name);
@@ -254,7 +362,7 @@ function recordParamBindings(
       typeAnnotationExcludesProperty: typeAnnotationExcludesProperty(
         param.typeAnnotation,
         'children',
-        aliasMap,
+        resolveAlias,
       ),
       childrenSourceId: param.name,
     });
@@ -272,7 +380,7 @@ function recordParamBindings(
       typeAnnotationExcludesProperty: typeAnnotationExcludesProperty(
         param.typeAnnotation,
         'children',
-        aliasMap,
+        resolveAlias,
       ),
       childrenSourceId: param.left.name,
     });
@@ -287,13 +395,18 @@ function recordParamBindings(
       param.left,
       ctx,
       param.typeAnnotation,
-      aliasMap,
+      resolveAlias,
     );
     return;
   }
 
   if (param.type === AST_NODE_TYPES.ObjectPattern) {
-    collectRestBindingsFromPattern(param, ctx, param.typeAnnotation, aliasMap);
+    collectRestBindingsFromPattern(
+      param,
+      ctx,
+      param.typeAnnotation,
+      resolveAlias,
+    );
   }
 }
 
@@ -544,16 +657,6 @@ export const preventChildrenClobber = createRule<Options, MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode =
-      (context as unknown as { sourceCode: TSESLint.SourceCode }).sourceCode ??
-      context.getSourceCode();
-    const aliasMap = new Map<string, TSESTree.TypeNode>();
-    for (const node of sourceCode.ast.body) {
-      if (node.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
-        aliasMap.set(node.id.name, node.typeAnnotation);
-      }
-    }
-
     const functionStack: FunctionContext[] = [];
 
     return {
@@ -566,8 +669,12 @@ export const preventChildrenClobber = createRule<Options, MessageIds>({
         };
 
         if (ctx.isComponent) {
+          // The function is the resolution site rather than the parameter:
+          // ESLint has assigned `parent` up the chain by the time this visitor
+          // runs, but not yet onto the parameter's own type annotation.
+          const resolveAlias = aliasResolverAt(node);
           for (const param of node.params) {
-            recordParamBindings(param, ctx, aliasMap);
+            recordParamBindings(param, ctx, resolveAlias);
           }
         }
 
@@ -591,7 +698,7 @@ export const preventChildrenClobber = createRule<Options, MessageIds>({
           const typeExcludes = typeAnnotationExcludesProperty(
             id.typeAnnotation,
             'children',
-            aliasMap,
+            aliasResolverAt(node),
           );
           if (sourceBinding) {
             componentCtx.bindings.set(id.name, {
@@ -669,7 +776,7 @@ export const preventChildrenClobber = createRule<Options, MessageIds>({
             id,
             componentCtx,
             id.typeAnnotation ?? null,
-            aliasMap,
+            aliasResolverAt(node),
             sourceChildrenSourceId,
           );
         }
