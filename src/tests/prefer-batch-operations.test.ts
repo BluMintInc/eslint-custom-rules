@@ -25,6 +25,25 @@ const expectOverwriteAll = (contextDescription: string): ErrorExpectation =>
 
 ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
   valid: [
+    /**
+     * A direct `Promise.all([...])` writes its elements out, so a lone call is
+     * a single write — which the docs call valid (issue #1757). The deferred
+     * "report on the second occurrence" branch that enforces this used to be
+     * unreachable, because Promise.all was routed through the array-method
+     * branch and reported on the first call.
+     */
+    {
+      code: `
+        const setter = new DocSetter(collectionRef);
+        await Promise.all([setter.set(doc1)]);
+      `,
+    },
+    {
+      code: `
+        const setter = new DocSetter(collectionRef);
+        await Promise.all([setter.overwrite(doc1)]);
+      `,
+    },
     // Different operations in Promise.all with conditional execution should not be flagged
     `
       class NotificationSender {
@@ -346,6 +365,27 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
     `,
   ],
   invalid: [
+    /**
+     * The other side of #1757: excluding Promise.all from the array-method
+     * branch must not silence the shapes that ARE repeated writes. Two elements
+     * is the boundary the deferred branch keys on, and a `map` callback inside
+     * Promise.all is a genuine loop even with one syntactic call — it resolves
+     * to the `map` node, which carries no Promise.all flag.
+     */
+    {
+      code: `
+        const setter = new DocSetter(collectionRef);
+        await Promise.all([setter.set(doc1), setter.set(doc2)]);
+      `,
+      errors: [expectSetAll('Promise.all()')],
+    },
+    {
+      code: `
+        const setter = new DocSetter(collectionRef);
+        await Promise.all(docs.map((doc) => setter.set(doc)));
+      `,
+      errors: [expectSetAll('map() callback')],
+    },
     // Multiple setter calls of the same type in Promise.all should be flagged
     {
       code: `

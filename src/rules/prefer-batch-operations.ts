@@ -483,8 +483,19 @@ export const preferBatchOperations = createRule<[], MessageIds>({
             }
           }
 
-          // For array methods, report on the first occurrence
-          else if (loopInfo.isArrayMethod) {
+          /**
+           * For array methods, report on the first occurrence — one syntactic
+           * call inside a `map` callback still runs once per element.
+           *
+           * A direct `Promise.all([...])` is not that: its elements are written
+           * out, so a lone `set()` is a single write and the docs call it
+           * valid. `findLoopNode` stamps `isArrayMethod: 'map'` onto the
+           * Promise.all result, which used to route it here and report on the
+           * first call — and, by adding the node to `reportedLoops`, made the
+           * deferred second-occurrence branch below unreachable for every
+           * input. Excluding it hands the decision back to that branch.
+           */
+          else if (loopInfo.isArrayMethod && !loopInfo.isPromiseAll) {
             if (!reportedLoops.has(loopInfo.node)) {
               reportedLoops.add(loopInfo.node);
               context.report({
