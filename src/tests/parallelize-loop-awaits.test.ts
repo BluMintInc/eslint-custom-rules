@@ -560,6 +560,99 @@ ruleTesterTs.run('parallelize-loop-awaits', parallelizeLoopAwaits, {
       }
       `,
     },
+
+    // A callback handed to the awaited call writes a binding declared outside
+    // the loop, so the iterations share a pagination cursor exactly as the
+    // direct-write spelling below does. (#1724)
+    {
+      filename: 'src/paginate.ts',
+      code: `
+      async function pageThroughItems(items, runner) {
+        let cursor;
+        for (const item of items) {
+          await runner.execute(item, async (page) => {
+            cursor = page.nextCursor;
+          });
+        }
+      }
+      `,
+    },
+    // The control for the case above: the same dependency written directly.
+    // It is exempt already, and the two spellings must agree. (#1724)
+    {
+      filename: 'src/paginate.ts',
+      code: `
+      async function pageThroughItemsDirect(items, runner) {
+        let cursor;
+        for (const item of items) {
+          cursor = await runner.execute(item, cursor);
+        }
+      }
+      `,
+    },
+    // A compound assignment inside a callback accumulates across iterations,
+    // and the total is read after the loop. (#1724)
+    {
+      filename: 'src/tally.ts',
+      code: `
+      async function tallyRows(rows, runner) {
+        let total = 0;
+        for (const row of rows) {
+          await runner.execute(row, async (result) => {
+            total += result.count;
+          });
+        }
+        await report(total);
+      }
+      `,
+    },
+    // An UpdateExpression inside a callback writes the shared binding just as a
+    // compound assignment does. (#1724)
+    {
+      filename: 'src/tally.ts',
+      code: `
+      async function countRows(rows, runner) {
+        let count = 0;
+        for (const row of rows) {
+          await runner.execute(row, async () => {
+            count++;
+          });
+        }
+      }
+      `,
+    },
+    // Depth does not change what the write reaches: a binding written two
+    // callbacks deep is still shared by every iteration. (#1724)
+    {
+      filename: 'src/tally.ts',
+      code: `
+      async function nestedCallbackWrite(rows, runner) {
+        let latest;
+        for (const row of rows) {
+          await runner.execute(row, async (result) => {
+            result.forEach((entry) => {
+              latest = entry;
+            });
+          });
+        }
+      }
+      `,
+    },
+    // A member write reaches the object its ROOT names, so mutating a box
+    // declared outside the loop couples the iterations. (#1724)
+    {
+      filename: 'src/tally.ts',
+      code: `
+      async function mutateSharedBox(rows, runner) {
+        const box = { value: null };
+        for (const row of rows) {
+          await runner.execute(row, async (result) => {
+            box.value = result.value;
+          });
+        }
+      }
+      `,
+    },
   ],
 
   invalid: [
@@ -1092,6 +1185,67 @@ ruleTesterTs.run('parallelize-loop-awaits', parallelizeLoopAwaits, {
       async function coordinatorNameOnlyInCallback() {
         for (const item of items) {
           await persist(item, () => buildBatch(item));
+        }
+      }
+      `,
+      errors: [{ messageId: 'parallelizeLoopAwaits' }],
+    },
+
+    // Controls for the callback write barrier: a callback that both DECLARES
+    // and assigns a name publishes nothing to the enclosing scope, so the
+    // iterations share nothing and the loop keeps its report. (#1724)
+    {
+      code: `
+      async function callbackLocalWrite(items, runner) {
+        for (const item of items) {
+          await runner.execute(item, async () => {
+            let tmp;
+            tmp = 1;
+            record(tmp);
+          });
+        }
+      }
+      `,
+      errors: [{ messageId: 'parallelizeLoopAwaits' }],
+    },
+    // A write through a callback's own PARAMETER reaches whatever the caller
+    // handed that invocation, not a binding the loop shares. (#1724)
+    {
+      code: `
+      async function callbackParameterWrite(items, runner) {
+        for (const item of items) {
+          await runner.execute(item, async (page) => {
+            page.total = 1;
+          });
+        }
+      }
+      `,
+      errors: [{ messageId: 'parallelizeLoopAwaits' }],
+    },
+    // A destructured parameter binds per invocation too. (#1724)
+    {
+      code: `
+      async function destructuredParameterWrite(items, runner) {
+        for (const item of items) {
+          await runner.execute(item, async ({ draft }) => {
+            draft = normalize(draft);
+          });
+        }
+      }
+      `,
+      errors: [{ messageId: 'parallelizeLoopAwaits' }],
+    },
+    // A callback assigning a binding declared inside the LOOP BODY writes a
+    // fresh variable every iteration, which couples nothing. (#1724)
+    {
+      code: `
+      async function callbackWritesLoopLocal(items, runner) {
+        for (const item of items) {
+          let scratch;
+          await runner.execute(item, async (result) => {
+            scratch = result.value;
+          });
+          record(scratch);
         }
       }
       `,
