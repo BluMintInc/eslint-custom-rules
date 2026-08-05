@@ -5,10 +5,7 @@ import { ASTHelpers } from '../utils/ASTHelpers';
 const NEXT_DYNAMIC_MODULE = 'next/dynamic';
 const DEFAULT_DYNAMIC_NAME = 'dynamic';
 
-type MessageIds =
-  | 'preferNextDynamic'
-  | 'addNextDynamicImport'
-  | 'removeUseDynamicImport';
+type MessageIds = 'preferNextDynamic';
 
 type Options = [
   {
@@ -294,10 +291,6 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
     messages: {
       preferNextDynamic:
         'Component "{{componentName}}" is created with useDynamic(import(...)), which bypasses Next.js dynamic() handling for client-only components and leaves SSR control to a custom wrapper. Wrap the import in dynamic(() => import(...), { ssr: false }) so Next.js manages code-splitting and disables server rendering safely.',
-      addNextDynamicImport:
-        "The auto-fix will replace useDynamic(import(...)) with dynamic(() => import(...), { ssr: false }), which references Next.js's dynamic function. Without importing dynamic from 'next/dynamic', the fixed code will throw a ReferenceError at runtime when the module loads. Add `import dynamic from 'next/dynamic'` at the top of the file to make the dynamic identifier available.",
-      removeUseDynamicImport:
-        'Remove the unused useDynamic import after migrating to dynamic(); leaving the custom hook imported invites accidental reuse and keeps dead code in the bundle.',
     },
   },
   defaultOptions: [{}],
