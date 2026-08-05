@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds = 'parallelizeLoopAwaits';
 type Options = [
@@ -357,72 +358,7 @@ export const parallelizeLoopAwaits = createRule<Options, MessageIds>({
     }
 
     /**
-     * Collects all variables declared INSIDE the loop body, including inside
-     * callbacks written there. These are iteration-local variables: nothing
-     * they hold outlives the iteration that created them.
-     *
-     * The walk crosses nested function boundaries because the write scan that
-     * consults this set crosses them too. A name both declared and assigned
-     * inside a callback (`async () => { let tmp; tmp = 1; }`) publishes nothing
-     * to the enclosing scope, so if the set stopped at the boundary the write
-     * would read as a cross-iteration dependency and silence the loop. (#1724)
-     */
-    function collectLoopLocalVars(body: TSESTree.Node): Set<string> {
-      const localVars = new Set<string>();
-
-      function visit(node: TSESTree.Node, isRoot: boolean): void {
-        // A callback's parameters bind afresh on every invocation, so a write
-        // through one (`async (page) => { page.total = 1 }`) reaches whatever
-        // the caller handed that call rather than state the iterations share.
-        if (
-          !isRoot &&
-          (node.type === AST_NODE_TYPES.FunctionDeclaration ||
-            node.type === AST_NODE_TYPES.FunctionExpression ||
-            node.type === AST_NODE_TYPES.ArrowFunctionExpression)
-        ) {
-          for (const param of node.params) {
-            collectBindingNames(
-              param as TSESTree.DestructuringPattern,
-              localVars,
-            );
-          }
-        }
-
-        if (node.type === AST_NODE_TYPES.VariableDeclaration) {
-          for (const declarator of node.declarations) {
-            collectBindingNames(declarator.id, localVars);
-          }
-        }
-
-        for (const key in node) {
-          if (
-            key === 'parent' ||
-            key === 'range' ||
-            key === 'loc' ||
-            key === 'type'
-          )
-            continue;
-          const child = (node as unknown as Record<string, unknown>)[key];
-          if (child && typeof child === 'object') {
-            if (Array.isArray(child)) {
-              for (const item of child) {
-                if (item && typeof item === 'object' && 'type' in item) {
-                  visit(item as TSESTree.Node, false);
-                }
-              }
-            } else if ('type' in (child as object)) {
-              visit(child as TSESTree.Node, false);
-            }
-          }
-        }
-      }
-
-      visit(body, true);
-      return localVars;
-    }
-
-    /**
-     * Collects the BINDINGS an assignment target writes through, returning
+     * Collects the IDENTIFIERS an assignment target writes through, returning
      * false when the target's root is not a plain binding at all.
      *
      * A member write reaches the object its ROOT names: `box.value = 1` writes
@@ -435,23 +371,30 @@ export const parallelizeLoopAwaits = createRule<Options, MessageIds>({
      * A root the analysis cannot name — `this.count += 1` reaches instance
      * state every iteration shares — returns false, and the caller reads that
      * as an outer write. The plugin prefers a missed report to a spurious one.
+     *
+     * The identifier NODE is carried rather than its name, because locality is
+     * a question about scope: two bindings can share a spelling, and only the
+     * node knows which one a given write reaches. (#1725)
      */
-    function collectAssignmentTargetNames(
+    function collectAssignmentTargetIdentifiers(
       target: TSESTree.Node,
-      names: Set<string>,
+      identifiers: TSESTree.Identifier[],
     ): boolean {
       switch (target.type) {
         case AST_NODE_TYPES.Identifier:
-          names.add(target.name);
+          identifiers.push(target);
           return true;
 
         case AST_NODE_TYPES.MemberExpression:
-          return collectAssignmentTargetNames(target.object, names);
+          return collectAssignmentTargetIdentifiers(target.object, identifiers);
 
         case AST_NODE_TYPES.ChainExpression:
         case AST_NODE_TYPES.TSNonNullExpression:
         case AST_NODE_TYPES.TSAsExpression:
-          return collectAssignmentTargetNames(target.expression, names);
+          return collectAssignmentTargetIdentifiers(
+            target.expression,
+            identifiers,
+          );
 
         case AST_NODE_TYPES.ObjectPattern: {
           let resolved = true;
@@ -460,7 +403,9 @@ export const parallelizeLoopAwaits = createRule<Options, MessageIds>({
               property.type === AST_NODE_TYPES.RestElement
                 ? property.argument
                 : property.value;
-            if (!collectAssignmentTargetNames(inner, names)) resolved = false;
+            if (!collectAssignmentTargetIdentifiers(inner, identifiers)) {
+              resolved = false;
+            }
           }
           return resolved;
         }
@@ -468,7 +413,10 @@ export const parallelizeLoopAwaits = createRule<Options, MessageIds>({
         case AST_NODE_TYPES.ArrayPattern: {
           let resolved = true;
           for (const element of target.elements) {
-            if (element && !collectAssignmentTargetNames(element, names)) {
+            if (
+              element &&
+              !collectAssignmentTargetIdentifiers(element, identifiers)
+            ) {
               resolved = false;
             }
           }
@@ -476,10 +424,13 @@ export const parallelizeLoopAwaits = createRule<Options, MessageIds>({
         }
 
         case AST_NODE_TYPES.RestElement:
-          return collectAssignmentTargetNames(target.argument, names);
+          return collectAssignmentTargetIdentifiers(
+            target.argument,
+            identifiers,
+          );
 
         case AST_NODE_TYPES.AssignmentPattern:
-          return collectAssignmentTargetNames(target.left, names);
+          return collectAssignmentTargetIdentifiers(target.left, identifiers);
 
         default:
           return false;
@@ -487,24 +438,57 @@ export const parallelizeLoopAwaits = createRule<Options, MessageIds>({
     }
 
     /**
+     * Reports whether an identifier resolves to a binding DECLARED inside the
+     * given root node.
+     *
+     * Such a binding is iteration-local: nothing it holds outlives the
+     * iteration that created it, so writing it couples no two iterations.
+     * `async () => { let tmp; tmp = 1; }` publishes nothing to the enclosing
+     * scope, and a callback's parameters bind afresh on every invocation.
+     *
+     * The question is settled by SCOPE rather than by spelling. A flat set of
+     * declared NAMES cannot tell an outer binding from a nested one that merely
+     * reuses the identifier, so a genuine cross-iteration write to `cursor`
+     * would read as local the moment any callback in the loop happened to name
+     * a parameter `cursor`. (#1725)
+     *
+     * An UNRESOLVED name — an implicit global — counts as external, which keeps
+     * the barrier in place for the case the analysis cannot see.
+     */
+    function isDeclaredWithin(
+      identifier: TSESTree.Identifier,
+      root: TSESTree.Node,
+    ): boolean {
+      const variable = ASTHelpers.findVariableInScope(
+        ASTHelpers.getScope(context, identifier),
+        identifier.name,
+      );
+      if (!variable || variable.defs.length === 0) {
+        return false;
+      }
+
+      return variable.defs.every(
+        (definition) =>
+          definition.name.range[0] >= root.range[0] &&
+          definition.name.range[1] <= root.range[1],
+      );
+    }
+
+    /**
      * Detects cross-iteration state patterns that require sequential
      * execution:
      *
-     * 1. Accumulator: a variable declared OUTSIDE the loop body (i.e., not
-     *    in localVars) is ASSIGNED inside the loop body, whether directly or
-     *    from inside a callback the body hands to the awaited call. Examples:
-     *    `total += value`, `cursor = page.nextCursor`, `previousResult =
-     *    result`. This catches running totals, pagination cursors, and chained
-     *    results.
+     * 1. Accumulator: a variable declared OUTSIDE the loop body is ASSIGNED
+     *    inside it, whether directly or from inside a callback the body hands
+     *    to the awaited call. Examples: `total += value`, `cursor =
+     *    page.nextCursor`, `previousResult = result`. This catches running
+     *    totals, pagination cursors, and chained results.
      *
      * 2. Direct cross-await dependency: a variable declared by an await
      *    inside the loop is then read as an argument to another await in the
      *    same loop body. Example: `const a = await f(); const b = await g(a);`.
      */
-    function hasSequentialDependency(
-      body: TSESTree.Node,
-      loopLocalVars: Set<string>,
-    ): boolean {
+    function hasSequentialDependency(body: TSESTree.Node): boolean {
       // Pattern 1: outer variable is written inside the loop body.
       // Collect every assignment target — the left-hand side of an assignment
       // or compound assignment, and the operand of an increment in a callback.
@@ -513,12 +497,20 @@ export const parallelizeLoopAwaits = createRule<Options, MessageIds>({
       /**
        * Reports whether an assignment target reaches a binding the iterations
        * share rather than one the iteration creates.
+       *
+       * The body is the locality root, so a binding introduced by the loop's
+       * own HEAD reads as shared. That is the conservative reading and the
+       * correct one for a C-style counter: `for (let i = 0; i < n; i += 1)`
+       * carries `i` forward between iterations, so a body write to it really
+       * does couple them.
        */
       function writesOuterBinding(target: TSESTree.Node): boolean {
-        const names = new Set<string>();
-        if (!collectAssignmentTargetNames(target, names)) return true;
-        for (const name of names) {
-          if (!loopLocalVars.has(name)) return true;
+        const identifiers: TSESTree.Identifier[] = [];
+        if (!collectAssignmentTargetIdentifiers(target, identifiers)) {
+          return true;
+        }
+        for (const identifier of identifiers) {
+          if (!isDeclaredWithin(identifier, body)) return true;
         }
         return false;
       }
@@ -1000,8 +992,7 @@ export const parallelizeLoopAwaits = createRule<Options, MessageIds>({
 
       // Exclusion: accumulator / pagination patterns — sequential dependency
       // detected between iterations
-      const loopLocalVars = collectLoopLocalVars(body);
-      if (hasSequentialDependency(body, loopLocalVars)) return null;
+      if (hasSequentialDependency(body)) return null;
 
       // Exclusion: the specific await being reported is a rate-limiting call
       const callNames = getCallNames(awaitExpr);
