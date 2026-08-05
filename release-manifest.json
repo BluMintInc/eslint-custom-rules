@@ -1,5 +1,43 @@
 [
   {
+    "version": "1.20.110",
+    "date": "2026-08-05T11:59:59.800Z",
+    "rules": [
+      {
+        "name": "enforce-firestore-doc-ref-generic",
+        "changeType": "fix",
+        "issues": [
+          1730
+        ],
+        "summary": "drop the unearned requiresTypeChecking declaration (closes #1730)"
+      },
+      {
+        "name": "enforce-memoize-async",
+        "changeType": "fix",
+        "issues": [
+          1735
+        ],
+        "summary": "decline to decorate a method of a class expression (closes #1735)"
+      },
+      {
+        "name": "no-redundant-usecallback-wrapper",
+        "changeType": "fix",
+        "issues": [
+          1729
+        ],
+        "summary": "report provably memoized wrappers under default options (closes #1729)"
+      },
+      {
+        "name": "prefer-fragment-component",
+        "changeType": "fix",
+        "issues": [
+          1736
+        ],
+        "summary": "declare the disabled severity it actually ships (closes #1736)"
+      }
+    ]
+  },
+  {
     "version": "1.20.109",
     "date": "2026-08-05T07:42:30.150Z",
     "rules": [

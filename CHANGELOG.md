@@ -1,3 +1,13 @@
+## [1.20.110](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.109...v1.20.110) (2026-08-05)
+
+
+### Bug Fixes
+
+* **enforce-firestore-doc-ref-generic:** drop the unearned requiresTypeChecking declaration (closes [#1730](https://github.com/BluMintInc/eslint-custom-rules/issues/1730)) ([8bcac75](https://github.com/BluMintInc/eslint-custom-rules/commit/8bcac75ac5015741d371b3576de829189cdd4e2a))
+* **enforce-memoize-async:** decline to decorate a method of a class expression (closes [#1735](https://github.com/BluMintInc/eslint-custom-rules/issues/1735)) ([79a65ec](https://github.com/BluMintInc/eslint-custom-rules/commit/79a65ecc5cbd9beae0b2ea5875746502584f13fa))
+* **no-redundant-usecallback-wrapper:** report provably memoized wrappers under default options (closes [#1729](https://github.com/BluMintInc/eslint-custom-rules/issues/1729)) ([fca3b2e](https://github.com/BluMintInc/eslint-custom-rules/commit/fca3b2e7081cfbf0a07491946f11085a756ae2a7))
+* **prefer-fragment-component:** declare the disabled severity it actually ships (closes [#1736](https://github.com/BluMintInc/eslint-custom-rules/issues/1736)) ([17d2a58](https://github.com/BluMintInc/eslint-custom-rules/commit/17d2a5823514ba971f7e1467321b96c42bd06a8f))
+
 ## [1.20.109](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.108...v1.20.109) (2026-08-05)
 
 
