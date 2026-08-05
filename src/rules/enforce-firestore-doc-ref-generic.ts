@@ -46,6 +46,84 @@ const referenceTypeNameOf = (
   return undefined;
 };
 
+/** The declaration spellings a named document schema can be written in. */
+type NamedTypeDeclaration =
+  | TSESTree.TSInterfaceDeclaration
+  | TSESTree.TSTypeAliasDeclaration;
+
+/** Statement containers a type declaration can be a direct child of. */
+function statementsOf(node: TSESTree.Node): TSESTree.Node[] | undefined {
+  switch (node.type) {
+    case AST_NODE_TYPES.Program:
+    case AST_NODE_TYPES.BlockStatement:
+    case AST_NODE_TYPES.TSModuleBlock:
+    case AST_NODE_TYPES.StaticBlock:
+      return (node as { body: TSESTree.Node[] }).body;
+    case AST_NODE_TYPES.SwitchCase:
+      return node.consequent;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * The type declaration a statement makes, looking through `export`.
+ *
+ * `export type User = ...` is the same declaration one AST node deeper, inside
+ * an `ExportNamedDeclaration`. Reading the statement without unwrapping makes
+ * the `export` keyword alone decide whether a schema is checked, which is not a
+ * distinction the document shape knows anything about.
+ */
+function typeDeclarationNamed(
+  statement: TSESTree.Node,
+  name: string,
+): NamedTypeDeclaration | undefined {
+  const declared =
+    statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
+    statement.declaration
+      ? statement.declaration
+      : statement;
+
+  if (
+    (declared.type === AST_NODE_TYPES.TSInterfaceDeclaration ||
+      declared.type === AST_NODE_TYPES.TSTypeAliasDeclaration) &&
+    declared.id.name === name
+  ) {
+    return declared;
+  }
+  return undefined;
+}
+
+/**
+ * Resolves a type name against every enclosing statement container, innermost
+ * outward, so the nearest declaration shadows a same-named outer one.
+ *
+ * Searching `Program.body` alone left the two commonest spellings unresolvable:
+ * an exported declaration sits inside its `export` statement, and a declaration
+ * written in a function body, block, or namespace sits inside that. Since an
+ * unresolved name is treated as carrying no readable members, the hole silently
+ * dropped the nested-`any` check rather than reporting anything.
+ */
+function declarationOfType(
+  from: TSESTree.Node,
+  name: string,
+): NamedTypeDeclaration | undefined {
+  let current: TSESTree.Node | undefined = from;
+  while (current) {
+    const statements = statementsOf(current);
+    if (statements) {
+      for (const statement of statements) {
+        const declaration = typeDeclarationNamed(statement, name);
+        if (declaration) {
+          return declaration;
+        }
+      }
+    }
+    current = current.parent as TSESTree.Node | undefined;
+  }
+  return undefined;
+}
+
 /**
  * @type {import('eslint').Rule.RuleModule}
  */
@@ -84,7 +162,13 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const typeCache = new Map<string, boolean>();
+    /**
+     * Keyed on the resolved declaration rather than on the name, because
+     * resolution is lexical: two scopes in one file may declare the same name
+     * with different fields, and a name-keyed answer would carry one scope's
+     * verdict into the other.
+     */
+    const declarationCache = new WeakMap<NamedTypeDeclaration, boolean>();
     const nodeCache = new WeakMap<TSESTree.Node, boolean>();
 
     function hasInvalidType(node: TSESTree.TypeNode | undefined): boolean {
@@ -103,19 +187,7 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
             return node.typeParameters.params.some(hasInvalidType);
           }
           if (node.typeName.type === AST_NODE_TYPES.Identifier) {
-            const typeName = node.typeName.name;
-            if (typeCache.has(typeName)) {
-              // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-              return typeCache.get(typeName)!;
-            }
-            // Prevent infinite recursion
-            typeCache.set(typeName, false);
-            const members = declaredMembersOf(typeName);
-            if (members) {
-              const result = membersHaveInvalidType(members);
-              typeCache.set(typeName, result);
-              return result;
-            }
+            return declaredTypeHasInvalidType(node.typeName);
           }
           return false;
         case AST_NODE_TYPES.TSIntersectionType:
@@ -209,8 +281,8 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
     }
 
     /**
-     * Resolves a named generic to the members its declaration lists, reading an
-     * interface and a type alias alike.
+     * The members a declaration lists, reading an interface and a type alias
+     * alike.
      *
      * The alias spelling is not an extra convenience: `prefer-type-over-interface`
      * ships in the same recommended config and is fixable, so a single
@@ -220,23 +292,43 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
      * unreported.
      */
     function declaredMembersOf(
-      typeName: string,
+      declaration: NamedTypeDeclaration,
     ): TSESTree.TypeElement[] | undefined {
-      for (const statement of context.sourceCode.ast.body) {
-        if (
-          statement.type === AST_NODE_TYPES.TSInterfaceDeclaration &&
-          statement.id.name === typeName
-        ) {
-          return statement.body.body;
-        }
-        if (
-          statement.type === AST_NODE_TYPES.TSTypeAliasDeclaration &&
-          statement.id.name === typeName
-        ) {
-          return aliasedTypeLiteral(statement.typeAnnotation)?.members;
-        }
+      return declaration.type === AST_NODE_TYPES.TSInterfaceDeclaration
+        ? declaration.body.body
+        : aliasedTypeLiteral(declaration.typeAnnotation)?.members;
+    }
+
+    /**
+     * Reports whether the type a name stands for declares a field this rule
+     * rejects, resolving the name from the reference site outward.
+     *
+     * The declaration doubles as the recursion guard: a self-referential schema
+     * such as `type Node = { child: Node }` reaches its own entry, which is
+     * seeded `false` before its members are read.
+     */
+    function declaredTypeHasInvalidType(
+      typeName: TSESTree.Identifier,
+    ): boolean {
+      const declaration = declarationOfType(typeName, typeName.name);
+      if (!declaration) {
+        return false;
       }
-      return undefined;
+
+      const cached = declarationCache.get(declaration);
+      if (cached !== undefined) {
+        return cached;
+      }
+      declarationCache.set(declaration, false);
+
+      const members = declaredMembersOf(declaration);
+      if (!members) {
+        return false;
+      }
+
+      const result = membersHaveInvalidType(members);
+      declarationCache.set(declaration, result);
+      return result;
     }
 
     function hasTypeAnnotation(node: TSESTree.Node): boolean {
