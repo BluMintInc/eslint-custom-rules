@@ -8,6 +8,25 @@ const errorFor = (hookName: string) => ({
 
 ruleTesterTs.run('require-hooks-default-params', requireHooksDefaultParams, {
   valid: [
+    // A required property anywhere in the enclosing-scope type keeps the
+    // parameter mandatory, so widening resolution must not widen the verdict.
+    {
+      code: `
+function outer() {
+  type Opts = { a: string };
+  const useThing = ({ a }: Opts) => a;
+  return useThing;
+}
+      `,
+    },
+    // An imported type's shape is unknowable here; an unresolved name must not
+    // be read as "all optional".
+    {
+      code: `
+import type { Opts } from './opts';
+const useThing = ({ a }: Opts) => a;
+      `,
+    },
     // Already has default empty object
     {
       code: `
@@ -149,6 +168,80 @@ ruleTesterTs.run('require-hooks-default-params', requireHooksDefaultParams, {
     },
   ],
   invalid: [
+    /**
+     * Type resolution walks the scope chain outward (issue #1756). Previously
+     * it read `context.getScope().variables`, which is own-scope-only, and fell
+     * back to scanning `Program.body` — so a type declared anywhere between the
+     * hook and module scope was invisible to both paths.
+     */
+    {
+      code: `
+function outer() {
+  type Opts = { a?: string };
+  const useThing = ({ a }: Opts) => a;
+  return useThing;
+}
+      `,
+      output: `
+function outer() {
+  type Opts = { a?: string };
+  const useThing = ({ a }: Opts = {}) => a;
+  return useThing;
+}
+      `,
+      errors: [errorFor('useThing')],
+    },
+    {
+      code: `
+function outer() {
+  interface Opts { a?: string }
+  const useThing = ({ a }: Opts) => a;
+  return useThing;
+}
+      `,
+      output: `
+function outer() {
+  interface Opts { a?: string }
+  const useThing = ({ a }: Opts = {}) => a;
+  return useThing;
+}
+      `,
+      errors: [errorFor('useThing')],
+    },
+    /**
+     * A same-name VALUE binding used to satisfy the own-scope lookup with a
+     * non-type definition, which skipped the fallback entirely and switched the
+     * rule off for that hook.
+     */
+    {
+      code: `
+type Opts = { a?: string };
+function useThing({ a }: Opts) {
+  const Opts = 1;
+  return a + Opts;
+}
+      `,
+      output: `
+type Opts = { a?: string };
+function useThing({ a }: Opts = {}) {
+  const Opts = 1;
+  return a + Opts;
+}
+      `,
+      errors: [errorFor('useThing')],
+    },
+    // An exported declaration sits inside its `export` statement.
+    {
+      code: `
+export type Opts = { a?: string };
+const useThing = ({ a }: Opts) => a;
+      `,
+      output: `
+export type Opts = { a?: string };
+const useThing = ({ a }: Opts = {}) => a;
+      `,
+      errors: [errorFor('useThing')],
+    },
     // Missing default empty object for hook with all optional params
     {
       code: `

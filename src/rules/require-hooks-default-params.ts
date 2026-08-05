@@ -25,6 +25,68 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
       return name.startsWith('use') && name[3]?.toUpperCase() === name[3];
     }
 
+    /** The declaration a statement introduces, looking through `export`. */
+    function typeDeclarationNamed(
+      statement: TSESTree.Node,
+      name: string,
+    ):
+      | TSESTree.TSTypeAliasDeclaration
+      | TSESTree.TSInterfaceDeclaration
+      | undefined {
+      const declared =
+        statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
+        statement.declaration
+          ? statement.declaration
+          : statement;
+      if (
+        (declared.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
+          declared.type === AST_NODE_TYPES.TSInterfaceDeclaration) &&
+        declared.id.name === name
+      ) {
+        return declared;
+      }
+      return undefined;
+    }
+
+    /**
+     * Lexical resolution of a type name, innermost scope outward.
+     *
+     * `context.getScope()` returns the scope of the node being visited and
+     * `scope.variables` is own-scope-only, so a type declared anywhere above
+     * the hook is invisible to it — and when a *value* of the same name is
+     * bound nearby, the lookup succeeds with a non-type definition and the
+     * whole check is abandoned. Walking the enclosing statement containers
+     * answers the question the rule actually asks, and a name that resolves to
+     * something other than a type declaration simply keeps searching.
+     */
+    function resolveTypeDeclaration(
+      from: TSESTree.Node,
+      name: string,
+    ):
+      | TSESTree.TSTypeAliasDeclaration
+      | TSESTree.TSInterfaceDeclaration
+      | undefined {
+      let current: TSESTree.Node | undefined = from;
+      while (current) {
+        const body: TSESTree.Node[] | undefined =
+          current.type === AST_NODE_TYPES.Program ||
+          current.type === AST_NODE_TYPES.BlockStatement ||
+          current.type === AST_NODE_TYPES.TSModuleBlock
+            ? (current.body as TSESTree.Node[])
+            : undefined;
+        if (body) {
+          for (const statement of body) {
+            const found = typeDeclarationNamed(statement, name);
+            if (found) {
+              return found;
+            }
+          }
+        }
+        current = current.parent as TSESTree.Node | undefined;
+      }
+      return undefined;
+    }
+
     function hasAllOptionalProperties(
       typeNode:
         | TSESTree.TypeNode
@@ -48,30 +110,10 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
           return false;
         }
 
-        const scope = context.getScope();
-        const variable = scope.variables.find((v) => v.name === typeName.name);
-        if (!variable || !variable.defs[0]?.node) {
-          // If we can't find the type definition, assume it's a type with required properties
-          // This handles cases where the type is imported from another module
-          return false;
-        }
-
-        const def = variable.defs[0].node;
-        if (def.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
-          return hasAllOptionalProperties(def.typeAnnotation);
-        } else if (def.type === AST_NODE_TYPES.TSInterfaceDeclaration) {
-          return def.body.body.every((member) => {
-            if (member.type !== AST_NODE_TYPES.TSPropertySignature) {
-              return false;
-            }
-            return member.optional === true;
-          });
-        }
-
-        // If we found the type definition but it's not a type alias or interface declaration,
-        // assume it's a type with required properties
-        // This handles cases where the type is imported from another module
-        return false;
+        const declaration = resolveTypeDeclaration(typeNode, typeName.name);
+        // An unresolved name is an imported type whose shape is unknowable
+        // here, so it is treated as carrying required properties.
+        return declaration ? hasAllOptionalProperties(declaration) : false;
       }
 
       // Handle type alias declarations
@@ -138,124 +180,16 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
           param.typeAnnotation
         ) {
           const typeAnnotation = param.typeAnnotation.typeAnnotation;
-          if (typeAnnotation.type === AST_NODE_TYPES.TSTypeReference) {
-            const typeName = typeAnnotation.typeName;
-            if (typeName.type === AST_NODE_TYPES.Identifier) {
-              const scope = context.getScope();
-              const variable = scope.variables.find(
-                (v) => v.name === typeName.name,
-              );
-              if (variable && variable.defs[0]?.node) {
-                const def = variable.defs[0].node;
-                if (def.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
-                  if (hasAllOptionalProperties(def.typeAnnotation)) {
-                    context.report({
-                      node: param,
-                      messageId: 'requireDefaultParams',
-                      data: messageData,
-                      fix(fixer) {
-                        const paramText = context.sourceCode.getText(param);
-                        return fixer.replaceText(param, `${paramText} = {}`);
-                      },
-                    });
-                  }
-                } else if (def.type === AST_NODE_TYPES.TSInterfaceDeclaration) {
-                  if (
-                    def.body.body.every((member) => {
-                      if (member.type !== AST_NODE_TYPES.TSPropertySignature) {
-                        return false;
-                      }
-                      return member.optional === true;
-                    })
-                  ) {
-                    context.report({
-                      node: param,
-                      messageId: 'requireDefaultParams',
-                      data: messageData,
-                      fix(fixer) {
-                        const paramText = context.sourceCode.getText(param);
-                        return fixer.replaceText(param, `${paramText} = {}`);
-                      },
-                    });
-                  }
-                }
-              } else {
-                // If we can't find the type definition, check if it's defined in the same file
-                const program = context.sourceCode.ast;
-                const typeDefinitions = program.body.filter((node) => {
-                  if (
-                    node.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
-                    node.type === AST_NODE_TYPES.TSInterfaceDeclaration
-                  ) {
-                    if (node.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
-                      return node.id.name === typeName.name;
-                    } else {
-                      return node.id.name === typeName.name;
-                    }
-                  }
-                  return false;
-                });
-
-                if (typeDefinitions.length > 0) {
-                  const def = typeDefinitions[0];
-                  if (def.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
-                    if (hasAllOptionalProperties(def.typeAnnotation)) {
-                      context.report({
-                        node: param,
-                        messageId: 'requireDefaultParams',
-                        data: messageData,
-                        fix(fixer) {
-                          const paramText = context.sourceCode.getText(param);
-                          return fixer.replaceText(param, `${paramText} = {}`);
-                        },
-                      });
-                    }
-                  } else if (
-                    def.type === AST_NODE_TYPES.TSInterfaceDeclaration
-                  ) {
-                    if (
-                      def.body.body.every((member) => {
-                        if (
-                          member.type !== AST_NODE_TYPES.TSPropertySignature
-                        ) {
-                          return false;
-                        }
-                        return member.optional === true;
-                      })
-                    ) {
-                      context.report({
-                        node: param,
-                        messageId: 'requireDefaultParams',
-                        data: messageData,
-                        fix(fixer) {
-                          const paramText = context.sourceCode.getText(param);
-                          return fixer.replaceText(param, `${paramText} = {}`);
-                        },
-                      });
-                    }
-                  }
-                }
-              }
-            }
-          } else if (typeAnnotation.type === AST_NODE_TYPES.TSTypeLiteral) {
-            if (
-              typeAnnotation.members.every((member) => {
-                if (member.type !== AST_NODE_TYPES.TSPropertySignature) {
-                  return false;
-                }
-                return member.optional === true;
-              })
-            ) {
-              context.report({
-                node: param,
-                messageId: 'requireDefaultParams',
-                data: messageData,
-                fix(fixer) {
-                  const paramText = context.sourceCode.getText(param);
-                  return fixer.replaceText(param, `${paramText} = {}`);
-                },
-              });
-            }
+          if (hasAllOptionalProperties(typeAnnotation)) {
+            context.report({
+              node: param,
+              messageId: 'requireDefaultParams',
+              data: messageData,
+              fix(fixer) {
+                const paramText = context.sourceCode.getText(param);
+                return fixer.replaceText(param, `${paramText} = {}`);
+              },
+            });
           }
         }
       },
