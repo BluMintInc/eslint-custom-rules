@@ -564,11 +564,36 @@ function collectDeclaredNamesFromPattern(
   }
 }
 
+/**
+ * `export` is a modifier on a declaration, not a distinct kind of statement:
+ * `export const x = 1` declares, initializes and orders exactly as `const x = 1`
+ * does. Every classifier therefore reads through the wrapper, so an exported
+ * declaration participates in the analysis instead of being scored an opaque
+ * impure barrier that no statement may cross (#1762).
+ *
+ * `export default …` and `export { a, b }` carry no `.declaration` and keep their
+ * opaque treatment: the first wraps an expression whose evaluation order is the
+ * module's own contract, and the second only re-binds names declared above it.
+ */
+function unwrapExport(statement: TSESTree.Statement): TSESTree.Statement {
+  if (
+    statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
+    statement.declaration
+  ) {
+    // `NamedExportDeclarations` widens `ClassDeclaration.id` to nullable, which
+    // `Statement` does not admit. Every classifier below null-checks `id` before
+    // reading it, so the cast costs nothing the code was not already handling.
+    return statement.declaration as TSESTree.Statement;
+  }
+  return statement;
+}
+
 function getDeclaredNames(statement: TSESTree.Statement): Set<string> {
   const names = new Set<string>();
+  const declaration = unwrapExport(statement);
 
-  if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
-    statement.declarations.forEach((declarator) => {
+  if (declaration.type === AST_NODE_TYPES.VariableDeclaration) {
+    declaration.declarations.forEach((declarator) => {
       collectDeclaredNamesFromPattern(
         declarator.id as
           | TSESTree.BindingName
@@ -579,16 +604,19 @@ function getDeclaredNames(statement: TSESTree.Statement): Set<string> {
     });
   }
 
-  if (statement.type === AST_NODE_TYPES.FunctionDeclaration && statement.id) {
-    names.add(statement.id.name);
+  if (
+    declaration.type === AST_NODE_TYPES.FunctionDeclaration &&
+    declaration.id
+  ) {
+    names.add(declaration.id.name);
   }
 
   if (
-    statement.type === AST_NODE_TYPES.ClassDeclaration &&
-    statement.id &&
-    statement.id.type === AST_NODE_TYPES.Identifier
+    declaration.type === AST_NODE_TYPES.ClassDeclaration &&
+    declaration.id &&
+    declaration.id.type === AST_NODE_TYPES.Identifier
   ) {
-    names.add(statement.id.name);
+    names.add(declaration.id.name);
   }
 
   return names;
@@ -766,7 +794,7 @@ function isIdentifierMutated(
   const target = new Set([name]);
   let seenDeclaration = false;
   for (let index = 0; index < beforeIndex; index += 1) {
-    const statement = body[index];
+    const statement = unwrapExport(body[index]);
     if (statementMutatesAny(statement, target)) {
       return true;
     }
@@ -964,12 +992,13 @@ function patternIsSafe(
 function isPureDeclaration(
   statement: TSESTree.Statement,
   { allowHooks }: { allowHooks: boolean },
-): statement is TSESTree.VariableDeclaration {
-  if (statement.type !== AST_NODE_TYPES.VariableDeclaration) {
+): boolean {
+  const declaration = unwrapExport(statement);
+  if (declaration.type !== AST_NODE_TYPES.VariableDeclaration) {
     return false;
   }
 
-  return statement.declarations.every((declarator) => {
+  return declaration.declarations.every((declarator) => {
     if (
       declarator.id &&
       ASTHelpers.isNode(declarator.id) &&
@@ -1038,10 +1067,11 @@ function containsMemberRead(node: TSESTree.Node): boolean {
  * clean.
  */
 function capturesObservableState(statement: TSESTree.Statement): boolean {
-  if (statement.type !== AST_NODE_TYPES.VariableDeclaration) {
+  const declaration = unwrapExport(statement);
+  if (declaration.type !== AST_NODE_TYPES.VariableDeclaration) {
     return false;
   }
-  return statement.declarations.some(
+  return declaration.declarations.some(
     (declarator) =>
       Boolean(declarator.init) &&
       containsMemberRead(declarator.init as TSESTree.Node),
@@ -1241,10 +1271,12 @@ function handleDerivedGrouping(
   const sourceDeclarators = new Map<string, TSESTree.VariableDeclarator>();
 
   body.forEach((statement, index) => {
-    if (isVariableDeclaration(statement)) {
+    const declaration = variableDeclarationOf(statement);
+    if (declaration) {
       processVariableDeclaration(
         sink,
         statement,
+        declaration,
         index,
         body,
         declaredIndices,
@@ -1257,21 +1289,31 @@ function handleDerivedGrouping(
   });
 }
 
-function isVariableDeclaration(
+function variableDeclarationOf(
   statement: TSESTree.Statement,
-): statement is TSESTree.VariableDeclaration {
-  return statement.type === AST_NODE_TYPES.VariableDeclaration;
+): TSESTree.VariableDeclaration | null {
+  const declaration = unwrapExport(statement);
+  return declaration.type === AST_NODE_TYPES.VariableDeclaration
+    ? declaration
+    : null;
 }
 
+/**
+ * `statement` is the block-level node — the `export` wrapper when there is one —
+ * because it is what gets reported and what the reordering fix relocates as a
+ * whole. `declaration` is the same node read through that wrapper, and is what
+ * the dependency analysis inspects.
+ */
 function processVariableDeclaration(
   sink: DetectionSink,
-  statement: TSESTree.VariableDeclaration,
+  statement: TSESTree.Statement,
+  declaration: TSESTree.VariableDeclaration,
   index: number,
   body: TSESTree.Statement[],
   declaredIndices: Map<string, number>,
   sourceDeclarators: Map<string, TSESTree.VariableDeclarator>,
 ): void {
-  const dependencies = collectDependencies(statement);
+  const dependencies = collectDependencies(declaration);
   const priorDependencies = findPriorDependencies(
     dependencies,
     declaredIndices,
@@ -1420,10 +1462,11 @@ function trackSourceDeclarators(
   statement: TSESTree.Statement,
   sourceDeclarators: Map<string, TSESTree.VariableDeclarator>,
 ): void {
-  if (statement.type !== AST_NODE_TYPES.VariableDeclaration) {
+  const declaration = variableDeclarationOf(statement);
+  if (!declaration) {
     return;
   }
-  statement.declarations.forEach((declarator) => {
+  declaration.declarations.forEach((declarator) => {
     const names = new Set<string>();
     collectDeclaredNamesFromPattern(
       declarator.id as
@@ -1485,14 +1528,12 @@ function isSiblingSourceDerivation(
   sourceNodes: Set<TSESTree.VariableDeclarator>,
   sourceDeclarators: Map<string, TSESTree.VariableDeclarator>,
 ): boolean {
-  if (
-    statement.type !== AST_NODE_TYPES.VariableDeclaration ||
-    !isPureDeclaration(statement, { allowHooks: false })
-  ) {
+  const declaration = variableDeclarationOf(statement);
+  if (!declaration || !isPureDeclaration(statement, { allowHooks: false })) {
     return false;
   }
 
-  const dependencies = collectDependencies(statement);
+  const dependencies = collectDependencies(declaration);
   const siblingSourced = Array.from(dependencies).filter((name) => {
     const declarator = sourceDeclarators.get(name);
     return Boolean(declarator && sourceNodes.has(declarator));
@@ -1521,24 +1562,27 @@ function isSiblingSourceDerivation(
  * change execution order when moved closer to their usage. More complex initializers are
  * excluded to maintain temporal safety.
  */
-function isLateDeclarationCandidate(
+function lateDeclarationCandidateOf(
   statement: TSESTree.Statement,
-): statement is TSESTree.VariableDeclaration & {
-  declarations: [TSESTree.VariableDeclarator & { id: TSESTree.Identifier }];
-} {
-  if (
-    statement.type !== AST_NODE_TYPES.VariableDeclaration ||
-    statement.declarations.length !== 1
-  ) {
-    return false;
+): (TSESTree.VariableDeclarator & { id: TSESTree.Identifier }) | null {
+  const declaration = variableDeclarationOf(statement);
+  if (!declaration || declaration.declarations.length !== 1) {
+    return null;
   }
-  const [declarator] = statement.declarations;
-  return (
-    declarator.id.type === AST_NODE_TYPES.Identifier &&
-    (!declarator.init ||
-      declarator.init.type === AST_NODE_TYPES.Identifier ||
-      declarator.init.type === AST_NODE_TYPES.Literal)
-  );
+  const [declarator] = declaration.declarations;
+  if (declarator.id.type !== AST_NODE_TYPES.Identifier) {
+    return null;
+  }
+  if (
+    declarator.init &&
+    declarator.init.type !== AST_NODE_TYPES.Identifier &&
+    declarator.init.type !== AST_NODE_TYPES.Literal
+  ) {
+    return null;
+  }
+  return declarator as TSESTree.VariableDeclarator & {
+    id: TSESTree.Identifier;
+  };
 }
 
 const LOOP_TYPES = new Set<TSESTree.Node['type']>([
@@ -1584,10 +1628,10 @@ function handleLateDeclarations(
   body: TSESTree.Statement[],
 ): void {
   body.forEach((statement, index) => {
-    if (!isLateDeclarationCandidate(statement)) {
+    const declarator = lateDeclarationCandidateOf(statement);
+    if (!declarator) {
       return;
     }
-    const [declarator] = statement.declarations;
     const name = declarator.id.name;
     const dependencies = new Set<string>();
     if (declarator.init && declarator.init.type === AST_NODE_TYPES.Identifier) {
@@ -1618,7 +1662,7 @@ function handleLateDeclarations(
       // Do not hop over another declaration that is used at the same index or earlier
       // if it is also a candidate for being moved.
       // This prevents circular swapping of related declarations (like resolve/reject pairs).
-      if (isLateDeclarationCandidate(stmt)) {
+      if (lateDeclarationCandidateOf(stmt)) {
         const declaredNames = getDeclaredNames(stmt);
         const firstUsageOfIntervening = findFirstUsageIndex(
           body,
@@ -1750,7 +1794,7 @@ function resolveValueForIdentifier(
     index >= 0;
     index -= 1
   ) {
-    const statement = body[index];
+    const statement = unwrapExport(body[index]);
     if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
       for (const declarator of statement.declarations) {
         if (
@@ -2063,13 +2107,10 @@ function collectCalleeDependencies(
     // TypeScript overloads (where earlier signatures omit the body).
     let functionDeclaration: TSESTree.FunctionDeclaration | null = null;
     for (let index = body.length - 1; index >= 0; index -= 1) {
-      const statement = body[index];
+      const statement = unwrapExport(body[index]);
       const declaration =
         statement.type === AST_NODE_TYPES.FunctionDeclaration
           ? statement
-          : statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
-            statement.declaration?.type === AST_NODE_TYPES.FunctionDeclaration
-          ? statement.declaration
           : null;
 
       if (declaration?.id?.name !== name) {
@@ -2095,8 +2136,8 @@ function collectCalleeDependencies(
     }
 
     for (let index = callIndex - 1; index >= 0; index -= 1) {
-      const statement = body[index];
-      if (statement.type !== AST_NODE_TYPES.VariableDeclaration) {
+      const statement = variableDeclarationOf(body[index]);
+      if (!statement) {
         continue;
       }
       for (const declarator of statement.declarations) {
@@ -2283,8 +2324,9 @@ function isAwaitBearingStatement(statement: TSESTree.Statement): boolean {
   if (statement.type === AST_NODE_TYPES.ExpressionStatement) {
     return statement.expression.type === AST_NODE_TYPES.AwaitExpression;
   }
-  if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
-    return statement.declarations.some(
+  const declaration = unwrapExport(statement);
+  if (declaration.type === AST_NODE_TYPES.VariableDeclaration) {
+    return declaration.declarations.some(
       (declaration) =>
         declaration.init?.type === AST_NODE_TYPES.AwaitExpression,
     );

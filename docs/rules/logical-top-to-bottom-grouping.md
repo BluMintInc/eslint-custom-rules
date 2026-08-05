@@ -100,6 +100,40 @@ Two consequences worth knowing:
   statement moves with it; a comment on its own line above a statement is treated as
   that statement's preamble and moves with it too.
 
+### Exported declarations are ordinary declarations
+
+`export` is a modifier on a declaration, not a distinct kind of statement:
+`export const x = 1` declares, initializes and orders exactly as `const x = 1` does.
+Every check the rule makes therefore reads through the `export` wrapper, so an
+exported declaration both **moves** like its bare counterpart and can be **crossed**
+like it. The `export` keyword travels with the declaration it modifies — a
+reordering never separates the two.
+
+```typescript
+// ❌ Incorrect — reported and fixed exactly as the unexported spelling is
+export const threshold = 10;
+logStart();
+use(threshold);
+```
+
+```typescript
+// ✅ Correct
+logStart();
+export const threshold = 10;
+use(threshold);
+```
+
+Two export forms carry no declaration and stay opaque, so they are neither moved
+nor crossed:
+
+* `export default …` wraps an expression whose evaluation order is the module's own
+  contract.
+* `export { a, b }` only re-binds names declared above it, and counts as a reference
+  to each of them.
+
+`export type`, `export interface` and `export enum` unwrap to declarations this rule
+does not classify as pure values, so they keep acting as ordering barriers.
+
 ### Sequential awaits are never split
 
 Two or more adjacent `await` statements are a run, and the search treats keeping that
