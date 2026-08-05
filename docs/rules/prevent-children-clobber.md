@@ -87,6 +87,40 @@ const Accordion = (props: AccordionProps) => (
 );
 ```
 
+The props alias is resolved lexically, so exporting it or declaring it inside a
+function, arrow, `namespace`, `static` block or `switch` case makes no
+difference. An alias declared in an inner scope shadows a same-named outer one,
+and because type aliases hoist, a component written above its own alias still
+resolves it.
+
+```tsx
+export type DialogAccordionProps = Readonly<
+  Omit<MuiAccordionProps, 'children'>
+>;
+
+const DialogAccordion = (props: DialogAccordionProps) => (
+  <AccordionRoot {...props}>
+    <AccordionDetails />
+  </AccordionRoot>
+);
+```
+
+```tsx
+function createAccordion() {
+  type LocalAccordionProps = Omit<MuiAccordionProps, 'children'>;
+
+  return (props: LocalAccordionProps) => (
+    <AccordionRoot {...props}>
+      <AccordionDetails />
+    </AccordionRoot>
+  );
+}
+```
+
+An alias the rule cannot resolve — one imported from another module, for
+instance — is treated as still carrying `children`, so the exemption never
+widens to names whose shape is unknown.
+
 #### Already forwarding children explicitly (allowed)
 
 ```tsx

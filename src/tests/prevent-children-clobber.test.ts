@@ -300,6 +300,149 @@ ruleTesterJsx.run('prevent-children-clobber', preventChildrenClobber, {
       `,
       filename: 'component.tsx',
     },
+    {
+      code: `
+        export type Props = Readonly<Omit<DialogProps, 'children' | 'open'>>;
+        const Accordion = (props: Props) => (
+          <AccordionRoot {...props}>
+            <AccordionDetails />
+          </AccordionRoot>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      code: `
+        function Outer() {
+          type Props = Omit<DialogProps, 'children'>;
+          const Accordion = (props: Props) => (
+            <AccordionRoot {...props}>
+              <AccordionDetails />
+            </AccordionRoot>
+          );
+          return Accordion;
+        }
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      code: `
+        const make = () => {
+          type Props = Omit<DialogProps, 'children'>;
+          const Accordion = (props: Props) => (
+            <AccordionRoot {...props}>
+              <AccordionDetails />
+            </AccordionRoot>
+          );
+          return Accordion;
+        };
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      code: `
+        namespace NS {
+          export type Props = Omit<DialogProps, 'children'>;
+          export const Accordion = (props: Props) => (
+            <AccordionRoot {...props}>
+              <AccordionDetails />
+            </AccordionRoot>
+          );
+        }
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      code: `
+        class Registry {
+          static {
+            type Props = Omit<DialogProps, 'children'>;
+            const Accordion = (props: Props) => (
+              <AccordionRoot {...props}>
+                <AccordionDetails />
+              </AccordionRoot>
+            );
+            Registry.register(Accordion);
+          }
+        }
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      code: `
+        function pick(kind: string) {
+          switch (kind) {
+            case 'accordion':
+              type Props = Omit<DialogProps, 'children'>;
+              const Accordion = (props: Props) => (
+                <AccordionRoot {...props}>
+                  <AccordionDetails />
+                </AccordionRoot>
+              );
+              return Accordion;
+            default:
+              return null;
+          }
+        }
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      // Type aliases hoist, so a component declared above its props alias must
+      // still resolve it.
+      code: `
+        const Accordion = (props: Props) => (
+          <AccordionRoot {...props}>
+            <AccordionDetails />
+          </AccordionRoot>
+        );
+        export type Props = Readonly<Omit<DialogProps, 'children' | 'open'>>;
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      code: `
+        export type Base = Omit<DialogProps, 'children'>;
+        export type Props = Base;
+        const Accordion = (props: Props) => (
+          <AccordionRoot {...props}>
+            <AccordionDetails />
+          </AccordionRoot>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      // An inner alias shadows a same-named outer one, so the omitting inner
+      // declaration is what the component's props resolve to.
+      code: `
+        type Props = Readonly<DialogProps>;
+        function Outer() {
+          type Props = Omit<DialogProps, 'children'>;
+          const Accordion = (props: Props) => (
+            <AccordionRoot {...props}>
+              <AccordionDetails />
+            </AccordionRoot>
+          );
+          return Accordion;
+        }
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      code: `
+        export type Props = Omit<DialogProps, 'children'>;
+        const Wrapper = (props: DialogProps) => {
+          const narrowed: Props = props;
+          return (
+            <Dialog {...narrowed}>
+              <Content />
+            </Dialog>
+          );
+        };
+      `,
+      filename: 'component.tsx',
+    },
   ],
   invalid: [
     {
@@ -559,6 +702,83 @@ ruleTesterJsx.run('prevent-children-clobber', preventChildrenClobber, {
           <Dialog {...props}>
             <Content />
           </Dialog>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      // Resolving through `export` must not blanket-exempt exported aliases:
+      // one that keeps `children` still clobbers.
+      code: `
+        export type Props = Readonly<DialogProps>;
+        const Accordion = (props: Props) => (
+          <AccordionRoot {...props}>
+            <AccordionDetails />
+          </AccordionRoot>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      code: `
+        function Outer() {
+          type Props = Readonly<DialogProps>;
+          const Accordion = (props: Props) => (
+            <AccordionRoot {...props}>
+              <AccordionDetails />
+            </AccordionRoot>
+          );
+          return Accordion;
+        }
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      // The inner alias shadows the omitting outer one, so the exemption must
+      // not leak across the scope boundary.
+      code: `
+        type Props = Omit<DialogProps, 'children'>;
+        function Outer() {
+          type Props = Readonly<DialogProps>;
+          const Accordion = (props: Props) => (
+            <AccordionRoot {...props}>
+              <AccordionDetails />
+            </AccordionRoot>
+          );
+          return Accordion;
+        }
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      // A self-referential alias must terminate rather than recurse forever,
+      // and an unprovable exclusion still reports.
+      code: `
+        export type Props = Props;
+        const Accordion = (props: Props) => (
+          <AccordionRoot {...props}>
+            <AccordionDetails />
+          </AccordionRoot>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      // A sibling scope's alias is not in scope, so the name stays unresolved.
+      code: `
+        function Sibling() {
+          type Props = Omit<DialogProps, 'children'>;
+          return null;
+        }
+        const Accordion = (props: Props) => (
+          <AccordionRoot {...props}>
+            <AccordionDetails />
+          </AccordionRoot>
         );
       `,
       filename: 'component.tsx',
