@@ -94,6 +94,44 @@ ruleTesterTs.run('enforce-serializable-params', rule, {
         };
       `,
     },
+
+    // An interface payload is resolved like an alias, so its JSON-safe form
+    // must stay silent for the same reason the alias form does.
+    {
+      code: `
+        interface ValidInterfaceParams {
+          id: string;
+          tags: string[];
+        }
+
+        export const interfaceFunction = async (request: CallableRequest<ValidInterfaceParams>) => {
+          // Implementation
+        };
+      `,
+    },
+
+    // Resolution follows references, which must not leak outside a request
+    // wrapper: a non-JSON-safe type is only a problem in a payload.
+    {
+      code: `
+        type LocalOnly = {
+          createdAt: Timestamp;
+        };
+
+        export const plainFunction = (value: LocalOnly) => value;
+      `,
+    },
+    {
+      code: `
+        type WrappedParams = {
+          createdAt: Timestamp;
+        };
+
+        export const otherWrapper = async (request: SomeOtherWrapper<WrappedParams>) => {
+          // Implementation
+        };
+      `,
+    },
   ],
   invalid: [
     {
@@ -245,6 +283,158 @@ ruleTesterTs.run('enforce-serializable-params', rule, {
 
         type HoistedParams = {
           createdAt: Timestamp;
+        };
+      `,
+      errors: [{ messageId: 'nonSerializableProperty' }],
+    },
+
+    // #1751: a namespaced name is the same type. Reading only `Identifier.name`
+    // leaves it undefined, which exempted every firebase-admin-style spelling.
+    {
+      code: `
+        export const namespacedFunction = async (request: CallableRequest<admin.firestore.Timestamp>) => {
+          // Invalid implementation
+        };
+      `,
+      errors: [{ messageId: 'nonSerializableParam' }],
+    },
+    {
+      code: `
+        type NamespacedParams = {
+          createdAt: admin.firestore.Timestamp;
+        };
+
+        export const namespacedPropertyFunction = async (request: CallableRequest<NamespacedParams>) => {
+          // Invalid implementation
+        };
+      `,
+      errors: [{ messageId: 'nonSerializableProperty' }],
+    },
+
+    // The wrapper itself is namespaced in firebase-functions v1 code, and the
+    // same undefined name meant its payload was never inspected at all.
+    {
+      code: `
+        export const v1Function = async (request: functions.https.CallableRequest<Timestamp>) => {
+          // Invalid implementation
+        };
+      `,
+      errors: [{ messageId: 'nonSerializableParam' }],
+    },
+
+    // #1751: an interface is as common as an alias for a request contract.
+    {
+      code: `
+        interface InterfaceParams {
+          createdAt: Timestamp;
+        }
+
+        export const interfaceInvalidFunction = async (request: CallableRequest<InterfaceParams>) => {
+          // Invalid implementation
+        };
+      `,
+      errors: [{ messageId: 'nonSerializableProperty' }],
+    },
+
+    // Type forms the switch omitted: intersection, tuple, readonly array.
+    {
+      code: `
+        export const intersectionFunction = async (request: CallableRequest<{ createdAt: Timestamp } & { id: string }>) => {
+          // Invalid implementation
+        };
+      `,
+      errors: [{ messageId: 'nonSerializableProperty' }],
+    },
+    {
+      code: `
+        export const tupleFunction = async (request: CallableRequest<[Timestamp, string]>) => {
+          // Invalid implementation
+        };
+      `,
+      errors: [{ messageId: 'nonSerializableParam' }],
+    },
+    {
+      code: `
+        export const readonlyFunction = async (request: CallableRequest<readonly Timestamp[]>) => {
+          // Invalid implementation
+        };
+      `,
+      errors: [{ messageId: 'nonSerializableParam' }],
+    },
+
+    // Resolution is transitive, so an alias pointing at another alias — and a
+    // payload assembled from named parts — is inspected as a whole.
+    {
+      code: `
+        type Inner = {
+          createdAt: Timestamp;
+        };
+        type OuterParams = Inner;
+
+        export const chainedFunction = async (request: CallableRequest<OuterParams>) => {
+          // Invalid implementation
+        };
+      `,
+      errors: [{ messageId: 'nonSerializableProperty' }],
+    },
+    {
+      code: `
+        type NestedInner = {
+          createdAt: Timestamp;
+        };
+        type NestedOuter = {
+          inner: NestedInner;
+        };
+
+        export const nestedFunction = async (request: CallableRequest<NestedOuter>) => {
+          // Invalid implementation
+        };
+      `,
+      errors: [{ messageId: 'nonSerializableProperty' }],
+    },
+
+    // A self-referential payload must terminate, and a type reachable by two
+    // paths must report once — resolution follows references, so neither is
+    // guaranteed by construction.
+    {
+      code: `
+        type RecursiveParams = {
+          createdAt: Timestamp;
+          next: RecursiveParams;
+        };
+
+        export const recursiveFunction = async (request: CallableRequest<RecursiveParams>) => {
+          // Invalid implementation
+        };
+      `,
+      errors: [{ messageId: 'nonSerializableProperty' }],
+    },
+    {
+      code: `
+        type SharedInner = {
+          createdAt: Timestamp;
+        };
+        type SharedParams = {
+          left: SharedInner;
+          right: SharedInner;
+        };
+
+        export const sharedFunction = async (request: CallableRequest<SharedParams>) => {
+          // Invalid implementation
+        };
+      `,
+      errors: [{ messageId: 'nonSerializableProperty' }],
+    },
+
+    // A quoted key names a property just as an identifier does.
+    {
+      code: `
+        type QuotedParams = {
+          'created-at': Timestamp;
+        };
+
+        export const quotedFunction = async (request: CallableRequest<QuotedParams>) => {
+          // Invalid implementation
         };
       `,
       errors: [{ messageId: 'nonSerializableProperty' }],

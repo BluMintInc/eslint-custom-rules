@@ -64,6 +64,22 @@ export const invalidGeneric = async (
 };
 ```
 
+Request contracts declared as an `interface` are resolved the same way as a type alias, and a namespaced type name is matched on its rightmost segment, so the firebase-admin and firebase-functions v1 spellings are covered too:
+
+```ts
+interface InvalidInterfaceParams {
+  createdAt: admin.firestore.Timestamp;
+}
+
+export const invalidInterface = async (
+  request: functions.https.CallableRequest<InvalidInterfaceParams>,
+) => {
+  // Send an ISO string instead
+};
+```
+
+Resolution follows references, so a payload assembled from other locally declared types — including intersections, tuples and `readonly` arrays — is inspected as a whole. A type parameter that names nothing declared in the file is left alone, so an imported request type is never flagged on a guess.
+
 ## Options
 
 This rule accepts an options object:
