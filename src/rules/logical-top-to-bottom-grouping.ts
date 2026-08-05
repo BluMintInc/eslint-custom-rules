@@ -1,6 +1,7 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
+import { isShebangComment } from '../utils/shebang';
 
 type MessageIds =
   | 'moveGuardUp'
@@ -1090,7 +1091,12 @@ function getLeadingComments(
   statement: TSESTree.Statement,
   sourceCode: TSESLint.SourceCode,
 ): TSESTree.Comment[] {
-  const comments = sourceCode.getCommentsBefore(statement);
+  // A shebang belongs to the file, not to the statement below it. Left in the
+  // preamble, relocating the first statement carries `#!` off character 0 and
+  // the output stops parsing.
+  const comments = sourceCode
+    .getCommentsBefore(statement)
+    .filter((comment) => !isShebangComment(sourceCode, comment));
   const ownLine = comments.findIndex((comment) => {
     const previous = sourceCode.getTokenBefore(comment, {
       includeComments: true,

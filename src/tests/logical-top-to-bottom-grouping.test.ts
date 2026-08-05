@@ -453,6 +453,29 @@ const c = gamma.value;
 }`,
   ],
   invalid: [
+    // A shebang is only a shebang at character 0. ESLint presents it as a
+    // leading comment of the first statement, so relocating that statement used
+    // to carry `#!` into the middle of the file, where it no longer parses
+    // (TS18026).
+    {
+      code: `#!/usr/bin/env node
+
+const threshold = 10;
+
+logStart();
+
+use(threshold);
+`,
+      errors: [{ messageId: 'moveSideEffect' }],
+      output: `#!/usr/bin/env node
+
+logStart();
+
+const threshold = 10;
+
+use(threshold);
+`,
+    },
     {
       code: `
 const { a } = props.group;
