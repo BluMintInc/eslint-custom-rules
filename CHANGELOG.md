@@ -1,3 +1,12 @@
+## [1.20.106](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.105...v1.20.106) (2026-08-05)
+
+
+### Bug Fixes
+
+* **consistent-callback-naming:** stop renaming destructuring keys and reserved words (closes [#1719](https://github.com/BluMintInc/eslint-custom-rules/issues/1719)) ([a2b824f](https://github.com/BluMintInc/eslint-custom-rules/commit/a2b824f5ae0b4c95de4f0f960026ee6c3021c377))
+* **no-entire-object-hook-deps:** keep the whole object when the member is a method (closes [#1721](https://github.com/BluMintInc/eslint-custom-rules/issues/1721)) ([96e4613](https://github.com/BluMintInc/eslint-custom-rules/commit/96e46138c3ad4e484feade2a8c0e46c99f1b1797)), closes [#391](https://github.com/BluMintInc/eslint-custom-rules/issues/391)
+* **prefer-nullish-coalescing-boolean-props:** keep the parens ?? requires (closes [#1720](https://github.com/BluMintInc/eslint-custom-rules/issues/1720)) ([743d9e6](https://github.com/BluMintInc/eslint-custom-rules/commit/743d9e6610a2987dc31e90ba1dfbd9f7a6c01558))
+
 ## [1.20.105](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.104...v1.20.105) (2026-08-04)
 
 

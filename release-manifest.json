@@ -1,5 +1,35 @@
 [
   {
+    "version": "1.20.106",
+    "date": "2026-08-05T01:12:16.076Z",
+    "rules": [
+      {
+        "name": "consistent-callback-naming",
+        "changeType": "fix",
+        "issues": [
+          1719
+        ],
+        "summary": "stop renaming destructuring keys and reserved words (closes #1719)"
+      },
+      {
+        "name": "no-entire-object-hook-deps",
+        "changeType": "fix",
+        "issues": [
+          1721
+        ],
+        "summary": "keep the whole object when the member is a method (closes #1721)"
+      },
+      {
+        "name": "prefer-nullish-coalescing-boolean-props",
+        "changeType": "fix",
+        "issues": [
+          1720
+        ],
+        "summary": "keep the parens ?? requires (closes #1720)"
+      }
+    ]
+  },
+  {
     "version": "1.20.105",
     "date": "2026-08-04T22:42:11.381Z",
     "rules": [
