@@ -1,3 +1,5 @@
+import { readFileSync } from 'fs';
+import { resolve as resolvePath } from 'path';
 import type { TSESLint } from '@typescript-eslint/utils';
 import { Linter, Rule } from 'eslint';
 import { ruleTesterTs } from '../utils/ruleTester';
@@ -2722,6 +2724,90 @@ describe('enforce-firestore-doc-ref-generic after no-explicit-return-type --fix'
     expect(messages.map((message) => message.messageId)).toEqual([
       'missingGeneric',
       'missingGeneric',
+    ]);
+  });
+});
+
+/**
+ * `meta.docs.requiresTypeChecking` is load-bearing beyond documentation: the
+ * #1641 half of `docs-examples-conformance` skips every "incorrect" fence of a
+ * rule that declares it, because a `Linter` without `parserOptions.project`
+ * cannot exercise a type-aware rule at all. A rule that declares the flag
+ * without consuming type services therefore exempts its own documented
+ * violations from the guard that proves they are enforced, and tells consumers
+ * to configure a project they do not need (#1730).
+ *
+ * The invariant asserted here is agreement, in both directions, between the
+ * declaration and the implementation.
+ */
+describe('requiresTypeChecking must match the implementation (#1730)', () => {
+  const RULE_ID = '@blumintinc/blumint/enforce-firestore-doc-ref-generic';
+  const TYPE_SERVICE = /getParserServices|getTypeChecker|parserServices/;
+
+  const ruleSource = () =>
+    readFileSync(
+      resolvePath(__dirname, '../rules/enforce-firestore-doc-ref-generic.ts'),
+      'utf8',
+    );
+
+  it('does not claim type information it never requests', () => {
+    const declared =
+      enforceFirestoreDocRefGeneric.meta.docs?.requiresTypeChecking === true;
+    const consumesTypes = TYPE_SERVICE.test(ruleSource());
+
+    // Non-vacuity: the probe must be able to see a type service where one
+    // exists, or "consumesTypes === false" proves nothing about the regex.
+    expect(
+      TYPE_SERVICE.test(
+        readFileSync(
+          resolvePath(__dirname, '../rules/no-usememo-for-pass-by-value.ts'),
+          'utf8',
+        ),
+      ),
+    ).toBe(true);
+
+    expect(consumesTypes).toBe(false);
+    expect(declared).toBe(false);
+  });
+
+  it('reports the shapes its docs call incorrect with no program available', () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      enforceFirestoreDocRefGeneric as unknown as Rule.RuleModule,
+    );
+
+    // Deliberately no `project`/`tsconfigRootDir`: this is the configuration
+    // the flag claims is insufficient, so a report here is the disproof.
+    const messages = linter.verify(
+      [
+        "const userDocRef: DocumentReference = db.doc('users/123');",
+        "const usersCollectionUntyped = db.collection('users');",
+        "const productDocRef: DocumentReference<any> = db.doc('products/123');",
+        "const auditLogDocRef: DocumentReference<{}> = db.doc('audit/123');",
+      ].join('\n'),
+      {
+        parser: '@typescript-eslint/parser',
+        parserOptions: {
+          ecmaVersion: 2022 as const,
+          sourceType: 'module' as const,
+        },
+        rules: { [RULE_ID]: 'error' },
+      },
+      'src/services/firestore.ts',
+    );
+
+    expect(messages.some((message) => message.fatal)).toBe(false);
+    expect(messages.map((message) => message.messageId)).toEqual([
+      'missingGeneric',
+      'missingGeneric',
+      'invalidGeneric',
+      'invalidGeneric',
     ]);
   });
 });

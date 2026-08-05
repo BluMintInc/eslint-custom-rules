@@ -2,8 +2,6 @@
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
-💭 This rule requires [type information](https://typescript-eslint.io/linting/typed-linting).
-
 <!-- end auto-generated rule header -->
 
 This rule requires every Firestore `DocumentReference`, `CollectionReference`, and `CollectionGroup` to declare the document shape via their generic type and rejects generics that are `any` or `{}` (and flags nested `any`/`{}` where they can be statically detected). Firestore does not enforce schemas at runtime; without a typed generic, TypeScript treats the data as loose `DocumentData`, so field typos and missing properties compile and ship to production unchecked.
