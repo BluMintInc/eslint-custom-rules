@@ -73,6 +73,31 @@ ruleTesterJsx.run('enforce-global-constants', enforceGlobalConstants, {
     `,
   ],
   invalid: [
+    // A shebang has to stay at character 0 or the file stops parsing
+    // (TS18026). With no import to anchor to, the hoisted constants used to be
+    // spliced in ahead of it.
+    {
+      code: `#!/usr/bin/env node
+
+const Comp = () => {
+  const [a = {x:1}, b = 2] = arr;
+  return <div/>;
+};
+`,
+      errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
+      output: `#!/usr/bin/env node
+
+const DEFAULT_A = {x:1} as const;
+
+const DEFAULT_B = 2 as const;
+
+
+const Comp = () => {
+  const [a = DEFAULT_A, b = DEFAULT_B] = arr;
+  return <div/>;
+};
+`,
+    },
     // useMemo with empty dependency array returning object literal
     {
       code: `

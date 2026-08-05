@@ -135,3 +135,10 @@ In most cases, however, you should prefer hoisting these literals to module-leve
 
 - [React useMemo Documentation](https://react.dev/reference/react/useMemo)
 - [React Hooks Performance Optimization](https://react.dev/reference/react/useMemo#skipping-expensive-recalculations)
+
+## Shebang files
+
+Hoisted constants are placed below a `#!` shebang, the same way they are placed
+below a `'use client'` directive prologue. A shebang is only a shebang at
+character 0 — anywhere else it is a syntax error (`TS18026`) and the file stops
+being executable.
