@@ -208,23 +208,54 @@ function getFunctionFromInit(
   return undefined;
 }
 
-function isInModuleScope(node: TSESTree.Node): boolean {
+/**
+ * Nearest enclosing function of a node, or `null` when the node sits at module
+ * scope. Class and object methods are reached through their `FunctionExpression`
+ * value, so no separate `MethodDefinition` case is needed.
+ */
+function getEnclosingFunction(
+  node: TSESTree.Node,
+):
+  | TSESTree.ArrowFunctionExpression
+  | TSESTree.FunctionExpression
+  | TSESTree.FunctionDeclaration
+  | null {
   let current: TSESTree.Node | undefined | null = node.parent;
   while (current) {
-    if (
-      current.type === AST_NODE_TYPES.FunctionDeclaration ||
-      current.type === AST_NODE_TYPES.FunctionExpression ||
-      current.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-      current.type === AST_NODE_TYPES.MethodDefinition
-    ) {
-      return false;
+    if (isFunctionNode(current)) {
+      return current;
     }
     if (current.type === AST_NODE_TYPES.Program) {
-      return true;
+      return null;
     }
     current = current.parent;
   }
-  return true;
+  return null;
+}
+
+/**
+ * The hazard is identity churn measured against the CONSUMER, not absolute
+ * scope depth: a wrapper remounts its subtree only when it is recreated by the
+ * very scope whose JSX passes it along. That holds exactly when the definition
+ * and the consuming JSX attribute share a nearest enclosing function.
+ *
+ * When the definition sits in a strictly outer function — an HOC factory, a
+ * `describe` callback consumed from a nested `it`, a class- or object-method
+ * factory — the binding is created once per outer call and every run of the
+ * consumer sees the identical reference, so there is nothing to remount and the
+ * message's remedy ("move it to module scope") would fix nothing. Module scope
+ * is the degenerate case: the definition has no enclosing function at all.
+ *
+ * A custom hook is deliberately NOT special-cased. A hook body does re-run per
+ * render, and when it also holds the consuming JSX the two functions coincide,
+ * so the same predicate reports it.
+ */
+function isStableForConsumer(
+  defNode: TSESTree.Node,
+  consumerFunction: TSESTree.Node | null,
+): boolean {
+  const definitionFunction = getEnclosingFunction(defNode);
+  return definitionFunction === null || definitionFunction !== consumerFunction;
 }
 
 function isComponentLikeFunction(
@@ -397,6 +428,7 @@ export const noInlineComponentProp = createRule<Options, MessageIds>({
     function shouldReportDefinition(
       definition: TSESLint.Scope.Definition,
       displayName: string | undefined,
+      consumerFunction: TSESTree.Node | null,
     ): boolean {
       if (
         definition.type === 'ImportBinding' ||
@@ -407,8 +439,10 @@ export const noInlineComponentProp = createRule<Options, MessageIds>({
       }
 
       const defNode = definition.node;
-      const moduleScoped = isInModuleScope(defNode);
-      if (moduleScoped && resolvedOptions.allowModuleScopeFactories) {
+      if (
+        resolvedOptions.allowModuleScopeFactories &&
+        isStableForConsumer(defNode, consumerFunction)
+      ) {
         return false;
       }
 
@@ -445,6 +479,7 @@ export const noInlineComponentProp = createRule<Options, MessageIds>({
     function handleIdentifierExpression(
       identifier: TSESTree.Identifier,
       propName: string,
+      consumerFunction: TSESTree.Node | null,
     ): void {
       const variable = findVariableInScopes(context, identifier);
       if (!variable) return;
@@ -456,7 +491,9 @@ export const noInlineComponentProp = createRule<Options, MessageIds>({
           def.type !== 'ImportBinding',
       );
       if (!definition) return;
-      if (shouldReportDefinition(definition, identifier.name)) {
+      if (
+        shouldReportDefinition(definition, identifier.name, consumerFunction)
+      ) {
         report(identifier, propName, identifier.name);
       }
     }
@@ -464,6 +501,7 @@ export const noInlineComponentProp = createRule<Options, MessageIds>({
     function handleMemberExpression(
       member: TSESTree.MemberExpression,
       propName: string,
+      consumerFunction: TSESTree.Node | null,
     ): void {
       if (member.computed) return;
       if (member.property.type !== AST_NODE_TYPES.Identifier) return;
@@ -493,8 +531,8 @@ export const noInlineComponentProp = createRule<Options, MessageIds>({
       }
 
       if (
-        isInModuleScope(defNode) &&
-        resolvedOptions.allowModuleScopeFactories
+        resolvedOptions.allowModuleScopeFactories &&
+        isStableForConsumer(defNode, consumerFunction)
       ) {
         return;
       }
@@ -577,13 +615,17 @@ export const noInlineComponentProp = createRule<Options, MessageIds>({
           return;
         }
 
+        // Anchored on the attribute rather than on the referencing expression so
+        // both branches measure churn against the same consuming scope.
+        const consumerFunction = getEnclosingFunction(node);
+
         if (expression.type === AST_NODE_TYPES.Identifier) {
-          handleIdentifierExpression(expression, propName);
+          handleIdentifierExpression(expression, propName, consumerFunction);
           return;
         }
 
         if (expression.type === AST_NODE_TYPES.MemberExpression) {
-          handleMemberExpression(expression, propName);
+          handleMemberExpression(expression, propName, consumerFunction);
         }
       },
     };

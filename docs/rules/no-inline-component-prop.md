@@ -17,6 +17,27 @@ Disallow inline function components created inside a render scope from being pas
 The rule flags components passed to component-type props when those components are created via inline expressions, hooks like `useCallback`/`useMemo`, or wrapped with `React.memo`/`forwardRef` inside a render scope (`CatalogWrapper`, names ending in `Wrapper`/`Component`, or configured names).
 Configured `props` patterns are honored for non-render-prop names even if the prop name is not PascalCase; when `allowRenderProps` is true, render-prop names such as `children` or `render*` are skipped even if they match a pattern. Glob patterns support up to two `*` wildcards to avoid overly complex regular expressions.
 
+### Which scope counts
+
+The hazard is measured **relative to the consumer**, not by absolute scope depth. A referenced wrapper is reported only when its nearest enclosing function is the same function that holds the consuming JSX attribute — that is exactly when the wrapper is recreated by the scope that passes it along, so React sees a new component type and remounts the subtree.
+
+A wrapper declared in a **strictly outer** function is created once per call of that outer function, and every run of the consumer sees the identical reference. There is no remount to prevent, and the suggested remedy would not change anything, so those are not reported: HOC/factory functions that return a component, a wrapper declared in a `describe` callback and used from nested `it` callbacks, and class- or object-method factories. Module scope is the degenerate case of the same rule — the definition has no enclosing function at all.
+
+Custom hooks are not exempt. A hook body re-runs on every render of its caller, so a wrapper declared next to the JSX that consumes it inside the hook churns exactly like one declared in a component:
+
+```tsx
+// ❌ Reported: useCatalogLayout re-runs per render, and it holds both the
+// definition and the consuming JSX.
+export function useCatalogLayout() {
+  const CatalogWrapper = (props: { children: JSX.Element }) => (
+    <div {...props} />
+  );
+  return <AlgoliaLayout CatalogWrapper={CatalogWrapper} />;
+}
+```
+
+Blocks that are not functions — loop bodies, `if` branches, `try` blocks — do not change the enclosing function, so a wrapper declared inside one still belongs to the surrounding component and is reported. An IIFE that encloses both the definition and the consumer is likewise the same-function case.
+
 ❌ Inline wrapper recreated per render:
 
 ```tsx
@@ -80,7 +101,7 @@ const ContentGrid = () => (
 
 - `props` (default `["CatalogWrapper", "*Wrapper", "*Component"]`): prop name patterns treated as component-type props.
 - `allowRenderProps` (default `true`): when `true`, props such as `render*`, `children`, and similar render-prop names are ignored.
-- `allowModuleScopeFactories` (default `true`): skips components defined at module scope (stable references and top-level factories/HOCs).
+- `allowModuleScopeFactories` (default `true`): skips components whose identity is stable from the consumer's point of view — those defined at module scope, and those defined in a function that strictly encloses the consumer (factories, HOCs, `describe` bodies, method factories). Setting it to `false` withdraws **every** stability carve-out, so any component-like definition passed to a component-type prop is reported no matter where it is declared. Withdrawing only the module-scope half would be incoherent: a module binding is strictly more stable than one held by an outer function, so it cannot be the only shape that reports.
 
 ## Valid
 
@@ -98,6 +119,31 @@ const Grid = ({ items }: { items: string[] }) => (
 ```tsx
 const wrappers = { CatalogWrapper: StableWrapper };
 const Page = () => <AlgoliaLayout CatalogWrapper={wrappers.CatalogWrapper} />;
+```
+
+```tsx
+// Created once per withCatalog() call; every render of Page sees the same
+// reference, so there is nothing to remount.
+export function withCatalog(Inner: ComponentType<{ children: JSX.Element }>) {
+  const StableWrapper = (props: { children: JSX.Element }) => (
+    <Inner>{props.children}</Inner>
+  );
+
+  return function Page() {
+    return <AlgoliaLayout CatalogWrapper={StableWrapper} />;
+  };
+}
+```
+
+```tsx
+// The describe body runs once, so the wrapper is fixed across every it callback.
+describe('CustomHitsPreempted', () => {
+  const CatalogWrapper = ({ hits }: { hits: Hit[] }) => <div>{hits.length}</div>;
+
+  it('renders', () => {
+    render(<CustomHitsPreempted CatalogWrapper={CatalogWrapper} />);
+  });
+});
 ```
 
 ## Invalid
