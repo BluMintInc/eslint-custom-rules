@@ -27,6 +27,21 @@ The rule uses purely syntactic detection (no type-checker required):
 
 > **Alias resolution is same-file only.** A type alias imported from another module (e.g. `import { ToClose } from './types'`) can't be resolved without a type checker, so state typed with an imported alias falls back to the name-pattern and scope-binding signals above.
 
+> **Alias resolution is lexical.** An alias is looked up in every enclosing statement container — function body, arrow body, bare block, `switch` case, `namespace` body, and finally the file's top level — innermost first, and `export type X = ...` is read the same as `type X = ...`. Declaring the alias beside the hook that uses it therefore behaves exactly like hoisting it to file scope:
+>
+> ```ts
+> function usePortal() {
+>   type ToClose = () => void; // resolved, same as if declared at file scope
+>   const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+>   const open = (newOnClose: ToClose) => {
+>     setOnCloseState(newOnClose); // flagged
+>   };
+>   return { open };
+> }
+> ```
+>
+> Because the innermost declaration wins, an inner alias shadows a same-named outer one, and an alias declared in a sibling scope is not in scope and does not resolve. TypeScript hoists type declarations, so an alias written *after* the `useState` call that references it still resolves.
+
 ### Safe forms (never flagged)
 
 - Inline arrow / function expressions: `setState(() => fn)` or `setState((prev) => prev + 1)`
