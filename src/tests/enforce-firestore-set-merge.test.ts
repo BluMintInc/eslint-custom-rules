@@ -300,6 +300,40 @@ ruleTesterTs.run('enforce-firestore-set-merge', enforceFirestoreSetMerge, {
         }
       `,
     },
+    // Issue #1763: the widened `firestore()` evidence search resolves more
+    // declarations, not more initializers. A name that resolves to something
+    // else is still no evidence at all, exported or not.
+    {
+      code: `
+        const db = somethingElse();
+        someRef.update({ theme: 'dark' });
+      `,
+    },
+    {
+      code: `
+        export const db = somethingElse();
+        someRef.update({ theme: 'dark' });
+      `,
+    },
+    // No `firestore()` handle anywhere in the file leaves a bare-identifier
+    // receiver unproven, so the call stays out of the rule.
+    {
+      code: `
+        someRef.update({ theme: 'dark' });
+      `,
+    },
+    // The search is lexical: a handle declared in a sibling function body is not
+    // in scope at the call and cannot stand as its evidence.
+    {
+      code: `
+        function other() {
+          const db = admin.firestore();
+        }
+        function saveTheme(someRef) {
+          someRef.update({ theme: 'dark' });
+        }
+      `,
+    },
   ],
   invalid: [
     // Invalid cases using update
@@ -894,6 +928,105 @@ export async function save(args) {
       `,
       errors: [{ messageId: 'preferSetMerge' }],
       output: null,
+    },
+    // Issue #1763: the file's `<x>.firestore()` handle is the only evidence a
+    // bare-identifier receiver has, and it is idiomatically exported rather than
+    // left module-private.
+    {
+      code: `
+        export const db = admin.firestore();
+        await someRef.update({ theme: 'dark' });
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        export const db = admin.firestore();
+        await someRef.set({ theme: 'dark' }, { merge: true });
+      `,
+    },
+    // A handle constructed inside the handler that uses it — how Cloud Functions
+    // code is written — carries the same evidence as a module-scope one.
+    {
+      code: `
+        function saveTheme(someRef) {
+          const db = admin.firestore();
+          someRef.update({ theme: 'dark' });
+        }
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        function saveTheme(someRef) {
+          const db = admin.firestore();
+          someRef.set({ theme: 'dark' }, { merge: true });
+        }
+      `,
+    },
+    {
+      code: `
+        const saveTheme = async (someRef) => {
+          const database = admin.firestore();
+          await someRef.update({ theme: 'dark' });
+        };
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        const saveTheme = async (someRef) => {
+          const database = admin.firestore();
+          await someRef.set({ theme: 'dark' }, { merge: true });
+        };
+      `,
+    },
+    // A namespace body is a statement container like any other, and the export
+    // wrapper inside it hides the declaration one node deeper still.
+    {
+      code: `
+        namespace Data {
+          export const db = admin.firestore();
+          someRef.update({ theme: 'dark' });
+        }
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        namespace Data {
+          export const db = admin.firestore();
+          someRef.set({ theme: 'dark' }, { merge: true });
+        }
+      `,
+    },
+    {
+      code: `
+        class Bootstrap {
+          static {
+            const db = admin.firestore();
+            someRef.update({ theme: 'dark' });
+          }
+        }
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        class Bootstrap {
+          static {
+            const db = admin.firestore();
+            someRef.set({ theme: 'dark' }, { merge: true });
+          }
+        }
+      `,
+    },
+    {
+      code: `
+        switch (kind) {
+          case 'theme':
+            const db = admin.firestore();
+            someRef.update({ theme: 'dark' });
+        }
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        switch (kind) {
+          case 'theme':
+            const db = admin.firestore();
+            someRef.set({ theme: 'dark' }, { merge: true });
+        }
+      `,
     },
   ],
 });
