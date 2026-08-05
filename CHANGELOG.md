@@ -1,3 +1,10 @@
+## [1.20.113](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.112...v1.20.113) (2026-08-05)
+
+
+### Bug Fixes
+
+* **enforce-serializable-params:** report a non-JSON-safe type used directly as the request type parameter (closes [#1750](https://github.com/BluMintInc/eslint-custom-rules/issues/1750)) ([5797add](https://github.com/BluMintInc/eslint-custom-rules/commit/5797add8c3877e491023fec3780d3c66b5e03cd5))
+
 ## [1.20.112](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.111...v1.20.112) (2026-08-05)
 
 

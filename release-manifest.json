@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.113",
+    "date": "2026-08-05T17:37:08.020Z",
+    "rules": [
+      {
+        "name": "enforce-serializable-params",
+        "changeType": "fix",
+        "issues": [
+          1750
+        ],
+        "summary": "report a non-JSON-safe type used directly as the request type parameter (closes #1750)"
+      }
+    ]
+  },
+  {
     "version": "1.20.112",
     "date": "2026-08-05T16:17:08.283Z",
     "rules": [
