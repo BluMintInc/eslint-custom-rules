@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.108",
+    "date": "2026-08-05T05:55:32.346Z",
+    "rules": [
+      {
+        "name": "parallelize-loop-awaits",
+        "changeType": "fix",
+        "issues": [
+          1725
+        ],
+        "summary": "resolve write locality by scope, not by name (closes #1725)"
+      }
+    ]
+  },
+  {
     "version": "1.20.107",
     "date": "2026-08-05T05:11:58.347Z",
     "rules": [

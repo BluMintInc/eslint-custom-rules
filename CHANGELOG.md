@@ -1,3 +1,10 @@
+## [1.20.108](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.107...v1.20.108) (2026-08-05)
+
+
+### Bug Fixes
+
+* **parallelize-loop-awaits:** resolve write locality by scope, not by name (closes [#1725](https://github.com/BluMintInc/eslint-custom-rules/issues/1725)) ([3e856b4](https://github.com/BluMintInc/eslint-custom-rules/commit/3e856b4c9bcf6e310bf3e71ec296f717a4264f13)), closes [#1724](https://github.com/BluMintInc/eslint-custom-rules/issues/1724) [#1724](https://github.com/BluMintInc/eslint-custom-rules/issues/1724) [#1723](https://github.com/BluMintInc/eslint-custom-rules/issues/1723) [pre-#1724](https://github.com/pre-/issues/1724) [#1724](https://github.com/BluMintInc/eslint-custom-rules/issues/1724)
+
 ## [1.20.107](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.106...v1.20.107) (2026-08-05)
 
 
