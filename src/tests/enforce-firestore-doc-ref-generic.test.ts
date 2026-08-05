@@ -1550,6 +1550,36 @@ ruleTesterTs.run(
         const userRef: DocumentReference<User> = db.collection('users').doc(userId);
       `,
       },
+      // An imported name used as the generic directly is declared in another
+      // file, which this rule does not open. Widening the search to every
+      // enclosing scope must not be read as reaching across the import.
+      {
+        code: `
+        import { UserData } from './types';
+        const userRef: DocumentReference<UserData> = db.collection('users').doc(userId);
+      `,
+      },
+      {
+        code: `
+        import type { UserData } from './types';
+        function scope() {
+          const userRef: DocumentReference<UserData> = db.collection('users').doc('1');
+          return userRef;
+        }
+      `,
+      },
+      // A wrapper that can drop fields stays unresolved wherever it is
+      // declared: an exported `Omit` alias is no more readable than a local one
+      {
+        code: `
+        export type BaseUser = {
+          name: string;
+          audit: any;
+        };
+        export type SafeUser = Omit<BaseUser, 'audit'>;
+        const userRef: DocumentReference<SafeUser> = db.collection('users').doc(id);
+      `,
+      },
       // A wrapper that can drop fields is not looked through: the members it
       // is given are not the document's members
       {
@@ -1562,43 +1592,29 @@ ruleTesterTs.run(
         const userRef: DocumentReference<PartialUser> = db.collection('users').doc(id);
       `,
       },
-      // An exported declaration is nested inside its export statement, which
-      // the top-level lookup does not descend into. Both spellings behave
-      // identically here.
+      // A name declared in a sibling scope is not in scope at the reference,
+      // so it resolves to nothing and the generic goes unchecked
       {
         code: `
-        export interface User {
-          data: any;
-        }
-        const userRef: DocumentReference<User> = db.collection('users').doc(userId);
-      `,
-      },
-      {
-        code: `
-        export type User = {
-          data: any;
-        };
-        const userRef: DocumentReference<User> = db.collection('users').doc(userId);
-      `,
-      },
-      // A declaration nested in a function body is likewise out of reach, in
-      // both spellings
-      {
-        code: `
-        function scope() {
-          interface User {
-            data: any;
-          }
-          const userRef: DocumentReference<User> = db.collection('users').doc('1');
-          return userRef;
-        }
-      `,
-      },
-      {
-        code: `
-        function scope() {
+        function elsewhere() {
           type User = {
             data: any;
+          };
+          return null as unknown as User;
+        }
+        const userRef: DocumentReference<User> = db.collection('users').doc('1');
+      `,
+      },
+      // An inner declaration shadows the same name declared outside, so the
+      // clean inner shape is what decides
+      {
+        code: `
+        type User = {
+          data: any;
+        };
+        function scope() {
+          type User = {
+            data: string;
           };
           const userRef: DocumentReference<User> = db.collection('users').doc('1');
           return userRef;
@@ -2442,6 +2458,122 @@ ruleTesterTs.run(
           data: any;
         };
         const nodeRef: DocumentReference<TreeNode> = db.collection('nodes').doc(id);
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      // An exported declaration is the same declaration one node deeper, inside
+      // its `export` statement. The `export` keyword says nothing about the
+      // document shape, so both spellings report exactly as the bare ones do.
+      {
+        code: `
+        export type User = {
+          data: any;
+        };
+        const userRef: DocumentReference<User> = db.collection('users').doc(userId);
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      {
+        code: `
+        export interface User {
+          data: any;
+        }
+        const userRef: DocumentReference<User> = db.collection('users').doc(userId);
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      // A declaration written in a function body is in scope at a reference in
+      // that body, in both spellings
+      {
+        code: `
+        function scope() {
+          type User = {
+            data: any;
+          };
+          const userRef: DocumentReference<User> = db.collection('users').doc('1');
+          return userRef;
+        }
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      {
+        code: `
+        function scope() {
+          interface User {
+            data: any;
+          }
+          const userRef: DocumentReference<User> = db.collection('users').doc('1');
+          return userRef;
+        }
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      // A namespace body is a statement container like any other
+      {
+        code: `
+        namespace Schemas {
+          type User = {
+            data: any;
+          };
+          export const userRef: DocumentReference<User> = db.collection('users').doc('1');
+        }
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      // The search runs outward from the reference, so an outer exported
+      // declaration is reached from a reference several scopes in
+      {
+        code: `
+        export type User = {
+          data: any;
+        };
+        const load = async () => {
+          if (enabled) {
+            const userRef: DocumentReference<User> = db.collection('users').doc('1');
+            return userRef;
+          }
+          return undefined;
+        };
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      // A bare block and a class static block are statement containers too
+      {
+        code: `
+        {
+          type User = {
+            data: any;
+          };
+          const userRef: DocumentReference<User> = db.collection('users').doc('1');
+        }
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      {
+        code: `
+        class Loader {
+          static {
+            type User = {
+              data: any;
+            };
+            const userRef: DocumentReference<User> = db.collection('users').doc('1');
+          }
+        }
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      // A switch case holds its statements in `consequent` rather than in a
+      // block, so it is reached by its own branch of the container list
+      {
+        code: `
+        switch (kind) {
+          case 'user':
+            type User = {
+              data: any;
+            };
+            const userRef: DocumentReference<User> = db.collection('users').doc('1');
+            break;
+        }
       `,
         errors: [invalidGenericError('DocumentReference')],
       },

@@ -18,17 +18,25 @@ This rule requires every Firestore `DocumentReference`, `CollectionReference`, a
 
 ## How a named generic is resolved
 
-`DocumentReference<User>` is checked for a nested `any`/`{}` only when the rule can read the fields `User` declares. The name is resolved against the top-level declarations of the same file, in either spelling:
+`DocumentReference<User>` is checked for a nested `any`/`{}` only when the rule can read the fields `User` declares. The name is resolved lexically within the same file: the search runs from the reference outward through every enclosing scope, and the nearest declaration wins, so an inner declaration shadows a same-named outer one. A declaration written at file scope, inside a function or block, in a `switch` case, or in a namespace all resolve, in either spelling, and the `export` keyword is looked through:
 
 ```ts
-// Both are reported: the declared fields are read, and one of them is `any`.
+// All of these are reported: the declared fields are read, and one is `any`.
 type User = { data: any };
 interface LegacyUser {
   data: any;
 }
+export type ExportedUser = { data: any };
+
+function load() {
+  type LocalUser = { data: any };
+  return db.collection('users').doc<LocalUser>('1');
+}
 ```
 
 Both spellings count because `prefer-type-over-interface` ships in the same `recommended` config and is fixable: a single `eslint --fix` pass rewrites every interface into a type alias, so a lookup that reads interfaces alone resolves nothing on a codebase that follows the config.
+
+`export` is looked through for the same reason a nested scope is searched: `export type User = ...` is the same declaration one AST node deeper, and the fields it lists are unambiguous. Letting the keyword decide whether a schema is checked would silently switch the nested-`any` check off for essentially every shared type.
 
 An alias resolves when it declares a type literal, including one wrapped in a single `Readonly<...>`. That wrapper preserves every field the document declares, and the type-argument recursion already looks through it when it is written at the reference itself (`DocumentReference<Readonly<{ data: any }>>`), so both spellings agree.
 
@@ -36,8 +44,8 @@ Everything else stays **unresolved**, and an unresolved generic is never reporte
 
 - an alias **to** a union, an intersection, a mapped type, or another named or imported type (`type User = UserData`) — an intersection written at the reference (`DocumentReference<User & Timestamps>`) is still read, one side at a time;
 - a wrapper that can drop fields, such as `Omit<...>` or `Pick<...>`, whose members are not the document's members;
-- a declaration nested inside another statement — an exported declaration (`export type User = ...`, `export interface User { ... }`) sits inside its `export` statement, and a declaration inside a function, block, or namespace sits inside that;
-- a type declared in another file, which this rule does not open;
+- a name declared in a scope the reference is not inside, which is not the name the reference means;
+- a type declared in another file, which this rule does not open — the search widens through enclosing scopes, never across an `import`;
 - a named empty declaration (`type Empty = {}`, `interface Empty {}`), because the empty-object check targets the `{}` written at the reference.
 
 ## Where the schema evidence must live
@@ -162,6 +170,12 @@ interface LegacyProfile {
   metadata: { audit: any };
 }
 const legacyProfileDocRef: DocumentReference<LegacyProfile> = db.doc('users/456');
+
+// The `export` keyword does not change the fields, so this is reported too
+export type SharedProfile = {
+  metadata: { audit: any };
+};
+const sharedProfileDocRef: DocumentReference<SharedProfile> = db.doc('users/789');
 
 // Overriding a typed collection with an unsafe generic
 const customerCollection = db.collection<UserProfile>('customers');
