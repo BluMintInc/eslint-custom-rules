@@ -15,7 +15,8 @@ Serializing independent async work stretches response time and wastes compute bi
 The rule reports when all of these are true:
 - The file is not a **test file** (`.test.*`, `.spec.*`, or under `__tests__/` / `__mocks__/`), whose awaits encode ordering rather than latency.
 - Two or more awaits or await-based variable declarations appear consecutively.
-- Later awaits do not reference identifiers created by earlier awaits (direct identifier reference-based dependency check).
+- Later awaits do not reference identifiers **declared** by earlier awaits (direct identifier reference-based dependency check).
+- Later awaits do not read an identifier that an earlier await **writes from inside a callback** (`mutator = new Mutator(tx)` in a transaction body), a data dependency that flows through the closure rather than through the await's value.
 - Later awaits do not share "coordinator" identifiers (like `batchManager`, `transaction`, or `collector`) with earlier awaits.
 - The awaited calls do not invoke methods on the **same receiver identifier** (e.g. `ref.set(...)` then `ref.get()`), which can carry a read-after-write / write-after-write ordering dependency on that shared object.
 - No later discarded-result await reads as a **state refetch/refresh** (`refresh*`, `reload*`, `refetch*`, `revalidate*`, `resync*`, `sync*`), which re-observes state a preceding await may have mutated.
@@ -46,6 +47,25 @@ async function cleanUpReferences(params, ref) {
   ]);
 }
 ```
+
+### ✅ Correct (closure write dependency)
+
+An awaited call whose callback **assigns an outer binding** hands its result back through that binding instead of through the await's value, so a later await that reads the binding depends on the earlier one. Wrapping the pair in `Promise.all([...])` is silently wrong rather than merely eager: array elements evaluate left to right at construction time, so the second element runs while the binding still holds `undefined`. The optional chain then short-circuits and the operation never happens, with nothing thrown to reveal it; without the `?.` the same rewrite throws a `TypeError` instead.
+
+```typescript
+async function exitTeam(db: Firestore, teamId: string) {
+  let teamMutator: TeamMutator | undefined;
+  await db.runTransaction(async (transaction) => {
+    // The transaction publishes its result through the closure, not the await.
+    teamMutator = new TeamMutator(transaction, teamId);
+  });
+  await teamMutator?.deleteIfEmptied();
+}
+```
+
+The write scan deliberately crosses function boundaries, because the interesting write lives inside the callback. It covers assignments (`x = v`, `x += v`), update expressions (`x++`), every leaf of a destructuring assignment target (`({ x } = v)`, `[x] = v`), and a `for...of` head that is not a declaration. A member write records its **root object** — `state.nested.value = v` counts as a write to `state` — since that is the binding through which a later await observes the change.
+
+A declaration inside the callback is not a write: `const x = ...` binds a fresh local that no later await can read, even when an outer binding shares the name. Callbacks that write only names they declare themselves, or write a binding no later await reads, stay parallelizable.
 
 ### ✅ Correct (shared coordinator dependency)
 
