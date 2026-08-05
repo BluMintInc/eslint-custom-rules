@@ -1216,6 +1216,16 @@ describe('documented "incorrect" fences must report (#1641)', () => {
  * `function`/`class`/`enum`), and the #1622 guard asserts every segment whose
  * own comment claims it violates — which is the shape a declaration-level
  * documented violation takes. The two guards partition the fence between them.
+ *
+ * Know what this reaches before trusting it (#1747). Of 343 firing fences, 246
+ * hold NO assertable statement at all: their whole body is one
+ * `const Component = () => {...}`, so they contribute a single top-level
+ * declaration and their interior is never examined. Statement granularity
+ * therefore covers 97 fences, and for the other 246 the coarseness #1742
+ * describes is intact — several violations in one component body, satisfied by
+ * any one of them firing. `assertedStatements` counts statements, not fences,
+ * so a floor on it cannot detect that; `fencesWithStatements` below is the
+ * number to watch.
  */
 const DECLARATION_TYPES = new Set([
   'VariableDeclaration',
@@ -1396,6 +1406,8 @@ export function auditSilentStatements(
 describe('claimed statements inside firing "incorrect" fences must report (#1742)', () => {
   const silents: SilentStatement[] = [];
   let firingFences = 0;
+  /** Firing fences that hold at least one statement this guard judges. */
+  let fencesWithStatements = 0;
   let assertedStatements = 0;
   let declarationStatements = 0;
   let unparsedFences = 0;
@@ -1458,6 +1470,7 @@ describe('claimed statements inside firing "incorrect" fences must report (#1742
         if (bestLines === null || bestLines.length === 0) continue;
 
         firingFences += 1;
+        if (assertable.length > 0) fencesWithStatements += 1;
         declarationStatements += parsed.length - assertable.length;
         assertedStatements += assertable.length;
 
@@ -1481,6 +1494,12 @@ describe('claimed statements inside firing "incorrect" fences must report (#1742
     // coverage grows, never lower one to make a run pass.
     expect(firingFences).toBeGreaterThan(300);
     expect(assertedStatements).toBeGreaterThan(150);
+    // The guard's REACH, which a statement count hides: statements cluster, so
+    // `assertedStatements` can hold while the set of fences contributing them
+    // shrinks. 97 of 343 firing fences reach statement granularity (#1747);
+    // this floor fails if that set erodes, and should rise as #1747 descends
+    // into declaration bodies.
+    expect(fencesWithStatements).toBeGreaterThan(90);
     // The declaration carve-out is the larger half by design; if that inverts,
     // the classification broke rather than the docs changing.
     expect(declarationStatements).toBeGreaterThan(assertedStatements);
