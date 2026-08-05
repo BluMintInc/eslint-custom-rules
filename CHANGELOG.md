@@ -1,3 +1,12 @@
+## [1.20.112](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.111...v1.20.112) (2026-08-05)
+
+
+### Bug Fixes
+
+* **enforce-css-media-queries:** exempt breakpoints that reach no style (closes [#1746](https://github.com/BluMintInc/eslint-custom-rules/issues/1746)) ([a0e4724](https://github.com/BluMintInc/eslint-custom-rules/commit/a0e4724febf87e1c7d5cb073a1b1ab5623c63c5b)), closes [#1675](https://github.com/BluMintInc/eslint-custom-rules/issues/1675)
+* **no-uuidv4-base62-as-key:** recognize the helper by module basename (closes [#1744](https://github.com/BluMintInc/eslint-custom-rules/issues/1744)) ([c49ad30](https://github.com/BluMintInc/eslint-custom-rules/commit/c49ad30f6059bbcfa085e91880d7a7813fa834d4))
+* **prefer-clone-deep:** classify a nested literal by all its sources (closes [#1745](https://github.com/BluMintInc/eslint-custom-rules/issues/1745)) ([61e20af](https://github.com/BluMintInc/eslint-custom-rules/commit/61e20afae853643e4a07ddfa3f2f49c1646812b2)), closes [#1396](https://github.com/BluMintInc/eslint-custom-rules/issues/1396) [#1371](https://github.com/BluMintInc/eslint-custom-rules/issues/1371) [#1364](https://github.com/BluMintInc/eslint-custom-rules/issues/1364)
+
 ## [1.20.111](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.110...v1.20.111) (2026-08-05)
 
 
