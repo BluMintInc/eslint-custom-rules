@@ -1,3 +1,15 @@
+## [1.20.116](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.115...v1.20.116) (2026-08-05)
+
+
+### Bug Fixes
+
+* **enforce-firestore-doc-ref-generic:** detect namespaced reference types (closes [#1754](https://github.com/BluMintInc/eslint-custom-rules/issues/1754)) ([42b5449](https://github.com/BluMintInc/eslint-custom-rules/commit/42b54494770198f944e41127d0b42dd6151a6e3e))
+* **extract-global-constants:** report nested helper functions (closes [#1755](https://github.com/BluMintInc/eslint-custom-rules/issues/1755)) ([9cc045e](https://github.com/BluMintInc/eslint-custom-rules/commit/9cc045e975f075b5da81f3cb53c817881d876dfa))
+* **prefer-batch-operations:** resolve the setter declaration lexically (closes [#1759](https://github.com/BluMintInc/eslint-custom-rules/issues/1759)) ([f533b2f](https://github.com/BluMintInc/eslint-custom-rules/commit/f533b2f2a434fa1e71f534c27aafcc540e94df4f))
+* **prefer-batch-operations:** stop flagging a lone set() in Promise.all (closes [#1757](https://github.com/BluMintInc/eslint-custom-rules/issues/1757)) ([46a513d](https://github.com/BluMintInc/eslint-custom-rules/commit/46a513dd4435199547e675da87aa5c7895a26337))
+* **require-hooks-default-params:** resolve the options type lexically (closes [#1756](https://github.com/BluMintInc/eslint-custom-rules/issues/1756)) ([1377c74](https://github.com/BluMintInc/eslint-custom-rules/commit/1377c74aca9aa8be46bfcbfc8b0fe589cee11e71))
+* **require-server-timestamp-for-firestore-dates:** unwrap non-null assertions (closes [#1758](https://github.com/BluMintInc/eslint-custom-rules/issues/1758)) ([c5523e0](https://github.com/BluMintInc/eslint-custom-rules/commit/c5523e095b34a65942e2c46eaa623777de16fa45))
+
 ## [1.20.115](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.114...v1.20.115) (2026-08-05)
 
 

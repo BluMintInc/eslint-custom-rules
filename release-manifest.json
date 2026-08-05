@@ -1,5 +1,52 @@
 [
   {
+    "version": "1.20.116",
+    "date": "2026-08-05T20:14:19.457Z",
+    "rules": [
+      {
+        "name": "enforce-firestore-doc-ref-generic",
+        "changeType": "fix",
+        "issues": [
+          1754
+        ],
+        "summary": "detect namespaced reference types (closes #1754)"
+      },
+      {
+        "name": "extract-global-constants",
+        "changeType": "fix",
+        "issues": [
+          1755
+        ],
+        "summary": "report nested helper functions (closes #1755)"
+      },
+      {
+        "name": "prefer-batch-operations",
+        "changeType": "fix",
+        "issues": [
+          1757,
+          1759
+        ],
+        "summary": "resolve the setter declaration lexically (closes #1759); stop flagging a lone set() in Promise.all (closes #1757)"
+      },
+      {
+        "name": "require-hooks-default-params",
+        "changeType": "fix",
+        "issues": [
+          1756
+        ],
+        "summary": "resolve the options type lexically (closes #1756)"
+      },
+      {
+        "name": "require-server-timestamp-for-firestore-dates",
+        "changeType": "fix",
+        "issues": [
+          1758
+        ],
+        "summary": "unwrap non-null assertions (closes #1758)"
+      }
+    ]
+  },
+  {
     "version": "1.20.115",
     "date": "2026-08-05T18:41:41.153Z",
     "rules": [
