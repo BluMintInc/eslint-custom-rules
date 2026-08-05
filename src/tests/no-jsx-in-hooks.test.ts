@@ -3,6 +3,29 @@ import { noJsxInHooks } from '../rules/no-jsx-in-hooks';
 
 ruleTesterJsx.run('no-jsx-in-hooks', noJsxInHooks, {
   valid: [
+    // Only `React.` re-exports the JSX types; any other qualifier names a type
+    // from a different module, so the annotation says nothing about JSX.
+    {
+      code: `
+        const useElement = (): Foo.ReactNode => {
+          return getElement();
+        };
+      `,
+    },
+    {
+      code: `
+        function useElement(): Foo.JSX.Element {
+          return getElement();
+        }
+      `,
+    },
+    {
+      code: `
+        const useElement = (): React.Dispatch<Action> => {
+          return getElement();
+        };
+      `,
+    },
     // A zero-argument .map() used to abort the whole lint run: the indexed
     // `arguments[0]` read is typed non-optional (issue #1572).
     {
@@ -201,6 +224,84 @@ ruleTesterJsx.run('no-jsx-in-hooks', noJsxInHooks, {
           messageId: 'noJsxInHooks',
           data: { hookName: 'useComplexElement' },
         },
+      ],
+    },
+    /**
+     * React-namespaced spellings of the same types (issue #1753). The bodies
+     * produce JSX indirectly on purpose: a literal `<div />` is caught by the
+     * block-statement scanner, which would mask a broken annotation check —
+     * as it does for the `(): ReactNode` and `(): JSX.Element` cases above.
+     */
+    {
+      code: `
+        const useElement = (): React.ReactNode => {
+          return getElement();
+        };
+      `,
+      errors: [{ messageId: 'noJsxInHooks', data: { hookName: 'useElement' } }],
+    },
+    {
+      code: `
+        const useElement = (): React.ReactElement => {
+          return getElement();
+        };
+      `,
+      errors: [{ messageId: 'noJsxInHooks', data: { hookName: 'useElement' } }],
+    },
+    {
+      code: `
+        const useNavigation = (): React.JSX.Element => {
+          return getElement();
+        };
+      `,
+      errors: [
+        { messageId: 'noJsxInHooks', data: { hookName: 'useNavigation' } },
+      ],
+    },
+    {
+      code: `
+        function useElement(): React.ReactNode {
+          return getElement();
+        }
+      `,
+      errors: [{ messageId: 'noJsxInHooks', data: { hookName: 'useElement' } }],
+    },
+    {
+      code: `
+        function useElement(): React.ReactElement {
+          return getElement();
+        }
+      `,
+      errors: [{ messageId: 'noJsxInHooks', data: { hookName: 'useElement' } }],
+    },
+    {
+      code: `
+        function useNavigation(): React.JSX.Element {
+          return getElement();
+        }
+      `,
+      errors: [
+        { messageId: 'noJsxInHooks', data: { hookName: 'useNavigation' } },
+      ],
+    },
+    // The unqualified spellings, with an indirect body so the annotation is the
+    // only detector in play — the pre-existing cases cannot make that claim.
+    {
+      code: `
+        const useElement = (): ReactNode => {
+          return getElement();
+        };
+      `,
+      errors: [{ messageId: 'noJsxInHooks', data: { hookName: 'useElement' } }],
+    },
+    {
+      code: `
+        function useNavigation(): JSX.Element {
+          return getElement();
+        }
+      `,
+      errors: [
+        { messageId: 'noJsxInHooks', data: { hookName: 'useNavigation' } },
       ],
     },
   ],

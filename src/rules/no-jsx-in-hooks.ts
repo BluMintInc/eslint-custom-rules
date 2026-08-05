@@ -17,22 +17,49 @@ const isJsxElement = (node: TSESTree.Node): boolean => {
   );
 };
 
-const isJsxReturnType = (node: TSESTree.TSTypeAnnotation): boolean => {
-  if (node.typeAnnotation.type === AST_NODE_TYPES.TSTypeReference) {
-    const typeName = node.typeAnnotation.typeName;
-    if (typeName.type === AST_NODE_TYPES.Identifier) {
-      return ['JSX', 'ReactNode', 'ReactElement'].includes(typeName.name);
-    }
-    if (typeName.type === AST_NODE_TYPES.TSQualifiedName) {
-      return (
-        typeName.left.type === AST_NODE_TYPES.Identifier &&
-        typeName.left.name === 'JSX' &&
-        typeName.right.type === AST_NODE_TYPES.Identifier &&
-        typeName.right.name === 'Element'
-      );
-    }
+/**
+ * A type reference's name as dotted segments.
+ *
+ * A qualified name nests to the LEFT, so `React.JSX.Element` is a
+ * TSQualifiedName whose own `left` is another TSQualifiedName. Matching one
+ * nesting level at a time therefore recognizes `JSX.Element` but not the
+ * React-namespaced spelling of the same type; comparing whole paths recognizes
+ * both.
+ */
+const qualifiedSegments = (typeName: TSESTree.EntityName): string[] | null => {
+  if (typeName.type === AST_NODE_TYPES.Identifier) {
+    return [typeName.name];
   }
-  return false;
+  if (typeName.type === AST_NODE_TYPES.TSQualifiedName) {
+    const left = qualifiedSegments(typeName.left);
+    return left && [...left, typeName.right.name];
+  }
+  return null;
+};
+
+/** JSX-producing type paths, written without the optional `React` qualifier. */
+const JSX_TYPE_PATHS = new Set([
+  'JSX',
+  'JSX.Element',
+  'ReactNode',
+  'ReactElement',
+]);
+
+const isJsxReturnType = (node: TSESTree.TSTypeAnnotation): boolean => {
+  if (node.typeAnnotation.type !== AST_NODE_TYPES.TSTypeReference) {
+    return false;
+  }
+  const segments = qualifiedSegments(node.typeAnnotation.typeName);
+  if (!segments) {
+    return false;
+  }
+  /**
+   * `React.` re-exports the same declarations, so it carries no meaning for
+   * this question. Every other qualifier names a type from a different module
+   * and must not match — `Foo.ReactNode` is not React's.
+   */
+  const path = segments[0] === 'React' ? segments.slice(1) : segments;
+  return path.length > 0 && JSX_TYPE_PATHS.has(path.join('.'));
 };
 
 const containsJsxInBlockStatement = (
