@@ -37,6 +37,19 @@ for (const doc of documents) {
 }
 ```
 
+Where the setter is constructed makes no difference — a setter built inside the
+function that uses it is the same violation:
+
+```ts
+async function syncAll(documents) {
+  const setter = new DocSetter(collectionRef);
+
+  for (const doc of documents) {
+    await setter.set(doc);
+  }
+}
+```
+
 ### ✅ Correct
 
 ```ts

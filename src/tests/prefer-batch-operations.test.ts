@@ -366,6 +366,58 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
   ],
   invalid: [
     /**
+     * Where the setter is CONSTRUCTED must not change the verdict (issue
+     * #1759). `findVariableDeclaration` climbed the parent chain but only
+     * inspected `Program.body`, so a setter built inside the function that uses
+     * it — how production code is written — was never resolved and the rule
+     * returned early. Every fixture in this file used to be top-level, which is
+     * the one side of that boundary where the rule worked.
+     */
+    {
+      code: `
+        async function writeAll() {
+          const setter = new DocSetter(collectionRef);
+          for (const doc of documents) {
+            await setter.set(doc);
+          }
+        }
+      `,
+      errors: [expectSetAll('for...of loop')],
+    },
+    {
+      code: `
+        const writeAll = async () => {
+          const setter = new DocSetter(collectionRef);
+          for (const doc of documents) {
+            await setter.set(doc);
+          }
+        };
+      `,
+      errors: [expectSetAll('for...of loop')],
+    },
+    {
+      code: `
+        class Writer {
+          async writeAll() {
+            const setter = new DocSetter(collectionRef);
+            for (const doc of documents) {
+              await setter.set(doc);
+            }
+          }
+        }
+      `,
+      errors: [expectSetAll('for...of loop')],
+    },
+    {
+      code: `
+        async function writeAll() {
+          const setter = new DocSetter(collectionRef);
+          await Promise.all([setter.set(doc1), setter.set(doc2)]);
+        }
+      `,
+      errors: [expectSetAll('Promise.all()')],
+    },
+    /**
      * The other side of #1757: excluding Promise.all from the array-method
      * branch must not silence the shapes that ARE repeated writes. Two elements
      * is the boundary the deferred branch keys on, and a `map` callback inside

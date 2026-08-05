@@ -307,22 +307,51 @@ function isMapInstance(node: TSESTree.Node): boolean {
   return false;
 }
 
+/** Statements a declaration can be a direct child of, innermost outward. */
+function statementsOf(node: TSESTree.Node): TSESTree.Node[] | undefined {
+  switch (node.type) {
+    case AST_NODE_TYPES.Program:
+    case AST_NODE_TYPES.BlockStatement:
+    case AST_NODE_TYPES.TSModuleBlock:
+    case AST_NODE_TYPES.StaticBlock:
+      return (node as { body: TSESTree.Node[] }).body;
+    case AST_NODE_TYPES.SwitchCase:
+      return node.consequent;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Lexical lookup of a local declaration, innermost scope outward.
+ *
+ * The walk used to climb the parent chain but only inspect `Program.body`,
+ * which meant a setter constructed inside the function that uses it — how
+ * essentially all production code is written — was never found, so the caller
+ * bailed and the rule reported nothing. Every enclosing statement container is
+ * searched instead, and the first match wins, which is what shadowing requires.
+ */
 function findVariableDeclaration(
   node: TSESTree.Node,
   varName: string,
 ): TSESTree.VariableDeclarator | undefined {
   let current: TSESTree.Node | undefined = node;
   while (current) {
-    if (current.type === AST_NODE_TYPES.Program) {
-      for (const statement of current.body) {
-        if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
-          for (const decl of statement.declarations) {
-            if (
-              decl.id.type === AST_NODE_TYPES.Identifier &&
-              decl.id.name === varName
-            ) {
-              return decl;
-            }
+    const statements = statementsOf(current);
+    if (statements) {
+      for (const statement of statements) {
+        const declaration =
+          statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
+          statement.declaration
+            ? statement.declaration
+            : statement;
+        if (declaration.type !== AST_NODE_TYPES.VariableDeclaration) continue;
+        for (const decl of declaration.declarations) {
+          if (
+            decl.id.type === AST_NODE_TYPES.Identifier &&
+            decl.id.name === varName
+          ) {
+            return decl;
           }
         }
       }
