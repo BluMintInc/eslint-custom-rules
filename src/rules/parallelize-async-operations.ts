@@ -591,6 +591,165 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     }
 
     /**
+     * Records the binding a single assignment target writes to.
+     *
+     * A member write records its ROOT object (`obj.a.b = 1` yields `obj`),
+     * because the state it mutates is reachable through that binding, and a
+     * later await naming the object observes the mutation. Optional chains and
+     * TS wrappers (`obj!.x = 1`) are unwrapped so the root is still found.
+     * Destructuring targets recurse to their leaf identifiers, since
+     * `({ a } = source)` and `[a] = source` write `a` just as `a = source.a`
+     * does.
+     */
+    function collectAssignmentTarget(
+      target: TSESTree.Node,
+      targets: TSESTree.Identifier[],
+    ): void {
+      switch (target.type) {
+        case AST_NODE_TYPES.Identifier:
+          targets.push(target);
+          break;
+
+        case AST_NODE_TYPES.MemberExpression: {
+          let root: TSESTree.Node = target;
+          for (;;) {
+            if (root.type === AST_NODE_TYPES.MemberExpression) {
+              root = root.object;
+            } else if (
+              root.type === AST_NODE_TYPES.ChainExpression ||
+              root.type === AST_NODE_TYPES.TSNonNullExpression ||
+              root.type === AST_NODE_TYPES.TSAsExpression
+            ) {
+              root = root.expression;
+            } else {
+              break;
+            }
+          }
+          if (root.type === AST_NODE_TYPES.Identifier) {
+            targets.push(root);
+          }
+          break;
+        }
+
+        case AST_NODE_TYPES.ObjectPattern:
+          for (const property of target.properties) {
+            if (property.type === AST_NODE_TYPES.Property) {
+              collectAssignmentTarget(property.value, targets);
+            } else {
+              collectAssignmentTarget(property.argument, targets);
+            }
+          }
+          break;
+
+        case AST_NODE_TYPES.ArrayPattern:
+          for (const element of target.elements) {
+            if (element) {
+              collectAssignmentTarget(element, targets);
+            }
+          }
+          break;
+
+        case AST_NODE_TYPES.RestElement:
+          collectAssignmentTarget(target.argument, targets);
+          break;
+
+        case AST_NODE_TYPES.AssignmentPattern:
+          collectAssignmentTarget(target.left, targets);
+          break;
+      }
+    }
+
+    /**
+     * Reports whether an assignment target resolves to a binding DECLARED
+     * inside the given expression.
+     *
+     * Such a binding is a fresh local: `async () => { let tmp; tmp = 1; }`
+     * publishes nothing to the enclosing scope, so a later await mentioning
+     * `tmp` is reading some other binding entirely. An unresolved name (an
+     * implicit global) counts as external, which keeps the barrier in place for
+     * the case the analysis cannot see.
+     */
+    function isDeclaredWithin(
+      identifier: TSESTree.Identifier,
+      root: TSESTree.Node,
+    ): boolean {
+      const variable = ASTHelpers.findVariableInScope(
+        ASTHelpers.getScope(context, identifier),
+        identifier.name,
+      );
+      if (!variable || variable.defs.length === 0) {
+        return false;
+      }
+
+      return variable.defs.every(
+        (definition) =>
+          definition.name.range[0] >= root.range[0] &&
+          definition.name.range[1] <= root.range[1],
+      );
+    }
+
+    /**
+     * Collects the identifier names an awaited expression WRITES.
+     *
+     * The traversal deliberately crosses function boundaries, which is the
+     * opposite of what containsSuspendingAwait needs: the write that matters
+     * lives inside the callback handed to the awaited call. `await
+     * db.runTransaction(async (tx) => { mutator = new Mutator(tx); })` publishes
+     * `mutator` to the enclosing scope by the time it settles, so the callback
+     * body is part of what that statement does, not a separate deferred unit.
+     *
+     * A `VariableDeclarator` id is deliberately NOT a write: `const x = ...`
+     * inside a callback creates a fresh local binding rather than publishing a
+     * value to an outer one, so it cannot be what a later await reads.
+     */
+    function getAssignedNames(node: TSESTree.Node): Set<string> {
+      const targets: TSESTree.Identifier[] = [];
+
+      const visit = (current: TSESTree.Node): void => {
+        if (current.type === AST_NODE_TYPES.AssignmentExpression) {
+          collectAssignmentTarget(current.left, targets);
+        } else if (current.type === AST_NODE_TYPES.UpdateExpression) {
+          collectAssignmentTarget(current.argument, targets);
+        } else if (
+          (current.type === AST_NODE_TYPES.ForOfStatement ||
+            current.type === AST_NODE_TYPES.ForInStatement) &&
+          current.left.type !== AST_NODE_TYPES.VariableDeclaration
+        ) {
+          // `for (captured of items)` assigns an existing binding on every
+          // iteration; only the declaration form introduces a fresh local.
+          collectAssignmentTarget(current.left, targets);
+        }
+
+        for (const key in current) {
+          if (key === 'parent' || key === 'range' || key === 'loc') continue;
+
+          const child = (current as any)[key];
+          if (!child || typeof child !== 'object') continue;
+
+          if (Array.isArray(child)) {
+            for (const item of child) {
+              if (item && typeof item === 'object' && 'type' in item) {
+                visit(item as TSESTree.Node);
+              }
+            }
+          } else if ('type' in child) {
+            visit(child as TSESTree.Node);
+          }
+        }
+      };
+
+      visit(node);
+
+      const names = new Set<string>();
+      for (const target of targets) {
+        if (!isDeclaredWithin(target, node)) {
+          names.add(target.name);
+        }
+      }
+      return names;
+    }
+
+    /**
      * Checks if there are dependencies between await expressions
      */
     function hasDependencies(
@@ -799,6 +958,37 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
         const awaitExpr = getAwaitExpression(node);
         if (awaitExpr && containsSuspendingAwait(awaitExpr.argument)) {
           return true;
+        }
+      }
+
+      // 10. Closure-write barrier: read after write. An awaited call whose
+      // callback ASSIGNS an outer binding carries a data dependency that no
+      // value flowing out of the await expresses, so `variableNames` -- which
+      // holds only the names the run's own statements DECLARE -- cannot see it.
+      // `let mutator; await db.runTransaction(async (tx) => { mutator = new
+      // Mutator(tx); }); await mutator?.deleteIfEmptied();` is the shape. The
+      // rewrite is silently wrong rather than merely eager: array elements
+      // evaluate left to right at construction time, so the second element runs
+      // while `mutator` is still undefined -- the optional chain short-circuits
+      // and the operation NEVER happens, with no error to reveal it. Dropping
+      // the `?.` turns the same rewrite into a TypeError instead. Keyed on a
+      // write that a LATER await actually reads, so a callback whose effects
+      // nothing downstream observes still parallelizes. (#1723)
+      const assignedNames = awaitNodes.map((node) => {
+        const awaitExpr = getAwaitExpression(node);
+        return awaitExpr
+          ? getAssignedNames(awaitExpr.argument)
+          : new Set<string>();
+      });
+      for (let i = 1; i < awaitNodes.length; i++) {
+        const currentIds = allIdentifiers[i];
+        if (currentIds.size === 0) continue;
+        for (let j = 0; j < i; j++) {
+          for (const written of assignedNames[j]) {
+            if (currentIds.has(written)) {
+              return true;
+            }
+          }
         }
       }
 

@@ -1151,6 +1151,138 @@ it('shows the message', async () => {
       return payload;
     }
     `,
+    /**
+     * A callback assigning an outer-scope binding that a later await reads is a
+     * data dependency the rule cannot see: extractVariableNames collects only
+     * names DECLARED by the run's own statements, so `teamMutator` is never
+     * tested by check #1 in hasDependencies.
+     */
+    `
+async function exitTeam(db, teamId) {
+  let teamMutator;
+  await db.runTransaction(async (transaction) => {
+    teamMutator = new TeamMutator(transaction, teamId);
+  });
+  await teamMutator?.deleteIfEmptied();
+}
+`,
+    /** Same dependency, non-optional read — the ?. must not be what decides. */
+    `
+async function exitTeamStrict(db, teamId) {
+  let teamMutator;
+  await db.runTransaction(async () => {
+    teamMutator = new TeamMutator(teamId);
+  });
+  await teamMutator.deleteIfEmptied();
+}
+`,
+    /** Same dependency, read as an ARGUMENT rather than a receiver. */
+    `
+async function captureThenPersist(runner) {
+  let captured;
+  await runner.execute(async () => { captured = compute(); });
+  await persist(captured);
+}
+`,
+    /**
+     * Regression pin for the name lottery: this is the SAME structure as the
+     * first case with the binding renamed to something COORDINATOR_PATTERN
+     * happens to match. It passes today only by accident; it must keep passing
+     * for the right reason once write-detection lands.
+     */
+    `
+async function exitTeamCoordinatorNamed(db, teamId) {
+  let batchManager;
+  await db.runTransaction(async () => {
+    batchManager = new TeamMutator(teamId);
+  });
+  await batchManager?.deleteIfEmptied();
+}
+`,
+    // A write through a member expression mutates state reachable from the root
+    // binding, so a later await naming that binding observes it. (#1723)
+    `
+async function propertyWriteThenRead(runner) {
+  const box = {};
+  await runner.execute(async () => { box.value = compute(); });
+  await persist(box);
+}
+`,
+    // The root of a nested member write is the binding that carries the change.
+    // (#1723)
+    `
+async function nestedPropertyWriteThenRead(runner) {
+  const state = { nested: {} };
+  await runner.execute(async () => { state.nested.value = compute(); });
+  await persist(state);
+}
+`,
+    // A compound assignment both reads and writes, and the write is what a
+    // later await depends on. (#1723)
+    `
+async function compoundAssignmentThenRead(runner) {
+  let total = 0;
+  await runner.execute(async () => { total += computeDelta(); });
+  await persist(total);
+}
+`,
+    // An update expression is a write with no assignment operator in sight.
+    // (#1723)
+    `
+async function updateExpressionThenRead(runner) {
+  let count = 0;
+  await runner.execute(async () => { count++; });
+  await persist(count);
+}
+`,
+    // A destructuring assignment writes every leaf of its pattern. (#1723)
+    `
+async function objectDestructuringWriteThenRead(runner) {
+  let alpha;
+  let beta;
+  await runner.execute(async () => { ({ alpha, beta } = computeParts()); });
+  await persist(alpha, beta);
+}
+`,
+    // The array form of the same write. (#1723)
+    `
+async function arrayDestructuringWriteThenRead(runner) {
+  let head;
+  await runner.execute(async () => { [head] = computeParts(); });
+  await persist(head);
+}
+`,
+    // A for-of head that is not a declaration assigns an existing binding on
+    // every iteration. (#1723)
+    `
+async function forOfWriteThenRead(runner, items) {
+  let current;
+  await runner.execute(async () => {
+    for (current of items) { record(current); }
+  });
+  await persist(current);
+}
+`,
+    // Depth does not dilute the dependency: the write reaches the outer binding
+    // through two nested callbacks. (#1723)
+    `
+async function nestedCallbackWriteThenRead(runner, items) {
+  let captured;
+  await runner.execute(async () => {
+    items.forEach((item) => { captured = item; });
+  });
+  await persist(captured);
+}
+`,
+    // The callback need not be async -- a synchronous visitor handed to an
+    // awaited call publishes its writes just the same. (#1723)
+    `
+async function plainFunctionCallbackWriteThenRead(runner) {
+  let captured;
+  await runner.execute(function () { captured = compute(); });
+  await persist(captured);
+}
+`,
   ],
   invalid: [
     // Control: different receivers, genuinely independent -> still flagged.
@@ -2516,6 +2648,112 @@ SELECT *
       errors: [error(2)],
       output:
         'async function tabIndented() {\n\tawait Promise.all([\n\t\talpha(),\n\t\tbeta()\n\t]);\n}\n',
+    },
+    // Controls for the closure-write barrier. It keys on a write that a LATER
+    // await actually reads, so callbacks that write bindings nothing downstream
+    // observes stay parallelizable -- the barrier must not degrade into "any
+    // callback containing an assignment blocks the run". (#1723)
+    {
+      code: `
+async function writeDistinctBindings(runnerA, runnerB) {
+  let alpha;
+  let beta;
+  await runnerA.execute(async () => { alpha = computeAlpha(); });
+  await runnerB.execute(async () => { beta = computeBeta(); });
+  report(alpha, beta);
+}
+`,
+      errors: [error(2)],
+      output: `
+async function writeDistinctBindings(runnerA, runnerB) {
+  let alpha;
+  let beta;
+  await Promise.all([
+    runnerA.execute(async () => { alpha = computeAlpha(); }),
+    runnerB.execute(async () => { beta = computeBeta(); })
+  ]);
+  report(alpha, beta);
+}
+`,
+    },
+    // A write no later await reads is not a dependency between the awaits.
+    // (#1723)
+    {
+      code: `
+async function writeUnreadBinding(runner, sink, payload) {
+  let scratch;
+  await runner.execute(async () => { scratch = computeScratch(); });
+  await sink.persist(payload);
+}
+`,
+      errors: [error(2)],
+      output: `
+async function writeUnreadBinding(runner, sink, payload) {
+  let scratch;
+  await Promise.all([
+    runner.execute(async () => { scratch = computeScratch(); }),
+    sink.persist(payload)
+  ]);
+}
+`,
+    },
+    // A name declared inside the callback is a fresh local, so writing it
+    // publishes nothing: the `tally` the second await reads is the outer
+    // binding, which the callback never touches. (#1723)
+    {
+      code: `
+async function shadowedLocalWrite(runner, sink) {
+  let tally = 0;
+  await runner.execute(async () => {
+    let tally;
+    tally = computeTally();
+    record(tally);
+  });
+  await sink.persist(tally);
+}
+`,
+      errors: [error(2)],
+      output: `
+async function shadowedLocalWrite(runner, sink) {
+  let tally = 0;
+  await Promise.all([
+    runner.execute(async () => {
+    let tally;
+    tally = computeTally();
+    record(tally);
+  }),
+    sink.persist(tally)
+  ]);
+}
+`,
+    },
+    // A declarator is not a write for this purpose either: `const captured`
+    // inside the callback binds a new name rather than filling the outer one.
+    // (#1723)
+    {
+      code: `
+async function localDeclarationIsNotAWrite(runner, sink) {
+  const captured = loadCaptured();
+  await runner.execute(async () => {
+    const captured = computeCaptured();
+    stash(captured);
+  });
+  await sink.persist(captured);
+}
+`,
+      errors: [error(2)],
+      output: `
+async function localDeclarationIsNotAWrite(runner, sink) {
+  const captured = loadCaptured();
+  await Promise.all([
+    runner.execute(async () => {
+    const captured = computeCaptured();
+    stash(captured);
+  }),
+    sink.persist(captured)
+  ]);
+}
+`,
     },
   ],
 });
