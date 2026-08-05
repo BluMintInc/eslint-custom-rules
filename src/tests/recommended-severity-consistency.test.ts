@@ -392,17 +392,54 @@ describe('recommended config ↔ documented config severity', () => {
  * a typo silently removes a page from this guard's reach — the same blind-spot
  * shape as the missed `overrides` block.
  */
+
+/**
+ * `@blumint/` reaching a docs page as a MODULE SPECIFIER is not the hazard: a
+ * documented example that imports `@blumint/utils/uuidv4Base62` is naming a
+ * package, and some rules only engage when their helper's import is present, so
+ * the example needs it to demonstrate anything. Specifiers are stripped before
+ * the scan rather than the pattern being loosened, which keeps a rule key under
+ * the wrong prefix an offender wherever it appears.
+ */
+function referencesNonCanonicalPrefix(source: string): boolean {
+  const withoutSpecifiers = source.replace(
+    /\b(?:from|import|require)\s*\(?\s*(['"])[^'"]*\1/g,
+    '',
+  );
+  return /@blumint\/[a-z0-9-]+/.test(withoutSpecifiers);
+}
 describe('docs config examples use the canonical plugin prefix', () => {
   it('no docs page references a rule under a non-canonical @blumint/ prefix', () => {
     const offenders = fs
       .readdirSync(DOCS_DIR)
       .filter((file) => file.endsWith('.md'))
       .filter((file) =>
-        /@blumint\/[a-z0-9-]+/.test(
+        referencesNonCanonicalPrefix(
           fs.readFileSync(path.join(DOCS_DIR, file), 'utf8'),
         ),
       );
     expect(offenders).toEqual([]);
+  });
+
+  it('reads a config example but not an import specifier (control)', () => {
+    expect(
+      referencesNonCanonicalPrefix(
+        `{ "rules": { "@blumint/no-foo": "error" } }`,
+      ),
+    ).toBe(true);
+    expect(
+      referencesNonCanonicalPrefix(
+        `import { uuidv4Base62 } from '@blumint/utils/uuidv4Base62';`,
+      ),
+    ).toBe(false);
+    // A specifier is exempt because of where it sits, not because of its shape:
+    // the same package path quoted as a rule key is still an offender.
+    expect(
+      referencesNonCanonicalPrefix(`'@blumint/utils/uuidv4Base62': 'error',`),
+    ).toBe(true);
+    expect(
+      referencesNonCanonicalPrefix(`const x = require('@blumint/utils');`),
+    ).toBe(false);
   });
 });
 

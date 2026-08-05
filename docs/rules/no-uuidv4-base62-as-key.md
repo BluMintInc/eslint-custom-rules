@@ -21,6 +21,8 @@ React reconciliation depends on stable keys to preserve component identity. Keys
 #### ❌ Incorrect
 
 ```jsx
+import { uuidv4Base62 } from '@blumint/utils/uuidv4Base62';
+
 {items.map((item) => (
   <div key={uuidv4Base62()}>{item.name}</div>
 ))}
