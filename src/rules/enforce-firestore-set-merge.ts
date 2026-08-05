@@ -269,6 +269,79 @@ function isPrimitiveLiteral(node: TSESTree.Node | undefined): boolean {
   );
 }
 
+/** Statement containers a declaration can be a direct child of. */
+function statementsOf(node: TSESTree.Node): TSESTree.Node[] | undefined {
+  switch (node.type) {
+    case AST_NODE_TYPES.Program:
+    case AST_NODE_TYPES.BlockStatement:
+    case AST_NODE_TYPES.TSModuleBlock:
+    case AST_NODE_TYPES.StaticBlock:
+      return (node as { body: TSESTree.Node[] }).body;
+    case AST_NODE_TYPES.SwitchCase:
+      return node.consequent;
+    default:
+      return undefined;
+  }
+}
+
+/** Whether a declarator is initialized from a `<x>.firestore()` call. */
+function initializesFirestore(
+  declarator: TSESTree.VariableDeclarator,
+): boolean {
+  const { init } = declarator;
+  return (
+    init?.type === AST_NODE_TYPES.CallExpression &&
+    init.callee.type === AST_NODE_TYPES.MemberExpression &&
+    init.callee.property.type === AST_NODE_TYPES.Identifier &&
+    init.callee.property.name === 'firestore'
+  );
+}
+
+/**
+ * Whether a statement declares a Firestore instance, looking through `export`.
+ *
+ * `export const db = admin.firestore()` is the same declaration one AST node
+ * deeper, inside an `ExportNamedDeclaration`. Reading the statement without
+ * unwrapping makes the `export` keyword alone decide whether the file's
+ * Firestore evidence is visible, which is not a distinction a `db` handle knows
+ * anything about — `classBodiesByName()` already unwraps it for the same
+ * "find the in-file declaration that carries the evidence" purpose.
+ */
+function declaresFirestoreInstance(statement: TSESTree.Node): boolean {
+  const declaration =
+    statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
+    statement.declaration
+      ? statement.declaration
+      : statement;
+  return (
+    declaration.type === AST_NODE_TYPES.VariableDeclaration &&
+    declaration.declarations.some(initializesFirestore)
+  );
+}
+
+/**
+ * Whether the file itself proves Firestore is in play at the call site, by
+ * searching every enclosing statement container innermost outward.
+ *
+ * Scanning `Program.body` alone left both commonplace spellings invisible: a
+ * `const db = admin.firestore()` written inside the handler that uses it, and an
+ * exported one, which sits inside its `export` statement. Since this scan is the
+ * only detector left for a bare-identifier receiver, the hole silently dropped
+ * the report rather than producing a wrong one. A container without the evidence
+ * falls through to the next one out instead of answering for the whole chain.
+ */
+function hasFirestoreInstanceInScope(node: TSESTree.Node): boolean {
+  let current: TSESTree.Node | undefined = node;
+  while (current) {
+    const statements = statementsOf(current);
+    if (statements?.some(declaresFirestoreInstance)) {
+      return true;
+    }
+    current = current.parent as TSESTree.Node | undefined;
+  }
+  return false;
+}
+
 export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
   name: 'enforce-firestore-set-merge',
   meta: {
@@ -526,31 +599,9 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
               return true;
             }
 
-            // Check if it's a Firestore document reference by looking at imports
-            const program = ASTHelpers.getAncestors(context, node).find(
-              (node): node is TSESTree.Program =>
-                node.type === AST_NODE_TYPES.Program,
-            );
-            if (program) {
-              for (const node of program.body) {
-                if (node.type === AST_NODE_TYPES.VariableDeclaration) {
-                  for (const decl of node.declarations) {
-                    if (
-                      decl.init?.type === AST_NODE_TYPES.CallExpression &&
-                      decl.init.callee.type ===
-                        AST_NODE_TYPES.MemberExpression &&
-                      decl.init.callee.property.type ===
-                        AST_NODE_TYPES.Identifier &&
-                      decl.init.callee.property.name === 'firestore'
-                    ) {
-                      return true;
-                    }
-                  }
-                }
-              }
-            }
-
-            return false;
+            // Check if it's a Firestore document reference by looking for the
+            // file's own `<x>.firestore()` handle, wherever it is declared.
+            return hasFirestoreInstanceInScope(node);
           }
           return false;
         }

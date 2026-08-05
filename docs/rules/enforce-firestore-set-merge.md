@@ -132,6 +132,33 @@ export class ReadMessageProcessor extends MessageProcessor {
 }
 ```
 
+### Identifying a Firestore receiver
+
+A receiver written as a plain identifier (`someRef.update(…)`) carries no
+Firestore marker in its name or in its call chain, so the file's own Firestore
+handle stands as the evidence: a declaration initialized from `<x>.firestore()`.
+The handle is looked up in every statement container enclosing the call — the
+module body, function and arrow bodies, blocks, namespace bodies, class static
+blocks and `switch` cases — and through an `export` wrapper, because where the
+handle is written says nothing about the call that uses it. Both spellings below
+report:
+
+```ts
+export const db = admin.firestore();
+await someRef.update({ theme: 'dark' });
+```
+
+```ts
+export async function saveTheme(someRef) {
+  const db = admin.firestore();
+  await someRef.update({ theme: 'dark' });
+}
+```
+
+A name bound to something else (`const db = somethingElse()`), a handle declared
+in a sibling scope that does not enclose the call, and a file carrying no such
+handle at all each leave the receiver unproven, and the call is left alone.
+
 ## When Not To Use It
 
 - Migration scripts that intentionally want `update()` to throw when the document is missing.
