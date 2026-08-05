@@ -1261,26 +1261,16 @@ type TopLevelStatement = {
  * `Cannot read properties of undefined` — which reads as an unparsable fence
  * and quietly retires 142 of the 345.
  */
-export function topLevelStatements(code: string): TopLevelStatement[] | null {
-  const lines = code.split('\n');
+export function parseFence(code: string): { body: ASTNode[] } | null {
   for (const jsx of [true, false]) {
     try {
-      const ast = tsParser.parse(code, {
+      return tsParser.parse(code, {
         ecmaVersion: 2022,
         sourceType: 'module',
         loc: true,
         range: true,
         ecmaFeatures: { jsx },
-      });
-      return (ast.body as { type: string; loc: TSLoc }[]).map((stmt) => ({
-        start: stmt.loc.start.line,
-        end: stmt.loc.end.line,
-        type: stmt.type,
-        head:
-          lines
-            .slice(stmt.loc.start.line - 1, stmt.loc.end.line)
-            .find((l) => l.trim()) ?? '',
-      }));
+      }) as unknown as { body: ASTNode[] };
     } catch {
       continue;
     }
@@ -1288,7 +1278,26 @@ export function topLevelStatements(code: string): TopLevelStatement[] | null {
   return null;
 }
 
+/** The one-line summary a statement is reported by, for error messages. */
+function headOf(lines: string[], start: number, end: number): string {
+  return lines.slice(start - 1, end).find((l) => l.trim()) ?? '';
+}
+
+export function topLevelStatements(code: string): TopLevelStatement[] | null {
+  const ast = parseFence(code);
+  if (ast === null) return null;
+  const lines = code.split('\n');
+  return ast.body.map((stmt) => ({
+    start: stmt.loc.start.line,
+    end: stmt.loc.end.line,
+    type: stmt.type,
+    head: headOf(lines, stmt.loc.start.line, stmt.loc.end.line),
+  }));
+}
+
 type TSLoc = { start: { line: number }; end: { line: number } };
+
+type ASTNode = { type: string; loc: TSLoc; [key: string]: unknown };
 
 /** The statements this guard judges: everything but the setup-shaped kinds. */
 export function assertableStatements(
@@ -1615,5 +1624,371 @@ describe('claimed statements inside firing "incorrect" fences must report (#1742
     expect(
       entries.filter(([, reason]) => reason.startsWith('DEBT')),
     ).toHaveLength(2);
+  });
+});
+
+/**
+ * Statements nested one level inside a top-level declaration — the interior of
+ * `const Component = () => {...}` and of class method bodies.
+ *
+ * This is the region #1747 measured as unreached: statement granularity (#1742)
+ * judges only a fence's TOP level, and 246 of 343 firing fences are a single
+ * declaration, so their whole body was one unit. `segmentFence` does not close
+ * it either — `SEGMENT_STARTER` is anchored at column 0, so an indented
+ * statement starts no segment.
+ *
+ * Only the first function body on each path is collected. A nested callback is
+ * its own level, and pulling its statements up here would attribute a claim
+ * written about the callback to the body that contains it.
+ */
+export function nestedStatements(code: string): TopLevelStatement[] | null {
+  const ast = parseFence(code);
+  if (ast === null) return null;
+  const lines = code.split('\n');
+  const out: TopLevelStatement[] = [];
+
+  const collectBody = (body: unknown) => {
+    const block = body as ASTNode | undefined;
+    if (!block || block.type !== 'BlockStatement') return;
+    for (const stmt of block.body as ASTNode[]) {
+      out.push({
+        start: stmt.loc.start.line,
+        end: stmt.loc.end.line,
+        type: stmt.type,
+        head: headOf(lines, stmt.loc.start.line, stmt.loc.end.line),
+      });
+    }
+  };
+
+  const walk = (node: unknown) => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      for (const child of node) walk(child);
+      return;
+    }
+    const n = node as ASTNode;
+    if (typeof n.type !== 'string') return;
+    if (FUNCTION_TYPES.has(n.type)) {
+      collectBody(n.body);
+      return;
+    }
+    for (const key of Object.keys(n)) {
+      if (key === 'parent' || key === 'loc' || key === 'range') continue;
+      walk(n[key]);
+    }
+  };
+
+  for (const top of ast.body) {
+    if (!DECLARATION_TYPES.has(top.type)) continue;
+    walk(top);
+  }
+  return out;
+}
+
+const FUNCTION_TYPES = new Set([
+  'ArrowFunctionExpression',
+  'FunctionExpression',
+  'FunctionDeclaration',
+]);
+
+/**
+ * A comment asserting THIS statement is the violation, on its own lines or on a
+ * whole-line comment directly above it.
+ *
+ * The whole-line requirement is load-bearing, not tidiness. A TRAILING comment
+ * belongs to the code sharing its line, and in a fence the line above a nested
+ * statement is usually its block opener or its preceding sibling. Accepting a
+ * trailing claim from above produced three findings, all false:
+ * `methodA() { // ❌ methodA appears before constructor` claims methodA rather
+ * than the call beneath it; `function useCustomHook(Component: ReactNode) {
+ * // ❌ Should be lowercase` claims the parameter; and
+ * `const PAGE_SIZE = 50; // ❌ you recreate it on every render` claims the
+ * declaration, not the `return` below. Requiring a whole-line comment takes the
+ * finding set to zero, which is the true state.
+ */
+export function claimsStatement(
+  lines: readonly string[],
+  statement: TopLevelStatement,
+): boolean {
+  const own = lines.slice(statement.start - 1, statement.end).join('\n');
+  if (CLAIM_COMMENT.test(own)) return true;
+  const above = lines[statement.start - 2];
+  if (above === undefined || !CLAIM_COMMENT.test(above)) return false;
+  return /^\s*(\/\/|\/\*|\*)/.test(above);
+}
+
+/** Claim-carrying nested statements of `code` with no report inside them. */
+export function silentNestedClaimsOf(
+  code: string,
+  reportLines: readonly number[],
+): TopLevelStatement[] {
+  const nested = nestedStatements(code);
+  if (nested === null) return [];
+  const lines = code.split('\n');
+  return nested.filter(
+    (s) =>
+      claimsStatement(lines, s) &&
+      !reportLines.some((line) => line >= s.start && line <= s.end),
+  );
+}
+
+/**
+ * Nested statements that declare themselves a violation yet report nothing.
+ *
+ * Empty on purpose: the corpus holds 10 claim-carrying nested statements and
+ * all 10 report. An entry here is a documented violation nobody enforces, so it
+ * must name the issue that retires it rather than reading as an acquittal.
+ */
+export const SILENT_NESTED_CLAIMS: Record<string, string> = {};
+
+export function auditNestedClaims(
+  silents: readonly SilentStatement[],
+  allowlist: Record<string, string>,
+): string[] {
+  const problems: string[] = [];
+  const seen = new Set<string>();
+
+  for (const silent of silents) {
+    const [rule] = silent.key.split(':');
+    seen.add(silent.key);
+    if (silent.key in allowlist) continue;
+    problems.push(
+      [
+        `docs/rules/${rule}.md:${silent.docsLine} sits inside a declaration body and its own comment calls it a violation, but no report lands on it:`,
+        `  ${silent.head}`,
+        '  Its fence reports elsewhere, so both the fence guard (#1641) and the',
+        '  top-level statement guard (#1742) are satisfied while the statement the',
+        '  docs point at is unenforced. Either fix the rule, or — if the comment',
+        `  describes a neighbour rather than this line — add '${silent.key}' to`,
+        '  SILENT_NESTED_CLAIMS naming where the report actually lands.',
+      ].join('\n'),
+    );
+  }
+
+  for (const [key, reason] of Object.entries(allowlist)) {
+    if (seen.has(key)) continue;
+    problems.push(
+      [
+        `SILENT_NESTED_CLAIMS lists '${key}' (${reason}) but that statement now reports or no longer exists.`,
+        '  Delete the entry: a stale exemption hides the next dead example.',
+      ].join('\n'),
+    );
+  }
+
+  return problems;
+}
+
+describe('claim-carrying statements inside declaration bodies must report (#1748)', () => {
+  const silents: SilentStatement[] = [];
+  let firingFences = 0;
+  /** Firing fences contributing at least one nested statement — the REACH. */
+  let fencesWithNested = 0;
+  let nestedTotal = 0;
+  let claimCarrying = 0;
+
+  it('descends into declaration bodies the top-level guard cannot see', () => {
+    for (const ruleName of ruleNames) {
+      if (requiresTypeChecking(ruleName)) continue;
+      const md = fs.readFileSync(path.join(DOCS_DIR, `${ruleName}.md`), 'utf8');
+      const incorrect = extractBlocks(md).filter(
+        (b) => b.polarity === 'incorrect' && LINTABLE_LANGS.has(b.lang),
+      );
+
+      for (const block of incorrect) {
+        const nested = nestedStatements(block.code);
+        if (nested === null || nested.length === 0) continue;
+        const lines = block.code.split('\n');
+        const claimed = nested.filter((s) => claimsStatement(lines, s));
+
+        const hinted = filenameHint(block.code);
+        const candidates = hinted
+          ? [hinted]
+          : (block.lang === 'tsx' || block.lang === 'jsx'
+              ? TSX_CANDIDATES
+              : [...TS_CANDIDATES, ...TSX_CANDIDATES]
+            ).map(anchor);
+
+        // Same calibration as #1622 and #1742: the filename lighting up the most
+        // claimed statements judges the fence, so a path-scoped rule is not
+        // marked silent for running off its path.
+        let bestLines: number[] | null = null;
+        let bestCovered = -1;
+        let bestTotal = -1;
+        for (const filename of candidates) {
+          const outcome = lintBlock(
+            ruleName,
+            filename,
+            block.code,
+            optionsHint(block.code),
+          );
+          if (outcome.skipped) continue;
+          const covered = claimed.filter((s) =>
+            outcome.reportLines.some((l) => l >= s.start && l <= s.end),
+          ).length;
+          if (
+            covered > bestCovered ||
+            (covered === bestCovered && outcome.reportLines.length > bestTotal)
+          ) {
+            bestCovered = covered;
+            bestTotal = outcome.reportLines.length;
+            bestLines = outcome.reportLines;
+          }
+        }
+        // A fence reporting nowhere is the #1641 guard's finding; flagging its
+        // interior too would report one defect many times.
+        if (bestLines === null || bestLines.length === 0) continue;
+
+        firingFences += 1;
+        fencesWithNested += 1;
+        nestedTotal += nested.length;
+        claimCarrying += claimed.length;
+
+        for (const statement of claimed) {
+          if (bestLines.some((l) => l >= statement.start && l <= statement.end))
+            continue;
+          silents.push({
+            key: `${ruleName}:${block.line}:${statement.start}`,
+            docsLine: block.line + statement.start,
+            head: statement.head,
+          });
+        }
+      }
+    }
+
+    // Coverage floors. Two units, per #1747: this guard ITERATES statements but
+    // its worth is the set of FENCES it reaches, and statements cluster, so a
+    // floor on one cannot see the other collapsing.
+    expect(firingFences).toBeGreaterThan(120);
+    expect(fencesWithNested).toBeGreaterThan(120);
+    expect(nestedTotal).toBeGreaterThan(250);
+    // The claim filter is what makes this assertable — 193 of 311 nested
+    // statements are silent setup, so a blanket assertion is not viable. If this
+    // hits zero the filter has stopped matching and the suite asserts nothing.
+    expect(claimCarrying).toBeGreaterThan(5);
+
+    const problems = auditNestedClaims(silents, SILENT_NESTED_CLAIMS);
+    if (problems.length > 0) {
+      throw new Error(
+        [
+          `${problems.length} nested claim problem(s) in documented "incorrect" fences:`,
+          ...problems,
+        ].join('\n\n'),
+      );
+    }
+  });
+
+  it('reaches more fences than the top-level statement guard (#1747)', () => {
+    // The point of descending. `fencesWithStatements` in the #1742 suite is 91;
+    // if this drops to its level the descent has silently stopped happening.
+    expect(fencesWithNested).toBeGreaterThan(140);
+  });
+
+  it('catches a claimed statement buried in a component body (positive control)', () => {
+    // The exact hiding shape: one top-level declaration, so #1742 judges nothing
+    // inside it, and the fence reports — satisfying #1641.
+    const fence = [
+      'const Widget = () => {',
+      '  const handler = useCallback(() => run(), []);',
+      '  // ❌ flagged: this literal is recreated every render',
+      '  const style = { margin: 0 };',
+      '  return <div style={style} onClick={handler} />;',
+      '};',
+    ].join('\n');
+    const nested = nestedStatements(fence);
+    expect(nested).not.toBeNull();
+    // The body's three statements are visible here; at top level the fence is
+    // one VariableDeclaration and the guard above sees none of them.
+    expect(nested).toHaveLength(3);
+    expect(topLevelStatements(fence)).toHaveLength(1);
+    expect(assertableStatements(topLevelStatements(fence)!)).toEqual([]);
+
+    // With a report elsewhere in the fence, the claimed statement is still flagged.
+    const silent = silentNestedClaimsOf(fence, [2]);
+    expect(silent.map((s) => s.start)).toEqual([4]);
+  });
+
+  it('ignores unclaimed setup and honours a landing report (negative controls)', () => {
+    const fence = [
+      'const Widget = () => {',
+      '  const style = { margin: 0 };',
+      '  return <div style={style} />;',
+      '};',
+    ].join('\n');
+    // Nothing reports anywhere, yet no statement carries a claim, so the guard
+    // stays silent. This is what keeps the other 193 silent statements out.
+    expect(silentNestedClaimsOf(fence, [])).toEqual([]);
+
+    const claimed = [
+      'const Widget = () => {',
+      '  // ❌ flagged',
+      '  doThing();',
+      '};',
+    ].join('\n');
+    expect(silentNestedClaimsOf(claimed, [])).toHaveLength(1);
+    // A report landing on it clears it.
+    expect(silentNestedClaimsOf(claimed, [3])).toEqual([]);
+  });
+
+  it('does not let a trailing claim above bleed onto the next statement (control)', () => {
+    // The false-finding shape this guard was nearly shipped with: the ❌ is
+    // ABOUT the block opener, and the statement below it is innocent.
+    const opener = [
+      'class C {',
+      '  methodA() { // ❌ methodA appears before constructor',
+      '    this.methodB();',
+      '  }',
+      '}',
+    ].join('\n');
+    expect(silentNestedClaimsOf(opener, [])).toEqual([]);
+
+    // The trailing ❌ claims the declaration it sits on, which is a real claim;
+    // what must NOT happen is it bleeding down onto the `return` beneath.
+    const sibling = [
+      'function renderPage() {',
+      '  const PAGE_SIZE = 50; // ❌ you recreate it on every render',
+      '  return paginate(items, PAGE_SIZE);',
+      '}',
+    ].join('\n');
+    expect(silentNestedClaimsOf(sibling, []).map((s) => s.start)).toEqual([2]);
+    // …and once the declaration reports, nothing in the body is left claimed.
+    expect(silentNestedClaimsOf(sibling, [2])).toEqual([]);
+
+    // …but a whole-line comment above DOES claim what follows.
+    const wholeLine = [
+      'function renderPage() {',
+      '  // ❌ you recreate it on every render',
+      '  return paginate(items, 50);',
+      '}',
+    ].join('\n');
+    expect(silentNestedClaimsOf(wholeLine, [])).toHaveLength(1);
+  });
+
+  it('audits the allowlist in both directions (control)', () => {
+    const planted = [
+      { key: 'planted-rule:12:3', docsLine: 15, head: 'doThing();' },
+    ];
+    const problems = auditNestedClaims(planted, {});
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('docs/rules/planted-rule.md:15');
+    expect(problems[0]).toContain('calls it a violation');
+    expect(
+      auditNestedClaims(planted, { 'planted-rule:12:3': 'reason' }),
+    ).toEqual([]);
+    expect(
+      auditNestedClaims([], { 'planted-rule:12:3': 'reason' })[0],
+    ).toContain('Delete the entry');
+  });
+
+  it('keys every exemption to a real rule and every entry to an issue', () => {
+    for (const [key, reason] of Object.entries(SILENT_NESTED_CLAIMS)) {
+      const [rule, fenceLine, statementLine] = key.split(':');
+      expect(ruleNames).toContain(rule);
+      expect(Number(fenceLine)).toBeGreaterThan(0);
+      expect(Number(statementLine)).toBeGreaterThan(0);
+      expect(reason.length).toBeGreaterThan(60);
+      // A statement that declares itself a violation and reports nothing is a
+      // rule miss, not context — it must cite the issue that retires it.
+      expect(reason).toMatch(/#\d+/);
+    }
   });
 });
