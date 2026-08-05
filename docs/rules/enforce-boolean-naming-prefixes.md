@@ -353,7 +353,7 @@ An array of strings that are valid prefixes for boolean names. If not provided, 
 ```json
 {
   "rules": {
-    "@blumint/enforce-boolean-naming-prefixes": ["error", {
+    "@blumintinc/blumint/enforce-boolean-naming-prefixes": ["error", {
       "prefixes": ["is", "has", "can", "should"]
     }]
   }
@@ -373,7 +373,7 @@ When `true`, boolean property signatures in interfaces and type aliases are requ
 ```json
 {
   "rules": {
-    "@blumint/enforce-boolean-naming-prefixes": ["error", {
+    "@blumintinc/blumint/enforce-boolean-naming-prefixes": ["error", {
       "enforceForPropertySignatures": true
     }]
   }
