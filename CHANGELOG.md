@@ -1,3 +1,10 @@
+## [1.20.114](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.113...v1.20.114) (2026-08-05)
+
+
+### Bug Fixes
+
+* **enforce-serializable-params:** resolve namespaced names, interfaces and reference chains (closes [#1751](https://github.com/BluMintInc/eslint-custom-rules/issues/1751)) ([748c657](https://github.com/BluMintInc/eslint-custom-rules/commit/748c657ffea05975b3e77d08e213ac2fd14ef4e3)), closes [#1750](https://github.com/BluMintInc/eslint-custom-rules/issues/1750)
+
 ## [1.20.113](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.112...v1.20.113) (2026-08-05)
 
 

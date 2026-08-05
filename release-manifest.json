@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.114",
+    "date": "2026-08-05T18:16:40.596Z",
+    "rules": [
+      {
+        "name": "enforce-serializable-params",
+        "changeType": "fix",
+        "issues": [
+          1751
+        ],
+        "summary": "resolve namespaced names, interfaces and reference chains (closes #1751)"
+      }
+    ]
+  },
+  {
     "version": "1.20.113",
     "date": "2026-08-05T17:37:08.020Z",
     "rules": [
