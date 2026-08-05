@@ -18,8 +18,12 @@ Prevent wrapping already memoized callbacks from hooks/contexts with an extra `u
 
 The rule reports `useCallback` when it only forwards a callback that was already memoized by a hook/context (identifier or member) without adding logic or changing arguments. Wrappers that transform parameters, add side effects, or pass additional arguments are allowed.
 
+`useLatestCallback` counts as a memoization wrapper too, and is reported on exactly the same terms. It is the spelling [`use-latest-callback`](use-latest-callback.md) — enabled in the same `recommended` config, and fixable — rewrites every `useCallback(fn, deps)` into, so a wrapper around an already stable callback survives that rewrite unchanged: `useLatestCallback(() => signIn())` still allocates a fresh arrow on every render around a callback the hook already keeps stable. The local binding is resolved from the `use-latest-callback` module rather than matched by name, because that rule's fixer names its import with `freeImportName` and emits `useLatestCallback2` when `useLatestCallback` is already taken. Both the default and named specifier forms are recognized, under any local alias.
+
 Example message:
-`useCallback is wrapping memoized callback "signIn", adding a redundant dependency array without improving stability. Pass the hook/context callback directly so React keeps the original stable reference and avoids wrapper allocations and dependency drift.`
+`useCallback is wrapping memoized callback "signIn", adding a redundant memoization layer without improving stability. Pass the hook/context callback directly so React keeps the original stable reference and avoids wrapper allocations and dependency drift.`
+
+The leading word is the wrapper actually found, so a report on the other spelling opens with `useLatestCallback` (or whatever local name the import bound).
 
 Flags cases like:
 
@@ -109,6 +113,18 @@ const onClick = useCallback((e) => {
 }, [signIn]);
 ```
 
+```tsx
+// eslint-options: {"assumeAllUseAreMemoized": true}
+// Recognizing useLatestCallback is not an amnesty on the wrapper: this callback
+// comes from props, so the wrapper is the only thing making it stable
+import useLatestCallback from 'use-latest-callback';
+
+function Row({ onDone }) {
+  const onClick = useLatestCallback(() => onDone());
+  return <Button onClick={onClick} />;
+}
+```
+
 ## Invalid
 
 `useAuthSubmit` and `useSomething` are only treated as returning memoized callbacks once the rule is told so. Each example below therefore declares `assumeAllUseAreMemoized: true`; naming the hooks in `memoizedHookNames` produces the same reports.
@@ -134,6 +150,30 @@ const svc = useSomething();
 const onClick = useCallback(() => svc.handle(), [svc]);
 ```
 
+```tsx
+// eslint-options: {"assumeAllUseAreMemoized": true}
+// ✖ Same redundant wrapper under the useLatestCallback spelling
+import useLatestCallback from 'use-latest-callback';
+
+function SignInButton() {
+  const { signIn } = useAuthSubmit();
+  const onClick = useLatestCallback(() => signIn());
+  return <Button onClick={onClick} />;
+}
+```
+
+```tsx
+// eslint-options: {"assumeAllUseAreMemoized": true}
+// ✖ The alias use-latest-callback's own fixer emits under a name collision
+import useLatestCallback2 from 'use-latest-callback';
+
+function SignInButton() {
+  const { signIn } = useAuthSubmit();
+  const onClick = useLatestCallback2(signIn);
+  return <Button onClick={onClick} />;
+}
+```
+
 ## Fixes
 
 Where safe, the rule removes the redundant `useCallback` wrapper and passes the memoized function directly.
@@ -150,3 +190,4 @@ Where safe, the rule removes the redundant `useCallback` wrapper and passes the 
 - Allows wrappers that call `preventDefault`, `stopPropagation` or `stopImmediatePropagation`: passing the memoized callback directly drops the suppression call and hands the event to a callback that took no arguments, so the wrapper is doing work.
 - Allows a wrapper whose body sequences a second statement: the memoized callback alone does not perform it, so collapsing the wrapper would drop it.
 - Detects object member calls from hook results and avoids unsafe auto-fixes.
+- Treats `useLatestCallback` as a memoization wrapper alongside `useCallback` and `React.useCallback`, resolving the local binding from the `use-latest-callback` module so aliases such as `useLatestCallback2` are recognized. Every carve-out above applies to that spelling unchanged.
