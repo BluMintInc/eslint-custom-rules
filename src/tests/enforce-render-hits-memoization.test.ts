@@ -451,6 +451,108 @@ ruleTesterJsx.run(
         };
       `,
       },
+      // Valid: a component factory. The helpers are built once per
+      // createHitList() call and the HitList closure is built in that same call,
+      // so every render of a given HitList sees the identical references. The
+      // demanded remedy is unavailable in both directions: useCallback cannot
+      // legally be called in createHitList (neither component nor hook), and
+      // transform closes over `pred` so it cannot be hoisted to module scope
+      // either (issue #1768).
+      {
+        code: `
+        export function createHitList(pred) {
+          const transform = (hits) => hits.filter(pred);
+          const renderHit = (hit) => <HitComponent hit={hit} />;
+          return function HitList({ hits }) {
+            useRenderHits({ hits, transformBefore: transform, render: renderHit });
+          };
+        }
+      `,
+      },
+      // Valid: the shorthand spelling of the same factory, so the carve-out is
+      // not keyed on one spelling
+      {
+        code: `
+        export function createHitList(pred) {
+          const transformBefore = (hits) => hits.filter(pred);
+          const render = (hit) => <HitComponent hit={hit} />;
+          return function HitList({ hits }) {
+            useRenderHits({ hits, transformBefore, render });
+          };
+        }
+      `,
+      },
+      // Valid: an HOC, with the helper written as a function declaration rather
+      // than a const
+      {
+        code: `
+        export function withHits(Inner) {
+          function renderHit(hit) {
+            return <Inner hit={hit} />;
+          }
+          return function HitList({ hits }) {
+            useRenderHits({ hits, render: renderHit });
+          };
+        }
+      `,
+      },
+      // Valid: a describe-scope helper consumed from a nested it. The helper is
+      // created once for the whole suite, which is the idiomatic Jest spelling.
+      {
+        code: `
+        describe('useRenderHits', () => {
+          const renderHit = () => null;
+          it('a', () => {
+            renderHook(() => useRenderHits({ hits: [], render: renderHit, isLoading: false }));
+          });
+          it('b', () => {
+            renderHook(() => useRenderHits({ hits: [], render: renderHit, isLoading: true }));
+          });
+        });
+      `,
+      },
+      // Valid: a custom hook body re-runs per render, but the helper it declares
+      // is captured by the component closure created in that same run, so the
+      // nested consumer never observes a previous identity
+      {
+        code: `
+        export function useHitListFactory() {
+          const transform = (hits) => hits.filter(h => h.isActive);
+          return function HitList({ hits }) {
+            useRenderHits({ hits, transformBefore: transform });
+          };
+        }
+      `,
+      },
+      // Valid: the declaration sits in a BLOCK of the enclosing function rather
+      // than its body — still outside the calling function
+      {
+        code: `
+        function buildHitList(enabled) {
+          if (enabled) {
+            const transform = (hits) => hits.filter(h => h.isActive);
+            return ({ hits }) => {
+              useRenderHits({ hits, transformBefore: transform });
+            };
+          }
+          return null;
+        }
+      `,
+      },
+      // Valid: a class-method factory reaches the same verdict as a plain one —
+      // the method is the enclosing function, the returned component is not
+      {
+        code: `
+        class HitListFactory {
+          build() {
+            const renderHit = (hit) => <HitComponent hit={hit} />;
+            return function HitList({ hits }) {
+              useRenderHits({ hits, render: renderHit });
+            };
+          }
+        }
+      `,
+      },
     ],
     invalid: [
       // Invalid: transformBefore not memoized
@@ -849,6 +951,113 @@ ruleTesterJsx.run(
           { messageId: 'requireMemoizedTransformBefore' },
           { messageId: 'requireMemoizedRender' },
         ],
+      },
+      // Invalid: the outer-scope carve-out is RELATIVE, so a declaration sharing
+      // the calling function still reports even when that function is itself
+      // nested inside a factory — the helpers are rebuilt on every HitList render
+      {
+        code: `
+        export function createHitList() {
+          return function HitList({ hits }) {
+            const transform = (hits) => hits.filter(h => h.isActive);
+            const renderHit = (hit) => <HitComponent hit={hit} />;
+            useRenderHits({ hits, transformBefore: transform, render: renderHit });
+          };
+        }
+      `,
+        errors: [
+          { messageId: 'requireMemoizedTransformBefore' },
+          { messageId: 'requireMemoizedRender' },
+        ],
+      },
+      // Invalid: a custom hook body re-runs on every render of its caller, so a
+      // helper declared there and consumed by a useRenderHits call in that same
+      // body is a fresh identity each pass
+      {
+        code: `
+        export function useHitList(hits) {
+          const transform = (hits) => hits.filter(h => h.isActive);
+          const renderHit = (hit) => <HitComponent hit={hit} />;
+          useRenderHits({ hits, transformBefore: transform, render: renderHit });
+        }
+      `,
+        errors: [
+          { messageId: 'requireMemoizedTransformBefore' },
+          { messageId: 'requireMemoizedRender' },
+        ],
+      },
+      // Invalid: a block INSIDE the calling function crosses no function
+      // boundary, so the declaration is still per-render
+      {
+        code: `
+        export function useHitList(hits, enabled) {
+          if (enabled) {
+            const transform = (hits) => hits.filter(h => h.isActive);
+            const renderHit = (hit) => <HitComponent hit={hit} />;
+            useRenderHits({ hits, transformBefore: transform, render: renderHit });
+          }
+        }
+      `,
+        errors: [
+          { messageId: 'requireMemoizedTransformBefore' },
+          { messageId: 'requireMemoizedRender' },
+        ],
+      },
+      // Invalid: an outer-scope helper is not a file-wide amnesty — the inline
+      // arrow beside it is still rebuilt on every render
+      {
+        code: `
+        export function createHitList(pred) {
+          const renderHit = (hit) => <HitComponent hit={hit} />;
+          return function HitList({ hits }) {
+            useRenderHits({
+              hits,
+              transformBefore: (hits) => hits.filter(pred),
+              render: renderHit,
+            });
+          };
+        }
+      `,
+        errors: [{ messageId: 'requireMemoizedTransformBefore' }],
+      },
+      // Invalid: an outer-scope `let` can be reassigned between renders of the
+      // closure that captured it, so enclosing the calling function is not
+      // enough on its own
+      {
+        code: `
+        export function createHitList() {
+          let transform = (hits) => hits.filter(h => h.isActive);
+          return function HitList({ hits }) {
+            useRenderHits({ hits, transformBefore: transform });
+          };
+        }
+      `,
+        errors: [{ messageId: 'requireMemoizedTransformBefore' }],
+      },
+      // Invalid: an outer-scope component is still a component — stability never
+      // makes passing one directly to render acceptable
+      {
+        code: `
+        export function createHitList() {
+          const HitComponent = (props) => <div {...props} />;
+          return function HitList({ hits }) {
+            useRenderHits({ hits, render: HitComponent });
+          };
+        }
+      `,
+        errors: [{ messageId: 'noDirectComponentInRender' }],
+      },
+      // Invalid: a parameter of the enclosing factory forwards a value whose
+      // identity the CALLER decides, so it is memoized where it is created
+      {
+        code: `
+        export function createHitList(transform) {
+          return function HitList({ hits }) {
+            useRenderHits({ hits, transformBefore: transform });
+          };
+        }
+      `,
+        errors: [{ messageId: 'requireMemoizedTransformBefore' }],
       },
     ],
   },

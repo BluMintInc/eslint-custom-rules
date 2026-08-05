@@ -15,6 +15,48 @@ type MessageIds =
 const LATEST_CALLBACK_MODULE = 'use-latest-callback';
 const LATEST_CALLBACK_HOOK = 'useLatestCallback';
 
+function isFunctionNode(
+  node: TSESTree.Node | null | undefined,
+): node is
+  | TSESTree.ArrowFunctionExpression
+  | TSESTree.FunctionExpression
+  | TSESTree.FunctionDeclaration {
+  if (!node) return false;
+  return (
+    node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+    node.type === AST_NODE_TYPES.FunctionExpression ||
+    node.type === AST_NODE_TYPES.FunctionDeclaration
+  );
+}
+
+/**
+ * Nearest enclosing function of a node, or `null` when the node sits at module
+ * scope. Class and object methods are reached through their `FunctionExpression`
+ * value, so no separate `MethodDefinition` case is needed.
+ *
+ * The walk starts at the parent, so a `FunctionDeclaration` passed in as the
+ * declaration site reports the function that CONTAINS it rather than itself.
+ */
+function getEnclosingFunction(
+  node: TSESTree.Node,
+):
+  | TSESTree.ArrowFunctionExpression
+  | TSESTree.FunctionExpression
+  | TSESTree.FunctionDeclaration
+  | null {
+  let current: TSESTree.Node | undefined | null = node.parent;
+  while (current) {
+    if (isFunctionNode(current)) {
+      return current;
+    }
+    if (current.type === AST_NODE_TYPES.Program) {
+      return null;
+    }
+    current = current.parent;
+  }
+  return null;
+}
+
 /**
  * Declaration forms whose binding is created once for the program's lifetime.
  *
@@ -39,6 +81,36 @@ function isStableDeclaration(def: TSESLint.Scope.Definition): boolean {
     default:
       return false;
   }
+}
+
+/**
+ * The hazard is identity churn measured against the CONSUMER, not absolute
+ * scope depth: `useRenderHits` only ever sees a new identity when the function
+ * that CALLS it re-runs and rebuilds the binding on the way. That holds exactly
+ * when the declaration and the call share a nearest enclosing function.
+ *
+ * When the declaration sits in a strictly outer function — a component factory,
+ * an HOC, a `describe` callback consumed from a nested `it` — the binding is
+ * created once per outer call and the calling function is created in that same
+ * call, so every run of the consumer sees the identical reference. The message's
+ * remedy is also unavailable there: `useCallback` cannot legally be called in a
+ * function that is neither a component nor a hook, and a helper closing over an
+ * outer parameter cannot be hoisted to module scope. Module scope is the
+ * degenerate case: the declaration has no enclosing function at all.
+ *
+ * Scope resolution guarantees the declaration's scope is on the consumer's scope
+ * chain, so "not the same function" and "strictly encloses" coincide here.
+ *
+ * A custom hook is deliberately NOT special-cased. A hook body does re-run per
+ * render, and when it also holds the `useRenderHits` call the two functions
+ * coincide, so the same predicate reports it.
+ */
+function isStableForConsumer(
+  defNode: TSESTree.Node,
+  consumerFunction: TSESTree.Node | null,
+): boolean {
+  const definitionFunction = getEnclosingFunction(defNode);
+  return definitionFunction === null || definitionFunction !== consumerFunction;
 }
 
 export const enforceRenderHitsMemoization = createRule<[], MessageIds>({
@@ -143,21 +215,25 @@ export const enforceRenderHitsMemoization = createRule<[], MessageIds>({
     };
 
     /**
-     * A prop pointing at a declaration that lives outside every component body.
+     * A prop pointing at a declaration that lives outside the body of the
+     * function calling `useRenderHits`.
      *
-     * Module scope creates the binding once for the program's lifetime, so its
-     * identity is strictly more stable than anything a hook can hand back:
-     * demanding a `useCallback` wrapper around it asks for work that can only
-     * make the reference less stable, never more.
+     * Such a binding is created once per run of the enclosing scope, and the
+     * calling function is created in that same run, so its identity is fixed for
+     * the whole life of that closure — strictly more stable than anything a hook
+     * can hand back. Demanding a `useCallback` wrapper around it asks for work
+     * that can only make the reference less stable, never more, and in a factory
+     * the wrapper is not even legal (rules-of-hooks) while a helper closing over
+     * an outer parameter cannot be hoisted to module scope either.
      *
-     * Both `module` and `global` count. Under `sourceType: 'script'` — the
-     * parser default, and what a consumer's config may well leave in place — a
-     * top-level declaration binds to the *global* scope and no module scope
-     * exists at all (issue #1578), so keying on `module` alone would silently
-     * drop the carve-out for exactly the consumers who never opted into module
-     * parsing.
+     * Module and global scope are the degenerate case of "outside", and both
+     * count. Under `sourceType: 'script'` — the parser default, and what a
+     * consumer's config may well leave in place — a top-level declaration binds
+     * to the *global* scope and no module scope exists at all (issue #1578);
+     * measuring against the enclosing function rather than the scope type keeps
+     * the carve-out for consumers who never opted into module parsing.
      *
-     * The shape is not hypothetical:
+     * The module-scope shape is not hypothetical:
      * `no-empty-dependency-use-callbacks` — 'error' in the same recommended
      * config, and fixable — hoists a dependency-free callback to module scope
      * and drops the hook, so one `eslint --fix` run rewrites memoized code into
@@ -168,21 +244,21 @@ export const enforceRenderHitsMemoization = createRule<[], MessageIds>({
       if (node.type !== AST_NODE_TYPES.Identifier) return false;
 
       // The scope chain has to be walked rather than a single scope's variable
-      // list read: the useRenderHits call sits inside the component, so a
-      // module-scope declaration is never among the current scope's own
+      // list read: the useRenderHits call sits inside the component, so an
+      // outer-scope declaration is never among the current scope's own
       // variables.
       const variable = ASTUtils.findVariable(context.getScope(), node);
       if (!variable) return false;
 
-      const scopeType = variable.scope.type;
-      if (
-        scopeType !== TSESLint.Scope.ScopeType.module &&
-        scopeType !== TSESLint.Scope.ScopeType.global
-      ) {
-        return false;
-      }
+      // The prop value sits lexically inside the useRenderHits call, so its
+      // nearest enclosing function is the consuming one.
+      const consumerFunction = getEnclosingFunction(node);
 
-      return variable.defs.some(isStableDeclaration);
+      return variable.defs.some(
+        (def) =>
+          isStableDeclaration(def) &&
+          isStableForConsumer(def.node, consumerFunction),
+      );
     };
 
     const isInsideMemoizedCall = (node: TSESTree.Node): boolean => {
