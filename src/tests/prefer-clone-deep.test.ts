@@ -240,6 +240,38 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
     {
       code: `const m = { ...ab, nested: { ...abc.x, v: 1 } };`,
     },
+    /**
+     * A nested literal that merges a DISTINCT source with a sub-path of the
+     * base is a merge, not a partial deep copy: `sx` is a new object combining
+     * DEFAULT_SX and props.sx, aliasing neither. cloneDeep cannot express it
+     * (buildOverrideObject already declines the fix), so the report is noise.
+     */
+    {
+      code: `const merged = { ...props, sx: { ...DEFAULT_SX, ...props?.sx } };`,
+    },
+    /** The same merge with the spreads reversed — no ordering escapes today. */
+    {
+      code: `const reversed = { ...props, sx: { ...props?.sx, ...DEFAULT_SX } };`,
+    },
+    /** Non-optional spelling, to pin that accessPathOf normalization is not the cause. */
+    {
+      code: `const merged = { ...a, sx: { ...b, ...a.sx } };`,
+    },
+    // Regression #1745: a third source does not turn the merge back into a
+    // partial copy — the verdict is over ALL of a literal's sources.
+    {
+      code: `const merged = { ...props, sx: { ...DEFAULT_SX, ...props?.sx, ...themeSx } };`,
+    },
+    // Regression #1745: the mixed literal is exempt wherever it sits, so the
+    // grouping cannot be an artifact of the first nesting level.
+    {
+      code: `const merged = { ...props, slotProps: { tooltip: { ...DEFAULT_SX, ...props.slotProps.tooltip } } };`,
+    },
+    // Regression #1745: a merge whose foreign source is itself a member path of
+    // an unrelated object is still a merge.
+    {
+      code: `const merged = { ...props, sx: { ...theme.defaults.sx, ...props.sx } };`,
+    },
   ],
   invalid: [
     // Basic nested spread
@@ -837,6 +869,28 @@ ${MERGED_OUTPUT}`,
       filename: '/agora/src/components/DialogCentered.tsx',
       errors: [expectPreferCloneDeepError],
       output: null,
+    },
+    // Regression #1745: the exemption is per literal, so a sibling that IS a
+    // pure partial copy still reports even though `merged` is a merge. The fix
+    // is declined because the merge cannot be expressed as overrides.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const both = { ...a, merged: { ...DEFAULTS, ...a.merged }, pure: { ...a.pure, v: 1 } };`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
+    },
+    // Regression #1745: dropping the foreign source from the mixed literal
+    // leaves a hand-written copy of `props.sx`, which is the hazard again.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const merged = { ...props, sx: { ...props?.sx, color: 'red' } };`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+const merged = cloneDeep(props, {
+  sx: {
+    color: 'red'
+  }
+} as const);`,
     },
     // Regression #1396: the same file with the helper imported is fixed, which
     // keeps the fixer reachable and the 🔧 badge honest.
