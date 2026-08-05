@@ -357,21 +357,35 @@ export const parallelizeLoopAwaits = createRule<Options, MessageIds>({
     }
 
     /**
-     * Collects all variables declared INSIDE the loop body (at the direct
-     * body scope, not crossing nested function boundaries). These are
-     * iteration-local variables.
+     * Collects all variables declared INSIDE the loop body, including inside
+     * callbacks written there. These are iteration-local variables: nothing
+     * they hold outlives the iteration that created them.
+     *
+     * The walk crosses nested function boundaries because the write scan that
+     * consults this set crosses them too. A name both declared and assigned
+     * inside a callback (`async () => { let tmp; tmp = 1; }`) publishes nothing
+     * to the enclosing scope, so if the set stopped at the boundary the write
+     * would read as a cross-iteration dependency and silence the loop. (#1724)
      */
     function collectLoopLocalVars(body: TSESTree.Node): Set<string> {
       const localVars = new Set<string>();
 
       function visit(node: TSESTree.Node, isRoot: boolean): void {
+        // A callback's parameters bind afresh on every invocation, so a write
+        // through one (`async (page) => { page.total = 1 }`) reaches whatever
+        // the caller handed that call rather than state the iterations share.
         if (
           !isRoot &&
           (node.type === AST_NODE_TYPES.FunctionDeclaration ||
             node.type === AST_NODE_TYPES.FunctionExpression ||
             node.type === AST_NODE_TYPES.ArrowFunctionExpression)
         ) {
-          return;
+          for (const param of node.params) {
+            collectBindingNames(
+              param as TSESTree.DestructuringPattern,
+              localVars,
+            );
+          }
         }
 
         if (node.type === AST_NODE_TYPES.VariableDeclaration) {
@@ -408,13 +422,80 @@ export const parallelizeLoopAwaits = createRule<Options, MessageIds>({
     }
 
     /**
+     * Collects the BINDINGS an assignment target writes through, returning
+     * false when the target's root is not a plain binding at all.
+     *
+     * A member write reaches the object its ROOT names: `box.value = 1` writes
+     * through `box`, and `value` is a field label that binds nothing — the same
+     * distinction drawn for a non-computed property key (#1688). Counting the
+     * label as a written name makes every member write look like a write to an
+     * outer binding, which is what hides a callback writing through its own
+     * parameter (`async (page) => { page.total = 1 }`).
+     *
+     * A root the analysis cannot name — `this.count += 1` reaches instance
+     * state every iteration shares — returns false, and the caller reads that
+     * as an outer write. The plugin prefers a missed report to a spurious one.
+     */
+    function collectAssignmentTargetNames(
+      target: TSESTree.Node,
+      names: Set<string>,
+    ): boolean {
+      switch (target.type) {
+        case AST_NODE_TYPES.Identifier:
+          names.add(target.name);
+          return true;
+
+        case AST_NODE_TYPES.MemberExpression:
+          return collectAssignmentTargetNames(target.object, names);
+
+        case AST_NODE_TYPES.ChainExpression:
+        case AST_NODE_TYPES.TSNonNullExpression:
+        case AST_NODE_TYPES.TSAsExpression:
+          return collectAssignmentTargetNames(target.expression, names);
+
+        case AST_NODE_TYPES.ObjectPattern: {
+          let resolved = true;
+          for (const property of target.properties) {
+            const inner =
+              property.type === AST_NODE_TYPES.RestElement
+                ? property.argument
+                : property.value;
+            if (!collectAssignmentTargetNames(inner, names)) resolved = false;
+          }
+          return resolved;
+        }
+
+        case AST_NODE_TYPES.ArrayPattern: {
+          let resolved = true;
+          for (const element of target.elements) {
+            if (element && !collectAssignmentTargetNames(element, names)) {
+              resolved = false;
+            }
+          }
+          return resolved;
+        }
+
+        case AST_NODE_TYPES.RestElement:
+          return collectAssignmentTargetNames(target.argument, names);
+
+        case AST_NODE_TYPES.AssignmentPattern:
+          return collectAssignmentTargetNames(target.left, names);
+
+        default:
+          return false;
+      }
+    }
+
+    /**
      * Detects cross-iteration state patterns that require sequential
      * execution:
      *
      * 1. Accumulator: a variable declared OUTSIDE the loop body (i.e., not
-     *    in localVars) is ASSIGNED inside the loop body. Examples: `total +=
-     *    value`, `cursor = page.nextCursor`, `previousResult = result`. This
-     *    catches running totals, pagination cursors, and chained results.
+     *    in localVars) is ASSIGNED inside the loop body, whether directly or
+     *    from inside a callback the body hands to the awaited call. Examples:
+     *    `total += value`, `cursor = page.nextCursor`, `previousResult =
+     *    result`. This catches running totals, pagination cursors, and chained
+     *    results.
      *
      * 2. Direct cross-await dependency: a variable declared by an await
      *    inside the loop is then read as an argument to another await in the
@@ -425,32 +506,65 @@ export const parallelizeLoopAwaits = createRule<Options, MessageIds>({
       loopLocalVars: Set<string>,
     ): boolean {
       // Pattern 1: outer variable is written inside the loop body.
-      // Collect all assignment targets (left-hand sides of assignments and
-      // compound assignments) in the loop body.
+      // Collect every assignment target — the left-hand side of an assignment
+      // or compound assignment, and the operand of an increment in a callback.
       let foundOuterWrite = false;
 
-      function findOuterWrites(node: TSESTree.Node, isRoot: boolean): void {
+      /**
+       * Reports whether an assignment target reaches a binding the iterations
+       * share rather than one the iteration creates.
+       */
+      function writesOuterBinding(target: TSESTree.Node): boolean {
+        const names = new Set<string>();
+        if (!collectAssignmentTargetNames(target, names)) return true;
+        for (const name of names) {
+          if (!loopLocalVars.has(name)) return true;
+        }
+        return false;
+      }
+
+      function findOuterWrites(
+        node: TSESTree.Node,
+        isRoot: boolean,
+        inNestedFunction: boolean,
+      ): void {
         if (foundOuterWrite) return;
 
+        // The walk deliberately enters callbacks. A write handed to the awaited
+        // call is the same data dependency as one written beside it:
+        // `await run(item, async (page) => { cursor = page.nextCursor })` has
+        // settled — and published `cursor` — by the time the iteration ends, so
+        // parallel iterations would race exactly as they would over
+        // `cursor = await run(item, cursor)`. (#1724)
+        const isNested =
+          inNestedFunction ||
+          (!isRoot &&
+            (node.type === AST_NODE_TYPES.FunctionDeclaration ||
+              node.type === AST_NODE_TYPES.FunctionExpression ||
+              node.type === AST_NODE_TYPES.ArrowFunctionExpression));
+
         if (
-          !isRoot &&
-          (node.type === AST_NODE_TYPES.FunctionDeclaration ||
-            node.type === AST_NODE_TYPES.FunctionExpression ||
-            node.type === AST_NODE_TYPES.ArrowFunctionExpression)
+          node.type === AST_NODE_TYPES.AssignmentExpression &&
+          writesOuterBinding(node.left)
         ) {
+          foundOuterWrite = true;
           return;
         }
 
-        if (node.type === AST_NODE_TYPES.AssignmentExpression) {
-          // Collect identifiers on the left-hand side
-          const lhsIds = new Set<string>();
-          collectIdentifiers(node.left, lhsIds, false);
-          for (const id of lhsIds) {
-            if (!loopLocalVars.has(id)) {
-              foundOuterWrite = true;
-              return;
-            }
-          }
+        // An increment counts only inside a callback. At the loop-body level it
+        // is the loop's own step counter — `while (i < n) { await f(items[i]);
+        // i++; }` walks the iteration space, and the `Promise.all(items.map(
+        // ...))` rewrite subsumes it — whereas a callback steps no iteration:
+        // `count++` there folds what the awaited work produced into a binding
+        // the whole loop shares, carrying the same dependency as the compound
+        // assignment it stands in for. (#1724)
+        if (
+          isNested &&
+          node.type === AST_NODE_TYPES.UpdateExpression &&
+          writesOuterBinding(node.argument)
+        ) {
+          foundOuterWrite = true;
+          return;
         }
 
         for (const key in node) {
@@ -466,17 +580,17 @@ export const parallelizeLoopAwaits = createRule<Options, MessageIds>({
             if (Array.isArray(child)) {
               for (const item of child) {
                 if (item && typeof item === 'object' && 'type' in item) {
-                  findOuterWrites(item as TSESTree.Node, false);
+                  findOuterWrites(item as TSESTree.Node, false, isNested);
                 }
               }
             } else if ('type' in (child as object)) {
-              findOuterWrites(child as TSESTree.Node, false);
+              findOuterWrites(child as TSESTree.Node, false, isNested);
             }
           }
         }
       }
 
-      findOuterWrites(body, true);
+      findOuterWrites(body, true, false);
       if (foundOuterWrite) return true;
 
       // Pattern 2: a variable declared by an await is used as arg to another await.

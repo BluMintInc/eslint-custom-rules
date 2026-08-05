@@ -94,6 +94,16 @@ while (true) {
   cursor = nextCursor;
 }
 
+// The same dependency written from inside a callback the awaited call invokes:
+// the write has landed by the time the await settles, so the iterations share
+// `pageCursor` exactly as they would if it were assigned directly
+let pageCursor = null;
+for (const item of items) {
+  await runner.execute(item, async (page) => {
+    pageCursor = page.nextCursor;
+  });
+}
+
 // Per-iteration error handling with try/catch
 for (const item of items) {
   try {
@@ -186,7 +196,7 @@ The rule does **not** flag the following patterns:
 | Rate-limiting calls (`sleep`, `delay`, `throttle`, `rateLimit`) | Any identifier the loop body references exactly matching a rate-limited pattern (case-insensitive), under the same property-key boundary |
 | Per-iteration `try/catch` wrapping the `await` | Detected via AST parent chain |
 | `break`, `continue`, or `return` inside the loop body | Detected syntactically (does not cross nested function boundaries) |
-| Accumulator / pagination patterns: a variable declared outside the loop is assigned inside the loop body | Detected via assignment target analysis |
+| Accumulator / pagination patterns: a variable declared outside the loop is assigned inside the loop body, including from inside a callback the body hands to the awaited call | Detected via assignment target analysis, which resolves a member write to the ROOT of its chain (`box.value = 1` writes `box`) |
 | Cross-iteration await dependency: result of one `await` is passed to a later `await` in the same loop body | Detected via data-flow analysis on identifier names |
 | `await` inside a nested async function within the loop body | Not flagged; the `await` belongs to the inner function's async scope |
 | Test files (`*.test.*`, `*.spec.*`, and anything under `__tests__/` or `__mocks__/`) | Filename check, controlled by the [`ignoreTestFiles`](#options) option |
@@ -212,6 +222,12 @@ This also keeps an inner loop's exemption from being circumvented: a `for await.
 ### What counts as a reference
 
 The coordinator and rate-limit barriers ask what names the loop body REFERENCES, so a name that binds nothing must not answer. In `await send({ lock: true, id: item.id })` the word `lock` is a field label in a payload, not the mutex the pattern list is looking for, and letting it match would exempt the loop on the strength of a string. Non-computed property keys are therefore skipped. Shorthand keeps its say because `{ lock }` carries the identifier as the property's VALUE — a real read of the surrounding scope — and so does a computed key, because `{ [lock]: true }` is an expression. Member access is untouched: `await this.batch.commit()` still names `batch`.
+
+### Where a write counts
+
+The barriers do not all draw the nested-function boundary in the same place, because they ask different questions. An `await` inside a callback belongs to that callback's async scope, and a `break` there governs that callback's control flow, so those searches stop at the boundary. A WRITE does not: the callback a loop body hands to the awaited call runs before that `await` settles, so `await run(item, async (page) => { cursor = page.nextCursor; })` publishes `cursor` within the iteration, exactly as `cursor = await run(item, cursor)` does. The write scan therefore crosses into callbacks, and so does the search for the iteration-local names it is measured against — a name declared inside a callback, or bound by one of its parameters, belongs to that invocation and couples nothing.
+
+An increment counts as a write only inside a callback. At the loop-body level it is the loop's own step counter: `while (i < n) { await f(items[i]); i++; }` walks the iteration space, and the `Promise.all(items.map(...))` rewrite subsumes it. A callback steps no iteration, so `count++` there folds what the awaited work produced into a binding the whole loop shares.
 
 Test files get the same treatment for the reason accepted in [#1395](https://github.com/BluMintInc/eslint-custom-rules/issues/1395) for `parallelize-async-operations`: a suite serves no requests and is not latency-critical, so the latency rationale does not apply, while its loops routinely replay one entrypoint so each call observes the state the previous call stored — usually in a mock closure the loop body never names. Set `ignoreTestFiles: false` to enforce the rule inside test files anyway.
 
