@@ -653,6 +653,60 @@ ruleTesterTs.run('parallelize-loop-awaits', parallelizeLoopAwaits, {
       }
       `,
     },
+
+    // Locality is a question about SCOPE, not about spelling. The body writes
+    // the outer `cursor`, so the iterations share a pagination cursor; an
+    // unrelated callback whose PARAMETER reuses the identifier binds its own
+    // `cursor` and says nothing about that dependency. (#1725)
+    {
+      filename: 'src/paginate.ts',
+      code: `
+      async function shadowedByCallbackParam(items, runner) {
+        let cursor;
+        for (const item of items) {
+          cursor = compute(item);
+          await runner.execute(item);
+          await runner.flush(item);
+          runner.on(async (cursor) => { log(cursor); });
+        }
+      }
+      `,
+    },
+    // The same collision spelled as a nested DECLARATION rather than a
+    // parameter. (#1725)
+    {
+      filename: 'src/tally.ts',
+      code: `
+      async function shadowedByCallbackLocal(items, runner) {
+        let total;
+        for (const item of items) {
+          total = total + item.n;
+          await runner.execute(item);
+          await runner.flush(item);
+          runner.on(async () => { let total = 0; return total; });
+        }
+      }
+      `,
+    },
+    // A function declaration shadows exactly as an arrow does. (#1725)
+    {
+      filename: 'src/paginate.ts',
+      code: `
+      async function shadowedByFunctionDeclaration(items, runner) {
+        let cursor;
+        for (const item of items) {
+          cursor = compute(item);
+          await runner.execute(item);
+          await runner.flush(item);
+          function handle(cursor) {
+            let total = 0;
+            log(cursor, total);
+          }
+          runner.on(handle);
+        }
+      }
+      `,
+    },
   ],
 
   invalid: [
