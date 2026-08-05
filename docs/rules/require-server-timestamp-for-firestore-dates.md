@@ -39,6 +39,15 @@ required. It:
    object literal whose declared type references one of those names — via a
    variable annotation, an `as`/`satisfies` cast, or a typed function return.
 3. Also looks through `as any` / `as Timestamp` casts applied to `new Date()`.
+4. Sees through assertion wrappers on the object literal itself. `as const`,
+   `satisfies`, and chained assertions are runtime no-ops, so
+   `{ createdAt: new Date() } as const` still stamps the document with the
+   client clock and is still flagged. This matters because
+   `enforce-object-literal-as-const` appends `as const` automatically via
+   `--fix`, so the wrapper appears without anyone writing it.
+
+A literal reached by both an annotation and a Firestore-typed `as` cast is
+reported once, not once per entry point.
 
 The rule is conservative by design: it only fires when a Firestore type
 annotation is visible in the same file. No false positives for objects that
@@ -69,6 +78,19 @@ function buildToken(): TokenMetadata<'offchain', Date> {
     createdAt: new Date(), // flagged
   };
 }
+
+// `as const` is a runtime no-op — it does not hide the violation
+const draft: TokenMetadata<'offchain', Date> = {
+  id: tokenEncoded,
+  createdAt: new Date(), // flagged
+} as const;
+
+// ...including on a concise arrow body, the shape `enforce-object-literal-as-const`
+// produces automatically
+const buildAdvancement = (): Advancement<Date> => ({
+  id,
+  createdAt: new Date(), // flagged
+} as const);
 ```
 
 ### Examples of correct code
@@ -89,6 +111,10 @@ await updateDraftDoc(({ firebaseFirestoreModule }) => ({
 
 // new Date() is fine when not inside a Firestore-typed object
 const now = new Date(); // ok — not in a Firestore-typed object
+
+// Seeing through `as const` does not widen the rule: an object with no
+// Firestore type connection stays untouched
+const uiDefaults = { id: 'a', createdAt: new Date() } as const; // ok
 ```
 
 ## Options
