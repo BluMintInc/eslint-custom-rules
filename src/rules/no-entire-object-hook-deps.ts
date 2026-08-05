@@ -4,7 +4,12 @@ import {
   TSESTree,
 } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
-import { TypeFlags, isArrayTypeNode, isTupleTypeNode } from 'typescript';
+import {
+  SymbolFlags,
+  TypeFlags,
+  isArrayTypeNode,
+  isTupleTypeNode,
+} from 'typescript';
 import type { TypeChecker, Node } from 'typescript';
 
 type MessageIds = 'avoidEntireObject' | 'removeUnusedDependency';
@@ -161,6 +166,67 @@ function isArrayOrPrimitive(
   }
 }
 
+/**
+ * The type-checker handles `getObjectUsagesInHook` needs. Absent when the
+ * consumer has no `parserOptions.project`, in which case every decision falls
+ * back to the syntactic heuristics below.
+ */
+type TypeInfo = {
+  checker: TypeChecker;
+  nodeMap: { get(node: TSESTree.Node): Node | undefined };
+};
+
+/**
+ * Whether a member access reads a method — a function declared as a member of
+ * a class or interface, which lives on the prototype.
+ *
+ * why: such a reference is one shared value across every instance of the type
+ * (`new Set().has === new Set().has`, `f1.call === f2.call`). Narrowing a
+ * dependency from `set` to `set.has` therefore pins a constant: the hook never
+ * invalidates again and serves a stale value forever, so the whole object has
+ * to stay the dependency. This is the checker-driven generalisation of the
+ * `ARRAY_METHODS`/`STRING_METHODS` name lists, which recognise the identical
+ * hazard for two built-ins only; `Map`, `Set`, `Promise`, `Date`, `Intl.*` and
+ * every user-defined class come for free.
+ *
+ * The discriminator is how the member is *declared*, not merely "the type is
+ * callable". A function-valued data property (`{ getName?: () => string }`, or
+ * a class field holding an arrow function) is per-instance state: it genuinely
+ * changes when the object carrying it is rebuilt, so narrowing to it is correct
+ * and stays allowed.
+ *
+ * The question is asked of the symbol's flags rather than its declarations'
+ * `SyntaxKind`, because a rule must survive a version skew between the
+ * TypeScript this package resolves and the one the consumer's parser built the
+ * program with. `SyntaxKind` is renumbered whenever a kind is inserted —
+ * `MethodSignature` is 170 under 5.0 and 174 under 5.9 — so a `ts.isMethodX`
+ * guard imported here silently answers `false` for every node of a consumer on
+ * a different minor, making the carve-out a no-op in exactly the place it
+ * matters. `SymbolFlags` is an append-only bit set (`Method` has been 8192
+ * throughout), so the flag test holds across versions.
+ */
+function isMethodMember(
+  checker: TypeChecker,
+  esTreeNode: TSESTree.Node,
+  nodeMap: { get(node: TSESTree.Node): Node | undefined },
+): boolean {
+  try {
+    const tsNode = nodeMap.get(esTreeNode);
+    if (!tsNode) return false;
+
+    // why: an unresolved member (an `any` receiver, a missing type) yields no
+    // symbol, so the check stays inert rather than guessing — matching the
+    // conservative stance `isArrayOrPrimitive` takes on Any/Unknown.
+    const symbol = checker.getSymbolAtLocation(tsNode);
+    if (!symbol) return false;
+
+    return (symbol.flags & SymbolFlags.Method) !== 0;
+  } catch (error) {
+    // A type-checker failure must not change what the rule reports.
+    return false;
+  }
+}
+
 type PathSegment = {
   /** Rendered link text: an identifier name (`foo`) or bracket key (`[0]`, `["key"]`). */
   text: string;
@@ -259,6 +325,7 @@ function callsCorrespondingSetter(
 function getObjectUsagesInHook(
   hookBody: TSESTree.Node,
   objectName: string,
+  typeInfo?: TypeInfo,
 ): { usages: Set<string>; needsEntireObject: boolean; notUsed: boolean } {
   const usages = new Map<string, number>(); // Track usage and its position
   // why: derived dependency paths (first-optional intermediate, array base)
@@ -387,11 +454,19 @@ function getObjectUsagesInHook(
           return null;
         }
 
-        // Check for array/string methods - these indicate usage of the entire array/string
-        if (
-          memberExpr.property.name &&
+        // Check for a member that cannot serve as a narrowed dependency: a
+        // built-in array/string method by name, or — when type information is
+        // available — any method of a class or interface. Both denote usage of
+        // the entire receiver, because the member itself is a prototype-shared
+        // reference rather than per-instance state.
+        const isBuiltInWholeObjectMethod =
+          !!memberExpr.property.name &&
           (ARRAY_METHODS.has(memberExpr.property.name) ||
-            STRING_METHODS.has(memberExpr.property.name))
+            STRING_METHODS.has(memberExpr.property.name));
+        if (
+          isBuiltInWholeObjectMethod ||
+          (typeInfo !== undefined &&
+            isMethodMember(typeInfo.checker, memberExpr, typeInfo.nodeMap))
         ) {
           const methodTarget = unwrapExpression(memberExpr.object);
           if (methodTarget.type === AST_NODE_TYPES.MemberExpression) {
@@ -816,6 +891,23 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
       // throw new Error('You have to enable the `project` setting in parser options to use this rule');
     }
 
+    // why: building the checker is the expensive half of a typed lint, so the
+    // handles are resolved once per file and shared by every type-driven check
+    // rather than re-fetched per dependency.
+    let typeInfo: TypeInfo | undefined;
+    function getTypeInfo(): TypeInfo | undefined {
+      if (!hasFullTypeChecking || !parserServices) {
+        return undefined;
+      }
+      if (!typeInfo) {
+        typeInfo = {
+          checker: parserServices.program.getTypeChecker(),
+          nodeMap: parserServices.esTreeNodeToTSNodeMap,
+        };
+      }
+      return typeInfo;
+    }
+
     const sourceCode = context.getSourceCode();
 
     // why: scanning every comment once per file rather than once per hook call
@@ -912,18 +1004,26 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
             const objectName = unwrappedElement.name;
 
             // Skip type checking if we don't have TypeScript services
-            if (hasFullTypeChecking && parserServices) {
-              const checker = parserServices.program.getTypeChecker();
-              const nodeMap = parserServices.esTreeNodeToTSNodeMap;
-
+            const dependencyTypeInfo = getTypeInfo();
+            if (dependencyTypeInfo) {
               // Skip if the dependency is an array or primitive type
-              if (isArrayOrPrimitive(checker, unwrappedElement, nodeMap)) {
+              if (
+                isArrayOrPrimitive(
+                  dependencyTypeInfo.checker,
+                  unwrappedElement,
+                  dependencyTypeInfo.nodeMap,
+                )
+              ) {
                 return;
               }
             }
             // For testing without TypeScript services, we'll assume all identifiers are objects
 
-            const result = getObjectUsagesInHook(callbackBody, objectName);
+            const result = getObjectUsagesInHook(
+              callbackBody,
+              objectName,
+              dependencyTypeInfo,
+            );
 
             // If the object is not used at all, suggest removing it
             if (result.notUsed) {
