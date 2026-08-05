@@ -7,6 +7,111 @@ type MessageIds = 'readsAfterWrites';
 const READ_OPERATIONS = new Set(['get']);
 const WRITE_OPERATIONS = new Set(['set', 'update', 'delete']);
 
+/**
+ * Helpers that validate a property key and hand back that very key, so a call
+ * to one names exactly the method its argument names. `enforce-assert-safe-object-key`
+ * is `error` in the same recommended config and its fixer wraps computed keys in
+ * `assertSafe(...)`, which means this shape is machine-generated from ordinary
+ * `transaction[methodName]` code rather than hand-written.
+ */
+const KEY_ASSERTION_HELPERS = new Set(['assertSafe']);
+
+/**
+ * How far a computed method key could be narrowed.
+ *
+ * `unresolved` is the answer for a key whose run-time value is unknown, which is
+ * what drives the conservative read-and-write verdict: the call could be `get`,
+ * so a preceding write must still be flagged.
+ *
+ * `opaque` marks the shapes this rule has never classified (member expressions,
+ * ternaries, templates, non-string literals). They stay silent so the fix adds
+ * no report surface beyond the wrappers it exists to see through.
+ */
+type ResolvedKey =
+  | { kind: 'name'; name: string }
+  | { kind: 'unresolved' }
+  | { kind: 'opaque' };
+
+/**
+ * Strips wrappers that erase at compile time or resolve to the key itself.
+ * `k as string`, `k satisfies string`, `<string>k` and `k!` emit nothing, and
+ * `await k` yields the same key, so none of them changes which method the
+ * lookup selects.
+ *
+ * The peel repeats because the wrappers nest: `(k as any)!`.
+ */
+function unwrapErasedKey(node: TSESTree.Node): TSESTree.Node {
+  let current = node;
+  for (;;) {
+    switch (current.type) {
+      case AST_NODE_TYPES.TSAsExpression:
+      case AST_NODE_TYPES.TSSatisfiesExpression:
+      case AST_NODE_TYPES.TSNonNullExpression:
+      case AST_NODE_TYPES.TSTypeAssertion:
+        current = current.expression;
+        break;
+      case AST_NODE_TYPES.AwaitExpression:
+        current = current.argument;
+        break;
+      default:
+        return current;
+    }
+  }
+}
+
+/** True for `assertSafe(k)` and for a namespaced `utils.assertSafe(k)`. */
+function isKeyAssertionCall(node: TSESTree.CallExpression): boolean {
+  const { callee } = node;
+  if (callee.type === AST_NODE_TYPES.Identifier) {
+    return KEY_ASSERTION_HELPERS.has(callee.name);
+  }
+  return (
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    !callee.computed &&
+    callee.property.type === AST_NODE_TYPES.Identifier &&
+    KEY_ASSERTION_HELPERS.has(callee.property.name)
+  );
+}
+
+/**
+ * Resolves the method a computed access selects: `transaction[<key>]()`.
+ *
+ * A key assertion returns its argument untouched, so reading through one is
+ * information-free — `transaction[assertSafe(k)]` must land on exactly the
+ * verdict `transaction[k]` lands on, definite name and all. Every other call
+ * may return something other than what it was handed, so its argument proves
+ * nothing about the method and the key counts as unresolved. That keeps the
+ * safety net on for any wrapper (`transaction[String(k)]`) while never minting
+ * a definite read/write verdict out of a call whose result is unknown.
+ */
+function resolveComputedKey(property: TSESTree.Node): ResolvedKey {
+  let current = unwrapErasedKey(property);
+  for (;;) {
+    if (
+      current.type === AST_NODE_TYPES.Literal &&
+      typeof current.value === 'string'
+    ) {
+      return { kind: 'name', name: current.value };
+    }
+    if (current.type === AST_NODE_TYPES.Identifier) {
+      return { kind: 'unresolved' };
+    }
+    if (current.type === AST_NODE_TYPES.CallExpression) {
+      const [argument] = current.arguments;
+      if (
+        !isKeyAssertionCall(current) ||
+        current.arguments.length !== 1 ||
+        argument.type === AST_NODE_TYPES.SpreadElement
+      ) {
+        return { kind: 'unresolved' };
+      }
+      current = unwrapErasedKey(argument);
+      continue;
+    }
+    return { kind: 'opaque' };
+  }
+}
+
 export const firestoreTransactionReadsBeforeWrites = createRule<[], MessageIds>(
   {
     name: 'firestore-transaction-reads-before-writes',
@@ -155,21 +260,19 @@ export const firestoreTransactionReadsBeforeWrites = createRule<[], MessageIds>(
         if (property.type === AST_NODE_TYPES.Identifier && !callee.computed) {
           // Normal property access: transaction.get()
           methodName = property.name;
-        } else if (
-          callee.computed &&
-          property.type === AST_NODE_TYPES.Literal &&
-          typeof property.value === 'string'
-        ) {
-          // Computed property access with string literal: transaction['get']
-          methodName = property.value;
-        } else if (
-          callee.computed &&
-          property.type === AST_NODE_TYPES.Identifier
-        ) {
-          // Computed property access with variable: transaction[methodName]
-          // This is tricky to analyze statically. For now, we'll be conservative
-          // and assume it could be any method. We'll handle this in the caller.
-          return { isRead: true, isWrite: true, methodName: null }; // Could be either - let caller decide
+        } else if (callee.computed) {
+          // Computed property access: transaction['get'], transaction[methodName],
+          // transaction[assertSafe(methodName)]. A key that survives resolution
+          // as a definite string names the method; one that cannot be resolved
+          // could be any method, so it is answered conservatively and the caller
+          // decides.
+          const resolved = resolveComputedKey(property);
+          if (resolved.kind === 'unresolved') {
+            return { isRead: true, isWrite: true, methodName: null };
+          }
+          if (resolved.kind === 'name') {
+            methodName = resolved.name;
+          }
         }
 
         if (!methodName) {
@@ -202,7 +305,14 @@ export const firestoreTransactionReadsBeforeWrites = createRule<[], MessageIds>(
           if (callee.property.type === AST_NODE_TYPES.Identifier) {
             return `${objectName}[${callee.property.name}]`;
           }
-          return `${objectName}[computed]`;
+          // A wrapped key such as assertSafe(methodName) is quoted verbatim so
+          // the message names text that exists in the file and can be searched
+          // for, rather than the resolved key the reader never wrote.
+          const keyText = context
+            .getSourceCode()
+            .getText(callee.property)
+            .replace(/\s+/g, ' ');
+          return `${objectName}[${keyText}]`;
         }
 
         if (callee.property.type === AST_NODE_TYPES.Identifier) {

@@ -465,6 +465,93 @@ ruleTesterTs.run(
         });
         `,
       },
+      // Valid: Computed read wrapped in assertSafe still runs before the write
+      {
+        code: `
+        const transactionResult = await firestore.runTransaction(async (transaction) => {
+          const methodName = 'get';
+          const docSnapshot = await transaction[assertSafe(methodName)](docRef);
+
+          transaction.set(docRef, { status: 'processing' });
+
+          return docSnapshot.data();
+        });
+        `,
+      },
+      // Valid: Wrapped string-literal read before the write
+      {
+        code: `
+        const transactionResult = await firestore.runTransaction(async (transaction) => {
+          const docSnapshot = await transaction[assertSafe('get')](docRef);
+
+          transaction.set(docRef, { status: 'processing' });
+
+          return docSnapshot.data();
+        });
+        `,
+      },
+      // Valid: A wrapped key resolving to a write is a write, not a read
+      {
+        code: `
+        const transactionResult = await firestore.runTransaction(async (transaction) => {
+          transaction[assertSafe('set')](docRef, { status: 'processing' });
+          transaction[assertSafe('update')](otherDocRef, { lastUpdated: Date.now() });
+
+          return true;
+        });
+        `,
+      },
+      // Valid: Wrapped read before a wrapped write
+      {
+        code: `
+        const transactionResult = await firestore.runTransaction(async (transaction) => {
+          const docSnapshot = await transaction[assertSafe('get')](docRef);
+
+          transaction[assertSafe('set')](docRef, { status: 'processing' });
+
+          return docSnapshot.data();
+        });
+        `,
+      },
+      // Valid: Wrapped key on a receiver that is not the transaction
+      {
+        code: `
+        const transactionResult = await firestore.runTransaction(async (transaction) => {
+          transaction.set(docRef, { status: 'processing' });
+
+          const methodName = 'get';
+          const cached = await cache[assertSafe(methodName)](otherDocRef);
+
+          return cached;
+        });
+        `,
+      },
+      // Valid: Unwrapping assertSafe is information-free, so a member-expression
+      // key keeps the same verdict wrapped as it has bare - neither is classified
+      {
+        code: `
+        const transactionResult = await firestore.runTransaction(async (transaction) => {
+          transaction.set(docRef, { status: 'processing' });
+
+          const snapshot = await transaction[assertSafe(operations.read)](otherDocRef);
+
+          return snapshot.data();
+        });
+        `,
+      },
+      // Valid: Erased type wrapper on a read that still precedes the write
+      {
+        code: `
+        const transactionResult = await firestore.runTransaction(async (transaction) => {
+          const methodName = 'get';
+          const docSnapshot = await transaction[methodName as string](docRef);
+
+          transaction.set(docRef, { status: 'processing' });
+
+          return docSnapshot.data();
+        });
+        `,
+      },
     ],
     invalid: [
       // Invalid: Read after write
@@ -1077,6 +1164,121 @@ ruleTesterTs.run(
         `,
         errors: [
           readsAfterWritesError('transaction[methodName]', 'transaction.set'),
+        ],
+      },
+      // Invalid: Computed read after write with the key wrapped in assertSafe,
+      // the exact shape enforce-assert-safe-object-key's fixer emits
+      {
+        code: `
+        const transactionResult = await firestore.runTransaction(async (transaction) => {
+          transaction.set(docRef, { status: 'processing' });
+
+          const methodName = 'get';
+          const snapshot = await transaction[assertSafe(methodName)](otherDocRef);
+
+          return snapshot.data();
+        });
+        `,
+        errors: [
+          readsAfterWritesError(
+            'transaction[assertSafe(methodName)]',
+            'transaction.set',
+          ),
+        ],
+      },
+      // Invalid: Wrapped string-literal read after write
+      {
+        code: `
+        const transactionResult = await firestore.runTransaction(async (transaction) => {
+          transaction.set(docRef, { status: 'processing' });
+
+          const snapshot = await transaction[assertSafe('get')](otherDocRef);
+
+          return snapshot.data();
+        });
+        `,
+        errors: [
+          readsAfterWritesError(
+            "transaction[assertSafe('get')]",
+            'transaction.set',
+          ),
+        ],
+      },
+      // Invalid: Nested wrappers around the key
+      {
+        code: `
+        const transactionResult = await firestore.runTransaction(async (transaction) => {
+          transaction.set(docRef, { status: 'processing' });
+
+          const methodName = 'get';
+          const snapshot = await transaction[assertSafe(assertSafe(methodName as string))](otherDocRef);
+
+          return snapshot.data();
+        });
+        `,
+        errors: [
+          readsAfterWritesError(
+            'transaction[assertSafe(assertSafe(methodName as string))]',
+            'transaction.set',
+          ),
+        ],
+      },
+      // Invalid: A call wrapper that is not a key assertion leaves the key
+      // unresolved, which is still an unknown method after a write
+      {
+        code: `
+        const transactionResult = await firestore.runTransaction(async (transaction) => {
+          transaction.set(docRef, { status: 'processing' });
+
+          const methodName = 'get';
+          const snapshot = await transaction[String(methodName)](otherDocRef);
+
+          return snapshot.data();
+        });
+        `,
+        errors: [
+          readsAfterWritesError(
+            'transaction[String(methodName)]',
+            'transaction.set',
+          ),
+        ],
+      },
+      // Invalid: Erased type wrapper on the key
+      {
+        code: `
+        const transactionResult = await firestore.runTransaction(async (transaction) => {
+          transaction.set(docRef, { status: 'processing' });
+
+          const methodName = 'get';
+          const snapshot = await transaction[methodName as string](otherDocRef);
+
+          return snapshot.data();
+        });
+        `,
+        errors: [
+          readsAfterWritesError(
+            'transaction[methodName as string]',
+            'transaction.set',
+          ),
+        ],
+      },
+      // Invalid: A wrapped key resolving to a write registers that write, so a
+      // later plain read is caught
+      {
+        code: `
+        const transactionResult = await firestore.runTransaction(async (transaction) => {
+          transaction[assertSafe('set')](docRef, { status: 'processing' });
+
+          const snapshot = await transaction.get(otherDocRef);
+
+          return snapshot.data();
+        });
+        `,
+        errors: [
+          readsAfterWritesError(
+            'transaction.get',
+            "transaction[assertSafe('set')]",
+          ),
         ],
       },
     ],
