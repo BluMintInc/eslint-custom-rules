@@ -240,12 +240,15 @@ export const extractGlobalConstants: TSESLint.RuleModule<
         }
       },
       FunctionDeclaration(node: TSESTree.FunctionDeclaration) {
-        if (
-          node.parent &&
-          (node.parent.type === 'FunctionDeclaration' ||
-            node.parent.type === 'FunctionExpression' ||
-            node.parent.type === 'ArrowFunctionExpression')
-        ) {
+        /**
+         * The enclosing function, not the immediate parent. A
+         * FunctionDeclaration is a Statement, so its parent is always a
+         * statement container — Program, BlockStatement, StaticBlock,
+         * SwitchCase, an export, an IfStatement. It is never a direct child of
+         * a function node, which made the previous `node.parent.type` check
+         * unsatisfiable and this whole branch dead.
+         */
+        if (node.parent && isInsideFunction(node.parent)) {
           const scope = context.getScope();
           const hasDependencies = ASTHelpers.blockIncludesIdentifier(node.body);
           if (!hasDependencies && scope.type === 'function') {
