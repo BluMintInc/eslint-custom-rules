@@ -1,11 +1,17 @@
+import { Linter, Rule } from 'eslint';
 import { ruleTesterJsx, ruleTesterTs } from '../utils/ruleTester';
 import { noRedundantUseCallbackWrapper } from '../rules/no-redundant-usecallback-wrapper';
+import { useLatestCallback } from '../rules/use-latest-callback';
 
-const redundantMessage = (callbackName: string) =>
-  `useCallback is wrapping memoized callback "${callbackName}", adding a redundant dependency array without improving stability. Pass the hook/context callback directly so React keeps the original stable reference and avoids wrapper allocations and dependency drift.`;
+// The wrapper defaults to `useCallback` because most fixtures use that
+// spelling; the ones asserting the useLatestCallback spelling name it, which is
+// what proves the report identifies the wrapper it actually found rather than
+// describing a `useCallback` that is not in the code.
+const redundantMessage = (callbackName: string, wrapper = 'useCallback') =>
+  `${wrapper} is wrapping memoized callback "${callbackName}", adding a redundant memoization layer without improving stability. Pass the hook/context callback directly so React keeps the original stable reference and avoids wrapper allocations and dependency drift.`;
 
-const redundantError = (callbackName: string) => ({
-  message: redundantMessage(callbackName),
+const redundantError = (callbackName: string, wrapper?: string) => ({
+  message: redundantMessage(callbackName, wrapper),
 });
 
 const valid = [
@@ -400,6 +406,88 @@ function C() {
       { memoizedHookNames: string[] },
     ],
   },
+  // Recognizing useLatestCallback is not a blanket amnesty on the wrapper: the
+  // callback here comes from props, not from a hook, so nothing guarantees its
+  // stability and the wrapper is the only thing providing it. This differs from
+  // the invalid fixtures below by exactly one thing — where the callback comes
+  // from — so it fails if the new spelling is treated as reportable on sight.
+  {
+    code: `import useLatestCallback from 'use-latest-callback';
+
+function C({ onDone }) {
+  const handle = useLatestCallback(() => onDone());
+  return <button onClick={handle}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+  },
+  // A wrapper closing over props and state is doing real work regardless of the
+  // spelling of the wrapper.
+  {
+    code: `import useLatestCallback from 'use-latest-callback';
+
+function C({ userId, onDone }) {
+  const [count, setCount] = React.useState(0);
+  const handle = useLatestCallback(() => {
+    setCount(count + 1);
+    onDone(userId);
+  });
+  return <button onClick={handle}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+  },
+  // Every carve-out the useCallback spelling gets applies to this spelling too:
+  // supplying an argument makes the wrapper non-redundant.
+  {
+    code: `import useLatestCallback from 'use-latest-callback';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C({ username }) {
+  const { signIn } = useAuthSubmit();
+  const handle = useLatestCallback(() => signIn(username));
+  return <button onClick={handle}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+  },
+  // ...as does suppressing the event, which the hand-off cannot preserve.
+  {
+    code: `import useLatestCallback from 'use-latest-callback';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const onClick = useLatestCallback((e) => {
+    e.preventDefault();
+    return signIn();
+  });
+  return <button onClick={onClick}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+  },
+  // ...as does sequencing a second call the delegate does not perform.
+  {
+    code: `import useLatestCallback from 'use-latest-callback';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const onClick = useLatestCallback(() => {
+    signIn();
+    setOpen(true);
+  });
+  return <button onClick={onClick}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+  },
 ];
 
 const invalid = [
@@ -705,6 +793,216 @@ function C() {
     errors: [redundantError('svc.handle')],
     output: null,
   },
+  // useLatestCallback is the same wrapper under a different name, and the same
+  // redundancy: `use-latest-callback` is 'error' in this config and fixable, so
+  // its `--fix` renames every useCallback into this spelling while leaving the
+  // wrapper byte-for-byte intact, and the config mandating it means the spelling
+  // is also written by hand.
+  {
+    code: `import useLatestCallback from 'use-latest-callback';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const handle = useLatestCallback(() => signIn());
+  return <button onClick={handle}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+    errors: [redundantError('signIn', 'useLatestCallback')],
+    output: `import useLatestCallback from 'use-latest-callback';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const handle = signIn;
+  return <button onClick={handle}/>;
+}`,
+  },
+  // Block body, useLatestCallback spelling.
+  {
+    code: `import useLatestCallback from 'use-latest-callback';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const onClick = useLatestCallback(() => {
+    return signIn();
+  });
+  return <button onClick={onClick}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+    errors: [redundantError('signIn', 'useLatestCallback')],
+    output: `import useLatestCallback from 'use-latest-callback';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const onClick = signIn;
+  return <button onClick={onClick}/>;
+}`,
+  },
+  // Direct pass-through of an already stable identifier.
+  {
+    code: `import useLatestCallback from 'use-latest-callback';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const handle = useLatestCallback(signIn);
+  return <button onClick={handle}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+    errors: [redundantError('signIn', 'useLatestCallback')],
+    output: `import useLatestCallback from 'use-latest-callback';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const handle = signIn;
+  return <button onClick={handle}/>;
+}`,
+  },
+  // Direct pass-through of a member on the hook result: reported without a fix,
+  // exactly as the useCallback spelling is.
+  {
+    code: `import useLatestCallback from 'use-latest-callback';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const ctx = useAuthSubmit();
+  const handle = useLatestCallback(ctx.signIn);
+  return <button onClick={handle}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+    errors: [redundantError('ctx.signIn', 'useLatestCallback')],
+    output: null,
+  },
+  // A namespaced hook receiver feeding the new spelling.
+  {
+    code: `import useLatestCallback from 'use-latest-callback';
+import * as hooks from 'src/hooks';
+
+function C() {
+  const svc = hooks.useMyCustomThing();
+  const click = useLatestCallback(() => svc.handle());
+  return <button onClick={click}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+    errors: [redundantError('svc.handle', 'useLatestCallback')],
+    output: null,
+  },
+  // The module's sole export is the hook, so its DEFAULT specifier binds it
+  // under whatever local name the file chose. `use-latest-callback`'s fixer
+  // picks that name with freeImportName and emits `useLatestCallback2` when the
+  // plain name is taken, so the alias is authored by the sibling fixer itself —
+  // matching the bare name would miss every file it collides in.
+  {
+    code: `import useLatestCallback2 from 'use-latest-callback';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+const useLatestCallback = 'not the hook';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const handle = useLatestCallback2(() => signIn());
+  return <button onClick={handle}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+    errors: [redundantError('signIn', 'useLatestCallback2')],
+    output: `import useLatestCallback2 from 'use-latest-callback';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+const useLatestCallback = 'not the hook';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const handle = signIn;
+  return <button onClick={handle}/>;
+}`,
+  },
+  // An arbitrary alias of the default export resolves the same way.
+  {
+    code: `import stableCallback from 'use-latest-callback';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const handle = stableCallback(() => signIn());
+  return <button onClick={handle}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+    errors: [redundantError('signIn', 'stableCallback')],
+    output: `import stableCallback from 'use-latest-callback';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const handle = signIn;
+  return <button onClick={handle}/>;
+}`,
+  },
+  // The named-specifier form of the same hook.
+  {
+    code: `import { useLatestCallback as stable } from 'use-latest-callback';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const handle = stable(() => signIn());
+  return <button onClick={handle}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+    errors: [redundantError('signIn', 'stable')],
+    output: `import { useLatestCallback as stable } from 'use-latest-callback';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const handle = signIn;
+  return <button onClick={handle}/>;
+}`,
+  },
+  // Function-expression wrappers collapse under the new spelling too.
+  {
+    code: `import useLatestCallback from 'use-latest-callback';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const onClick = useLatestCallback(function () {
+    signIn();
+  });
+  return <button onClick={onClick}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+    errors: [redundantError('signIn', 'useLatestCallback')],
+    output: `import useLatestCallback from 'use-latest-callback';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const onClick = signIn;
+  return <button onClick={onClick}/>;
+}`,
+  },
 ];
 
 ruleTesterJsx.run(
@@ -732,3 +1030,121 @@ function C(){
     invalid: [],
   },
 );
+
+/**
+ * `use-latest-callback` is 'error' in the same recommended config and fixable,
+ * so its `--fix` rewrites `useCallback(fn, deps)` into `useLatestCallback(fn)`.
+ * The redundant wrapper survives that rewrite byte-for-byte, so a rule matching
+ * only the literal name `useCallback` goes blind on its own config's output.
+ *
+ * Every `RuleTester` case above runs one rule at a time and is structurally
+ * incapable of seeing that, which is why this composition is asserted directly.
+ */
+describe('composition with use-latest-callback', () => {
+  const OPTIONS = { memoizedHookNames: ['useAuthSubmit'] };
+
+  const makeLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      'test/no-redundant-usecallback-wrapper',
+      noRedundantUseCallbackWrapper as unknown as Rule.RuleModule,
+    );
+    linter.defineRule(
+      'test/use-latest-callback',
+      useLatestCallback as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const baseConfig = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2020 as const,
+      sourceType: 'module' as const,
+      ecmaFeatures: { jsx: true },
+    },
+  };
+
+  const SOURCE = `import { useCallback } from 'react';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+export function C() {
+  const { signIn } = useAuthSubmit();
+  const handle = useCallback(() => signIn(), [signIn]);
+  return handle;
+}`;
+
+  it('reports the wrapper the sibling fixer renames out of view', () => {
+    const linter = makeLinter();
+    const { output } = linter.verifyAndFix(
+      SOURCE,
+      {
+        ...baseConfig,
+        rules: { 'test/use-latest-callback': 'error' as const },
+      },
+      'C.tsx',
+    );
+
+    // Without this the assertion below is vacuous: an unrun sibling fixer
+    // leaves the `useCallback` spelling, which the rule always reported.
+    expect(output).toContain('useLatestCallback(() => signIn())');
+    expect(output).not.toContain('useCallback(');
+
+    const messages = linter.verify(
+      output,
+      {
+        ...baseConfig,
+        rules: {
+          'test/no-redundant-usecallback-wrapper': ['error', OPTIONS] as const,
+        },
+      },
+      'C.tsx',
+    );
+
+    expect(messages.map((message) => message.messageId)).toEqual([
+      'redundantWrapper',
+    ]);
+  });
+
+  it('collapses the wrapper when both rules fix, and the result settles', () => {
+    const linter = makeLinter();
+    const config = {
+      ...baseConfig,
+      rules: {
+        'test/use-latest-callback': 'error' as const,
+        'test/no-redundant-usecallback-wrapper': ['error', OPTIONS] as const,
+      },
+    };
+    const { output } = linter.verifyAndFix(SOURCE, config, 'C.tsx');
+
+    expect(output).toContain('const handle = signIn;');
+    expect(linter.verify(output, config, 'C.tsx')).toEqual([]);
+  });
+
+  it('leaves a wrapper the sibling produced around an unstable callback', () => {
+    const linter = makeLinter();
+    const source = `import { useCallback } from 'react';
+
+export function C({ onDone }) {
+  const handle = useCallback(() => onDone(), [onDone]);
+  return handle;
+}`;
+    const config = {
+      ...baseConfig,
+      rules: {
+        'test/use-latest-callback': 'error' as const,
+        'test/no-redundant-usecallback-wrapper': ['error', OPTIONS] as const,
+      },
+    };
+    const { output } = linter.verifyAndFix(source, config, 'C.tsx');
+
+    // The wrapper is what makes a prop callback stable, so recognizing the new
+    // spelling must not collapse it.
+    expect(output).toContain('useLatestCallback(() => onDone())');
+  });
+});

@@ -10,6 +10,9 @@ type Options = [
 
 type MessageIds = 'redundantWrapper';
 
+const LATEST_CALLBACK_MODULE = 'use-latest-callback';
+const LATEST_CALLBACK_HOOK = 'useLatestCallback';
+
 function isHookLikeName(name: string): boolean {
   return name.startsWith('use');
 }
@@ -131,8 +134,11 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
       },
     ],
     messages: {
+      // The wrapper is named rather than hardcoded: the rule reports
+      // `useLatestCallback` too, which has no dependency array, so a message
+      // asserting one would describe code the reader cannot find.
       redundantWrapper:
-        'useCallback is wrapping memoized callback "{{callbackName}}", adding a redundant dependency array without improving stability. Pass the hook/context callback directly so React keeps the original stable reference and avoids wrapper allocations and dependency drift.',
+        '{{wrapper}} is wrapping memoized callback "{{callbackName}}", adding a redundant memoization layer without improving stability. Pass the hook/context callback directly so React keeps the original stable reference and avoids wrapper allocations and dependency drift.',
     },
   },
   defaultOptions: [{}],
@@ -142,11 +148,71 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
     const assumeAllUseAreMemoized = option.assumeAllUseAreMemoized === true;
     const sourceCode = context.sourceCode;
 
+    // Every callee that memoizes the callback handed to it. `useLatestCallback`
+    // belongs here because `use-latest-callback` — 'error' in the same
+    // recommended config, and fixable — rewrites every `useCallback(fn, deps)`
+    // into `useLatestCallback(fn)`. The wrapper it produces is the very
+    // construct this rule objects to, still allocating a fresh arrow around an
+    // already stable callback, so without this entry one `eslint --fix` renames
+    // the violation out of view while leaving it byte-for-byte intact — and the
+    // config mandating that spelling means it is also written by hand (#1726).
+    const wrapperNames = new Set(['useCallback', LATEST_CALLBACK_HOOK]);
+
+    /**
+     * The wrapper's name if this callee is one, else null. Reading the name
+     * rather than a boolean lets the report say which wrapper it found, since
+     * the local binding need not be spelled `useLatestCallback` at all.
+     */
+    const wrapperNameOf = (
+      callee: TSESTree.LeftHandSideExpression,
+    ): string | null => {
+      if (callee.type === AST_NODE_TYPES.Identifier) {
+        return wrapperNames.has(callee.name) ? callee.name : null;
+      }
+      // Namespaced spelling, e.g. React.useCallback
+      if (
+        callee.type === AST_NODE_TYPES.MemberExpression &&
+        !callee.computed &&
+        callee.property.type === AST_NODE_TYPES.Identifier
+      ) {
+        return wrapperNames.has(callee.property.name)
+          ? callee.property.name
+          : null;
+      }
+      return null;
+    };
+
     // Track identifiers coming from hook-like calls
     const hookReturnObjects = new Set<string>(); // variables assigned to a hook call result (object or function)
     const hookReturnProps = new Set<string>(); // properties destructured from a hook call result
 
     return {
+      ImportDeclaration(node) {
+        // The module's sole export is the hook, so its DEFAULT specifier binds
+        // it under whatever local name the file chose — a shape a set of bare
+        // hook names cannot see. `use-latest-callback`'s own fixer picks that
+        // name with `freeImportName`, falling back to `useLatestCallback2` when
+        // `useLatestCallback` is already taken in the file, so the alias is
+        // authored by the sibling fixer rather than being hypothetical.
+        if (
+          node.source.value !== LATEST_CALLBACK_MODULE ||
+          (node.importKind && node.importKind !== 'value')
+        ) {
+          return;
+        }
+        for (const specifier of node.specifiers) {
+          if (
+            specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
+            (specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+              specifier.importKind !== 'type' &&
+              specifier.imported.type === AST_NODE_TYPES.Identifier &&
+              specifier.imported.name === LATEST_CALLBACK_HOOK)
+          ) {
+            wrapperNames.add(specifier.local.name);
+          }
+        }
+      },
+
       VariableDeclarator(node) {
         if (!node.init) return;
         const initCall = unwrapChainExpression<TSESTree.CallExpression>(
@@ -185,20 +251,15 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
       },
 
       CallExpression(node) {
-        // Detect useCallback wrappers (including React.useCallback)
+        // Detect memoization wrappers (including React.useCallback and the
+        // useLatestCallback spelling the config's own fixer produces)
         const calleeNode =
           unwrapChainExpression<TSESTree.LeftHandSideExpression>(
             node.callee as TSESTree.Node,
           );
         if (!calleeNode) return;
-        const isUseCallback =
-          (calleeNode.type === AST_NODE_TYPES.Identifier &&
-            calleeNode.name === 'useCallback') ||
-          (calleeNode.type === AST_NODE_TYPES.MemberExpression &&
-            !calleeNode.computed &&
-            calleeNode.property.type === AST_NODE_TYPES.Identifier &&
-            calleeNode.property.name === 'useCallback');
-        if (isUseCallback && node.arguments.length >= 1) {
+        const wrapper = wrapperNameOf(calleeNode);
+        if (wrapper && node.arguments.length >= 1) {
           const arg = node.arguments[0];
           const unwrappedArg = unwrapChainExpression<TSESTree.Node>(arg);
 
@@ -221,7 +282,10 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
                 context.report({
                   node,
                   messageId: 'redundantWrapper',
-                  data: { callbackName: sourceCode.getText(unwrappedArg) },
+                  data: {
+                    wrapper,
+                    callbackName: sourceCode.getText(unwrappedArg),
+                  },
                   fix: (fixer) => fixer.replaceText(node, replaceText),
                 });
               } else {
@@ -229,7 +293,10 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
                 context.report({
                   node,
                   messageId: 'redundantWrapper',
-                  data: { callbackName: sourceCode.getText(unwrappedArg) },
+                  data: {
+                    wrapper,
+                    callbackName: sourceCode.getText(unwrappedArg),
+                  },
                 });
               }
             }
@@ -275,7 +342,10 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
                       context.report({
                         node,
                         messageId: 'redundantWrapper',
-                        data: { callbackName: sourceCode.getText(callee) },
+                        data: {
+                          wrapper,
+                          callbackName: sourceCode.getText(callee),
+                        },
                         fix: (fixer) => fixer.replaceText(node, replaceText),
                       });
                     } else {
@@ -283,7 +353,10 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
                       context.report({
                         node,
                         messageId: 'redundantWrapper',
-                        data: { callbackName: sourceCode.getText(callee) },
+                        data: {
+                          wrapper,
+                          callbackName: sourceCode.getText(callee),
+                        },
                       });
                     }
                   }
@@ -338,7 +411,10 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
                           context.report({
                             node,
                             messageId: 'redundantWrapper',
-                            data: { callbackName: sourceCode.getText(callee) },
+                            data: {
+                              wrapper,
+                              callbackName: sourceCode.getText(callee),
+                            },
                             fix: (fixer) =>
                               fixer.replaceText(node, replaceText),
                           });
@@ -347,7 +423,10 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
                           context.report({
                             node,
                             messageId: 'redundantWrapper',
-                            data: { callbackName: sourceCode.getText(callee) },
+                            data: {
+                              wrapper,
+                              callbackName: sourceCode.getText(callee),
+                            },
                           });
                         }
                       }
