@@ -1252,21 +1252,8 @@ const findingKey = (finding: Pair & { added: string[] }) =>
  *
  * Prefer fixing over listing.
  */
-const TYPE_UNSAFE_BASELINE: Record<string, { pairs: number; note: string }> = {
-  'enforce-memoize-async TS1206': {
-    pairs: 1,
-    note:
-      'The fixer decorates a method of a class EXPRESSION (`jest.mock(' +
-      'resolveModule(class Locator { … }))`), and TypeScript accepts a ' +
-      'decorator only inside a class DECLARATION under experimentalDecorators ' +
-      '— verified against tsc 5.0.3: the same member decorated inside `class ' +
-      'C {}` or `export default class {}` compiles, inside `const C = class ' +
-      "{}` or a call argument it is TS1206. The rule's own invalid fixture " +
-      'enshrines the broken output as its expectation, so RuleTester agrees ' +
-      'with it. Surfaced by #1732 lifting the 30-pair cap that hid the ' +
-      'fixture; the rule fix belongs in its own issue.',
-  },
-};
+const TYPE_UNSAFE_BASELINE: Record<string, { pairs: number; note: string }> =
+  {};
 
 const baselinedCounts = new Map<string, number>();
 for (const findings of findingsByRule.values()) {
