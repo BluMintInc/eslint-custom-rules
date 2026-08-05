@@ -18,6 +18,10 @@ Prevent wrapping already memoized callbacks from hooks/contexts with an extra `u
 
 The rule reports `useCallback` when it only forwards a callback that was already memoized by a hook/context (identifier or member) without adding logic or changing arguments. Wrappers that transform parameters, add side effects, or pass additional arguments are allowed.
 
+Memoization that is visible in the same file needs no configuration. A `const` initialized from `useCallback`, `useLatestCallback`, or a `useMemo` whose factory hands back a function literal holds a callback this rule can prove is already stable, so re-wrapping it is reported under the default options. The binding is resolved through scope analysis rather than matched by name, so the memoized `handleSelect` of one component never vouches for the `handleSelect` prop of another. `useMemo` memoizes any value, so its result counts as a memoized *callback* only when the factory demonstrably produces a function — a factory returning a call result, a conditional, or a value assembled across several statements proves nothing and is left alone.
+
+Everything else needs `memoizedHookNames` (or `assumeAllUseAreMemoized`): the stability of a callback a hook or context hands out is knowledge this rule cannot read out of the file it is linting.
+
 `useLatestCallback` counts as a memoization wrapper too, and is reported on exactly the same terms. It is the spelling [`use-latest-callback`](use-latest-callback.md) — enabled in the same `recommended` config, and fixable — rewrites every `useCallback(fn, deps)` into, so a wrapper around an already stable callback survives that rewrite unchanged: `useLatestCallback(() => signIn())` still allocates a fresh arrow on every render around a callback the hook already keeps stable. The local binding is resolved from the `use-latest-callback` module rather than matched by name, because that rule's fixer names its import with `freeImportName` and emits `useLatestCallback2` when `useLatestCallback` is already taken. Both the default and named specifier forms are recognized, under any local alias.
 
 Example message:
@@ -29,11 +33,10 @@ Flags cases like:
 
 ```tsx
 import { useCallback } from 'react';
-import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
 
 function SignInButton() {
-  const { signIn } = useAuthSubmit();
-  const handleSignIn = useCallback(() => signIn(), [signIn]); // ✖ redundant wrapper around memoized callback
+  const signIn = useCallback(() => submitCredentials(), []);
+  const handleSignIn = useCallback(() => signIn(), [signIn]); // ✖ redundant wrapper around an already memoized callback
   return <LoadingButton onClick={handleSignIn}>Sign In</LoadingButton>;
 }
 ```
@@ -41,11 +44,25 @@ function SignInButton() {
 Use the memoized function directly:
 
 ```tsx
+import { useCallback } from 'react';
+
+function SignInButton() {
+  const signIn = useCallback(() => submitCredentials(), []);
+  return <LoadingButton onClick={signIn}>Sign In</LoadingButton>;
+}
+```
+
+A callback the file receives ready-made carries no such proof, so the same wrapper around a context callback is reported only once the hook is declared memoizing:
+
+```tsx
+// eslint-options: {"memoizedHookNames": ["useAuthSubmit"]}
+import { useCallback } from 'react';
 import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
 
 function SignInButton() {
   const { signIn } = useAuthSubmit();
-  return <LoadingButton onClick={signIn}>Sign In</LoadingButton>;
+  const handleSignIn = useCallback(() => signIn(), [signIn]); // ✖ redundant wrapper around memoized callback
+  return <LoadingButton onClick={handleSignIn}>Sign In</LoadingButton>;
 }
 ```
 
@@ -68,7 +85,30 @@ function SignInButton() {
 
 ## Valid
 
-These declare `assumeAllUseAreMemoized: true` for the same reason the invalid examples below do: under the default options the rule does not recognize `useAuthSubmit`/`useUserContext` as returning memoized callbacks at all, so it would never reach the logic these examples exist to demonstrate. Each wrapper here is allowed *despite* the callback being recognized as memoized.
+The examples naming `useAuthSubmit`/`useUserContext` declare `assumeAllUseAreMemoized: true` for the same reason the invalid ones below do: nothing in those files proves those hooks return memoized callbacks, so without the option the rule would never reach the logic they exist to demonstrate. Each wrapper there is allowed *despite* the callback being recognized as memoized. The examples built on `useCallback`/`useMemo` need no options, because the memoization is in the source.
+
+```tsx
+// A locally declared arrow is a fresh function on every render, so the wrapper
+// is what gives it a stable identity
+const fn = () => doThing();
+const outer = useCallback(fn, [fn]);
+```
+
+```tsx
+// Bindings are resolved through scope analysis, so a memoized `inner` elsewhere
+// in the file does not vouch for this prop
+function Row({ inner }) {
+  const outer = useCallback(inner, [inner]);
+  return <Button onClick={outer} />;
+}
+```
+
+```tsx
+// useMemo memoizes any value; a factory whose result is a call is not provably
+// a callback
+const value = useMemo(() => compute(), []);
+const outer = useCallback(value, [value]);
+```
 
 ```tsx
 // eslint-options: {"assumeAllUseAreMemoized": true}
@@ -126,6 +166,34 @@ function Row({ onDone }) {
 ```
 
 ## Invalid
+
+These need no options: each callback is memoized by a call in the same file.
+
+```tsx
+// ✖ Re-wrapping a callback useCallback already memoized
+const inner = useCallback(() => doThing(), []);
+const outer = useCallback(inner, [inner]);
+```
+
+```tsx
+// ✖ The same redundancy in the forwarding spelling
+const inner = useCallback(() => doThing(), []);
+const outer = useCallback(() => inner(), [inner]);
+```
+
+```tsx
+// ✖ A useMemo factory that hands back a function produces a memoized callback
+const inner = useMemo(() => () => doThing(), []);
+const outer = useCallback(inner, [inner]);
+```
+
+```tsx
+// ✖ Both spellings of the wrapper, on both sides
+import useLatestCallback from 'use-latest-callback';
+
+const inner = useLatestCallback(() => doThing());
+const outer = useLatestCallback(() => inner());
+```
 
 `useAuthSubmit` and `useSomething` are only treated as returning memoized callbacks once the rule is told so. Each example below therefore declares `assumeAllUseAreMemoized: true`; naming the hooks in `memoizedHookNames` produces the same reports.
 
@@ -185,6 +253,10 @@ Where safe, the rule removes the redundant `useCallback` wrapper and passes the 
 ## Edge Cases Handled
 
 - Identifies callbacks destructured from hook results.
+- Reports re-wrapping of a callback memoized in the same file (`useCallback`, `useLatestCallback`, or a `useMemo` yielding a function literal) without any configuration, since that memoization is proven in-source.
+- Resolves such a binding through scope analysis, so a shadowing parameter or a same-named prop in another component is not mistaken for the memoized one.
+- Leaves a `let` binding alone: it can be reassigned, so the value read at the wrapper need not be the one the memoizing call produced.
+- Leaves a wrapper that reads the binding it is initializing alone, rather than collapsing it to `const x = x`.
 - Allows substantial logic in wrappers.
 - Allows wrappers that transform parameters or supply arguments.
 - Allows wrappers that call `preventDefault`, `stopPropagation` or `stopImmediatePropagation`: passing the memoized callback directly drops the suppression call and hands the event to a callback that took no arguments, so the wrapper is doing work.

@@ -1026,8 +1026,414 @@ function C(){
   return x as any;
 }`,
       },
+      // A locally declared arrow is a fresh function on every render, so the
+      // wrapper is what gives it a stable identity: collapsing it changes
+      // behaviour. Nothing memoizes `fn`, so nothing is proven.
+      {
+        code: `import { useCallback } from 'react';
+const C = () => {
+  const fn = () => doThing();
+  const outer = useCallback(fn, [fn]);
+  return outer;
+};`,
+      },
+      // A prop callback carries no stability guarantee either.
+      {
+        code: `import { useCallback } from 'react';
+const C = ({ onDone }) => {
+  const outer = useCallback(onDone, [onDone]);
+  return outer;
+};`,
+      },
+      // The binding is resolved through scope analysis, so the memoized `inner`
+      // of one component does not vouch for the `inner` prop of the next. A
+      // name-keyed lookup reports this, deleting the only thing stabilizing a
+      // prop.
+      {
+        code: `import { useCallback } from 'react';
+const A = () => {
+  const inner = useCallback(() => doThing(), []);
+  return inner;
+};
+const B = ({ inner }) => {
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};`,
+      },
+      // A parameter shadows the memoized binding of the same name inside the
+      // wrapper, and a parameter is a different value on every call.
+      {
+        code: `import { useCallback } from 'react';
+const C = () => {
+  const inner = useCallback(() => doThing(), []);
+  const outer = useCallback((inner) => inner(), []);
+  return [inner, outer];
+};`,
+      },
+      // A rebindable declaration breaks the proof: the value read at the wrapper
+      // need not be the one the memoizing call produced.
+      {
+        code: `import { useCallback } from 'react';
+const C = () => {
+  let inner = useCallback(() => doThing(), []);
+  inner = somethingElse;
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};`,
+      },
+      // A self-referential wrapper reads the binding it is initializing, so the
+      // remedy would emit \`const inner = inner\`.
+      {
+        code: `import { useCallback } from 'react';
+const C = () => {
+  const inner = useCallback(() => inner(), []);
+  return inner;
+};`,
+      },
+      // useMemo memoizes any value; a factory whose result is a call is not
+      // provably a callback.
+      {
+        code: `import { useCallback, useMemo } from 'react';
+const C = () => {
+  const value = useMemo(() => compute(), []);
+  const outer = useCallback(value, [value]);
+  return outer;
+};`,
+      },
+      // A factory assembling its result across statements is not provable
+      // either, even though this one does return a function.
+      {
+        code: `import { useCallback, useMemo } from 'react';
+const C = () => {
+  const inner = useMemo(() => {
+    const fn = () => doThing();
+    return fn;
+  }, []);
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};`,
+      },
+      // A conditional factory result is unproven for the same reason.
+      {
+        code: `import { useCallback, useMemo } from 'react';
+const C = ({ flag, a, b }) => {
+  const inner = useMemo(() => (flag ? a : b), [flag, a, b]);
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};`,
+      },
+      // A non-memoizing initializer proves nothing, whatever it returns.
+      {
+        code: `import { useCallback } from 'react';
+const C = () => {
+  const inner = memoize(() => doThing());
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};`,
+      },
+      // Supplying an argument makes the wrapper non-redundant; the carve-out
+      // holds for locally proven callbacks exactly as it does for configured
+      // hooks.
+      {
+        code: `import { useCallback } from 'react';
+const C = ({ userId }) => {
+  const inner = useCallback((id) => doThing(id), []);
+  const outer = useCallback(() => inner(userId), [inner, userId]);
+  return outer;
+};`,
+      },
+      // ...as does sequencing a second call the delegate does not perform.
+      {
+        code: `import { useCallback } from 'react';
+const C = () => {
+  const inner = useCallback(() => doThing(), []);
+  const outer = useCallback(() => {
+    track('click');
+    inner();
+  }, [inner]);
+  return outer;
+};`,
+      },
+      // ...as does suppressing the event.
+      {
+        code: `import { useCallback } from 'react';
+const C = () => {
+  const inner = useCallback(() => doThing(), []);
+  const outer = useCallback((e) => {
+    e.preventDefault();
+    inner();
+  }, [inner]);
+  return outer;
+};`,
+      },
+      // ...as does transforming the parameters.
+      {
+        code: `import { useCallback } from 'react';
+const C = () => {
+  const inner = useCallback((value) => doThing(value), []);
+  const outer = useCallback((e) => inner(e.target.value), [inner]);
+  return outer;
+};`,
+      },
     ],
-    invalid: [],
+    invalid: [
+      // Locally visible memoization needs no configuration: the memoizing call
+      // sits in the same file, so these fire under the default options — the
+      // shape the recommended config actually ships.
+      {
+        code: `
+const C = () => {
+  const inner = useCallback(() => doThing(), []);
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};
+`,
+        errors: [{ messageId: 'redundantWrapper' as const }],
+        output: `
+const C = () => {
+  const inner = useCallback(() => doThing(), []);
+  const outer = inner;
+  return outer;
+};
+`,
+      },
+      // The trivial-arrow spelling of the same redundancy.
+      {
+        code: `import { useCallback } from 'react';
+const C = () => {
+  const inner = useCallback(() => doThing(), []);
+  const outer = useCallback(() => inner(), [inner]);
+  return outer;
+};`,
+        errors: [redundantError('inner')],
+        output: `import { useCallback } from 'react';
+const C = () => {
+  const inner = useCallback(() => doThing(), []);
+  const outer = inner;
+  return outer;
+};`,
+      },
+      // Block body returning the delegate.
+      {
+        code: `import { useCallback } from 'react';
+const C = () => {
+  const inner = useCallback(() => doThing(), []);
+  const outer = useCallback(() => {
+    return inner();
+  }, [inner]);
+  return outer;
+};`,
+        errors: [redundantError('inner')],
+        output: `import { useCallback } from 'react';
+const C = () => {
+  const inner = useCallback(() => doThing(), []);
+  const outer = inner;
+  return outer;
+};`,
+      },
+      // Block body calling the delegate for effect.
+      {
+        code: `import { useCallback } from 'react';
+const C = () => {
+  const inner = useCallback(() => doThing(), []);
+  const outer = useCallback(() => {
+    inner();
+  }, [inner]);
+  return outer;
+};`,
+        errors: [redundantError('inner')],
+        output: `import { useCallback } from 'react';
+const C = () => {
+  const inner = useCallback(() => doThing(), []);
+  const outer = inner;
+  return outer;
+};`,
+      },
+      // Function-expression wrappers collapse the same way.
+      {
+        code: `import { useCallback } from 'react';
+const C = () => {
+  const inner = useCallback(() => doThing(), []);
+  const outer = useCallback(function () {
+    return inner();
+  }, [inner]);
+  return outer;
+};`,
+        errors: [redundantError('inner')],
+        output: `import { useCallback } from 'react';
+const C = () => {
+  const inner = useCallback(() => doThing(), []);
+  const outer = inner;
+  return outer;
+};`,
+      },
+      // The namespaced spelling of both the source and the wrapper.
+      {
+        code: `import React from 'react';
+const C = () => {
+  const inner = React.useCallback(() => doThing(), []);
+  const outer = React.useCallback(inner, [inner]);
+  return outer;
+};`,
+        errors: [redundantError('inner')],
+        output: `import React from 'react';
+const C = () => {
+  const inner = React.useCallback(() => doThing(), []);
+  const outer = inner;
+  return outer;
+};`,
+      },
+      // useCallback wrapping a local useLatestCallback result.
+      {
+        code: `import { useCallback } from 'react';
+import useLatestCallback from 'use-latest-callback';
+const C = () => {
+  const inner = useLatestCallback(() => doThing());
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};`,
+        errors: [redundantError('inner')],
+        output: `import { useCallback } from 'react';
+import useLatestCallback from 'use-latest-callback';
+const C = () => {
+  const inner = useLatestCallback(() => doThing());
+  const outer = inner;
+  return outer;
+};`,
+      },
+      // useLatestCallback wrapping a local useLatestCallback result: the
+      // spelling this config's own fixer writes, on both sides.
+      {
+        code: `import useLatestCallback from 'use-latest-callback';
+const C = () => {
+  const inner = useLatestCallback(() => doThing());
+  const outer = useLatestCallback(() => inner());
+  return outer;
+};`,
+        errors: [redundantError('inner', 'useLatestCallback')],
+        output: `import useLatestCallback from 'use-latest-callback';
+const C = () => {
+  const inner = useLatestCallback(() => doThing());
+  const outer = inner;
+  return outer;
+};`,
+      },
+      // useLatestCallback wrapping a local useCallback result.
+      {
+        code: `import { useCallback } from 'react';
+import useLatestCallback from 'use-latest-callback';
+const C = () => {
+  const inner = useCallback(() => doThing(), []);
+  const outer = useLatestCallback(inner);
+  return outer;
+};`,
+        errors: [redundantError('inner', 'useLatestCallback')],
+        output: `import { useCallback } from 'react';
+import useLatestCallback from 'use-latest-callback';
+const C = () => {
+  const inner = useCallback(() => doThing(), []);
+  const outer = inner;
+  return outer;
+};`,
+      },
+      // The memoization source is resolved from the module, so the alias
+      // use-latest-callback's own fixer emits is recognized as one.
+      {
+        code: `import { useCallback } from 'react';
+import stableCallback from 'use-latest-callback';
+const C = () => {
+  const inner = stableCallback(() => doThing());
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};`,
+        errors: [redundantError('inner')],
+        output: `import { useCallback } from 'react';
+import stableCallback from 'use-latest-callback';
+const C = () => {
+  const inner = stableCallback(() => doThing());
+  const outer = inner;
+  return outer;
+};`,
+      },
+      // useMemo produces a memoized callback when its factory hands back a
+      // function literal.
+      {
+        code: `import { useCallback, useMemo } from 'react';
+const C = () => {
+  const inner = useMemo(() => () => doThing(), []);
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};`,
+        errors: [redundantError('inner')],
+        output: `import { useCallback, useMemo } from 'react';
+const C = () => {
+  const inner = useMemo(() => () => doThing(), []);
+  const outer = inner;
+  return outer;
+};`,
+      },
+      // ...including through a block body whose single statement returns one.
+      {
+        code: `import { useCallback, useMemo } from 'react';
+const C = () => {
+  const inner = useMemo(() => {
+    return function () {
+      doThing();
+    };
+  }, []);
+  const outer = useCallback(() => inner(), [inner]);
+  return outer;
+};`,
+        errors: [redundantError('inner')],
+        output: `import { useCallback, useMemo } from 'react';
+const C = () => {
+  const inner = useMemo(() => {
+    return function () {
+      doThing();
+    };
+  }, []);
+  const outer = inner;
+  return outer;
+};`,
+      },
+      // A cast carries no runtime value, so annotating the produced callback
+      // does not hide it.
+      {
+        code: `import { useCallback, useMemo } from 'react';
+type Handler = () => void;
+const C = () => {
+  const inner = useMemo(() => (() => doThing()) as Handler, []);
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};`,
+        errors: [redundantError('inner')],
+        output: `import { useCallback, useMemo } from 'react';
+type Handler = () => void;
+const C = () => {
+  const inner = useMemo(() => (() => doThing()) as Handler, []);
+  const outer = inner;
+  return outer;
+};`,
+      },
+      // A chain of wrappers reports each redundant layer.
+      {
+        code: `import { useCallback } from 'react';
+const C = () => {
+  const first = useCallback(() => doThing(), []);
+  const second = useCallback(first, [first]);
+  const third = useCallback(() => second(), [second]);
+  return third;
+};`,
+        errors: [redundantError('first'), redundantError('second')],
+        output: `import { useCallback } from 'react';
+const C = () => {
+  const first = useCallback(() => doThing(), []);
+  const second = first;
+  const third = second;
+  return third;
+};`,
+      },
+    ],
   },
 );
 
