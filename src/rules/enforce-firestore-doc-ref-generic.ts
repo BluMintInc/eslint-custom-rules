@@ -24,7 +24,12 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
       description:
         'Enforce generic argument for Firestore DocumentReference, CollectionReference and CollectionGroup',
       recommended: 'error',
-      requiresTypeChecking: true,
+      // Every check here is syntactic: generics are read off the AST and named
+      // generics are resolved against declarations in the same file. Declaring
+      // type information would be a false promise twice over — it tells
+      // consumers they need `parserOptions.project`, and it exempts this rule
+      // from guards that skip rules a program-less `Linter` cannot exercise.
+      requiresTypeChecking: false,
     },
     schema: [],
     messages: {
