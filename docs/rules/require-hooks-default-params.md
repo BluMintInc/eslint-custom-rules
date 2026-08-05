@@ -20,7 +20,7 @@ React hooks often receive a single "options" object. When every property on that
 
 - If a hook takes one object parameter and all properties are optional, add a default empty object: `({ foo, bar }: Options = {})`.
 
-## How the options type is resolved
+## How the parameter type is resolved
 
 A named options type is resolved lexically, from the hook outward through each enclosing block to module scope. That covers a type declared beside the hook, one declared in an enclosing function, and an exported declaration — `export type Props = { ... }` is a type alias inside an `export` statement, and both spellings resolve the same way. A name that also has a value binding of the same name nearby still resolves to the type.
 
