@@ -338,6 +338,46 @@ const x: TokenMetadata<'offchain', Date> = source as TokenMetadata<'offchain', D
     ],
 
     invalid: [
+      /**
+       * A non-null assertion is a type-level wrapper like `as` (issue #1758).
+       * `unwrapCast` looked through `as` and `satisfies` only, so `new Date()!`
+       * never reached the NewExpression check and escaped the rule entirely
+       * rather than degrading to a weaker one.
+       */
+      {
+        code: `
+import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+const x: TokenMetadata<'offchain', Date> = {
+  id: 'offchain:abc',
+  createdAt: new Date()!,
+};
+`,
+        filename: 'src/hooks/useExample.ts',
+        errors: [{ messageId: 'useServerTimestamp' }],
+      },
+      {
+        code: `
+import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+const x: TokenMetadata<'offchain', Date> = {
+  id: 'offchain:abc',
+  createdAt: new Date()! as Timestamp,
+};
+`,
+        filename: 'src/hooks/useExample.ts',
+        errors: [{ messageId: 'useServerTimestamp' }],
+      },
+      // A non-null assertion wrapping an object literal must still recurse.
+      {
+        code: `
+import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+const x: TokenMetadata<'offchain', Date> = {
+  id: 'offchain:abc',
+  nested: { createdAt: new Date() }!,
+};
+`,
+        filename: 'src/hooks/useExample.ts',
+        errors: [{ messageId: 'useServerTimestamp' }],
+      },
       // Basic: typed variable with new Date() as property value
       {
         code: `

@@ -118,9 +118,17 @@ function typeAnnotationReferencesFirestoreType(
  * True for the assertion wrappers that leave the underlying expression intact:
  * `x as T` and `x satisfies T`.
  */
+/**
+ * Wrappers that change only the static type, never the runtime value. A
+ * non-null assertion belongs here for the same reason `as` does — `new Date()!`
+ * still constructs a client-clock Date — and it is exactly what a developer
+ * reaches for when silencing a nullability complaint, so leaving it wrapped
+ * turns an accident into a bypass.
+ */
 function isCastExpression(node: TSESTree.Node): boolean {
   return (
     node.type === AST_NODE_TYPES.TSAsExpression ||
+    node.type === AST_NODE_TYPES.TSNonNullExpression ||
     node.type ===
       (AST_NODE_TYPES as { TSSatisfiesExpression?: string })
         .TSSatisfiesExpression
@@ -212,20 +220,15 @@ function reportNewDatesInObject(
       });
     } else if (value.type === AST_NODE_TYPES.ObjectExpression) {
       reportNewDatesInObject(value, context);
-    } else if (
-      value.type === AST_NODE_TYPES.TSAsExpression ||
-      value.type ===
-        (AST_NODE_TYPES as { TSSatisfiesExpression?: string })
-          .TSSatisfiesExpression
-    ) {
-      // The cast may wrap a new Date() OR an object literal we need to recurse into
-      const inner = unwrapCast(value as TSESTree.Expression);
-      if (isNewDate(inner as TSESTree.Expression)) {
-        context.report({
-          node: value,
-          messageId: 'useServerTimestamp',
-        });
-      } else if (inner.type === AST_NODE_TYPES.ObjectExpression) {
+    } else if (isCastExpression(value)) {
+      /**
+       * A cast can wrap an object literal that still needs recursion. It cannot
+       * wrap a `new Date()` that reaches here: `isNewDate` unwraps casts before
+       * answering, so the branch above has already reported that shape and this
+       * one is only ever entered when it did not.
+       */
+      const inner = unwrapCast(value);
+      if (inner.type === AST_NODE_TYPES.ObjectExpression) {
         reportNewDatesInObject(inner as TSESTree.ObjectExpression, context);
       }
     } else if (value.type === AST_NODE_TYPES.ConditionalExpression) {

@@ -38,9 +38,13 @@ required. It:
 2. Flags `new Date()` appearing as a property value (at any depth) inside an
    object literal whose declared type references one of those names — via a
    variable annotation, an `as`/`satisfies` cast, or a typed function return.
-3. Also looks through `as any` / `as Timestamp` casts applied to `new Date()`.
+3. Also looks through `as any` / `as Timestamp` casts applied to `new Date()`,
+   and through a non-null assertion — `new Date()!` and `new Date()! as Timestamp`
+   are flagged too. A non-null assertion changes only the static type, and it is
+   what a developer reaches for when silencing a nullability complaint, so
+   leaving it unwrapped would turn an accident into a bypass.
 4. Sees through assertion wrappers on the object literal itself. `as const`,
-   `satisfies`, and chained assertions are runtime no-ops, so
+   `satisfies`, non-null assertions, and chained assertions are runtime no-ops, so
    `{ createdAt: new Date() } as const` still stamps the document with the
    client clock and is still flagged. This matters because
    `enforce-object-literal-as-const` appends `as const` automatically via
