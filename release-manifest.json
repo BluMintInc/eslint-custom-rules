@@ -1,5 +1,35 @@
 [
   {
+    "version": "1.20.111",
+    "date": "2026-08-05T13:37:20.101Z",
+    "rules": [
+      {
+        "name": "enforce-global-constants",
+        "changeType": "fix",
+        "issues": [
+          1739
+        ],
+        "summary": "hoist below a shebang, not above it (closes #1739)"
+      },
+      {
+        "name": "logical-top-to-bottom-grouping",
+        "changeType": "fix",
+        "issues": [
+          1738
+        ],
+        "summary": "keep a shebang at character 0 when reordering (closes #1738)"
+      },
+      {
+        "name": "vertically-group-related-functions",
+        "changeType": "fix",
+        "issues": [
+          1737
+        ],
+        "summary": "keep a shebang at character 0 when reordering (closes #1737)"
+      }
+    ]
+  },
+  {
     "version": "1.20.110",
     "date": "2026-08-05T11:59:59.800Z",
     "rules": [

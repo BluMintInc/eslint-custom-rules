@@ -1,3 +1,12 @@
+## [1.20.111](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.110...v1.20.111) (2026-08-05)
+
+
+### Bug Fixes
+
+* **enforce-global-constants:** hoist below a shebang, not above it (closes [#1739](https://github.com/BluMintInc/eslint-custom-rules/issues/1739)) ([c795a8e](https://github.com/BluMintInc/eslint-custom-rules/commit/c795a8e056ef8e742a13e131ddc421f0f4be7ec2))
+* **logical-top-to-bottom-grouping:** keep a shebang at character 0 when reordering (closes [#1738](https://github.com/BluMintInc/eslint-custom-rules/issues/1738)) ([db4a127](https://github.com/BluMintInc/eslint-custom-rules/commit/db4a127dd2a36f258484880c5ec55479f6610f26))
+* **vertically-group-related-functions:** keep a shebang at character 0 when reordering (closes [#1737](https://github.com/BluMintInc/eslint-custom-rules/issues/1737)) ([bbf7ad2](https://github.com/BluMintInc/eslint-custom-rules/commit/bbf7ad2d8a68004d08f8bf7bd979b134701f7412))
+
 ## [1.20.110](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.109...v1.20.110) (2026-08-05)
 
 
