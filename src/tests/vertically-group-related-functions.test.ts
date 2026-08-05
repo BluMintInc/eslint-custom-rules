@@ -194,6 +194,39 @@ ruleTesterTs.run(
       },
     ],
     invalid: [
+      // A shebang is only a shebang at character 0. ESLint presents it as a
+      // leading comment of the first statement, so relocating that statement
+      // used to carry `#!` into the middle of the file, where the output no
+      // longer parses (TS18026).
+      {
+        code: `#!/usr/bin/env node
+function fetchData() {
+  return api.get('/data');
+}
+
+function handleClick() {
+  processUserInput(userInput);
+}
+
+function processUserInput(input) {
+  return sanitize(input);
+}
+`,
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: `#!/usr/bin/env node
+function handleClick() {
+  processUserInput(userInput);
+}
+
+function processUserInput(input) {
+  return sanitize(input);
+}
+
+function fetchData() {
+  return api.get('/data');
+}
+`,
+      },
       {
         code: `
         function fetchData() {

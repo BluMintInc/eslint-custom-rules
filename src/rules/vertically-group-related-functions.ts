@@ -1,6 +1,7 @@
 import { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
+import { isShebangComment } from '../utils/shebang';
 
 type GroupName = 'event-handlers' | 'utilities' | 'other';
 type DependencyDirection = 'callers-first' | 'callees-first';
@@ -478,14 +479,17 @@ function getStatementRangeWithComments(
   // when the following function is relocated. Only own-line comments count as
   // leading comments.
   const leadingCommentsOf = (target: TSESTree.Node) =>
-    filterComments(sourceCode.getCommentsBefore(target) || []).filter(
-      (comment) => {
+    filterComments(sourceCode.getCommentsBefore(target) || [])
+      .filter((comment) => {
         const tokenBefore = sourceCode.getTokenBefore(comment);
         return (
           !tokenBefore || tokenBefore.loc.end.line !== comment.loc.start.line
         );
-      },
-    );
+      })
+      // A shebang belongs to the file, not to the statement below it. Left in
+      // the span, relocating the first statement carries `#!` off character 0
+      // and the output stops parsing.
+      .filter((comment) => !isShebangComment(sourceCode, comment));
 
   const commentsBefore = leadingCommentsOf(statement);
   const nextLeadingComments = nextStatement

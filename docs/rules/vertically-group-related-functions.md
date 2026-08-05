@@ -99,3 +99,10 @@ export function makeRequest() {
   return prepareRequest();
 }
 ```
+
+## Shebang files
+
+A `#!` shebang belongs to the file rather than to the statement beneath it, so
+the reordering fix never moves it: it stays on line 1 even when the first
+function in the file is the one being relocated. Anywhere else, `#!` is a syntax
+error (`TS18026`) and the file stops being executable.
