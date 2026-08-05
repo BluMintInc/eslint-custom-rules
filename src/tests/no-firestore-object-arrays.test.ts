@@ -289,6 +289,106 @@ export const MEMBER_ROLE_VALUES = ['owner', 'admin'] as const;
 `,
       filename: 'functions/src/types/firestore/Guild/hoisted.ts',
     },
+    // Test: A const array nested beside the model type that consumes it backs a
+    // primitive element union exactly as a top-level one does
+    {
+      code: `
+function build() {
+  const VALUES = ['a', 'b'] as const;
+  type Post = { roles: (typeof VALUES)[number][] };
+}
+`,
+      filename: 'functions/src/types/firestore/nested-const-array.ts',
+    },
+    // Test: Nested const array behind an arrow body
+    {
+      code: `
+const build = () => {
+  const VALUES = ['owner', 'admin'] as const;
+  type Role = (typeof VALUES)[number];
+  type Guild = { roles: Role[] };
+};
+`,
+      filename: 'functions/src/types/firestore/nested-const-alias.ts',
+    },
+    // Test: Nested const array spreading another nested const array
+    {
+      code: `
+function build() {
+  const ADMIN_ROLES = ['owner', 'admin'] as const;
+  const ALL_ROLES = [...ADMIN_ROLES, 'member'] as const;
+  type Guild = { roles: (typeof ALL_ROLES)[number][] };
+}
+`,
+      filename: 'functions/src/types/firestore/nested-const-spread.ts',
+    },
+    // Test: Unknown (imported) element type stays silent when nested, so the
+    // widened lexical search cannot be read as "assume object on a miss"
+    {
+      code: `
+import type { Comment } from './comment';
+function build() {
+  type Post = { comments: Comment[] };
+}
+`,
+      filename: 'functions/src/types/firestore/nested-imported.ts',
+    },
+    // Test: An object alias declared in a sibling scope must not resolve — that
+    // binding is not in scope at the reference, so TypeScript never sees it
+    {
+      code: `
+function other() {
+  type Comment = { text: string };
+  return null as unknown as Comment;
+}
+export type Post = { comments: Comment[] };
+`,
+      filename: 'functions/src/types/firestore/sibling-scope.ts',
+    },
+    // Test: The nearest declaration wins, so an inner primitive alias shadows a
+    // same-named outer object alias
+    {
+      code: `
+type Comment = { text: string };
+function build() {
+  type Comment = string;
+  type Post = { comments: Comment[] };
+}
+`,
+      filename: 'functions/src/types/firestore/shadow-primitive.ts',
+    },
+    // Test: Nested enum element types remain primitive-like
+    {
+      code: `
+function build() {
+  enum Perm { TEMPORARY = 'temporary', PINNED = 'pinned' }
+  type Post = { perms: Perm[]; ro: ReadonlyArray<Perm> };
+}
+`,
+      filename: 'functions/src/types/firestore/nested-enum.ts',
+    },
+    // Test: Nested alias to a primitive union
+    {
+      code: `
+function build() {
+  type Role = 'owner' | 'member';
+  type Post = { roles: Role[]; arr: Array<Role> };
+}
+`,
+      filename: 'functions/src/types/firestore/nested-primitive-alias.ts',
+    },
+    // Test: A same-named nested const that is not an array literal shadows the
+    // outer const array, so the reference no longer denotes a literal union
+    {
+      code: `
+export const VALUES = ['a', 'b'] as const;
+function build() {
+  const VALUES = { a: 1 };
+  type Post = { roles: string[] };
+}
+`,
+      filename: 'functions/src/types/firestore/shadow-const.ts',
+    },
   ],
   invalid: [
     // Test: Basic object array
@@ -701,6 +801,246 @@ export const OBJECT_VALUES = [{ a: 1 }] as const;
 export type Guild = { entries: (typeof OBJECT_VALUES)[number][] };
 `,
       filename: 'functions/src/types/firestore/Guild/inline-objects.ts',
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'entries' },
+        },
+      ],
+    },
+    // Test: An alias declared beside the model type inside a function body
+    {
+      code: `
+function buildDefaults() {
+  type Comment = { text: string; author: string };
+  type Post = { comments: Comment[] };
+}
+`,
+      filename: 'functions/src/types/firestore/nested-alias.ts',
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'comments' },
+        },
+      ],
+    },
+    // Test: A nested interface element type
+    {
+      code: `
+function buildDefaults() {
+  interface Comment { text: string }
+  type Post = { comments: Comment[] };
+}
+`,
+      filename: 'functions/src/types/firestore/nested-interface.ts',
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'comments' },
+        },
+      ],
+    },
+    // Test: The generic array spellings resolve a nested element type too
+    {
+      code: `
+function buildDefaults() {
+  type Comment = { text: string };
+  type Post = { generic: Array<Comment>; readonlyGeneric: ReadonlyArray<Comment> };
+}
+`,
+      filename: 'functions/src/types/firestore/nested-generic.ts',
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'generic' },
+        },
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'readonlyGeneric' },
+        },
+      ],
+    },
+    // Test: An alias declared inside an arrow function body
+    {
+      code: `
+const buildDefaults = () => {
+  type Comment = { text: string };
+  type Post = { comments: Comment[] };
+};
+`,
+      filename: 'functions/src/types/firestore/nested-arrow.ts',
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'comments' },
+        },
+      ],
+    },
+    // Test: A bare block is a statement container like any other
+    {
+      code: `
+{
+  type Comment = { text: string };
+  type Post = { comments: Comment[] };
+}
+`,
+      filename: 'functions/src/types/firestore/nested-block.ts',
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'comments' },
+        },
+      ],
+    },
+    // Test: A switch case holds its statements under `consequent`
+    {
+      code: `
+switch (kind) {
+  case 'post': {
+    type Comment = { text: string };
+    type Post = { comments: Comment[] };
+    break;
+  }
+}
+`,
+      filename: 'functions/src/types/firestore/nested-switch.ts',
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'comments' },
+        },
+      ],
+    },
+    // Test: A class static block is a statement container
+    {
+      code: `
+class Builder {
+  static {
+    type Comment = { text: string };
+    type Post = { comments: Comment[] };
+  }
+}
+`,
+      filename: 'functions/src/types/firestore/nested-static-block.ts',
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'comments' },
+        },
+      ],
+    },
+    // Test: The export forms are looked through in a nested container, so the
+    // `export` keyword alone cannot decide whether an element type resolves
+    {
+      code: `
+namespace Models {
+  export type Comment = { text: string };
+  export type Post = { comments: Comment[] };
+}
+`,
+      filename: 'functions/src/types/firestore/nested-export-alias.ts',
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'comments' },
+        },
+      ],
+    },
+    {
+      code: `
+namespace Models {
+  export interface Comment { text: string }
+  export type Post = { comments: Array<Comment> };
+}
+`,
+      filename: 'functions/src/types/firestore/nested-export-interface.ts',
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'comments' },
+        },
+      ],
+    },
+    // Test: A nested alias declared below its own reference still resolves,
+    // matching TypeScript's hoisting of type declarations
+    {
+      code: `
+function buildDefaults() {
+  type Post = { comments: Comment[] };
+  type Comment = { text: string };
+}
+`,
+      filename: 'functions/src/types/firestore/nested-hoisted.ts',
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'comments' },
+        },
+      ],
+    },
+    // Test: A nested alias chain resolves each hop in the scope it is written in
+    {
+      code: `
+function buildDefaults() {
+  type Comment = { text: string };
+  type Alias = Comment;
+  type Post = { comments: Alias[] };
+}
+`,
+      filename: 'functions/src/types/firestore/nested-alias-chain.ts',
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'comments' },
+        },
+      ],
+    },
+    // Test: The nearest declaration wins in the reporting direction too — an
+    // inner object alias shadows a same-named outer primitive alias
+    {
+      code: `
+type Comment = string;
+function buildDefaults() {
+  type Comment = { text: string };
+  type Post = { comments: Comment[] };
+}
+`,
+      filename: 'functions/src/types/firestore/shadow-object.ts',
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'comments' },
+        },
+      ],
+    },
+    // Test: A nested const array of objects behind `(typeof X)[number]` is still
+    // an object array, so the widened const-array search stays conservative
+    {
+      code: `
+function buildDefaults() {
+  const OBJECT_VALUES = [{ a: 1 }] as const;
+  type Post = { entries: (typeof OBJECT_VALUES)[number][] };
+}
+`,
+      filename: 'functions/src/types/firestore/nested-const-objects.ts',
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'entries' },
+        },
+      ],
+    },
+    // Test: A same-named nested const array of objects shadows an outer const
+    // array of primitives
+    {
+      code: `
+export const VALUES = ['a', 'b'] as const;
+function buildDefaults() {
+  const VALUES = [{ a: 1 }] as const;
+  type Post = { entries: (typeof VALUES)[number][] };
+}
+`,
+      filename: 'functions/src/types/firestore/shadow-const-objects.ts',
       errors: [
         {
           messageId: 'noObjectArrays',

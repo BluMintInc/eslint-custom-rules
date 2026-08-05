@@ -22,6 +22,83 @@ const PRIMITIVE_TYPES = new Set([
 
 const UNKNOWN_FIELD_LABEL = '<unknown field>';
 
+/** Statements a declaration can be a direct child of, innermost outward. */
+const statementsOf = (node: TSESTree.Node): TSESTree.Node[] | undefined => {
+  switch (node.type) {
+    case AST_NODE_TYPES.Program:
+    case AST_NODE_TYPES.BlockStatement:
+    case AST_NODE_TYPES.TSModuleBlock:
+    case AST_NODE_TYPES.StaticBlock:
+      return (node as { body: TSESTree.Node[] }).body;
+    case AST_NODE_TYPES.SwitchCase:
+      return node.consequent;
+    default:
+      return undefined;
+  }
+};
+
+/**
+ * The declaration a statement carries, looking through `export`.
+ *
+ * `export type Comment = ...` is the same declaration one AST node deeper,
+ * inside an `ExportNamedDeclaration`. Reading the statement without unwrapping
+ * would let the `export` keyword alone decide whether an element type is
+ * resolvable, which says nothing about the shape it denotes.
+ */
+const declarationOf = (statement: TSESTree.Node): TSESTree.Node => {
+  if (
+    (statement.type === AST_NODE_TYPES.ExportNamedDeclaration ||
+      statement.type === AST_NODE_TYPES.ExportDefaultDeclaration) &&
+    statement.declaration
+  ) {
+    return statement.declaration as TSESTree.Node;
+  }
+  return statement;
+};
+
+type ResolvedTypeName =
+  | { kind: 'interface' }
+  | { kind: 'enum' }
+  | { kind: 'alias'; typeAnnotation: TSESTree.TypeNode };
+
+/**
+ * Interface beats enum beats alias, matching the order the file-wide tables are
+ * consulted in. The orderings can only differ for a name declared twice in one
+ * scope — which TypeScript rejects — but keeping them identical means the
+ * lexical search can never disagree with the fallback it precedes.
+ */
+const typeDeclarationIn = (
+  statements: TSESTree.Node[],
+  name: string,
+): ResolvedTypeName | undefined => {
+  let interfaceMatch: ResolvedTypeName | undefined;
+  let enumMatch: ResolvedTypeName | undefined;
+  let aliasMatch: ResolvedTypeName | undefined;
+  for (const statement of statements) {
+    const declaration = declarationOf(statement);
+    switch (declaration.type) {
+      case AST_NODE_TYPES.TSInterfaceDeclaration:
+        if (declaration.id.name === name)
+          interfaceMatch = { kind: 'interface' };
+        break;
+      case AST_NODE_TYPES.TSEnumDeclaration:
+        if (declaration.id.name === name) enumMatch = { kind: 'enum' };
+        break;
+      case AST_NODE_TYPES.TSTypeAliasDeclaration:
+        if (declaration.id.name === name) {
+          aliasMatch = {
+            kind: 'alias',
+            typeAnnotation: declaration.typeAnnotation,
+          };
+        }
+        break;
+      default:
+        break;
+    }
+  }
+  return interfaceMatch ?? enumMatch ?? aliasMatch;
+};
+
 const isInFirestoreTypesDirectory = (filename: string): boolean => {
   if (!filename || filename === '<input>') return false;
   const normalized = filename.replace(/\\/g, '/');
@@ -102,6 +179,42 @@ const unwrapExpressionAssertions = (
     break;
   }
   return current;
+};
+
+/**
+ * A same-named `const` binding shadows any outer one whether or not it holds an
+ * array literal, so the lexical search must stop at it rather than reaching past
+ * it to a binding the reference cannot denote.
+ */
+const CONST_ARRAY_SHADOWED = 'shadowed' as const;
+
+const constArrayIn = (
+  statements: TSESTree.Node[],
+  name: string,
+): TSESTree.ArrayExpression | typeof CONST_ARRAY_SHADOWED | undefined => {
+  for (const statement of statements) {
+    const declaration = declarationOf(statement);
+    if (
+      declaration.type !== AST_NODE_TYPES.VariableDeclaration ||
+      declaration.kind !== 'const'
+    ) {
+      continue;
+    }
+    for (const declarator of declaration.declarations) {
+      if (
+        declarator.id.type !== AST_NODE_TYPES.Identifier ||
+        declarator.id.name !== name
+      ) {
+        continue;
+      }
+      if (!declarator.init) return CONST_ARRAY_SHADOWED;
+      const init = unwrapExpressionAssertions(declarator.init);
+      return init.type === AST_NODE_TYPES.ArrayExpression
+        ? init
+        : CONST_ARRAY_SHADOWED;
+    }
+  }
+  return undefined;
 };
 
 const unwrapArrayElementType = (
@@ -264,7 +377,12 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
 
     const sourceCode = context.sourceCode;
 
-    // Collect alias/interface/enum information within this file to refine object vs primitive classification
+    // Namespace members are reachable unqualified from this table, which is what
+    // lets a `NS.User[]` reference — whose rightmost name no lexical scope binds —
+    // still classify. It backs the lexical search below rather than replacing it:
+    // a flat, file-wide table cannot express shadowing, and widening it to every
+    // nested container would make a declaration inside one function resolve a
+    // reference inside another, which TypeScript never does.
     const aliasNameToType = new Map<string, TSESTree.TypeNode>();
     const interfaceNames = new Set<string>();
     const enumNames = new Set<string>();
@@ -340,12 +458,62 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
       visitNode(stmt);
     }
 
-    const seenAlias = new Set<string>();
-    const visitingAliases = new Set<string>();
+    /**
+     * Resolves a same-file type name against every enclosing statement
+     * container, innermost outward, so the nearest declaration shadows a
+     * same-named outer one.
+     *
+     * Searching lexically rather than reading a table built off `Program.body`
+     * is what lets an alias or interface declared beside the model type that
+     * uses it be seen at all. Every statement of a container is searched, so a
+     * declaration written below its own reference still resolves, matching
+     * TypeScript's hoisting of type declarations.
+     */
+    const resolveTypeName = (
+      from: TSESTree.Node,
+      name: string,
+    ): ResolvedTypeName | undefined => {
+      let current: TSESTree.Node | undefined = from;
+      while (current) {
+        const statements = statementsOf(current);
+        if (statements) {
+          const declared = typeDeclarationIn(statements, name);
+          if (declared) return declared;
+        }
+        current = current.parent as TSESTree.Node | undefined;
+      }
+      if (interfaceNames.has(name)) return { kind: 'interface' };
+      if (enumNames.has(name)) return { kind: 'enum' };
+      const aliased = aliasNameToType.get(name);
+      return aliased ? { kind: 'alias', typeAnnotation: aliased } : undefined;
+    };
+
+    const resolveConstArray = (
+      from: TSESTree.Node,
+      name: string,
+    ): TSESTree.ArrayExpression | undefined => {
+      let current: TSESTree.Node | undefined = from;
+      while (current) {
+        const statements = statementsOf(current);
+        if (statements) {
+          const declared = constArrayIn(statements, name);
+          if (declared === CONST_ARRAY_SHADOWED) return undefined;
+          if (declared) return declared;
+        }
+        current = current.parent as TSESTree.Node | undefined;
+      }
+      return constArrayNameToLiteral.get(name);
+    };
+
+    // Keyed by resolved declaration rather than by name: one name can denote
+    // different declarations in different scopes, so a name-keyed memo would
+    // answer for whichever scope asked first.
+    const seenAlias = new Set<TSESTree.Node>();
+    const visitingAliases = new Set<TSESTree.Node>();
 
     const isPrimitiveLiteralElement = (
       element: TSESTree.Expression | TSESTree.SpreadElement | null,
-      visitedConstArrays: Set<string>,
+      visitedConstArrays: Set<TSESTree.Node>,
     ): boolean => {
       // Array holes resolve to `undefined`, but the shape is unusual enough
       // that refusing to classify it keeps the narrowing conservative.
@@ -358,7 +526,13 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
           );
         }
         if (argument.type === AST_NODE_TYPES.Identifier) {
-          return isPrimitiveConstArray(argument.name, visitedConstArrays);
+          // The spread resolves in the scope it is written in, not the scope of
+          // whichever reference started this walk.
+          return isPrimitiveConstArray(
+            argument.name,
+            argument,
+            visitedConstArrays,
+          );
         }
         return false;
       }
@@ -400,17 +574,18 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
 
     const isPrimitiveConstArray = (
       name: string,
-      visitedConstArrays: Set<string>,
+      from: TSESTree.Node,
+      visitedConstArrays: Set<TSESTree.Node>,
     ): boolean => {
-      // A cyclic spread cannot be resolved syntactically; refuse to classify it
-      if (visitedConstArrays.has(name)) return false;
-      const arrayLiteral = constArrayNameToLiteral.get(name);
+      const arrayLiteral = resolveConstArray(from, name);
       if (!arrayLiteral) return false;
-      visitedConstArrays.add(name);
+      // A cyclic spread cannot be resolved syntactically; refuse to classify it
+      if (visitedConstArrays.has(arrayLiteral)) return false;
+      visitedConstArrays.add(arrayLiteral);
       const result = arrayLiteral.elements.every((element) =>
         isPrimitiveLiteralElement(element, visitedConstArrays),
       );
-      visitedConstArrays.delete(name);
+      visitedConstArrays.delete(arrayLiteral);
       return result;
     };
 
@@ -431,33 +606,37 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
       if (objectType.type !== AST_NODE_TYPES.TSTypeQuery) return false;
       const exprName = (objectType as TSESTree.TSTypeQuery).exprName;
       if (exprName.type !== AST_NODE_TYPES.Identifier) return false;
-      return isPrimitiveConstArray(exprName.name, new Set());
+      return isPrimitiveConstArray(exprName.name, exprName, new Set());
     };
 
     const isPrimitiveLikeAlias = (
       name: string,
+      from: TSESTree.Node,
       recursionDepth: number,
     ): boolean => {
-      if (seenAlias.has(name)) return true;
       if (recursionDepth > 50) return false;
       if (PRIMITIVE_TYPES.has(name)) return true;
-      if (enumNames.has(name)) return true; // enums are non-object primitives for our purposes
-      const aliased = aliasNameToType.get(name);
-      if (!aliased) return false;
-      if (visitingAliases.has(name)) {
+      const resolved = resolveTypeName(from, name);
+      if (!resolved) return false;
+      if (resolved.kind === 'enum') return true; // enums are non-object primitives for our purposes
+      if (resolved.kind === 'interface') return false;
+      const aliased = resolved.typeAnnotation;
+      if (seenAlias.has(aliased)) return true;
+      if (visitingAliases.has(aliased)) {
         return false;
       }
-      visitingAliases.add(name);
-      seenAlias.add(name);
-      // Determine if the alias ultimately resolves to only primitive-like/literal types
-      const node = aliased as TSESTree.TypeNode;
-      const result = isPrimitiveLikeTypeNode(node, recursionDepth + 1);
-      visitingAliases.delete(name);
+      visitingAliases.add(aliased);
+      seenAlias.add(aliased);
+      // Determine if the alias ultimately resolves to only primitive-like/literal
+      // types. The annotation is searched from its own position, so each hop of
+      // an alias chain resolves in the scope it was written in.
+      const result = isPrimitiveLikeTypeNode(aliased, recursionDepth + 1);
+      visitingAliases.delete(aliased);
       if (result) {
-        seenAlias.add(name);
+        seenAlias.add(aliased);
       } else {
         // Remove optimistic marking when resolution fails
-        seenAlias.delete(name);
+        seenAlias.delete(aliased);
       }
       return result;
     };
@@ -494,19 +673,17 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
         case AST_NODE_TYPES.TSTypeReference: {
           // Allow known primitive-like references and enums or primitive-like aliases
           const ref = node as TSESTree.TSTypeReference;
-          if (ref.typeName.type === AST_NODE_TYPES.Identifier) {
-            const name = ref.typeName.name;
-            if (PRIMITIVE_TYPES.has(name) || enumNames.has(name)) return true;
-            if (seenAlias.has(name)) return true;
-            return isPrimitiveLikeAlias(name, recursionDepth + 1);
+          if (
+            ref.typeName.type !== AST_NODE_TYPES.Identifier &&
+            ref.typeName.type !== AST_NODE_TYPES.TSQualifiedName
+          ) {
+            return false;
           }
-          if (ref.typeName.type === AST_NODE_TYPES.TSQualifiedName) {
-            const name = getRightmostIdentifierName(ref.typeName);
-            if (PRIMITIVE_TYPES.has(name) || enumNames.has(name)) return true;
-            if (seenAlias.has(name)) return true;
-            return isPrimitiveLikeAlias(name, recursionDepth + 1);
-          }
-          return false;
+          const name =
+            ref.typeName.type === AST_NODE_TYPES.Identifier
+              ? ref.typeName.name
+              : getRightmostIdentifierName(ref.typeName);
+          return isPrimitiveLikeAlias(name, ref, recursionDepth + 1);
         }
         case AST_NODE_TYPES.TSUnionType: {
           return (node.types as TSESTree.TypeNode[]).every((t) =>
@@ -560,13 +737,12 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
               : getRightmostIdentifierName(tn);
 
           if (PRIMITIVE_TYPES.has(refName)) return false;
-          if (interfaceNames.has(refName)) return true;
-          if (enumNames.has(refName)) return false;
-          if (aliasNameToType.has(refName)) {
-            return !isPrimitiveLikeAlias(refName, 0);
-          }
+          const resolved = resolveTypeName(node, refName);
           // Unknown reference: do not assume object to avoid false positives
-          return false;
+          if (!resolved) return false;
+          if (resolved.kind === 'interface') return true;
+          if (resolved.kind === 'enum') return false;
+          return !isPrimitiveLikeAlias(refName, node, 0);
         }
         case AST_NODE_TYPES.TSIntersectionType:
         case AST_NODE_TYPES.TSUnionType:

@@ -9,13 +9,29 @@
 - Flags any Firestore model field under `functions/src/types/firestore` whose type is an array of objects (type literals, interfaces, unions/intersections of objects, mapped types, or indexed access types).
 - Allows arrays of Firestore primitives such as `string`, `number`, `boolean`, `Date`, `Timestamp`, `GeoPoint`, including qualified names such as `firebase.firestore.Timestamp`.
 - Allows map-like structures such as `Record<string, T>` or `{ [key: string]: T }`, which support targeted updates.
-- Allows arrays of a const-array-derived union: `(typeof X)[number]` is treated as the underlying union of `X`'s elements when `X` is a const array declared in the same file whose elements are all primitive literals. This is the shape [`prefer-union-from-const-array`](./prefer-union-from-const-array.md) autofixes toward, so `eslint --fix` cannot turn a passing model type into a violation.
+- Allows arrays of a const-array-derived union: `(typeof X)[number]` is treated as the underlying union of `X`'s elements when `X` is a const array in scope at the reference whose elements are all primitive literals. This is the shape [`prefer-union-from-const-array`](./prefer-union-from-const-array.md) autofixes toward, so `eslint --fix` cannot turn a passing model type into a violation.
+
+### How element type names are resolved
+
+An element type spelled by name (`Comment[]`, `Array<Comment>`, `ReadonlyArray<Comment>`) is resolved against the same file, searching every statement container enclosing the reference — file scope, function and block bodies, `namespace` bodies, class static blocks, and `switch` cases — from the innermost outward, looking through `export`. Declaration position does not change the verdict: a model type written inside a function body is judged exactly as one written at file scope, and a declaration written below its own reference still resolves, matching TypeScript's hoisting of type declarations.
+
+The nearest declaration wins, so an inner declaration shadows a same-named outer one. A declaration in a scope the reference cannot see — a sibling function body, or another module — is not consulted, and an unresolvable name keeps the conservative non-object classification rather than being assumed to be an object.
+
+```ts
+// File: functions/src/types/firestore/Post.ts
+export function buildDefaults() {
+  type Comment = { text: string; author: string };
+  type Post = {
+    comments: Comment[]; // ❌ Reported: `Comment` resolves in the enclosing block
+  };
+}
+```
 
 ### Limits of the `(typeof X)[number]` exemption
 
 The lookup is syntactic, so the exemption applies only when every part is verifiable in the file being linted. These forms keep the default object-lookup classification:
 
-- `X` is imported or otherwise not declared in the same file.
+- `X` is imported, or declared only in a scope the reference cannot see.
 - `X` holds anything other than an array literal (for example an object literal).
 - Any element of `X` is an object literal, or any other expression that is not a primitive literal, a nested primitive array, or a spread of another qualifying const array.
 - The index is not `number` (for example `(typeof X)['length']`), or the object side is not a `typeof` query (for example `DataShape['user']`).
