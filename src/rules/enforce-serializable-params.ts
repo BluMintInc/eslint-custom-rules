@@ -57,22 +57,86 @@ export default createRule({
       ...(options.additionalNonSerializableTypes || []),
     ]);
 
-    const typeAliasMap = new Map<string, TSESTree.TSTypeAliasDeclaration>();
+    type PayloadDeclaration =
+      | TSESTree.TSTypeAliasDeclaration
+      | TSESTree.TSInterfaceDeclaration;
+
+    /**
+     * Interfaces sit here alongside aliases because a request contract is as
+     * often an `interface` as a `type`, and resolving only one of the two makes
+     * the rule's coverage depend on which keyword the author reached for.
+     */
+    const declarations = new Map<string, PayloadDeclaration>();
+
+    /**
+     * A node reports at most once. Resolution follows references, so a type
+     * reachable by two paths (`{ x: Inner; y: Inner }`) would otherwise produce
+     * duplicate reports at one location.
+     */
+    const reported = new Set<TSESTree.Node>();
 
     function isNonSerializableType(typeName: string): boolean {
       return allNonSerializableTypes.has(typeName);
     }
 
+    /**
+     * The rightmost identifier of a possibly-namespaced name, so
+     * `admin.firestore.Timestamp` is matched as `Timestamp`. The whole rule
+     * keys off simple names, and a namespaced spelling of a type is the same
+     * type — reading only `Identifier.name` leaves it `undefined` and silently
+     * exempts every firebase-admin-style reference.
+     */
+    function simpleTypeNameOf(
+      entity: TSESTree.EntityName | undefined,
+    ): string | undefined {
+      if (!entity) return undefined;
+      if (entity.type === AST_NODE_TYPES.Identifier) return entity.name;
+      if (entity.type === AST_NODE_TYPES.TSQualifiedName) {
+        return simpleTypeNameOf(entity.right);
+      }
+      return undefined;
+    }
+
+    const propertyNameOf = (
+      member: TSESTree.TSPropertySignature,
+    ): string | undefined => {
+      const { key } = member;
+      if (key.type === AST_NODE_TYPES.Identifier) return key.name;
+      if (key.type === AST_NODE_TYPES.Literal) return String(key.value);
+      return undefined;
+    };
+
+    function checkMembers(
+      members: TSESTree.TypeElement[],
+      seen: Set<string>,
+      propName?: string,
+    ): void {
+      for (const member of members) {
+        if (member.type !== AST_NODE_TYPES.TSPropertySignature) continue;
+        checkTypeNode(
+          member.typeAnnotation,
+          propertyNameOf(member) ?? propName,
+          seen,
+        );
+      }
+    }
+
     function checkTypeNode(
       node: TSESTree.TypeNode | TSESTree.TSTypeAnnotation | undefined,
       propName?: string,
+      seen: Set<string> = new Set(),
     ): void {
       if (!node) return;
 
       switch (node.type) {
         case AST_NODE_TYPES.TSTypeReference: {
-          const typeName = (node.typeName as TSESTree.Identifier).name;
-          if (isNonSerializableType(typeName)) {
+          const typeName = simpleTypeNameOf(node.typeName);
+          if (
+            typeName &&
+            isNonSerializableType(typeName) &&
+            !reported.has(node)
+          ) {
+            reported.add(node);
             context.report({
               node,
               messageId: propName
@@ -84,30 +148,54 @@ export default createRule({
               },
             });
           }
+          /**
+           * A reference to a locally declared type is followed so a payload
+           * assembled from named parts is inspected as a whole. `seen` is
+           * path-scoped rather than global: a self-referential type must not
+           * loop, but a type legitimately used by two siblings must still be
+           * checked under each of them.
+           */
+          if (typeName && !seen.has(typeName)) {
+            const declaration = declarations.get(typeName);
+            if (declaration) {
+              seen.add(typeName);
+              if (declaration.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
+                checkTypeNode(declaration.typeAnnotation, propName, seen);
+              } else {
+                checkMembers(declaration.body.body, seen, propName);
+              }
+              seen.delete(typeName);
+            }
+          }
           // Check type parameters of generic types (like Array<T>)
           if (node.typeParameters) {
             node.typeParameters.params.forEach((param) =>
-              checkTypeNode(param, propName),
+              checkTypeNode(param, propName, seen),
             );
           }
           break;
         }
         case AST_NODE_TYPES.TSArrayType:
-          checkTypeNode(node.elementType, propName);
+          checkTypeNode(node.elementType, propName, seen);
           break;
         case AST_NODE_TYPES.TSTypeAnnotation:
-          checkTypeNode(node.typeAnnotation, propName);
+          checkTypeNode(node.typeAnnotation, propName, seen);
           break;
         case AST_NODE_TYPES.TSTypeLiteral:
-          node.members.forEach((member) => {
-            if (member.type === AST_NODE_TYPES.TSPropertySignature) {
-              const propertyName = (member.key as TSESTree.Identifier).name;
-              checkTypeNode(member.typeAnnotation, propertyName);
-            }
-          });
+          checkMembers(node.members, seen, propName);
           break;
         case AST_NODE_TYPES.TSUnionType:
-          node.types.forEach((type) => checkTypeNode(type, propName));
+        case AST_NODE_TYPES.TSIntersectionType:
+          node.types.forEach((type) => checkTypeNode(type, propName, seen));
+          break;
+        case AST_NODE_TYPES.TSTupleType:
+          node.elementTypes.forEach((type) =>
+            checkTypeNode(type, propName, seen),
+          );
+          break;
+        // `readonly T[]` wraps its operand rather than replacing it.
+        case AST_NODE_TYPES.TSTypeOperator:
+          checkTypeNode(node.typeAnnotation, propName, seen);
           break;
       }
     }
@@ -122,11 +210,15 @@ export default createRule({
 
     return {
       TSTypeAliasDeclaration(node) {
-        typeAliasMap.set(node.id.name, node);
+        declarations.set(node.id.name, node);
+      },
+      TSInterfaceDeclaration(node) {
+        declarations.set(node.id.name, node);
       },
       TSTypeReference(node) {
-        const typeName = (node.typeName as TSESTree.Identifier).name;
+        const typeName = simpleTypeNameOf(node.typeName);
         if (
+          typeName &&
           options.functionTypes.includes(typeName) &&
           node.typeParameters?.params[0]
         ) {
@@ -135,25 +227,15 @@ export default createRule({
       },
       'Program:exit'() {
         for (const node of wrapperReferences) {
-          const typeParam = node.typeParameters?.params[0];
-          if (!typeParam) continue;
-
-          if (typeParam.type === AST_NODE_TYPES.TSTypeReference) {
-            const referencedTypeName = (
-              typeParam.typeName as TSESTree.Identifier
-            ).name;
-            const typeAlias = typeAliasMap.get(referencedTypeName);
-            /**
-             * A reference that names no local alias is still a type in its own
-             * right — `CallableRequest<Timestamp>` is the plainest form of the
-             * violation. Checking the node itself lets the non-serializable
-             * lookup and the generic descent apply; an unrecognized name simply
-             * yields no report, so an imported request type stays silent.
-             */
-            checkTypeNode(typeAlias ? typeAlias.typeAnnotation : typeParam);
-          } else {
-            checkTypeNode(typeParam);
-          }
+          /**
+           * The payload is handed to `checkTypeNode` whatever its shape: it
+           * resolves a reference to a local declaration itself, and a reference
+           * that names none is still a type in its own right —
+           * `CallableRequest<Timestamp>` is the plainest form of the violation.
+           * An unrecognized name yields no report, so an imported request type
+           * stays silent.
+           */
+          checkTypeNode(node.typeParameters?.params[0]);
         }
       },
     };
