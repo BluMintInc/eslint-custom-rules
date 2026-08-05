@@ -2471,8 +2471,10 @@ export class Loader {
       },
       {
         // The module specifier is evaluated in place rather than hoisted with
-        // the factory, so a class there keeps its access to the file's imports.
-        name: 'a class in the mock specifier position still fixes',
+        // the factory, so the factory guard does not apply here — but the class
+        // is an EXPRESSION, where a member decorator is TS1206 (#1735), so the
+        // report stands without a fix on that ground instead.
+        name: 'a class in the mock specifier position reports without a fix',
         code: `
 jest.mock(
   resolveModule(
@@ -2486,20 +2488,7 @@ jest.mock(
 );
 `,
         errors: [{ messageId: 'requireMemoize' as const }],
-        output: `
-import { Memoize } from '@blumintinc/typescript-memoize';
-jest.mock(
-  resolveModule(
-    class Locator {
-      @Memoize()
-      public async path() {
-        return './FirestoreFetcher';
-      }
-    },
-  ),
-  () => ({}),
-);
-`,
+        output: null,
       },
       {
         // `jest.fn` is not a registrar: its callback is never hoisted, so a
@@ -2686,5 +2675,324 @@ export class Loader {
         "import { Memoize } from '@blumintinc/typescript-memoize';",
       );
     }
+  });
+});
+
+// Issue #1735: under `experimentalDecorators`, TypeScript accepts a member
+// decorator only inside a class DECLARATION. Verified against tsc 5.0.3: the
+// same `@Memoize()` method compiles inside `class C {}`, `export class C {}`
+// and `export default class {}`, and is `TS1206: Decorators are not valid here.`
+// inside `const C = class {}`, a class in argument position, or a class
+// assigned to a property. The fix is withheld for every expression form while
+// the report stands; the declaration forms must keep fixing.
+ruleTesterTs.run(
+  'enforce-memoize-async: class expressions cannot carry decorators (issue #1735)',
+  enforceMemoizeAsync,
+  {
+    valid: [
+      // The exemptions that precede the report are unaffected: withholding the
+      // fix must not turn a non-violation into one.
+      {
+        name: 'a decorated method in a class expression reports nothing',
+        code: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+const Loader = class {
+  @Memoize()
+  public async load() {
+    return 1;
+  }
+};
+`,
+      },
+      {
+        name: 'a multi-parameter method in a class expression reports nothing',
+        code: `
+const Loader = class {
+  public async load(collection: string, id: string) {
+    return [collection, id];
+  }
+};
+`,
+      },
+    ],
+    invalid: [
+      {
+        name: 'a class expression assigned to a const reports without a fix',
+        code: `
+const Loader = class {
+  public async load() {
+    return 1;
+  }
+};
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: null,
+      },
+      {
+        // A class expression's own name binds inside its body only, so it is
+        // still an expression and still rejects the decorator.
+        name: 'a named class expression reports without a fix',
+        code: `
+const Loader = class NamedLoader {
+  public async load() {
+    return 1;
+  }
+};
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: null,
+      },
+      {
+        name: 'a class expression in argument position reports without a fix',
+        code: `
+register(
+  class Arg {
+    public async load() {
+      return 1;
+    }
+  },
+);
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: null,
+      },
+      {
+        name: 'a class expression assigned to a property reports without a fix',
+        code: `
+const registry = {
+  Loader: class {
+    public async load() {
+      return 1;
+    }
+  },
+};
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: null,
+      },
+      {
+        name: 'a class expression assigned to a member reports without a fix',
+        code: `
+registry.Loader = class {
+  public async load() {
+    return 1;
+  }
+};
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: null,
+      },
+      {
+        // `export default (class {})` is parenthesised into an expression,
+        // unlike the declaration form below.
+        name: 'a parenthesised default-exported class expression reports without a fix',
+        code: `
+export default (class {
+  public async load() {
+    return 1;
+  }
+});
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: null,
+      },
+      {
+        // The controls: every declaration form is a legal decorator position
+        // and must keep its fix.
+        name: 'a plain class declaration still fixes',
+        code: `
+class Loader {
+  public async load() {
+    return 1;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Loader {
+  @Memoize()
+  public async load() {
+    return 1;
+  }
+}
+`,
+      },
+      {
+        name: 'an exported class declaration still fixes',
+        code: `
+export class Loader {
+  public async load() {
+    return 1;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  @Memoize()
+  public async load() {
+    return 1;
+  }
+}
+`,
+      },
+      {
+        // An anonymous `export default class {}` is a DECLARATION despite
+        // having no name, so it is a legal decorator position — the shape the
+        // ClassExpression check is easiest to misclassify.
+        name: 'an anonymous default-exported class declaration still fixes',
+        code: `
+export default class {
+  public async load() {
+    return 1;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+export default class {
+  @Memoize()
+  public async load() {
+    return 1;
+  }
+}
+`,
+      },
+      {
+        name: 'a named default-exported class declaration still fixes',
+        code: `
+export default class Loader {
+  public async load() {
+    return 1;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+export default class Loader {
+  @Memoize()
+  public async load() {
+    return 1;
+  }
+}
+`,
+      },
+      {
+        // A declaration nested inside a function body is still a declaration.
+        name: 'a class declaration inside a function still fixes',
+        code: `
+function build() {
+  class Loader {
+    public async load() {
+      return 1;
+    }
+  }
+  return Loader;
+}
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+function build() {
+  class Loader {
+    @Memoize()
+    public async load() {
+      return 1;
+    }
+  }
+  return Loader;
+}
+`,
+      },
+      {
+        // A declining class expression must not consume the import carrier: the
+        // declaration in the same file still gets both decorator and import.
+        name: 'a declining class expression passes the import carrier on',
+        code: `
+const Anonymous = class {
+  public async load() {
+    return 1;
+  }
+};
+
+export class Loader {
+  public async fetch() {
+    return 2;
+  }
+}
+`,
+        errors: [
+          { messageId: 'requireMemoize' as const },
+          { messageId: 'requireMemoize' as const },
+        ],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+const Anonymous = class {
+  public async load() {
+    return 1;
+  }
+};
+
+export class Loader {
+  @Memoize()
+  public async fetch() {
+    return 2;
+  }
+}
+`,
+      },
+    ],
+  },
+);
+
+// The real multi-pass fixer over the #1735 repro: RuleTester runs a single pass
+// and so cannot show the file `eslint --fix` writes.
+describe('enforce-memoize-async: class expressions under --fix (issue #1735)', () => {
+  const EXPRESSION_REPRO = `const Loader = class {
+  public async load() {
+    return 1;
+  }
+};
+`;
+
+  it('leaves a class expression untouched across every pass', () => {
+    const output = lint(EXPRESSION_REPRO);
+
+    expect(output).toBe(EXPRESSION_REPRO);
+    expect(output).not.toContain('Memoize');
+  });
+
+  it('drops the fix from the report rather than the report itself', () => {
+    const messages = lintMessages(EXPRESSION_REPRO);
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].ruleId).toBe(RULE_ID);
+    expect(messages[0].fix).toBeUndefined();
+
+    // The same method inside a declaration still arrives with a fix attached.
+    const declared = lintMessages(`class Loader {
+  public async load() {
+    return 1;
+  }
+}
+`);
+    expect(declared).toHaveLength(1);
+    expect(declared[0].fix).toBeDefined();
+  });
+
+  it('adds no import when every violation sits in a class expression', () => {
+    const output = lint(`${EXPRESSION_REPRO}const Fetcher = class {
+  public async fetch() {
+    return 2;
+  }
+};
+`);
+
+    expect(output).not.toContain('@blumintinc/typescript-memoize');
+    expect(output).not.toContain('@Memoize');
   });
 });

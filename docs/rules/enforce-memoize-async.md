@@ -261,11 +261,52 @@ jest.mock('../FirestoreFetcher', () => {
 A mock is usually a stand-in whose caching is beside the point, so an inline
 `eslint-disable-next-line` on the method is equally appropriate.
 
-Only the factory — the registrar's second argument — declines. A method in the
-module specifier position, inside a `jest.fn` callback, or anywhere else in the
-file is fixed as usual, and a declining factory never claims the import: the
-injected `import { Memoize } from '@blumintinc/typescript-memoize';` rides on
-the first violation that does fix.
+Only the factory — the registrar's second argument — declines on this ground. A
+method in the module specifier position, inside a `jest.fn` callback, or
+anywhere else in the file is fixed as usual, subject to the class-expression
+limit below, and a declining factory never claims the import: the injected
+`import { Memoize } from '@blumintinc/typescript-memoize';` rides on the first
+violation that does fix.
+
+### Methods on a class expression
+
+Under `experimentalDecorators`, TypeScript accepts a member decorator only
+inside a class **declaration**. The same `@Memoize()` that compiles inside
+`class C {}` is `TS1206: Decorators are not valid here.` inside a class
+expression, so the fix is withheld for every expression form — a class assigned
+to a variable, a property, or passed as an argument — while the report stands:
+
+```ts
+// Reported, and left untouched by --fix: a decorator here is TS1206.
+const Loader = class {
+  public async load() {
+    return 1;
+  }
+};
+
+register(
+  class Arg {
+    public async load() {
+      return 1;
+    }
+  },
+);
+```
+
+Hoisting the class to a declaration makes the decorator legal, and every
+declaration form is fixed — including an anonymous `export default class {}`,
+which is a declaration despite having no name:
+
+```ts
+import { Memoize } from '@blumintinc/typescript-memoize';
+
+export default class {
+  @Memoize()
+  public async load() {
+    return 1;
+  }
+}
+```
 
 ## When Not To Use It
 

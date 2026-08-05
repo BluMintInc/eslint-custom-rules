@@ -108,6 +108,33 @@ function isInsideMockFactory(node: TSESTree.Node): boolean {
 }
 
 /**
+ * The class a method belongs to, reached through its `ClassBody`.
+ */
+function enclosingClass(
+  node: TSESTree.MethodDefinition,
+): TSESTree.Node | undefined {
+  const body = node.parent;
+  return body?.type === AST_NODE_TYPES.ClassBody ? body.parent : undefined;
+}
+
+/**
+ * Whether the method's own class is written as an expression — `const C = class
+ * {}`, a class in argument position, a class assigned to a property — rather
+ * than as a declaration.
+ *
+ * Under `experimentalDecorators`, TypeScript accepts a member decorator only
+ * inside a class DECLARATION: the same `@Memoize()` that compiles inside `class
+ * C {}`, `export class C {}` or `export default class {}` is `TS1206:
+ * Decorators are not valid here.` inside a class expression. An emitted
+ * decorator there breaks the consumer's build, so the report stands without a
+ * fix and the author restructures deliberately — hoisting the class to a
+ * declaration makes the decorator legal.
+ */
+function isInsideClassExpression(node: TSESTree.MethodDefinition): boolean {
+  return enclosingClass(node)?.type === AST_NODE_TYPES.ClassExpression;
+}
+
+/**
  * Whether a declared return type annotation promises no value: `void` or
  * `Promise<void>`.
  *
@@ -417,6 +444,15 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
             // the author reaches for a remedy the factory can hold, such as
             // decorating the real class the mock stands in for.
             if (isInsideMockFactory(node)) {
+              return null;
+            }
+
+            // A decorator is legal only on a member of a class declaration, so
+            // decorating a class expression's method emits code the consumer's
+            // compiler rejects outright (TS1206). Declining ahead of the import
+            // carrier claim below leaves the import to a violation that does
+            // fix.
+            if (isInsideClassExpression(node)) {
               return null;
             }
 
