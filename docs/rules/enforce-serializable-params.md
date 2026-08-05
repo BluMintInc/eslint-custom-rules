@@ -50,6 +50,20 @@ export const invalidFunction = async (
 };
 ```
 
+A not JSON-safe type used directly as the request type parameter is flagged the same way, whether it stands alone or sits behind a generic:
+
+```ts
+export const invalidDirect = async (request: CallableRequest<Timestamp>) => {
+  // Send an ISO string instead
+};
+
+export const invalidGeneric = async (
+  request: CallableRequest<Map<string, number>>,
+) => {
+  // Send a plain object or an array of entries instead
+};
+```
+
 ## Options
 
 This rule accepts an options object:

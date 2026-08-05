@@ -112,6 +112,14 @@ export default createRule({
       }
     }
 
+    /**
+     * TypeScript hoists type aliases, so a request type may be declared below
+     * the function that consumes it. Collecting the wrapper references and
+     * resolving them once traversal is finished decouples the check from
+     * declaration order, which `typeAliasMap` alone cannot do.
+     */
+    const wrapperReferences: TSESTree.TSTypeReference[] = [];
+
     return {
       TSTypeAliasDeclaration(node) {
         typeAliasMap.set(node.id.name, node);
@@ -122,16 +130,27 @@ export default createRule({
           options.functionTypes.includes(typeName) &&
           node.typeParameters?.params[0]
         ) {
-          const typeParam = node.typeParameters.params[0];
+          wrapperReferences.push(node);
+        }
+      },
+      'Program:exit'() {
+        for (const node of wrapperReferences) {
+          const typeParam = node.typeParameters?.params[0];
+          if (!typeParam) continue;
 
           if (typeParam.type === AST_NODE_TYPES.TSTypeReference) {
             const referencedTypeName = (
               typeParam.typeName as TSESTree.Identifier
             ).name;
             const typeAlias = typeAliasMap.get(referencedTypeName);
-            if (typeAlias) {
-              checkTypeNode(typeAlias.typeAnnotation);
-            }
+            /**
+             * A reference that names no local alias is still a type in its own
+             * right — `CallableRequest<Timestamp>` is the plainest form of the
+             * violation. Checking the node itself lets the non-serializable
+             * lookup and the generic descent apply; an unrecognized name simply
+             * yields no report, so an imported request type stays silent.
+             */
+            checkTypeNode(typeAlias ? typeAlias.typeAnnotation : typeParam);
           } else {
             checkTypeNode(typeParam);
           }

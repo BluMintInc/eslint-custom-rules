@@ -75,6 +75,25 @@ ruleTesterTs.run('enforce-serializable-params', rule, {
         };
       `,
     },
+
+    // A type parameter naming no local alias is unresolvable, so the rule knows
+    // nothing about its shape. Reporting it would flag every imported request
+    // type; these pin the silence that keeps the #1750 fallthrough from
+    // over-correcting into a false positive.
+    {
+      code: `
+        export const importedFunction = async (request: CallableRequest<ImportedParams>) => {
+          // Implementation
+        };
+      `,
+    },
+    {
+      code: `
+        export const indexedFunction = async (request: CallableRequest<Record<string, string>>) => {
+          // Implementation
+        };
+      `,
+    },
   ],
   invalid: [
     {
@@ -182,6 +201,53 @@ ruleTesterTs.run('enforce-serializable-params', rule, {
           'What\'s wrong: property "createdAt" uses a non-JSON-safe type "Date" → Why it matters: Firebase may coerce, drop, or strip semantic type when serializing callable/HTTPS request payloads → How to fix: accept only JSON-safe primitives, arrays, or plain objects, and convert Date to a safe representation (e.g., Date/Timestamp -> ISO string, DocumentReference -> document path string, Map/Set -> an array or object).',
         ),
       ],
+    },
+
+    // #1750: the plainest spelling of the violation. A bad type used directly as
+    // the type parameter is a bare TSTypeReference, which the rule used to hand
+    // to the alias map and then drop when the lookup missed — so the array,
+    // union and object-literal spellings reported while this one stayed silent.
+    {
+      code: `
+        export const directFunction = async (request: CallableRequest<Timestamp>) => {
+          // Invalid implementation
+        };
+      `,
+      errors: [{ messageId: 'nonSerializableParam' }],
+    },
+    {
+      code: `
+        export const refFunction = async (request: CallableRequest<DocumentReference>) => {
+          // Invalid implementation
+        };
+      `,
+      errors: [{ messageId: 'nonSerializableParam' }],
+    },
+
+    // The same fallthrough reaches a non-serializable type behind a generic.
+    {
+      code: `
+        export const cacheFunction = async (request: CallableRequest<Map<string, number>>) => {
+          // Invalid implementation
+        };
+      `,
+      errors: [{ messageId: 'nonSerializableParam' }],
+    },
+
+    // #1750: TypeScript hoists type aliases, so a request type declared below
+    // its consumer is legal. Resolution happens after traversal for this reason;
+    // reading the alias map mid-traversal missed every such declaration.
+    {
+      code: `
+        export const hoistedFunction = async (request: CallableRequest<HoistedParams>) => {
+          // Invalid implementation
+        };
+
+        type HoistedParams = {
+          createdAt: Timestamp;
+        };
+      `,
+      errors: [{ messageId: 'nonSerializableProperty' }],
     },
   ],
 });
