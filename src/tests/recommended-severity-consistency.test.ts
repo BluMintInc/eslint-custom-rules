@@ -95,18 +95,39 @@ const configuredRules = collectConfiguredRules();
 const configuredNames = new Set(configuredRules.map((rule) => rule.name));
 
 /**
- * Scope is the rules the recommended config ENABLES somewhere. A rule set to
- * 'off' everywhere, and a rule absent from the config entirely, are not
- * asserted against `meta.docs.recommended` — a disabled or unshipped rule's
- * declared severity does not affect what gates downstream.
+ * The rules the recommended config ENABLES somewhere. A rule absent from the
+ * config entirely is out of scope here — an unshipped rule's declared severity
+ * gates nothing downstream — but a rule the config ships 'off' is NOT: it is
+ * configured, and its meta is asserted by `disabledRules` below.
  */
 const enabledRules = configuredRules.filter(
   (rule) => rule.enabledSeverities.length > 0,
 );
 
+/**
+ * The rules the recommended config ships 'off' everywhere. Comparing their meta
+ * against the config was the one severity pairing nothing checked, which is how
+ * `prefer-fragment-component` came to ship 'off' while declaring 'error'
+ * (#1736). A rule disabled in the config does not gate, so meta claiming it
+ * does is exactly the misrepresentation this file exists to prevent — and it
+ * also hides that the disablement was never given a documented reason.
+ */
+const disabledRules = configuredRules.filter(
+  (rule) => rule.enabledSeverities.length === 0,
+);
+
 /** The severity to assert against, for rules with an unambiguous one. */
 const shippedSeverity = (rule: ConfiguredRule): Severity =>
   rule.enabledSeverities[0];
+
+/**
+ * The `meta.docs.recommended` value that represents a shipped severity.
+ * `RuleMetaDataDocs` types the field `false | 'error' | 'strict' | 'warn'` and
+ * has no `'off'` member, so `false` is the meta spelling of a config 'off' —
+ * not a value a rule may omit or leave at 'error'.
+ */
+const expectedMeta = (severity: Severity): Severity | false =>
+  severity === 'off' ? false : severity;
 
 /**
  * Every BluMint rule the recommended config ENABLES (at 'error' or 'warn') must
@@ -134,10 +155,68 @@ describe('recommended config ↔ meta.docs.recommended consistency', () => {
       const implementation = plugin.rules[rule.name];
       expect(implementation).toBeDefined();
       expect(implementation.meta?.docs?.recommended).toBe(
-        shippedSeverity(rule),
+        expectedMeta(shippedSeverity(rule)),
       );
     },
   );
+});
+
+/**
+ * The mirror of the block above, for the rules the config ships 'off'. Written
+ * as one assertion over a collected list rather than `it.each`, because the set
+ * is legitimately empty once every disabled rule graduates — and `it.each` on an
+ * empty table fails, which would turn a fully-graduated rule set into a red
+ * suite. The mismatch objects name the offending rules in the diff.
+ */
+describe('recommended config ↔ meta.docs.recommended for disabled rules', () => {
+  it('accounts for every configured rule as either enabled or disabled', () => {
+    // The partition is what makes the two blocks exhaustive: a configured rule
+    // that fell into neither would have its meta compared by nothing, which is
+    // the shape of the drift this file guards.
+    expect(enabledRules.length + disabledRules.length).toBe(
+      configuredRules.length,
+    );
+    expect(configuredRules.length).toBeGreaterThan(0);
+  });
+
+  it('every rule the config disables declares false in meta.docs.recommended', () => {
+    const mismatched = disabledRules.map((rule) => ({
+      name: rule.name,
+      declared: plugin.rules[rule.name]?.meta?.docs?.recommended,
+      sources: rule.sources,
+    }));
+    expect(
+      mismatched.filter((entry) => entry.declared !== expectedMeta('off')),
+    ).toEqual([]);
+  });
+
+  it('every rule the config disables has an implementation to check', () => {
+    expect(
+      disabledRules
+        .filter((rule) => plugin.rules[rule.name] === undefined)
+        .map((rule) => rule.name),
+    ).toEqual([]);
+  });
+
+  // The 'off' pairing has one live instance, so the mapping is exercised
+  // directly as well: a comparator that stopped distinguishing the values would
+  // otherwise read as a clean run rather than a lost check.
+  describe('meta representation of a shipped severity', () => {
+    it.each([
+      ['off', false],
+      ['error', 'error'],
+      ['warn', 'warn'],
+    ] as [Severity, Severity | false][])(
+      'a rule shipped %s must declare %s',
+      (severity, expected) => {
+        expect(expectedMeta(severity)).toBe(expected);
+      },
+    );
+
+    it('does not accept the config spelling of off as a meta value', () => {
+      expect(expectedMeta('off')).not.toBe('off');
+    });
+  });
 });
 
 const DOCS_DIR = path.join(__dirname, '../../docs/rules');

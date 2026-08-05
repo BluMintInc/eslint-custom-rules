@@ -8,6 +8,42 @@
 
 Using a single fragment style keeps React dependencies explicit and avoids shorthand limitations. This rule replaces `<>` and `<React.Fragment>` with `<Fragment>` imported from `'react'`.
 
+## Why this rule ships disabled
+
+The recommended config sets this rule to `'off'`
+(`meta.docs.recommended` is `false`, that field's spelling of `'off'` — its type
+admits `false | 'error' | 'strict' | 'warn'` and has no `'off'` member).
+
+A census of the consumer codebase — 8,726 parsed files across `src/**` and
+`functions/src/**`, inline disable directives honoured — measures **56 reports
+across 37 files**. The consumer's rule-sync reverts a plugin release on *any*
+report from a rule it enables, so shipping this rule at `'error'` would break
+that gate on the release that shipped it, taking every unrelated rule in the
+same release down with it.
+
+The stake is style consistency, not correctness: every construct this rule
+flags (`<>`, `React.Fragment`) is valid React that behaves identically to the
+`<Fragment>` it asks for. That does not justify blocking a release, so the rule
+ships off. Its fixer stays available for migrating the remaining sites on
+demand: enable the rule for a single `eslint --fix` run via the `--rule` flag,
+without changing what the shipped config gates on.
+
+The recommended config also enables
+[`prefer-fragment-shorthand`](./prefer-fragment-shorthand.md), which demands the
+opposite spelling (`<React.Fragment>` → `<>`). The two rules cannot both gate: on
+`<React.Fragment>` both fire, and their fixers rewrite the same element in
+opposite directions. Only one fragment style can be the enforced one, and the
+config's answer is the shorthand.
+
+**Graduation criterion:** promote the entry in `src/index.ts` and
+`meta.docs.recommended` to `'error'` together, in the same commit, once **both**
+hold: the consumer reports **zero** violations of this rule, and
+`prefer-fragment-shorthand` has been turned off in the same config (the two are
+mutually exclusive). Until the report count is zero, raising the severity is a
+knowingly red gate. The consistency of the two severities is asserted by
+`src/tests/recommended-severity-consistency.test.ts`, which covers rules shipped
+`'off'` as well as enabled ones, so the pair cannot drift apart again.
+
 ## Why?
 
 - Shorthand fragments cannot receive props such as `key`, so adding keys later forces a rewrite; `<Fragment>` keeps that option available.
