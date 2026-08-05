@@ -60,6 +60,19 @@ const NON_LAYOUT_FEATURES = new Set([
 const PREFERENCE_FEATURE_PREFIX = 'prefers-';
 
 /**
+ * JSX attributes and object properties that carry CSS. A value reaching one of
+ * these has the remedy the report prescribes — declare the breakpoint in a
+ * `@media` rule and let the class name change — so it keeps reporting.
+ */
+const STYLE_DESTINATIONS = new Set([
+  'sx',
+  'style',
+  'className',
+  'classes',
+  'css',
+]);
+
+/**
  * Guards the text a query carries outside its feature groups — media types and
  * combinators such as `screen`, `and`, `not`. A layout name appearing there
  * means the query is shaped in a way the group scanner does not read, so the
@@ -71,6 +84,13 @@ const FEATURE_GROUP = /\(([^()]*)\)/g;
 
 /** Follows at most this many indirections while resolving a query argument. */
 const MAX_RESOLUTION_DEPTH = 4;
+
+/**
+ * Follows at most this many hops while tracing a value to its destinations. A
+ * chain longer than this is unresolved and therefore reported, so the bound only
+ * ever costs an exemption.
+ */
+const MAX_DESTINATION_DEPTH = 8;
 
 /**
  * The feature a parenthesized query group tests, or `null` when the group's
@@ -186,9 +206,168 @@ function resolveBinding(
   return resolveQuery(definition.node.init, scope, depth + 1);
 }
 
+type RuleContext = Readonly<TSESLint.RuleContext<MessageIds, []>>;
+
+/** The name a property is keyed by, or `null` when the key is computed. */
+function propertyKeyName(property: TSESTree.Property): string | null {
+  const { key } = property;
+  if (!property.computed && key.type === AST_NODE_TYPES.Identifier) {
+    return key.name;
+  }
+  if (key.type === AST_NODE_TYPES.Literal && typeof key.value === 'string') {
+    return key.value;
+  }
+  return null;
+}
+
+/**
+ * Whether a JSX expression container hands its value to a prop CSS cannot
+ * express. A container in children position decides which markup renders, which
+ * a class name can do, so it is not exempt; neither is a style attribute nor a
+ * namespaced one, whose name this walk does not read.
+ */
+function isNonStyleAttributeValue(
+  container: TSESTree.JSXExpressionContainer,
+): boolean {
+  const attribute = container.parent;
+  if (attribute?.type !== AST_NODE_TYPES.JSXAttribute) {
+    return false;
+  }
+  return (
+    attribute.name.type === AST_NODE_TYPES.JSXIdentifier &&
+    !STYLE_DESTINATIONS.has(attribute.name.name)
+  );
+}
+
+/**
+ * Whether every destination the value reaches is one CSS cannot express — a
+ * `timeout`, an `anchorOrigin`, any prop a stylesheet has no way to select.
+ *
+ * The walk climbs from the value through the expressions that merely carry it
+ * (a conditional, an object it is nested in, a `const` it is bound to) until it
+ * reaches somewhere the value is consumed. It answers `false` for a style
+ * destination AND for every shape it does not model, because the exemption
+ * exists only where the rule's remedy is provably unavailable: a value returned,
+ * exported, passed to a call, or spread into props escapes to a destination this
+ * walk cannot see, and an unseen destination may well be a stylesheet.
+ */
+function reachesOnlyNonStyleDestinations(
+  node: TSESTree.Node,
+  context: RuleContext,
+  depth: number,
+): boolean {
+  if (depth > MAX_DESTINATION_DEPTH) {
+    return false;
+  }
+
+  const parent = node.parent;
+  if (!parent) {
+    return false;
+  }
+
+  switch (parent.type) {
+    // Expressions that pass the value along: where their own result lands is
+    // the question that decides the original value.
+    case AST_NODE_TYPES.ArrayExpression:
+    case AST_NODE_TYPES.BinaryExpression:
+    case AST_NODE_TYPES.ConditionalExpression:
+    case AST_NODE_TYPES.LogicalExpression:
+    case AST_NODE_TYPES.ObjectExpression:
+    case AST_NODE_TYPES.SpreadElement:
+    case AST_NODE_TYPES.TemplateLiteral:
+    case AST_NODE_TYPES.TSAsExpression:
+    case AST_NODE_TYPES.TSNonNullExpression:
+    case AST_NODE_TYPES.TSSatisfiesExpression:
+    case AST_NODE_TYPES.TSTypeAssertion:
+    case AST_NODE_TYPES.UnaryExpression:
+      return reachesOnlyNonStyleDestinations(parent, context, depth + 1);
+    // A `sx`/`style`/`classes` key names a style destination wherever the object
+    // itself ends up, so the property is checked before the object is followed.
+    case AST_NODE_TYPES.Property: {
+      const key = propertyKeyName(parent);
+      return (
+        (key === null || !STYLE_DESTINATIONS.has(key)) &&
+        reachesOnlyNonStyleDestinations(parent, context, depth + 1)
+      );
+    }
+    case AST_NODE_TYPES.JSXExpressionContainer:
+      return isNonStyleAttributeValue(parent);
+    case AST_NODE_TYPES.VariableDeclarator:
+      return (
+        parent.init === node &&
+        bindingReachesOnlyNonStyleDestinations(parent, context, depth)
+      );
+    default:
+      return false;
+  }
+}
+
+/**
+ * Whether every read of the binding this declarator introduces reaches a
+ * non-style destination.
+ *
+ * A binding with no reads is not exempt, mirroring `testsOnlyNonLayoutFeatures`
+ * on the query axis: a query naming no feature proves nothing, and neither does
+ * a value going nowhere.
+ */
+function bindingReachesOnlyNonStyleDestinations(
+  declarator: TSESTree.VariableDeclarator,
+  context: RuleContext,
+  depth: number,
+): boolean {
+  if (declarator.id.type !== AST_NODE_TYPES.Identifier) {
+    return false;
+  }
+
+  // Only a `const` proves the reads below observe the value declared here; a
+  // `let` may hold something else by the time a style reads it. An exported
+  // binding is read in files this walk cannot open.
+  const declaration = declarator.parent;
+  if (
+    declaration?.type !== AST_NODE_TYPES.VariableDeclaration ||
+    declaration.kind !== 'const' ||
+    declaration.parent?.type === AST_NODE_TYPES.ExportNamedDeclaration
+  ) {
+    return false;
+  }
+
+  const scope = ASTHelpers.getScope(context, declarator.id);
+  const variable = ASTHelpers.findVariableInScope(scope, declarator.id.name);
+  if (!variable || variable.defs.length !== 1) {
+    return false;
+  }
+
+  const reads = variable.references.filter(
+    (reference) => reference.identifier !== declarator.id,
+  );
+  if (reads.length === 0) {
+    return false;
+  }
+
+  return reads.every(
+    (reference) =>
+      reference.isRead() &&
+      // `export { isMobile }` hands the value to another file.
+      reference.identifier.parent?.type !== AST_NODE_TYPES.ExportSpecifier &&
+      reachesOnlyNonStyleDestinations(reference.identifier, context, depth + 1),
+  );
+}
+
 /**
  * This rule enforces the use of CSS media queries instead of JavaScript-based breakpoints
  * in React components for better performance and separation of concerns.
+ *
+ * Two exemptions exist, both resting on the same principle: the rule reports
+ * only where its remedy exists. A query testing capability or preference has no
+ * CSS remedy, and neither does a viewport breakpoint whose result never reaches
+ * a style.
+ *
+ * Known limitation of the destination exemption: a value handed to a child
+ * component through an ordinary prop is exempt here even if the child applies it
+ * to a class, because the walk stops at this file's props. That false negative
+ * is the accepted price of an analysis that stays inside one file; the
+ * alternative — reporting every value that leaves the component — is the
+ * unactionable report this exemption exists to remove.
  */
 export const enforceCssMediaQueries = createRule<[], MessageIds>({
   name: 'enforce-css-media-queries',
@@ -227,7 +406,8 @@ export const enforceCssMediaQueries = createRule<[], MessageIds>({
     const localNamesOf = (node: TSESTree.ImportDeclaration) =>
       node.specifiers.map((specifier) => specifier.local.name);
 
-    const isExemptCall = (node: TSESTree.CallExpression) => {
+    /** Whether the query the call carries is provably free of layout. */
+    const testsExemptQuery = (node: TSESTree.CallExpression) => {
       const [argument] = node.arguments;
       if (!argument) {
         return false;
@@ -235,6 +415,13 @@ export const enforceCssMediaQueries = createRule<[], MessageIds>({
       const query = resolveQuery(argument, ASTHelpers.getScope(context, node));
       return query !== null && testsOnlyNonLayoutFeatures(query);
     };
+
+    // A zero-argument hook such as `useMobile` carries no query, so the
+    // query axis can never clear it; the destination axis is the only one that
+    // can, and it applies to every media hook alike.
+    const isExemptCall = (node: TSESTree.CallExpression) =>
+      testsExemptQuery(node) ||
+      reachesOnlyNonStyleDestinations(node, context, 0);
 
     return {
       // Only react-responsive is handled at the declaration level to avoid duplicates.
