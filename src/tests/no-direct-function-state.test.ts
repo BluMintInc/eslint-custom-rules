@@ -180,6 +180,60 @@ setValue(actions.refresh);
     const [onCloseState, setOnCloseState] = useState<Foo.Bar | undefined>(undefined);
     setOnCloseState(newOnClose);
     `,
+
+    // A nested alias shadows a same-named outer one: the inner declaration is
+    // the one in scope, and it is not a function type, so the outer function
+    // alias must not leak in and flag the setter.
+    `
+    type Shadowed = () => void;
+    function usePortal() {
+      type Shadowed = { id: string };
+      const [state, setState] = useState<Shadowed | undefined>(undefined);
+      const apply = (payload: Shadowed) => {
+        setState(payload);
+      };
+      return { apply };
+    }
+    `,
+
+    // Sibling scope: the alias lives in a function the setter is not inside,
+    // so it must not resolve.
+    `
+    function other() {
+      type ToClose = () => void;
+      return null as unknown as ToClose;
+    }
+    function usePortal() {
+      const [state, setState] = useState<ToClose | undefined>(undefined);
+      const apply = (payload: ToClose) => {
+        setState(payload);
+      };
+      return { apply };
+    }
+    `,
+
+    // Nested alias resolving to a non-function type — bare identifier is safe.
+    `
+    function useCounter() {
+      type Count = number;
+      const [count, setCount] = useState<Count>(0);
+      const n = 5;
+      setCount(n);
+    }
+    `,
+
+    // Self-referential alias declared inside a function body terminates rather
+    // than recursing forever, and resolves to no function type.
+    `
+    function usePortal() {
+      type A = A;
+      const [state, setState] = useState<A | undefined>(undefined);
+      const apply = (payload: A) => {
+        setState(payload);
+      };
+      return { apply };
+    }
+    `,
   ],
 
   invalid: [
@@ -591,6 +645,223 @@ type Maybe = ToClose | undefined;
 declare const newOnClose: ToClose;
 const [onCloseState, setOnCloseState] = useState<Maybe>(undefined);
 setOnCloseState(() => newOnClose);
+      `,
+    },
+
+    // Alias declared inside the hook that uses it — declaring the type beside
+    // its consumer is the natural spelling, and the alias is just as readable
+    // there as at file scope.
+    {
+      code: `
+function usePortal() {
+  type ToClose = () => void;
+  const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+  const open = (newOnClose: ToClose) => {
+    setOnCloseState(newOnClose);
+  };
+  return { open };
+}
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+function usePortal() {
+  type ToClose = () => void;
+  const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+  const open = (newOnClose: ToClose) => {
+    setOnCloseState(() => newOnClose);
+  };
+  return { open };
+}
+      `,
+    },
+
+    // Alias declared inside an arrow function body
+    {
+      code: `
+const usePortal = () => {
+  type ToClose = () => void;
+  const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+  const open = (newOnClose: ToClose) => {
+    setOnCloseState(newOnClose);
+  };
+  return { open };
+};
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+const usePortal = () => {
+  type ToClose = () => void;
+  const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+  const open = (newOnClose: ToClose) => {
+    setOnCloseState(() => newOnClose);
+  };
+  return { open };
+};
+      `,
+    },
+
+    // `export type` alias nested in a namespace — the export wrapper and the
+    // TSModuleBlock both have to be seen through.
+    {
+      code: `
+namespace Portal {
+  export type ToClose = () => void;
+  export function usePortal() {
+    const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+    const open = (newOnClose: ToClose) => {
+      setOnCloseState(newOnClose);
+    };
+    return { open };
+  }
+}
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+namespace Portal {
+  export type ToClose = () => void;
+  export function usePortal() {
+    const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+    const open = (newOnClose: ToClose) => {
+      setOnCloseState(() => newOnClose);
+    };
+    return { open };
+  }
+}
+      `,
+    },
+
+    // Alias declared inside a bare block
+    {
+      code: `
+{
+  type ToClose = () => void;
+  declare const newOnClose: ToClose;
+  const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+  setOnCloseState(newOnClose);
+}
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+{
+  type ToClose = () => void;
+  declare const newOnClose: ToClose;
+  const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+  setOnCloseState(() => newOnClose);
+}
+      `,
+    },
+
+    // Alias declared inside a switch case's block
+    {
+      code: `
+switch (mode) {
+  case 'portal': {
+    type ToClose = () => void;
+    const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+    const open = (newOnClose: ToClose) => {
+      setOnCloseState(newOnClose);
+    };
+    break;
+  }
+}
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+switch (mode) {
+  case 'portal': {
+    type ToClose = () => void;
+    const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+    const open = (newOnClose: ToClose) => {
+      setOnCloseState(() => newOnClose);
+    };
+    break;
+  }
+}
+      `,
+    },
+
+    // Type declarations hoist, so an alias written after the `useState` call
+    // that references it still resolves — including inside a function body.
+    {
+      code: `
+function usePortal() {
+  const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+  const open = (newOnClose: ToClose) => {
+    setOnCloseState(newOnClose);
+  };
+  type ToClose = () => void;
+  return { open };
+}
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+function usePortal() {
+  const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+  const open = (newOnClose: ToClose) => {
+    setOnCloseState(() => newOnClose);
+  };
+  type ToClose = () => void;
+  return { open };
+}
+      `,
+    },
+
+    // Two-hop alias chain declared inside the function body
+    {
+      code: `
+function usePortal() {
+  type Base = () => void;
+  type ToClose = Base;
+  const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+  const open = (newOnClose: ToClose) => {
+    setOnCloseState(newOnClose);
+  };
+  return { open };
+}
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+function usePortal() {
+  type Base = () => void;
+  type ToClose = Base;
+  const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+  const open = (newOnClose: ToClose) => {
+    setOnCloseState(() => newOnClose);
+  };
+  return { open };
+}
+      `,
+    },
+
+    // The alias sits in an outer scope relative to the setter call: resolution
+    // climbs out of the inner function to find it.
+    {
+      code: `
+function usePortal() {
+  type ToClose = () => void;
+  function inner() {
+    const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+    const open = (newOnClose: ToClose) => {
+      setOnCloseState(newOnClose);
+    };
+    return { open };
+  }
+  return inner;
+}
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+function usePortal() {
+  type ToClose = () => void;
+  function inner() {
+    const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
+    const open = (newOnClose: ToClose) => {
+      setOnCloseState(() => newOnClose);
+    };
+    return { open };
+  }
+  return inner;
+}
       `,
     },
   ],

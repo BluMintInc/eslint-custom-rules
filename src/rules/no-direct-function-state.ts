@@ -17,34 +17,75 @@ const DEFAULT_FUNCTION_PATTERNS = [
   'on[A-Z].*',
 ];
 
-/**
- * Maps a same-file type alias name (from `type X = ...`) to the type node on
- * its right-hand side, so `useState<X>` can be resolved back to a function
- * type without a type checker.
- */
-type TypeAliasMap = Map<string, TSESTree.TypeNode>;
+/** Statement containers a type alias can be a direct child of. */
+function statementsOf(node: TSESTree.Node): TSESTree.Node[] | undefined {
+  switch (node.type) {
+    case AST_NODE_TYPES.Program:
+    case AST_NODE_TYPES.BlockStatement:
+    case AST_NODE_TYPES.TSModuleBlock:
+    case AST_NODE_TYPES.StaticBlock:
+      return (node as { body: TSESTree.Node[] }).body;
+    case AST_NODE_TYPES.SwitchCase:
+      return node.consequent;
+    default:
+      return undefined;
+  }
+}
 
 /**
- * Walks the top-level statements of a Program to build a name -> type-node
- * map of every `type X = ...` alias declared in the file (including ones
- * behind `export`). Populated up front from `Program.body` rather than from
- * a `TSTypeAliasDeclaration` visitor, because ESLint visits in document
- * order: an alias declared AFTER the `useState` call it types would not yet
- * be known if we relied on visitor order alone.
+ * The type alias a statement declares under `name`, looking through `export`.
+ *
+ * `export type ToClose = ...` is the same declaration one AST node deeper,
+ * inside an `ExportNamedDeclaration`. Reading the statement without unwrapping
+ * would make the `export` keyword alone decide whether the state's type is
+ * readable, which says nothing about what the state holds.
  */
-function collectTypeAliases(programNode: TSESTree.Program): TypeAliasMap {
-  const aliases: TypeAliasMap = new Map();
-  for (const statement of programNode.body) {
-    const declaration =
-      statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
-      statement.declaration
-        ? statement.declaration
-        : statement;
-    if (declaration.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
-      aliases.set(declaration.id.name, declaration.typeAnnotation);
+function typeAliasNamed(
+  statement: TSESTree.Node,
+  name: string,
+): TSESTree.TSTypeAliasDeclaration | undefined {
+  const declaration =
+    statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
+    statement.declaration
+      ? statement.declaration
+      : statement;
+  return declaration.type === AST_NODE_TYPES.TSTypeAliasDeclaration &&
+    declaration.id.name === name
+    ? declaration
+    : undefined;
+}
+
+/**
+ * Resolves a same-file `type X = ...` alias against every enclosing statement
+ * container, innermost outward, so the nearest declaration shadows a
+ * same-named outer one.
+ *
+ * Resolving lexically rather than from a map built off `Program.body` is what
+ * lets an alias declared beside the hook that uses it — the more natural
+ * spelling than hoisting it to file scope — be seen at all. It also keeps the
+ * document-order independence the up-front scan was written for: every
+ * statement of a container is searched, so an alias declared after the
+ * `useState` call that references it still resolves, matching TypeScript's
+ * hoisting of type declarations.
+ */
+function resolveTypeAlias(
+  from: TSESTree.Node,
+  name: string,
+): TSESTree.TSTypeAliasDeclaration | undefined {
+  let current: TSESTree.Node | undefined = from;
+  while (current) {
+    const statements = statementsOf(current);
+    if (statements) {
+      for (const statement of statements) {
+        const alias = typeAliasNamed(statement, name);
+        if (alias) {
+          return alias;
+        }
+      }
     }
+    current = current.parent as TSESTree.Node | undefined;
   }
-  return aliases;
+  return undefined;
 }
 
 /**
@@ -53,16 +94,19 @@ function collectTypeAliases(programNode: TSESTree.Program): TypeAliasMap {
  * null/undefined. We check purely syntactically; no type-checker required.
  *
  * A `TSTypeReference` (e.g. `ToClose` in `useState<ToClose>`) is resolved
- * against same-file type aliases and recursed into. Cross-file aliases
- * (imported types) are syntactically unreachable and are left unreported by
- * this signal — the name-pattern and scope-binding signals still apply.
- * `visitedAliases` guards against infinite recursion on a self-referential
- * or mutually-recursive alias chain (`type A = B; type B = A;`).
+ * against same-file type aliases and recursed into, continuing the search from
+ * the alias's own declaration so each hop of a chain resolves in its own
+ * scope. Cross-file aliases (imported types) are syntactically unreachable and
+ * are left unreported by this signal — the name-pattern and scope-binding
+ * signals still apply. `visitedAliases` guards against infinite recursion on a
+ * self-referential or mutually-recursive alias chain (`type A = B; type B = A;`).
+ * It holds resolved declaration nodes rather than names, because one name can
+ * denote different declarations in different scopes.
  */
 function isFunctionTypeAnnotation(
   typeNode: TSESTree.TypeNode,
-  aliases: TypeAliasMap,
-  visitedAliases: Set<string> = new Set(),
+  resolveFrom: TSESTree.Node,
+  visitedAliases: Set<TSESTree.Node> = new Set(),
 ): boolean {
   switch (typeNode.type) {
     case AST_NODE_TYPES.TSFunctionType:
@@ -71,7 +115,7 @@ function isFunctionTypeAnnotation(
     case AST_NODE_TYPES.TSUnionType:
       // Union like `(() => void) | null` — any member being a function type suffices
       return typeNode.types.some((member) =>
-        isFunctionTypeAnnotation(member, aliases, visitedAliases),
+        isFunctionTypeAnnotation(member, resolveFrom, visitedAliases),
       );
     case AST_NODE_TYPES.TSTypeReference: {
       const { typeName } = typeNode;
@@ -79,15 +123,16 @@ function isFunctionTypeAnnotation(
       if (typeName.type !== AST_NODE_TYPES.Identifier) {
         return false;
       }
-      if (visitedAliases.has(typeName.name)) {
+      const alias = resolveTypeAlias(resolveFrom, typeName.name);
+      if (!alias || visitedAliases.has(alias)) {
         return false;
       }
-      const aliasTarget = aliases.get(typeName.name);
-      if (!aliasTarget) {
-        return false;
-      }
-      visitedAliases.add(typeName.name);
-      return isFunctionTypeAnnotation(aliasTarget, aliases, visitedAliases);
+      visitedAliases.add(alias);
+      return isFunctionTypeAnnotation(
+        alias.typeAnnotation,
+        alias,
+        visitedAliases,
+      );
     }
     default:
       return false;
@@ -97,16 +142,19 @@ function isFunctionTypeAnnotation(
 /**
  * Checks whether a useState call expression has a type parameter that
  * includes a function type, e.g. useState<(() => void) | null>(null).
+ *
+ * `resolveFrom` anchors alias lookup at the declaration site so that an alias
+ * local to the enclosing function or block is reachable.
  */
 function useStateHasFunctionTypeParam(
   callNode: TSESTree.CallExpression,
-  aliases: TypeAliasMap,
+  resolveFrom: TSESTree.Node,
 ): boolean {
   const typeParams = callNode.typeParameters;
   if (!typeParams || typeParams.params.length === 0) {
     return false;
   }
-  return isFunctionTypeAnnotation(typeParams.params[0], aliases);
+  return isFunctionTypeAnnotation(typeParams.params[0], resolveFrom);
 }
 
 /**
@@ -274,16 +322,7 @@ export const noDirectFunctionState = createRule<Options, MessageIds>({
      */
     const setterFunctionTyped = new Map<string, boolean>();
 
-    // Populated by the Program visitor, which runs before any descendant
-    // visitor, so declaration order of `type` aliases relative to the
-    // `useState` call that references them never matters.
-    let typeAliases: TypeAliasMap = new Map();
-
     return {
-      Program(node) {
-        typeAliases = collectTypeAliases(node);
-      },
-
       VariableDeclarator(node) {
         // Look for `const [state, setter] = useState<T>(...)` or
         // `const [state, setter] = React.useState<T>(...)`.
@@ -320,10 +359,7 @@ export const noDirectFunctionState = createRule<Options, MessageIds>({
         }
 
         const setterName = setterElement.name;
-        const hasFunctionType = useStateHasFunctionTypeParam(
-          callNode,
-          typeAliases,
-        );
+        const hasFunctionType = useStateHasFunctionTypeParam(callNode, node);
         setterFunctionTyped.set(setterName, hasFunctionType);
       },
 
