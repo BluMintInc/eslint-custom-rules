@@ -571,7 +571,6 @@ const UNPROBED_RULES: Record<string, Reason> = {
   'enforce-unique-cursor-headers': REASONS.noEnclosingBlock,
   'global-const-style': REASONS.noEnclosingBlock,
   'jsdoc-above-field': REASONS.noEnclosingBlock,
-  'no-curly-brackets-around-commented-properties': REASONS.noEnclosingBlock,
   'no-unnecessary-destructuring': REASONS.noEnclosingBlock,
   'no-useless-usememo-primitives': REASONS.noEnclosingBlock,
   'omit-index-html': REASONS.noEnclosingBlock,
@@ -606,6 +605,10 @@ const UNPROBED_RULES: Record<string, Reason> = {
   'key-only-outermost-element': REASONS.noModuleBoundReference,
   'logical-top-to-bottom-grouping': REASONS.noModuleBoundReference,
   'no-class-instance-destructuring': REASONS.noModuleBoundReference,
+  // Reaches inside a function block once the parent gate spans every statement
+  // list, but the fix only strips braces, so it emits no reference to capture.
+  'no-curly-brackets-around-commented-properties':
+    REASONS.noModuleBoundReference,
   'no-direct-function-state': REASONS.noModuleBoundReference,
   'no-empty-dependency-use-callbacks': REASONS.noModuleBoundReference,
   'no-entire-object-hook-deps': REASONS.noModuleBoundReference,

@@ -62,24 +62,61 @@ function getBlockComments(
     );
 }
 
-type TopLevelParent = TSESTree.Program | TSESTree.TSModuleBlock;
+/**
+ * The node kinds that hold a list of sibling statements. An orphaned brace block
+ * can only appear as an element of one of these lists, wherever a statement is
+ * legal: module scope, a namespace/module body, any nested block, a class static
+ * block, or a switch case.
+ */
+type StatementListParent =
+  | TSESTree.Program
+  | TSESTree.TSModuleBlock
+  | TSESTree.BlockStatement
+  | TSESTree.StaticBlock
+  | TSESTree.SwitchCase;
+
+const STATEMENT_LIST_PARENT_TYPES = new Set<string>([
+  AST_NODE_TYPES.Program,
+  AST_NODE_TYPES.TSModuleBlock,
+  AST_NODE_TYPES.BlockStatement,
+  AST_NODE_TYPES.StaticBlock,
+  AST_NODE_TYPES.SwitchCase,
+]);
+
+function getStatementList(parent: StatementListParent): TSESTree.Node[] {
+  return parent.type === AST_NODE_TYPES.SwitchCase
+    ? parent.consequent
+    : parent.body;
+}
 
 type ReportableBlockContext = {
-  parent: TopLevelParent;
+  parent: StatementListParent;
   ancestors: TSESTree.Node[];
   siblingIndent: string | null;
 };
 
-function isEmptyTopLevelBlock(
+/**
+ * A block that is the BODY of some construct — a function or arrow body, an
+ * `if` consequent or alternate, a `try`/`catch`/`finally` block, a loop body, a
+ * labeled statement — is deliberate code, not an orphaned member list, even when
+ * it holds nothing but comments. Every such body is referenced through a
+ * dedicated property of a non-list parent, so requiring membership in the
+ * parent's statement list (rather than trusting the parent kind alone) keeps
+ * those bodies silent.
+ */
+function isOrphanedStatementListBlock(
   node: TSESTree.BlockStatement,
   parent: TSESTree.Node | null | undefined,
-): parent is TopLevelParent {
-  return (
-    node.body.length === 0 &&
-    !!parent &&
-    (parent.type === AST_NODE_TYPES.Program ||
-      parent.type === AST_NODE_TYPES.TSModuleBlock)
-  );
+): parent is StatementListParent {
+  if (node.body.length !== 0 || !parent) {
+    return false;
+  }
+
+  if (!STATEMENT_LIST_PARENT_TYPES.has(parent.type)) {
+    return false;
+  }
+
+  return getStatementList(parent as StatementListParent).includes(node);
 }
 
 function hasTypeMemberComments(comments: TSESTree.Comment[]): boolean {
@@ -110,20 +147,10 @@ function describeContext(
 
 function getSiblingIndent(
   sourceCode: Readonly<TSESLint.SourceCode>,
-  parent: TSESTree.Node | null,
+  parent: StatementListParent,
   current: TSESTree.BlockStatement,
 ): string | null {
-  const container =
-    parent &&
-    'body' in parent &&
-    Array.isArray((parent as TSESTree.Program).body)
-      ? (parent as TSESTree.Program | TSESTree.TSModuleBlock).body
-      : null;
-
-  /* istanbul ignore next -- defensive, parent is guaranteed to be Program or TSModuleBlock */
-  if (!container) {
-    return null;
-  }
+  const container = getStatementList(parent);
 
   let indent: string | null = null;
 
@@ -261,7 +288,7 @@ function getReportableBlockContext(
 ): ReportableBlockContext | null {
   const parent = node.parent;
 
-  if (!isEmptyTopLevelBlock(node, parent)) {
+  if (!isOrphanedStatementListBlock(node, parent)) {
     return null;
   }
 
@@ -305,7 +332,7 @@ function createBlockRemovalFix(
       return null;
     }
 
-    let fixRange: [number, number] = [node.range[0], node.range[1]];
+    const fixRange: [number, number] = [node.range[0], node.range[1]];
     let finalText = replacement;
 
     /**
