@@ -251,10 +251,43 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
     // Using a key with a destructured function that isn't uuidv4Base62
     `
     import React from 'react';
-    
+
     const { generateId } = utils;
     {items.map((item) => (
       <div key={generateId()}>{item.name}</div>
+    ))}
+    `,
+
+    // A relative module whose basename only starts with uuidv4Base62 is a
+    // different helper: the basename must match exactly, not by prefix.
+    `
+    import React from 'react';
+    import { uuidv4Base62Stable } from '../../util/uuidv4Base62Stable';
+
+    {items.map((item) => (
+      <div key={uuidv4Base62Stable(item)}>{item.name}</div>
+    ))}
+    `,
+
+    // A relative module whose basename is not uuidv4Base62 exports an
+    // unrelated key generator, so widening the source match must not reach it.
+    `
+    import React from 'react';
+    import { generateKey } from '../../util/keyFactory';
+
+    {items.map((item) => (
+      <div key={generateKey(item)}>{item.name}</div>
+    ))}
+    `,
+
+    // A matching module still only contributes its uuidv4Base62 export: the
+    // binding-name gate survives the widened source match.
+    `
+    import React from 'react';
+    import { formatKey } from '../../util/uuidv4Base62';
+
+    {items.map((item) => (
+      <div key={formatKey(item)}>{item.name}</div>
     ))}
     `,
   ],
@@ -685,6 +718,74 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
       })}
       `,
       errors: [error('uuidv4Base62()')],
+    },
+
+    // The helper reached through a relative path is the same helper
+    {
+      code: `
+import { uuidv4Base62 } from '../../util/uuidv4Base62';
+
+const List = ({ items }) => (
+  <div>
+    {items.map((item) => (
+      <div key={uuidv4Base62()}>{item.name}</div>
+    ))}
+  </div>
+);
+`,
+      errors: [{ messageId: 'noUuidv4Base62AsKey' }],
+    },
+
+    // Reached through a tsconfig path alias rooted at the project source dir
+    {
+      code: `
+      import React from 'react';
+      import { uuidv4Base62 } from 'src/util/uuidv4Base62';
+
+      {items.map((item) => (
+        <div key={uuidv4Base62()}>{item.name}</div>
+      ))}
+      `,
+      errors: [error('uuidv4Base62()')],
+    },
+
+    // Reached through a deeper subpath of the package the rule already knows
+    {
+      code: `
+      import React from 'react';
+      import { uuidv4Base62 } from '@blumint/utils/keys/uuidv4Base62';
+
+      {items.map((item) => (
+        <div key={uuidv4Base62()}>{item.name}</div>
+      ))}
+      `,
+      errors: [error('uuidv4Base62()')],
+    },
+
+    // A specifier carrying a module extension resolves to the same module
+    {
+      code: `
+      import React from 'react';
+      import { uuidv4Base62 } from './uuidv4Base62.js';
+
+      {items.map((item) => (
+        <div key={uuidv4Base62()}>{item.name}</div>
+      ))}
+      `,
+      errors: [error('uuidv4Base62()')],
+    },
+
+    // The local-alias path keeps working through a widened source
+    {
+      code: `
+      import React from 'react';
+      import { uuidv4Base62 as makeKey } from '../../util/uuidv4Base62';
+
+      {items.map((item) => (
+        <div key={makeKey(item)}>{item.name}</div>
+      ))}
+      `,
+      errors: [error('makeKey(item)')],
     },
   ],
 });

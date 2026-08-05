@@ -4,6 +4,36 @@ import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds = 'noUuidv4Base62AsKey';
 
+/**
+ * The helper's own module, identified by its file name rather than by a fixed
+ * list of specifiers: it is reachable as a package subpath, a tsconfig alias,
+ * or a relative path, and every one of those spellings imports the same
+ * function.
+ */
+const UUIDV4_BASE62_MODULE = 'uuidv4Base62';
+
+/** The barrel that re-exports the helper alongside unrelated utilities. */
+const UUIDV4_BASE62_BARREL = '@blumint/utils';
+
+const MODULE_EXTENSION = /\.(?:tsx?|jsx?)$/;
+
+/**
+ * Matches the final path segment exactly rather than testing the whole
+ * specifier with a suffix check. A suffix test has no module resolution behind
+ * it, so it conflates monorepo tiers (`functions/src/util/uuidv4Base62` versus
+ * `src/util/uuidv4Base62`) and, worse, accepts sibling modules whose names
+ * merely end with the helper's name. An exact basename comparison keeps
+ * `../../util/uuidv4Base62Stable` — a different helper — out.
+ */
+function isUuidv4Base62Module(source: unknown): boolean {
+  if (typeof source !== 'string') return false;
+  if (source === UUIDV4_BASE62_BARREL) return true;
+
+  const segments = source.split('/');
+  const basename = segments[segments.length - 1].replace(MODULE_EXTENSION, '');
+  return basename === UUIDV4_BASE62_MODULE;
+}
+
 export const noUuidv4Base62AsKey = createRule<[], MessageIds>({
   name: 'no-uuidv4-base62-as-key',
   meta: {
@@ -318,10 +348,7 @@ export const noUuidv4Base62AsKey = createRule<[], MessageIds>({
 
       // Track imports of uuidv4Base62
       ImportDeclaration(node) {
-        if (
-          node.source.value === '@blumint/utils/uuidv4Base62' ||
-          node.source.value === '@blumint/utils'
-        ) {
+        if (isUuidv4Base62Module(node.source.value)) {
           for (const specifier of node.specifiers) {
             if (specifier.type === AST_NODE_TYPES.ImportSpecifier) {
               if (
