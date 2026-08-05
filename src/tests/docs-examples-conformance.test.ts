@@ -1182,3 +1182,419 @@ describe('documented "incorrect" fences must report (#1641)', () => {
     expect(requiresTypeChecking('no-jsx-whitespace-literal')).toBe(false);
   });
 });
+
+/**
+ * Statement-level dead-example guard (#1742).
+ *
+ * The #1641 guard asks whether a fence reports AT ALL and stops at the first
+ * hit, so a fence documenting several violations is satisfied by any one of
+ * them still working. Pages routinely document several per fence: of the 341
+ * incorrect fences that fire, 192 top-level non-declaration statements sit
+ * inside them, so the coarser question leaves most documented violations
+ * unasserted. Reverting the #1625 fix leaves its documented example silent and
+ * the fence guard green, because a sibling in the same fence reports.
+ *
+ * This asks the same question one level down: inside a fence that fires, does
+ * every top-level statement carry a report of its own? A statement that does
+ * not is either scaffolding the example needs, or a documented violation
+ * nobody flags — and the difference has to be written down rather than
+ * inferred from a sibling's report.
+ */
+
+/**
+ * Statement kinds excluded from the assertion.
+ *
+ * A fence's declarations are overwhelmingly setup for the violation that
+ * follows — the `const docRef = ...` that a bad `docRef.update()` needs.
+ * Measured across the corpus, 645 top-level declarations sit in firing fences
+ * and 216 of them carry no report, against 17 silent non-declaration
+ * statements; asserting declarations would trade one real finding for a dozen
+ * exemptions of mixed validity.
+ *
+ * The declaration half is not left unguarded. `segmentFence` splits fences at
+ * exactly these boundaries (`SEGMENT_STARTER` matches `const`/`let`/`var`/
+ * `function`/`class`/`enum`), and the #1622 guard asserts every segment whose
+ * own comment claims it violates — which is the shape a declaration-level
+ * documented violation takes. The two guards partition the fence between them.
+ */
+const DECLARATION_TYPES = new Set([
+  'VariableDeclaration',
+  'FunctionDeclaration',
+  'ImportDeclaration',
+  'ClassDeclaration',
+  'TSTypeAliasDeclaration',
+  'TSInterfaceDeclaration',
+  'TSEnumDeclaration',
+  'TSModuleDeclaration',
+  'TSDeclareFunction',
+  'ExportNamedDeclaration',
+  'ExportDefaultDeclaration',
+  'ExportAllDeclaration',
+]);
+
+type TopLevelStatement = {
+  /** 1-based lines relative to the fence, matching `LintResult.reportLines`. */
+  start: number;
+  end: number;
+  type: string;
+  head: string;
+};
+
+/**
+ * Top-level statements of a fence, or `null` when it parses under neither JSX
+ * setting. JSX is tried first and plain TS second: a fence's language tag is
+ * not always accurate, and the two disagree only on constructs (`<T>x`) that a
+ * documented example does not use.
+ *
+ * `range` is not optional despite nothing here reading it: the parser attaches
+ * comments by range, and without it every fence carrying a `//` comment throws
+ * `Cannot read properties of undefined` — which reads as an unparsable fence
+ * and quietly retires 142 of the 345.
+ */
+export function topLevelStatements(code: string): TopLevelStatement[] | null {
+  const lines = code.split('\n');
+  for (const jsx of [true, false]) {
+    try {
+      const ast = tsParser.parse(code, {
+        ecmaVersion: 2022,
+        sourceType: 'module',
+        loc: true,
+        range: true,
+        ecmaFeatures: { jsx },
+      });
+      return (ast.body as { type: string; loc: TSLoc }[]).map((stmt) => ({
+        start: stmt.loc.start.line,
+        end: stmt.loc.end.line,
+        type: stmt.type,
+        head:
+          lines
+            .slice(stmt.loc.start.line - 1, stmt.loc.end.line)
+            .find((l) => l.trim()) ?? '',
+      }));
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+type TSLoc = { start: { line: number }; end: { line: number } };
+
+/** The statements this guard judges: everything but the setup-shaped kinds. */
+export function assertableStatements(
+  statements: readonly TopLevelStatement[],
+): TopLevelStatement[] {
+  return statements.filter((s) => !DECLARATION_TYPES.has(s.type));
+}
+
+/**
+ * Assertable statements of `code` with no report landing inside them. Exported
+ * so the controls can drive the attribution on hand-built fences rather than
+ * asserting it only through the corpus.
+ */
+export function silentStatementsOf(
+  code: string,
+  reportLines: readonly number[],
+): TopLevelStatement[] {
+  const parsed = topLevelStatements(code);
+  if (parsed === null) return [];
+  return assertableStatements(parsed).filter(
+    (s) => !reportLines.some((line) => line >= s.start && line <= s.end),
+  );
+}
+
+type SilentStatement = { key: string; docsLine: number; head: string };
+
+/**
+ * Statements verified by hand to report nothing legitimately, keyed
+ * `<rule>:<fence docs line>:<statement line within fence>` — the fence line
+ * alone cannot address a fence hiding more than one.
+ *
+ * Two classes live here, and each entry says which it is: a statement that is
+ * context for the violation reported elsewhere in the same fence, and a
+ * documented violation the rule genuinely misses, carrying the issue that
+ * tracks it. The second class is a debt marker, not an acquittal — when the
+ * rule is fixed the entry goes stale and the audit below fails until it is
+ * deleted.
+ */
+export const SILENT_INCORRECT_STATEMENTS: Record<string, string> = {
+  'enforce-centralized-mock-firestore:65:3':
+    "usage scaffolding, byte-identical to the page's own correct fence; the one file-level report sits on `const mockFirestore = jest.fn()` at fence line 1 and its fix imports the shared mock, rebinding this call",
+  'enforce-centralized-mock-firestore:75:4':
+    'usage scaffolding for the aliased mock; the report sits on `const mockFirestore = myMockFirestore` at fence line 2, and its fix deletes that line and imports the shared mock, rebinding this call',
+  'enforce-centralized-mock-firestore:86:3':
+    'the report on the destructured require at fence line 1 carries a fix that rewrites `customMockFirestore(` to `mockFirestore(` inside this very describe, so one report already covers and repairs it',
+  'enforce-centralized-mock-firestore:102:3':
+    'usage scaffolding identical to the correct fence; the report sits on the exported declaration at fence line 1 and is deliberately unfixable, since collapsing that export is what repairs this call',
+  'enforce-firestore-set-merge:97:3':
+    'DEBT (#1743): flagging `docRef.update(...)` requires the file to declare a namespaced `admin.firestore()` instance, which this fence has no reason to carry and the modular SDK never produces. Delete this entry when #1743 lands',
+  'enforce-firestore-set-merge:97:6':
+    "DEBT (#1743): detection requires the receiver's last member to be `batchManager`, so `batchManager.batch.update(...)` never matches and this documented violation is unenforced. Delete this entry when #1743 lands",
+  'flatten-push-calls:19:3':
+    'one violation per consecutive run: the report lands on `handlers.push` at fence line 2 and its fixer replaces the range spanning all three statements with `handlers.push(fnA, fnB, fnC)`',
+  'flatten-push-calls:19:4':
+    "tail of the same run as fence line 2, whose fixer range ends at this statement's semicolon; `checkStatements` skips past a merged run, so a run can never yield a second report",
+  'flatten-push-calls:26:4':
+    'part of the run reported at `items.push` on fence line 2, whose fixer rewrites every statement through the spread push into one merged call',
+  'flatten-push-calls:26:5':
+    'tail of the same run; `canSafelyFix` accepts a spread argument, so `...more` is merged into the single call reported at fence line 2 rather than reported again',
+  'logical-top-to-bottom-grouping:37:5':
+    'the loop is an ordering barrier, never a subject: `moveSideEffect` claims only expression statements, and the report on `console.log` at fence line 3 alone yields the documented correct code',
+  'no-firestore-jest-mock:23:3':
+    "the rule bans the import, not the mock calls; the report on `import ... from 'firestore-jest-mock'` at fence line 1 has a fix that rewrites the module this block's bindings come from",
+  'no-unused-usestate:25:3':
+    "the setter call is the example's premise — it is what makes the setter half live while the value half is dead; the sole report lands on the `useState` declaration at fence line 2",
+  'prefer-document-flattening:36:3':
+    'the nested payload is evidence for one per-instance violation reported at the `DocSetter` constructor on fence line 1, whose message names both remedies (shouldFlatten and field paths)',
+  'require-image-optimized:19:2':
+    'the JSX visitor claims only `img`; the whole next/image surface is reported once at the import on fence line 1, whose fix rewrites the module so this element renders the wrapper untouched',
+};
+
+/**
+ * Compare the silent statements against the allowlist in both directions, the
+ * same way `auditSilentIncorrect` does for whole fences. An unlisted silent
+ * statement is a documented violation nobody enforces; a listed statement that
+ * fires again is a stale exemption that would absorb the next real one.
+ */
+export function auditSilentStatements(
+  silents: readonly SilentStatement[],
+  allowlist: Record<string, string>,
+): string[] {
+  const problems: string[] = [];
+  const seen = new Set<string>();
+
+  for (const silent of silents) {
+    const [rule] = silent.key.split(':');
+    seen.add(silent.key);
+    if (silent.key in allowlist) continue;
+    problems.push(
+      [
+        `docs/rules/${rule}.md:${silent.docsLine} sits in a fence documented as INCORRECT, but no report lands on it:`,
+        `  ${silent.head}`,
+        '  Its fence reports elsewhere, so the fence-level guard (#1641) is satisfied',
+        '  while this statement documents a violation nobody is warned about.',
+        '  Either the rule should flag it — fix the rule — or it is setup rather',
+        `  than a claim, in which case add '${silent.key}' to`,
+        '  SILENT_INCORRECT_STATEMENTS naming where the report does land.',
+      ].join('\n'),
+    );
+  }
+
+  for (const [key, reason] of Object.entries(allowlist)) {
+    if (seen.has(key)) continue;
+    problems.push(
+      [
+        `SILENT_INCORRECT_STATEMENTS lists '${key}' (${reason}) but that statement now reports or no longer exists.`,
+        '  Delete the entry: a stale exemption hides the next dead example.',
+      ].join('\n'),
+    );
+  }
+
+  return problems;
+}
+
+describe('claimed statements inside firing "incorrect" fences must report (#1742)', () => {
+  const silents: SilentStatement[] = [];
+  let firingFences = 0;
+  let assertedStatements = 0;
+  let declarationStatements = 0;
+  let unparsedFences = 0;
+
+  it('attributes reports per statement, not per fence', () => {
+    for (const ruleName of ruleNames) {
+      if (requiresTypeChecking(ruleName)) continue;
+      const md = fs.readFileSync(path.join(DOCS_DIR, `${ruleName}.md`), 'utf8');
+      const incorrect = extractBlocks(md).filter(
+        (b) => b.polarity === 'incorrect' && LINTABLE_LANGS.has(b.lang),
+      );
+
+      for (const block of incorrect) {
+        const parsed = topLevelStatements(block.code);
+        if (parsed === null || parsed.length === 0) {
+          unparsedFences += 1;
+          continue;
+        }
+        const assertable = assertableStatements(parsed);
+
+        const hinted = filenameHint(block.code);
+        const candidates = hinted
+          ? [hinted]
+          : (block.lang === 'tsx' || block.lang === 'jsx'
+              ? TSX_CANDIDATES
+              : [...TS_CANDIDATES, ...TSX_CANDIDATES]
+            ).map(anchor);
+
+        // Same calibration as the #1622 segment guard, one level down: the
+        // filename that lights up the most statements judges the fence, so a
+        // path-scoped rule is not marked silent for running off its path.
+        // Total reports break ties, so a fence whose assertable statements are
+        // all silent still counts as firing when some declaration reports.
+        let bestLines: number[] | null = null;
+        let bestCovered = -1;
+        let bestTotal = -1;
+        for (const filename of candidates) {
+          const outcome = lintBlock(
+            ruleName,
+            filename,
+            block.code,
+            optionsHint(block.code),
+          );
+          if (outcome.skipped) continue;
+          const covered = assertable.filter((s) =>
+            outcome.reportLines.some((l) => l >= s.start && l <= s.end),
+          ).length;
+          if (
+            covered > bestCovered ||
+            (covered === bestCovered && outcome.reportLines.length > bestTotal)
+          ) {
+            bestCovered = covered;
+            bestTotal = outcome.reportLines.length;
+            bestLines = outcome.reportLines;
+          }
+        }
+        // A fence no candidate can lint asserts nothing here, and a fence that
+        // reports nowhere is the #1641 guard's finding — flagging its
+        // statements too would report one defect many times.
+        if (bestLines === null || bestLines.length === 0) continue;
+
+        firingFences += 1;
+        declarationStatements += parsed.length - assertable.length;
+        assertedStatements += assertable.length;
+
+        for (const statement of assertable) {
+          if (bestLines.some((l) => l >= statement.start && l <= statement.end))
+            continue;
+          silents.push({
+            key: `${ruleName}:${block.line}:${statement.start}`,
+            // `block.line` is the fence marker, so the first code line is the
+            // one after it.
+            docsLine: block.line + statement.start,
+            head: statement.head,
+          });
+        }
+      }
+    }
+
+    // Coverage floors. If extraction, parsing, or attribution breaks, the
+    // corpus empties and this suite passes while asserting nothing. The corpus
+    // holds ~341 firing fences and ~192 assertable statements; raise these as
+    // coverage grows, never lower one to make a run pass.
+    expect(firingFences).toBeGreaterThan(300);
+    expect(assertedStatements).toBeGreaterThan(150);
+    // The declaration carve-out is the larger half by design; if that inverts,
+    // the classification broke rather than the docs changing.
+    expect(declarationStatements).toBeGreaterThan(assertedStatements);
+    // Unparsable fences are exempt by construction, so they must stay rare —
+    // otherwise a parse regression would retire the corpus silently.
+    expect(unparsedFences).toBeLessThan(10);
+
+    const problems = auditSilentStatements(
+      silents,
+      SILENT_INCORRECT_STATEMENTS,
+    );
+    if (problems.length > 0) {
+      throw new Error(
+        [
+          `${problems.length} statement-level problem(s) in documented "incorrect" fences:`,
+          ...problems,
+        ].join('\n\n'),
+      );
+    }
+  });
+
+  it('catches a statement its firing fence hides (control)', () => {
+    // The exact hiding shape: the import reports, so the fence-level guard is
+    // satisfied, and everything below it is judged by that one report.
+    const fence = [
+      "import { mockFirebase } from 'firestore-jest-mock';",
+      'beforeEach(() => {',
+      "  mockFirebase({ 'some/path': [{ id: 'test' }] });",
+      '});',
+    ].join('\n');
+    const outcome = lintBlock(
+      'no-firestore-jest-mock',
+      '/repo/src/util/helper.test.ts',
+      fence,
+      null,
+    );
+    expect(outcome.skipped).toBe(false);
+    expect(outcome.reportLines).toEqual([1]);
+
+    const silent = silentStatementsOf(fence, outcome.reportLines);
+    expect(silent.map((s) => s.start)).toEqual([2]);
+    expect(silent[0].type).toBe('ExpressionStatement');
+    // The statement spans lines 2-4, so attribution is by range, not by the
+    // statement's first line.
+    expect(silent[0].end).toBe(4);
+  });
+
+  it('leaves statements that carry their own report alone (control)', () => {
+    const fence = [
+      'await transaction.update(userRef, { visits: 1 });',
+      'await transaction.update(otherRef, { visits: 2 });',
+    ].join('\n');
+    const outcome = lintBlock(
+      'enforce-firestore-set-merge',
+      '/repo/src/util/helper.ts',
+      fence,
+      null,
+    );
+    expect(outcome.skipped).toBe(false);
+    expect(outcome.reportLines).toEqual([1, 2]);
+    expect(silentStatementsOf(fence, outcome.reportLines)).toEqual([]);
+  });
+
+  it('judges statements but not declarations (carve-out control)', () => {
+    const fence = ['const setup = { a: 1 };', 'doThing();'].join('\n');
+    // Nothing reports anywhere, yet only the expression statement is judged.
+    const silent = silentStatementsOf(fence, []);
+    expect(silent.map((s) => s.type)).toEqual(['ExpressionStatement']);
+    expect(topLevelStatements(fence)).toHaveLength(2);
+    // A fence that does not parse under either setting yields no statements
+    // rather than throwing mid-suite.
+    expect(topLevelStatements('const = ;')).toBeNull();
+    expect(silentStatementsOf('const = ;', [])).toEqual([]);
+  });
+
+  it('audits the allowlist in both directions (control)', () => {
+    const planted = [
+      { key: 'planted-rule:12:3', docsLine: 14, head: 'doThing();' },
+    ];
+    const problems = auditSilentStatements(planted, {});
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('docs/rules/planted-rule.md:14');
+    expect(problems[0]).toContain('no report lands on it');
+    expect(
+      auditSilentStatements(planted, { 'planted-rule:12:3': 'reason' }),
+    ).toEqual([]);
+    expect(
+      auditSilentStatements([], { 'planted-rule:12:3': 'reason' })[0],
+    ).toContain('Delete the entry');
+  });
+
+  it('keys every exemption to a real rule and every debt entry to an issue', () => {
+    const entries = Object.entries(SILENT_INCORRECT_STATEMENTS);
+    // The exemption set is meant to stay small, so growth is a conscious edit
+    // rather than a drift nobody reviews.
+    expect(entries.length).toBeLessThanOrEqual(20);
+
+    for (const [key, reason] of entries) {
+      const [rule, fenceLine, statementLine] = key.split(':');
+      expect(ruleNames).toContain(rule);
+      expect(Number(fenceLine)).toBeGreaterThan(0);
+      expect(Number(statementLine)).toBeGreaterThan(0);
+      // A one-liner is a placeholder, not a verified exemption.
+      expect(reason.length).toBeGreaterThan(60);
+      // The two classes are not interchangeable. A statement the rule genuinely
+      // misses is debt and must name the issue that retires it; without that it
+      // reads as an acquittal and the defect is never fixed.
+      if (reason.startsWith('DEBT')) expect(reason).toMatch(/#\d+/);
+    }
+
+    // Pinned so a new unenforced violation cannot be filed away as debt
+    // silently — raising this means deciding to ship another one.
+    expect(
+      entries.filter(([, reason]) => reason.startsWith('DEBT')),
+    ).toHaveLength(2);
+  });
+});

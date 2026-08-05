@@ -95,6 +95,8 @@ export async function saveSize(ref) {
 ### Examples of **incorrect** code for this rule:
 
 ```ts
+import { updateDoc } from 'firebase/firestore';
+
 await docRef.update({ name: 'Ada' });
 await updateDoc(docRef, { active: true });
 await transaction.update(userRef, { visits: visits + 1 });
