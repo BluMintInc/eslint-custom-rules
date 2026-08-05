@@ -115,20 +115,72 @@ function typeAnnotationReferencesFirestoreType(
 }
 
 /**
+ * True for the assertion wrappers that leave the underlying expression intact:
+ * `x as T` and `x satisfies T`.
+ */
+function isCastExpression(node: TSESTree.Node): boolean {
+  return (
+    node.type === AST_NODE_TYPES.TSAsExpression ||
+    node.type ===
+      (AST_NODE_TYPES as { TSSatisfiesExpression?: string })
+        .TSSatisfiesExpression
+  );
+}
+
+/**
  * Returns the inner expression, unwrapping TSAsExpression / TSSatisfiesExpression
  * chains, so we can inspect what lies under a cast.
  */
 function unwrapCast(node: TSESTree.Expression): TSESTree.Expression {
   let current: TSESTree.Expression = node;
-  while (
-    current.type === AST_NODE_TYPES.TSAsExpression ||
-    current.type ===
-      (AST_NODE_TYPES as { TSSatisfiesExpression?: string })
-        .TSSatisfiesExpression
-  ) {
+  while (isCastExpression(current)) {
     current = (current as TSESTree.TSAsExpression).expression;
   }
   return current;
+}
+
+/**
+ * True when some `as` cast in the wrapper chain targets a Firestore type. Those
+ * casts are the TSAsExpression visitor's own entry point, so the annotation- and
+ * return-type-driven visitors must stand down on them or the same `new Date()`
+ * is reported twice.
+ */
+function castChainTargetsFirestoreType(
+  node: TSESTree.Expression,
+  firestoreTypeNames: Set<string>,
+): boolean {
+  let current: TSESTree.Expression = node;
+  while (isCastExpression(current)) {
+    const cast = current as TSESTree.TSAsExpression;
+    if (
+      cast.type === AST_NODE_TYPES.TSAsExpression &&
+      typeAnnotationReferencesFirestoreType(
+        cast.typeAnnotation,
+        firestoreTypeNames,
+      )
+    ) {
+      return true;
+    }
+    current = cast.expression;
+  }
+  return false;
+}
+
+/**
+ * Resolves an expression in a Firestore-typed position to the object literal it
+ * ultimately denotes, seeing through `as const` and other assertion wrappers.
+ * A wrapper is a syntactic no-op — `{ createdAt: new Date() } as const` still
+ * stamps the document with the client clock — so it must not hide the object.
+ * Returns null when the chain is already owned by the TSAsExpression visitor.
+ */
+function resolveObjectLiteral(
+  node: TSESTree.Expression | null | undefined,
+  firestoreTypeNames: Set<string>,
+): TSESTree.ObjectExpression | null {
+  if (!node) return null;
+  if (castChainTargetsFirestoreType(node, firestoreTypeNames)) return null;
+  const inner = unwrapCast(node);
+  return inner.type === AST_NODE_TYPES.ObjectExpression ? inner : null;
 }
 
 /**
@@ -391,26 +443,29 @@ export const requireServerTimestampForFirestoreDates = createRule<
       VariableDeclarator(node) {
         if (firestoreTypeNames.size === 0) return;
 
-        // Pattern: const x: FirestoreType = { ... }
+        // Pattern: const x: FirestoreType = { ... }, including when the literal
+        // is wrapped in `as const` or another assertion.
         const typeAnnotation = node.id.typeAnnotation?.typeAnnotation;
         if (
-          typeAnnotation &&
-          typeAnnotationReferencesFirestoreType(
+          !typeAnnotation ||
+          !typeAnnotationReferencesFirestoreType(
             typeAnnotation,
             firestoreTypeNames,
-          ) &&
-          node.init &&
-          node.init.type === AST_NODE_TYPES.ObjectExpression
+          )
         ) {
-          // Exempt local render seeds handed to React state, never written to
-          // Firestore — being typed as a Firestore doc is not a write.
-          if (
-            context.getDeclaredVariables(node).some(isLocalRenderSeedVariable)
-          ) {
-            return;
-          }
-          reportNewDatesInObject(node.init, context);
+          return;
         }
+        const object = resolveObjectLiteral(node.init, firestoreTypeNames);
+        if (!object) return;
+
+        // Exempt local render seeds handed to React state, never written to
+        // Firestore — being typed as a Firestore doc is not a write.
+        if (
+          context.getDeclaredVariables(node).some(isLocalRenderSeedVariable)
+        ) {
+          return;
+        }
+        reportNewDatesInObject(object, context);
       },
 
       // Pattern: { ... } as FirestoreType  or  { ... } satisfies FirestoreType
@@ -449,25 +504,29 @@ export const requireServerTimestampForFirestoreDates = createRule<
       // In this form the body is the ObjectExpression directly (no ReturnStatement).
       ArrowFunctionExpression(node) {
         if (firestoreTypeNames.size === 0) return;
-        if (node.body.type !== AST_NODE_TYPES.ObjectExpression) return;
+        if (node.body.type === AST_NODE_TYPES.BlockStatement) return;
 
         const returnType = node.returnType?.typeAnnotation;
         if (
-          returnType &&
-          typeAnnotationReferencesFirestoreType(returnType, firestoreTypeNames)
+          !returnType ||
+          !typeAnnotationReferencesFirestoreType(returnType, firestoreTypeNames)
         ) {
-          reportNewDatesInObject(
-            node.body as TSESTree.ObjectExpression,
-            context,
-          );
+          return;
+        }
+        const object = resolveObjectLiteral(
+          node.body as TSESTree.Expression,
+          firestoreTypeNames,
+        );
+        if (object) {
+          reportNewDatesInObject(object, context);
         }
       },
 
       // Return statements in functions with explicit Firestore return type annotation
       ReturnStatement(node) {
         if (firestoreTypeNames.size === 0) return;
-        if (!node.argument) return;
-        if (node.argument.type !== AST_NODE_TYPES.ObjectExpression) return;
+        const object = resolveObjectLiteral(node.argument, firestoreTypeNames);
+        if (!object) return;
 
         // Walk up to find the enclosing function and check its return type
         let ancestor: TSESTree.Node | undefined = node.parent;
@@ -490,10 +549,7 @@ export const requireServerTimestampForFirestoreDates = createRule<
                 firestoreTypeNames,
               )
             ) {
-              reportNewDatesInObject(
-                node.argument as TSESTree.ObjectExpression,
-                context,
-              );
+              reportNewDatesInObject(object, context);
             }
             break;
           }

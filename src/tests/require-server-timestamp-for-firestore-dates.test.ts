@@ -245,6 +245,96 @@ function seed() {
 `,
         filename: 'src/hooks/useDraft.ts',
       },
+      // `as const` on an object that is NOT Firestore-typed — seeing through the
+      // cast must not turn the rule into a blanket ban on new Date().
+      {
+        code: `
+import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+const config = { id: 'a', createdAt: new Date() } as const;
+`,
+        filename: 'src/hooks/useExample.ts',
+      },
+      // `as const` on an object typed by a NON-Firestore import.
+      {
+        code: `
+import type { LocalDraft } from 'src/types/LocalDraft';
+const draft: LocalDraft = { id: 'a', createdAt: new Date() } as const;
+`,
+        filename: 'src/hooks/useExample.ts',
+      },
+      // `as const` on a Firestore-typed object that already uses serverTimestamp().
+      {
+        code: `
+import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+const x: TokenMetadata<'offchain', Date> = {
+  id: 'a',
+  createdAt: serverTimestamp(),
+} as const;
+`,
+        filename: 'src/hooks/useExample.ts',
+      },
+      // `as const` on a returned Firestore-typed object using serverTimestamp().
+      {
+        code: `
+import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+function buildToken(): TokenMetadata<'offchain', Date> {
+  return { id: 'a', createdAt: serverTimestamp() } as const;
+}
+`,
+        filename: 'src/hooks/useExample.ts',
+      },
+      // `as const` on a concise arrow body using serverTimestamp().
+      {
+        code: `
+import type { Advancement } from 'functions/src/types/firestore/Progression';
+const build = (): Advancement<Date> => ({ id: '1', createdAt: serverTimestamp() } as const);
+`,
+        filename: 'src/contexts/ProgressionContext.ts',
+      },
+      // The render-seed exemption survives the cast: an `as const` seed handed
+      // to a state setter and never written to Firestore stays silent.
+      {
+        code: `
+import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+declare function setDraft(v: TokenMetadata<'offchain', Date>): void;
+function seed(draft: TokenMetadata<'offchain', Date>) {
+  const initialData: TokenMetadata<'offchain', Date> = {
+    ...draft,
+    createdAt: new Date(),
+  } as const;
+  setDraft(initialData);
+}
+`,
+        filename: 'src/hooks/useDraft.ts',
+      },
+      // Test files stay exempt even when the literal is cast.
+      {
+        code: `
+import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+const mock: TokenMetadata<'offchain', Date> = { createdAt: new Date() } as const;
+`,
+        filename: 'src/components/Token.test.ts',
+      },
+      // A block-bodied arrow returning a cast object with serverTimestamp() —
+      // the ReturnStatement path must not fire.
+      {
+        code: `
+import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+const build = (): TokenMetadata<'offchain', Date> => {
+  return { id: 'a', createdAt: serverTimestamp() } as const;
+};
+`,
+        filename: 'src/hooks/useExample.ts',
+      },
+      // A cast wrapping something that is not an object literal at all.
+      {
+        code: `
+import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+declare const source: unknown;
+const x: TokenMetadata<'offchain', Date> = source as TokenMetadata<'offchain', Date>;
+`,
+        filename: 'src/hooks/useExample.ts',
+      },
     ],
 
     invalid: [
@@ -533,6 +623,127 @@ import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata'
 const mock: TokenMetadata<'offchain', Date> = { createdAt: new Date() };
 `,
         filename: 'src/components/__tests__/Token.ts',
+        options: [{ ignoreTestFiles: false }],
+        errors: [{ messageId: 'useServerTimestamp' }],
+      },
+      // `as const` on a variable-annotated literal. The assertion is a no-op at
+      // runtime, so the client clock still stamps the document.
+      {
+        code: `
+import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+const x: TokenMetadata<'offchain', Date> = {
+  id: 'offchain:abc',
+  createdAt: new Date(),
+} as const;
+`,
+        filename: 'src/hooks/useExample.ts',
+        errors: [{ messageId: 'useServerTimestamp' }],
+      },
+      // `as const` on a returned literal in a function with a Firestore return
+      // type annotation.
+      {
+        code: `
+import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+function buildToken(): TokenMetadata<'offchain', Date> {
+  return {
+    id: 'abc',
+    createdAt: new Date(),
+  } as const;
+}
+`,
+        filename: 'src/hooks/useExample.ts',
+        errors: [{ messageId: 'useServerTimestamp' }],
+      },
+      // `as const` on a concise arrow body — the shape `enforce-object-literal-as-const`
+      // produces automatically via --fix.
+      {
+        code: `
+import type { Advancement } from 'functions/src/types/firestore/Progression';
+const buildAdvancement = (): Advancement<Date> => ({
+  id: '1',
+  createdAt: new Date(),
+} as const);
+`,
+        filename: 'src/contexts/ProgressionContext.ts',
+        errors: [{ messageId: 'useServerTimestamp' }],
+      },
+      // Double cast: `as const` combined with a widening assertion. Neither
+      // target is a Firestore type, so the annotation still governs.
+      {
+        code: `
+import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+const x: TokenMetadata<'offchain', Date> = {
+  id: 'abc',
+  createdAt: new Date(),
+} as const as unknown as TokenMetadata<'offchain', Date>;
+`,
+        filename: 'src/hooks/useExample.ts',
+        errors: [{ messageId: 'useServerTimestamp' }],
+      },
+      // `satisfies` wrapper on a variable-annotated literal.
+      {
+        code: `
+import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+const x: TokenMetadata<'offchain', Date> = {
+  id: 'abc',
+  createdAt: new Date(),
+} satisfies Record<string, unknown>;
+`,
+        filename: 'src/hooks/useExample.ts',
+        errors: [{ messageId: 'useServerTimestamp' }],
+      },
+      // `as const` does not hide nested date fields either.
+      {
+        code: `
+import type { Tournament } from 'functions/src/types/firestore/Tournament';
+const t: Tournament = {
+  title: 'Championship',
+  createdAt: new Date(),
+  schedule: {
+    startDate: new Date(),
+  },
+} as const;
+`,
+        filename: 'src/hooks/useTournament.ts',
+        errors: [
+          { messageId: 'useServerTimestamp' },
+          { messageId: 'useServerTimestamp' },
+        ],
+      },
+      // Annotation AND a Firestore-typed cast on the same literal: exactly one
+      // report, not one per entry point.
+      {
+        code: `
+import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+const x: TokenMetadata<'offchain', Date> = {
+  id: 'abc',
+  createdAt: new Date(),
+} as TokenMetadata<'offchain', Date>;
+`,
+        filename: 'src/hooks/useExample.ts',
+        errors: [{ messageId: 'useServerTimestamp' }],
+      },
+      // Firestore return-type annotation AND a Firestore-typed cast: one report.
+      {
+        code: `
+import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+function buildToken(): TokenMetadata<'offchain', Date> {
+  return {
+    id: 'abc',
+    createdAt: new Date(),
+  } as TokenMetadata<'offchain', Date>;
+}
+`,
+        filename: 'src/hooks/useExample.ts',
+        errors: [{ messageId: 'useServerTimestamp' }],
+      },
+      // `as const` on a test-file literal with `ignoreTestFiles: false`.
+      {
+        code: `
+import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+const mock: TokenMetadata<'offchain', Date> = { createdAt: new Date() } as const;
+`,
+        filename: 'src/components/Token.test.ts',
         options: [{ ignoreTestFiles: false }],
         errors: [{ messageId: 'useServerTimestamp' }],
       },
