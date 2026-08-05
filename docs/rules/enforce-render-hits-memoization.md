@@ -43,25 +43,45 @@ declared.
 construction: shorthand requires the variable's name to equal the prop's name,
 and `render` is lowercase, so the value can never look like a component.
 
-### Module scope is already a memoization boundary
+### A declaration outside the calling function is already a memoization boundary
 
-A `transformBefore` or `render` prop that points at a declaration outside every
-component body needs no hook at all: the binding is created once for the
-program's lifetime, so its identity is strictly more stable than anything
-`useCallback` can hand back. These forms are accepted:
+A `transformBefore` or `render` prop that points at a declaration outside the
+body of the function calling `useRenderHits` needs no hook at all. The binding is
+created once per run of the enclosing scope, and the calling function is created
+in that same run, so its identity is fixed for the whole life of that closure —
+strictly more stable than anything `useCallback` can hand back.
+
+The test is **relative**, not absolute: what matters is whether at least one
+function boundary separates the declaration from the `useRenderHits` call. Module
+scope is the degenerate case, where the declaration has no enclosing function at
+all. These forms are accepted:
 
 | Form | Accepted |
 | --- | --- |
 | `const f = () => {}` at module scope (including `export const`) | ✅ |
 | `function f() {}` at module scope | ✅ |
 | `import { f } from './f'` / `import f from './f'` | ✅ |
-| `let` / `var` at module scope | ❌ — reassignable, so a later render can see a different function |
+| `const f = () => {}` in a factory/HOC/`describe` that encloses the calling function | ✅ — created once per run of the enclosing scope, and the caller is created with it |
+| `let` / `var` anywhere | ❌ — reassignable, so a later render can see a different function |
 | type-only import | ❌ — binds no value |
-| `const f = () => {}` inside a component or any nested block | ❌ — re-created every render |
+| a parameter of the calling function or of any function enclosing it | ❌ — the caller decides the identity, so memoize it there |
+| `const f = () => {}` in the calling function itself, or in a block inside it | ❌ — re-created every time that function runs |
 
-Both module scope and global scope count, because under
-`sourceType: 'script'` a top-level declaration binds to the *global* scope and
-no module scope exists at all.
+Both module scope and global scope count as "no enclosing function", because
+under `sourceType: 'script'` a top-level declaration binds to the *global* scope
+and no module scope exists at all.
+
+Gating on module scope alone rejected shapes whose remedy does not exist. In a
+component factory, `useCallback` cannot legally be called in the factory (it is
+neither a component nor a hook, so the rules of hooks forbid it), and a helper
+closing over a factory parameter cannot be hoisted to module scope either — the
+only ways to satisfy an absolute gate are a rules-of-hooks violation or an
+`eslint-disable`.
+
+A custom hook is not special-cased. A hook body re-runs on every render of its
+caller, so a helper declared there and consumed by a `useRenderHits` call in that
+same body is reported; the same helper consumed from a component the hook
+*returns* is accepted, because that component is rebuilt alongside it.
 
 This carve-out is what keeps the `recommended` config self-consistent:
 [`no-empty-dependency-use-callbacks`](./no-empty-dependency-use-callbacks.md) is
@@ -118,6 +138,21 @@ const HitsList = ({ hits }) => {
 const Forwarder = ({ hits, transformBefore, render }) => {
   useRenderHits({ hits, transformBefore, render });
 };
+
+// ❌ Declared in the very function that calls the hook, even though that
+// function is itself nested inside a factory — no boundary separates them
+function createHitList() {
+  return function HitList({ hits }) {
+    const transform = (hits) => hits.filter(h => h.isActive);
+    useRenderHits({ hits, transformBefore: transform });
+  };
+}
+
+// ❌ A custom hook body re-runs on every render of its caller
+function useHitList(hits) {
+  const render = (hit) => <HitComponent hit={hit} />;
+  useRenderHits({ hits, render });
+}
 ```
 
 ### Examples of **correct** code for this rule:
@@ -164,6 +199,26 @@ const HitsSection = ({ hits }) => {
   const render = useCallback((hit) => <HitComponent hit={hit} />, []);
   useRenderHits({ hits, transformBefore, render });
 };
+
+// ✅ A factory: the helpers are built once per createHitList() call and the
+// HitList closure is built in the same call, so every render sees the identical
+// references. useCallback is not even legal in createHitList, and transform
+// closes over `pred`, so neither remedy the message names exists here.
+function createHitList(pred) {
+  const transform = (hits) => hits.filter(pred);
+  const renderHit = (hit) => <HitComponent hit={hit} />;
+  return function HitList({ hits }) {
+    useRenderHits({ hits, transformBefore: transform, render: renderHit });
+  };
+}
+
+// ✅ A describe-scope helper consumed from a nested it
+describe('useRenderHits', () => {
+  const renderHit = () => null;
+  it('renders', () => {
+    renderHook(() => useRenderHits({ hits: [], render: renderHit }));
+  });
+});
 ```
 
 ## When Not To Use It
