@@ -24,6 +24,11 @@
  *   run of string-literal expression statements at the top of the Program. A
  *   statement inserted above it does not move it; it *demotes* it to a no-op
  *   string expression, which every bundler stops honouring.
+ *
+ * Both rewrite channels are probed. `--fix` never applies a suggestion, and six
+ * of the seven rules offering one are not `meta.fixable`, so a guard keyed on
+ * `meta.fixable` alone leaves them to nobody — the #1733 decay. Three of those
+ * six emit a top-of-file import, which is the exact edit policed here.
  */
 import fs from 'fs';
 import path from 'path';
@@ -36,12 +41,13 @@ import {
   parserOptionsFor,
   defaultFilenameFor,
   severityWithOptions,
+  suggestionEditsOf,
   typeAwareRuleNames,
 } from '../utils/fixtureCorpus';
 
 /* eslint-disable @typescript-eslint/no-var-requires */
 const plugin = require('../index') as {
-  rules: Record<string, { meta?: { fixable?: string } }>;
+  rules: Record<string, { meta?: { fixable?: string; hasSuggestions?: boolean } }>;
 };
 /* eslint-enable @typescript-eslint/no-var-requires */
 
@@ -60,14 +66,26 @@ for (const [name, rule] of Object.entries(plugin.rules)) {
 }
 
 /**
- * Only a fixable rule can displace anything, and a type-aware rule reports
- * nothing under a bare `Linter` (no program), so probing one manufactures a
- * false clean rather than a finding. The skipped set is counted below rather
- * than dropped, so the filter cannot quietly become a blind spot.
+ * Every rule that can rewrite a source, through EITHER channel.
+ *
+ * Filtering on `meta.fixable` alone is the #1733 defect: six of the seven
+ * rules offering suggestions are not `meta.fixable`, and three of those
+ * (`react-memoize-literals`, `enforce-safe-stringify`,
+ * `enforce-snapshot-state-narrowing`) emit a top-of-file import — exactly the
+ * edit this guard exists to police. `--fix` never applies a suggestion, so the
+ * fix channel cannot reach them.
+ *
+ * A type-aware rule is excluded for the opposite reason: a bare `Linter` has no
+ * program, so it reports nothing and would manufacture a false clean. Both
+ * skipped populations are counted and printed rather than dropped.
  */
-const FIXABLE_RULES = new Set(
+const REWRITING_RULES = new Set(
   Object.entries(plugin.rules)
-    .filter(([name, rule]) => rule.meta?.fixable && !typeAwareRuleNames.has(name))
+    .filter(
+      ([name, rule]) =>
+        (rule.meta?.fixable || rule.meta?.hasSuggestions) &&
+        !typeAwareRuleNames.has(name),
+    )
     .map(([name]) => name),
 );
 
@@ -76,12 +94,28 @@ const corpus = harvestFixtureCorpus();
 type Variant = {
   kind: 'shebang' | 'directive' | 'shebang+directive';
   prefix: string;
+  /** The prologue token whose survival is asserted, when the variant has one. */
+  directive?: string;
 };
 
+/**
+ * `'use client'` is the directive whose loss is silent and expensive (the
+ * component quietly becomes a server one), but the invariant is about position
+ * in the prologue, not about which string sits there — so `'use server'` and a
+ * double-quoted `"use strict"` are probed too. A rule keyed on one spelling
+ * would otherwise pass here and fail on the others, the
+ * exemption-keyed-on-one-spelling shape.
+ */
 const VARIANTS: Variant[] = [
   { kind: 'shebang', prefix: `${SHEBANG}\n` },
-  { kind: 'directive', prefix: `${DIRECTIVE}\n` },
-  { kind: 'shebang+directive', prefix: `${SHEBANG}\n${DIRECTIVE}\n` },
+  { kind: 'directive', prefix: `${DIRECTIVE}\n`, directive: 'use client' },
+  {
+    kind: 'shebang+directive',
+    prefix: `${SHEBANG}\n${DIRECTIVE}\n`,
+    directive: 'use client',
+  },
+  { kind: 'directive', prefix: `'use server';\n`, directive: 'use server' },
+  { kind: 'directive', prefix: `"use strict";\n`, directive: 'use strict' },
 ];
 
 const configFor = (rules: Record<string, unknown>, tc: FixtureCase) =>
@@ -141,7 +175,7 @@ const prologueBreak = (
   const isDirective =
     first?.type === 'ExpressionStatement' &&
     first.expression?.type === 'Literal' &&
-    first.expression.value === 'use client';
+    first.expression.value === variant.directive;
   return isDirective ? null : 'DIRECTIVE_DEMOTED';
 };
 
@@ -158,13 +192,44 @@ const stats = {
   considered: 0,
   baseFixed: 0,
   variantFixed: 0,
+  baseSuggested: 0,
+  variantSuggested: 0,
   rulesProbed: new Set<string>(),
   rulesFixing: new Set<string>(),
+  rulesSuggesting: new Set<string>(),
   skippedTypeAware: 0,
-  skippedNotFixable: 0,
+  skippedInert: 0,
 };
 
 const findings: Finding[] = [];
+
+const verify = (code: string, rules: Record<string, unknown>, tc: FixtureCase) => {
+  try {
+    return linter.verify(code, configFor(rules, tc), {
+      filename: defaultFilenameFor(tc),
+    });
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Every state one accepted suggestion can reach. `--fix` never applies a
+ * suggestion, so without this the six suggestion-only rules are probed by
+ * nobody even though three of them emit a top-of-file import.
+ */
+const suggestionOutputs = (
+  name: string,
+  code: string,
+  rules: Record<string, unknown>,
+  tc: FixtureCase,
+) => {
+  const messages = verify(code, rules, tc);
+  if (!messages) return [];
+  return suggestionEditsOf(code, messages, PREFIX + name).map(
+    (edit) => edit.output,
+  );
+};
 
 const probeCase = (name: string, tc: FixtureCase, collect: Finding[]) => {
   const rules = { [PREFIX + name]: severityWithOptions(tc) as never };
@@ -173,29 +238,47 @@ const probeCase = (name: string, tc: FixtureCase, collect: Finding[]) => {
   // ambiguous about which copy moved.
   if (tc.code.startsWith('#!') || /^\s*['"]use /.test(tc.code)) return;
 
-  // A case the rule does not actually rewrite proves nothing about placement.
+  // A case the rule rewrites through NEITHER channel proves nothing about
+  // placement, so it is not counted as probed.
   const base = fixOf(tc.code, rules, tc);
-  if (!base || !base.fixed) return;
-  stats.baseFixed++;
-  stats.rulesFixing.add(name);
+  const baseFixed = Boolean(base?.fixed);
+  const baseSuggests = suggestionOutputs(name, tc.code, rules, tc).length > 0;
+  if (!baseFixed && !baseSuggests) return;
+  if (baseFixed) {
+    stats.baseFixed++;
+    stats.rulesFixing.add(name);
+  }
+  if (baseSuggests) {
+    stats.baseSuggested++;
+    stats.rulesSuggesting.add(name);
+  }
 
-  for (const variant of VARIANTS) {
-    const source = variant.prefix + tc.code;
-    const fixed = fixOf(source, rules, tc);
-    if (!fixed || !fixed.fixed) continue;
-    stats.variantFixed++;
-
-    const displaced = prologueBreak(fixed.output, variant, tc);
-    if (!displaced) continue;
-
+  const record = (variant: Variant, after: string, source: string) => {
+    const displaced = prologueBreak(after, variant, tc);
+    if (!displaced) return;
     collect.push({
       rule: name,
       variant: variant.kind,
       origin: tc.origin,
       reason: displaced,
       before: source,
-      after: fixed.output,
+      after,
     });
+  };
+
+  for (const variant of VARIANTS) {
+    const source = variant.prefix + tc.code;
+
+    const fixed = fixOf(source, rules, tc);
+    if (fixed?.fixed) {
+      stats.variantFixed++;
+      record(variant, fixed.output, source);
+    }
+
+    for (const output of suggestionOutputs(name, source, rules, tc)) {
+      stats.variantSuggested++;
+      record(variant, output, source);
+    }
   }
 };
 
@@ -204,8 +287,8 @@ for (const [name, cases] of corpus.byRule) {
     stats.skippedTypeAware++;
     continue;
   }
-  if (!FIXABLE_RULES.has(name)) {
-    stats.skippedNotFixable++;
+  if (!REWRITING_RULES.has(name)) {
+    stats.skippedInert++;
     continue;
   }
   stats.rulesProbed.add(name);
@@ -232,6 +315,17 @@ describe('directive prologue and shebang survive every fixer', () => {
     expect(stats.baseFixed).toBeGreaterThanOrEqual(800);
     expect(stats.variantFixed).toBeGreaterThanOrEqual(2000);
     expect(stats.rulesFixing.size).toBeGreaterThanOrEqual(50);
+  });
+
+  /**
+   * The suggestion channel gets its OWN floor. Rolled into the aggregate above,
+   * the ~2,000 fix-channel rewrites would cover for it going to zero — which is
+   * exactly how it stayed unmeasured in four other guards until #1733.
+   */
+  it('probed the suggestion channel', () => {
+    expect(stats.rulesSuggesting.size).toBeGreaterThanOrEqual(3);
+    expect(stats.baseSuggested).toBeGreaterThanOrEqual(20);
+    expect(stats.variantSuggested).toBeGreaterThanOrEqual(100);
   });
 
   it('flags a fixer that inserts above the prologue (positive control)', () => {
@@ -268,6 +362,65 @@ describe('directive prologue and shebang survive every fixer', () => {
       collected,
     );
     expect(collected.map((f) => f.reason).sort()).toEqual([
+      'DIRECTIVE_DEMOTED',
+      'DIRECTIVE_DEMOTED',
+      'DIRECTIVE_DEMOTED',
+      'SHEBANG_DISPLACED',
+      'SHEBANG_DISPLACED',
+    ]);
+  });
+
+  /**
+   * The same planted defect offered as a SUGGESTION rather than a fix. Without
+   * this, `REWRITING_RULES` could widen to include suggestion rules while the
+   * probe still only ever drove `verifyAndFix`, and the sweep would read clean.
+   */
+  it('flags a SUGGESTION that inserts above the prologue (positive control)', () => {
+    const rogue = {
+      meta: {
+        type: 'problem',
+        hasSuggestions: true,
+        schema: [],
+        messages: { x: 'x', s: 's' },
+      },
+      create(context: never) {
+        const ctx = context as unknown as { report: (d: unknown) => void };
+        return {
+          Program(node: { body: unknown[] }) {
+            if (!node.body.length) return;
+            ctx.report({
+              node,
+              messageId: 'x',
+              suggest: [
+                {
+                  messageId: 's',
+                  fix: (fixer: {
+                    insertTextAfterRange: (r: number[], t: string) => unknown;
+                  }) => fixer.insertTextAfterRange([0, 0], "import x from 'y';\n"),
+                },
+              ],
+            });
+          },
+        };
+      },
+    };
+    linter.defineRule(PREFIX + '__rogueSuggest__', rogue as never);
+    const collected: Finding[] = [];
+    const before = stats.variantSuggested;
+    probeCase(
+      '__rogueSuggest__',
+      {
+        code: 'const a = 1;\n',
+        tester: 'ruleTesterTs',
+        origin: 'planted',
+        bucket: 'invalid',
+      },
+      collected,
+    );
+    expect(stats.variantSuggested).toBeGreaterThan(before);
+    expect(collected.map((f) => f.reason).sort()).toEqual([
+      'DIRECTIVE_DEMOTED',
+      'DIRECTIVE_DEMOTED',
       'DIRECTIVE_DEMOTED',
       'SHEBANG_DISPLACED',
       'SHEBANG_DISPLACED',
@@ -349,8 +502,8 @@ afterAll(() => {
   process.stdout.write(
     `\n[directive-prologue] rules=${stats.rulesProbed.size} ` +
       `considered=${stats.considered} baseFixed=${stats.baseFixed} ` +
-      `variantFixed=${stats.variantFixed} findings=${findings.length} ` +
+      `variantFixed=${stats.variantFixed} suggested=${stats.variantSuggested} findings=${findings.length} ` +
       `skipped(typeAware)=${stats.skippedTypeAware} ` +
-      `skipped(notFixable)=${stats.skippedNotFixable}\n`,
+      `skipped(inert)=${stats.skippedInert}\n`,
   );
 });
