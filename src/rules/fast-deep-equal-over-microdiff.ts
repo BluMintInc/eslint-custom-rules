@@ -8,7 +8,7 @@ import {
   fastDeepEqualImport,
 } from '../utils/fastDeepEqualModules';
 
-type MessageIds = 'useFastDeepEqual' | 'addFastDeepEqualImport';
+type MessageIds = 'useFastDeepEqual';
 
 const DIFF_EXPORT_NAME = 'diff';
 
@@ -113,10 +113,6 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
         "What's wrong: This code uses `{{diffName}}(...).length` as a deep equality check.\n" +
         'Why it matters: `{{diffName}}` allocates a full change list (paths, types, values) before you compare it to zero, which hides the boolean intent and wastes memory/time.\n' +
         'How to fix: Call `{{fastEqualName}}(left, right)` for equality (or prefix with `!` for inequality) using the same two arguments instead of counting diff length.',
-      addFastDeepEqualImport:
-        "What's wrong: This file checks equality via `{{diffName}}(...).length` but does not import a deep-equality function.\n" +
-        'Why it matters: Without `@blumintinc/fast-deep-equal`, equality checks keep building diff entries just to count them, adding overhead and obscuring intent.\n' +
-        'How to fix: Add a default import from `@blumintinc/fast-deep-equal` as `{{fastEqualName}}` and use `{{fastEqualName}}(a, b)` for equality checks.',
     },
   },
   defaultOptions: [],
