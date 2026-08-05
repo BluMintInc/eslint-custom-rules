@@ -8,7 +8,9 @@ Hooks should expose data, effects, and callbacks so components decide how to ren
 
 ## Rule Details
 
-This rule reports hooks whose return type is JSX (including ReactNode/JSX.Element annotations) or hooks that return JSX from block bodies, ternaries, or memoized callbacks. The warning explains that JSX in hooks breaks the hook/component separation and suggests moving the markup into a component while keeping the hook focused on data and behavior.
+This rule reports hooks whose return type annotation names a JSX type, and hooks that return JSX from block bodies, ternaries, or memoized callbacks. The warning explains that JSX in hooks breaks the hook/component separation and suggests moving the markup into a component while keeping the hook focused on data and behavior.
+
+The annotation check accepts `ReactNode`, `ReactElement` and `JSX.Element`, each with or without a `React.` qualifier — `React.ReactNode` and `React.JSX.Element` are the same types and are reported the same way. Only `React.` is treated as a qualifier for these names: `Foo.ReactNode` refers to another module's type and is left alone.
 
 ### Examples of incorrect code for this rule:
 
@@ -16,6 +18,12 @@ This rule reports hooks whose return type is JSX (including ReactNode/JSX.Elemen
 const useHeader = () => {
   return <header>App Header</header>;
 };
+```
+
+```tsx
+function useNavigation(): React.ReactNode {
+  return buildNavigation();
+}
 ```
 
 ```tsx
