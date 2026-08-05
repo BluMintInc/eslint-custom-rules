@@ -67,6 +67,18 @@ await firestore.runTransaction(async (t) => {
 });
 ```
 
+```typescript
+// A wrapper around the computed key does not hide the read
+await firestore.runTransaction(async (transaction) => {
+  transaction.set(docRef, { status: 'processing' });
+
+  const method = 'get';
+  const docSnapshot = await transaction[assertSafe(method)](otherDocRef); // ❌ Error
+
+  return docSnapshot.data();
+});
+```
+
 ### ✅ Correct
 
 ```typescript
@@ -121,6 +133,16 @@ await firestore.runTransaction(async (transaction) => {
 });
 ```
 
+```typescript
+// A wrapped key resolving to a write is a write, not a read
+await firestore.runTransaction(async (transaction) => {
+  const doc = await transaction[assertSafe('get')](docRef);
+
+  transaction[assertSafe('set')](docRef, { status: 'processing' });
+  return doc.data();
+});
+```
+
 ## Edge Cases Handled
 
 ### 1. Conditional Write Operations
@@ -149,6 +171,16 @@ The rule attempts to track transaction objects passed to other functions and ana
 ### 6. Computed Transaction Method Access
 
 Computed property access (e.g., `transaction['get']`) is treated conservatively. Reads after writes are reported even when the method name is computed, and reported data includes the method name when it can be determined.
+
+### 7. Wrapped Computed Keys
+
+A computed key is read through the wrappers that leave the selected method unchanged, so wrapping cannot hide a read:
+
+- **Key assertions** — `assertSafe(key)` validates the key and returns it, so `transaction[assertSafe(method)]` is judged exactly as `transaction[method]` is. This matters because [`enforce-assert-safe-object-key`](./enforce-assert-safe-object-key.md) is `error` in the same config and its fixer writes that wrapper automatically.
+- **Erased type wrappers** — `key as string`, `key satisfies string`, `<string>key`, `key!` and `await key` compile away or resolve to the same key, and they nest (`assertSafe((key as string)!)`).
+- **Any other call** — `transaction[String(method)]` may return something other than what it was handed, so the key counts as unresolved and falls to the conservative verdict rather than to a definite read or write. A definite `get` / `set` / `update` / `delete` classification is only drawn through a key assertion, whose return value is provably its argument.
+
+Shapes the rule has never classified — member expressions (`transaction[ops.read]`), ternaries and template literals — stay unclassified whether or not a key assertion wraps them, since reading through an assertion is information-free.
 
 ## When Not To Use It
 
