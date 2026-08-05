@@ -339,6 +339,11 @@ module.exports = {
         '@blumintinc/blumint/prefer-destructuring-no-class': 'error',
         '@blumintinc/blumint/enforce-render-hits-memoization': 'error',
         '@blumintinc/blumint/enforce-transform-memoization': 'error',
+        // Off because it demands the opposite spelling from the enabled
+        // prefer-fragment-shorthand, and because the consumer's codebase
+        // still violates it while its sync reverts on any report. The measured
+        // impact and the criterion that graduates it to 'error' are recorded in
+        // docs/rules/prefer-fragment-component.md.
         '@blumintinc/blumint/prefer-fragment-component': 'off',
         '@blumintinc/blumint/react-usememo-should-be-component': 'error',
         '@blumintinc/blumint/no-unnecessary-verb-suffix': 'error',

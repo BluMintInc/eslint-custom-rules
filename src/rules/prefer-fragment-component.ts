@@ -142,7 +142,11 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
     docs: {
       description:
         'Require the Fragment named import instead of shorthand fragments or React.Fragment to keep fragments explicit and prop-friendly',
-      recommended: 'error',
+      // `RuleMetaDataDocs` admits `false | 'error' | 'strict' | 'warn'` and has
+      // no `'off'` member, so `false` is this field's spelling of the `'off'`
+      // the recommended config ships. See the docs page for why it ships off
+      // and what graduates it to 'error'.
+      recommended: false,
     },
     fixable: 'code',
     schema: [],
