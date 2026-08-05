@@ -451,6 +451,67 @@ const c = gamma.value;
   const x = 1;
   return x + a + b;
 }`,
+    // #1762: reading through `export` must not cost the carve-outs. Correctly
+    // ordered exported code stays silent for each of the four detectors.
+    `
+export const threshold = 10;
+use(threshold);
+logStart();
+`,
+    `
+export const source = getSource();
+export const derived = source.value;
+export const unrelated = 1;
+`,
+    `
+export const start = 0;
+export let counter;
+counter = start + 1;
+`,
+    `
+if (id === null) {
+  throw new Error('missing');
+}
+export const a = props.group;
+use(a);
+`,
+    // An exported declaration reading a property still captures observable state,
+    // so the effect below it may not be hoisted past it (#1493 applies unchanged).
+    `
+export const before = counter.value;
+
+bump();
+
+expect(counter.value).toBeGreaterThan(before);
+`,
+    // An exported impure initializer remains an ordering barrier.
+    `
+export const value = compute();
+logStart();
+use(value);
+`,
+    // `export type` / `export enum` unwrap to non-variable declarations, so they
+    // keep the opaque-barrier treatment they had before the unwrap existed.
+    `
+export type Thing = { a: number };
+logStart();
+use(other);
+`,
+    `
+export enum Thing {
+  A,
+}
+logStart();
+use(other);
+`,
+    // An exported declaration whose initializer is an await stays inside its run,
+    // so `parallelize-async-operations` keeps its Promise.all rewrite.
+    `
+export const first = await fetchFirst();
+export const second = await fetchSecond();
+log();
+use(first, second);
+`,
   ],
   invalid: [
     // A shebang is only a shebang at character 0. ESLint presents it as a
@@ -1200,6 +1261,167 @@ async function load() {
 `,
       errors: [{ messageId: 'groupDerived' }],
     },
+    /**
+     * #1762: `export` is a modifier on a declaration, not a distinct statement
+     * kind. Every classifier reads through the wrapper, so all four detectors see
+     * the exported spelling exactly as they see the bare one — and the fix keeps
+     * `export` welded to the declaration it modifies.
+     */
+    {
+      code: `
+export const threshold = 10;
+logStart();
+use(threshold);
+`,
+      output: `
+logStart();
+export const threshold = 10;
+use(threshold);
+`,
+      errors: [{ messageId: 'moveSideEffect' }],
+    },
+    {
+      code: `
+export const a = props.group;
+if (id !== null) {
+  throw new Error('bad');
+}
+use(a);
+`,
+      output: `
+if (id !== null) {
+  throw new Error('bad');
+}
+export const a = props.group;
+use(a);
+`,
+      errors: [{ messageId: 'moveGuardUp' }],
+    },
+    {
+      code: `
+export const source = getSource();
+export const unrelated = 1;
+export const other = 2;
+export const derived = source.value;
+`,
+      output: `
+export const source = getSource();
+export const derived = source.value;
+export const unrelated = 1;
+export const other = 2;
+`,
+      errors: [{ messageId: 'groupDerived' }],
+    },
+    // The hole hits the moved statement independently of the ones around it: only
+    // the derivation carries `export` here.
+    {
+      code: `
+const source = getSource();
+const unrelated = 1;
+const other = 2;
+export const derived = source.value;
+`,
+      output: `
+const source = getSource();
+export const derived = source.value;
+const unrelated = 1;
+const other = 2;
+`,
+      errors: [{ messageId: 'groupDerived' }],
+    },
+    // …and independently of the dependency source, which carries `export` here.
+    {
+      code: `
+export const source = getSource();
+const unrelated = 1;
+const other = 2;
+const derived = source.value;
+`,
+      output: `
+export const source = getSource();
+const derived = source.value;
+const unrelated = 1;
+const other = 2;
+`,
+      errors: [{ messageId: 'groupDerived' }],
+    },
+    {
+      code: `
+export let counter;
+const start = 0, end = 1;
+counter = start + end;
+`,
+      output: `
+const start = 0, end = 1;
+export let counter;
+counter = start + end;
+`,
+      errors: [{ messageId: 'moveDeclarationCloser' }],
+    },
+    {
+      code: `
+export const x = 1;
+const a = value + 2;
+const b = value + 3;
+use(x, a, b);
+`,
+      output: `
+const a = value + 2;
+const b = value + 3;
+export const x = 1;
+use(x, a, b);
+`,
+      errors: [{ messageId: 'moveDeclarationCloser' }],
+    },
+    // An exported declaration is a crossable statement as well as a movable one:
+    // scored impure it broke the backward scan at the first `export` (#1762).
+    {
+      code: `
+export const first = 1;
+export const second = 2;
+logStart();
+use(first, second);
+`,
+      output: `
+logStart();
+export const first = 1;
+export const second = 2;
+use(first, second);
+`,
+      errors: [{ messageId: 'moveSideEffect' }],
+    },
+    // `export default` carries no `.declaration`, so it stays opaque: the report
+    // and the fix here concern the statements around it, never the export itself.
+    {
+      code: `
+const threshold = 10;
+logStart();
+export default threshold;
+`,
+      output: `
+logStart();
+const threshold = 10;
+export default threshold;
+`,
+      errors: [{ messageId: 'moveSideEffect' }],
+    },
+    // `export { x }` likewise carries no `.declaration`. It reads the name it
+    // re-binds, so it keeps acting as a reference to that binding.
+    {
+      code: `
+const threshold = 10;
+logStart();
+use(threshold);
+export { threshold };
+`,
+      output: `
+logStart();
+const threshold = 10;
+use(threshold);
+export { threshold };
+`,
+      errors: [{ messageId: 'moveSideEffect' }],
+    },
   ],
 });
 
@@ -1372,6 +1594,18 @@ const unrelated = 1;
 const detail = base.value; // derived note
 `;
 
+  // Exported declarations are movable and crossable (#1762), so the reordering
+  // permutes segments that each open with an `export` keyword. Splitting one from
+  // its declaration would leave text that no longer parses, which a fixpoint run
+  // surfaces as an unresolved fix rather than as a silent corruption.
+  const EXPORTED_CHAIN = `export const base = getBase();
+export const unrelated = 1;
+export const detail = base.value;
+export const other = getOther();
+export const filler = 2;
+export const derived = other.value;
+`;
+
   it.each([
     ['cross-handler ping-pong', PING_PONG],
     ['cross-handler ping-pong (opposite phase)', PING_PONG_MIRROR],
@@ -1426,6 +1660,7 @@ const detail = base.value; // derived note
     ['interleaved fixtures', INTERLEAVED_FIXTURES],
     ['trailing comments', TRAILING_COMMENTS],
     ['a trailing comment on the last statement', TRAILING_COMMENT_LAST],
+    ['exported declarations', EXPORTED_CHAIN],
   ])('settles %s in a single fix pass', (_label, code) => {
     const result = fixToFixpoint(code);
 
@@ -1549,6 +1784,7 @@ use(mockFetch, mockRefs);
     ['interleaved fixtures', INTERLEAVED_FIXTURES],
     ['trailing comments', TRAILING_COMMENTS],
     ['a trailing comment on the last statement', TRAILING_COMMENT_LAST],
+    ['exported declarations', EXPORTED_CHAIN],
   ])('reaches an idempotent fixpoint for %s', (_label, code) => {
     const { text } = fixToFixpoint(code);
     const rerun = fixToFixpoint(text);
