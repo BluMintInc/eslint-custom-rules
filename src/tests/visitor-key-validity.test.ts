@@ -20,6 +20,16 @@ import { rules } from '../index';
  * directions: an unlisted dead key fails, and an ALLOWED entry that stops being
  * dead also fails. That way the exemption list cannot quietly rot into a
  * blanket amnesty.
+ *
+ * The same rot applies one level up, to the population itself. A rule that
+ * gates on filename or file content — `functions/src/types/firestore/**`,
+ * `*.dynamic.tsx`, `.md`, a configured glob — returns `{}` for any probe that
+ * misses its gate, and an empty visitor object passes every key check
+ * vacuously. A single fixed probe therefore validated nothing at all for 19 of
+ * 194 rules while the suite stayed green (issue #1731). Visitor keys are
+ * collected as a UNION over a probe surface built to reach those gates, and the
+ * per-rule floor below — every rule yields at least one key — is what keeps the
+ * surface honest: deleting a probe drops its rules to zero keys and fails.
  */
 
 // esquery is resolved through ESLint's own dependency tree rather than declared
@@ -51,6 +61,103 @@ for (const extra of [
   KNOWN_TYPES.add(extra);
 }
 
+type Probe = { filename: string; code: string; reaches: string };
+
+/**
+ * Probe sources stay valid TypeScript even when the filename is not: a source
+ * that fails to parse never reaches `create()`, which would reintroduce the
+ * silent hole this surface exists to close. Rules gate on the path, not on the
+ * body, so a parseable body costs nothing.
+ */
+const PROBES: Probe[] = [
+  {
+    filename: 'probe.tsx',
+    code: 'const x = 1;\n',
+    reaches: 'ungated rules; the baseline every rule must tolerate',
+  },
+  {
+    filename: 'src/components/Foo.tsx',
+    code: 'export const Foo = () => null;\n',
+    reaches: 'frontend/component-path gates',
+  },
+  {
+    filename: 'functions/src/index.ts',
+    code: 'export const f = () => 1;\n',
+    reaches: 'backend `functions/` gates',
+  },
+  {
+    filename: 'functions/src/callable/fOnCall.f.ts',
+    code: 'export const f = 1;\n',
+    reaches: 'callable entry-point (`.f.ts`) gates',
+  },
+  {
+    filename: 'functions/src/callable/scripts/migrateFoo.f.ts',
+    code: 'export const f = 1;\n',
+    reaches: 'the default migration-script glob',
+  },
+  {
+    filename: 'functions/src/types/firestore/Foo/index.ts',
+    code: 'export type Foo = { a: string };\n',
+    reaches: 'Firestore type-definition directory gates',
+  },
+  {
+    filename: 'src/types/Foo.ts',
+    code: 'export type Foo = { a: string };\n',
+    reaches: 'types-directory placement gates',
+  },
+  {
+    filename: 'src/util/foo.test.ts',
+    code: "it('x', () => {});\n",
+    reaches: 'test-file gates',
+  },
+  {
+    filename: 'package.json',
+    code: '{"name":"x"}\n',
+    reaches: 'manifest-file gates',
+  },
+  {
+    filename: 'migrations/2026-01-01-foo.ts',
+    code: 'export const up = () => 1;\n',
+    reaches: 'migration-directory gates',
+  },
+  {
+    filename: 'docs/example.md',
+    code: 'const x = 1;\n',
+    reaches: 'markdown gates, which key on the extension alone',
+  },
+  {
+    filename: 'src/components/Foo.dynamic.tsx',
+    code: 'const A = 1;\n',
+    reaches: 'dynamic-import module gates',
+  },
+  {
+    filename: 'src/validators/foo.ts',
+    code: 'export const isFoo = () => true;\n',
+    reaches: 'the default validator-path glob',
+  },
+  {
+    filename: 'src/hooks/useFoo.ts',
+    code: 'export const useFoo = () => 1;\n',
+    reaches: 'hook-path gates',
+  },
+  {
+    filename: 'src/config/foo.ts',
+    code: 'export const A = 1;\n',
+    reaches: 'configuration-module gates',
+  },
+];
+
+/**
+ * Rules whose visitor surface is unlocked by configuration rather than by file
+ * shape. Options are supplied through the lint config so the rule's own default
+ * merging runs; each value satisfies that rule's schema.
+ */
+const RULE_OPTIONS: Record<string, readonly unknown[]> = {
+  // Reports nothing until a caller lists restricted properties, so the default
+  // (empty list) makes every visitor unreachable.
+  'no-restricted-properties-fix': [[{ object: 'foo', property: 'bar' }]],
+};
+
 /**
  * Dead keys that are correct as written. Each needs a verified reason, because
  * the staleness assertion below turns an unjustified entry into a failure the
@@ -64,6 +171,15 @@ const ALLOWED: { rule: string; key: string; reason: string }[] = [
       'Runs under jsonc-eslint-parser (see ruleTesterJson), which really does emit JSONLiteral. The node is real; it is TSESTree AST_NODE_TYPES that has no entry for it.',
   },
 ];
+
+/**
+ * Rules that expose no visitor key under any probe. Empty because every
+ * registered rule is reachable by some probe above; an entry here is an
+ * admission that a rule's gate is unreachable, so it needs a one-line verified
+ * reason. Enforced both ways — a listed rule that starts producing keys fails,
+ * so a stale exemption cannot absorb the next regression.
+ */
+const EXEMPT_ZERO_KEY: { rule: string; reason: string }[] = [];
 
 /** Every identifier used as a node type anywhere in a parsed esquery selector. */
 function typeIdentifiers(selector: unknown, acc = new Set<string>()) {
@@ -107,73 +223,166 @@ function classifyKey(
     : { ok: true };
 }
 
-const captured = new Map<string, string[]>();
-const unassessed = new Map<string, string>();
+type CaptureEvent =
+  | { kind: 'keys'; keys: string[] }
+  | { kind: 'failure'; message: string };
+
+type Capture = {
+  /** Union of the visitor keys a rule exposed across the whole probe surface. */
+  keys: Map<string, Set<string>>;
+  /** Probes that produced no reading at all — coverage holes, not passes. */
+  holes: string[];
+};
 
 /**
  * The visitor object is captured from a real lint run rather than by calling
  * `create()` with a hand-built stub: a stub that throws on an unexpected
  * accessor drops rules from the population silently, which would understate
  * coverage while still looking like a pass.
+ *
+ * Taking a rule map as a parameter lets the planted controls below travel the
+ * exact same path as the real population, so a capture layer that stops
+ * capturing cannot fake a clean sweep.
  */
-function captureRule(name: string, rule: TSESLint.AnyRuleModule) {
+function captureVisitorKeys(
+  ruleMap: Record<string, TSESLint.AnyRuleModule>,
+): Capture {
   const linter = new Linter();
   linter.defineParser('ts', tsParser as unknown as Linter.ParserModule);
-  linter.defineRule(`probe/${name}`, {
-    ...(rule as unknown as Linter.RuleModule),
-    create(context: unknown) {
-      let visitors: unknown;
+  const keys = new Map<string, Set<string>>();
+  const holes: string[] = [];
+
+  for (const [name, rule] of Object.entries(ruleMap)) {
+    const union = new Set<string>();
+    // An array sidesteps the reassignment the closure performs mid-lint, which
+    // a single narrowed binding cannot express.
+    const events: CaptureEvent[] = [];
+    linter.defineRule(`probe/${name}`, {
+      ...(rule as unknown as Linter.RuleModule),
+      create(context: unknown) {
+        try {
+          const visitors = (
+            rule as unknown as { create: (ctx: unknown) => unknown }
+          ).create(context);
+          if (visitors && typeof visitors === 'object') {
+            events.push({
+              kind: 'keys',
+              keys: Object.keys(visitors as object),
+            });
+          } else {
+            events.push({
+              kind: 'failure',
+              message: 'create() returned a non-object',
+            });
+          }
+        } catch (err) {
+          events.push({
+            kind: 'failure',
+            message: `create() threw: ${(err as Error).message}`,
+          });
+        }
+        return {};
+      },
+    } as Linter.RuleModule);
+
+    for (const probe of PROBES) {
+      events.length = 0;
+      let messages: Linter.LintMessage[] = [];
+      let thrown: string | undefined;
       try {
-        visitors = (rule as { create: (ctx: unknown) => unknown }).create(
-          context,
+        messages = linter.verify(
+          probe.code,
+          {
+            parser: 'ts',
+            parserOptions: {
+              ecmaVersion: 2022,
+              sourceType: 'module',
+              ecmaFeatures: { jsx: true },
+            },
+            rules: {
+              [`probe/${name}`]: [
+                'error',
+                ...(RULE_OPTIONS[name] ?? []),
+              ] as Linter.RuleLevelAndOptions,
+            },
+          },
+          probe.filename,
         );
       } catch (err) {
-        unassessed.set(name, `create() threw: ${(err as Error).message}`);
-        return {};
+        thrown = `lint threw: ${(err as Error).message}`;
       }
-      if (visitors && typeof visitors === 'object') {
-        captured.set(name, Object.keys(visitors as object));
-      } else {
-        unassessed.set(name, 'create() returned a non-object');
-      }
-      return {};
-    },
-  } as Linter.RuleModule);
 
-  try {
-    linter.verify(
-      'const x = 1;\n',
-      {
-        parser: 'ts',
-        parserOptions: {
-          ecmaVersion: 2022,
-          sourceType: 'module',
-          ecmaFeatures: { jsx: true },
-        },
-        rules: { [`probe/${name}`]: 'error' },
-      },
-      'probe.tsx',
-    );
-  } catch (err) {
-    if (!unassessed.has(name) && !captured.has(name)) {
-      unassessed.set(name, `lint threw: ${(err as Error).message}`);
+      const fatal = messages.find((message) => message.fatal);
+      const observed = events.find((event) => event.kind === 'keys');
+      if (observed && observed.kind === 'keys') {
+        observed.keys.forEach((key) => union.add(key));
+        continue;
+      }
+      const failure = events.find((event) => event.kind === 'failure');
+      const reason = fatal
+        ? `probe source failed to parse — ${fatal.message}`
+        : failure && failure.kind === 'failure'
+        ? failure.message
+        : thrown ?? 'create() was never invoked';
+      holes.push(`${name} @ ${probe.filename}: ${reason}`);
     }
+    keys.set(name, union);
   }
+  return { keys, holes };
 }
-
-for (const [name, rule] of Object.entries(rules)) {
-  captureRule(name, rule as unknown as TSESLint.AnyRuleModule);
-}
-
-const findings = [...captured].flatMap(([rule, keys]) =>
-  keys.flatMap((key) => {
-    const verdict = classifyKey(key);
-    return verdict.ok ? [] : [{ rule, key, reason: verdict.reason }];
-  }),
-);
 
 const allowKey = (rule: string, key: string) => JSON.stringify([rule, key]);
+
+function invalidKeys(keys: Map<string, Set<string>>) {
+  return [...keys].flatMap(([rule, ruleKeys]) =>
+    [...ruleKeys].flatMap((key) => {
+      const verdict = classifyKey(key);
+      return verdict.ok ? [] : [{ rule, key, reason: verdict.reason }];
+    }),
+  );
+}
+
+/** Rules for which the probe surface validated nothing at all. */
+function rulesWithoutKeys(keys: Map<string, Set<string>>, exempt: Set<string>) {
+  return [...keys]
+    .filter(([rule, ruleKeys]) => ruleKeys.size === 0 && !exempt.has(rule))
+    .map(([rule]) => rule);
+}
+
+/**
+ * An exemption is stale when its rule produces keys after all, and equally when
+ * the rule no longer exists — both leave a licence to skip lying around.
+ */
+function staleExemptions(
+  keys: Map<string, Set<string>>,
+  exempt: readonly { rule: string }[],
+) {
+  return exempt
+    .filter(({ rule }) => (keys.get(rule)?.size ?? 0) > 0 || !keys.has(rule))
+    .map(({ rule }) => rule);
+}
+
+const corpus = captureVisitorKeys(
+  rules as unknown as Record<string, TSESLint.AnyRuleModule>,
+);
+const findings = invalidKeys(corpus.keys);
 const allowed = new Set(ALLOWED.map((a) => allowKey(a.rule, a.key)));
+const exemptZeroKey = new Set(EXEMPT_ZERO_KEY.map((e) => e.rule));
+
+/** A key that matches nothing, planted to prove the classifier still fires. */
+const PLANTED_TYPO_RULE = {
+  meta: { type: 'problem', schema: [], messages: {} },
+  create: () => ({
+    NotARealNode: () => undefined,
+    CallExpression: () => undefined,
+  }),
+} as unknown as TSESLint.AnyRuleModule;
+
+/** A rule no probe can unlock, planted to prove the per-rule floor still fires. */
+const PLANTED_SILENT_RULE = {
+  meta: { type: 'problem', schema: [], messages: {} },
+  create: () => ({}),
+} as unknown as TSESLint.AnyRuleModule;
 
 describe('visitor key validity', () => {
   // Without this the suite passes whenever the classifier is broken, since a
@@ -186,18 +395,69 @@ describe('visitor key validity', () => {
     expect(classifyKey('onCodePathStart').ok).toBe(true);
   });
 
-  it('captures a visitor object for every registered rule', () => {
-    // A rule whose visitor was never captured is a hole in coverage, not a pass.
-    expect([...unassessed]).toEqual([]);
-    expect(captured.size).toBe(Object.keys(rules).length);
+  // The controls run the planted rules through the real capture path, so a
+  // capture layer that silently stops reading visitors — the defect this guard
+  // exists to prevent — turns the suite red instead of green.
+  it('catches a planted dead key and a planted empty visitor', () => {
+    const control = captureVisitorKeys({
+      'planted-typo': PLANTED_TYPO_RULE,
+      'planted-silent': PLANTED_SILENT_RULE,
+    });
+
+    expect(control.holes).toEqual([]);
+    expect(control.keys.get('planted-typo')?.size).toBe(2);
+    expect(invalidKeys(control.keys).map((f) => `${f.rule}: ${f.key}`)).toEqual(
+      ['planted-typo: NotARealNode'],
+    );
+    expect(rulesWithoutKeys(control.keys, new Set())).toEqual([
+      'planted-silent',
+    ]);
+    expect(rulesWithoutKeys(control.keys, new Set(['planted-silent']))).toEqual(
+      [],
+    );
+
+    // Two-way exemption enforcement: a licence granted to a rule that produces
+    // keys is stale, and so is one naming a rule that is not registered.
+    expect(staleExemptions(control.keys, [{ rule: 'planted-typo' }])).toEqual([
+      'planted-typo',
+    ]);
+    expect(staleExemptions(control.keys, [{ rule: 'planted-silent' }])).toEqual(
+      [],
+    );
+    expect(staleExemptions(control.keys, [{ rule: 'planted-absent' }])).toEqual(
+      ['planted-absent'],
+    );
+  });
+
+  it('captures a visitor object for every registered rule and probe', () => {
+    // A probe that never reached `create()` validated nothing, so it is a hole
+    // in coverage rather than a pass.
+    expect(corpus.holes).toEqual([]);
+    expect(corpus.keys.size).toBe(Object.keys(rules).length);
+  });
+
+  it('validates at least one visitor key for every rule', () => {
+    // The real gate. An empty visitor object satisfies every key check
+    // vacuously, so a rule whose gates no probe reaches must fail loudly
+    // instead of inflating the population.
+    expect(rulesWithoutKeys(corpus.keys, exemptZeroKey)).toEqual([]);
+  });
+
+  it('holds no stale zero-key exemption', () => {
+    expect(staleExemptions(corpus.keys, EXEMPT_ZERO_KEY)).toEqual([]);
   });
 
   it('checks a non-trivial number of visitor keys', () => {
-    const totalKeys = [...captured.values()].reduce(
-      (sum, keys) => sum + keys.length,
+    const totalKeys = [...corpus.keys.values()].reduce(
+      (sum, keys) => sum + keys.size,
       0,
     );
-    expect(totalKeys).toBeGreaterThan(400);
+    // Scaled to the population rather than fixed, so growth cannot outrun it
+    // and shrinkage cannot hide beneath it. The per-rule floor above is the
+    // real gate; this only catches a systemic collapse — a capture path that
+    // truncates visitor objects to a single key would pass every per-rule
+    // check while validating almost nothing.
+    expect(totalKeys).toBeGreaterThanOrEqual(corpus.keys.size * 2);
   });
 
   it('registers no visitor key that matches nothing', () => {
