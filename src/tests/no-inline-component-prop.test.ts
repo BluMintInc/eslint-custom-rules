@@ -129,6 +129,97 @@ ruleTesterJsx.run('no-inline-component-prop', noInlineComponentProp, {
       code: MODULE_SCOPE_WRAPPER_OBJECT,
       options: [{ allowModuleScopeFactories: true }],
     },
+    // A definition in a STRICTLY OUTER function is created once per call of that
+    // outer function, so every run of the consumer sees the identical reference
+    // and there is no remount to prevent. The invalid twins below pin that the
+    // same shapes still report once definition and consumer share a function.
+    `
+    export function withCatalog(Inner: any) {
+      const StableWrapper = (props: { children: unknown }) => (
+        <Inner>{props.children}</Inner>
+      );
+
+      return function Page() {
+        return <AlgoliaLayout CatalogWrapper={StableWrapper} />;
+      };
+    }
+    `,
+    // A describe body runs once while its it callbacks run later, so the wrapper
+    // identity is fixed across every consuming callback.
+    `
+    describe('CustomHitsPreempted', () => {
+      const CatalogWrapper = ({ hits }: { hits: unknown[] }) => (
+        <div>{hits.length}</div>
+      );
+
+      it('renders', () => {
+        render(<CustomHitsPreemptedUnmemoized CatalogWrapper={CatalogWrapper} />);
+      });
+    });
+    `,
+    `
+    class PageFactory {
+      build() {
+        const StableWrapper = (props: { children: unknown }) => (
+          <div>{props.children}</div>
+        );
+        return function Page() {
+          return <AlgoliaLayout CatalogWrapper={StableWrapper} />;
+        };
+      }
+    }
+    `,
+    `
+    const factories = {
+      build() {
+        const StableWrapper = (props: { children: unknown }) => (
+          <div>{props.children}</div>
+        );
+        return function Page() {
+          return <AlgoliaLayout CatalogWrapper={StableWrapper} />;
+        };
+      },
+    };
+    `,
+    // Wrapping the module-scope fixture in a plain function is semantically
+    // neutral for identity churn, so it must stay silent.
+    `
+    function buildPage() {
+      const StableWrapper = (props: { children: unknown }) => (
+        <div>{props.children}</div>
+      );
+
+      function Page() {
+        return <AlgoliaLayout CatalogWrapper={StableWrapper} />;
+      }
+
+      return Page;
+    }
+    `,
+    // Member-expression branch of the same outer-scope shape; it carries its own
+    // exemption check, so it needs its own fixture.
+    `
+    function buildPage() {
+      const wrappers = {
+        CatalogWrapper: (props: { children: JSX.Element }) => <div>{props.children}</div>,
+      };
+
+      function Page() {
+        return <AlgoliaLayout CatalogWrapper={wrappers.CatalogWrapper} />;
+      }
+
+      return Page;
+    }
+    `,
+    // Definition and consumer both at module scope: neither has an enclosing
+    // function, and a module binding is never recreated.
+    `
+    const StableWrapper = (props: { children: unknown }) => (
+      <div>{props.children}</div>
+    );
+
+    export const element = <AlgoliaLayout CatalogWrapper={StableWrapper} />;
+    `,
   ],
   invalid: [
     {
@@ -296,6 +387,110 @@ ruleTesterJsx.run('no-inline-component-prop', noInlineComponentProp, {
     },
     {
       code: MODULE_SCOPE_WRAPPER_OBJECT,
+      options: [{ allowModuleScopeFactories: false }],
+      errors: [{ messageId: 'inlineComponentProp' }],
+    },
+    // Nesting depth is irrelevant: what matters is that the definition and the
+    // consuming JSX share their nearest enclosing function.
+    {
+      code: `
+      export function outer() {
+        return function middle() {
+          return function Page() {
+            const StableWrapper = (props: { children: unknown }) => (
+              <div>{props.children}</div>
+            );
+            return <AlgoliaLayout CatalogWrapper={StableWrapper} />;
+          };
+        };
+      }
+      `,
+      errors: [{ messageId: 'inlineComponentProp' }],
+    },
+    // A custom hook body re-runs on every render of its caller, so a wrapper
+    // declared beside the consuming JSX churns exactly like one in a component.
+    {
+      code: `
+      export function useCatalogLayout() {
+        const CatalogWrapper = (props: { children: unknown }) => (
+          <div>{props.children}</div>
+        );
+        return <AlgoliaLayout CatalogWrapper={CatalogWrapper} />;
+      }
+      `,
+      errors: [{ messageId: 'inlineComponentProp' }],
+    },
+    {
+      code: `
+      export function useCatalogWrappers() {
+        const wrappers = {
+          CatalogWrapper: (props: { children: JSX.Element }) => <div {...props} />,
+        };
+        return <AlgoliaLayout CatalogWrapper={wrappers.CatalogWrapper} />;
+      }
+      `,
+      errors: [{ messageId: 'inlineComponentProp' }],
+    },
+    // An IIFE body encloses both the definition and the consumer, so it is the
+    // same-function case rather than an outer factory.
+    {
+      code: `
+      function Page() {
+        return (() => {
+          const StableWrapper = (props: { children: unknown }) => (
+            <div>{props.children}</div>
+          );
+          return <AlgoliaLayout CatalogWrapper={StableWrapper} />;
+        })();
+      }
+      `,
+      errors: [{ messageId: 'inlineComponentProp' }],
+    },
+    // A loop body is not a function, so the declaration still belongs to Page.
+    {
+      code: `
+      function Page({ rows }: { rows: string[] }) {
+        for (const row of rows) {
+          const RowWrapper = (props: { children: unknown }) => (
+            <div>{props.children}</div>
+          );
+          return <AlgoliaLayout CatalogWrapper={RowWrapper} />;
+        }
+        return null;
+      }
+      `,
+      errors: [{ messageId: 'inlineComponentProp' }],
+    },
+    // Withdrawing allowModuleScopeFactories withdraws every stability carve-out,
+    // outer-function factories included; without this the option would be inert
+    // for anything but module scope.
+    {
+      code: `
+      export function withCatalog(Inner: any) {
+        const StableWrapper = (props: { children: unknown }) => (
+          <Inner>{props.children}</Inner>
+        );
+
+        return function Page() {
+          return <AlgoliaLayout CatalogWrapper={StableWrapper} />;
+        };
+      }
+      `,
+      options: [{ allowModuleScopeFactories: false }],
+      errors: [{ messageId: 'inlineComponentProp' }],
+    },
+    {
+      code: `
+      export function withCatalog() {
+        const wrappers = {
+          CatalogWrapper: (props: { children: JSX.Element }) => <div {...props} />,
+        };
+
+        return function Page() {
+          return <AlgoliaLayout CatalogWrapper={wrappers.CatalogWrapper} />;
+        };
+      }
+      `,
       options: [{ allowModuleScopeFactories: false }],
       errors: [{ messageId: 'inlineComponentProp' }],
     },
