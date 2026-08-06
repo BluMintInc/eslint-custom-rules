@@ -125,9 +125,9 @@ type PendingReport = {
   node: TSESTree.Node;
   messageId: MessageIds;
   data?: { variableName: string };
-  /** Present only for the string-literal case, which is the fixable one. */
+  /** Present only where the key's value is statically known, hence fixable. */
   substitution?: {
-    keyNode: TSESTree.Literal;
+    keyNode: TSESTree.Literal | TSESTree.TemplateLiteral;
     constant: string;
     scope: TSESLint.Scope.Scope;
   };
@@ -665,6 +665,42 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
     }
 
     /**
+     * The key's value when it is knowable without running the program, paired
+     * with the node that spells it.
+     *
+     * The substituted `QUERY_KEY_*` name is derived from that value, so what a
+     * fix needs is the value — not the notation carrying it. Gating on the node
+     * type instead left a static template reported exactly like the quoted
+     * string it renders to but with no fix behind the report (#1803). Every
+     * genuinely underivable shape — concatenation, a ternary, a template WITH
+     * expressions — holds no single value and falls out here on its own, so the
+     * conservative carve-out survives without being keyed to notation.
+     *
+     * Read through `cooked` rather than `raw` so an escape names the character
+     * it renders to, and the two spellings of one key derive one constant.
+     */
+    function staticKeyOf(node: TSESTree.Node): {
+      node: TSESTree.Literal | TSESTree.TemplateLiteral;
+      text: string;
+    } | null {
+      if (node.type === AST_NODE_TYPES.Literal) {
+        return typeof node.value === 'string'
+          ? { node, text: node.value }
+          : null;
+      }
+      if (
+        node.type === AST_NODE_TYPES.TemplateLiteral &&
+        node.expressions.length === 0
+      ) {
+        const cooked = node.quasis[0]?.value.cooked;
+        // A cooked value is absent only for an invalid escape sequence, which
+        // names no character and so cannot name a constant either.
+        return typeof cooked === 'string' ? { node, text: cooked } : null;
+      }
+      return null;
+    }
+
+    /**
      * Generate auto-fix suggestion for string literals
      */
     function generateAutoFix(keyValue: string): string | null {
@@ -755,20 +791,18 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
                 if (!isValidQueryKeyUsage(keyValue)) {
                   // Check if it contains invalid string literals
                   if (containsInvalidStringLiteral(keyValue)) {
-                    // Only simple string literals can be auto-fixed
-                    const suggestedConstant =
-                      keyValue.type === AST_NODE_TYPES.Literal &&
-                      typeof keyValue.value === 'string'
-                        ? generateAutoFix(keyValue.value)
-                        : null;
+                    // Only a statically known key value can be auto-fixed.
+                    const staticKey = staticKeyOf(keyValue);
+                    const suggestedConstant = staticKey
+                      ? generateAutoFix(staticKey.text)
+                      : null;
                     pendingReports.push({
                       node: keyValue,
                       messageId: 'enforceQueryKeyImport',
                       substitution:
-                        suggestedConstant &&
-                        keyValue.type === AST_NODE_TYPES.Literal
+                        staticKey && suggestedConstant
                           ? {
-                              keyNode: keyValue,
+                              keyNode: staticKey.node,
                               constant: suggestedConstant,
                               scope: scopeOf(keyValue),
                             }

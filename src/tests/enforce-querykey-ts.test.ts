@@ -2,6 +2,62 @@ import { Linter, Rule } from 'eslint';
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { enforceQueryKeyTs } from '../rules/enforce-querykey-ts';
 
+/**
+ * One static key in two spellings, and the single fixed state both must reach.
+ *
+ * A quoted key and an expression-free template are the same key written two
+ * ways, and the rule reports them identically, so the fix it emits has to be
+ * the same text. Pointing both cases at ONE `output` constant is what makes a
+ * fix withheld from either spelling a failure rather than a difference a reader
+ * could take for intent (#1803). The template spelling is derived from the
+ * quoted one so that the quoting stays their only difference.
+ */
+const STATIC_KEY_QUOTED = `
+        function Component() {
+          const [stream] = useRouterState({ key: 'stream-view' });
+          return <div>{stream}</div>;
+        }
+      `;
+
+const STATIC_KEY_TEMPLATE = STATIC_KEY_QUOTED.replace(
+  "'stream-view'",
+  '`stream-view`',
+);
+
+const STATIC_KEY_FIXED = `import { QUERY_KEY_STREAM_VIEW } from 'src/util/routing/queryKeys';
+
+        function Component() {
+          const [stream] = useRouterState({ key: QUERY_KEY_STREAM_VIEW });
+          return <div>{stream}</div>;
+        }
+      `;
+
+/**
+ * The same pairing for a key written with an escape. Both spellings denote the
+ * character the escape renders to, so both derive the same constant — which
+ * only holds if the template is read through `cooked`; `raw` would invent
+ * `QUERY_KEY_USER_U002DPROFILE` for the template alone.
+ */
+const ESCAPED_KEY_QUOTED = `
+        function Component() {
+          const [profile] = useRouterState({ key: 'user\\u002dprofile' });
+          return <div>{profile}</div>;
+        }
+      `;
+
+const ESCAPED_KEY_TEMPLATE = ESCAPED_KEY_QUOTED.replace(
+  "'user\\u002dprofile'",
+  '`user\\u002dprofile`',
+);
+
+const ESCAPED_KEY_FIXED = `import { QUERY_KEY_USER_PROFILE } from 'src/util/routing/queryKeys';
+
+        function Component() {
+          const [profile] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+          return <div>{profile}</div>;
+        }
+      `;
+
 ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
   valid: [
     // 1. Basic valid cases - using imported QUERY_KEY constants
@@ -675,6 +731,28 @@ export const useGroupIdMap = () => {
           const attemptKey = QUERY_KEY_ATTEMPT;
           const [attempt] = useRouterState({ key: attemptKey });
           return <div>{attempt}</div>;
+        }
+      `,
+    },
+
+    // 46-47. #1803: widening the FIX to expression-free templates must not
+    // widen detection. A template that names no key is still not a violation,
+    // so the silence these fence is the floor the widening had to preserve.
+    {
+      name: 'an empty template key stays silent',
+      code: `
+        function Component() {
+          const [value] = useRouterState({ key: \`\` });
+          return <div>{value}</div>;
+        }
+      `,
+    },
+    {
+      name: 'a separator-only template key stays silent',
+      code: `
+        function Component() {
+          const [value] = useRouterState({ key: \`-\` });
+          return <div>{value}</div>;
         }
       `,
     },
@@ -1883,6 +1961,110 @@ function Component() {
   const [match] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
   return [attempt, match];
 }`,
+    },
+
+    // ------------------------------------------------------------------
+    // Issue #1803: the fix is gated on the key's VALUE being statically known,
+    // never on the node type that spells it. Each pair below writes one key two
+    // ways and asserts ONE shared `output`, so a spelling that reports without
+    // a fix — a dead-end error — fails here. The declines that follow pin the
+    // shapes that have no static value to derive from, which is what keeps the
+    // widening from reaching them.
+    // ------------------------------------------------------------------
+
+    // 61. The quoted spelling, whose fixed state its template twin shares.
+    {
+      name: 'a quoted static key is substituted and imported',
+      code: STATIC_KEY_QUOTED,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: STATIC_KEY_FIXED,
+    },
+
+    // 62. The same key in template notation reaches the same bytes.
+    {
+      name: 'an expression-free template key emits the quoted spelling fix',
+      code: STATIC_KEY_TEMPLATE,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: STATIC_KEY_FIXED,
+    },
+
+    // 63. An escape denotes the character it renders to, in both spellings.
+    {
+      name: 'an escaped quoted key derives its constant from the escape',
+      code: ESCAPED_KEY_QUOTED,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: ESCAPED_KEY_FIXED,
+    },
+
+    // 64. Reading the template through `raw` would invent a different constant
+    // here, which is the whole difference this case exists to catch.
+    {
+      name: 'an escaped template key derives the same constant as the quoted one',
+      code: ESCAPED_KEY_TEMPLATE,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: ESCAPED_KEY_FIXED,
+    },
+
+    // 65. Two spellings, one import: the substitution and the import carrier
+    // work the same whichever spelling holds the key.
+    {
+      name: 'a template key and a quoted key share one emitted import',
+      code: `function Component() {
+  const [match] = useRouterState({ key: \`match-view\` });
+  const [tournament] = useRouterState({ key: 'tournament-view' });
+  return [match, tournament];
+}`,
+      errors: [
+        { messageId: 'enforceQueryKeyImport' },
+        { messageId: 'enforceQueryKeyImport' },
+      ],
+      output: `import { QUERY_KEY_MATCH_VIEW, QUERY_KEY_TOURNAMENT_VIEW } from 'src/util/routing/queryKeys';
+
+function Component() {
+  const [match] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
+  const [tournament] = useRouterState({ key: QUERY_KEY_TOURNAMENT_VIEW });
+  return [match, tournament];
+}`,
+    },
+
+    // 66. An interpolated template holds a different key per render, so there
+    // is no value to derive a constant from and the decline is deliberate.
+    {
+      name: 'an interpolated template key reports without a fix',
+      code: `
+        function Component({ id }) {
+          const [value] = useRouterState({ key: \`session-\${id}\` });
+          return <div>{value}</div>;
+        }
+      `,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: null,
+    },
+
+    // 67-68. Concatenation and a ternary decline for the same reason.
+    {
+      name: 'a concatenated key reports without a fix',
+      code: `
+        function Component({ id }) {
+          const [value] = useRouterState({ key: 'session-' + id });
+          return <div>{value}</div>;
+        }
+      `,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: null,
+    },
+    {
+      name: 'a ternary between two static keys reports without a fix',
+      code: `
+        function Component({ isAdmin }) {
+          const [value] = useRouterState({
+            key: isAdmin ? 'admin-home' : 'user-home'
+          });
+          return <div>{value}</div>;
+        }
+      `,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: null,
     },
   ],
 });
