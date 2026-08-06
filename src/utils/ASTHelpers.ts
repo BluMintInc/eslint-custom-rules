@@ -1144,16 +1144,67 @@ export class ASTHelpers {
   private static isTransparentWrapperCall(
     node: TSESTree.CallExpression,
   ): boolean {
+    return this.hasCalleeNamed(node, this.TRANSPARENT_WRAPPER_CALLEES);
+  }
+
+  /**
+   * Calls whose function argument IS a component render function. `memo`,
+   * `forwardRef` and `observer` define a component out of the callback they are
+   * handed, so that callback is a render path even with no binding to take a
+   * name from. `useCallback`/`useMemo` are deliberately absent: they wrap a
+   * value or an event handler produced inside a component, not a component.
+   */
+  private static readonly COMPONENT_DEFINING_CALLEES = new Set([
+    'forwardRef',
+    'memo',
+    'observer',
+  ]);
+
+  private static hasCalleeNamed(
+    node: TSESTree.CallExpression,
+    names: ReadonlySet<string>,
+  ): boolean {
     const { callee } = node;
     if (callee.type === AST_NODE_TYPES.Identifier) {
-      return this.TRANSPARENT_WRAPPER_CALLEES.has(callee.name);
+      return names.has(callee.name);
     }
     return (
       callee.type === AST_NODE_TYPES.MemberExpression &&
       !callee.computed &&
       callee.property.type === AST_NODE_TYPES.Identifier &&
-      this.TRANSPARENT_WRAPPER_CALLEES.has(callee.property.name)
+      names.has(callee.property.name)
     );
+  }
+
+  /**
+   * Whether an anonymous function is the argument of a call that defines a
+   * component from it (`memo(() => <div />)`, `React.forwardRef((p, ref) =>
+   * ...)`). TS assertions between the function and the call are stepped over so
+   * `memo((() => <div />) as FC)` classifies the same way.
+   */
+  private static isComponentDefiningArgument(node: TSESTree.Node): boolean {
+    let child: TSESTree.Node = node;
+    let parent: TSESTree.Node | undefined = node.parent;
+    while (parent) {
+      if (
+        parent.type === AST_NODE_TYPES.TSAsExpression ||
+        parent.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+        parent.type === AST_NODE_TYPES.TSNonNullExpression ||
+        parent.type === AST_NODE_TYPES.TSTypeAssertion
+      ) {
+        child = parent;
+        parent = parent.parent;
+        continue;
+      }
+      if (parent.type !== AST_NODE_TYPES.CallExpression) {
+        return false;
+      }
+      return (
+        parent.arguments.includes(child as TSESTree.CallExpressionArgument) &&
+        this.hasCalleeNamed(parent, this.COMPONENT_DEFINING_CALLEES)
+      );
+    }
+    return false;
   }
 
   private static staticPropertyName(
@@ -1265,9 +1316,20 @@ export class ASTHelpers {
    * that name alone — `buildTree` is not a component even though it returns
    * JSX, because the name is an explicit signal about its role. Only a truly
    * anonymous function falls back to "does it return JSX", which is what makes
-   * `memo(() => <div />)` a component. That fallback is suppressed when some
-   * enclosing function carries a non-component name, since a callback nested in
-   * a plain helper is no more of a render path than the helper itself.
+   * `memo(() => <div />)` a component.
+   *
+   * Both component spellings answer the moment they are met, walking outwards,
+   * so the question stays RELATIVE: is a render function interposed between the
+   * node and whatever encloses it further out? A component nested in a plain
+   * helper is still a component, and the hook is legal inside it — `function
+   * makeCard() { return memo(() => <X onClick={...} />); }` is a render path
+   * even though `makeCard` is not.
+   *
+   * The remaining `hasNamedNonComponent` veto only settles the case where no
+   * component was found at all. It keeps a bare callback such as
+   * `items.map((i) => <Row />)` inside a plain helper silent: that callback is
+   * anonymous and returns JSX, but nothing turns it into a component, so it is
+   * no more of a render path than the helper holding it.
    */
   public static isInsideComponentOrHook(
     node: TSESTree.Node,
@@ -1281,6 +1343,12 @@ export class ASTHelpers {
       if (this.isFunctionNode(current)) {
         const name = this.inferFunctionName(current);
         if (name === null) {
+          if (
+            this.isComponentDefiningArgument(current) &&
+            this.returnsJSX(current, context)
+          ) {
+            return true;
+          }
           anonymousFunctions.push(current);
         } else if (this.isComponentOrHookName(name)) {
           return true;

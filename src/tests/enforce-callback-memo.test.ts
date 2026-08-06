@@ -622,6 +622,42 @@ ruleTesterJsx.run('enforce-callback-memo', rule, {
         }
       `,
     },
+    // Valid: the same carve-out through another array method — nothing turns a
+    // bare callback into a component, so the helper's name still settles it
+    {
+      code: `
+        function buildRows(items) {
+          return items.flatMap((i) => <Row key={i} onClick={() => { pick(i); }} />);
+        }
+      `,
+    },
+    // Valid: a useCallback argument is a handler produced inside a component,
+    // not a component definition, so it does not interpose one (issue #1777)
+    {
+      code: `
+        function buildRows() {
+          return useCallback(() => <X onClick={() => { pick(); }} />, []);
+        }
+      `,
+    },
+    // Valid: a memo argument that returns no JSX is not classified as a render
+    // function, so the enclosing helper's name still applies
+    {
+      code: `
+        function buildRows(items) {
+          return memo((i) => items.map(() => <Row onClick={() => { pick(i); }} />));
+        }
+      `,
+    },
+    // Valid: a plain helper that merely returns JSX is not a component, even
+    // when it is the innermost function
+    {
+      code: `
+        function buildRow() {
+          return <X onClick={() => { pick(); }} />;
+        }
+      `,
+    },
   ]),
   invalid: withParserOptions(parserOptions, [
     // Invalid: Inline function
@@ -1405,6 +1441,101 @@ ruleTesterJsx.run('enforce-callback-memo', rule, {
         });
       `,
       errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: an anonymous memo component built by a lowercase factory. The
+    // component ancestor sits between the JSX and the factory, so the hook is
+    // legal exactly where the report points — the factory's name says nothing
+    // about the arrow it hands to memo (issue #1777).
+    {
+      code: `
+        function createCardWidget() {
+          return memo(() => <X onClick={() => { open(); }} />);
+        }
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: the same anonymous component under an HOC-shaped wrapper
+    {
+      code: `
+        function withTheme(Inner) {
+          return memo(() => <X onClick={() => { open(); }} />);
+        }
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: two levels of lowercase nesting — the veto is relative to the
+    // interposed component, so depth above it does not matter
+    {
+      code: `
+        function outerBuild() {
+          function innerBuild() {
+            return memo(() => <X onClick={() => { open(); }} />);
+          }
+          return innerBuild;
+        }
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: anonymous forwardRef render function inside a factory
+    {
+      code: `
+        function makeInput() {
+          return forwardRef((props, ref) => (
+            <input ref={ref} onFocus={() => { props.onFocus(); }} />
+          ));
+        }
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: React.memo reached through a member expression callee
+    {
+      code: `
+        function makeCard() {
+          return React.memo(() => <X onClick={() => { open(); }} />);
+        }
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: mobx observer also defines a component from its argument
+    {
+      code: `
+        function makeCard() {
+          return observer(() => <X onClick={() => { open(); }} />);
+        }
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: a TS assertion between the arrow and the memo call does not hide
+    // the component definition
+    {
+      code: `
+        function makeCard() {
+          return memo((() => <X onClick={() => { open(); }} />) as any);
+        }
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: a plain helper nested inside an anonymous memo component, itself
+    // nested in a factory — the same chain the named form already asserts
+    {
+      code: `
+        function makeCard() {
+          return memo(() => {
+            const buildRow = () => <X onClick={() => { pick(); }} />;
+            return <div>{buildRow()}</div>;
+          });
+        }
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: an object prop inside an anonymous memo component under a factory
+    {
+      code: `
+        function makeCard() {
+          return memo(() => <X config={{ onDone: () => { pick(); } }} />);
+        }
+      `,
+      errors: [{ messageId: 'enforceMemo' }],
     },
   ]),
 });
