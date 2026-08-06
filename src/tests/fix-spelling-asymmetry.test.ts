@@ -530,11 +530,6 @@ const DETECTION_EXEMPT: Record<string, string> = {
   // identity shape is deliberately still concise-only, because widening it
   // would ship a second copy of behaviour whose boundary is unsettled.
   'no-undefined-null-passthrough': 'identity shape deferred, tracked as #1785',
-  // TEMPORARY, unlike the two above: this one is a plain defect awaiting its
-  // fix, not a decision. Only a concise-arrow `jest.mock` factory is matched.
-  // The both-ways assertion below is what makes the entry self-clearing — the
-  // gate fails the moment the rule is fixed and this line is still here.
-  'enforce-mock-firestore': 'awaiting fix, tracked as #1798',
 };
 
 const reportOf = (findings: Finding[]) =>
