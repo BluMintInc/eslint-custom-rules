@@ -15,6 +15,8 @@ This rule reports when:
 
 The factory's body form is irrelevant: a concise arrow, a block-bodied arrow, and a `function` expression that all return the same object are the same mock, and all three report. A factory whose body does more than return that object is out of scope, since the module it produces can no longer be read off a single expression.
 
+Type assertions are transparent everywhere the rule classifies an expression: `as T`, `satisfies T`, `!` and `<T>` assert a type without changing the value, so a mock wrapped in any of them (`() => ({ db } as const)`), a factory wrapped in one, and an asserted module path all report exactly as the unwrapped spelling does. This is not only a hand-written spelling — `enforce-object-literal-as-const` appends ` as const` to these very objects by `--fix`.
+
 ### Examples of **incorrect** code for this rule:
 
 ```ts
@@ -31,6 +33,11 @@ jest.mock('firebase-admin', () => {
 // The same mock, written as a function expression
 jest.mock('firebase-admin', function () {
   return { db: { collection: jest.fn() } };
+});
+
+// The same mock, after a sibling rule's --fix appended `as const`
+jest.mock('firebase-admin', () => {
+  return { db: { collection: jest.fn() } } as const;
 });
 
 // Using firestore-jest-mock
