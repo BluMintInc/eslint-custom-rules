@@ -54,7 +54,7 @@ call site, and **reports without fixing** everywhere else. The editor suggestion
 offers the same edit and is likewise withheld when the fix is.
 
 The fix applies when every value reference to the import lives inside one
-`async` function with a block body:
+`async` function body:
 
 ```ts
 import { setGroupChannel } from '../../firebaseCloud/messaging/setGroupChannel';
@@ -79,13 +79,34 @@ A reference held by a synchronous callback nested inside that async function
 still counts, because the callback cannot run before the first statement of the
 body it is created in.
 
+An `async` arrow with a concise body has no statement list to head, so the fix
+gives it a block and returns the expression it used to be:
+
+```ts
+import { setGroupChannel } from '../../firebaseCloud/messaging/setGroupChannel';
+
+export const handler = async () => setGroupChannel();
+```
+
+becomes
+
+```ts
+export const handler = async () => {
+  const { setGroupChannel } = await import(
+    '../../firebaseCloud/messaging/setGroupChannel'
+  );
+  return setGroupChannel();
+};
+```
+
+An enclosing `async` block is the smaller edit, so a reference inside a concise
+arrow nested in one lands there instead.
+
 The fix is withheld — the violation is still reported — when the import is:
 
 - read at module scope, including a re-export (`export { create }`) or a
   module-level `typeof` annotation;
 - read only from a synchronous function, which has nowhere to put an `await`;
-- read from an `async` arrow with an expression body, which has no block to
-  declare into;
 - read from a function's signature (a parameter default or a return type),
   which is evaluated before the body runs;
 - read from more than one `async` function, which is a per-call-site refactor;
