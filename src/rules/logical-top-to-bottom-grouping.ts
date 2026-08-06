@@ -25,21 +25,30 @@ function isHookLikeName(name: string): boolean {
   return /^use[A-Z0-9]/.test(name);
 }
 
+/**
+ * The hook carve-out is a *suppression*, so failing to recognize a callee costs
+ * more than a missed report: `handleSideEffects` would hoist the call, and
+ * reordering hook calls is the one reordering React forbids outright. The
+ * assertion wrappers are therefore peeled off both the callee and the receiver
+ * it hangs from, so `(useTrack as any)()` and `(ref as Ref).useThing()` keep the
+ * suppression their bare spellings get.
+ */
 function isHookCallee(
   callee:
     | TSESTree.LeftHandSideExpression
     | TSESTree.PrivateIdentifier
     | TSESTree.Super,
 ): boolean {
-  if (callee.type === AST_NODE_TYPES.Identifier) {
-    return isHookLikeName(callee.name);
+  const target = unwrapAssertions(callee as TSESTree.Node);
+  if (target.type === AST_NODE_TYPES.Identifier) {
+    return isHookLikeName(target.name);
   }
   if (
-    callee.type === AST_NODE_TYPES.MemberExpression &&
-    !callee.computed &&
-    callee.property.type === AST_NODE_TYPES.Identifier
+    target.type === AST_NODE_TYPES.MemberExpression &&
+    !target.computed &&
+    target.property.type === AST_NODE_TYPES.Identifier
   ) {
-    return isHookLikeName(callee.property.name);
+    return isHookLikeName(target.property.name);
   }
   return false;
 }
@@ -76,6 +85,32 @@ function isTypeNode(node: TSESTree.Node | undefined): boolean {
     return false;
   }
   return node.type.startsWith('TS');
+}
+
+/**
+ * Peels every type-only wrapper off an expression: `x as T`, `<T>x`,
+ * `x satisfies T`, `x!` and `f<T>` all assert or instantiate a type without
+ * contributing a value, so a classifier asking about the *shape* of an
+ * expression must read straight through them.
+ *
+ * This matters beyond hand-written code. Sibling rules' autofixes put these
+ * wrappers on the very expressions this rule inspects — `global-const-style`
+ * appends ` as const` to module constants, `enforce-object-literal-as-const`
+ * to object literals — so a bare `init.type === Literal` test goes silent on a
+ * declaration `eslint --fix` had just reported (#1807). In the callee-resolving
+ * direction the same blindness is worse than silence: an unresolved callee
+ * contributes none of its captures, and the reordering fix then hoists the call
+ * above a binding it reads.
+ */
+function unwrapAssertions(node: TSESTree.Node): TSESTree.Node {
+  let target = node;
+  while (
+    TYPE_EXPRESSION_WRAPPERS.has(target.type) &&
+    'expression' in (target as { expression?: unknown })
+  ) {
+    target = (target as unknown as { expression: TSESTree.Node }).expression;
+  }
+  return target;
 }
 
 function unwrapTypeExpression(
@@ -1557,10 +1592,28 @@ function isSiblingSourceDerivation(
 }
 
 /**
+ * A declarator's initializer with every type-only wrapper removed, or null when
+ * there is none.
+ *
+ * The candidate test and the dependency read below must agree on which node the
+ * initializer *is*: accepting `x as const` as a movable candidate while reading
+ * its dependency off the wrapper would make the move miss the very name it
+ * depends on. One accessor keeps both in step.
+ */
+function unwrappedInitOf(
+  declarator: TSESTree.VariableDeclarator,
+): TSESTree.Node | null {
+  return declarator.init ? unwrapAssertions(declarator.init) : null;
+}
+
+/**
  * Restrict late-declaration candidates to simple variables with at most an Identifier or
  * Literal initializer. This ensures they are pure values that do not have side effects or
  * change execution order when moved closer to their usage. More complex initializers are
  * excluded to maintain temporal safety.
+ *
+ * The classification runs on the unwrapped initializer: an assertion is erased
+ * before the code runs, so `1 as const` is exactly the movable literal `1` is.
  */
 function lateDeclarationCandidateOf(
   statement: TSESTree.Statement,
@@ -1573,10 +1626,11 @@ function lateDeclarationCandidateOf(
   if (declarator.id.type !== AST_NODE_TYPES.Identifier) {
     return null;
   }
+  const init = unwrappedInitOf(declarator);
   if (
-    declarator.init &&
-    declarator.init.type !== AST_NODE_TYPES.Identifier &&
-    declarator.init.type !== AST_NODE_TYPES.Literal
+    init &&
+    init.type !== AST_NODE_TYPES.Identifier &&
+    init.type !== AST_NODE_TYPES.Literal
   ) {
     return null;
   }
@@ -1634,8 +1688,9 @@ function handleLateDeclarations(
     }
     const name = declarator.id.name;
     const dependencies = new Set<string>();
-    if (declarator.init && declarator.init.type === AST_NODE_TYPES.Identifier) {
-      dependencies.add(declarator.init.name);
+    const init = unwrappedInitOf(declarator);
+    if (init && init.type === AST_NODE_TYPES.Identifier) {
+      dependencies.add(init.name);
     }
 
     const nameSet = new Set([name]);
@@ -1708,17 +1763,23 @@ function handleLateDeclarations(
   });
 }
 
+/**
+ * Assertions are peeled at both ends of the optional-chain wrapper, so
+ * `send() as void`, `(send?.())!` and `(send?.() as void)` are all recognized as
+ * the call they perform.
+ */
 function extractCallExpression(
   expression: TSESTree.Expression,
 ): TSESTree.CallExpression | null {
-  if (expression.type === AST_NODE_TYPES.CallExpression) {
-    return expression;
+  const unwrapped = unwrapAssertions(expression);
+  if (unwrapped.type === AST_NODE_TYPES.CallExpression) {
+    return unwrapped;
   }
-  if (
-    expression.type === AST_NODE_TYPES.ChainExpression &&
-    expression.expression.type === AST_NODE_TYPES.CallExpression
-  ) {
-    return expression.expression;
+  if (unwrapped.type === AST_NODE_TYPES.ChainExpression) {
+    const chained = unwrapAssertions(unwrapped.expression);
+    if (chained.type === AST_NODE_TYPES.CallExpression) {
+      return chained;
+    }
   }
   return null;
 }
@@ -1839,12 +1900,20 @@ function resolveValueNode(
   | TSESTree.ClassDeclaration
   | TSESTree.ClassExpression
   | null {
-  if (node.type === AST_NODE_TYPES.Identifier) {
-    if (visited.has(node.name)) {
+  // Every caller feeds its value through here, so unwrapping once at the entry
+  // covers the object, class and function shapes `descend` matches on: an
+  // `as const` on a lookup table must not turn its members opaque.
+  const target = unwrapAssertions(node) as
+    | TSESTree.Expression
+    | TSESTree.ClassDeclaration
+    | TSESTree.ClassExpression;
+
+  if (target.type === AST_NODE_TYPES.Identifier) {
+    if (visited.has(target.name)) {
       return null;
     }
-    visited.add(node.name);
-    const resolved = resolveValueForIdentifier(body, node.name, beforeIndex);
+    visited.add(target.name);
+    const resolved = resolveValueForIdentifier(body, target.name, beforeIndex);
     if (!resolved) {
       return null;
     }
@@ -1856,25 +1925,25 @@ function resolveValueNode(
     );
   }
 
-  if (
-    node.type === AST_NODE_TYPES.NewExpression &&
-    node.callee.type === AST_NODE_TYPES.Identifier
-  ) {
-    const resolvedClass = resolveValueForIdentifier(
-      body,
-      node.callee.name,
-      beforeIndex,
-    );
-    if (
-      resolvedClass &&
-      (resolvedClass.type === AST_NODE_TYPES.ClassDeclaration ||
-        resolvedClass.type === AST_NODE_TYPES.ClassExpression)
-    ) {
-      return resolvedClass;
+  if (target.type === AST_NODE_TYPES.NewExpression) {
+    const constructor = unwrapAssertions(target.callee);
+    if (constructor.type === AST_NODE_TYPES.Identifier) {
+      const resolvedClass = resolveValueForIdentifier(
+        body,
+        constructor.name,
+        beforeIndex,
+      );
+      if (
+        resolvedClass &&
+        (resolvedClass.type === AST_NODE_TYPES.ClassDeclaration ||
+          resolvedClass.type === AST_NODE_TYPES.ClassExpression)
+      ) {
+        return resolvedClass;
+      }
     }
   }
 
-  return node;
+  return target;
 }
 
 function resolveMemberFunction(
@@ -1887,11 +1956,10 @@ function resolveMemberFunction(
   }
 
   const path: string[] = [];
-  let cursor:
-    | TSESTree.LeftHandSideExpression
-    | TSESTree.PrivateIdentifier
-    | TSESTree.Super
-    | null = member;
+  // A receiver may carry an assertion at any link — `(api as Api).run` — and an
+  // unresolved receiver costs the captures of the function it names, which is
+  // what stops the call being hoisted above them.
+  let cursor: TSESTree.Node | null = unwrapAssertions(member);
 
   while (
     cursor &&
@@ -1900,11 +1968,7 @@ function resolveMemberFunction(
     cursor.property.type === AST_NODE_TYPES.Identifier
   ) {
     path.unshift(cursor.property.name);
-    cursor = cursor.object as
-      | TSESTree.LeftHandSideExpression
-      | TSESTree.PrivateIdentifier
-      | TSESTree.Super
-      | null;
+    cursor = unwrapAssertions(cursor.object as TSESTree.Node);
   }
 
   if (!cursor || cursor.type !== AST_NODE_TYPES.Identifier) {
@@ -2007,14 +2071,14 @@ function getMemberCalleeKey(member: TSESTree.MemberExpression): string | null {
   }
 
   const parts: string[] = [member.property.name];
-  let cursor: TSESTree.Expression = member.object as TSESTree.Expression;
+  let cursor: TSESTree.Node = unwrapAssertions(member.object as TSESTree.Node);
   while (
     cursor.type === AST_NODE_TYPES.MemberExpression &&
     !cursor.computed &&
     cursor.property.type === AST_NODE_TYPES.Identifier
   ) {
     parts.unshift(cursor.property.name);
-    cursor = cursor.object as TSESTree.Expression;
+    cursor = unwrapAssertions(cursor.object as TSESTree.Node);
   }
 
   if (cursor.type !== AST_NODE_TYPES.Identifier) {
@@ -2142,21 +2206,26 @@ function collectCalleeDependencies(
       }
       for (const declarator of statement.declarations) {
         if (
-          declarator.id.type === AST_NODE_TYPES.Identifier &&
-          declarator.id.name === name &&
-          declarator.init &&
-          (declarator.init.type === AST_NODE_TYPES.FunctionExpression ||
-            declarator.init.type === AST_NODE_TYPES.ArrowFunctionExpression)
+          declarator.id.type !== AST_NODE_TYPES.Identifier ||
+          declarator.id.name !== name
         ) {
-          return collectFunctionBodyDependencies(
-            declarator.init,
-            dependencies,
-            {
-              body,
-              callIndex,
-              visitedCallees,
-            },
-          );
+          continue;
+        }
+        // Missing the function behind an assertion does not merely lose a
+        // report: the scan falls through to "resolved with no dependencies",
+        // and the reordering fix then hoists the call above the bindings the
+        // function body reads.
+        const init = unwrappedInitOf(declarator);
+        if (
+          init &&
+          (init.type === AST_NODE_TYPES.FunctionExpression ||
+            init.type === AST_NODE_TYPES.ArrowFunctionExpression)
+        ) {
+          return collectFunctionBodyDependencies(init, dependencies, {
+            body,
+            callIndex,
+            visitedCallees,
+          });
         }
       }
     }
@@ -2172,10 +2241,9 @@ function collectCalleeDependencies(
       visitedCallees.add(memberKey);
     }
 
+    const receiver = unwrapAssertions(callee.object as TSESTree.Node);
     const rootName =
-      callee.object.type === AST_NODE_TYPES.Identifier
-        ? callee.object.name
-        : null;
+      receiver.type === AST_NODE_TYPES.Identifier ? receiver.name : null;
     if (rootName && isIdentifierMutated(body, rootName, callIndex)) {
       return false;
     }
@@ -2319,6 +2387,12 @@ type Move = {
  * an await. An await buried deeper (`const x = (await f()).y`) is deliberately not
  * counted — that rule does not group it either, so protecting it would cost autofixes
  * for no gain.
+ *
+ * The same reasoning keeps assertion wrappers *out* of this one test, against the
+ * grain of the rest of the file: `parallelize-async-operations` matches an await
+ * initializer with the identical bare type check, so `const x = (await f()) as T`
+ * is outside its runs. Peeling the wrapper here would protect a run that rule
+ * never forms, so the narrowness is what keeps the two in step (#1807).
  */
 function isAwaitBearingStatement(statement: TSESTree.Statement): boolean {
   if (statement.type === AST_NODE_TYPES.ExpressionStatement) {

@@ -512,6 +512,57 @@ export const second = await fetchSecond();
 log();
 use(first, second);
 `,
+    // An assertion on a hook callee must not cost the hook carve-out. Reordering
+    // hook calls is the one reordering React forbids outright, so a wrapper that
+    // hides the callee turns a suppression into a breaking autofix (#1807).
+    `
+function Comp() {
+  const threshold = 10;
+  (useTrack as any)();
+  return use(threshold);
+}
+`,
+    `
+function Comp() {
+  const threshold = 10;
+  (facade as Facade).useTrack();
+  return use(threshold);
+}
+`,
+    // A callee behind an assertion still contributes its captures. Losing them
+    // does not merely drop a report: the scan falls through to "resolved with no
+    // dependencies" and the reorder hoists the call above what it reads.
+    `
+const handler = (() => { touch(threshold); }) as Handler;
+const threshold = 10;
+handler();
+`,
+    `
+const handler = <Handler>(() => { touch(threshold); });
+const threshold = 10;
+handler();
+`,
+    // Same, reached through an assertion on the receiver rather than the callee.
+    `
+const api = { run: () => { touch(threshold); } };
+const threshold = 10;
+(api as any).run();
+`,
+    `
+const api = { run: () => { touch(threshold); } } as const;
+const threshold = 10;
+api.run();
+`,
+    // The candidate test and the dependency read agree on the unwrapped
+    // initializer, so an intervening statement that mentions `src` still blocks
+    // the move that accepting `src as const` as a candidate now permits.
+    `
+const src = seed;
+const alias = src as const;
+const derived = src + 1;
+const spacer = 2;
+use(alias, derived, spacer);
+`,
   ],
   invalid: [
     // A shebang is only a shebang at character 0. ESLint presents it as a
@@ -1422,6 +1473,148 @@ export { threshold };
 `,
       errors: [{ messageId: 'moveSideEffect' }],
     },
+    // An assertion is erased before the code runs, so `1 as const` is exactly the
+    // movable literal `1` is. Classifying on the wrapper silenced the rule on the
+    // very declaration `global-const-style`'s autofix had just rewritten (#1807).
+    {
+      code: `
+export const x = 1 as const;
+const a = value + 2;
+const b = value + 3;
+use(x, a, b);
+`,
+      output: `
+const a = value + 2;
+const b = value + 3;
+export const x = 1 as const;
+use(x, a, b);
+`,
+      errors: [{ messageId: 'moveDeclarationCloser' }],
+    },
+    {
+      code: `
+const x = 1 satisfies number;
+const a = value + 2;
+const b = value + 3;
+use(x, a, b);
+`,
+      output: `
+const a = value + 2;
+const b = value + 3;
+const x = 1 satisfies number;
+use(x, a, b);
+`,
+      errors: [{ messageId: 'moveDeclarationCloser' }],
+    },
+    {
+      code: `
+const x = (1)!;
+const a = value + 2;
+const b = value + 3;
+use(x, a, b);
+`,
+      output: `
+const a = value + 2;
+const b = value + 3;
+const x = (1)!;
+use(x, a, b);
+`,
+      errors: [{ messageId: 'moveDeclarationCloser' }],
+    },
+    {
+      code: `
+const x = <const>1;
+const a = value + 2;
+const b = value + 3;
+use(x, a, b);
+`,
+      output: `
+const a = value + 2;
+const b = value + 3;
+const x = <const>1;
+use(x, a, b);
+`,
+      errors: [{ messageId: 'moveDeclarationCloser' }],
+    },
+    // Wrappers stack, so peeling one is not enough.
+    {
+      code: `
+const x = 1 as const satisfies number;
+const a = value + 2;
+const b = value + 3;
+use(x, a, b);
+`,
+      output: `
+const a = value + 2;
+const b = value + 3;
+const x = 1 as const satisfies number;
+use(x, a, b);
+`,
+      errors: [{ messageId: 'moveDeclarationCloser' }],
+    },
+    // An Identifier initializer behind an assertion is a candidate too, and the
+    // name it depends on travels with it.
+    {
+      code: `
+const src = seed;
+const alias = src as const;
+const a = value + 2;
+const b = value + 3;
+use(alias, a, b);
+`,
+      output: `
+const a = value + 2;
+const b = value + 3;
+const src = seed;
+const alias = src as const;
+use(alias, a, b);
+`,
+      errors: [{ messageId: 'moveDeclarationCloser' }],
+    },
+    // A call statement is still a side effect when an assertion sits on its value.
+    {
+      code: `
+const threshold = 10;
+logStart() as void;
+use(threshold);
+`,
+      output: `
+logStart() as void;
+const threshold = 10;
+use(threshold);
+`,
+      errors: [{ messageId: 'moveSideEffect' }],
+    },
+    {
+      code: `
+const threshold = 10;
+(reporter?.send() as void);
+use(threshold);
+`,
+      output: `
+(reporter?.send() as void);
+const threshold = 10;
+use(threshold);
+`,
+      errors: [{ messageId: 'moveSideEffect' }],
+    },
+    // `enforce-object-literal-as-const` writes exactly this receiver, and the
+    // member walk has to read through it to find the function it names.
+    {
+      code: `
+const api = { run: () => {} } as const;
+const threshold = 10;
+api.run();
+use(threshold);
+`,
+      output: `
+const api = { run: () => {} } as const;
+api.run();
+const threshold = 10;
+use(threshold);
+`,
+      errors: [{ messageId: 'moveSideEffect' }],
+    },
   ],
 });
 
@@ -1815,6 +2008,15 @@ const AWAIT_PAIR = `async function loadPair(payload: Payload) {
 }
 `;
 
+const WRAPPED_AWAIT_PAIR = `async function loadPair(payload: Payload) {
+  const sender = payload.sender;
+  const receiver = payload.receiver;
+  const senderFriends = (await fetchFriends(sender)) as Friends;
+  const receiverFriends = (await fetchFriends(receiver)) as Friends;
+  return [senderFriends, receiverFriends];
+}
+`;
+
 const SYNC_PAIR = `function loadPair(payload: Payload) {
   const sender = payload.sender;
   const receiver = payload.receiver;
@@ -1929,5 +2131,139 @@ describe('logical-top-to-bottom-grouping composed with parallelize-async-operati
 }
 `);
     expect(linter.verify(output, config, 'file.ts')).toEqual([]);
+  });
+
+  /**
+   * The await-run protection is the one place in this rule that deliberately does
+   * *not* read through an assertion, because `parallelize-async-operations`
+   * matches an await initializer with the same bare type check. The pairing is
+   * what makes the narrowness correct, so it is asserted rather than assumed: if
+   * that rule ever starts forming runs out of wrapped awaits, this fails and this
+   * rule has to follow (#1807).
+   */
+  it('keeps its await-run carve-out in step with the rule it protects', () => {
+    const linter = composedLinter();
+    const parallelizeOnly = configFor({ [PARALLELIZE_ID]: 'error' });
+
+    expect(
+      linter.verify(AWAIT_PAIR, parallelizeOnly, 'file.ts').length,
+    ).toBeGreaterThan(0);
+    expect(
+      linter.verify(WRAPPED_AWAIT_PAIR, parallelizeOnly, 'file.ts'),
+    ).toEqual([]);
+  });
+});
+
+/**
+ * The deletion direction of the fix-closure axis: `recommended-config-fix-closure`
+ * counts reports a fix *introduces*, so it is structurally blind to a fix that
+ * *removes* one. These rules append ` as const` under `--fix`, and this rule used
+ * to classify an initializer on the wrapper — so `eslint --fix` silenced it on the
+ * very declaration it had just rewritten (#1807).
+ */
+const AS_CONST_FIXER_IDS = [
+  '@blumintinc/blumint/enforce-object-literal-as-const',
+  '@blumintinc/blumint/global-const-style',
+  '@blumintinc/blumint/prefer-union-from-const-array',
+];
+
+const AS_CONST_FIXERS = Object.fromEntries(
+  AS_CONST_FIXER_IDS.map((id) => [id, 'error']),
+);
+
+/**
+ * `global-const-style` renames as well as asserts, so the declaration's name
+ * changes in the same rewrite the assertion arrives in. Two variables move at
+ * once, which is exactly why the isolation pass below is load-bearing rather
+ * than decorative.
+ */
+const LATE_DECLARATION = `const threshold = 10;
+const a = value + 2;
+const b = value + 3;
+use(threshold, a, b);
+`;
+
+/** Already grouped: neither spelling of it may report, in any pass. */
+const GROUPED_CONTROL = `const a = value + 2;
+const b = value + 3;
+const threshold = 10;
+use(threshold, a, b);
+`;
+
+const messageIdsFor = (linter: Linter, code: string) =>
+  linter
+    .verify(code, configFor({ [GROUPING_ID]: 'error' }), 'file.ts')
+    .map((message) => message.messageId);
+
+describe('logical-top-to-bottom-grouping composed with the `as const` fixers', () => {
+  it('every culprit fixer is a live, registered rule', () => {
+    // Without this the suite would happily "compose" three rule ids that ESLint
+    // silently ignores, and every rewrite assertion below would be vacuous.
+    for (const id of AS_CONST_FIXER_IDS) {
+      expect(rules[id.slice('@blumintinc/blumint/'.length)]).toBeDefined();
+    }
+  });
+
+  it('still reports the declaration a sibling fixer wrapped in `as const`', () => {
+    const linter = composedLinter();
+
+    // Control: the rule must claim the input, or "still reports" proves nothing.
+    expect(messageIdsFor(linter, LATE_DECLARATION)).toEqual([
+      'moveDeclarationCloser',
+    ]);
+
+    const { output } = linter.verifyAndFix(
+      LATE_DECLARATION,
+      configFor(AS_CONST_FIXERS),
+      'file.ts',
+    );
+
+    // Non-vacuity: a culprit must actually have written the wrapper, or the
+    // assertion below is being made against unrewritten text.
+    expect(output).not.toBe(LATE_DECLARATION);
+    expect(output).toContain(' as const');
+
+    expect(messageIdsFor(linter, output)).toEqual(['moveDeclarationCloser']);
+  });
+
+  /**
+   * Causal isolation. Removing just the assertion from the rewritten text holds
+   * the rename fixed, so a verdict that differs between the two can only be the
+   * assertion's doing. Before the unwrap the wrapped text reported nothing while
+   * the stripped text reported — that gap is the bug, and equality is its cure.
+   */
+  it('attributes the verdict to the rename, not to the assertion', () => {
+    const linter = composedLinter();
+    const { output } = linter.verifyAndFix(
+      LATE_DECLARATION,
+      configFor(AS_CONST_FIXERS),
+      'file.ts',
+    );
+
+    const stripped = output.replace(/ as const/gu, '');
+
+    // The strip must remove the assertion and nothing else: the rename has to
+    // survive it, or the two texts differ in more than the variable under test.
+    expect(stripped).not.toBe(output);
+    expect(stripped).not.toContain('as const');
+    expect(stripped).toContain('THRESHOLD');
+    expect(output).toContain('THRESHOLD');
+
+    expect(messageIdsFor(linter, output)).toEqual(
+      messageIdsFor(linter, stripped),
+    );
+  });
+
+  it('does not manufacture a report on either spelling of grouped code', () => {
+    const linter = composedLinter();
+    const { output } = linter.verifyAndFix(
+      GROUPED_CONTROL,
+      configFor(AS_CONST_FIXERS),
+      'file.ts',
+    );
+
+    expect(output).toContain(' as const');
+    expect(messageIdsFor(linter, GROUPED_CONTROL)).toEqual([]);
+    expect(messageIdsFor(linter, output)).toEqual([]);
   });
 });
