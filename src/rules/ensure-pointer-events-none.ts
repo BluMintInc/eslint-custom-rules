@@ -204,6 +204,17 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
       string
     >();
 
+    // Track style objects that declare a `pointerEvents` key whose value cannot
+    // be read statically (a member expression, a call, a ternary, an
+    // interpolated template). Such a value earns no exemption — it might be
+    // 'auto', so the report stands — but it does veto the fix: the rule's only
+    // remedy is to append a `pointerEvents` key, and an object literal with two
+    // identical keys does not compile (TS1117).
+    const stylesWithUnreadablePointerEvents = new Map<
+      TSESTree.ObjectExpression,
+      boolean
+    >();
+
     // Track style objects that are hit-slop touch-target extensions: an
     // absolute/fixed overlay whose inset offsets only extend beyond the origin
     // box (>=1 negative, none positive). A browser attributes pointer events on
@@ -218,6 +229,7 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
     function processStyleObject(node: TSESTree.ObjectExpression) {
       let hasAbsolutePosition = false;
       let pointerEventsValue: string | undefined;
+      let hasUnreadablePointerEvents = false;
       let hasNegativeOffset = false;
       let hasPositiveOffset = false;
 
@@ -233,14 +245,16 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
           hasAbsolutePosition = true;
         }
 
-        // Check if this is pointer-events property. A value that cannot be read
-        // statically never clears one already read: the rule's only remedy is to
-        // append a `pointerEvents` key, which would duplicate the existing one.
-        if (
-          isPointerEventsProperty(propertyName) &&
-          propertyValue !== undefined
-        ) {
-          pointerEventsValue = propertyValue;
+        // Check if this is pointer-events property. A value that can be read
+        // decides the exemption; one that cannot is recorded separately, because
+        // the key's presence vetoes the fix even where it cannot prove the
+        // overlay is inert. An unreadable value never clears one already read.
+        if (isPointerEventsProperty(propertyName)) {
+          if (propertyValue !== undefined) {
+            pointerEventsValue = propertyValue;
+          } else {
+            hasUnreadablePointerEvents = true;
+          }
         }
 
         // Track inset offsets to detect hit-slop touch-target extensions
@@ -259,6 +273,7 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
       if (pointerEventsValue !== undefined) {
         stylesWithPointerEvents.set(node, pointerEventsValue);
       }
+      stylesWithUnreadablePointerEvents.set(node, hasUnreadablePointerEvents);
 
       // A hit-slop extension only enlarges the tappable area: it is
       // absolute/fixed and its inset offsets extend outward (>=1 negative, none
@@ -301,6 +316,13 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
             selector: formatSelector(selector),
           },
           fix(fixer) {
+            // The object already declares `pointerEvents`, but in a spelling
+            // whose value cannot be read. Appending the key is the rule's only
+            // remedy, and here it would emit a duplicate key that does not
+            // compile. A report with no fix is the correct outcome: the reader
+            // decides what the opaque value resolves to.
+            if (stylesWithUnreadablePointerEvents.get(node)) return null;
+
             // Find the last property in the object
             const sourceCode = context.sourceCode;
             const properties = node.properties;

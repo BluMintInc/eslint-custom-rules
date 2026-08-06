@@ -18,7 +18,7 @@ This rule reports when:
 
 The rule allows:
 
-- Pseudo-elements that already specify `pointer-events`.
+- Pseudo-elements that already specify `pointer-events` with a statically readable value.
 - Explicit `pointer-events: auto` for intentionally interactive pseudo-elements.
 - Non-pseudo-element styles.
 - Hit-slop touch-target extensions (see [Exceptions](#exceptions)).
@@ -28,6 +28,12 @@ The rule allows:
 A selector, a property name, and a property value are read as the static string they denote, whichever notation spells it: `` position: `absolute` `` is the same declaration as `position: 'absolute'`, and `` [`pointerEvents`]: 'none' `` is the same exemption as `pointerEvents: 'none'`. Detection and the `pointerEvents` exemption read through the same accessor, so a template-literal exemption is honored rather than given a second `pointerEvents` key by the fixer.
 
 A template with a substitution — `` position: `${POSITION}` `` — is not known statically, so the rule stays silent on it (the one exception is a hit-slop offset, whose leading literal `-` states its direction; see [Exceptions](#exceptions)).
+
+### An unreadable `pointerEvents` value reports without a fix
+
+A pseudo-element may already declare `pointerEvents` with a value the rule cannot read: `pointerEvents: theme.overlay`, a call, a ternary such as `isDecorative ? 'none' : 'auto'`, or an interpolated template. The rule still **reports** there — it cannot prove the value is `none`, and an overlay left at `auto` is exactly what the rule exists to catch — but it does **not** autofix. Its only remedy is to append a `pointerEvents` key, and the object already declares one; an object literal with two identical keys does not compile (TS1117). A report with no fix is the correct outcome: a fixer that cannot prove its output is correct emits nothing.
+
+Resolve such a report by hand — write the value the overlay actually needs (`pointerEvents: 'none'`), or set `pointerEvents: 'auto'` to record that it is deliberately interactive.
 
 ## Exceptions
 
