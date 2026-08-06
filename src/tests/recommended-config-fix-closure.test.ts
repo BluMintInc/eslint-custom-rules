@@ -763,6 +763,24 @@ export const SUGGESTION_INDUCED_BASELINE: Record<string, string> = {
   'enforce-dynamic-firebase-imports (suggestion) -> prefer-block-comments-for-declarations':
     "the suggestion strands the removed import's trailing comment on its own line above the next declaration; that comment is fixable and the file ends clean under `--fix`",
 
+  // --- A third mechanism, shared by the two entries below: relocating the
+  // import into a concise-bodied async arrow means giving that arrow a block,
+  // and both of these rules read a function's returned expression only out of a
+  // BLOCK body. The object literal and the annotated `return` they object to
+  // are written by the developer and unchanged by the suggestion — the block is
+  // what makes an already-present violation visible to a reader that was
+  // looking in the wrong place.
+  //
+  // Resolved by design, not deferred, on the same ground as the entry above:
+  // `--fix` under the full recommended config appends the `as const` and drops
+  // the redundant return annotation in one converging pass, and the file ends
+  // with zero reports from either rule. Verified end to end with verifyAndFix
+  // over the whole config for both filenames the corpus tries.
+  'enforce-dynamic-firebase-imports (suggestion) -> enforce-object-literal-as-const':
+    'the block the suggestion adds exposes the returned object literal to a rule that reads block bodies only; the missing `as const` is fixable and the file ends clean under `--fix`',
+  'enforce-dynamic-firebase-imports (suggestion) -> no-type-assertion-returns':
+    'the block the suggestion adds exposes the annotated `return` to a rule that reads block bodies only; the redundant annotation is fixable and the file ends clean under `--fix`',
+
   // --- Resolved by design, not deferred: `--fix` under the full recommended
   // config rewrites the emitted `useCallback(fn, deps)` into
   // `useLatestCallback(fn)` and the file ends with zero use-latest-callback

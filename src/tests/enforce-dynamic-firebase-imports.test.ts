@@ -431,15 +431,6 @@ export { a };`,
         errors: [error('../firebaseCloud/utils/helper')],
         output: null,
       },
-      // An expression-bodied async arrow has no block to hoist into
-      {
-        code: `import { a } from '../firebaseCloud/utils/helper';
-
-export const run = async () => a();`,
-        filename: 'src/utils/run.ts',
-        errors: [error('../firebaseCloud/utils/helper')],
-        output: null,
-      },
       // A type annotation on the async function's signature is evaluated
       // outside the body, so the binding cannot move into it
       {
@@ -701,6 +692,355 @@ export async function* run() {
   const { a } = await import('../firebaseCloud/utils/helper');
   yield a();
 }`,
+      },
+
+      // ---------------------------------------------------------------------
+      // A concise body is a consumer too: the arrow gains a block so the
+      // declaration has somewhere to land, rather than losing both the fix and
+      // the suggestion the rule advertises.
+      // ---------------------------------------------------------------------
+
+      // The reported shape: an expression-bodied async arrow
+      {
+        code: `import { a } from '../firebaseCloud/utils/helper';
+
+export const run = async () => a();`,
+        filename: 'src/utils/run.ts',
+        errors: [error('../firebaseCloud/utils/helper')],
+        output: `
+export const run = async () => {
+  const { a } = await import('../firebaseCloud/utils/helper');
+  return a();
+};`,
+      },
+      // A parenthesized object literal keeps its parentheses: they are not part
+      // of the expression's node, so reprinting it would drop them
+      {
+        code: `import { a } from '../firebaseCloud/utils/helper';
+
+export const run = async () => ({ value: a() });`,
+        filename: 'src/utils/run.ts',
+        errors: [error('../firebaseCloud/utils/helper')],
+        output: `
+export const run = async () => {
+  const { a } = await import('../firebaseCloud/utils/helper');
+  return ({ value: a() });
+};`,
+      },
+      // A multi-line object literal is spliced verbatim rather than re-indented,
+      // which is what keeps a multi-line template literal's own text intact
+      {
+        code: `import { a } from '../firebaseCloud/utils/helper';
+
+export const run = async () => ({
+  value: a(),
+});`,
+        filename: 'src/utils/run.ts',
+        errors: [error('../firebaseCloud/utils/helper')],
+        output: `
+export const run = async () => {
+  const { a } = await import('../firebaseCloud/utils/helper');
+  return ({
+  value: a(),
+});
+};`,
+      },
+      // An `as const` assertion wrapping the object literal rides along
+      {
+        code: `import { a } from '../firebaseCloud/utils/helper';
+
+export const run = async () => ({ value: a() } as const);`,
+        filename: 'src/utils/run.ts',
+        errors: [error('../firebaseCloud/utils/helper')],
+        output: `
+export const run = async () => {
+  const { a } = await import('../firebaseCloud/utils/helper');
+  return ({ value: a() } as const);
+};`,
+      },
+      // Multiple named specifiers destructure into one declaration
+      {
+        code: `import { a, b as B } from '../firebaseCloud/utils/helper';
+
+export const run = async () => a(B);`,
+        filename: 'src/utils/run.ts',
+        errors: [error('../firebaseCloud/utils/helper')],
+        output: `
+export const run = async () => {
+  const { a, b: B } = await import('../firebaseCloud/utils/helper');
+  return a(B);
+};`,
+      },
+      // Default + namespace emits two statements ahead of the return
+      {
+        code: `import def, * as helper from '../firebaseCloud/utils/helper';
+
+export const run = async () => def(helper);`,
+        filename: 'src/utils/run.ts',
+        errors: [error('../firebaseCloud/utils/helper')],
+        output: `
+export const run = async () => {
+  const helper = await import('../firebaseCloud/utils/helper');
+  const def = helper.default;
+  return def(helper);
+};`,
+      },
+      // A type-only specifier alongside a value one stays at module scope
+      {
+        code: `import { type Params, setGroupChannel } from '../firebaseCloud/messaging/setGroupChannel';
+
+export const handler = async (params: Params) => setGroupChannel(params);`,
+        filename: 'src/hooks/useSetGroupChannel.ts',
+        errors: [error('../firebaseCloud/messaging/setGroupChannel')],
+        output: `import type { Params } from '../firebaseCloud/messaging/setGroupChannel';
+
+export const handler = async (params: Params) => {
+  const { setGroupChannel } = await import('../firebaseCloud/messaging/setGroupChannel');
+  return setGroupChannel(params);
+};`,
+      },
+      // The default specifier alone
+      {
+        code: `import helper from '../firebaseCloud/utils/helper';
+
+export const run = async () => helper();`,
+        filename: 'src/utils/run.ts',
+        errors: [error('../firebaseCloud/utils/helper')],
+        output: `
+export const run = async () => {
+  const { default: helper } = await import('../firebaseCloud/utils/helper');
+  return helper();
+};`,
+      },
+      // A namespace specifier alone
+      {
+        code: `import * as helper from '../firebaseCloud/utils/helper';
+
+export const run = async () => helper.run();`,
+        filename: 'src/utils/run.ts',
+        errors: [error('../firebaseCloud/utils/helper')],
+        output: `
+export const run = async () => {
+  const helper = await import('../firebaseCloud/utils/helper');
+  return helper.run();
+};`,
+      },
+      // The new block sits at the arrow's own indentation, not the file's
+      {
+        code: `import { a } from '../firebaseCloud/utils/helper';
+
+export const outer = () => {
+  const inner = async () => a();
+  return inner;
+};`,
+        filename: 'src/utils/run.ts',
+        errors: [error('../firebaseCloud/utils/helper')],
+        output: `
+export const outer = () => {
+  const inner = async () => {
+    const { a } = await import('../firebaseCloud/utils/helper');
+    return a();
+  };
+  return inner;
+};`,
+      },
+      // A class property holding an async arrow is a call site too
+      {
+        code: `import { a } from '../firebaseCloud/utils/helper';
+
+export class Runner {
+  public run = async () => a();
+}`,
+        filename: 'src/utils/Runner.ts',
+        errors: [error('../firebaseCloud/utils/helper')],
+        output: `
+export class Runner {
+  public run = async () => {
+    const { a } = await import('../firebaseCloud/utils/helper');
+    return a();
+  };
+}`,
+      },
+      // A comment between `=>` and the expression belongs to neither node, so
+      // only splicing the source text preserves it
+      {
+        code: `import { a } from '../firebaseCloud/utils/helper';
+
+export const run = async () => /* lazy */ a();`,
+        filename: 'src/utils/run.ts',
+        errors: [error('../firebaseCloud/utils/helper')],
+        output: `
+export const run = async () => {
+  const { a } = await import('../firebaseCloud/utils/helper');
+  return /* lazy */ a();
+};`,
+      },
+      // A multi-line template literal is spliced, never re-indented: its own
+      // line breaks and leading spaces are part of the string's value
+      {
+        code: `import { a } from '../firebaseCloud/utils/helper';
+
+export const run = async () => \`line one
+  line two \${a()}\`;`,
+        filename: 'src/utils/run.ts',
+        errors: [error('../firebaseCloud/utils/helper')],
+        output: `
+export const run = async () => {
+  const { a } = await import('../firebaseCloud/utils/helper');
+  return \`line one
+  line two \${a()}\`;
+};`,
+      },
+      // An arrow in a parameter default owns an earlier `=>`, which must not be
+      // mistaken for the consuming arrow's own
+      {
+        code: `import { a } from '../firebaseCloud/utils/helper';
+
+export const run = async (cb = (x: number) => x) => a(cb);`,
+        filename: 'src/utils/run.ts',
+        errors: [error('../firebaseCloud/utils/helper')],
+        output: `
+export const run = async (cb = (x: number) => x) => {
+  const { a } = await import('../firebaseCloud/utils/helper');
+  return a(cb);
+};`,
+      },
+      // A body starting on the following line collapses onto the return
+      {
+        code: `import { a } from '../firebaseCloud/utils/helper';
+
+export const run = async () =>
+  a();`,
+        filename: 'src/utils/run.ts',
+        errors: [error('../firebaseCloud/utils/helper')],
+        output: `
+export const run = async () => {
+  const { a } = await import('../firebaseCloud/utils/helper');
+  return a();
+};`,
+      },
+      // An awaited body keeps its `await`
+      {
+        code: `import { a } from '../firebaseCloud/utils/helper';
+
+export const run = async () => await a();`,
+        filename: 'src/utils/run.ts',
+        errors: [error('../firebaseCloud/utils/helper')],
+        output: `
+export const run = async () => {
+  const { a } = await import('../firebaseCloud/utils/helper');
+  return await a();
+};`,
+      },
+      // A return type annotation stays on the signature
+      {
+        code: `import { a } from '../firebaseCloud/utils/helper';
+
+export const run = async (): Promise<number> => a();`,
+        filename: 'src/utils/run.ts',
+        errors: [error('../firebaseCloud/utils/helper')],
+        output: `
+export const run = async (): Promise<number> => {
+  const { a } = await import('../firebaseCloud/utils/helper');
+  return a();
+};`,
+      },
+      // A synchronous callback inside the concise body resolves against the
+      // declaration that now heads the block
+      {
+        code: `import { a } from '../firebaseCloud/utils/helper';
+
+export const run = async (items: string[]) => items.map((item) => a(item));`,
+        filename: 'src/utils/run.ts',
+        errors: [error('../firebaseCloud/utils/helper')],
+        output: `
+export const run = async (items: string[]) => {
+  const { a } = await import('../firebaseCloud/utils/helper');
+  return items.map((item) => a(item));
+};`,
+      },
+      // The import sharing the arrow's line does not let the removal swallow it
+      {
+        code: `import { a } from '../firebaseCloud/utils/helper'; export const run = async () => a();`,
+        filename: 'src/utils/run.ts',
+        errors: [error('../firebaseCloud/utils/helper')],
+        output: `export const run = async () => {
+  const { a } = await import('../firebaseCloud/utils/helper');
+  return a();
+};`,
+      },
+      // An enclosing async block is the smaller edit, so it keeps the
+      // declaration even when the reference sits in a concise arrow
+      {
+        code: `import { a } from '../firebaseCloud/utils/helper';
+
+export const run = async () => {
+  const inner = async () => a();
+  return inner();
+};`,
+        filename: 'src/utils/run.ts',
+        errors: [error('../firebaseCloud/utils/helper')],
+        output: `
+export const run = async () => {
+  const { a } = await import('../firebaseCloud/utils/helper');
+  const inner = async () => a();
+  return inner();
+};`,
+      },
+
+      // Deliberate declines: a concise body earns no more reach than a block
+      // one, so the fix is still withheld wherever an `await` cannot go.
+
+      // A synchronous arrow cannot host an `await`
+      {
+        code: `import { a } from '../firebaseCloud/utils/helper';
+
+export const run = () => a();`,
+        filename: 'src/utils/run.ts',
+        errors: [error('../firebaseCloud/utils/helper')],
+        output: null,
+      },
+      // A parameter default is evaluated before the body, so a declaration
+      // inside the new block would come too late for it
+      {
+        code: `import { a } from '../firebaseCloud/utils/helper';
+
+export const run = async (fn = a) => fn();`,
+        filename: 'src/utils/run.ts',
+        errors: [error('../firebaseCloud/utils/helper')],
+        output: null,
+      },
+      // Two concise arrows are two call sites, which is a per-call-site refactor
+      {
+        code: `import { a } from '../firebaseCloud/utils/helper';
+
+export const one = async () => a();
+export const two = async () => a(1);`,
+        filename: 'src/utils/run.ts',
+        errors: [error('../firebaseCloud/utils/helper')],
+        output: null,
+      },
+      // A concise arrow and an async block are likewise two call sites
+      {
+        code: `import { a } from '../firebaseCloud/utils/helper';
+
+export const one = async () => a();
+export const two = async () => {
+  return a(1);
+};`,
+        filename: 'src/utils/run.ts',
+        errors: [error('../firebaseCloud/utils/helper')],
+        output: null,
+      },
+      // A side-effect import binds nothing, so a concise consumer changes
+      // nothing about it
+      {
+        code: `import '../firebaseCloud/utils/helper';
+
+export const run = async () => undefined;`,
+        filename: 'src/utils/run.ts',
+        errors: [error('../firebaseCloud/utils/helper')],
+        output: null,
       },
     ],
   },

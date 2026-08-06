@@ -1,4 +1,9 @@
-import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  AST_TOKEN_TYPES,
+  TSESLint,
+  TSESTree,
+} from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type FunctionNode =
@@ -12,8 +17,8 @@ const isFunctionNode = (node: TSESTree.Node): node is FunctionNode =>
   node.type === AST_NODE_TYPES.FunctionExpression;
 
 /**
- * Walks outward from a reference to the innermost `async` function whose block
- * body contains it.
+ * Walks outward from a reference to the innermost `async` function whose body
+ * both contains it and satisfies `hostsDeclaration`.
  *
  * A reference sitting in a *synchronous* callback nested inside an async
  * function still resolves once the declaration heads the async body, because
@@ -25,15 +30,16 @@ const isFunctionNode = (node: TSESTree.Node): node is FunctionNode =>
  * before the body runs, so a declaration at the top of the body would come too
  * late for it.
  */
-const enclosingAsyncBodyOf = (
+const enclosingAsyncFunctionOf = (
   identifier: TSESTree.Identifier | TSESTree.JSXIdentifier,
+  hostsDeclaration: (fn: FunctionNode) => boolean,
 ): FunctionNode | undefined => {
   let current: TSESTree.Node | undefined = identifier.parent;
   while (current) {
     if (
       isFunctionNode(current) &&
       current.async &&
-      current.body.type === AST_NODE_TYPES.BlockStatement &&
+      hostsDeclaration(current) &&
       identifier.range[0] >= current.body.range[0] &&
       identifier.range[1] <= current.body.range[1]
     ) {
@@ -43,6 +49,30 @@ const enclosingAsyncBodyOf = (
   }
   return undefined;
 };
+
+const enclosingAsyncBodyOf = (
+  identifier: TSESTree.Identifier | TSESTree.JSXIdentifier,
+): FunctionNode | undefined =>
+  enclosingAsyncFunctionOf(
+    identifier,
+    (fn) => fn.body.type === AST_NODE_TYPES.BlockStatement,
+  );
+
+/**
+ * The innermost `async` arrow whose *concise* body holds the reference.
+ *
+ * A concise body is a single expression with no statement list to head, so the
+ * declaration only becomes expressible once the arrow gains a block. That is a
+ * larger edit than heading an existing body, which is why this search runs only
+ * for references no async block encloses — an enclosing block always wins.
+ */
+const enclosingConciseAsyncArrowOf = (
+  identifier: TSESTree.Identifier | TSESTree.JSXIdentifier,
+): FunctionNode | undefined =>
+  enclosingAsyncFunctionOf(
+    identifier,
+    (fn) => fn.body.type !== AST_NODE_TYPES.BlockStatement,
+  );
 
 const THIRD_PARTY_DIRECTORY = /(^|\/)node_modules(\/|$)/;
 
@@ -236,7 +266,9 @@ const enforceFirebaseImports = createRule({
 
           let target: FunctionNode | undefined;
           for (const reference of references) {
-            const enclosing = enclosingAsyncBodyOf(reference.identifier);
+            const enclosing =
+              enclosingAsyncBodyOf(reference.identifier) ??
+              enclosingConciseAsyncArrowOf(reference.identifier);
             if (!enclosing || (target && target !== enclosing)) {
               return undefined;
             }
@@ -273,11 +305,68 @@ const enforceFirebaseImports = createRule({
           return cursor;
         };
 
+        /**
+         * Gives a concise-bodied arrow the block its declaration needs, turning
+         * the returned expression into an explicit `return`.
+         *
+         * The expression is spliced verbatim out of the source rather than
+         * reprinted from the AST: the parentheses around an object literal are
+         * not part of its node, and a comment sitting between `=>` and the
+         * expression belongs to neither, so both survive only by copying the
+         * text the arrow already owns.
+         */
+        const blockifyConciseBody = (
+          fixer: TSESLint.RuleFixer,
+          arrow: TSESTree.ArrowFunctionExpression,
+          statements: string[],
+        ): TSESLint.RuleFix | null => {
+          const arrowToken = sourceCode.getTokenBefore(arrow.body, {
+            filter: (token) =>
+              token.type === AST_TOKEN_TYPES.Punctuator && token.value === '=>',
+          });
+          if (!arrowToken) {
+            return null;
+          }
+
+          const expression = sourceCode
+            .getText()
+            .slice(arrowToken.range[1], arrow.range[1])
+            .trim();
+          const indent = indentationAt(arrow.loc.start.line);
+          const bodyIndent = `${indent}  `;
+          const lines = [...statements, `return ${expression};`]
+            .map((statement) => `\n${bodyIndent}${statement}`)
+            .join('');
+
+          return fixer.replaceTextRange(
+            [arrowToken.range[1], arrow.range[1]],
+            ` {${lines}\n${indent}}`,
+          );
+        };
+
         const buildFix: TSESLint.ReportFixFunction = (fixer) => {
           const target = findRelocationTarget();
           const statements = buildValueStatements();
           if (!target || statements.length === 0) {
             return null;
+          }
+
+          // Type-only specifiers are erased at compile time, so they stay where
+          // they are instead of riding along into the function body.
+          const importEdit =
+            typeOnlySpecifiers.length > 0
+              ? fixer.replaceText(
+                  node,
+                  `import type { ${buildTypeNames()} } from '${importPath}';`,
+                )
+              : fixer.removeRange([node.range[0], removalEnd()]);
+
+          if (
+            target.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+            target.body.type !== AST_NODE_TYPES.BlockStatement
+          ) {
+            const blockified = blockifyConciseBody(fixer, target, statements);
+            return blockified ? [importEdit, blockified] : null;
           }
 
           const body = target.body as TSESTree.BlockStatement;
@@ -318,14 +407,7 @@ const enforceFirebaseImports = createRule({
                   .join('');
 
           return [
-            // Type-only specifiers are erased at compile time, so they stay
-            // where they are instead of riding along into the function body.
-            typeOnlySpecifiers.length > 0
-              ? fixer.replaceText(
-                  node,
-                  `import type { ${buildTypeNames()} } from '${importPath}';`,
-                )
-              : fixer.removeRange([node.range[0], removalEnd()]),
+            importEdit,
             lastDirective
               ? fixer.insertTextAfter(lastDirective, insertion)
               : fixer.insertTextAfterRange(
