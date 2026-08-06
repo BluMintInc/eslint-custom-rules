@@ -28,6 +28,18 @@ function extractAudioTrack(audioTrackPublications) {
 }
 ```
 
+### ❌ Incorrect (guarding with `&&` or a ternary)
+
+A function that answers a nullish argument with `&&` or with a ternary whose alternate is `null`/`undefined` passes the absence through just as plainly. The body spelling makes no difference: an implicit return and a block whose sole statement returns the same expression state the same thing.
+
+```typescript
+const getValue = (data) => data && data.value;
+
+const getName = (user) => {
+  return user ? user.name : null;
+};
+```
+
 ### ✅ Correct (validate before calling)
 
 ```typescript
