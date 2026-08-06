@@ -16,6 +16,48 @@ function normalizePropertyName(name: string): string {
   return toKebabCase(name).toLowerCase();
 }
 
+/**
+ * `x as T`, `<T>x`, `x satisfies T` and `x!` assert a type without contributing
+ * a value of their own, so a check that classifies the *shape* of an expression
+ * must look through all four alike.
+ *
+ * This matters beyond hand-written code: sibling rules' autofixes append
+ * ` as const` to the very object literals this rule inspects
+ * (`global-const-style` rewrites `const styles = { margin: 8 }` into
+ * `const STYLES = { margin: 8 } as const`). A bare
+ * `node.type === ObjectExpression` test taken on the wrapper therefore goes
+ * silent on code `eslint --fix` had just reported (Issue #1805).
+ */
+const ASSERTION_EXPRESSION_TYPES = new Set([
+  AST_NODE_TYPES.TSAsExpression,
+  AST_NODE_TYPES.TSSatisfiesExpression,
+  AST_NODE_TYPES.TSNonNullExpression,
+  AST_NODE_TYPES.TSTypeAssertion,
+]);
+
+type AssertionExpression =
+  | TSESTree.TSAsExpression
+  | TSESTree.TSSatisfiesExpression
+  | TSESTree.TSNonNullExpression
+  | TSESTree.TSTypeAssertion;
+
+const isAssertionExpression = (
+  node: TSESTree.Node,
+): node is AssertionExpression => ASSERTION_EXPRESSION_TYPES.has(node.type);
+
+/**
+ * Peels every assertion wrapper off an expression, so `{ m: 1 } as const`,
+ * `<const>{ m: 1 }` and chains such as `{ m: 1 } as const satisfies Styles`
+ * all classify as the object literal they wrap.
+ */
+function unwrapAssertions(node: TSESTree.Node): TSESTree.Node {
+  let target: TSESTree.Node = node;
+  while (isAssertionExpression(target)) {
+    target = target.expression;
+  }
+  return target;
+}
+
 // List of margin properties to flag
 const MARGIN_PROPERTIES = new Set([
   'margin',
@@ -70,6 +112,11 @@ export const noMarginProperties = createRule<[], MessageIds>({
     function isMuiStylingContext(node: TSESTree.Node): boolean {
       let current: TSESTree.Node | undefined = node;
 
+      // An assertion wrapper (`{ m: 1 } as const`) is transparent to this
+      // climb: it matches none of the terminal predicates below, so the loop
+      // steps over it and keeps ascending. Any terminal branch added here must
+      // preserve that — concluding *at* an assertion would decide the styling
+      // context from the type syntax an author happened to reach for.
       while (current?.parent) {
         // Check for JSX sx attribute (MUI specific)
         if (
@@ -90,12 +137,14 @@ export const noMarginProperties = createRule<[], MessageIds>({
         }
 
         // Check for MUI's css function
-        if (
-          current.parent.type === AST_NODE_TYPES.CallExpression &&
-          current.parent.callee.type === AST_NODE_TYPES.Identifier &&
-          current.parent.callee.name === 'css'
-        ) {
-          return true;
+        if (current.parent.type === AST_NODE_TYPES.CallExpression) {
+          const callee = unwrapAssertions(current.parent.callee);
+          if (
+            callee.type === AST_NODE_TYPES.Identifier &&
+            callee.name === 'css'
+          ) {
+            return true;
+          }
         }
 
         // Skip if we're in a TypeScript type definition
@@ -118,20 +167,21 @@ export const noMarginProperties = createRule<[], MessageIds>({
       if (seenNodes.has(node)) return;
       seenNodes.add(node);
 
+      // A computed key carries its own assertions (`['margin' as const]`), so
+      // the key is classified through them as well.
+      const key = unwrapAssertions(node.key);
+
       let propertyName = '';
 
       // Get property name
-      if (node.key.type === AST_NODE_TYPES.Identifier) {
-        propertyName = node.key.name;
-      } else if (node.key.type === AST_NODE_TYPES.Literal) {
-        propertyName = String(node.key.value);
-      } else if (
-        node.computed &&
-        node.key.type === AST_NODE_TYPES.TemplateLiteral
-      ) {
+      if (key.type === AST_NODE_TYPES.Identifier) {
+        propertyName = key.name;
+      } else if (key.type === AST_NODE_TYPES.Literal) {
+        propertyName = String(key.value);
+      } else if (node.computed && key.type === AST_NODE_TYPES.TemplateLiteral) {
         // Handle template literals like [`${prop}Top`]
-        const quasis = node.key.quasis.map((q) => q.value.raw).join('');
-        const expressions = node.key.expressions
+        const quasis = key.quasis.map((q) => q.value.raw).join('');
+        const expressions = key.expressions
           .map((exp) => {
             if (exp.type === AST_NODE_TYPES.Identifier) {
               return exp.name;
@@ -157,27 +207,42 @@ export const noMarginProperties = createRule<[], MessageIds>({
       }
     }
 
+    /**
+     * Resolves an identifier to the object literal it is initialized with,
+     * looking through any assertion wrappers on that initializer.
+     */
+    function resolveObjectLiteral(
+      variableName: string,
+    ): TSESTree.ObjectExpression | undefined {
+      const scope = context.getScope();
+      const variable = scope.variables.find((v) => v.name === variableName);
+
+      if (!variable || variable.defs.length === 0) return undefined;
+
+      const def = variable.defs[0];
+      if (
+        def.node.type !== AST_NODE_TYPES.VariableDeclarator ||
+        !def.node.init
+      ) {
+        return undefined;
+      }
+
+      const init = unwrapAssertions(def.node.init);
+      return init.type === AST_NODE_TYPES.ObjectExpression ? init : undefined;
+    }
+
     // Check object expression for margin properties
     function checkObjectExpression(objExp: TSESTree.ObjectExpression): void {
       objExp.properties.forEach((prop) => {
         if (prop.type === AST_NODE_TYPES.Property) {
           checkNode(prop);
-        } else if (
-          prop.type === AST_NODE_TYPES.SpreadElement &&
-          prop.argument.type === AST_NODE_TYPES.Identifier
-        ) {
+        } else if (prop.type === AST_NODE_TYPES.SpreadElement) {
           // Handle spread elements by looking up the variable
-          const variableName = prop.argument.name;
-          const scope = context.getScope();
-          const variable = scope.variables.find((v) => v.name === variableName);
-
-          if (variable && variable.defs.length > 0) {
-            const def = variable.defs[0];
-            if (
-              def.node.type === AST_NODE_TYPES.VariableDeclarator &&
-              def.node.init?.type === AST_NODE_TYPES.ObjectExpression
-            ) {
-              checkObjectExpression(def.node.init);
+          const spreadArgument = unwrapAssertions(prop.argument);
+          if (spreadArgument.type === AST_NODE_TYPES.Identifier) {
+            const spreadSource = resolveObjectLiteral(spreadArgument.name);
+            if (spreadSource) {
+              checkObjectExpression(spreadSource);
             }
           }
         }
@@ -199,93 +264,72 @@ export const noMarginProperties = createRule<[], MessageIds>({
         )
           return;
 
-        if (
-          node.value?.type === AST_NODE_TYPES.JSXExpressionContainer &&
-          node.value.expression.type === AST_NODE_TYPES.ObjectExpression
-        ) {
-          checkObjectExpression(node.value.expression);
-        } else if (
-          node.value?.type === AST_NODE_TYPES.JSXExpressionContainer &&
-          node.value.expression.type === AST_NODE_TYPES.Identifier
-        ) {
-          // Handle variable reference in sx prop
-          const variableName = node.value.expression.name;
-          const scope = context.getScope();
-          const variable = scope.variables.find((v) => v.name === variableName);
+        if (node.value?.type !== AST_NODE_TYPES.JSXExpressionContainer) return;
 
-          if (variable && variable.defs.length > 0) {
-            const def = variable.defs[0];
-            if (
-              def.node.type === AST_NODE_TYPES.VariableDeclarator &&
-              def.node.init?.type === AST_NODE_TYPES.ObjectExpression
-            ) {
-              checkObjectExpression(def.node.init);
-            }
+        const expression = unwrapAssertions(node.value.expression);
+
+        if (expression.type === AST_NODE_TYPES.ObjectExpression) {
+          checkObjectExpression(expression);
+        } else if (expression.type === AST_NODE_TYPES.Identifier) {
+          // Handle variable reference in sx prop
+          const referenced = resolveObjectLiteral(expression.name);
+          if (referenced) {
+            checkObjectExpression(referenced);
           }
-        } else if (
-          node.value?.type === AST_NODE_TYPES.JSXExpressionContainer &&
-          node.value.expression.type === AST_NODE_TYPES.ArrowFunctionExpression
-        ) {
+        } else if (expression.type === AST_NODE_TYPES.ArrowFunctionExpression) {
           // Handle function-based sx props
-          if (
-            node.value.expression.body.type === AST_NODE_TYPES.ObjectExpression
-          ) {
+          const body = unwrapAssertions(expression.body);
+
+          if (body.type === AST_NODE_TYPES.ObjectExpression) {
             // Arrow function with object expression body
-            checkObjectExpression(node.value.expression.body);
-          } else if (
-            node.value.expression.body.type === AST_NODE_TYPES.BlockStatement
-          ) {
+            checkObjectExpression(body);
+          } else if (body.type === AST_NODE_TYPES.BlockStatement) {
             // Arrow function with block body
-            const returnStatements = node.value.expression.body.body.filter(
+            const returnStatements = body.body.filter(
               (stmt) => stmt.type === AST_NODE_TYPES.ReturnStatement,
             ) as TSESTree.ReturnStatement[];
 
             returnStatements.forEach((returnStmt) => {
-              if (
-                returnStmt.argument?.type === AST_NODE_TYPES.ObjectExpression
-              ) {
-                checkObjectExpression(returnStmt.argument);
+              if (!returnStmt.argument) return;
+              const returned = unwrapAssertions(returnStmt.argument);
+              if (returned.type === AST_NODE_TYPES.ObjectExpression) {
+                checkObjectExpression(returned);
               }
             });
           }
-        } else if (
-          node.value?.type === AST_NODE_TYPES.JSXExpressionContainer &&
-          node.value.expression.type === AST_NODE_TYPES.ConditionalExpression
-        ) {
+        } else if (expression.type === AST_NODE_TYPES.ConditionalExpression) {
           // Handle conditional expressions in sx props
-          if (
-            node.value.expression.consequent.type ===
-            AST_NODE_TYPES.ObjectExpression
-          ) {
-            checkObjectExpression(node.value.expression.consequent);
+          const consequent = unwrapAssertions(expression.consequent);
+          if (consequent.type === AST_NODE_TYPES.ObjectExpression) {
+            checkObjectExpression(consequent);
           }
-          if (
-            node.value.expression.alternate.type ===
-            AST_NODE_TYPES.ObjectExpression
-          ) {
-            checkObjectExpression(node.value.expression.alternate);
+          const alternate = unwrapAssertions(expression.alternate);
+          if (alternate.type === AST_NODE_TYPES.ObjectExpression) {
+            checkObjectExpression(alternate);
           }
         }
       },
 
       // Handle variable declarations that might be used in sx props
       VariableDeclarator(node: TSESTree.VariableDeclarator) {
-        if (
-          node.init?.type === AST_NODE_TYPES.ObjectExpression &&
-          node.id.type === AST_NODE_TYPES.Identifier
-        ) {
+        if (!node.init || node.id.type !== AST_NODE_TYPES.Identifier) return;
+
+        const init = unwrapAssertions(node.init);
+
+        if (init.type === AST_NODE_TYPES.ObjectExpression) {
           const variableName = node.id.name;
           const sourceText = context.sourceCode.getText();
 
           // Check for margin properties in the object
-          node.init.properties.forEach((prop) => {
+          init.properties.forEach((prop) => {
             if (prop.type === AST_NODE_TYPES.Property) {
+              const key = unwrapAssertions(prop.key);
               let propertyName = '';
 
-              if (prop.key.type === AST_NODE_TYPES.Identifier) {
-                propertyName = prop.key.name;
-              } else if (prop.key.type === AST_NODE_TYPES.Literal) {
-                propertyName = String(prop.key.value);
+              if (key.type === AST_NODE_TYPES.Identifier) {
+                propertyName = key.name;
+              } else if (key.type === AST_NODE_TYPES.Literal) {
+                propertyName = String(key.value);
               }
 
               if (propertyName && checkProperty(propertyName)) {
@@ -332,12 +376,13 @@ export const noMarginProperties = createRule<[], MessageIds>({
 
       // Handle MUI's css function
       CallExpression(node: TSESTree.CallExpression) {
+        const callee = unwrapAssertions(node.callee);
         if (
-          node.callee.type === AST_NODE_TYPES.Identifier &&
-          node.callee.name === 'css' &&
+          callee.type === AST_NODE_TYPES.Identifier &&
+          callee.name === 'css' &&
           node.arguments.length > 0
         ) {
-          const arg = node.arguments[0];
+          const arg = unwrapAssertions(node.arguments[0]);
           if (arg.type === AST_NODE_TYPES.ObjectExpression) {
             checkObjectExpression(arg);
           }

@@ -13,6 +13,7 @@ Margin props push spacing outside a component and bypass MUI's container-control
 
 - Any margin property (`margin`, `marginLeft`, `marginRight`, `marginTop`, `marginBottom`, `mx`, `my`, `mt`, `mb`, `ml`, `mr`, `m`, kebab-case equivalents) used in MUI styling surfaces (`sx`, theme `styleOverrides`, MUI `css`, or direct JSX props like `margin`/`mt`).
 - Margin properties found inside objects, conditionals, arrays, spreads, and nested selectors within those MUI styling contexts.
+- Type assertions are transparent: `{ margin: 2 } as const`, `… satisfies Styles`, `…!` and `<const>{ … }` report exactly as the bare object literal does. The wrapper asserts a type and changes no value, and a fixer (`global-const-style`) appends `as const` to these very objects, so a check keyed on the wrapper would go silent on code `--fix` just rewrote.
 - Non-MUI contexts (plain CSS-in-JS objects, styled-components strings, type declarations) are ignored.
 
 
