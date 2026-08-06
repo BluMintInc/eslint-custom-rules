@@ -1,5 +1,35 @@
 [
   {
+    "version": "1.20.125",
+    "date": "2026-08-06T17:33:56.677Z",
+    "rules": [
+      {
+        "name": "enforce-querykey-ts",
+        "changeType": "fix",
+        "issues": [
+          1813
+        ],
+        "summary": "decline the fix when a key normalizes to nothing (closes #1813)"
+      },
+      {
+        "name": "ensure-pointer-events-none",
+        "changeType": "fix",
+        "issues": [
+          1810
+        ],
+        "summary": "decline the fix when an existing pointerEvents value is unreadable (closes #1810)"
+      },
+      {
+        "name": "prefer-global-router-state-key",
+        "changeType": "fix",
+        "issues": [
+          1811
+        ],
+        "summary": "decline the fix when a key normalizes to nothing (closes #1811)"
+      }
+    ]
+  },
+  {
     "version": "1.20.124",
     "date": "2026-08-06T15:15:14.462Z",
     "rules": [

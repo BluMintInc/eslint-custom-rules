@@ -1,3 +1,12 @@
+## [1.20.125](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.124...v1.20.125) (2026-08-06)
+
+
+### Bug Fixes
+
+* **enforce-querykey-ts:** decline the fix when a key normalizes to nothing (closes [#1813](https://github.com/BluMintInc/eslint-custom-rules/issues/1813)) ([c079450](https://github.com/BluMintInc/eslint-custom-rules/commit/c079450978ed51be34bd94cb315230b678da33b1))
+* **ensure-pointer-events-none:** decline the fix when an existing pointerEvents value is unreadable (closes [#1810](https://github.com/BluMintInc/eslint-custom-rules/issues/1810)) ([74c30f2](https://github.com/BluMintInc/eslint-custom-rules/commit/74c30f2bef0456bdadd601263f8aab0259e095cf))
+* **prefer-global-router-state-key:** decline the fix when a key normalizes to nothing (closes [#1811](https://github.com/BluMintInc/eslint-custom-rules/issues/1811)) ([59636ff](https://github.com/BluMintInc/eslint-custom-rules/commit/59636ffdac32071d941784ccd2837fac278f7338))
+
 ## [1.20.124](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.123...v1.20.124) (2026-08-06)
 
 
