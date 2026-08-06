@@ -29,9 +29,15 @@ A selector, a property name, and a property value are read as the static string 
 
 A template with a substitution — `` position: `${POSITION}` `` — is not known statically, so the rule stays silent on it (the one exception is a hit-slop offset, whose leading literal `-` states its direction; see [Exceptions](#exceptions)).
 
+### Type assertions are transparent
+
+An expression assertion states a type about the expression it wraps and contributes no value of its own, so all four spellings — `'none' as const`, `'none' satisfies string`, `('none')!`, and `<const>'none'` — denote the same string as `'none'`, and chains of them peel fully. Every selector, property name, property value, and inset offset is read through the assertion, so the verdict never turns on which type syntax an author reached for: `pointerEvents: 'none' as const` is honored as the exemption it is, `position: 'absolute' as const` is detected as absolute positioning, and `top: '-6px' as const` still counts toward the hit-slop carve-out.
+
+An assertion around a value that is *not* statically readable does not make it readable. `pointerEvents: theme.overlay!` reads exactly as `pointerEvents: theme.overlay` does — the expression underneath decides.
+
 ### An unreadable `pointerEvents` value reports without a fix
 
-A pseudo-element may already declare `pointerEvents` with a value the rule cannot read: `pointerEvents: theme.overlay`, a call, a ternary such as `isDecorative ? 'none' : 'auto'`, or an interpolated template. The rule still **reports** there — it cannot prove the value is `none`, and an overlay left at `auto` is exactly what the rule exists to catch — but it does **not** autofix. Its only remedy is to append a `pointerEvents` key, and the object already declares one; an object literal with two identical keys does not compile (TS1117). A report with no fix is the correct outcome: a fixer that cannot prove its output is correct emits nothing.
+A pseudo-element may already declare `pointerEvents` with a value the rule cannot read: `pointerEvents: theme.overlay`, a call, a ternary such as `isDecorative ? 'none' : 'auto'`, or an interpolated template (with or without an assertion around it). The rule still **reports** there — it cannot prove the value is `none`, and an overlay left at `auto` is exactly what the rule exists to catch — but it does **not** autofix. Its only remedy is to append a `pointerEvents` key, and the object already declares one; an object literal with two identical keys does not compile (TS1117). A report with no fix is the correct outcome: a fixer that cannot prove its output is correct emits nothing.
 
 Resolve such a report by hand — write the value the overlay actually needs (`pointerEvents: 'none'`), or set `pointerEvents: 'auto'` to record that it is deliberately interactive.
 

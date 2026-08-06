@@ -594,6 +594,163 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
         };
       `,
     },
+
+    // Valid case: the exemption carries an `as const` assertion. An expression
+    // assertion states a type and contributes no value of its own, so the
+    // property still denotes 'none' and the object is already compliant.
+    {
+      code: `
+        const style = {
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            pointerEvents: 'none' as const
+          }
+        };
+      `,
+    },
+
+    // Valid case: the same exemption under `satisfies`
+    {
+      code: `
+        const style = {
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            pointerEvents: 'none' satisfies string
+          }
+        };
+      `,
+    },
+
+    // Valid case: the same exemption under a non-null assertion
+    {
+      code: `
+        const style = {
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            pointerEvents: ('none')!
+          }
+        };
+      `,
+    },
+
+    // Valid case: the same exemption under the angle-bracket assertion syntax
+    {
+      code: `
+        const style = {
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            pointerEvents: <const>'none'
+          }
+        };
+      `,
+    },
+
+    // Valid case: a CHAIN of assertions peels fully — reading only the outermost
+    // wrapper would still leave the exemption unrecognised
+    {
+      code: `
+        const style = {
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            pointerEvents: 'none' as const satisfies string
+          }
+        };
+      `,
+    },
+
+    // Valid case: an assertion-wrapped no-substitution template still denotes
+    // the same static string
+    {
+      code: `
+        const style = {
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            pointerEvents: \`none\` as const
+          }
+        };
+      `,
+    },
+
+    // Valid case: the pointer-events: auto opt-out is equally an assertion's to
+    // carry — the assertion decides nothing about the value
+    {
+      code: `
+        const style = {
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            pointerEvents: 'auto' as const
+          }
+        };
+      `,
+    },
+
+    // Valid case: the assertion sits on the computed KEY rather than the value
+    {
+      code: `
+        const style = {
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            ['pointerEvents' as const]: 'none'
+          }
+        };
+      `,
+    },
+
+    // Valid case: an assertion-wrapped position value keeps the hit-slop
+    // carve-out — widening the read must not cost an overlay its exemption
+    {
+      code: `
+        const style = {
+          '&::before': {
+            content: '""',
+            position: 'absolute' as const,
+            top: '-6px',
+            bottom: '-6px'
+          }
+        };
+      `,
+    },
+
+    // Valid case: the OFFSETS carry the assertions too. Reading the position
+    // through an assertion while leaving the offsets opaque would hand this
+    // hit-slop overlay the tap-target-shrinking autofix.
+    {
+      code: `
+        const style = {
+          '&::before': {
+            content: '""',
+            position: 'absolute' as const,
+            top: '-6px' as const,
+            bottom: '-6px' as const,
+            left: 0 as const,
+            right: 0 as const
+          }
+        };
+      `,
+    },
+
+    // Valid case: an interpolated template under an assertion stays opaque, so
+    // the position is never recognised and the rule keeps its silence
+    {
+      code: `
+        const POSITION = 'absolute';
+        const style = {
+          '&::before': {
+            content: '""',
+            position: \`\${POSITION}\` as const,
+            width: '100%'
+          }
+        };
+      `,
+    },
   ],
   invalid: [
     // Invalid case: pseudo-element with position: absolute but no pointer-events
@@ -1438,6 +1595,111 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
       errors: [pointerEventsError('::before')],
       output: null,
     },
+    // Invalid case: a non-null assertion over a member expression. Peeling the
+    // assertion reaches the member expression, which is still unreadable, so the
+    // report stands and the fixer must still decline — appending a second
+    // `pointerEvents` key would not compile.
+    {
+      code: `
+        const style = {
+          '&::before': { content: '""', position: 'absolute', pointerEvents: theme.overlay! }
+        };
+      `,
+      errors: [pointerEventsError('::before')],
+      output: null,
+    },
+    // Invalid case: an `as` assertion over a call — the assertion names a type,
+    // it does not make the call's result knowable
+    {
+      code: `
+        const style = {
+          '&::before': { content: '""', position: 'absolute', pointerEvents: resolveEvents() as string }
+        };
+      `,
+      errors: [pointerEventsError('::before')],
+      output: null,
+    },
+    // Invalid case: an assertion over a ternary whose branches disagree
+    {
+      code: `
+        const style = {
+          '&::before': { content: '""', position: 'absolute', pointerEvents: (isDecorative ? 'none' : 'auto') as const }
+        };
+      `,
+      errors: [pointerEventsError('::before')],
+      output: null,
+    },
+    // Invalid case: an assertion over an INTERPOLATED template — the assertion
+    // peels away to a template whose text is still not known statically
+    {
+      code: `
+        const style = {
+          '&::before': { content: '""', position: 'absolute', pointerEvents: \`\${mode}\` as const }
+        };
+      `,
+      errors: [pointerEventsError('::before')],
+      output: null,
+    },
+    // Invalid case: reading the POSITION through an assertion widens detection —
+    // an overlay written `'absolute' as const` is as absolutely positioned as one
+    // written 'absolute', and it does get its fix
+    {
+      code: `
+        const style = {
+          '&::before': { content: '""', position: 'absolute' as const, width: '100%' }
+        };
+      `,
+      errors: [pointerEventsError('::before')],
+      output: `
+        const style = {
+          '&::before': { content: '""', position: 'absolute' as const, width: '100%', pointerEvents: 'none' }
+        };
+      `,
+    },
+    // Invalid case: the same for the angle-bracket assertion syntax
+    {
+      code: `
+        const style = {
+          '&::after': { content: '""', position: <const>'fixed', width: '100%' }
+        };
+      `,
+      errors: [pointerEventsError('::after')],
+      output: `
+        const style = {
+          '&::after': { content: '""', position: <const>'fixed', width: '100%', pointerEvents: 'none' }
+        };
+      `,
+    },
+    // Invalid case: the assertion sits on the pseudo-element SELECTOR key, which
+    // is read through the same accessor
+    {
+      code: `
+        const style = {
+          ['&::before' as const]: { content: '""', position: 'absolute', width: '100%' }
+        };
+      `,
+      errors: [pointerEventsError('::before')],
+      output: `
+        const style = {
+          ['&::before' as const]: { content: '""', position: 'absolute', width: '100%', pointerEvents: 'none' }
+        };
+      `,
+    },
+    // Invalid case: an assertion-wrapped POSITIVE offset is classified, so a
+    // full-cover overlay does not slip into the hit-slop carve-out through one
+    {
+      code: `
+        const style = {
+          '&::before': { content: '""', position: 'absolute', inset: '8px' as const }
+        };
+      `,
+      errors: [pointerEventsError('::before')],
+      output: `
+        const style = {
+          '&::before': { content: '""', position: 'absolute', inset: '8px' as const, pointerEvents: 'none' }
+        };
+      `,
+    },
   ],
 });
 
@@ -1464,6 +1726,16 @@ describe('ensure-pointer-events-none autofix never duplicates pointerEvents', ()
       ecmaFeatures: { jsx: true },
     },
     rules: { [RULE_ID]: 'error' },
+  } as unknown as Linter.Config;
+
+  // `<const>x` and JSX cannot coexist in one parse, so the angle-bracket
+  // assertion needs a configuration with JSX switched off.
+  const TS_ONLY_CONFIG = {
+    ...CONFIG,
+    parserOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+    },
   } as unknown as Linter.Config;
 
   // Counts both the camelCase and the kebab-case spelling of the property.
@@ -1497,6 +1769,38 @@ describe('ensure-pointer-events-none autofix never duplicates pointerEvents', ()
       'template selector key with template exemption',
       'const style = { [`&::after`]: { position: `fixed`, pointerEvents: `none` } };',
     ],
+    [
+      'as-const value',
+      `const style = { '&::before': { position: 'absolute', pointerEvents: 'none' as const } };`,
+    ],
+    [
+      'satisfies value',
+      `const style = { '&::before': { position: 'absolute', pointerEvents: 'none' satisfies string } };`,
+    ],
+    [
+      'non-null-asserted value',
+      `const style = { '&::before': { position: 'absolute', pointerEvents: ('none')! } };`,
+    ],
+    [
+      'chained as-const satisfies value',
+      `const style = { '&::before': { position: 'absolute', pointerEvents: 'none' as const satisfies string } };`,
+    ],
+    [
+      'as-const template value under an as-const position',
+      "const style = { '&::before': { position: `absolute` as const, pointerEvents: `none` as const } };",
+    ],
+    [
+      'computed key carrying the assertion',
+      `const style = { '&::before': { position: 'absolute', ['pointerEvents' as const]: 'none' } };`,
+    ],
+    [
+      'as-const kebab-case value',
+      `const style = { '&::before': { position: 'absolute', 'pointer-events': 'none' as const } };`,
+    ],
+    [
+      'assertion on the selector key and on the exemption',
+      `const style = { ['&::after' as const]: { position: 'fixed' as const, pointerEvents: 'none' as const } };`,
+    ],
   ];
 
   it.each(EXEMPT_SPELLINGS)(
@@ -1510,6 +1814,18 @@ describe('ensure-pointer-events-none autofix never duplicates pointerEvents', ()
       expect(countPointerEventsKeys(output)).toBe(1);
     },
   );
+
+  // The angle-bracket assertion is unavailable under JSX, where `<const>` opens
+  // an element. It needs a JSX-free parse to be exercised at all.
+  it('leaves an overlay exempted via an angle-bracket assertion untouched', () => {
+    const code = `const style = { '&::before': { position: 'absolute', pointerEvents: <const>'none' } };`;
+    const messages = linter.verify(code, TS_ONLY_CONFIG, 'probe.ts');
+    expect(messages.filter((m) => m.ruleId === RULE_ID)).toHaveLength(0);
+
+    const { output } = linter.verifyAndFix(code, TS_ONLY_CONFIG, 'probe.ts');
+    expect(output).toBe(code);
+    expect(countPointerEventsKeys(output)).toBe(1);
+  });
 
   // Every spelling of a `pointerEvents` value the rule cannot read. Detection
   // stays: an unreadable value might be 'auto', so the report is still useful.
@@ -1555,6 +1871,34 @@ describe('ensure-pointer-events-none autofix never duplicates pointerEvents', ()
     [
       'emotion css() object',
       `const style = css({ '&::after': { position: 'fixed', pointerEvents: theme.overlay } });`,
+    ],
+    // An assertion peels away to the expression underneath, and that expression
+    // is what decides readability. Wrapping an opaque value does not make it
+    // readable, so these keep the #1810 decline rather than joining the exempt
+    // list above.
+    [
+      'non-null-asserted member expression',
+      `const style = { '&::before': { position: 'absolute', pointerEvents: theme.overlay! } };`,
+    ],
+    [
+      'as-typed call expression',
+      `const style = { '&::before': { position: 'absolute', pointerEvents: resolveEvents() as string } };`,
+    ],
+    [
+      'as-const ternary',
+      `const style = { '&::before': { position: 'absolute', pointerEvents: (isDecorative ? 'none' : 'auto') as const } };`,
+    ],
+    [
+      'as-const interpolated template literal',
+      "const style = { '&::before': { position: 'absolute', pointerEvents: `${mode}` as const } };",
+    ],
+    [
+      'as-const logical fallback',
+      `const style = { '&::before': { position: 'absolute', pointerEvents: (theme.overlay || 'none') as const } };`,
+    ],
+    [
+      'chained assertions over a member expression',
+      `const style = { '&::before': { position: 'absolute', pointerEvents: theme.overlay! as const satisfies string } };`,
     ],
   ];
 
@@ -1602,6 +1946,14 @@ describe('ensure-pointer-events-none autofix never duplicates pointerEvents', ()
   it('counts the duplicate key that the pre-fix rule emitted', () => {
     const brokenOutput =
       "const style = { '&::before': { position: 'absolute', pointerEvents: `none`, pointerEvents: 'none' } };";
+    expect(countPointerEventsKeys(brokenOutput)).toBe(2);
+  });
+
+  // Non-vacuity for the assertion cases: the same counter must see the duplicate
+  // the rule emitted before assertions were read through.
+  it('counts the duplicate key an assertion-wrapped exemption used to produce', () => {
+    const brokenOutput =
+      "const style = { '&::before': { position: 'absolute', pointerEvents: 'none' as const, pointerEvents: 'none' } };";
     expect(countPointerEventsKeys(brokenOutput)).toBe(2);
   });
 

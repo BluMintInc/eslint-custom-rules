@@ -12,6 +12,43 @@ function hasPseudoElementSelector(selector: string): boolean {
 }
 
 /**
+ * The four expression assertions state a type about the expression they wrap and
+ * contribute no value of their own, so `'none' as const`, `'none' satisfies
+ * string`, `('none')!` and `<const>'none'` all denote the same string as
+ * `'none'`. A read that classifies the value a property holds must look through
+ * every one of them alike, or the verdict turns on which type syntax an author
+ * reached for.
+ */
+const ASSERTION_TYPES = new Set([
+  AST_NODE_TYPES.TSAsExpression,
+  AST_NODE_TYPES.TSSatisfiesExpression,
+  AST_NODE_TYPES.TSNonNullExpression,
+  AST_NODE_TYPES.TSTypeAssertion,
+]);
+
+type AssertionExpression =
+  | TSESTree.TSAsExpression
+  | TSESTree.TSSatisfiesExpression
+  | TSESTree.TSNonNullExpression
+  | TSESTree.TSTypeAssertion;
+
+const isAssertion = (node: TSESTree.Node): node is AssertionExpression =>
+  ASSERTION_TYPES.has(node.type);
+
+/**
+ * Peels every assertion off a node. Assertions nest — `'none' as const
+ * satisfies string` is a satisfies over an as — so a single unwrap would still
+ * hand back a wrapper.
+ */
+function unwrapAssertions(node: TSESTree.Node): TSESTree.Node {
+  let target = node;
+  while (isAssertion(target)) {
+    target = target.expression;
+  }
+  return target;
+}
+
+/**
  * Reads the static string a node denotes, so a property name or value carries
  * the same meaning however it is spelled. A no-substitution template literal is
  * a notation-only rewrite of a quoted string, and CSS-in-JS code writes both.
@@ -23,21 +60,24 @@ function hasPseudoElementSelector(selector: string): boolean {
  * literal with duplicate keys does not compile.
  *
  * An interpolated template stays opaque: its text is not known statically, so
- * the rule keeps its conservative silence there.
+ * the rule keeps its conservative silence there. An assertion around an opaque
+ * value is equally opaque: unwrapping reaches the expression underneath, and
+ * that expression still decides whether anything can be read.
  */
 function staticStringOf(node: TSESTree.Node): string | undefined {
-  if (node.type === AST_NODE_TYPES.Literal) {
-    return String(node.value);
+  const target = unwrapAssertions(node);
+  if (target.type === AST_NODE_TYPES.Literal) {
+    return String(target.value);
   }
-  if (node.type === AST_NODE_TYPES.Identifier) {
-    return node.name;
+  if (target.type === AST_NODE_TYPES.Identifier) {
+    return target.name;
   }
   if (
-    node.type === AST_NODE_TYPES.TemplateLiteral &&
-    node.expressions.length === 0 &&
-    node.quasis.length === 1
+    target.type === AST_NODE_TYPES.TemplateLiteral &&
+    target.expressions.length === 0 &&
+    target.quasis.length === 1
   ) {
-    return node.quasis[0].value.cooked ?? node.quasis[0].value.raw;
+    return target.quasis[0].value.cooked ?? target.quasis[0].value.raw;
   }
   return undefined;
 }
@@ -119,7 +159,12 @@ function classifyOffsetComponents(raw: string): OffsetSign {
  * classified; variables, member expressions, and calls are treated as unknown
  * and never counted toward the hit-slop exemption.
  */
-function classifyOffsetValue(value: TSESTree.Node): OffsetSign {
+function classifyOffsetValue(node: TSESTree.Node): OffsetSign {
+  // An assertion states a type, not a length. Reading the position through one
+  // while leaving the offsets opaque would strip an assertion-written hit-slop
+  // overlay of its carve-out and hand it the tap-target-shrinking autofix.
+  const value = unwrapAssertions(node);
+
   if (value.type === AST_NODE_TYPES.Literal) {
     if (typeof value.value === 'number') {
       if (value.value === 0) return 'zero';
