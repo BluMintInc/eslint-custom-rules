@@ -77,8 +77,14 @@ const [value] = useRouterState({ key: QUERY_KEY_MATCH_SESSION });
 
 ### Autofix behavior
 
-The fix replaces the string literal with the matching `QUERY_KEY_*` constant and
-makes sure that constant is imported. An existing import of `queryKeys.ts` is
+The fix replaces the key with the matching `QUERY_KEY_*` constant and
+makes sure that constant is imported. It is gated on the key's **value**, not on
+the notation that spells it: a quoted string and an expression-free template are
+the same key written two ways, so both are rewritten to the same constant, with
+the template read through its cooked value so `` `user-profile` `` and
+`'user-profile'` derive one name. A key whose value the rule cannot evaluate —
+concatenation, a ternary, or a template that interpolates an expression — is
+still reported, and requires manual refactoring. An existing import of `queryKeys.ts` is
 reused: a namespace or default import qualifies the constant (`QueryKeys.QUERY_KEY_MATCH`),
 and a named import is extended in place rather than duplicated. Relative
 specifiers count as that module, including ones whose text hides the directory
@@ -104,7 +110,7 @@ reports without fixing rather than write an import that fails to resolve.
 The emitted reference is only as good as the name it starts with — the namespace
 or default import's alias for a qualified `QueryKeys.QUERY_KEY_*`, otherwise the
 constant's own imported name. That name is resolved through the scope chain at
-the string literal, not at module scope, so a binding in any enclosing block,
+the key being rewritten, not at module scope, so a binding in any enclosing block,
 function or parameter list is seen. Where it resolves to anything other than the
 intended import, the fix is withheld and only the report stands:
 
