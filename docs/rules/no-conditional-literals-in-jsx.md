@@ -10,6 +10,8 @@ Conditional string literals must not sit next to other JSX text or expressions. 
 
 The rule reports conditional string literals that are adjacent to other JSX text or expressions. A sibling counts as adjacent content when it is non-whitespace JSX text or any expression container — an identifier, a property access, a call, a concatenation, a template literal, a ternary, or another conditional literal. The single exception is a comment container (`{/* ... */}`), which renders nothing. A conditional literal with no such sibling renders as one text node and is not reported.
 
+A conditional value counts as a string literal in either notation: `{cond && 'back'}` and the backtick spelling `` {cond && `back`} `` render the same text node, so both report. A template literal with substitutions (`` {cond && `back ${name}`} ``) is not reported, because its rendered value is not decidable syntactically. Only the rendered (right-hand) operand is enforced: a literal on the left in either notation is unconditional, so `{'always' && value}` and ``{`always` && value}`` are both ignored.
+
 This pattern is risky because:
 
 - Browser translation and screen readers treat each fragment as a separate node, so conditional pieces produce garbled output or untranslated leftovers.
@@ -30,6 +32,7 @@ To fix the warning, either:
 <div>Status: {state || 'unknown'}</div>;
 <div>{formatDate(date)} {isLate && 'late'}</div>;
 <div>{isA && 'alpha'}{isB && 'beta'}</div>;
+<div>Welcome {isReturning && `back`} user</div>;
 ```
 
 ### Examples of **correct** code for this rule:
@@ -41,4 +44,5 @@ To fix the warning, either:
 <div>Status: <span>{state || 'unknown'}</span></div>;
 <div>{formatDate(date)} <span>{isLate && 'late'}</span></div>;
 <div>{isReturning && 'back'}</div>;
+<div>Welcome <span>{isReturning && `back`}</span> user</div>;
 ```

@@ -25,6 +25,20 @@ export const noConditionalLiteralsInJsx: TSESLint.RuleModule<
   },
   defaultOptions: [],
   create(context) {
+    /**
+     * A template literal without substitutions renders exactly the text its
+     * quoted spelling renders, so notation must never decide whether a value
+     * counts as JSX text. Substitution-bearing templates are excluded because
+     * their rendered value is not decidable syntactically. Numeric and boolean
+     * literals are excluded to avoid misleading messages for values that are
+     * not text.
+     */
+    const isTextLiteral = (astNode: TSESTree.Node) =>
+      (astNode.type === TSESTree.AST_NODE_TYPES.Literal &&
+        typeof astNode.value === 'string') ||
+      (astNode.type === TSESTree.AST_NODE_TYPES.TemplateLiteral &&
+        astNode.expressions.length === 0);
+
     return {
       // Imagine evaluating <div>text {conditional && 'string'}</div>
       JSXExpressionContainer(node: TSESTree.JSXExpressionContainer) {
@@ -78,23 +92,23 @@ export const noConditionalLiteralsInJsx: TSESLint.RuleModule<
         const literalNode = logicalExpression.right;
         const conditionalNode = logicalExpression.left;
 
-        // Only enforce when the literal is the expression's return value.
-        if (literalNode.type !== TSESTree.AST_NODE_TYPES.Literal) {
-          return;
-        }
-
-        // Only enforce for string literals to avoid misleading messages for
-        // numeric or boolean literals rendered conditionally.
-        if (typeof literalNode.value !== 'string') {
+        // Only enforce when a text literal is the expression's return value.
+        if (!isTextLiteral(literalNode)) {
           return;
         }
 
         /**
          * Ignore logical expressions that do not actually render the literal
          * conditionally (e.g., literal && condition or literal || condition)
-         * and expressions with two literals.
+         * and expressions with two literals. Any literal on the left is
+         * unconditional, including the numeric and boolean ones that are never
+         * reported as a rendered value, so this exemption is wider than
+         * isTextLiteral on purpose.
          */
-        if (conditionalNode.type === TSESTree.AST_NODE_TYPES.Literal) {
+        if (
+          conditionalNode.type === TSESTree.AST_NODE_TYPES.Literal ||
+          isTextLiteral(conditionalNode)
+        ) {
           return;
         }
 
