@@ -44,6 +44,25 @@ ruleTesterJsx.run('no-jsx-in-hooks', noJsxInHooks, {
         }
       `,
     },
+    // The same zero-argument .map(), reached through a concise arrow body so the
+    // guard is exercised on that path too rather than only through the block
+    // scanner.
+    {
+      code: `const useItems = () => useMemo(() => registry.map(), []);`,
+    },
+    // A concise body that is a useMemo call producing no JSX: the call shape
+    // alone must not report, only JSX inside it.
+    {
+      code: `const useComputed = () => useMemo(() => computeThing(), []);`,
+    },
+    {
+      code: `const useComputed = () => useMemo(() => { return { value: 42 }; }, []);`,
+    },
+    // A concise body that is an ordinary call returning JSX is not a memoized
+    // render, and the unwrapper deliberately gates on useMemo.
+    {
+      code: `const useThing = () => buildThing(() => <div />);`,
+    },
     // Valid hook that returns a non-JSX value
     {
       code: `
@@ -175,6 +194,30 @@ ruleTesterJsx.run('no-jsx-in-hooks', noJsxInHooks, {
           return useMemo(() => <div>Element</div>, []);
         };
       `,
+      errors: [
+        {
+          messageId: 'noJsxInHooks',
+          data: { hookName: 'useGetElement' },
+        },
+      ],
+    },
+    /**
+     * The same hook spelled with a concise body. A concise body is a
+     * CallExpression rather than a BlockStatement, so neither the direct-JSX
+     * check nor the block scanner sees it; rewriting a block-bodied hook to a
+     * concise arrow must not turn the rule off.
+     */
+    {
+      code: `const useGetElement = () => useMemo(() => <div>Element</div>, []);`,
+      errors: [
+        {
+          messageId: 'noJsxInHooks',
+          data: { hookName: 'useGetElement' },
+        },
+      ],
+    },
+    {
+      code: `const useGetElement = () => useMemo(() => { return <div>Element</div>; }, []);`,
       errors: [
         {
           messageId: 'noJsxInHooks',

@@ -32,6 +32,14 @@ function useLivestreamPlayer({ playbackId }: Props) {
 }
 ```
 
+The arrow-body spelling makes no difference — a concise body that is a memoized
+callback returns the same JSX:
+
+```tsx
+const useLivestreamPlayer = ({ playbackId }: Props) =>
+  useMemo(() => <Player id={playbackId} />, [playbackId]);
+```
+
 ### Examples of correct code for this rule:
 
 ```tsx

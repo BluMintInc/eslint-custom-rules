@@ -273,6 +273,25 @@ export const noJsxInHooks = createRule<[], MessageIds>({
                 data: { hookName: parent.id.name },
               });
             }
+            return;
+          }
+
+          /**
+           * A concise body that is a call expression returns whatever the call
+           * yields, so `() => useMemo(() => <div />, [])` is the same violation
+           * as its block-bodied spelling. Without this branch the block scanner
+           * — the only place the useMemo unwrapper is reached from — never runs
+           * for it, and rewriting a hook to a concise arrow silences the rule.
+           */
+          if (
+            node.body.type === AST_NODE_TYPES.CallExpression &&
+            containsJsxInUseMemo(node.body)
+          ) {
+            context.report({
+              node: parent.id,
+              messageId: 'noJsxInHooks',
+              data: { hookName: parent.id.name },
+            });
           }
         }
       },
