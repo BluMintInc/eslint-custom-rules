@@ -1,3 +1,14 @@
+## [1.20.118](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.117...v1.20.118) (2026-08-06)
+
+
+### Bug Fixes
+
+* **enforce-callback-memo:** answer the anonymous component where it is met (closes [#1777](https://github.com/BluMintInc/eslint-custom-rules/issues/1777)) ([e95a4e7](https://github.com/BluMintInc/eslint-custom-rules/commit/e95a4e7ab2142c79c059771df4ab84cc7ae5dc8c))
+* **enforce-firestore-set-merge:** resolve the base class lexically too (closes [#1773](https://github.com/BluMintInc/eslint-custom-rules/issues/1773)) ([afa3547](https://github.com/BluMintInc/eslint-custom-rules/commit/afa354707bc01081584f501070cf6b4e7c20b429)), closes [#1763](https://github.com/BluMintInc/eslint-custom-rules/issues/1763) [#1763](https://github.com/BluMintInc/eslint-custom-rules/issues/1763)
+* **prefer-block-comments-for-declarations:** anchor the comment lookup on the export wrapper (closes [#1775](https://github.com/BluMintInc/eslint-custom-rules/issues/1775)) ([3da6f02](https://github.com/BluMintInc/eslint-custom-rules/commit/3da6f02de41119bb42ce06e91752abecd2996c33))
+* **require-memo:** claim a component by lifetime, not by parent node type (closes [#1774](https://github.com/BluMintInc/eslint-custom-rules/issues/1774)) ([3635237](https://github.com/BluMintInc/eslint-custom-rules/commit/36352370b8340ca00fd459608573620be0b06ff4))
+* **require-props-composition:** resolve names lexically in both directions (closes [#1776](https://github.com/BluMintInc/eslint-custom-rules/issues/1776)) ([cdd4b56](https://github.com/BluMintInc/eslint-custom-rules/commit/cdd4b56b6f5a17d294638bf744d7784167fe3ec1)), closes [#1316](https://github.com/BluMintInc/eslint-custom-rules/issues/1316) [#1335](https://github.com/BluMintInc/eslint-custom-rules/issues/1335)
+
 ## [1.20.117](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.116...v1.20.117) (2026-08-06)
 
 

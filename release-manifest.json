@@ -1,5 +1,51 @@
 [
   {
+    "version": "1.20.118",
+    "date": "2026-08-06T03:08:14.815Z",
+    "rules": [
+      {
+        "name": "enforce-callback-memo",
+        "changeType": "fix",
+        "issues": [
+          1777
+        ],
+        "summary": "answer the anonymous component where it is met (closes #1777)"
+      },
+      {
+        "name": "enforce-firestore-set-merge",
+        "changeType": "fix",
+        "issues": [
+          1773
+        ],
+        "summary": "resolve the base class lexically too (closes #1773)"
+      },
+      {
+        "name": "prefer-block-comments-for-declarations",
+        "changeType": "fix",
+        "issues": [
+          1775
+        ],
+        "summary": "anchor the comment lookup on the export wrapper (closes #1775)"
+      },
+      {
+        "name": "require-memo",
+        "changeType": "fix",
+        "issues": [
+          1774
+        ],
+        "summary": "claim a component by lifetime, not by parent node type (closes #1774)"
+      },
+      {
+        "name": "require-props-composition",
+        "changeType": "fix",
+        "issues": [
+          1776
+        ],
+        "summary": "resolve names lexically in both directions (closes #1776)"
+      }
+    ]
+  },
+  {
     "version": "1.20.117",
     "date": "2026-08-06T01:05:58.683Z",
     "rules": [
