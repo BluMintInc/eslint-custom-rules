@@ -67,6 +67,42 @@ const ESCAPED_KEY_FIXED = `import { QUERY_KEY_USER_PROFILE } from 'src/util/rout
         }
         `;
 
+/**
+ * One component body parameterized by the text spelling the key, so a case's
+ * notation is the only thing that varies from its neighbours.
+ */
+const keyCode = (keySpelling: string) => `
+        function Component() {
+          const [value] = useRouterState({ key: ${keySpelling} });
+          return <div>{value}</div>;
+        }
+        `;
+
+/**
+ * Keys that normalize to nothing: empty, or made only of the characters the
+ * normalizer turns into separators and then strips. No constant name can be
+ * derived from any of them, and the notation carrying one makes no difference
+ * to that — which is why every spelling is listed rather than just the quoted
+ * empty string the report cited (#1811).
+ */
+const SINGLE_CHARACTER_KEY_FIXED = `import { QUERY_KEY_A } from 'src/util/routing/queryKeys';
+${keyCode('QUERY_KEY_A')}`;
+
+const DEGENERATE_KEY_SPELLINGS = [
+  "''",
+  '``',
+  "'-'",
+  '`-`',
+  "'_'",
+  '`_`',
+  "'---'",
+  "':'",
+  "'/'",
+  "'.'",
+  "'_-:/.'",
+  "'   '",
+];
+
 ruleTesterJsx.run(
   'prefer-global-router-state-key',
   preferGlobalRouterStateKey,
@@ -1705,6 +1741,41 @@ function Component() {
         `,
         errors: [stringLiteralError("isAdmin ? 'admin-home' : 'user-home'")],
         output: null,
+      },
+
+      // ------------------------------------------------------------------
+      // Issue #1811: a key whose normalized text is empty names no constant.
+      // Emitting `QUERY_KEY_` anyway wrote an identifier `queryKeys.ts` cannot
+      // export, so the "fixed" file failed to compile — strictly worse than
+      // the report it replaced. Every spelling is asserted the same way,
+      // because the decline turns on the key's VALUE; keying it to notation
+      // would undo the parity #1804 established. The narrowness controls that
+      // follow fix on a single surviving character.
+      // ------------------------------------------------------------------
+      ...DEGENERATE_KEY_SPELLINGS.map((spelling) => ({
+        name: `a key spelled ${spelling} reports without a fix`,
+        code: keyCode(spelling),
+        errors: [stringLiteralError(spelling)],
+        output: null,
+      })),
+
+      // 78. One alphanumeric character survives normalization, so a constant
+      // exists and the fix stands: the decline covers keys that normalize to
+      // nothing, not short keys.
+      {
+        name: 'a one-character key is still substituted and imported',
+        code: keyCode("'a'"),
+        errors: [stringLiteralError("'a'")],
+        output: SINGLE_CHARACTER_KEY_FIXED,
+      },
+
+      // 79. Separators around a single character are stripped, and what is
+      // left still names a constant.
+      {
+        name: 'a key of separators around one character is substituted',
+        code: keyCode("'-a-'"),
+        errors: [stringLiteralError("'-a-'")],
+        output: SINGLE_CHARACTER_KEY_FIXED,
       },
     ],
   },
