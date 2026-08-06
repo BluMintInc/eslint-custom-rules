@@ -92,6 +92,24 @@ function checkFunctionBody(
 
   if (!paramName) return;
 
+  // A block whose only statement is `return <expr>;` makes exactly the claim
+  // the implicit-return spelling of that same expression makes, so it is
+  // answered by the same predicate. A block that does other work first is a
+  // different claim and stays out of scope.
+  const soleStatement = body.body.length === 1 ? body.body[0] : null;
+  if (
+    soleStatement?.type === 'ReturnStatement' &&
+    soleStatement.argument &&
+    isNullishPassthroughExpression(soleStatement.argument, paramName)
+  ) {
+    context.report({
+      node: soleStatement,
+      messageId: 'unexpected',
+      data: { paramName },
+    });
+    return;
+  }
+
   // Look for early returns based on parameter being null/undefined
   for (const statement of body.body) {
     if (statement.type === 'IfStatement') {
@@ -259,6 +277,40 @@ function containsParameterTransformation(
 }
 
 /**
+ * Recognizes the expressions that hand a nullish parameter straight back to the
+ * caller: `param && ...` and `param ? ... : null/undefined`.
+ *
+ * A function states this shape either as an implicit return or as a block whose
+ * sole statement returns it; both spellings mean the same thing, so they share
+ * this predicate rather than each carrying a copy that can drift.
+ *
+ * The bare-identifier passthrough (`(param) => param`) is deliberately absent.
+ * Its boundary is unsettled — inline callback arguments such as
+ * `items.filter((x) => x)` reach that shape without the prescribed remedy
+ * applying — so it stays confined to the implicit-return path instead of being
+ * duplicated into a second spelling that would have to be narrowed twice.
+ */
+function isNullishPassthroughExpression(
+  node: TSESTree.Node,
+  paramName: string,
+): boolean {
+  // (param) => param ? param.value : null
+  if (node.type === 'ConditionalExpression') {
+    return (
+      isParameterReference(node.test, paramName) &&
+      isNullOrUndefinedLiteral(node.alternate)
+    );
+  }
+
+  // (param) => param && doSomething(param)
+  if (node.type === 'LogicalExpression') {
+    return node.operator === '&&' && isParameterReference(node.left, paramName);
+  }
+
+  return false;
+}
+
+/**
  * Check arrow functions with expression bodies (implicit returns)
  */
 function checkImplicitReturn(
@@ -278,31 +330,12 @@ function checkImplicitReturn(
 
   if (!paramName) return;
 
-  // Check for patterns like: (param) => param ? param.value : null
-  if (node.body.type === 'ConditionalExpression') {
-    const test = node.body.test;
-    if (
-      isParameterReference(test, paramName) &&
-      isNullOrUndefinedLiteral(node.body.alternate)
-    ) {
-      context.report({
-        node,
-        messageId: 'unexpected',
-        data: { paramName },
-      });
-    }
-  } else if (node.body.type === 'LogicalExpression') {
-    // Check for (param) => param && doSomething(param)
-    if (
-      node.body.operator === '&&' &&
-      isParameterReference(node.body.left, paramName)
-    ) {
-      context.report({
-        node,
-        messageId: 'unexpected',
-        data: { paramName },
-      });
-    }
+  if (isNullishPassthroughExpression(node.body, paramName)) {
+    context.report({
+      node,
+      messageId: 'unexpected',
+      data: { paramName },
+    });
   } else if (node.body.type === 'Identifier' && node.body.name === paramName) {
     // Check for (param) => param
     context.report({

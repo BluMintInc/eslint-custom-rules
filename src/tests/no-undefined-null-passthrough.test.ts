@@ -268,6 +268,75 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
       if (!b) return;
       return a + String(b);
     }`,
+
+    // The bare-identifier passthrough is deliberately withheld from the
+    // block-bodied path. Its boundary is unsettled — inline callback arguments
+    // such as `items.filter((x) => x)` reach the same shape without the
+    // prescribed remedy applying — so the implicit-return spelling's treatment
+    // of it is intentionally NOT mirrored here. Whatever carve-out settles that
+    // question should land on both spellings at once rather than being fixed
+    // twice.
+    `const identity = (value) => { return value; };`,
+
+    `function identity(value) {
+      return value;
+    }`,
+
+    `const passThrough = function (payload = null) {
+      return payload;
+    };`,
+
+    // Only a SOLE return statement is in scope: a block that does other work
+    // before returning is not the same claim as an implicit return.
+    `const getData = (data) => {
+      logAccess(data);
+      return data && data.value;
+    };`,
+
+    `const getName = (user) => {
+      const trimmed = user;
+      return user ? user.name : null;
+    };`,
+
+    // The returned expression must be keyed on the parameter itself.
+    `const getData = (data) => {
+      return other && other.value;
+    };`,
+
+    `const getName = (user) => {
+      return account ? account.name : null;
+    };`,
+
+    // A ternary whose alternate is a concrete fallback provides a meaningful
+    // result, so it is not a passthrough.
+    `const getName = (user) => {
+      return user ? user.name : 'anonymous';
+    };`,
+
+    // `||` hands back the right operand rather than the nullish parameter.
+    `const getData = (data) => {
+      return data || getFallback();
+    };`,
+
+    // A block returning nothing has no expression to classify.
+    `const getData = (data) => {
+      return;
+    };`,
+
+    // An empty block has no sole statement at all.
+    `const getData = (data) => {};`,
+
+    `function getData(data) {}`,
+
+    // React hooks stay exempt regardless of body spelling.
+    `const useData = (data) => {
+      return data && data.value;
+    };`,
+
+    // Unknown parameters stay exempt regardless of body spelling.
+    `const narrow = (input: unknown) => {
+      return input ? String(input) : null;
+    };`,
   ],
   invalid: [
     // Function declaration with early return for null/undefined
@@ -535,6 +604,75 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
         if (!data || !options) return;
         return data.process(options);
       }`,
+      errors: [error('data')],
+    },
+
+    // A block whose sole statement is `return <expr>;` states exactly what the
+    // implicit-return spelling of the same expression states, so the logical
+    // and conditional passthrough shapes report in either spelling.
+    {
+      code: `const getData = (data) => { return data && data.value; };`,
+      errors: [error('data')],
+    },
+    {
+      code: `const getData2 = (data) => { return data ? data.value : null; };`,
+      errors: [error('data')],
+    },
+    {
+      code: `const getUser = (user) => { return user ? user.name : undefined; };`,
+      errors: [error('user')],
+    },
+    {
+      code: `const getId = (user) => {
+        return user && user.id;
+      };`,
+      errors: [error('user')],
+    },
+
+    // The block spelling is not specific to arrows.
+    {
+      code: `function getData(data) {
+        return data && data.value;
+      }`,
+      errors: [error('data')],
+    },
+    {
+      code: `const getName = function (user) {
+        return user ? user.name : null;
+      };`,
+      errors: [error('user')],
+    },
+    {
+      code: `class DataProcessor {
+        getValue(data) {
+          return data && data.value;
+        }
+      }`,
+      errors: [error('data')],
+    },
+
+    // Default parameters resolve to the same name in either spelling.
+    {
+      code: `const getData = (data = null) => {
+        return data && data.value;
+      };`,
+      errors: [error('data')],
+    },
+
+    // Async and awaited bodies carry the same passthrough.
+    {
+      code: `const getData = async (data) => {
+        return data ? data.value : null;
+      };`,
+      errors: [error('data')],
+    },
+
+    // A chained right-hand side does not change what the nullish parameter
+    // yields to the caller.
+    {
+      code: `const getData = (data) => {
+        return data && data.items.map((item) => item.value);
+      };`,
       errors: [error('data')],
     },
   ],
