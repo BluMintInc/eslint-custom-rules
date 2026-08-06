@@ -27,6 +27,95 @@ import type { Opts } from './opts';
 const useThing = ({ a }: Opts) => a;
       `,
     },
+    /**
+     * The imported-type carve-out has to hold from every container, not just
+     * from module scope. Widening the container set adds scopes to the walk;
+     * none of them may turn an unreadable shape into an assumed-empty one.
+     */
+    {
+      code: `
+import type { Opts } from './opts';
+class Holder {
+  static {
+    const useThing = ({ a }: Opts) => a;
+    void useThing;
+  }
+}
+      `,
+    },
+    {
+      code: `
+import type { Opts } from './opts';
+function pick(kind: string) {
+  switch (kind) {
+    case 'a':
+      const useThing = ({ a }: Opts) => a;
+      return useThing;
+    default:
+      return null;
+  }
+}
+      `,
+    },
+    /**
+     * A sibling scope is not an enclosing one. The walk goes outward only, so a
+     * matching type inside a container the hook is not written in must stay
+     * invisible — otherwise the imported type above it would be overruled by an
+     * unrelated declaration and the fix would change behaviour.
+     */
+    {
+      code: `
+import type { Opts } from './opts';
+class Holder {
+  static {
+    type Opts = { a?: string };
+    void 0;
+  }
+}
+const useThing = ({ a }: Opts) => a;
+      `,
+    },
+    // Resolving in the added containers must not change the VERDICT: a required
+    // property there keeps the parameter mandatory exactly as at module scope.
+    {
+      code: `
+class Holder {
+  static {
+    type Opts = { a: string };
+    const useThing = ({ a }: Opts) => a;
+    void useThing;
+  }
+}
+      `,
+    },
+    {
+      code: `
+function pick(kind: string) {
+  switch (kind) {
+    case 'a':
+      type Opts = { a: string };
+      const useThing = ({ a }: Opts) => a;
+      return useThing;
+    default:
+      return null;
+  }
+}
+      `,
+    },
+    // Innermost declaration wins: a nearer required shape must answer for the
+    // reference rather than the all-optional one it shadows.
+    {
+      code: `
+type Opts = { a?: string };
+class Holder {
+  static {
+    type Opts = { a: string };
+    const useThing = ({ a }: Opts) => a;
+    void useThing;
+  }
+}
+      `,
+    },
     // Already has default empty object
     {
       code: `
@@ -239,6 +328,125 @@ const useThing = ({ a }: Opts) => a;
       output: `
 export type Opts = { a?: string };
 const useThing = ({ a }: Opts = {}) => a;
+      `,
+      errors: [errorFor('useThing')],
+    },
+    {
+      code: `
+export default interface Opts { a?: string }
+const useThing = ({ a }: Opts) => a;
+      `,
+      output: `
+export default interface Opts { a?: string }
+const useThing = ({ a }: Opts = {}) => a;
+      `,
+      errors: [errorFor('useThing')],
+    },
+    /**
+     * Which containers hold a declaration is not a per-rule decision (#1781).
+     * A class `static {}` block and a `switch` case consequent each hold a
+     * statement list, so a type written in one is in scope for a hook written
+     * beside it — the same type one container over was already reported, which
+     * made the DEPTH of the declaration decide whether the rule could see it.
+     */
+    {
+      code: `
+class Holder {
+  static {
+    type Opts = { a?: string };
+    const useThing = ({ a }: Opts) => a;
+    void useThing;
+  }
+}
+      `,
+      output: `
+class Holder {
+  static {
+    type Opts = { a?: string };
+    const useThing = ({ a }: Opts = {}) => a;
+    void useThing;
+  }
+}
+      `,
+      errors: [errorFor('useThing')],
+    },
+    {
+      code: `
+function pick(kind: string) {
+  switch (kind) {
+    case 'a':
+      type Opts = { a?: string };
+      const useThing = ({ a }: Opts) => a;
+      return useThing;
+    default:
+      return null;
+  }
+}
+      `,
+      output: `
+function pick(kind: string) {
+  switch (kind) {
+    case 'a':
+      type Opts = { a?: string };
+      const useThing = ({ a }: Opts = {}) => a;
+      return useThing;
+    default:
+      return null;
+  }
+}
+      `,
+      errors: [errorFor('useThing')],
+    },
+    {
+      code: `
+function pick(kind: string) {
+  switch (kind) {
+    case 'a':
+      interface Opts { a?: string }
+      const useThing = ({ a }: Opts) => a;
+      return useThing;
+    default:
+      return null;
+  }
+}
+      `,
+      output: `
+function pick(kind: string) {
+  switch (kind) {
+    case 'a':
+      interface Opts { a?: string }
+      const useThing = ({ a }: Opts = {}) => a;
+      return useThing;
+    default:
+      return null;
+  }
+}
+      `,
+      errors: [errorFor('useThing')],
+    },
+    // The nearest declaration answers, including one written in an added
+    // container: an all-optional type in a `static {}` block shadows an outer
+    // required one, so the parameter is safe to default.
+    {
+      code: `
+type Opts = { a: string };
+class Holder {
+  static {
+    type Opts = { a?: string };
+    const useThing = ({ a }: Opts) => a;
+    void useThing;
+  }
+}
+      `,
+      output: `
+type Opts = { a: string };
+class Holder {
+  static {
+    type Opts = { a?: string };
+    const useThing = ({ a }: Opts = {}) => a;
+    void useThing;
+  }
+}
       `,
       errors: [errorFor('useThing')],
     },
