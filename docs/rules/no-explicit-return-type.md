@@ -36,9 +36,40 @@ Deleting the annotation there does not simplify the code — it stops it compili
 
 - The function has a resolvable name: its own `id`, the identifier of the `VariableDeclarator` it initialises, or the key of the object property / class member / assignment target it is attached to (reached as `this.name`, `Owner.name`).
 - That name is referenced somewhere inside one of the function's own `return` expressions, or inside a concise arrow body. Nested closures inside the returned expression count, because their types are part of the return type.
-- Or the function takes part in a **cycle of module-scope functions** — `a` returns something referencing `b`, and `b` returns something referencing `a` — which triggers the same TS7023.
+- Or the function takes part in a **cycle** — `a` returns something referencing `b`, and `b` returns something referencing `a` — which triggers the same TS7023.
 
 The search is deliberately restricted to return expressions. A function that calls itself only for side effects (inside a `forEach` callback, say) still has an inferable return type, so its annotation is still reported.
+
+#### Mutual recursion is resolved through the scope chain
+
+Each name in a return expression is resolved from the referencing function's own body outward, through every enclosing statement container — a function body, an arrow body, a bare block, a `namespace`, a `switch` case, a class `static` block, and finally the module — with the nearest declaration shadowing a same-named outer one. That is the resolution TypeScript itself performs, and TS7023 does not care how deeply a pair is nested:
+
+```ts
+// Silent: removing either annotation makes tsc fail with TS7023 on both.
+export function makeParity() {
+  const isEven = (n: number): boolean => (n === 0 ? true : isOdd(n - 1));
+  const isOdd = (n: number): boolean => (n === 0 ? false : isEven(n - 1));
+  return { isEven, isOdd };
+}
+```
+
+Two consequences follow from resolving names rather than matching them:
+
+- Two same-named functions in **sibling** scopes cannot see each other, so they are not a mutually recursive pair and both annotations are still reported.
+- A cycle that **crosses** a scope boundary — an inner function returning a call to the enclosing one, which returns a call to the inner — is a cycle, and both annotations are kept.
+
+```ts
+// Reported: `isEven` and `isOdd` are declared in scopes that cannot see each
+// other, so neither annotation breaks an inference cycle.
+export function first() {
+  const isEven = (n: number): boolean => n === 0;
+  return isEven;
+}
+export function second() {
+  const isOdd = (n: number): boolean => n !== 0;
+  return isOdd;
+}
+```
 
 ### `void` and `Promise<void>`: the annotation cannot drift
 
@@ -119,7 +150,7 @@ Limitations, all of which err toward silence or toward the status quo:
 
 - Only *import* bindings are unbindable, so only they group annotations. Annotations sharing a local type alias are stripped one at a time and the alias is left unused, exactly as before.
 - A self-reference inside a closure in the returned value counts, even though TypeScript can sometimes still break the cycle (it depends on how the returned value is contextually typed, which needs type information this rule does not have).
-- Mutual recursion is resolved among module-scope functions only. A mutually recursive pair declared inside another function body is still reported.
+- Mutual recursion is resolved syntactically, by name through the scope chain. A pair linked through a value this rule cannot follow — a re-export, a property of an imported object, a dynamically keyed lookup — is still reported.
 - Annotating *either* member of a mutually recursive pair is enough for TypeScript; the rule exempts both rather than picking one.
 - A function with no resolvable name (an anonymous callback) cannot be self-referential by name, so it is always reported.
 - An annotation whose removal would strand a declaration the fixer cannot delete is reported without a fix rather than fixed halfway.
@@ -156,6 +187,17 @@ const walkTree = (nodes: number[][], depth: number): number => {
 // A union can carry a value, so it is not covered by `allowVoidReturnTypes`
 async function maybe(): Promise<void | string> {
   return undefined;
+}
+
+// Same-named helpers in sibling scopes cannot see each other, so neither
+// annotation breaks an inference cycle and both are reported
+export function firstScope() {
+  const isEvenSibling = (n: number): boolean => n === 0;
+  return isEvenSibling;
+}
+export function secondScope() {
+  const isOddSibling = (n: number): boolean => n !== 0;
+  return isOddSibling;
 }
 ```
 
@@ -209,6 +251,16 @@ const isEvenNumber = (n: number): boolean =>
   n === 0 ? true : isOddNumber(n - 1);
 const isOddNumber = (n: number): boolean =>
   n === 0 ? false : isEvenNumber(n - 1);
+
+// Nesting does not change that verdict: the pair is resolved through the scope
+// chain, so a mutually recursive pair local to a factory is kept too
+export function makeParityChecks() {
+  const isEvenLocal = (n: number): boolean =>
+    n === 0 ? true : isOddLocal(n - 1);
+  const isOddLocal = (n: number): boolean =>
+    n === 0 ? false : isEvenLocal(n - 1);
+  return { isEvenLocal, isOddLocal };
+}
 
 // `Promise<void>` declares the absence of a result: it cannot drift, and
 // `enforce-memoize-async` reads it to leave a side-effecting method uncached
