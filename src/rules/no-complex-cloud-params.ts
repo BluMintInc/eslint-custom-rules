@@ -5,6 +5,52 @@ type MessageIds = 'noComplexObjects';
 
 const PASCAL_CASE_RE = /^[A-Z][a-zA-Z0-9]*$/;
 
+/**
+ * Resolves a member expression's property to the name it accesses, so that a
+ * computed spelling such as `Object['create']` is recognized as the same
+ * access as `Object.create`. Returns null when the property is only known at
+ * runtime, in which case callers must fall back to their conservative path.
+ */
+function staticPropertyName(
+  property: TSESTree.Node,
+  computed: boolean,
+): string | null {
+  if (!computed && property.type === AST_NODE_TYPES.Identifier) {
+    return property.name;
+  }
+  if (
+    computed &&
+    property.type === AST_NODE_TYPES.Literal &&
+    (typeof property.value === 'string' || typeof property.value === 'number')
+  ) {
+    return String(property.value);
+  }
+  return null;
+}
+
+/**
+ * Reads the module path of a dynamic import when the path is fixed in the
+ * source. A no-substitution template literal spells exactly the same path as a
+ * string literal, so both must be tracked; an interpolated template resolves to
+ * a different module per call and is deliberately left untracked to keep this
+ * to a question of notation.
+ */
+function staticModulePath(source: TSESTree.Node): string | null {
+  if (
+    source.type === AST_NODE_TYPES.Literal &&
+    typeof source.value === 'string'
+  ) {
+    return source.value;
+  }
+  if (
+    source.type === AST_NODE_TYPES.TemplateLiteral &&
+    source.expressions.length === 0
+  ) {
+    return source.quasis[0]?.value.cooked ?? null;
+  }
+  return null;
+}
+
 export const noComplexCloudParams = createRule<[], MessageIds>({
   name: 'no-complex-cloud-params',
   meta: {
@@ -56,8 +102,10 @@ export const noComplexCloudParams = createRule<[], MessageIds>({
           node.value &&
           node.value.type === AST_NODE_TYPES.CallExpression &&
           node.value.callee.type === AST_NODE_TYPES.MemberExpression &&
-          node.value.callee.property.type === AST_NODE_TYPES.Identifier &&
-          node.value.callee.property.name === 'bind'
+          staticPropertyName(
+            node.value.callee.property,
+            node.value.callee.computed,
+          ) === 'bind'
         ) {
           return true;
         }
@@ -219,13 +267,17 @@ export const noComplexCloudParams = createRule<[], MessageIds>({
 
         // Check for method calls that could create complex objects
         if (node.type === AST_NODE_TYPES.CallExpression) {
+          const calleeProperty =
+            node.callee.type === AST_NODE_TYPES.MemberExpression
+              ? staticPropertyName(node.callee.property, node.callee.computed)
+              : null;
+
           // Allow JSON.stringify
           if (
             node.callee.type === AST_NODE_TYPES.MemberExpression &&
             node.callee.object.type === AST_NODE_TYPES.Identifier &&
             node.callee.object.name === 'JSON' &&
-            node.callee.property.type === AST_NODE_TYPES.Identifier &&
-            node.callee.property.name === 'stringify'
+            calleeProperty === 'stringify'
           ) {
             return false;
           }
@@ -235,8 +287,7 @@ export const noComplexCloudParams = createRule<[], MessageIds>({
             node.callee.type === AST_NODE_TYPES.MemberExpression &&
             node.callee.object.type === AST_NODE_TYPES.Identifier &&
             node.callee.object.name === 'Object' &&
-            node.callee.property.type === AST_NODE_TYPES.Identifier &&
-            node.callee.property.name === 'create'
+            calleeProperty === 'create'
           ) {
             // Only allow Object.create(null), check if the prototype object is complex
             if (node.arguments.length === 1) {
@@ -254,8 +305,7 @@ export const noComplexCloudParams = createRule<[], MessageIds>({
           // Check for function binding
           if (
             node.callee.type === AST_NODE_TYPES.MemberExpression &&
-            node.callee.property.type === AST_NODE_TYPES.Identifier &&
-            node.callee.property.name === 'bind'
+            calleeProperty === 'bind'
           ) {
             return true;
           }
@@ -419,11 +469,8 @@ export const noComplexCloudParams = createRule<[], MessageIds>({
     return {
       // Track cloud function imports
       ImportExpression(node) {
-        if (
-          node.source.type === AST_NODE_TYPES.Literal &&
-          typeof node.source.value === 'string' &&
-          node.source.value.includes('firebaseCloud')
-        ) {
+        const modulePath = staticModulePath(node.source);
+        if (modulePath !== null && modulePath.includes('firebaseCloud')) {
           // Find the variable declarator that contains this import
           let parent = node.parent;
           while (parent && parent.type !== AST_NODE_TYPES.VariableDeclarator) {
