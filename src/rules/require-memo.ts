@@ -70,31 +70,153 @@ const isUnmemoizedArrowFunction = (parentNode: TSESTree.Node) => {
   );
 };
 
+/**
+ * The nearest function whose body lexically contains `node`. Climbing from the
+ * parent keeps a function from being treated as its own enclosing function.
+ */
+function enclosingFunctionOf(node: TSESTree.Node): ComponentNode | null {
+  let current = node.parent as TSESTree.Node | undefined;
+  while (current) {
+    if (isFunction(current)) {
+      return current;
+    }
+    current = current.parent as TSESTree.Node | undefined;
+  }
+  return null;
+}
+
+/**
+ * Return arguments belonging to `fn` itself. Descent stops at a nested
+ * function, whose returns belong to it rather than to `fn`.
+ */
+function ownReturnArguments(fn: ComponentNode): TSESTree.Node[] {
+  if (fn.body.type !== AST_NODE_TYPES.BlockStatement) {
+    return [fn.body];
+  }
+
+  const args: TSESTree.Node[] = [];
+  const visit = (node: TSESTree.Node) => {
+    if (isFunction(node)) {
+      return;
+    }
+    if (node.type === AST_NODE_TYPES.ReturnStatement) {
+      if (node.argument) {
+        args.push(node.argument);
+      }
+      return;
+    }
+    for (const [key, value] of Object.entries(node)) {
+      if (key === 'parent') {
+        continue;
+      }
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          if (ASTHelpers.isNode(item)) {
+            visit(item);
+          }
+        }
+      } else if (ASTHelpers.isNode(value)) {
+        visit(value);
+      }
+    }
+  };
+
+  fn.body.body.forEach(visit);
+  return args;
+}
+
+/** Strips type-level wrappers so `return Row as ComponentType<P>` still reads as `Row`. */
+function unwrapValue(node: TSESTree.Node): TSESTree.Node {
+  if (
+    node.type === AST_NODE_TYPES.TSAsExpression ||
+    node.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+    node.type === AST_NODE_TYPES.TSTypeAssertion ||
+    node.type === AST_NODE_TYPES.TSNonNullExpression
+  ) {
+    return unwrapValue(node.expression);
+  }
+  return node;
+}
+
+/**
+ * Whether `enclosing` is an HOC factory that hands `componentName` straight back
+ * to its callers. Such a component reaches callers as-is, so wrapping it in
+ * memo() at its declaration is the correct remedy — exactly as it is at module
+ * scope. A `memo(Row)` / `forwardRef(Row)` return is not a bare hand-back: the
+ * component is already memoized and a second wrapper would be redundant.
+ */
+function handsComponentToCallers(
+  enclosing: ComponentNode,
+  componentName: string,
+  context: Readonly<RuleContext<'requireMemo', []>>,
+): boolean {
+  // A function that renders JSX is a render body, not a factory. Components
+  // declared in one are recreated on every render, which memo() cannot fix;
+  // `memo-nested-react-components` owns that shape and says so in its message.
+  if (ASTHelpers.returnsJSX(enclosing.body, context)) {
+    return false;
+  }
+
+  return ownReturnArguments(enclosing).some((argument) => {
+    const value = unwrapValue(argument);
+    return (
+      value.type === AST_NODE_TYPES.Identifier && value.name === componentName
+    );
+  });
+}
+
+/**
+ * Whether wrapping the declaration in memo() where it stands is the right fix.
+ *
+ * This is the rule's real question, and it is about the binding's lifetime, not
+ * about which node happens to be the declaration's parent: a component whose
+ * binding outlives a render (module scope — including a block, a namespace and
+ * `export default`) is memoizable in place, and so is one an HOC factory returns
+ * unwrapped. A component created inside a render body is not; it gets a fresh
+ * identity on every render and `memo-nested-react-components` owns it.
+ */
+function isMemoizableInPlace(
+  node: TSESTree.FunctionDeclaration,
+  context: Readonly<RuleContext<'requireMemo', []>>,
+): boolean {
+  const enclosing = enclosingFunctionOf(node);
+  if (!enclosing) {
+    return true;
+  }
+  return handsComponentToCallers(enclosing, node.id?.name ?? '', context);
+}
+
 const isUnmemoizedFunctionComponent = (
-  parentNode: TSESTree.Node,
   node: TSESTree.Node,
+  context: Readonly<RuleContext<'requireMemo', []>>,
 ) => {
   return (
     node.type === 'FunctionDeclaration' &&
-    parentNode.type === 'Program' &&
-    node.id &&
+    !!node.id &&
     startsWithUppercase(node.id.name) &&
-    !isComponentExplicitlyUnmemoized(node.id.name)
+    !isComponentExplicitlyUnmemoized(node.id.name) &&
+    isMemoizableInPlace(node, context)
   );
 };
 
-const isUnmemoizedExportedFunctionComponent = (
-  parentNode: TSESTree.Node,
-  node: TSESTree.Node,
-) => {
-  return (
-    node.type === 'FunctionDeclaration' &&
-    parentNode.type === 'ExportNamedDeclaration' &&
-    node.id &&
-    startsWithUppercase(node.id.name) &&
-    !isComponentExplicitlyUnmemoized(node.id.name)
-  );
-};
+/**
+ * Statement positions where the rewritten `const X = memo(...)` is legal. A
+ * function declaration is also grammatical as the lone body of an `if` or a
+ * labelled statement, where a lexical declaration is not, so the report there
+ * stands without an edit.
+ */
+const CONST_HOSTING_PARENTS = new Set<string>([
+  AST_NODE_TYPES.Program,
+  AST_NODE_TYPES.ExportNamedDeclaration,
+  AST_NODE_TYPES.ExportDefaultDeclaration,
+  AST_NODE_TYPES.BlockStatement,
+  AST_NODE_TYPES.StaticBlock,
+  AST_NODE_TYPES.SwitchCase,
+  AST_NODE_TYPES.TSModuleBlock,
+]);
+
+const canHostConstDeclaration = (parentNode: TSESTree.Node) =>
+  CONST_HOSTING_PARENTS.has(parentNode.type);
 
 const MEMO_NAME = 'memo';
 
@@ -221,12 +343,9 @@ function checkFunction(
     ASTHelpers.returnsJSX(node.body, context) &&
     ASTHelpers.hasParameters(node)
   ) {
-    const results = [
-      isUnmemoizedArrowFunction,
-      isUnmemoizedFunctionComponent,
-      isUnmemoizedExportedFunctionComponent,
-    ].map((fn) => fn(parentNode, node));
-    if (results.some((result) => !!result)) {
+    const isDeclarationComponent = isUnmemoizedFunctionComponent(node, context);
+    const isArrowComponent = isUnmemoizedArrowFunction(parentNode);
+    if (isDeclarationComponent || isArrowComponent) {
       const componentName =
         (node.type === 'FunctionDeclaration' && node.id?.name) ||
         (parentNode.type === 'VariableDeclarator' &&
@@ -241,7 +360,7 @@ function checkFunction(
           name: componentName,
         },
         fix:
-          results[2] || results[1]
+          isDeclarationComponent && canHostConstDeclaration(parentNode)
             ? function fix(fixer) {
                 if (node.async || (node as any).generator) {
                   return null;
@@ -317,6 +436,15 @@ function checkFunction(
                   node.id!.name
                 }Unmemoized`;
 
+                // `export default const X = memo(...)` is a syntax error, so a
+                // default-exported declaration becomes a memoized const plus a
+                // trailing `export default X;`. The local binding is preserved
+                // because other statements in the module may reference it.
+                const defaultExport =
+                  parentNode.type === AST_NODE_TYPES.ExportDefaultDeclaration
+                    ? parentNode
+                    : null;
+
                 const fixes = [
                   fixer.replaceTextRange(
                     functionKeywordRange,
@@ -324,13 +452,21 @@ function checkFunction(
                   ),
                   fixer.insertTextAfterRange(
                     [node.range[1], node.range[1]],
-                    ');',
+                    defaultExport
+                      ? `);\nexport default ${node.id!.name};`
+                      : ');',
                   ),
                   fixer.replaceTextRange(
                     [node.id!.range[0] - 1, node.id!.range[1]],
                     functionNameReplacement,
                   ),
                 ];
+
+                if (defaultExport) {
+                  fixes.push(
+                    fixer.removeRange([defaultExport.range[0], node.range[0]]),
+                  );
+                }
 
                 if (importFix) {
                   fixes.push(importFix);
