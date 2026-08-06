@@ -743,8 +743,25 @@ export const SUGGESTION_INDUCED_BASELINE: Record<string, string> = {
   // policing module scope then object to — used to arrive here through
   // enforce-dynamic-firebase-imports' suggestion. #1716 removed the mechanism:
   // that suggestion no longer rewrites the import where it stands, so it emits
-  // no module-scope const for global-const-style, export-if-in-doubt or
-  // prefer-block-comments-for-declarations to object to.
+  // no module-scope const for global-const-style or export-if-in-doubt to
+  // object to.
+
+  // --- A second, unrelated mechanism reaches prefer-block-comments-for-
+  // declarations through the same suggestion: removing the import deliberately
+  // outlives its TRAILING comment (`import ...; // needed by run`), which then
+  // stands alone on the line above the next declaration and becomes a leading
+  // declaration comment. The pair was invisible while that rule attributed a
+  // trailing comment to the declaration below it (#1779) — the report existed
+  // before the suggestion too, so the count did not RISE. Correcting the
+  // attribution is what exposed it.
+  //
+  // Resolved by design, not deferred, on the same ground as the entry below:
+  // `--fix` under the full recommended config rewrites the stranded comment to
+  // `/** needed by run */` in one converging pass and the file ends with zero
+  // prefer-block-comments-for-declarations reports. Verified end to end with
+  // verifyAndFix over the whole config for both filenames the corpus tries.
+  'enforce-dynamic-firebase-imports (suggestion) -> prefer-block-comments-for-declarations':
+    "the suggestion strands the removed import's trailing comment on its own line above the next declaration; that comment is fixable and the file ends clean under `--fix`",
 
   // --- Resolved by design, not deferred: `--fix` under the full recommended
   // config rewrites the emitted `useCallback(fn, deps)` into
