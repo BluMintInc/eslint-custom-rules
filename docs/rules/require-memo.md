@@ -139,6 +139,46 @@ A component that matches the criterion but has nothing to gain from memoization 
 a framework root such as Next.js's `_app` — opts out through the same
 `Unmemoized` suffix as any other deliberate exception.
 
+### What the fix emits
+
+A **declaration** becomes a memoized `const`, and the function it wraps is
+renamed so the component keeps a display name — see the `export default` example
+above for the shape.
+
+An **arrow or function expression assigned to a `const`** is wrapped where it
+stands. The binding, its name and the function's own text are untouched, so
+every reference keeps resolving to the same name and an anonymous initializer is
+not forced into a spelling it did not have. This declaration:
+
+```jsx
+const ProfileCard = ({ user }) => {
+  return <UserAvatar {...user} />;
+};
+```
+
+becomes:
+
+```jsx
+import { memo } from '../util/memo';
+
+const ProfileCard = memo(({ user }) => {
+  return <UserAvatar {...user} />;
+});
+```
+
+The wrapper is withheld — the violation is still reported, only the automated
+edit is skipped — for shapes where wrapping in place is not equivalent:
+
+- **an annotated binding** (`const ProfileCard: FC<Props> = ...`), because the
+  wrapper's return type is the memo helper's and need not be assignable to the
+  declared one, so the edit would trade a lint report for a type error;
+- **`let` and `var`**, which can be reassigned afterwards, leaving the name bound
+  to an unmemoized value the edit only appears to have fixed, and a declaration
+  holding more than one declarator, whose other declarators may carry reports of
+  their own;
+- **`async` and generator functions**, which React renders as neither a promise
+  nor an iterator, so no wrapper rescues them.
+
 ### Existing `memo` bindings
 
 The fix emits a **value named specifier** — `import { memo } from '../util/memo';`,
