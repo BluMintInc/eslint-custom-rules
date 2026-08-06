@@ -291,8 +291,9 @@ The import is resolved as follows:
 
 The fix is declined (the violation is still reported, but nothing is rewritten) when:
 
-* the constant name is already taken by something else — another module's export, a local declaration, or an alias of a non-`QUERY_KEY_*` export — because substituting would silently point the key at an unrelated value; or
-* no correct specifier can be derived for a file that has no queryKeys import to reuse, because an import that fails to resolve is worse than the literal it replaced.
+* the constant name is already taken by something else — another module's export, a local declaration, or an alias of a non-`QUERY_KEY_*` export — because substituting would silently point the key at an unrelated value;
+* no correct specifier can be derived for a file that has no queryKeys import to reuse, because an import that fails to resolve is worse than the literal it replaced; or
+* the key names no constant at all: `''`, `'-'`, `'_-:/.'` and `'   '` all normalize to nothing, and the bare `QUERY_KEY_` they would produce is not a name `queryKeys.ts` exports, so those report without a fix. A key that keeps a single alphanumeric character — `'a'`, `'-a-'` — still fixes, to `QUERY_KEY_A`.
 
 Note: the fix is gated on the key's **value**, not on the notation that spells it. A quoted string and an expression-free template are the same key written two ways, and both are rewritten to the same constant — reading the template through its cooked value, so `` `user-profile` `` and `'user-profile'` derive one name. Keys whose value depends on something the rule cannot evaluate — concatenation, ternaries, and templates that interpolate an expression — are still reported and require manual refactoring.
 

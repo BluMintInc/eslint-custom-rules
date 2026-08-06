@@ -58,6 +58,51 @@ const ESCAPED_KEY_FIXED = `import { QUERY_KEY_USER_PROFILE } from 'src/util/rout
         }
       `;
 
+/**
+ * One component body parameterized by the text spelling the key, so a case's
+ * notation is the only thing that varies from its neighbours.
+ */
+const keyCode = (keySpelling: string) => `
+        function Component() {
+          const [value] = useRouterState({ key: ${keySpelling} });
+          return <div>{value}</div>;
+        }
+        `;
+
+const SINGLE_CHARACTER_KEY_FIXED = `import { QUERY_KEY_A } from 'src/util/routing/queryKeys';
+${keyCode('QUERY_KEY_A')}`;
+
+/**
+ * Keys that normalize to nothing: empty, or made only of the characters the
+ * normalizer turns into separators and then strips. No constant name can be
+ * derived from any of them, and the notation carrying one makes no difference
+ * to that — which is why every reported spelling is listed rather than just the
+ * quoted empty string the report cited (#1813).
+ */
+const DEGENERATE_KEY_SPELLINGS = [
+  "''",
+  "'-'",
+  "'_'",
+  "'---'",
+  "':'",
+  "'/'",
+  "'.'",
+  "'_-:/.'",
+  "'   '",
+];
+
+/**
+ * The rest of the degenerate surface, in template notation. This rule reports
+ * an expression-free template only when it carries a significant static part,
+ * so a template that normalizes to nothing is not a violation here at all —
+ * the silence #1803 fenced when it widened the FIX to templates without
+ * widening detection. They are carried in the same generated body as the
+ * spellings above so the surface stays whole: between the two lists, no
+ * spelling of a key that names no constant can produce `QUERY_KEY_`, and a
+ * later detection change lands on an assertion rather than on silence.
+ */
+const SILENT_DEGENERATE_KEY_SPELLINGS = ['``', '`-`', '`_`'];
+
 ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
   valid: [
     // 1. Basic valid cases - using imported QUERY_KEY constants
@@ -756,6 +801,13 @@ export const useGroupIdMap = () => {
         }
       `,
     },
+
+    // 48-50. #1813: the template half of the degenerate surface, generated from
+    // the same body as the reported half so the two cannot drift apart.
+    ...SILENT_DEGENERATE_KEY_SPELLINGS.map((spelling) => ({
+      name: `a degenerate template key spelled ${spelling} stays silent`,
+      code: keyCode(spelling),
+    })),
   ],
 
   invalid: [
@@ -1118,7 +1170,9 @@ export const useGroupIdMap = () => {
       `,
     },
 
-    // 20. Empty string literal
+    // 20. Empty string literal. The report stands, but the fix does not: the
+    // constant this used to substitute was the bare `QUERY_KEY_`, a name
+    // `queryKeys.ts` cannot export, so the assertion here was the bug (#1813).
     {
       code: `
         function Component() {
@@ -1127,13 +1181,7 @@ export const useGroupIdMap = () => {
         }
       `,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
-      output: `import { QUERY_KEY_ } from 'src/util/routing/queryKeys';
-
-        function Component() {
-          const [value] = useRouterState({ key: QUERY_KEY_ });
-          return <div>{value}</div>;
-        }
-      `,
+      output: null,
     },
 
     // 21. Regression #1365: the substituted constant must come with its import,
@@ -2065,6 +2113,64 @@ function Component() {
       `,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
       output: null,
+    },
+
+    // ------------------------------------------------------------------
+    // Issue #1813: a key whose normalized text is empty names no constant.
+    // Emitting `QUERY_KEY_` anyway wrote an identifier `queryKeys.ts` cannot
+    // export, so the "fixed" file failed to compile — strictly worse than the
+    // report it replaced. Every spelling is asserted the same way, because the
+    // decline turns on the key's VALUE; keying it to notation would undo the
+    // parity #1803 established. The narrowness controls that follow fix on a
+    // single surviving character.
+    // ------------------------------------------------------------------
+    ...DEGENERATE_KEY_SPELLINGS.map((spelling) => ({
+      name: `a key spelled ${spelling} reports without a fix`,
+      code: keyCode(spelling),
+      errors: [{ messageId: 'enforceQueryKeyImport' as const }],
+      output: null,
+    })),
+
+    // 78. One alphanumeric character survives normalization, so a constant
+    // exists and the fix stands: the decline covers keys that normalize to
+    // nothing, not short keys.
+    {
+      name: 'a one-character key is still substituted and imported',
+      code: keyCode("'a'"),
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: SINGLE_CHARACTER_KEY_FIXED,
+    },
+
+    // 79. Separators around a single character are stripped, and what is left
+    // still names a constant.
+    {
+      name: 'a key of separators around one character is substituted',
+      code: keyCode("'-a-'"),
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: SINGLE_CHARACTER_KEY_FIXED,
+    },
+
+    // 80. The decline is per violation: a degenerate key sitting ahead of a
+    // real one must not claim the import carrier slot it can no longer fill,
+    // which would leave the substituted constant undefined (#1410, #1813).
+    {
+      name: 'a degenerate key ahead of a real one does not take the import down',
+      code: `function Component() {
+  const [empty] = useRouterState({ key: '' });
+  const [match] = useRouterState({ key: 'match-view' });
+  return [empty, match];
+}`,
+      errors: [
+        { messageId: 'enforceQueryKeyImport' },
+        { messageId: 'enforceQueryKeyImport' },
+      ],
+      output: `import { QUERY_KEY_MATCH_VIEW } from 'src/util/routing/queryKeys';
+
+function Component() {
+  const [empty] = useRouterState({ key: '' });
+  const [match] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
+  return [empty, match];
+}`,
     },
   ],
 });
