@@ -1331,6 +1331,113 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
         };
       `,
     },
+    // Invalid case: the existing pointerEvents value is a member expression, so
+    // the rule cannot prove it is 'none' and the report stands. The fixer must
+    // decline: the object already declares the key, and a second one is TS1117.
+    {
+      code: `
+        const style = {
+          '&::before': { content: '""', position: 'absolute', pointerEvents: theme.pointerEvents }
+        };
+      `,
+      errors: [pointerEventsError('::before')],
+      output: null,
+    },
+    // Invalid case: the value comes from a call
+    {
+      code: `
+        const style = {
+          '&::before': { content: '""', position: 'absolute', pointerEvents: resolvePointerEvents() }
+        };
+      `,
+      errors: [pointerEventsError('::before')],
+      output: null,
+    },
+    // Invalid case: the value is a ternary — one branch is 'none', the other is
+    // not, so neither guessing nor appending is sound
+    {
+      code: `
+        const style = {
+          '&::before': { content: '""', position: 'absolute', pointerEvents: isDecorative ? 'none' : 'auto' }
+        };
+      `,
+      errors: [pointerEventsError('::before')],
+      output: null,
+    },
+    // Invalid case: the value is an INTERPOLATED template — opaque, unlike the
+    // no-substitution spelling that reads as its static text
+    {
+      code: `
+        const style = {
+          '&::before': { content: '""', position: 'absolute', pointerEvents: \`\${mode}\` }
+        };
+      `,
+      errors: [pointerEventsError('::before')],
+      output: null,
+    },
+    // Invalid case: an unreadable value under the kebab-case key spelling
+    {
+      code: `
+        const style = {
+          '&::before': { content: '""', position: 'absolute', 'pointer-events': theme.pointerEvents }
+        };
+      `,
+      errors: [pointerEventsError('::before')],
+      output: null,
+    },
+    // Invalid case: an unreadable value under a computed template-literal key
+    {
+      code: `
+        const style = {
+          '&::before': { content: '""', position: 'absolute', [\`pointerEvents\`]: theme.pointerEvents }
+        };
+      `,
+      errors: [pointerEventsError('::before')],
+      output: null,
+    },
+    // Invalid case: the same decline inside a JSX style object
+    {
+      code: `
+        const Component = () => (
+          <div style={{
+            '&::before': {
+              content: '""',
+              position: 'absolute',
+              pointerEvents: theme.pointerEvents
+            }
+          }} />
+        );
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [pointerEventsError('::before')],
+      output: null,
+    },
+    // Invalid case: the same decline inside an emotion css() object
+    {
+      code: `
+        const styles = css({
+          '&::after': { content: '""', position: 'fixed', pointerEvents: getPointerEvents(theme) }
+        });
+      `,
+      errors: [pointerEventsError('::after')],
+      output: null,
+    },
+    // Invalid case: the same decline for an object nested under a container key
+    {
+      code: `
+        const styles = {
+          container: {
+            '&::before': { content: '""', position: 'absolute', pointerEvents: theme?.overlay }
+          }
+        };
+      `,
+      errors: [pointerEventsError('::before')],
+      output: null,
+    },
   ],
 });
 
@@ -1404,6 +1511,80 @@ describe('ensure-pointer-events-none autofix never duplicates pointerEvents', ()
     },
   );
 
+  // Every spelling of a `pointerEvents` value the rule cannot read. Detection
+  // stays: an unreadable value might be 'auto', so the report is still useful.
+  // The FIX is what must stand down — the key is already there, and appending a
+  // second one emits an object literal that does not compile.
+  const UNREADABLE_VALUES: [string, string][] = [
+    [
+      'member expression',
+      `const style = { '&::before': { position: 'absolute', pointerEvents: theme.overlay } };`,
+    ],
+    [
+      'optional-chained member expression',
+      `const style = { '&::before': { position: 'absolute', pointerEvents: theme?.overlay } };`,
+    ],
+    [
+      'call expression',
+      `const style = { '&::before': { position: 'absolute', pointerEvents: resolveEvents() } };`,
+    ],
+    [
+      'ternary',
+      `const style = { '&::before': { position: 'absolute', pointerEvents: isDecorative ? 'none' : 'auto' } };`,
+    ],
+    [
+      'interpolated template literal',
+      "const style = { '&::before': { position: `absolute`, pointerEvents: `${mode}` } };",
+    ],
+    [
+      'logical fallback',
+      `const style = { '&::before': { position: 'absolute', pointerEvents: theme.overlay || 'none' } };`,
+    ],
+    [
+      'kebab-case key with an unreadable value',
+      `const style = { '&::before': { position: 'absolute', 'pointer-events': theme.overlay } };`,
+    ],
+    [
+      'computed template-literal key with an unreadable value',
+      "const style = { '&::before': { position: 'absolute', [`pointerEvents`]: theme.overlay } };",
+    ],
+    [
+      'JSX style object',
+      `const C = () => (<div style={{ '&::before': { position: 'absolute', pointerEvents: theme.overlay } }} />);`,
+    ],
+    [
+      'emotion css() object',
+      `const style = css({ '&::after': { position: 'fixed', pointerEvents: theme.overlay } });`,
+    ],
+  ];
+
+  it.each(UNREADABLE_VALUES)(
+    'declines to fix an overlay whose pointerEvents value is a %s',
+    (_label, code) => {
+      // Non-vacuity for the decline: a rule that stopped reporting would satisfy
+      // the unchanged-output assertion below without ever reaching the fixer.
+      const messages = linter.verify(code, CONFIG, 'probe.tsx');
+      expect(messages.filter((m) => m.ruleId === RULE_ID)).toHaveLength(1);
+
+      const { output } = linter.verifyAndFix(code, CONFIG, 'probe.tsx');
+      expect(output).toBe(code);
+      expect(countPointerEventsKeys(output)).toBe(1);
+    },
+  );
+
+  // Negative control: the decline is keyed on an unreadable value under the
+  // `pointerEvents` key, not on unreadable values in general. An overlay with no
+  // `pointerEvents` key still gets its fix even when other values are opaque.
+  it('still fixes when only a non-pointerEvents value is unreadable', () => {
+    const code = `const style = { '&::before': { content: theme.content, position: 'absolute', top: unknownOffset() } };`;
+    const messages = linter.verify(code, CONFIG, 'probe.tsx');
+    expect(messages.filter((m) => m.ruleId === RULE_ID)).toHaveLength(1);
+
+    const { output } = linter.verifyAndFix(code, CONFIG, 'probe.tsx');
+    expect(output).not.toBe(code);
+    expect(countPointerEventsKeys(output)).toBe(1);
+  });
+
   // Non-vacuity: the harness must actually lint and fix something, otherwise the
   // assertions above would hold for a rule that never runs.
   it('still appends exactly one pointerEvents key when none is present', () => {
@@ -1421,6 +1602,14 @@ describe('ensure-pointer-events-none autofix never duplicates pointerEvents', ()
   it('counts the duplicate key that the pre-fix rule emitted', () => {
     const brokenOutput =
       "const style = { '&::before': { position: 'absolute', pointerEvents: `none`, pointerEvents: 'none' } };";
+    expect(countPointerEventsKeys(brokenOutput)).toBe(2);
+  });
+
+  // Non-vacuity for the unreadable-value cases: the same counter must see the
+  // duplicate the rule emitted before the fixer learned to decline.
+  it('counts the duplicate key an unreadable value used to produce', () => {
+    const brokenOutput =
+      "const style = { '&::before': { position: 'absolute', pointerEvents: theme.overlay, pointerEvents: 'none' } };";
     expect(countPointerEventsKeys(brokenOutput)).toBe(2);
   });
 });
