@@ -86,6 +86,40 @@ ruleTesterJsx.run(
         literal: `'back'`,
         expression: `isReturning && 'back'`,
       },
+      // A template literal without substitutions renders the same fragmented
+      // text node as its quoted spelling, so notation must not decide.
+      {
+        code: `<div>Welcome {isReturning && \`back\`} user</div>`,
+        condition: 'isReturning',
+        literal: '`back`',
+        expression: 'isReturning && `back`',
+      },
+      {
+        code: `<div> Label: {value || \`missing\`} </div>`,
+        condition: 'value',
+        literal: '`missing`',
+        expression: 'value || `missing`',
+      },
+      {
+        code: `<div>{getName()} {isReturning && \`back\`}</div>`,
+        condition: 'isReturning',
+        literal: '`back`',
+        expression: 'isReturning && `back`',
+      },
+      {
+        code: `<div> <span> This is a {show && \`extra\`} test </span> </div>`,
+        condition: 'show',
+        literal: '`extra`',
+        expression: 'show && `extra`',
+      },
+      // An interpolated template on the left is not an unconditional literal,
+      // so the right-hand string literal still reports.
+      {
+        code: `<div>x {\`always \${y}\` && 'text'} z</div>`,
+        condition: '`always ${y}`',
+        literal: `'text'`,
+        expression: "`always ${y}` && 'text'",
+      },
     ]
       .map(({ code, condition, literal, expression }) => {
         return {
@@ -210,6 +244,23 @@ ruleTesterJsx.run(
       `<div><span>{getName()}</span><span>{isReturning && 'back'}</span></div>`,
       // Wrapping the conditional keeps it whole even beside an expression.
       `<div>{formatDate(date)} <span>{isLate && 'late'}</span></div>`,
+      // A template literal on the left is unconditional exactly as a quoted
+      // literal is, so the carve-out must survive the notation change.
+      `<div>prefix {\`always\` && 'bar'} suffix</div>`,
+      `<div>prefix {\`always\` && \`bar\`} suffix</div>`,
+      `<div>start {\`always\` && condition} end</div>`,
+      `<div>start {\`always\` || condition} end</div>`,
+      // A non-string literal on the left stays unconditional too.
+      `<div>prefix {0 && 'bar'} suffix</div>`,
+      // An interpolated template is not a text literal: its rendered value is
+      // not decidable syntactically, so the conservative carve-out holds.
+      `<div>Welcome {isReturning && \`back \${name}\`} user</div>`,
+      `<div>{getName()} {isReturning && \`back \${name}\`}</div>`,
+      // A conditional template literal with no sibling fragments nothing.
+      `<div>{isReturning && \`back\`}</div>`,
+      `<div>Welcome <span>{isReturning && \`back\`}</span> user</div>`,
+      // A template conditional rendering an element is not a text literal.
+      `<div>Welcome {isReturning && <span>back</span>} user</div>`,
     ],
   },
 );
