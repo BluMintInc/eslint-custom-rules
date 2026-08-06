@@ -254,6 +254,13 @@ export default createRule<[], MessageIds>({
       // that happens to build JSX, and JSX rendered from a test body are all
       // outside any render path, so wrapping there would throw
       // "Invalid hook call" while saving no re-render.
+      //
+      // The question the gate asks is RELATIVE — is a render function interposed
+      // between this attribute and whatever encloses it further out — so a
+      // component built by a plain factory (`function makeCard() { return
+      // memo(() => <X onClick={...} />); }`) reports: the arrow handed to `memo`
+      // IS the component, and `useCallback` is legal inside it no matter what
+      // the factory is called.
       if (!ASTHelpers.isInsideComponentOrHook(node, context)) {
         return;
       }

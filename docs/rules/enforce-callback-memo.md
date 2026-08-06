@@ -29,6 +29,10 @@ The whole ancestry is consulted, not just the nearest enclosing function: a `.ma
 
 A function is classified by its name first. A name the developer chose is authoritative even when the function returns JSX — `buildTree` is a helper, not a component. Only a function with no inferable name at all (`memo(() => <div />)`) is classified by whether it returns JSX.
 
+The search stops at the first component it meets on the way out, so the question is relative: **is a render function interposed between the JSX and whatever encloses it further out?** A component built by a plain factory is still a component, and `useCallback` is legal inside it, so the factory's name does not suppress the report. This holds for both spellings — a component bound to a name (`const Card = () => ...`) and an anonymous one handed to `memo`, `forwardRef` or `observer`.
+
+A helper's name settles the case only when no component is found at all. That is what keeps a bare `items.map((i) => <Row />)` callback inside a helper silent: the callback is anonymous and returns JSX, but nothing turns it into a component, so it is no more of a render path than the helper holding it. `useCallback`/`useMemo` arguments are treated the same way — they wrap a value produced inside a component, they do not define one.
+
 ```tsx
 // Correct: module scope — there is no component to host a hook
 const TREE = <Child onReady={(value) => { sink = value; }} />;
