@@ -1,3 +1,11 @@
+## [1.20.120](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.119...v1.20.120) (2026-08-06)
+
+
+### Bug Fixes
+
+* **enforce-microdiff:** give the arrow spelling the rewrite its declaration twin carries (closes [#1784](https://github.com/BluMintInc/eslint-custom-rules/issues/1784)) ([e103f8a](https://github.com/BluMintInc/eslint-custom-rules/commit/e103f8a9745f65e4af9731a9f9a1f913829c10d9))
+* **prefer-use-base62-id:** look through type-only wrappers to the ref name (closes [#1782](https://github.com/BluMintInc/eslint-custom-rules/issues/1782)) ([2893964](https://github.com/BluMintInc/eslint-custom-rules/commit/28939648061dcdcb85cbaa5bab6227385a2d49be))
+
 ## [1.20.119](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.118...v1.20.119) (2026-08-06)
 
 
