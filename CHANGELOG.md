@@ -1,3 +1,21 @@
+## [1.20.117](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.116...v1.20.117) (2026-08-06)
+
+
+### Bug Fixes
+
+* **enforce-firestore-doc-ref-generic:** resolve the generic's type lexically (closes [#1761](https://github.com/BluMintInc/eslint-custom-rules/issues/1761)) ([86ecb19](https://github.com/BluMintInc/eslint-custom-rules/commit/86ecb1970b1e97f81d3a022cae8aa3bf79359689))
+* **enforce-firestore-set-merge:** resolve the firestore() handle lexically (closes [#1763](https://github.com/BluMintInc/eslint-custom-rules/issues/1763)) ([61f1323](https://github.com/BluMintInc/eslint-custom-rules/commit/61f132350d86f27ce40e456a1ab4fb58bf22e8b7))
+* **enforce-render-hits-memoization:** gate stability on the consumer, not scope type (closes [#1768](https://github.com/BluMintInc/eslint-custom-rules/issues/1768)) ([5d2b865](https://github.com/BluMintInc/eslint-custom-rules/commit/5d2b865a342a8445bb7e068644a7f7773f2718fc)), closes [#1767](https://github.com/BluMintInc/eslint-custom-rules/issues/1767)
+* **enforce-transform-memoization:** gate stability on the consumer, not scope type (closes [#1770](https://github.com/BluMintInc/eslint-custom-rules/issues/1770)) ([fadc8ff](https://github.com/BluMintInc/eslint-custom-rules/commit/fadc8ffceb30cbd7d95946837ff82745dd286bcc)), closes [#1768](https://github.com/BluMintInc/eslint-custom-rules/issues/1768) [#1767](https://github.com/BluMintInc/eslint-custom-rules/issues/1767)
+* **logical-top-to-bottom-grouping:** classify through the export wrapper (closes [#1762](https://github.com/BluMintInc/eslint-custom-rules/issues/1762)) ([7ea29ad](https://github.com/BluMintInc/eslint-custom-rules/commit/7ea29ad5ca770b8b6064469234f11c84b01fb238))
+* **no-curly-brackets-around-commented-properties:** detect orphaned blocks in any statement list (closes [#1766](https://github.com/BluMintInc/eslint-custom-rules/issues/1766)) ([066dc3e](https://github.com/BluMintInc/eslint-custom-rules/commit/066dc3e3fd203fe8b41b040550c8586166c3bc47))
+* **no-direct-function-state:** resolve function-type aliases lexically (closes [#1764](https://github.com/BluMintInc/eslint-custom-rules/issues/1764)) ([21d954a](https://github.com/BluMintInc/eslint-custom-rules/commit/21d954aac6d22c9b2e80c14eb4bdee86d3c05a53))
+* **no-explicit-return-type:** resolve mutual recursion through the scope chain (closes [#1771](https://github.com/BluMintInc/eslint-custom-rules/issues/1771)) ([88e85e3](https://github.com/BluMintInc/eslint-custom-rules/commit/88e85e3d1b4a0f5e641e56c72c00f78edc69d1cc))
+* **no-firestore-object-arrays:** resolve element type names in scope (closes [#1765](https://github.com/BluMintInc/eslint-custom-rules/issues/1765)) ([cedd8ed](https://github.com/BluMintInc/eslint-custom-rules/commit/cedd8edff6a4a3757551097424e424470061b72b))
+* **no-inline-component-prop:** compare the definition's scope to the consumer's (closes [#1767](https://github.com/BluMintInc/eslint-custom-rules/issues/1767)) ([ef5f721](https://github.com/BluMintInc/eslint-custom-rules/commit/ef5f7211e3257926d7f541165a74d229c0a0e400))
+* **prefer-spread-over-reassembly:** resolve local type declarations lexically (closes [#1769](https://github.com/BluMintInc/eslint-custom-rules/issues/1769)) ([008decb](https://github.com/BluMintInc/eslint-custom-rules/commit/008decb76d3d9759dd2016b5bcf11b90b1ac29fb)), closes [#1642](https://github.com/BluMintInc/eslint-custom-rules/issues/1642) [#1644](https://github.com/BluMintInc/eslint-custom-rules/issues/1644)
+* **prevent-children-clobber:** resolve the props alias lexically (closes [#1760](https://github.com/BluMintInc/eslint-custom-rules/issues/1760)) ([d8818e0](https://github.com/BluMintInc/eslint-custom-rules/commit/d8818e01f9b68c2c87050178bca77779c16336de))
+
 ## [1.20.116](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.115...v1.20.116) (2026-08-05)
 
 

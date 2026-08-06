@@ -1,5 +1,107 @@
 [
   {
+    "version": "1.20.117",
+    "date": "2026-08-06T01:05:58.683Z",
+    "rules": [
+      {
+        "name": "enforce-firestore-doc-ref-generic",
+        "changeType": "fix",
+        "issues": [
+          1761
+        ],
+        "summary": "resolve the generic's type lexically (closes #1761)"
+      },
+      {
+        "name": "enforce-firestore-set-merge",
+        "changeType": "fix",
+        "issues": [
+          1763
+        ],
+        "summary": "resolve the firestore() handle lexically (closes #1763)"
+      },
+      {
+        "name": "enforce-render-hits-memoization",
+        "changeType": "fix",
+        "issues": [
+          1768
+        ],
+        "summary": "gate stability on the consumer, not scope type (closes #1768)"
+      },
+      {
+        "name": "enforce-transform-memoization",
+        "changeType": "fix",
+        "issues": [
+          1770
+        ],
+        "summary": "gate stability on the consumer, not scope type (closes #1770)"
+      },
+      {
+        "name": "logical-top-to-bottom-grouping",
+        "changeType": "fix",
+        "issues": [
+          1762
+        ],
+        "summary": "classify through the export wrapper (closes #1762)"
+      },
+      {
+        "name": "no-curly-brackets-around-commented-properties",
+        "changeType": "fix",
+        "issues": [
+          1766
+        ],
+        "summary": "detect orphaned blocks in any statement list (closes #1766)"
+      },
+      {
+        "name": "no-direct-function-state",
+        "changeType": "fix",
+        "issues": [
+          1764
+        ],
+        "summary": "resolve function-type aliases lexically (closes #1764)"
+      },
+      {
+        "name": "no-explicit-return-type",
+        "changeType": "fix",
+        "issues": [
+          1771
+        ],
+        "summary": "resolve mutual recursion through the scope chain (closes #1771)"
+      },
+      {
+        "name": "no-firestore-object-arrays",
+        "changeType": "fix",
+        "issues": [
+          1765
+        ],
+        "summary": "resolve element type names in scope (closes #1765)"
+      },
+      {
+        "name": "no-inline-component-prop",
+        "changeType": "fix",
+        "issues": [
+          1767
+        ],
+        "summary": "compare the definition's scope to the consumer's (closes #1767)"
+      },
+      {
+        "name": "prefer-spread-over-reassembly",
+        "changeType": "fix",
+        "issues": [
+          1769
+        ],
+        "summary": "resolve local type declarations lexically (closes #1769)"
+      },
+      {
+        "name": "prevent-children-clobber",
+        "changeType": "fix",
+        "issues": [
+          1760
+        ],
+        "summary": "resolve the props alias lexically (closes #1760)"
+      }
+    ]
+  },
+  {
     "version": "1.20.116",
     "date": "2026-08-05T20:14:19.457Z",
     "rules": [
