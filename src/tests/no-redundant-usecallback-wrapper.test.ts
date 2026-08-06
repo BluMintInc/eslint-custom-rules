@@ -488,6 +488,129 @@ function C() {
       { memoizedHookNames: string[] },
     ],
   },
+  // A block body delegating to a callback no hook produced proves nothing about
+  // stability: a prop is a fresh reference each render, and the wrapper is what
+  // stabilizes it. Recognizing the non-destructured hook shape must not widen
+  // to every bare identifier a block body happens to call.
+  {
+    code: `import { useCallback } from 'react';
+
+function C({ onDone }) {
+  const handle = useCallback(() => {
+    return onDone();
+  }, [onDone]);
+  return <button onClick={handle}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+  },
+  // A module-level function is not a hook result either, whichever body the
+  // wrapper is spelled with.
+  {
+    code: `import { useCallback } from 'react';
+
+function doThing() {}
+
+function C() {
+  const handle = useCallback(() => {
+    doThing();
+  }, []);
+  return <button onClick={handle}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+  },
+  // A hook-named call whose result is never a callback is still only tracked as
+  // a value, so calling a plain local binding stays untouched.
+  {
+    code: `import { useCallback } from 'react';
+import { useMyCustomThing } from 'src/hooks/useMyCustomThing';
+
+function C() {
+  const signIn = useMyCustomThing();
+  const local = () => signIn;
+  const handle = useCallback(() => {
+    return local();
+  }, [local]);
+  return <button onClick={handle}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+  },
+  // Sequencing a second call around a non-destructured hook result is work the
+  // delegate alone does not do.
+  {
+    code: `import { useCallback } from 'react';
+import { useMyCustomThing } from 'src/hooks/useMyCustomThing';
+
+function C() {
+  const signIn = useMyCustomThing();
+  const handle = useCallback(() => {
+    signIn();
+    setOpen(true);
+  }, [signIn]);
+  return <button onClick={handle}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+  },
+  // Supplying an argument makes the wrapper carry the call shape, so it is not
+  // interchangeable with the delegate.
+  {
+    code: `import { useCallback } from 'react';
+import { useMyCustomThing } from 'src/hooks/useMyCustomThing';
+
+function C({ username }) {
+  const signIn = useMyCustomThing();
+  const handle = useCallback(() => {
+    return signIn(username);
+  }, [signIn, username]);
+  return <button onClick={handle}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+  },
+  // Suppressing the event is behaviour the hand-off cannot preserve, on a
+  // non-destructured hook result like on any other.
+  {
+    code: `import { useCallback } from 'react';
+import { useMyCustomThing } from 'src/hooks/useMyCustomThing';
+
+function C() {
+  const signIn = useMyCustomThing();
+  const handle = useCallback((e) => {
+    e.preventDefault();
+    signIn();
+  }, [signIn]);
+  return <button onClick={handle}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+  },
+  // The suppression carve-out is decided before the statement count, so a lone
+  // suppression call sourced from a hook is exempt on its own merits rather
+  // than because a second statement happens to sit beside it.
+  {
+    code: `import { useCallback } from 'react';
+import { useEventThing } from 'src/hooks/useEventThing';
+
+function C() {
+  const preventDefault = useEventThing();
+  const handle = useCallback(() => {
+    preventDefault();
+  }, [preventDefault]);
+  return <button onClick={handle}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+  },
 ];
 
 const invalid = [
@@ -749,6 +872,131 @@ import { useMyCustomThing } from 'src/hooks/useMyCustomThing';
 function C() {
   const signIn = useMyCustomThing();
   const handle = signIn;
+  return <button onClick={handle}/>;
+}`,
+  },
+  // A block body delegating to a non-destructured hook result is the same
+  // wrapper as the concise spelling, so the two must agree.
+  {
+    code: `import { useCallback } from 'react';
+import { useMyCustomThing } from 'src/hooks/useMyCustomThing';
+
+function C() {
+  const signIn = useMyCustomThing();
+  const handle = useCallback(() => { return signIn(); }, [signIn]);
+  return <button onClick={handle}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+    errors: [redundantError('signIn')],
+    output: `import { useCallback } from 'react';
+import { useMyCustomThing } from 'src/hooks/useMyCustomThing';
+
+function C() {
+  const signIn = useMyCustomThing();
+  const handle = signIn;
+  return <button onClick={handle}/>;
+}`,
+  },
+  // The expression-statement spelling of the same block body.
+  {
+    code: `import { useCallback } from 'react';
+import { useMyCustomThing } from 'src/hooks/useMyCustomThing';
+
+function C() {
+  const signIn = useMyCustomThing();
+  const handle = useCallback(() => {
+    signIn();
+  }, [signIn]);
+  return <button onClick={handle}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+    errors: [redundantError('signIn')],
+    output: `import { useCallback } from 'react';
+import { useMyCustomThing } from 'src/hooks/useMyCustomThing';
+
+function C() {
+  const signIn = useMyCustomThing();
+  const handle = signIn;
+  return <button onClick={handle}/>;
+}`,
+  },
+  // A function-expression wrapper around the same delegate.
+  {
+    code: `import { useCallback } from 'react';
+import { useMyCustomThing } from 'src/hooks/useMyCustomThing';
+
+function C() {
+  const signIn = useMyCustomThing();
+  const handle = useCallback(function () {
+    return signIn();
+  }, [signIn]);
+  return <button onClick={handle}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+    errors: [redundantError('signIn')],
+    output: `import { useCallback } from 'react';
+import { useMyCustomThing } from 'src/hooks/useMyCustomThing';
+
+function C() {
+  const signIn = useMyCustomThing();
+  const handle = signIn;
+  return <button onClick={handle}/>;
+}`,
+  },
+  // A hook named in memoizedHookNames reaches the same block-bodied shape, so
+  // the recognition does not depend on assumeAllUseAreMemoized.
+  {
+    code: `import { useCallback } from 'react';
+import { useSomething } from 'x';
+
+function C() {
+  const submit = useSomething();
+  const handle = useCallback(() => {
+    return submit();
+  }, [submit]);
+  return <button onClick={handle}/>;
+}`,
+    options: [{ memoizedHookNames: ['useSomething'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+    errors: [redundantError('submit')],
+    output: `import { useCallback } from 'react';
+import { useSomething } from 'x';
+
+function C() {
+  const submit = useSomething();
+  const handle = submit;
+  return <button onClick={handle}/>;
+}`,
+  },
+  // The useLatestCallback spelling of the block-bodied shape.
+  {
+    code: `import useLatestCallback from 'use-latest-callback';
+import { useSomething } from 'x';
+
+function C() {
+  const submit = useSomething();
+  const handle = useLatestCallback(() => {
+    return submit();
+  });
+  return <button onClick={handle}/>;
+}`,
+    options: [{ memoizedHookNames: ['useSomething'] }] as [
+      { memoizedHookNames: string[] },
+    ],
+    errors: [redundantError('submit', 'useLatestCallback')],
+    output: `import useLatestCallback from 'use-latest-callback';
+import { useSomething } from 'x';
+
+function C() {
+  const submit = useSomething();
+  const handle = submit;
   return <button onClick={handle}/>;
 }`,
   },
@@ -1552,5 +1800,208 @@ export function C({ onDone }) {
     // The wrapper is what makes a prop callback stable, so recognizing the new
     // spelling must not collapse it.
     expect(output).toContain('useLatestCallback(() => onDone())');
+  });
+});
+
+/**
+ * Whether a wrapper is redundant is a question about the delegate it calls, not
+ * about how the author spelled the arrow's body. The rule answers it in three
+ * separate branches — concise body, block body with `return`, block body with a
+ * bare call — and each branch carries its own copy of the delegate test, so a
+ * set consulted by one and forgotten by another leaves a shape that reports
+ * under one spelling and passes under the next.
+ *
+ * A per-shape fixture pins one branch at a time and cannot see that. This
+ * matrix asserts the branches agree, which is the property the per-shape
+ * fixtures assume.
+ *
+ * Event suppression is deliberately absent from the matrix: only the block
+ * branches carve it out, so those shapes do diverge by spelling, and folding
+ * them in here would assert a claim the rule does not make.
+ */
+describe('arrow-body spelling parity', () => {
+  const OPTIONS = { assumeAllUseAreMemoized: true };
+
+  const linter = new Linter();
+  linter.defineParser(
+    '@typescript-eslint/parser',
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    require('@typescript-eslint/parser'),
+  );
+  linter.defineRule(
+    'test/no-redundant-usecallback-wrapper',
+    noRedundantUseCallbackWrapper as unknown as Rule.RuleModule,
+  );
+
+  const config = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2020 as const,
+      sourceType: 'module' as const,
+      ecmaFeatures: { jsx: true },
+    },
+    rules: {
+      'test/no-redundant-usecallback-wrapper': ['error', OPTIONS] as const,
+    },
+  };
+
+  type Shape = {
+    label: string;
+    /** Bindings the delegate expression reads. */
+    setup: string;
+    /** Component parameters, for shapes whose delegate is a prop. */
+    params?: string;
+    /** The call the wrapper delegates to. */
+    delegate: string;
+    reports: boolean;
+  };
+
+  const SHAPES: Shape[] = [
+    {
+      label: 'non-destructured hook result',
+      setup: 'const signIn = useMyCustomThing();',
+      delegate: 'signIn()',
+      reports: true,
+    },
+    {
+      label: 'destructured hook prop',
+      setup: 'const { signIn } = useMyCustomThing();',
+      delegate: 'signIn()',
+      reports: true,
+    },
+    {
+      label: 'member on a hook result',
+      setup: 'const svc = useMyCustomThing();',
+      delegate: 'svc.handle()',
+      reports: true,
+    },
+    {
+      label: 'member on a namespaced hook result',
+      setup: 'const svc = hooks.useMyCustomThing();',
+      delegate: 'svc.handle()',
+      reports: true,
+    },
+    {
+      label: 'locally memoized callback',
+      setup: 'const inner = useCallback(() => doThing(), []);',
+      delegate: 'inner()',
+      reports: true,
+    },
+    {
+      label: 'callback memoized by useMemo',
+      setup: 'const inner = useMemo(() => () => doThing(), []);',
+      delegate: 'inner()',
+      reports: true,
+    },
+    {
+      label: 'prop callback',
+      setup: '',
+      params: '{ onDone }',
+      delegate: 'onDone()',
+      reports: false,
+    },
+    {
+      label: 'locally declared arrow',
+      setup: 'const fn = () => doThing();',
+      delegate: 'fn()',
+      reports: false,
+    },
+    {
+      label: 'module-level function',
+      setup: '',
+      delegate: 'doThing()',
+      reports: false,
+    },
+    {
+      label: 'hook result invoked with an argument',
+      setup: 'const signIn = useMyCustomThing();',
+      params: '{ username }',
+      delegate: 'signIn(username)',
+      reports: false,
+    },
+    {
+      label: 'member on a hook result invoked with an argument',
+      setup: 'const svc = useMyCustomThing();',
+      params: '{ username }',
+      delegate: 'svc.handle(username)',
+      reports: false,
+    },
+    {
+      label: 'call on a value the hook result produced',
+      setup:
+        'const signIn = useMyCustomThing();\n  const local = () => signIn;',
+      delegate: 'local()',
+      reports: false,
+    },
+  ];
+
+  const SPELLINGS: [string, (delegate: string) => string][] = [
+    ['concise', (delegate) => `() => ${delegate}`],
+    ['block return', (delegate) => `() => {\n    return ${delegate};\n  }`],
+    ['block expression', (delegate) => `() => {\n    ${delegate};\n  }`],
+    [
+      'function expression',
+      (delegate) => `function () {\n    return ${delegate};\n  }`,
+    ],
+  ];
+
+  const sourceFor = (shape: Shape, wrapperArg: string) =>
+    `import { useCallback, useMemo } from 'react';
+import * as hooks from 'src/hooks';
+import { useMyCustomThing } from 'src/hooks/useMyCustomThing';
+
+function doThing() {}
+
+function C(${shape.params ?? ''}) {
+  ${shape.setup}
+  const handle = useCallback(${wrapperArg}, []);
+  return handle;
+}`;
+
+  const messagesFor = (shape: Shape, wrapperArg: string) => {
+    const messages = linter.verify(
+      sourceFor(shape, wrapperArg),
+      config,
+      'C.tsx',
+    );
+    expect(messages.filter((message) => message.fatal)).toEqual([]);
+    return messages
+      .filter(
+        (message) => message.ruleId === 'test/no-redundant-usecallback-wrapper',
+      )
+      .map((message) => message.message)
+      .sort();
+  };
+
+  let shapesReporting = 0;
+  let shapesSilent = 0;
+
+  for (const shape of SHAPES) {
+    it(`answers alike for every arrow-body spelling: ${shape.label}`, () => {
+      const [, firstSpelling] = SPELLINGS[0];
+      const expected = messagesFor(shape, firstSpelling(shape.delegate));
+
+      // The declared expectation is the anchor: agreeing on silence is also
+      // agreement, so parity alone cannot tell a fixed rule from a dead one.
+      expect(expected.length > 0).toBe(shape.reports);
+      if (shape.reports) {
+        shapesReporting++;
+      } else {
+        shapesSilent++;
+      }
+
+      for (const [spellingLabel, render] of SPELLINGS.slice(1)) {
+        expect({
+          spelling: spellingLabel,
+          messages: messagesFor(shape, render(shape.delegate)),
+        }).toEqual({ spelling: spellingLabel, messages: expected });
+      }
+    });
+  }
+
+  it('exercises both answers, so agreement is not agreement on nothing', () => {
+    expect(shapesReporting).toBeGreaterThanOrEqual(6);
+    expect(shapesSilent).toBeGreaterThanOrEqual(6);
+    expect(shapesReporting + shapesSilent).toBe(SHAPES.length);
   });
 });
