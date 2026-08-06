@@ -84,7 +84,10 @@ the same key written two ways, so both are rewritten to the same constant, with
 the template read through its cooked value so `` `user-profile` `` and
 `'user-profile'` derive one name. A key whose value the rule cannot evaluate —
 concatenation, a ternary, or a template that interpolates an expression — is
-still reported, and requires manual refactoring. An existing import of `queryKeys.ts` is
+still reported, and requires manual refactoring. So is a key that names no
+constant: `''`, `` `` ``, `'-'` and `'_-:/.'` all normalize to nothing, and the
+bare `QUERY_KEY_` they would produce is not a name `queryKeys.ts` exports, so
+those report without a fix in every spelling. An existing import of `queryKeys.ts` is
 reused: a namespace or default import qualifies the constant (`QueryKeys.QUERY_KEY_MATCH`),
 and a named import is extended in place rather than duplicated. Relative
 specifiers count as that module, including ones whose text hides the directory
