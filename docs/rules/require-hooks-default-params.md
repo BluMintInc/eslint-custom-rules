@@ -22,7 +22,7 @@ React hooks often receive a single "options" object. When every property on that
 
 ## How the parameter type is resolved
 
-A named options type is resolved lexically, from the hook outward through each enclosing block to module scope. That covers a type declared beside the hook, one declared in an enclosing function, and an exported declaration — `export type Props = { ... }` is a type alias inside an `export` statement, and both spellings resolve the same way. A name that also has a value binding of the same name nearby still resolves to the type.
+A named options type is resolved lexically, from the hook outward through each enclosing statement container to module scope. Every container that can hold a declaration counts — a function body, a `namespace`, a class `static {}` block, a `switch` case consequent — so how deeply the type is nested never decides whether the rule can see it. That covers a type declared beside the hook, one declared in an enclosing function, and an exported declaration — `export type Props = { ... }` is a type alias inside an `export` statement, and both spellings resolve the same way. The nearest declaration answers, so an inner type shadows a same-named outer one, and a matching type in a scope that does not enclose the hook is never consulted. A name that also has a value binding of the same name nearby still resolves to the type.
 
 A type this rule cannot read is left alone rather than guessed at, so a hook whose options type is **imported from another module** is never reported. The rule does not open other files, and treating an unknown shape as all-optional would produce a fix that changes behaviour. Declare the type in the same file if you want it checked.
 

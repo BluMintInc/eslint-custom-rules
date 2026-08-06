@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { declarationOf, resolveInEnclosingScopes } from '../utils/lexicalScope';
 
 type MessageIds = 'requireDefaultParams';
 
@@ -33,11 +34,7 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
       | TSESTree.TSTypeAliasDeclaration
       | TSESTree.TSInterfaceDeclaration
       | undefined {
-      const declared =
-        statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
-        statement.declaration
-          ? statement.declaration
-          : statement;
+      const declared = declarationOf(statement);
       if (
         (declared.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
           declared.type === AST_NODE_TYPES.TSInterfaceDeclaration) &&
@@ -58,6 +55,13 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
      * whole check is abandoned. Walking the enclosing statement containers
      * answers the question the rule actually asks, and a name that resolves to
      * something other than a type declaration simply keeps searching.
+     *
+     * The container set comes from the shared helper rather than an inlined
+     * list: which containers count is not a per-rule decision, and enumerating
+     * them here let the DEPTH of a declaration decide whether the rule can see
+     * it — a type written in a class `static {}` block or a `switch` case
+     * consequent went unresolved while the identical type one container over
+     * resolved fine (#1781).
      */
     function resolveTypeDeclaration(
       from: TSESTree.Node,
@@ -66,25 +70,17 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
       | TSESTree.TSTypeAliasDeclaration
       | TSESTree.TSInterfaceDeclaration
       | undefined {
-      let current: TSESTree.Node | undefined = from;
-      while (current) {
-        const body: TSESTree.Node[] | undefined =
-          current.type === AST_NODE_TYPES.Program ||
-          current.type === AST_NODE_TYPES.BlockStatement ||
-          current.type === AST_NODE_TYPES.TSModuleBlock
-            ? (current.body as TSESTree.Node[])
-            : undefined;
-        if (body) {
-          for (const statement of body) {
-            const found = typeDeclarationNamed(statement, name);
-            if (found) {
-              return found;
-            }
+      return resolveInEnclosingScopes<
+        TSESTree.TSTypeAliasDeclaration | TSESTree.TSInterfaceDeclaration
+      >(from, (statements) => {
+        for (const statement of statements) {
+          const found = typeDeclarationNamed(statement, name);
+          if (found) {
+            return found;
           }
         }
-        current = current.parent as TSESTree.Node | undefined;
-      }
-      return undefined;
+        return undefined;
+      });
     }
 
     function hasAllOptionalProperties(
