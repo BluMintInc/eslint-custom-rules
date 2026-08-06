@@ -323,6 +323,195 @@ function buildImportExtensionFix(
   return null;
 }
 
+/**
+ * An `async` or generator function cannot be a React component — React renders
+ * neither a promise nor an iterator — so memoizing one would enshrine a shape
+ * that never renders. The report stands, the edit is withheld.
+ */
+const isRewritableFunction = (node: ComponentNode) =>
+  !node.async && !(node as any).generator;
+
+/**
+ * Whether the emitted `memo(...)` call can reach the helper, and the import edit
+ * that makes it so (null when the helper is already imported).
+ *
+ * `available: false` withholds the whole rewrite. `memo` is resolved through the
+ * scope chain at the rewritten component because a binding that is not the
+ * helper import breaks the edit two ways: the inserted import collides with the
+ * existing declaration (TS2440, or TS2300 when that declaration is itself an
+ * import), and a binding visible at the fix site captures the emitted call with
+ * no compile error at all. Declining leaves the report standing so the author
+ * resolves the clash deliberately. `React.memo` is a member access on the
+ * default import rather than a `memo` binding, so it never reaches this path.
+ */
+function planMemoBinding(
+  context: Readonly<RuleContext<'requireMemo', []>>,
+  fixer: TSESLint.RuleFixer,
+  node: ComponentNode,
+): { available: boolean; importFix: TSESLint.RuleFix | null } {
+  const existingMemo = ASTHelpers.findVariableInScope(
+    ASTHelpers.getScope(context, node),
+    MEMO_NAME,
+  );
+  if (existingMemo && !bindsMemoHelper(existingMemo)) {
+    return { available: false, importFix: null };
+  }
+
+  const sourceCode = context.sourceCode;
+  const program = sourceCode.ast;
+  if (importsMemo(program)) {
+    return { available: true, importFix: null };
+  }
+
+  const extensionFix = buildImportExtensionFix(fixer, program);
+  if (extensionFix) {
+    return { available: true, importFix: extensionFix };
+  }
+
+  const importPath = calculateImportPath(context.getFilename());
+  const importStatement = `import { memo } from '${importPath}';`;
+  const firstImport = program.body.find(
+    (statement) => statement.type === AST_NODE_TYPES.ImportDeclaration,
+  );
+
+  // An existing import hosts the helper import directly after it, keeping the
+  // module's imports contiguous. With none to follow, the shared anchor keeps
+  // the file's prologue in place: a `'use client'` directive only counts as one
+  // while it is the first statement, and a `#!` shebang only parses at
+  // character 0.
+  return {
+    available: true,
+    importFix: firstImport
+      ? fixer.insertTextAfter(firstImport, `\n${importStatement}`)
+      : insertAtImportAnchor(
+          sourceCode,
+          fixer,
+          importInsertionAnchor(sourceCode),
+          `${importStatement}\n`,
+        ),
+  };
+}
+
+/**
+ * Whether `memo(...)` can be wrapped around the initializer of `declarator`
+ * without changing what the binding means.
+ *
+ * A type annotation on the binding is the decisive exclusion: the wrapper's
+ * return type is the memo helper's, which need not be assignable to the
+ * declared type (`const Row: FC<Props> = ...`), so the edit would trade a
+ * lint report for a type error. A lone `const` declarator is the shape whose
+ * initializer is the binding's only definition — `let`/`var` can be reassigned
+ * afterwards, leaving the name bound to an unmemoized value that the edit only
+ * appears to have fixed, and a shared declaration's other declarators may carry
+ * reports of their own whose edits then compete for the same import anchor.
+ */
+function isWrappableInitializer(declarator: TSESTree.VariableDeclarator) {
+  if (
+    declarator.id.type !== AST_NODE_TYPES.Identifier ||
+    declarator.id.typeAnnotation
+  ) {
+    return false;
+  }
+  const declaration = declarator.parent;
+  return (
+    declaration?.type === AST_NODE_TYPES.VariableDeclaration &&
+    declaration.kind === 'const' &&
+    declaration.declarations.length === 1
+  );
+}
+
+/**
+ * Rewrites a function declaration into a memoized `const`, renaming the function
+ * itself to `<Name>Unmemoized` so the wrapped component keeps a display name.
+ */
+function memoizeDeclaration(
+  context: Readonly<RuleContext<'requireMemo', []>>,
+  node: ComponentNode & NodeWithParent,
+): TSESLint.ReportFixFunction {
+  return function fix(fixer) {
+    if (!isRewritableFunction(node)) {
+      return null;
+    }
+
+    const { available, importFix } = planMemoBinding(context, fixer, node);
+    if (!available) {
+      return null;
+    }
+
+    const functionKeywordRange: Readonly<[number, number]> = [
+      node.range[0],
+      node.range[0] + 'function'.length,
+    ];
+    const functionKeywordReplacement = `const ${node.id!.name} = memo(`;
+    const functionNameReplacement = `function ${node.id!.name}Unmemoized`;
+
+    // `export default const X = memo(...)` is a syntax error, so a
+    // default-exported declaration becomes a memoized const plus a trailing
+    // `export default X;`. The local binding is preserved because other
+    // statements in the module may reference it.
+    const defaultExport =
+      node.parent.type === AST_NODE_TYPES.ExportDefaultDeclaration
+        ? node.parent
+        : null;
+
+    const fixes = [
+      fixer.replaceTextRange(functionKeywordRange, functionKeywordReplacement),
+      fixer.insertTextAfterRange(
+        [node.range[1], node.range[1]],
+        defaultExport ? `);\nexport default ${node.id!.name};` : ');',
+      ),
+      fixer.replaceTextRange(
+        [node.id!.range[0] - 1, node.id!.range[1]],
+        functionNameReplacement,
+      ),
+    ];
+
+    if (defaultExport) {
+      fixes.push(fixer.removeRange([defaultExport.range[0], node.range[0]]));
+    }
+
+    if (importFix) {
+      fixes.push(importFix);
+    }
+
+    return fixes;
+  };
+}
+
+/**
+ * Wraps a `const X = <function>` initializer in `memo(...)` where it stands.
+ *
+ * The binding, its name and the function's own text are left untouched, so
+ * every reference to the component keeps resolving to the same name and an
+ * anonymous initializer is not forced into a spelling it did not have.
+ */
+function memoizeInitializer(
+  context: Readonly<RuleContext<'requireMemo', []>>,
+  node: ComponentNode,
+): TSESLint.ReportFixFunction {
+  return function fix(fixer) {
+    if (!isRewritableFunction(node)) {
+      return null;
+    }
+
+    const { available, importFix } = planMemoBinding(context, fixer, node);
+    if (!available) {
+      return null;
+    }
+
+    const fixes = [
+      fixer.insertTextBefore(node, `${MEMO_NAME}(`),
+      fixer.insertTextAfter(node, ')'),
+    ];
+
+    if (importFix) {
+      fixes.push(importFix);
+    }
+
+    return fixes;
+  };
+}
+
 function checkFunction(
   context: Readonly<RuleContext<'requireMemo', []>>,
   node: ComponentNode & NodeWithParent,
@@ -353,128 +542,27 @@ function checkFunction(
           parentNode.id.name) ||
         'component';
 
+      // Both spellings of a component carry the same remedy, so both carry an
+      // edit: the declaration one becomes a memoized const, and an initializer
+      // is wrapped in place.
+      const fixDeclaration =
+        isDeclarationComponent && canHostConstDeclaration(parentNode);
+      const fixInitializer =
+        isArrowComponent &&
+        parentNode.type === AST_NODE_TYPES.VariableDeclarator &&
+        isWrappableInitializer(parentNode);
+
       context.report({
         node,
         messageId: 'requireMemo',
         data: {
           name: componentName,
         },
-        fix:
-          isDeclarationComponent && canHostConstDeclaration(parentNode)
-            ? function fix(fixer) {
-                if (node.async || (node as any).generator) {
-                  return null;
-                }
-                const sourceCode = context.sourceCode;
-                const program = sourceCode.ast;
-
-                // Resolve `memo` through the scope chain at the fixed node. A
-                // binding that is not the helper import breaks the edit two
-                // ways: the inserted import collides with the existing
-                // declaration (TS2440, or TS2300 when that declaration is
-                // itself an import), and a binding visible at the fix site
-                // captures the emitted call with no compile error at all.
-                // Declining leaves the report standing so the author resolves
-                // the clash deliberately. `React.memo` is a member access on
-                // the default import rather than a `memo` binding, so it never
-                // reaches this path.
-                const existingMemo = ASTHelpers.findVariableInScope(
-                  ASTHelpers.getScope(context, node),
-                  MEMO_NAME,
-                );
-                if (existingMemo && !bindsMemoHelper(existingMemo)) {
-                  return null;
-                }
-
-                let importFix: TSESLint.RuleFix | null = null;
-
-                if (!importsMemo(program)) {
-                  importFix = buildImportExtensionFix(fixer, program);
-
-                  if (!importFix) {
-                    // Calculate relative path based on current file location
-                    const currentFilePath = context.getFilename();
-                    const importPath = calculateImportPath(currentFilePath);
-
-                    const importStatement = `import { memo } from '${importPath}';`;
-
-                    const firstImport = program.body.find(
-                      (statement) =>
-                        statement.type === AST_NODE_TYPES.ImportDeclaration,
-                    );
-
-                    // An existing import hosts the helper import directly after
-                    // it, keeping the module's imports contiguous. With none to
-                    // follow, the shared anchor keeps the file's prologue in
-                    // place: a `'use client'` directive only counts as one while
-                    // it is the first statement, and a `#!` shebang only parses
-                    // at character 0.
-                    importFix = firstImport
-                      ? fixer.insertTextAfter(
-                          firstImport,
-                          `\n${importStatement}`,
-                        )
-                      : insertAtImportAnchor(
-                          sourceCode,
-                          fixer,
-                          importInsertionAnchor(sourceCode),
-                          `${importStatement}\n`,
-                        );
-                  }
-                }
-
-                const functionKeywordRange: Readonly<[number, number]> = [
-                  node.range[0],
-                  node.range[0] + 'function'.length,
-                ];
-                const functionKeywordReplacement = `const ${
-                  node.id!.name
-                } = memo(`;
-
-                // Step 3: Rename function
-                const functionNameReplacement = `function ${
-                  node.id!.name
-                }Unmemoized`;
-
-                // `export default const X = memo(...)` is a syntax error, so a
-                // default-exported declaration becomes a memoized const plus a
-                // trailing `export default X;`. The local binding is preserved
-                // because other statements in the module may reference it.
-                const defaultExport =
-                  parentNode.type === AST_NODE_TYPES.ExportDefaultDeclaration
-                    ? parentNode
-                    : null;
-
-                const fixes = [
-                  fixer.replaceTextRange(
-                    functionKeywordRange,
-                    functionKeywordReplacement,
-                  ),
-                  fixer.insertTextAfterRange(
-                    [node.range[1], node.range[1]],
-                    defaultExport
-                      ? `);\nexport default ${node.id!.name};`
-                      : ');',
-                  ),
-                  fixer.replaceTextRange(
-                    [node.id!.range[0] - 1, node.id!.range[1]],
-                    functionNameReplacement,
-                  ),
-                ];
-
-                if (defaultExport) {
-                  fixes.push(
-                    fixer.removeRange([defaultExport.range[0], node.range[0]]),
-                  );
-                }
-
-                if (importFix) {
-                  fixes.push(importFix);
-                }
-
-                return fixes;
-              }
-            : undefined,
+        fix: fixDeclaration
+          ? memoizeDeclaration(context, node)
+          : fixInitializer
+          ? memoizeInitializer(context, node)
+          : undefined,
       });
     }
   }

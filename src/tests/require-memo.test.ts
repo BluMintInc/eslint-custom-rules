@@ -315,6 +315,31 @@ const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</
           </>
         );
       };`,
+      output: `import { memo } from '../util/memo';
+export const TeamMemberDetails = memo(({ member }: TeamMemberDetailsProps) => {
+        const { user } = useAuth();
+        const { checkedIn, imgUrl, status, tournamentId, ...memberRest } = member;
+        const { username, userId } = memberRest;
+        return (
+          <>
+            {!!Object.keys(memberRest).length && (
+              <>
+                <ChipUser
+                  username={truncateIfTooLong(username)}
+                  avatarUrl={imgUrl}
+                  href={\`/profile/\${userId}\`}
+                />,
+                {isAdmin(user?.email) && !!memberRest && (
+                  <ParticipantAdminDetails
+                    {...memberRest}
+                    sx={{ wordWrap: 'break-word' }}
+                  />
+                )}
+              </>
+            )}
+          </>
+        );
+      });`,
       name: 'TeamMemberDetails',
     }),
     withDefaults({
@@ -323,14 +348,24 @@ const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</
                 <SomeOtherComponent baz={baz}/>
             )
         }`,
+      output: `import { memo } from '../util/memo';
+const FooBar = memo(({baz}) => {
+            return (
+                <SomeOtherComponent baz={baz}/>
+            )
+        })`,
       name: 'FooBar',
     }),
+    // An annotated binding keeps its report and loses its edit: memo()'s return
+    // type need not be assignable to the declared one, so the rewrite would
+    // trade a lint report for a type error.
     withDefaults({
       code: `const FooBar: FC<{baz: string}> = ({baz}) => {
             return (
                 <SomeOtherComponent baz={baz}/>
             )
         }`,
+      output: null,
       name: 'FooBar',
     }),
     withDefaults({
@@ -349,18 +384,26 @@ const DefaultPropComponent = memo(function DefaultPropComponentUnmemoized({ foo 
     }),
     withDefaults({
       code: `const Component = ({ someFunc }) => <div>{someFunc()}</div>;`,
+      output: `import { memo } from '../util/memo';
+const Component = memo(({ someFunc }) => <div>{someFunc()}</div>);`,
       name: 'Component',
     }),
     withDefaults({
       code: `const Component = ({ foo, shouldRender }) => { return shouldRender ? <div>{foo}</div> : null; };`,
+      output: `import { memo } from '../util/memo';
+const Component = memo(({ foo, shouldRender }) => { return shouldRender ? <div>{foo}</div> : null; });`,
       name: 'Component',
     }),
     withDefaults({
       code: `const Component = ({ foo, ...rest }) => <div>{foo}{Object.values(rest).join()}</div>;`,
+      output: `import { memo } from '../util/memo';
+const Component = memo(({ foo, ...rest }) => <div>{foo}{Object.values(rest).join()}</div>);`,
       name: 'Component',
     }),
     withDefaults({
       code: `const Component = ({ onClick = () => {} }) => <button onClick={onClick}>Click me</button>;`,
+      output: `import { memo } from '../util/memo';
+const Component = memo(({ onClick = () => {} }) => <button onClick={onClick}>Click me</button>);`,
       name: 'Component',
     }),
     withDefaults({
@@ -453,6 +496,8 @@ const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</
     // Confirm PascalCase arrow functions are still flagged (no false negatives from fix)
     withDefaults({
       code: `const RenderItem = ({ item }) => <li>{item.label}</li>;`,
+      output: `import { memo } from '../util/memo';
+const RenderItem = memo(({ item }) => <li>{item.label}</li>);`,
       name: 'RenderItem',
     }),
     // Confirm PascalCase function declarations are still flagged
@@ -800,7 +845,151 @@ export function makeRow() {
   const Row = ({label}) => { return <li>{label}</li>; };
   return Row;
 }`,
+      output: `import { memo } from '../util/memo';
+export function makeRow() {
+  const Row = memo(({label}) => { return <li>{label}</li>; });
+  return Row;
+}`,
       name: 'Row',
+    }),
+
+    // ---------------------------------------------------------------------
+    // The initializer spellings carry the same remedy as the declaration one:
+    // the component is wrapped where it stands, keeping the binding's name.
+    // ---------------------------------------------------------------------
+    withDefaults({
+      code: `const Component = ({ foo }) => { return <div>{foo}</div>; };`,
+      output: `import { memo } from '../util/memo';
+const Component = memo(({ foo }) => { return <div>{foo}</div>; });`,
+      name: 'Component',
+    }),
+    withDefaults({
+      code: `export const Component = ({ foo }) => { return <div>{foo}</div>; };`,
+      output: `import { memo } from '../util/memo';
+export const Component = memo(({ foo }) => { return <div>{foo}</div>; });`,
+      name: 'Component',
+    }),
+    // A concise body needs no braces added: the arrow is wrapped whole.
+    withDefaults({
+      code: `const Component = ({ foo }) => <div>{foo}</div>;`,
+      output: `import { memo } from '../util/memo';
+const Component = memo(({ foo }) => <div>{foo}</div>);`,
+      name: 'Component',
+    }),
+    withDefaults({
+      code: `const Component = ({ foo, bar, baz }) => <div>{foo}{bar}{baz}</div>;`,
+      output: `import { memo } from '../util/memo';
+const Component = memo(({ foo, bar, baz }) => <div>{foo}{bar}{baz}</div>);`,
+      name: 'Component',
+    }),
+    // An anonymous function expression stays anonymous: the edit adds the
+    // wrapper and nothing else.
+    withDefaults({
+      code: `const Component = function ({ foo }) { return <div>{foo}</div>; };`,
+      output: `import { memo } from '../util/memo';
+const Component = memo(function ({ foo }) { return <div>{foo}</div>; });`,
+      name: 'Component',
+    }),
+    // A named function expression keeps the name it was written with.
+    withDefaults({
+      code: `const Component = function ComponentInner({ foo }) { return <div>{foo}</div>; };`,
+      output: `import { memo } from '../util/memo';
+const Component = memo(function ComponentInner({ foo }) { return <div>{foo}</div>; });`,
+      name: 'Component',
+    }),
+    // The import specifier follows the file's depth below `src`, the same way
+    // it does for the declaration spelling.
+    withDefaults({
+      code: `const Component = ({ foo }) => <div>{foo}</div>;`,
+      output: `import { memo } from '../../util/memo';
+const Component = memo(({ foo }) => <div>{foo}</div>);`,
+      filename: 'src/components/nested/SomeComponent.tsx',
+      name: 'Component',
+    }),
+    withDefaults({
+      code: `const Component = ({ foo }) => <div>{foo}</div>;`,
+      output: `import { memo } from './util/memo';
+const Component = memo(({ foo }) => <div>{foo}</div>);`,
+      filename: 'src/SomeComponent.tsx',
+      name: 'Component',
+    }),
+    // An already-imported helper is reused rather than imported twice.
+    withDefaults({
+      code: `import { memo } from '../util/memo';
+const Component = ({ foo }) => <div>{foo}</div>;`,
+      output: `import { memo } from '../util/memo';
+const Component = memo(({ foo }) => <div>{foo}</div>);`,
+      name: 'Component',
+    }),
+    // An existing value import of the helper is extended in place.
+    withDefaults({
+      code: `import { memoWithDisplayName } from '../util/memo';
+const Component = ({ foo }) => <div>{foo}</div>;`,
+      output: `import { memoWithDisplayName, memo } from '../util/memo';
+const Component = memo(({ foo }) => <div>{foo}</div>);`,
+      name: 'Component',
+    }),
+    // The helper import follows the module's own imports.
+    withDefaults({
+      code: `import { useState } from 'react';
+const Component = ({ foo }) => <div>{foo}</div>;`,
+      output: `import { useState } from 'react';
+import { memo } from '../util/memo';
+const Component = memo(({ foo }) => <div>{foo}</div>);`,
+      name: 'Component',
+    }),
+
+    // ---------------------------------------------------------------------
+    // Initializer carve-outs: the report stands, the edit is withheld.
+    // ---------------------------------------------------------------------
+    // A colliding `memo` binding captures the emitted call.
+    withDefaults({
+      code: `const memo = 1;
+const Component = ({ foo }) => <div>{foo}</div>;`,
+      output: null,
+      name: 'Component',
+    }),
+    withDefaults({
+      code: `import { memo } from 'react';
+const Component = ({ foo }) => <div>{foo}</div>;`,
+      output: null,
+      name: 'Component',
+    }),
+    // A parameter named `memo` is visible at the component itself.
+    withDefaults({
+      code: `const Component = (memo) => <div>{memo}</div>;`,
+      output: null,
+      name: 'Component',
+    }),
+    // React renders neither a promise nor an iterator, so neither shape is a
+    // component the wrapper could rescue.
+    withDefaults({
+      code: `const Component = async ({ foo }) => <div>{foo}</div>;`,
+      output: null,
+      name: 'Component',
+    }),
+    withDefaults({
+      code: `const Component = function* ({ foo }) { return <div>{foo}</div>; };`,
+      output: null,
+      name: 'Component',
+    }),
+    // A reassignable binding can be rebound to an unmemoized value later, so
+    // wrapping the initializer would only appear to have fixed it.
+    withDefaults({
+      code: `let Component = ({ foo }) => <div>{foo}</div>;`,
+      output: null,
+      name: 'Component',
+    }),
+    withDefaults({
+      code: `var Component = ({ foo }) => <div>{foo}</div>;`,
+      output: null,
+      name: 'Component',
+    }),
+    // A shared declaration may carry more than one reported component.
+    withDefaults({
+      code: `const label = 'x', Component = ({ foo }) => <div>{foo}</div>;`,
+      output: null,
+      name: 'Component',
     }),
   ],
 });
