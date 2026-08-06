@@ -959,6 +959,213 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
         };
       `,
     },
+
+    // Valid: Substitution-free template severity "error" with console.error
+    {
+      code: `
+        import { useCallback } from 'react';
+        import { useAlertDialog } from '../useAlertDialog';
+
+        export const useDialog = () => {
+          const { open } = useAlertDialog('DIALOG');
+
+          const showError = useCallback(() => {
+            console.error('Error occurred');
+            open({
+              title: 'Error',
+              description: 'Error occurred',
+              severity: \`error\`,
+            });
+          }, [open]);
+
+          return { showError };
+        };
+      `,
+    },
+
+    // Valid: Substitution-free template severity "warning" with console.warn
+    {
+      code: `
+        import { useCallback } from 'react';
+        import { useAlertDialog } from '../useAlertDialog';
+
+        export const useDialog = () => {
+          const { open } = useAlertDialog('DIALOG');
+
+          const showWarning = useCallback(() => {
+            console.warn('Warning occurred');
+            open({
+              title: 'Warning',
+              description: 'Warning occurred',
+              severity: \`warning\`,
+            });
+          }, [open]);
+
+          return { showWarning };
+        };
+      `,
+    },
+
+    // Valid: Substitution-free template severity "info" needs no console call
+    {
+      code: `
+        import { useCallback } from 'react';
+        import { useAlertDialog } from '../useAlertDialog';
+
+        export const useDialog = () => {
+          const { open } = useAlertDialog('DIALOG');
+
+          const showInfo = useCallback(() => {
+            open({
+              title: 'Info',
+              description: 'Just information',
+              severity: \`info\`,
+            });
+          }, [open]);
+
+          return { showInfo };
+        };
+      `,
+    },
+
+    // Valid: 'error' as const with console.error
+    {
+      code: `
+        import { useCallback } from 'react';
+        import { useAlertDialog } from '../useAlertDialog';
+
+        export const useDialog = () => {
+          const { open } = useAlertDialog('DIALOG');
+
+          const showError = useCallback(() => {
+            console.error('Error occurred');
+            open({
+              title: 'Error',
+              description: 'Error occurred',
+              severity: 'error' as const,
+            });
+          }, [open]);
+
+          return { showError };
+        };
+      `,
+    },
+
+    // Valid: 'warning' as const with console.warn
+    {
+      code: `
+        import { useCallback } from 'react';
+        import { useAlertDialog } from '../useAlertDialog';
+
+        export const useDialog = () => {
+          const { open } = useAlertDialog('DIALOG');
+
+          const showWarning = useCallback(() => {
+            console.warn('Warning occurred');
+            open({
+              title: 'Warning',
+              description: 'Warning occurred',
+              severity: 'warning' as const,
+            });
+          }, [open]);
+
+          return { showWarning };
+        };
+      `,
+    },
+
+    // Valid: 'info' as const needs no console call
+    {
+      code: `
+        import { useCallback } from 'react';
+        import { useAlertDialog } from '../useAlertDialog';
+
+        export const useDialog = () => {
+          const { open } = useAlertDialog('DIALOG');
+
+          const showInfo = useCallback(() => {
+            open({
+              title: 'Info',
+              description: 'Just information',
+              severity: 'info' as const,
+            });
+          }, [open]);
+
+          return { showInfo };
+        };
+      `,
+    },
+
+    // Valid: satisfies assertion around a literal severity with console.error
+    {
+      code: `
+        import { useCallback } from 'react';
+        import { useAlertDialog } from '../useAlertDialog';
+
+        type Severity = 'error' | 'warning' | 'info';
+
+        export const useDialog = () => {
+          const { open } = useAlertDialog('DIALOG');
+
+          const showError = useCallback(() => {
+            console.error('Error occurred');
+            open({
+              title: 'Error',
+              description: 'Error occurred',
+              severity: 'error' satisfies Severity,
+            });
+          }, [open]);
+
+          return { showError };
+        };
+      `,
+    },
+
+    // Valid: angle-bracket type assertion around a literal severity
+    {
+      code: `
+        import { useCallback } from 'react';
+        import { useAlertDialog } from '../useAlertDialog';
+
+        export const useDialog = () => {
+          const { open } = useAlertDialog('DIALOG');
+
+          const showError = useCallback(() => {
+            console.error('Error occurred');
+            open({
+              title: 'Error',
+              description: 'Error occurred',
+              severity: <const>'error',
+            });
+          }, [open]);
+
+          return { showError };
+        };
+      `,
+    },
+
+    // Valid: non-null assertion around a literal severity
+    {
+      code: `
+        import { useCallback } from 'react';
+        import { useAlertDialog } from '../useAlertDialog';
+
+        export const useDialog = () => {
+          const { open } = useAlertDialog('DIALOG');
+
+          const showError = useCallback(() => {
+            console.error('Error occurred');
+            open({
+              title: 'Error',
+              description: 'Error occurred',
+              severity: 'error'!,
+            });
+          }, [open]);
+
+          return { showError };
+        };
+      `,
+    },
   ],
 
   invalid: [
@@ -2425,6 +2632,244 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
         };
       `,
       errors: [missingConsoleError],
+    },
+
+    // Invalid: Substitution-free template severity "error" without console.error
+    {
+      code: `
+        import { useCallback } from 'react';
+        import { useAlertDialog } from '../useAlertDialog';
+
+        export const useDialog = () => {
+          const { open } = useAlertDialog('DIALOG');
+
+          const showError = useCallback(() => {
+            open({
+              title: 'Error',
+              description: 'Error occurred',
+              severity: \`error\`,
+            });
+          }, [open]);
+
+          return { showError };
+        };
+      `,
+      errors: [missingConsoleError],
+    },
+
+    // Invalid: Substitution-free template severity "warning" without console.warn
+    {
+      code: `
+        import { useCallback } from 'react';
+        import { useAlertDialog } from '../useAlertDialog';
+
+        export const useDialog = () => {
+          const { open } = useAlertDialog('DIALOG');
+
+          const showWarning = useCallback(() => {
+            open({
+              title: 'Warning',
+              description: 'Warning occurred',
+              severity: \`warning\`,
+            });
+          }, [open]);
+
+          return { showWarning };
+        };
+      `,
+      errors: [missingConsoleWarn],
+    },
+
+    // Invalid: 'error' as const without console.error
+    {
+      code: `
+        import { useCallback } from 'react';
+        import { useAlertDialog } from '../useAlertDialog';
+
+        export const useDialog = () => {
+          const { open } = useAlertDialog('DIALOG');
+
+          const showError = useCallback(() => {
+            open({
+              title: 'Error',
+              description: 'Error occurred',
+              severity: 'error' as const,
+            });
+          }, [open]);
+
+          return { showError };
+        };
+      `,
+      errors: [missingConsoleError],
+    },
+
+    // Invalid: 'warning' as const without console.warn
+    {
+      code: `
+        import { useCallback } from 'react';
+        import { useAlertDialog } from '../useAlertDialog';
+
+        export const useDialog = () => {
+          const { open } = useAlertDialog('DIALOG');
+
+          const showWarning = useCallback(() => {
+            open({
+              title: 'Warning',
+              description: 'Warning occurred',
+              severity: 'warning' as const,
+            });
+          }, [open]);
+
+          return { showWarning };
+        };
+      `,
+      errors: [missingConsoleWarn],
+    },
+
+    // Invalid: 'error' as const logged with the wrong console method
+    {
+      code: `
+        import { useCallback } from 'react';
+        import { useAlertDialog } from '../useAlertDialog';
+
+        export const useDialog = () => {
+          const { open } = useAlertDialog('DIALOG');
+
+          const showError = useCallback(() => {
+            console.warn('This should be console.error');
+            open({
+              title: 'Error',
+              description: 'Error occurred',
+              severity: 'error' as const,
+            });
+          }, [open]);
+
+          return { showError };
+        };
+      `,
+      errors: [missingConsoleError],
+    },
+
+    // Invalid: Chained assertions around a literal severity without console.error
+    {
+      code: `
+        import { useCallback } from 'react';
+        import { useAlertDialog } from '../useAlertDialog';
+
+        type Severity = 'error' | 'warning' | 'info';
+
+        export const useDialog = () => {
+          const { open } = useAlertDialog('DIALOG');
+
+          const showError = useCallback(() => {
+            open({
+              title: 'Error',
+              description: 'Error occurred',
+              severity: 'error' as unknown as Severity,
+            });
+          }, [open]);
+
+          return { showError };
+        };
+      `,
+      errors: [missingConsoleError],
+    },
+
+    // Invalid: satisfies assertion around a literal severity without console.error
+    {
+      code: `
+        import { useCallback } from 'react';
+        import { useAlertDialog } from '../useAlertDialog';
+
+        type Severity = 'error' | 'warning' | 'info';
+
+        export const useDialog = () => {
+          const { open } = useAlertDialog('DIALOG');
+
+          const showError = useCallback(() => {
+            open({
+              title: 'Error',
+              description: 'Error occurred',
+              severity: 'error' satisfies Severity,
+            });
+          }, [open]);
+
+          return { showError };
+        };
+      `,
+      errors: [missingConsoleError],
+    },
+
+    // Invalid: angle-bracket type assertion around a literal severity without console.error
+    {
+      code: `
+        import { useCallback } from 'react';
+        import { useAlertDialog } from '../useAlertDialog';
+
+        export const useDialog = () => {
+          const { open } = useAlertDialog('DIALOG');
+
+          const showError = useCallback(() => {
+            open({
+              title: 'Error',
+              description: 'Error occurred',
+              severity: <const>'error',
+            });
+          }, [open]);
+
+          return { showError };
+        };
+      `,
+      errors: [missingConsoleError],
+    },
+
+    // Invalid: An assertion around a NON-literal severity stays dynamic
+    {
+      code: `
+        import { useCallback } from 'react';
+        import { useAlertDialog } from '../useAlertDialog';
+
+        type Severity = 'error' | 'warning' | 'info';
+
+        export const useDialog = () => {
+          const { open } = useAlertDialog('DIALOG');
+
+          const showDialog = useCallback((severity) => {
+            open({
+              title: 'Alert',
+              description: 'Something happened',
+              severity: severity as Severity,
+            });
+          }, [open]);
+
+          return { showDialog };
+        };
+      `,
+      errors: [missingConsoleBothErrorAndWarn],
+    },
+
+    // Invalid: Interpolated template severity stays dynamic even when partly logged
+    {
+      code: `
+        import { useCallback } from 'react';
+        import { useAlertDialog } from '../useAlertDialog';
+
+        export const useDialog = () => {
+          const { open } = useAlertDialog('DIALOG');
+
+          const showDialog = useCallback((type) => {
+            console.error('Only error console present');
+            open({
+              title: 'Alert',
+              description: 'Something happened',
+              severity: \`\${type}\`,
+            });
+          }, [open]);
+
+          return { showDialog };
+        };
+      `,
+      errors: [missingConsoleWarnForDynamic],
     },
   ],
 });
