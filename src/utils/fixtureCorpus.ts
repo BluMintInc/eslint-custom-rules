@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { Linter } from 'eslint';
+import { parse as estreeParse } from '@typescript-eslint/typescript-estree';
 import {
   harvestRuleTesterCases,
   HarvestResult,
@@ -150,18 +151,69 @@ export const ruleNameByIdentity = new Map<unknown, string>(
   Object.entries(plugin.rules).map(([name, rule]) => [rule, name]),
 );
 
+const parsesWithJsx = (code: string, jsx: boolean): boolean => {
+  try {
+    // `range`/`loc` are not optional in practice: without them any comment in
+    // the snippet throws, which reads as an unparsable fixture.
+    estreeParse(code, { jsx, range: true, loc: true });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** Decided once per snippet+preference; the corpus reprobes the same code. */
+const extensionByCode = new Map<string, string>();
+
+/**
+ * `.ts` and `.tsx` are not ordered by permissiveness, so neither one can be the
+ * blanket default: only `.ts` accepts the angle-bracket assertion `<T>expr`, and
+ * only `.tsx` accepts JSX. The tester supplies a PREFERENCE, and the snippet
+ * overrides it only when that preference cannot parse the snippet at all.
+ *
+ * Taking the tester's word for it instead makes a JSX fixture in a `ruleTesterTs`
+ * suite a FATAL parse. Every consumer filters messages by `ruleId`, so the fatal
+ * is indistinguishable from the rule staying silent — a false clean over 168
+ * cases, four fifths of some rules' corpora. The converse costs one case: an
+ * angle-bracket assertion declared in a `ruleTesterJsx` suite.
+ *
+ * Correcting only on a fatal is what keeps this from churning: a snippet legal
+ * both ways stays on the extension it has always been probed under, so no
+ * path-gated rule silently changes which fixtures reach it.
+ */
+const extensionFor = (code: string, preferred: string): string => {
+  const key = `${preferred}\u0000${code}`;
+  const cached = extensionByCode.get(key);
+  if (cached) return cached;
+  const alternate = preferred === '.tsx' ? '.ts' : '.tsx';
+  // Only a `<` can make the two disagree, so the common case never parses.
+  const extension =
+    !code.includes('<') || parsesWithJsx(code, preferred === '.tsx')
+      ? preferred
+      : parsesWithJsx(code, alternate === '.tsx')
+      ? alternate
+      : preferred;
+  extensionByCode.set(key, extension);
+  return extension;
+};
+
 /**
  * The filename a case is probed under when it declares none.
  *
  * `RuleTester` passes `undefined` in that situation, which ESLint renders as
  * `<input>` — a name with no extension, under which every path-gated rule is
- * silent and contributes nothing. A bare `file.ts`/`react.tsx` is the smallest
- * departure that keeps those rules reachable, and it matches the extension the
- * fixture's own tester implies.
+ * silent and contributes nothing. A bare `file`/`react` basename is the smallest
+ * departure that keeps those rules reachable.
  */
-export const defaultFilenameFor = (testCase: FixtureCase) =>
-  testCase.filename ??
-  (testCase.tester === 'ruleTesterJsx' ? 'react.tsx' : 'file.ts');
+export const defaultFilenameFor = (testCase: FixtureCase) => {
+  if (testCase.filename) return testCase.filename;
+  const jsxTester = testCase.tester === 'ruleTesterJsx';
+  const basename = jsxTester ? 'react' : 'file';
+  return `${basename}${extensionFor(
+    testCase.code,
+    jsxTester ? '.tsx' : '.ts',
+  )}`;
+};
 
 /**
  * Second-chance filenames, used ONLY for a rule that produced no probe at all
