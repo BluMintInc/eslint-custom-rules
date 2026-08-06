@@ -119,6 +119,40 @@ function typeReferenceContainsPickOrOmit(
 }
 
 /**
+ * The statement list a declaration can sit directly inside. A node that holds no
+ * statement list yields undefined, so a lexical walk simply steps past it.
+ */
+function statementsOf(node: TSESTree.Node): TSESTree.Node[] | undefined {
+  switch (node.type) {
+    case AST_NODE_TYPES.Program:
+    case AST_NODE_TYPES.BlockStatement:
+    case AST_NODE_TYPES.TSModuleBlock:
+    case AST_NODE_TYPES.StaticBlock:
+      return (node as { body: TSESTree.Node[] }).body;
+    case AST_NODE_TYPES.SwitchCase:
+      return node.consequent;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Look through an `export` wrapper to the declaration it carries. `export type
+ * XProps = …` and `export const X = …` are the same declaration one AST node
+ * deeper, and the `export` keyword says nothing about what the declaration
+ * declares.
+ */
+function unwrapExport(statement: TSESTree.Node): TSESTree.Node | null {
+  if (
+    statement.type === AST_NODE_TYPES.ExportNamedDeclaration ||
+    statement.type === AST_NODE_TYPES.ExportDefaultDeclaration
+  ) {
+    return statement.declaration ?? null;
+  }
+  return statement;
+}
+
+/**
  * Returns the identifier name of a TSTypeReference node.
  */
 function getTypeReferenceName(node: TSESTree.TSTypeReference): string {
@@ -141,17 +175,17 @@ function getTypeReferenceName(node: TSESTree.TSTypeReference): string {
  * named-alias indirection, or nested in a TSTypeLiteral property's type
  * annotation).
  *
- * `program` (when supplied) enables resolving a locally-declared named type
- * alias to its definition, so composition can be seen through named union arms
- * and shared bases. `seenAliases` guards against recursive-alias cycles; each
- * descent *through* an alias extends a copy of the set so that sibling paths
- * (e.g. two union arms sharing a base) each resolve the shared alias
- * independently.
+ * `scope` (when supplied) is the node the alias lookup walks outward from, which
+ * enables resolving a locally-declared named type alias to its definition, so
+ * composition can be seen through named union arms and shared bases.
+ * `seenAliases` guards against recursive-alias cycles; each descent *through* an
+ * alias extends a copy of the set so that sibling paths (e.g. two union arms
+ * sharing a base) each resolve the shared alias independently.
  */
 function typeNodeComposesWithProps(
   typeNode: TSESTree.TypeNode,
   propsTypeName: string,
-  program?: TSESTree.Program,
+  scope?: TSESTree.Node,
   seenAliases: Set<string> = new Set<string>(),
 ): boolean {
   switch (typeNode.type) {
@@ -170,12 +204,7 @@ function typeNodeComposesWithProps(
       if (typeNode.typeParameters) {
         for (const param of typeNode.typeParameters.params) {
           if (
-            typeNodeComposesWithProps(
-              param,
-              propsTypeName,
-              program,
-              seenAliases,
-            )
+            typeNodeComposesWithProps(param, propsTypeName, scope, seenAliases)
           ) {
             return true;
           }
@@ -186,10 +215,10 @@ function typeNodeComposesWithProps(
       // shared bases (issue #1343): `RowActionableProps` → `RowBaseProps & {…}`
       // → `Pick<MenuItemProps, …>`. Only in-file aliases resolve; imported
       // names (e.g. MenuItemProps) return null and are left as-is.
-      if (program) {
+      if (scope) {
         const aliasName = getTypeReferenceName(typeNode);
         if (aliasName && !seenAliases.has(aliasName)) {
-          const alias = findPropsTypeAliasByName(program, aliasName);
+          const alias = findPropsTypeAliasByName(scope, aliasName);
           if (alias) {
             const nextSeen = new Set(seenAliases);
             nextSeen.add(aliasName);
@@ -197,7 +226,7 @@ function typeNodeComposesWithProps(
               typeNodeComposesWithProps(
                 alias.typeAnnotation,
                 propsTypeName,
-                program,
+                scope,
                 nextSeen,
               )
             ) {
@@ -212,7 +241,7 @@ function typeNodeComposesWithProps(
       // Check each member of an intersection (A & B & C) — the whole
       // intersection composes if any member does.
       return typeNode.types.some((t) =>
-        typeNodeComposesWithProps(t, propsTypeName, program, seenAliases),
+        typeNodeComposesWithProps(t, propsTypeName, scope, seenAliases),
       );
     }
     case AST_NODE_TYPES.TSUnionType: {
@@ -224,7 +253,7 @@ function typeNodeComposesWithProps(
       // positive the repo prefers to avoid. `.some` still passes the target
       // case, where every arm composes with the single shared child.
       return typeNode.types.some((t) =>
-        typeNodeComposesWithProps(t, propsTypeName, program, seenAliases),
+        typeNodeComposesWithProps(t, propsTypeName, scope, seenAliases),
       );
     }
     case AST_NODE_TYPES.TSTypeLiteral: {
@@ -238,7 +267,7 @@ function typeNodeComposesWithProps(
           return typeNodeComposesWithProps(
             member.typeAnnotation.typeAnnotation,
             propsTypeName,
-            program,
+            scope,
             seenAliases,
           );
         }
@@ -389,32 +418,13 @@ function collectPropSlotNames(
 
 /**
  * Find the Props type alias node that corresponds to a component by name.
- * Looks for `type <ComponentName>Props = ...` in the program body.
+ * Looks for `type <ComponentName>Props = ...` in `scope`'s lexical chain.
  */
 function findPropsTypeAlias(
-  program: TSESTree.Program,
+  scope: TSESTree.Node,
   componentName: string,
 ): TSESTree.TSTypeAliasDeclaration | null {
-  const expectedTypeName = toPropsTypeName(componentName);
-
-  for (const stmt of program.body) {
-    // type XProps = ...
-    if (
-      stmt.type === AST_NODE_TYPES.TSTypeAliasDeclaration &&
-      stmt.id.name === expectedTypeName
-    ) {
-      return stmt;
-    }
-    // export type XProps = ...
-    if (
-      stmt.type === AST_NODE_TYPES.ExportNamedDeclaration &&
-      stmt.declaration?.type === AST_NODE_TYPES.TSTypeAliasDeclaration &&
-      stmt.declaration.id.name === expectedTypeName
-    ) {
-      return stmt.declaration;
-    }
-  }
-  return null;
+  return findPropsTypeAliasByName(scope, toPropsTypeName(componentName));
 }
 
 /**
@@ -536,49 +546,59 @@ type ComponentFunctionLookup = {
 };
 
 /**
- * Resolve the function node for a component name in the program, following a
- * single-identifier alias (`const Live = LiveUnmemoized`) and unwrapping a HOC
- * call (`memo((props) => ...)`). Returns null when no function is found.
+ * A statement list either binds the name or it does not, and the two must not be
+ * conflated: `null` means "not declared here, keep walking outward", while a
+ * `declared` result ends the search even when it proves no function.
+ *
+ * A name bound to something unprovable — `const Spinner = lazy(…)` under the
+ * zero-parameter proof — has to STOP the walk. Letting it fall through would let
+ * an outer, unrelated `Spinner` answer for the inner binding the JSX actually
+ * resolves to, which is precisely the masquerade the zero-parameter proof exists
+ * to prevent (issue #1316).
  */
-function findComponentFunction(
-  program: TSESTree.Program,
-  name: string,
-  lookup: ComponentFunctionLookup = {},
-): ComponentFunction | null {
-  const seen = lookup.seen ?? new Set<string>();
-  const nextLookup: ComponentFunctionLookup = { ...lookup, seen };
-  if (seen.has(name)) return null;
-  seen.add(name);
+type StatementLookup = { fn: ComponentFunction | null } | null;
 
-  for (const stmt of program.body) {
-    const decl =
-      stmt.type === AST_NODE_TYPES.ExportNamedDeclaration
-        ? stmt.declaration
-        : stmt;
+const UNPROVABLE: StatementLookup = { fn: null };
+
+function findComponentFunctionInStatements(
+  statements: TSESTree.Node[],
+  name: string,
+  lookup: ComponentFunctionLookup,
+  nextLookup: ComponentFunctionLookup,
+): StatementLookup {
+  for (const stmt of statements) {
+    const decl = unwrapExport(stmt);
     if (!decl) continue;
 
     if (
-      decl.type === AST_NODE_TYPES.FunctionDeclaration &&
+      (decl.type === AST_NODE_TYPES.FunctionDeclaration ||
+        decl.type === AST_NODE_TYPES.ClassDeclaration) &&
       decl.id?.name === name
     ) {
-      return decl;
+      // A class component binds the name without being a ComponentFunction, so
+      // it proves nothing and still ends the search.
+      return decl.type === AST_NODE_TYPES.FunctionDeclaration
+        ? { fn: decl }
+        : UNPROVABLE;
     }
 
     if (decl.type === AST_NODE_TYPES.VariableDeclaration) {
       for (const declarator of decl.declarations) {
         if (
           declarator.id.type !== AST_NODE_TYPES.Identifier ||
-          declarator.id.name !== name ||
-          !declarator.init
+          declarator.id.name !== name
         ) {
           continue;
         }
         const init = declarator.init;
+        if (!init) {
+          return UNPROVABLE;
+        }
         if (
           init.type === AST_NODE_TYPES.ArrowFunctionExpression ||
           init.type === AST_NODE_TYPES.FunctionExpression
         ) {
-          return init;
+          return { fn: init };
         }
         if (init.type === AST_NODE_TYPES.CallExpression) {
           if (
@@ -587,7 +607,7 @@ function findComponentFunction(
           ) {
             // The binding IS this call, and the call is not known to preserve
             // props — so nothing about its props surface is provable.
-            return null;
+            return UNPROVABLE;
           }
           const arg0 = init.arguments[0];
           if (
@@ -595,14 +615,62 @@ function findComponentFunction(
             (arg0.type === AST_NODE_TYPES.ArrowFunctionExpression ||
               arg0.type === AST_NODE_TYPES.FunctionExpression)
           ) {
-            return arg0;
+            return { fn: arg0 };
           }
+          return UNPROVABLE;
         }
         if (init.type === AST_NODE_TYPES.Identifier) {
-          return findComponentFunction(program, init.name, nextLookup);
+          // The alias target is resolved from the alias's own declaration site,
+          // which is the scope the alias was written in — not the site that
+          // asked, which may sit several containers deeper.
+          return {
+            fn: findComponentFunction(declarator, init.name, nextLookup),
+          };
         }
+        return UNPROVABLE;
       }
     }
+  }
+  return null;
+}
+
+/**
+ * Resolve the function node a component name binds to, following a
+ * single-identifier alias (`const Live = LiveUnmemoized`) and unwrapping a HOC
+ * call (`memo((props) => ...)`). Returns null when no function is found.
+ *
+ * The search runs from `scope` outward through every enclosing statement
+ * container, so a child declared beside the JSX that renders it resolves exactly
+ * as a top-level one does. Anchoring at `Program.body` made a nested
+ * `const Spinner = memo(() => <div />)` unresolvable, and an unresolvable child
+ * is treated as one that takes props: the rule then demanded a `SpinnerProps`
+ * that cannot exist, because Spinner declares no parameters (issue #1776).
+ */
+function findComponentFunction(
+  scope: TSESTree.Node,
+  name: string,
+  lookup: ComponentFunctionLookup = {},
+): ComponentFunction | null {
+  const seen = lookup.seen ?? new Set<string>();
+  const nextLookup: ComponentFunctionLookup = { ...lookup, seen };
+  if (seen.has(name)) return null;
+  seen.add(name);
+
+  let current: TSESTree.Node | undefined = scope;
+  while (current) {
+    const statements = statementsOf(current);
+    if (statements) {
+      const resolved = findComponentFunctionInStatements(
+        statements,
+        name,
+        lookup,
+        nextLookup,
+      );
+      if (resolved) {
+        return resolved.fn;
+      }
+    }
+    current = current.parent as TSESTree.Node | undefined;
   }
   return null;
 }
@@ -612,9 +680,15 @@ function findComponentFunction(
  * parameters has no props surface to compose with, so it is not a composition
  * dependency (same category as a decorative icon). Only in-file resolution is
  * used; imported children are left to the normal composition check.
+ *
+ * `scope` must be anchored at the JSX site's own container rather than at the
+ * program: a child declared inside the very component that renders it is the
+ * commonplace shape (`memo-nested-react-components` ships as an error, which
+ * presumes nested components exist), and reading its unresolvability as "takes
+ * props" names a props type the author cannot write.
  */
-function isZeroPropComponent(program: TSESTree.Program, name: string): boolean {
-  const fn = findComponentFunction(program, name, {
+function isZeroPropComponent(scope: TSESTree.Node, name: string): boolean {
+  const fn = findComponentFunction(scope, name, {
     propsPreservingHocsOnly: true,
   });
   return fn !== null && fn.params.length === 0;
@@ -1116,14 +1190,14 @@ function isPropLessImportedComponent(
  * the child derives its props from the parent's props type.
  */
 function getDependencyPropsSourceType(
-  program: TSESTree.Program,
+  scope: TSESTree.Node,
   depName: string,
 ): TSESTree.TypeNode | null {
-  const alias = findPropsTypeAliasByName(program, toPropsTypeName(depName));
+  const alias = findPropsTypeAliasByName(scope, toPropsTypeName(depName));
   if (alias) {
     return alias.typeAnnotation;
   }
-  const fn = findComponentFunction(program, depName);
+  const fn = findComponentFunction(scope, depName);
   if (fn) {
     return getFirstParamTypeNode(fn);
   }
@@ -1141,13 +1215,13 @@ function getDependencyPropsSourceType(
  */
 function collectUnionArmNames(
   arm: TSESTree.TypeNode,
-  program: TSESTree.Program,
+  scope: TSESTree.Node,
   seenAliases: Set<string>,
   into: Set<string>,
 ): void {
   if (arm.type === AST_NODE_TYPES.TSUnionType) {
     for (const nested of arm.types) {
-      collectUnionArmNames(nested, program, seenAliases, into);
+      collectUnionArmNames(nested, scope, seenAliases, into);
     }
     return;
   }
@@ -1160,7 +1234,7 @@ function collectUnionArmNames(
     // A `Readonly<X>` arm is the X arm: the wrapper adds no surface of its own.
     const inner = arm.typeParameters?.params[0];
     if (inner) {
-      collectUnionArmNames(inner, program, seenAliases, into);
+      collectUnionArmNames(inner, scope, seenAliases, into);
     }
     return;
   }
@@ -1169,11 +1243,11 @@ function collectUnionArmNames(
   }
 
   into.add(name);
-  const alias = findPropsTypeAliasByName(program, name);
+  const alias = findPropsTypeAliasByName(scope, name);
   if (alias) {
     const nextSeen = new Set(seenAliases);
     nextSeen.add(name);
-    collectUnionArmNames(alias.typeAnnotation, program, nextSeen, into);
+    collectUnionArmNames(alias.typeAnnotation, scope, nextSeen, into);
   }
 }
 
@@ -1189,7 +1263,7 @@ function collectUnionArmNames(
  */
 function collectUnionMemberNames(
   typeNode: TSESTree.TypeNode | null,
-  program: TSESTree.Program,
+  scope: TSESTree.Node,
   seenAliases: Set<string> = new Set<string>(),
   into: Set<string> = new Set<string>(),
 ): Set<string> {
@@ -1199,7 +1273,7 @@ function collectUnionMemberNames(
 
   if (typeNode.type === AST_NODE_TYPES.TSUnionType) {
     for (const arm of typeNode.types) {
-      collectUnionArmNames(arm, program, seenAliases, into);
+      collectUnionArmNames(arm, scope, seenAliases, into);
     }
     return into;
   }
@@ -1209,16 +1283,16 @@ function collectUnionMemberNames(
     if (name === 'Readonly') {
       const inner = typeNode.typeParameters?.params[0];
       if (inner) {
-        collectUnionMemberNames(inner, program, seenAliases, into);
+        collectUnionMemberNames(inner, scope, seenAliases, into);
       }
       return into;
     }
     if (name && !seenAliases.has(name)) {
-      const alias = findPropsTypeAliasByName(program, name);
+      const alias = findPropsTypeAliasByName(scope, name);
       if (alias) {
         const nextSeen = new Set(seenAliases);
         nextSeen.add(name);
-        collectUnionMemberNames(alias.typeAnnotation, program, nextSeen, into);
+        collectUnionMemberNames(alias.typeAnnotation, scope, nextSeen, into);
       }
     }
   }
@@ -1492,19 +1566,25 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
      *
      * A dependency whose props type is not a union yields no members, so this
      * never credits a parent that composes with nothing.
+     *
+     * `scope` resolves in-file declarations lexically, while `prog` answers the
+     * questions that are genuinely module-level: an import can only ever appear
+     * at the top of the file, so its spelling does not depend on where the JSX
+     * sits.
      */
     function composesWithUnionMember(
       dep: string,
       propsTypeNode: TSESTree.TypeNode,
       prog: TSESTree.Program,
+      scope: TSESTree.Node,
       componentRoot: TSESTree.Node,
     ): boolean {
       const localMembers = collectUnionMemberNames(
-        getDependencyPropsSourceType(prog, dep),
-        prog,
+        getDependencyPropsSourceType(scope, dep),
+        scope,
       );
       for (const member of localMembers) {
-        if (typeNodeComposesWithProps(propsTypeNode, member, prog)) {
+        if (typeNodeComposesWithProps(propsTypeNode, member, scope)) {
           return true;
         }
       }
@@ -1518,7 +1598,7 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
       );
       return importedMembers.some((member) =>
         collectImportSpellings(prog, member).some((spelling) =>
-          typeNodeComposesWithProps(propsTypeNode, spelling, prog),
+          typeNodeComposesWithProps(propsTypeNode, spelling, scope),
         ),
       );
     }
@@ -1537,6 +1617,16 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
       const allJsxNames = collectJsxElementNames(body);
       const propSlots = collectPropSlotNames(funcNode);
 
+      // A rendered child is resolved from the JSX site outward, so a component
+      // declared inside this very body is found; the component's own props alias
+      // is resolved from the *declaration* site outward, because a parameter
+      // annotation is read in the scope enclosing the function, never in its
+      // body. `bodyScope`'s chain contains `declarationScope`'s, so the two only
+      // differ over declarations local to the body — exactly the nested children
+      // the dependency lookups must see and the props lookups must not.
+      const bodyScope: TSESTree.Node = body;
+      const declarationScope: TSESTree.Node = funcNode;
+
       // Filter to non-excluded custom components
       const depComponents = Array.from(allJsxNames).filter(
         (name) =>
@@ -1544,7 +1634,7 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
           !isDecorativeIcon(name) &&
           name !== componentName &&
           !propSlots.has(name) &&
-          !isZeroPropComponent(prog, name),
+          !isZeroPropComponent(bodyScope, name),
       );
 
       if (depComponents.length < minDependencyCount) {
@@ -1552,7 +1642,10 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
       }
 
       // Resolve the props type for this component
-      const propsTypeAlias = findPropsTypeAlias(prog, componentName);
+      const propsTypeAlias = findPropsTypeAlias(
+        declarationScope,
+        componentName,
+      );
 
       let propsTypeName: string | null = null;
       let propsTypeNode: TSESTree.TypeNode | null = null;
@@ -1568,8 +1661,11 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
           return;
         }
         propsTypeName = paramTypeName;
-        // Try to find this type alias in the program too
-        const resolved = findPropsTypeAliasByName(prog, paramTypeName);
+        // Try to find this type alias in scope too
+        const resolved = findPropsTypeAliasByName(
+          declarationScope,
+          paramTypeName,
+        );
         if (resolved) {
           propsTypeNode = resolved.typeAnnotation;
         }
@@ -1588,7 +1684,7 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
         let composes = typeNodeComposesWithProps(
           propsTypeNode,
           expectedPropsType,
-          prog,
+          declarationScope,
         );
         // Inverse composition: the child derives its props FROM this parent's
         // props type (e.g. `Omit<ParentProps, 'children'>`, often with no named
@@ -1597,10 +1693,10 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
         // *also* compose from ChildProps would invert the source of truth or
         // create a circular dependency.
         if (!composes && propsTypeName) {
-          const depPropsSource = getDependencyPropsSourceType(prog, dep);
+          const depPropsSource = getDependencyPropsSourceType(bodyScope, dep);
           if (
             depPropsSource &&
-            typeNodeComposesWithProps(depPropsSource, propsTypeName, prog)
+            typeNodeComposesWithProps(depPropsSource, propsTypeName, bodyScope)
           ) {
             composes = true;
           }
@@ -1627,7 +1723,15 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
       ) {
         for (let index = missingComposition.length - 1; index >= 0; index--) {
           const dep = missingComposition[index];
-          if (composesWithUnionMember(dep, propsTypeNode, prog, funcNode)) {
+          if (
+            composesWithUnionMember(
+              dep,
+              propsTypeNode,
+              prog,
+              bodyScope,
+              funcNode,
+            )
+          ) {
             composedWith.add(dep);
             missingComposition.splice(index, 1);
           }
@@ -1684,26 +1788,36 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
 });
 
 /**
- * Find a type alias by name anywhere in the program body (exported or not).
+ * Find a type alias by name (exported or not), searching from `scope` outward
+ * through every enclosing statement container.
+ *
+ * Scanning `Program.body` alone made the *depth* of a declaration decide whether
+ * it exists, a distinction a props type knows nothing about: a component and its
+ * props alias written inside a factory, a `describe` block or an
+ * `export namespace` resolved to nothing, so the rule returned early and went
+ * silent (issue #1776). The innermost container wins, so an alias declared
+ * beside the component shadows a same-named one further out — a file-wide search
+ * would instead hand one scope's verdict to another.
  */
 function findPropsTypeAliasByName(
-  program: TSESTree.Program,
+  scope: TSESTree.Node,
   typeName: string,
 ): TSESTree.TSTypeAliasDeclaration | null {
-  for (const stmt of program.body) {
-    if (
-      stmt.type === AST_NODE_TYPES.TSTypeAliasDeclaration &&
-      stmt.id.name === typeName
-    ) {
-      return stmt;
+  let current: TSESTree.Node | undefined = scope;
+  while (current) {
+    const statements = statementsOf(current);
+    if (statements) {
+      for (const stmt of statements) {
+        const declaration = unwrapExport(stmt);
+        if (
+          declaration?.type === AST_NODE_TYPES.TSTypeAliasDeclaration &&
+          declaration.id.name === typeName
+        ) {
+          return declaration;
+        }
+      }
     }
-    if (
-      stmt.type === AST_NODE_TYPES.ExportNamedDeclaration &&
-      stmt.declaration?.type === AST_NODE_TYPES.TSTypeAliasDeclaration &&
-      stmt.declaration.id.name === typeName
-    ) {
-      return stmt.declaration;
-    }
+    current = current.parent as TSESTree.Node | undefined;
   }
   return null;
 }

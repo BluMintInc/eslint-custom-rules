@@ -1158,6 +1158,132 @@ export const ParamUnionComposed = ({ label }: ParamUnionComposedProps) => (
 );
 `,
     },
+    // 68. Issue #1776: a zero-parameter child declared INSIDE the component that
+    // renders it has no props surface, exactly as a hoisted one does. Anchoring
+    // the child lookup at Program.body made it unresolvable, and an unresolvable
+    // child is read as one that takes props — so the rule demanded a
+    // `SpinnerProps` that cannot be written, because Spinner declares no params.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+import { memo } from 'react';
+export type PanelProps = Readonly<{ title: string }>;
+export const Panel = memo(({ title }: PanelProps) => {
+  const Spinner = memo(() => <div />);
+  return <Card>{title}<Spinner /></Card>;
+});
+`,
+    },
+    // 69. Issue #1776: control for the case above with the child hoisted — the
+    // shape that always passed. Both must be clean, or the carve-out is keyed on
+    // declaration depth rather than on the child's parameter list.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+import { memo } from 'react';
+const Spinner = memo(() => <div />);
+export type PanelProps = Readonly<{ title: string }>;
+export const Panel = ({ title }: PanelProps) => (
+  <Card>{title}<Spinner /></Card>
+);
+`,
+    },
+    // 70. Issue #1776: inverse composition survives nesting. The child derives
+    // its props FROM the parent's props type, so the parent is already the single
+    // source of truth — a carve-out that vanished when the child moved into the
+    // body it is rendered from.
+    {
+      filename: 'src/components/LiveBadge.tsx',
+      code: `
+export type LiveBadgeProps = { size: number; children?: React.ReactNode };
+export const LiveBadge = ({ size, children }: LiveBadgeProps) => {
+  const Live = ({ size: s }: Omit<LiveBadgeProps, 'children'>) => <span>{s}</span>;
+  return <Live size={size}>{children}</Live>;
+};
+`,
+    },
+    // 71. Issue #1776: a nested component whose nested props alias DOES compose.
+    // The alias lookup must reach the enclosing block, not just Program.body —
+    // otherwise the composition is invisible and the rule falls silent for the
+    // wrong reason (which case 5 of `invalid` pins from the other side).
+    {
+      filename: 'src/components/NestedComposed.tsx',
+      code: `
+function useRowFactory() {
+  type RowProps = Readonly<Pick<LoadingButtonProps, 'loading'>> & {
+    label: string;
+  };
+  const Row = ({ label, loading }: RowProps) => (
+    <LoadingButton loading={loading}>{label}</LoadingButton>
+  );
+  return Row;
+}
+`,
+    },
+    // 72. Issue #1776: the same pair inside `export namespace`, whose body is a
+    // TSModuleBlock rather than a BlockStatement.
+    {
+      filename: 'src/components/NamespaceComposed.tsx',
+      code: `
+export namespace Widgets {
+  type WidgetButtonProps = Omit<LoadingButtonProps, 'onClick'> & {
+    label: string;
+  };
+  export const WidgetButton = ({ label }: WidgetButtonProps) => (
+    <LoadingButton>{label}</LoadingButton>
+  );
+}
+`,
+    },
+    // 73. Issue #1776: an alias in a SIBLING scope must stay invisible. A
+    // file-wide search would resolve this non-composing `SiblingButtonProps` and
+    // report; lexical resolution cannot see it, so the props type is unresolved
+    // and the rule skips — one scope's declarations never answer for another's.
+    {
+      filename: 'src/components/SiblingScope.tsx',
+      code: `
+function declaresElsewhere() {
+  type SiblingButtonProps = { label: string };
+  return null as unknown as SiblingButtonProps;
+}
+function rendersHere() {
+  const SiblingButton = ({ label }: SiblingButtonProps) => (
+    <LoadingButton>{label}</LoadingButton>
+  );
+  return SiblingButton;
+}
+`,
+    },
+    // 74. Issue #1776: an outer zero-prop child still applies when nothing
+    // shadows it — the control for invalid case 67, which plants a shadow.
+    {
+      filename: 'src/components/OuterZeroProp.tsx',
+      code: `
+const Spinner = () => <div />;
+export type PanelProps = Readonly<{ title: string }>;
+export const Panel = ({ title }: PanelProps) => {
+  return <Card>{title}<Spinner /></Card>;
+};
+`,
+    },
+    // 75. Issue #1776: the innermost declaration wins. A composing alias beside
+    // the component shadows a same-named non-composing one at the top level, so
+    // the file that reads the shadow is the file the verdict describes.
+    {
+      filename: 'src/components/ShadowedAlias.tsx',
+      code: `
+type ShadowButtonProps = { label: string };
+function rendersHere() {
+  type ShadowButtonProps = Pick<LoadingButtonProps, 'loading'> & {
+    label: string;
+  };
+  const ShadowButton = ({ label, loading }: ShadowButtonProps) => (
+    <LoadingButton loading={loading}>{label}</LoadingButton>
+  );
+  return ShadowButton;
+}
+`,
+    },
   ],
 
   invalid: [
@@ -2268,6 +2394,85 @@ type ChainComposedProps = Readonly<Pick<ChildShapeProps, 'label'>>;
 export const ChainComposed = ({ label }: ChainComposedProps) => (
   <Child label={label} variant="chip" />
 );
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 63. Issue #1776: a genuine violation nested inside a function body. The
+    // component and its props alias both sit in the block, so a Program.body
+    // lookup resolved neither and the rule went silent on a real violation.
+    {
+      filename: 'src/components/NestedViolation.tsx',
+      code: `
+function useButtonFactory() {
+  type MyButtonProps = { label: string; disabled?: boolean };
+  const MyButton = ({ label, disabled }: MyButtonProps) => {
+    return <LoadingButton disabled={disabled}>{label}</LoadingButton>;
+  };
+  return MyButton;
+}
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 64. Issue #1776: the same violation inside `export namespace`, a legal
+    // nesting whose body is a TSModuleBlock.
+    {
+      filename: 'src/components/NamespaceViolation.tsx',
+      code: `
+export namespace Widgets {
+  type MyButtonProps = { label: string; disabled?: boolean };
+  export const MyButton = ({ label, disabled }: MyButtonProps) => {
+    return <LoadingButton disabled={disabled}>{label}</LoadingButton>;
+  };
+}
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 65. Issue #1776, the MIXED control: a nested component whose props alias
+    // stays at the top level. This shape reported before the lexical lookups and
+    // must keep reporting — the pre-fix behaviour under nesting was partial, not
+    // a deliberate module-scope gate, and the fix must not flip it to a gate.
+    {
+      filename: 'src/components/MixedScope.tsx',
+      code: `
+type MyButtonProps = { label: string; disabled?: boolean };
+function useButtonFactory() {
+  const MyButton = ({ label, disabled }: MyButtonProps) => {
+    return <LoadingButton disabled={disabled}>{label}</LoadingButton>;
+  };
+  return MyButton;
+}
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 66. Issue #1776: a nested child that DOES take props is still a
+    // composition dependency. The zero-parameter carve-out must key on the
+    // resolved parameter list, not on "the child was found in the body".
+    {
+      filename: 'src/components/NestedPropfulChild.tsx',
+      code: `
+export type PanelProps = Readonly<{ title: string }>;
+export const Panel = ({ title }: PanelProps) => {
+  const Badge = ({ tone }: { tone: string }) => <span>{tone}</span>;
+  return <Card>{title}<Badge tone="warn" /></Card>;
+};
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 67. Issue #1776: walking outward must STOP at the binding the JSX resolves
+    // to. The inner `lazy(...)` shadows the outer zero-prop `Spinner`; treating
+    // the unprovable inner binding as "not declared here" would let the outer one
+    // answer for it and silently drop a child that does take props — the
+    // masquerade the zero-parameter proof exists to prevent (issue #1316).
+    {
+      filename: 'src/components/ShadowedZeroProp.tsx',
+      code: `
+import { lazy } from 'react';
+const Spinner = () => <div />;
+export type PanelProps = Readonly<{ title: string }>;
+export const Panel = ({ title }: PanelProps) => {
+  const Spinner = lazy(() => import('./HeavySpinner'));
+  return <Card>{title}<Spinner /></Card>;
+};
 `,
       errors: [{ messageId: 'missingPropsComposition' }],
     },
