@@ -13,6 +13,7 @@ Enforces the use of block comments (`/** */`) instead of single-line comments (`
 Line comments placed directly above a declaration look like documentation but TypeScript and IDEs ignore them for hovers, signature help, and generated docs. Converting them to block comments keeps the text attached to the declaration so refactors and API exploration still show the intent.
 
 - Reports line comments immediately before declarations (functions, variables, types, interfaces, classes, properties, enums) except inside function bodies.
+- Covers exported declarations. A leading comment sits before the `export` keyword, so the comment is resolved against the `export` wrapper (`export`, `export default`) and an exported declaration is treated exactly like its unexported form. Exported declarations are the public API the rule exists to document, so an `export` must not hide the comment.
 - Leaves existing block comments untouched, including block ESLint directives.
 - Ignores ESLint directive comments so configuration comments remain untouched.
 - Auto-fix rewrites `//` comments into `/** ... */` while preserving the text; whitespace-only comments become `/** declaration comment */` as a generic label so the declaration still has a visible doc stub.
@@ -33,6 +34,17 @@ interface User {
   id: number;
   // Name of user
   name: string;
+}
+
+// Default handler
+export default function handler() {
+  return null;
+}
+
+// Sort direction
+export enum Direction {
+  ASC,
+  DESC,
 }
 ```
 
@@ -61,6 +73,17 @@ interface User {
   id: number;
   /** Name of user */
   name: string;
+}
+
+/** Default handler */
+export default function handler() {
+  return null;
+}
+
+/** Sort direction */
+export enum Direction {
+  ASC,
+  DESC,
 }
 
 /* Block comments of any kind are not checked by this rule */
