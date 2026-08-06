@@ -12,6 +12,37 @@ function hasPseudoElementSelector(selector: string): boolean {
 }
 
 /**
+ * Reads the static string a node denotes, so a property name or value carries
+ * the same meaning however it is spelled. A no-substitution template literal is
+ * a notation-only rewrite of a quoted string, and CSS-in-JS code writes both.
+ *
+ * Reading every name and value through one accessor keeps detection and the
+ * `pointerEvents` exemption on the same footing. Widening only the detection
+ * side would make the rule report objects that already set `pointerEvents` in a
+ * spelling it cannot read, and its fixer would append a second key — an object
+ * literal with duplicate keys does not compile.
+ *
+ * An interpolated template stays opaque: its text is not known statically, so
+ * the rule keeps its conservative silence there.
+ */
+function staticStringOf(node: TSESTree.Node): string | undefined {
+  if (node.type === AST_NODE_TYPES.Literal) {
+    return String(node.value);
+  }
+  if (node.type === AST_NODE_TYPES.Identifier) {
+    return node.name;
+  }
+  if (
+    node.type === AST_NODE_TYPES.TemplateLiteral &&
+    node.expressions.length === 0 &&
+    node.quasis.length === 1
+  ) {
+    return node.quasis[0].value.cooked ?? node.quasis[0].value.raw;
+  }
+  return undefined;
+}
+
+/**
  * Checks if a property name is position with absolute or fixed value
  */
 function isAbsoluteOrFixedPosition(
@@ -194,38 +225,22 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
       for (const property of node.properties) {
         if (property.type !== AST_NODE_TYPES.Property) continue;
 
-        let propertyName = '';
-        let propertyValue: string | undefined;
-
-        // Get property name
-        if (property.key.type === AST_NODE_TYPES.Identifier) {
-          propertyName = property.key.name;
-        } else if (
-          property.key.type === AST_NODE_TYPES.Literal &&
-          typeof property.key.value === 'string'
-        ) {
-          propertyName = property.key.value;
-        }
-
-        // Get property value if it's a string literal
-        if (property.value.type === AST_NODE_TYPES.Literal) {
-          propertyValue = String(property.value.value);
-        } else if (property.value.type === AST_NODE_TYPES.Identifier) {
-          propertyValue = property.value.name;
-        }
+        const propertyName = staticStringOf(property.key) ?? '';
+        const propertyValue = staticStringOf(property.value);
 
         // Check if this is position: absolute/fixed
         if (isAbsoluteOrFixedPosition(propertyName, propertyValue)) {
           hasAbsolutePosition = true;
         }
 
-        // Check if this is pointer-events property
-        if (isPointerEventsProperty(propertyName)) {
-          if (property.value.type === AST_NODE_TYPES.Literal) {
-            pointerEventsValue = String(property.value.value);
-          } else if (property.value.type === AST_NODE_TYPES.Identifier) {
-            pointerEventsValue = property.value.name;
-          }
+        // Check if this is pointer-events property. A value that cannot be read
+        // statically never clears one already read: the rule's only remedy is to
+        // append a `pointerEvents` key, which would duplicate the existing one.
+        if (
+          isPointerEventsProperty(propertyName) &&
+          propertyValue !== undefined
+        ) {
+          pointerEventsValue = propertyValue;
         }
 
         // Track inset offsets to detect hit-slop touch-target extensions
@@ -422,14 +437,14 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
       // Process CSS-in-JS libraries that use objects with selectors
       Property(node: TSESTree.Property) {
         // Check for patterns like { '&::before': { ... } }
+        const selector = staticStringOf(node.key);
         if (
-          node.key.type === AST_NODE_TYPES.Literal &&
-          typeof node.key.value === 'string' &&
-          hasPseudoElementSelector(node.key.value) &&
+          selector !== undefined &&
+          hasPseudoElementSelector(selector) &&
           node.value.type === AST_NODE_TYPES.ObjectExpression
         ) {
           processStyleObject(node.value);
-          checkStyleObject(node.value, node.key.value);
+          checkStyleObject(node.value, selector);
         }
       },
     };

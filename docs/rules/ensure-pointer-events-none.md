@@ -23,6 +23,12 @@ The rule allows:
 - Non-pseudo-element styles.
 - Hit-slop touch-target extensions (see [Exceptions](#exceptions)).
 
+### Notation
+
+A selector, a property name, and a property value are read as the static string they denote, whichever notation spells it: `` position: `absolute` `` is the same declaration as `position: 'absolute'`, and `` [`pointerEvents`]: 'none' `` is the same exemption as `pointerEvents: 'none'`. Detection and the `pointerEvents` exemption read through the same accessor, so a template-literal exemption is honored rather than given a second `pointerEvents` key by the fixer.
+
+A template with a substitution — `` position: `${POSITION}` `` — is not known statically, so the rule stays silent on it (the one exception is a hit-slop offset, whose leading literal `-` states its direction; see [Exceptions](#exceptions)).
+
 ## Exceptions
 
 ### Hit-slop touch-target extensions
