@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.20.120",
+    "date": "2026-08-06T05:46:26.078Z",
+    "rules": [
+      {
+        "name": "enforce-microdiff",
+        "changeType": "fix",
+        "issues": [
+          1784
+        ],
+        "summary": "give the arrow spelling the rewrite its declaration twin carries (closes #1784)"
+      },
+      {
+        "name": "prefer-use-base62-id",
+        "changeType": "fix",
+        "issues": [
+          1782
+        ],
+        "summary": "look through type-only wrappers to the ref name (closes #1782)"
+      }
+    ]
+  },
+  {
     "version": "1.20.119",
     "date": "2026-08-06T04:34:04.981Z",
     "rules": [
