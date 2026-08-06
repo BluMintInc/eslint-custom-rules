@@ -44,6 +44,24 @@ export function RenderCell({ value }) {
 }
 ```
 
+```jsx
+// A default export is a component like any other.
+export default function ProfileCard({ user }) {
+  return <UserAvatar {...user} />;
+}
+```
+
+```jsx
+// An HOC factory that hands the component back unwrapped: callers receive an
+// un-memoized component, so memoizing it where it is declared is the fix.
+export function makeRow() {
+  function Row({ label }) {
+    return <li>{label}</li>;
+  }
+  return Row;
+}
+```
+
 ### Examples of **correct** code
 
 ```jsx
@@ -72,6 +90,54 @@ function renderItem({ label }) {
   return <li>{label}</li>;
 }
 ```
+
+### Which components this rule claims
+
+The rule asks whether wrapping the component in `memo()` **where it stands** is
+the right fix, which is a question about the binding's lifetime — not about the
+syntax that declares it or the node that happens to be its parent. A component is
+reported when its identity survives a render:
+
+- anywhere outside a function body — module scope, a bare or conditional block, a
+  `namespace` body, and `export default`;
+- inside a function that hands it straight back to callers unwrapped
+  (`function makeRow() { function Row(...) {...} return Row; }`), because the
+  caller receives exactly that un-memoized function.
+
+Two shapes are deliberately **not** this rule's:
+
+- **A component created inside a render body** belongs to
+  [`memo-nested-react-components`](./memo-nested-react-components.md). It gets a
+  fresh identity on every render, so React unmounts and remounts it — damage that
+  `memo()` does not repair. That rule reports it and explains the real fix
+  (hoist to module scope). Reporting it here as well would attach a second,
+  contradictory remedy to one defect.
+- **A component already handed to `memo()`/`forwardRef()` where it escapes**
+  (`return memo(Row);`) is memoized; a second wrapper would be redundant.
+
+`export default` is rewritten as a separate statement, because
+`export default const X = ...` is not valid syntax. This declaration:
+
+```jsx
+export default function ProfileCard({ user }) {
+  return <UserAvatar {...user} />;
+}
+```
+
+becomes:
+
+```jsx
+import { memo } from '../util/memo';
+
+const ProfileCard = memo(function ProfileCardUnmemoized({ user }) {
+  return <UserAvatar {...user} />;
+});
+export default ProfileCard;
+```
+
+A component that matches the criterion but has nothing to gain from memoization —
+a framework root such as Next.js's `_app` — opts out through the same
+`Unmemoized` suffix as any other deliberate exception.
 
 ### Existing `memo` bindings
 

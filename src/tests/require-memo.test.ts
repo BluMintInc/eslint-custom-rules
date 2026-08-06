@@ -178,6 +178,102 @@ ruleTesterJsx.run('requireMemo', requireMemo, {
       filename: 'grid.tsx',
       code: `const handleRenderItem = ({ item }) => <li>{item.name}</li>;`,
     },
+
+    // ---------------------------------------------------------------------
+    // Division of labour with `memo-nested-react-components` (issue #1774).
+    //
+    // A component whose identity is recreated by an enclosing scope belongs to
+    // that rule, whose message says outright that memo() does NOT fix it.
+    // Reporting these here too would double-report a single defect with two
+    // contradictory remedies, so each shape below is deliberately silent.
+    // ---------------------------------------------------------------------
+    // Declared in a function body and never handed back: the enclosing call
+    // recreates it, so `memo-nested-react-components` owns it.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `function setup() {
+  function Component({foo}) { return <div>{foo}</div>; }
+  register(Component);
+}`,
+    },
+    // Declared in a render body — the canonical shape
+    // `memo-nested-react-components` exists for. The outer component is already
+    // memoized so the only question the case asks is about the inner one.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `export const Page = memo(function PageUnmemoized({items}) {
+  function Row({label}) { return <li>{label}</li>; }
+  return <ul>{items.map((item) => <Row label={item} />)}</ul>;
+});`,
+    },
+    // Returned on one branch by a function that renders JSX on another: still a
+    // render body, so `memo-nested-react-components` owns it.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `export function renderPanel({compact, items}) {
+  function Row({label}) { return <li>{label}</li>; }
+  if (compact) {
+    return Row;
+  }
+  return <ul>{items.map((item) => <Row label={item} />)}</ul>;
+}`,
+    },
+    // Declared inside an HOC factory but never handed back: the factory's own
+    // return value is what reaches callers, so neither rule claims this one —
+    // `memo-nested-react-components` exempts the factory as identity-stable and
+    // require-memo has no escaping binding to memoize.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `export function withGuard(Editable) {
+  function GuardedInner({value}) { return <Editable value={value} />; }
+  return memo(function GuardedUnmemoized({value}) {
+    return <Provider><GuardedInner value={value} /></Provider>;
+  });
+}`,
+    },
+
+    // ---------------------------------------------------------------------
+    // Already memoized where it escapes: a second wrapper is redundant.
+    // ---------------------------------------------------------------------
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `export function makeRow() {
+  function Row({label}) { return <li>{label}</li>; }
+  return memo(Row);
+}`,
+    },
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `export function withRef(Wrapped) {
+  function Inner({value}, ref) { return <Wrapped value={value} ref={ref} />; }
+  return memo(forwardRef(Inner));
+}`,
+    },
+
+    // ---------------------------------------------------------------------
+    // `export default` shapes that stay exempt for the ordinary reasons.
+    // ---------------------------------------------------------------------
+    // Anonymous default export has no name to memoize or to opt out with.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `export default function ({foo}) { return <div>{foo}</div>; }`,
+    },
+    // Explicit opt-out via the `Unmemoized` suffix.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `export default function ComponentUnmemoized({foo}) { return <div>{foo}</div>; }`,
+    },
+    // camelCase default export — a render helper, not a component.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `export default function renderCell({value}) { return <span>{value}</span>; }`,
+    },
+    // A default-exported declaration taking no props is not a memo candidate,
+    // matching the existing parameterless carve-out.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `export default function Component() { return <div />; }`,
+    },
   ],
   invalid: [
     withDefaults({
@@ -587,6 +683,124 @@ import { useState } from 'react';
 import { memo } from '../util/memo';
 const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
       name: 'Component',
+    }),
+
+    // ---------------------------------------------------------------------
+    // Scope, not parent node type (issue #1774). A declaration whose binding
+    // outlives a render is reported wherever it sits; the shipped check only
+    // enumerated `Program` and `ExportNamedDeclaration` parents, so the shapes
+    // below went silent while their arrow twins were reported.
+    // ---------------------------------------------------------------------
+    // `export default const X = ...` is a syntax error, so the edit splits the
+    // declaration from the export rather than rewriting in place.
+    withDefaults({
+      code: `export default function Component({foo}) { return <div>{foo}</div>; }`,
+      output: `import { memo } from '../util/memo';
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });
+export default Component;`,
+      name: 'Component',
+    }),
+    // The same, with an import to anchor the helper import to.
+    withDefaults({
+      code: `import { useState } from 'react';
+export default function ProfileCard({ user }) { return <UserAvatar {...user} />; }`,
+      output: `import { useState } from 'react';
+import { memo } from '../util/memo';
+const ProfileCard = memo(function ProfileCardUnmemoized({ user }) { return <UserAvatar {...user} />; });
+export default ProfileCard;`,
+      name: 'ProfileCard',
+    }),
+    // A default export is not exempt from the `memo` collision guard either:
+    // the report stands, the edit is withheld.
+    withDefaults({
+      code: `const memo = 1;
+export default function Component({foo}) { return <div>{foo}</div>; }`,
+      output: null,
+      name: 'Component',
+    }),
+    // A bare block at module scope: the binding still outlives every render.
+    withDefaults({
+      code: `{
+  function Component({foo}) { return <div>{foo}</div>; }
+}`,
+      output: `import { memo } from '../util/memo';
+{
+  const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });
+}`,
+      name: 'Component',
+    }),
+    // A conditional block at module scope.
+    withDefaults({
+      code: `if (flag) {
+  function Component({foo}) { return <div>{foo}</div>; }
+}`,
+      output: `import { memo } from '../util/memo';
+if (flag) {
+  const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });
+}`,
+      name: 'Component',
+    }),
+    // A namespace body is not module scope, yet the shipped check reported this
+    // one purely because its parent happened to be `ExportNamedDeclaration`.
+    // It stays reported, for the right reason.
+    withDefaults({
+      code: `namespace UI {
+  export function Component({foo}) { return <div>{foo}</div>; }
+}`,
+      output: `import { memo } from '../util/memo';
+namespace UI {
+  export const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });
+}`,
+      name: 'Component',
+    }),
+    // The same namespace declaration without `export` — identical lifetime,
+    // and the parent-type check missed it.
+    withDefaults({
+      code: `namespace UI {
+  function Component({foo}) { return <div>{foo}</div>; }
+}`,
+      output: `import { memo } from '../util/memo';
+namespace UI {
+  const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });
+}`,
+      name: 'Component',
+    }),
+    // An HOC factory hands the component straight to its callers unwrapped, so
+    // memoizing it where it is declared is exactly the right remedy — and the
+    // arrow twin of this shape has always been reported.
+    withDefaults({
+      code: `export function makeRow() {
+  function Row({label}) { return <li>{label}</li>; }
+  return Row;
+}`,
+      output: `import { memo } from '../util/memo';
+export function makeRow() {
+  const Row = memo(function RowUnmemoized({label}) { return <li>{label}</li>; });
+  return Row;
+}`,
+      name: 'Row',
+    }),
+    // A type assertion on the returned reference does not hide the hand-back.
+    withDefaults({
+      code: `export function makeRow() {
+  function Row({label}) { return <li>{label}</li>; }
+  return Row as ComponentType<RowProps>;
+}`,
+      output: `import { memo } from '../util/memo';
+export function makeRow() {
+  const Row = memo(function RowUnmemoized({label}) { return <li>{label}</li>; });
+  return Row as ComponentType<RowProps>;
+}`,
+      name: 'Row',
+    }),
+    // The arrow twin of the factory case, pinned so the two shapes cannot drift
+    // apart again.
+    withDefaults({
+      code: `export function makeRow() {
+  const Row = ({label}) => { return <li>{label}</li>; };
+  return Row;
+}`,
+      name: 'Row',
     }),
   ],
 });
