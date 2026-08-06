@@ -1,3 +1,18 @@
+## [1.20.124](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.123...v1.20.124) (2026-08-06)
+
+
+### Bug Fixes
+
+* **enforce-console-error:** treat a no-substitution template and an assertion-wrapped literal as a static severity (closes [#1801](https://github.com/BluMintInc/eslint-custom-rules/issues/1801)) ([362f50a](https://github.com/BluMintInc/eslint-custom-rules/commit/362f50ac71f0738864eb9f5178947d437130ea84))
+* **enforce-mock-firestore:** treat expression assertions as transparent when resolving the jest.mock factory's object (closes [#1806](https://github.com/BluMintInc/eslint-custom-rules/issues/1806)) ([20ab708](https://github.com/BluMintInc/eslint-custom-rules/commit/20ab708ca7b9744ca5de93d09d431ff31cbffb21)), closes [#1798](https://github.com/BluMintInc/eslint-custom-rules/issues/1798)
+* **enforce-querykey-ts:** gate the autofix on the key's value rather than its notation (closes [#1803](https://github.com/BluMintInc/eslint-custom-rules/issues/1803)) ([30f8e84](https://github.com/BluMintInc/eslint-custom-rules/commit/30f8e84a953485f136485036fa17a91e5c95f360))
+* **ensure-pointer-events-none:** read a no-substitution template as the static string it denotes (closes [#1800](https://github.com/BluMintInc/eslint-custom-rules/issues/1800)) ([4738e36](https://github.com/BluMintInc/eslint-custom-rules/commit/4738e36a33904b68f3efe5b930088deb308b2c12))
+* **logical-top-to-bottom-grouping:** treat expression assertions as transparent in every movability and dependency read (closes [#1807](https://github.com/BluMintInc/eslint-custom-rules/issues/1807)) ([a2f9c7a](https://github.com/BluMintInc/eslint-custom-rules/commit/a2f9c7aa63db1632fb67b428409cf5489bfcf09f))
+* **no-complex-cloud-params:** track template-literal cloud imports and computed escape-hatch spellings (closes [#1799](https://github.com/BluMintInc/eslint-custom-rules/issues/1799)) ([defc936](https://github.com/BluMintInc/eslint-custom-rules/commit/defc9364719dd5c4c62b1a9dc9ceb02402187475))
+* **no-conditional-literals-in-jsx:** recognise a no-substitution template on both operands (closes [#1802](https://github.com/BluMintInc/eslint-custom-rules/issues/1802)) ([effa77a](https://github.com/BluMintInc/eslint-custom-rules/commit/effa77ae072e16ed2277e8e0b8b8fd787ee15acd))
+* **no-margin-properties:** treat expression assertions as transparent when classifying a style object (closes [#1805](https://github.com/BluMintInc/eslint-custom-rules/issues/1805)) ([c837097](https://github.com/BluMintInc/eslint-custom-rules/commit/c83709760275bfb64f2db503ef85faf80ccf2acb))
+* **prefer-global-router-state-key:** gate the autofix on the key's value rather than its notation (closes [#1804](https://github.com/BluMintInc/eslint-custom-rules/issues/1804)) ([044a506](https://github.com/BluMintInc/eslint-custom-rules/commit/044a50649f9ff3a24bd9802d78db32185656610a))
+
 ## [1.20.123](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.122...v1.20.123) (2026-08-06)
 
 

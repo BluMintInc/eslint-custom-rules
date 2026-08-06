@@ -1,5 +1,83 @@
 [
   {
+    "version": "1.20.124",
+    "date": "2026-08-06T15:15:14.462Z",
+    "rules": [
+      {
+        "name": "enforce-console-error",
+        "changeType": "fix",
+        "issues": [
+          1801
+        ],
+        "summary": "treat a no-substitution template and an assertion-wrapped literal as a static severity (closes #1801)"
+      },
+      {
+        "name": "enforce-mock-firestore",
+        "changeType": "fix",
+        "issues": [
+          1806
+        ],
+        "summary": "treat expression assertions as transparent when resolving the jest.mock factory's object (closes #1806)"
+      },
+      {
+        "name": "enforce-querykey-ts",
+        "changeType": "fix",
+        "issues": [
+          1803
+        ],
+        "summary": "gate the autofix on the key's value rather than its notation (closes #1803)"
+      },
+      {
+        "name": "ensure-pointer-events-none",
+        "changeType": "fix",
+        "issues": [
+          1800
+        ],
+        "summary": "read a no-substitution template as the static string it denotes (closes #1800)"
+      },
+      {
+        "name": "logical-top-to-bottom-grouping",
+        "changeType": "fix",
+        "issues": [
+          1807
+        ],
+        "summary": "treat expression assertions as transparent in every movability and dependency read (closes #1807)"
+      },
+      {
+        "name": "no-complex-cloud-params",
+        "changeType": "fix",
+        "issues": [
+          1799
+        ],
+        "summary": "track template-literal cloud imports and computed escape-hatch spellings (closes #1799)"
+      },
+      {
+        "name": "no-conditional-literals-in-jsx",
+        "changeType": "fix",
+        "issues": [
+          1802
+        ],
+        "summary": "recognise a no-substitution template on both operands (closes #1802)"
+      },
+      {
+        "name": "no-margin-properties",
+        "changeType": "fix",
+        "issues": [
+          1805
+        ],
+        "summary": "treat expression assertions as transparent when classifying a style object (closes #1805)"
+      },
+      {
+        "name": "prefer-global-router-state-key",
+        "changeType": "fix",
+        "issues": [
+          1804
+        ],
+        "summary": "gate the autofix on the key's value rather than its notation (closes #1804)"
+      }
+    ]
+  },
+  {
     "version": "1.20.123",
     "date": "2026-08-06T11:53:46.588Z",
     "rules": [
