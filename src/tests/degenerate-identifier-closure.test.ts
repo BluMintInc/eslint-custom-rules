@@ -50,6 +50,12 @@
  * - A pair that fails to parse is SKIPPED, never scored. Treating an unreadable
  *   baseline as "no identifiers" reports the whole output as newly derived and
  *   manufactures findings out of harness artifacts.
+ * - An unreadable baseline is COUNTED and asserted at zero. Skipping it quietly
+ *   is the mirror failure: `tsParser.parse` needs `range: true` or it throws on
+ *   all JSX, and folding that null into "derived nothing" withheld 42% of the
+ *   literal arm's derivations and 11 rules while every counter read clean
+ *   (#1820). A counter placed past the skip it is meant to measure can only
+ *   ever report zero.
  *
  * The perturbation is deliberately allowed to change meaning — it may collide
  * with an existing binding or rename a property. That is sound here because the
@@ -210,13 +216,19 @@ const stringLiteralRangesOf = (
  * newly derived: `sourceType` defaults to `script`, so a fixture carrying an
  * `import` threw here, and a fixer that removes the import produced an output
  * that parsed — manufacturing a phantom derivation out of a harness artifact.
+ *
+ * `range: true` is load-bearing, not cosmetic. Without it `tsParser.parse`
+ * throws `Cannot read properties of undefined (reading '0')` on ANY JSX input,
+ * which this helper catches and reports as unreadable. That silently withheld
+ * 1585 of 3164 invalid fixtures from the literal arm — 42% of its derivations
+ * and 11 whole rules — while every counter still read clean.
  */
 const identifierNamesOf = (code: string, jsx: boolean): Set<string> | null => {
   const names = new Set<string>();
   let ast: unknown;
   try {
     ast = tsParser.parse(code, {
-      range: false,
+      range: true,
       loc: false,
       sourceType: 'module',
       ecmaFeatures: { jsx },
@@ -396,6 +408,13 @@ type LiteralTotals = {
   derivationsObserved: number;
   discardedUnparsable: number;
   skippedUnparsableComparison: number;
+  /**
+   * Control runs whose BASELINE could not be read. Distinct from
+   * `skippedUnparsableComparison`, which can only count pairs that already
+   * cleared the deriving gate — so it stays at 0 no matter how much of the
+   * corpus an unreadable baseline withholds.
+   */
+  unreadableControl: number;
   rulesDeriving: Set<string>;
 };
 
@@ -448,6 +467,7 @@ const sweepLiterals = (ruleNames: string[]): LiteralTotals => {
     derivationsObserved: 0,
     discardedUnparsable: 0,
     skippedUnparsableComparison: 0,
+    unreadableControl: 0,
     rulesDeriving: new Set(),
   };
 
@@ -491,8 +511,17 @@ const sweepLiterals = (ruleNames: string[]): LiteralTotals => {
           continue;
         }
         const controlOutput = runFix(controlInput);
-        const controlDerived =
-          derivedNames(controlInput, controlOutput, jsx) ?? new Set<string>();
+        const controlDerived = derivedNames(controlInput, controlOutput, jsx);
+        // An unreadable baseline is not a non-deriving one. Folding null to an
+        // empty set routes it into the `!controlDerived.size` skip below, where
+        // it becomes indistinguishable from a fixer that invented nothing —
+        // and `skippedUnparsableComparison` never sees it, because that branch
+        // sits past the skip. Counting it separately is what makes the arm's
+        // reach measurable rather than merely assumed.
+        if (!controlDerived) {
+          literalTotals.unreadableControl++;
+          continue;
+        }
         if (controlDerived.size) {
           literalTotals.derivationsObserved++;
           literalTotals.rulesDeriving.add(rule);
@@ -680,7 +709,8 @@ describe('degenerate-identifier fix closure', () => {
       `[degenerate-literal] considered ${literalTotals.considered}, rewritten ${literalTotals.rewritten}, ` +
         `derivations ${literalTotals.derivationsObserved} across ${literalTotals.rulesDeriving.size} rule(s); ` +
         `discarded unparsable ${literalTotals.discardedUnparsable}, ` +
-        `skipped unreadable comparisons ${literalTotals.skippedUnparsableComparison}\n` +
+        `skipped unreadable comparisons ${literalTotals.skippedUnparsableComparison}, ` +
+        `unreadable controls ${literalTotals.unreadableControl}\n` +
         `  deriving rules (${literalTotals.rulesDeriving.size}): ${
           [...literalTotals.rulesDeriving].join(', ') || '(none)'
         }\n` +
@@ -692,10 +722,31 @@ describe('degenerate-identifier fix closure', () => {
           notDeriving.length
         }): ${notDeriving.join(', ') || '(none)'}`,
     );
+    // A baseline the harness cannot read withholds its whole fixture from the
+    // arm while every other counter still reads clean, so this is asserted at
+    // zero rather than merely reported.
+    expect(literalTotals.unreadableControl).toBe(0);
     expect(literalTotals.considered).toBeGreaterThan(1000);
     expect(literalTotals.rewritten).toBeGreaterThan(100);
-    expect(literalTotals.derivationsObserved).toBeGreaterThan(0);
-    expect(literalTotals.rulesDeriving.size).toBeGreaterThanOrEqual(15);
+    expect(literalTotals.derivationsObserved).toBeGreaterThan(800);
+    expect(literalTotals.rulesDeriving.size).toBeGreaterThanOrEqual(28);
+  });
+
+  /**
+   * Pins the parser option the reach depends on. The floors above would also
+   * drop if `range` regressed, but they would read as "the corpus shrank"; this
+   * names the cause, so the next reader is not left bisecting counters.
+   */
+  it('reads identifiers out of JSX, not just plain TypeScript', () => {
+    const jsxSource =
+      'const List = ({ items }) => (\n' +
+      '  <ul>{items.map((item) => (<li key={item.id}>{item.name}</li>))}</ul>\n' +
+      ');\n';
+    const names = identifierNamesOf(jsxSource, true);
+    expect(names).not.toBeNull();
+    expect([...(names as Set<string>)]).toEqual(
+      expect.arrayContaining(['List', 'items', 'item']),
+    );
   });
 
   it('no fixer derives a name that collapses to its bare affix', () => {
