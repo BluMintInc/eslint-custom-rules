@@ -3,6 +3,12 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+# Releases must serialize: two runs publishing the same tip would race on the
+# npm publish and on the `chore(release)` commit pushed back to main.
+concurrency:
+  group: release-main
+  cancel-in-progress: false
 permissions:
   contents: write
   issues: write
@@ -22,6 +28,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # Release the branch tip, not the SHA that triggered this run. A push
+          # landing while a release is queued leaves the event SHA behind the
+          # remote, and semantic-release then declines with "the local branch
+          # main is behind the remote one" — stranding released-worthy commits.
+          ref: main
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
