@@ -257,7 +257,7 @@ than opening a second one.
 
 ## Auto-fix Capability
 
-The rule provides automatic fixes for simple string literals by converting them to suggested `QUERY_KEY_*` constant names **together with the import that makes the constant resolve**:
+The rule provides automatic fixes for keys whose value is statically known by converting them to suggested `QUERY_KEY_*` constant names **together with the import that makes the constant resolve**:
 
 ```typescript
 // Before (auto-fixable), in src/components/tournament/TeamCard.tsx
@@ -294,7 +294,7 @@ The fix is declined (the violation is still reported, but nothing is rewritten) 
 * the constant name is already taken by something else — another module's export, a local declaration, or an alias of a non-`QUERY_KEY_*` export — because substituting would silently point the key at an unrelated value; or
 * no correct specifier can be derived for a file that has no queryKeys import to reuse, because an import that fails to resolve is worse than the literal it replaced.
 
-Note: Auto-fix only works for simple string literals. Complex expressions (concatenation, ternaries, template literals with static content) require manual refactoring.
+Note: the fix is gated on the key's **value**, not on the notation that spells it. A quoted string and an expression-free template are the same key written two ways, and both are rewritten to the same constant — reading the template through its cooked value, so `` `user-profile` `` and `'user-profile'` derive one name. Keys whose value depends on something the rule cannot evaluate — concatenation, ternaries, and templates that interpolate an expression — are still reported and require manual refactoring.
 
 ### Interaction with inline disable comments
 
