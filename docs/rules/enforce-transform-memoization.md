@@ -13,7 +13,7 @@ This rule enforces:
 1. `transformValue` must be memoized with `useMemo` (or a clearly memoized helper).
 1. `transformOnChange` must be memoized with `useCallback` (or a memoized helper).
 1. When `useMemo`/`useCallback` is used, the dependency array must exist and include all outer-scope values referenced by the transform.
-1. Functions defined outside the component are treated as stable and are allowed directly.
+1. Functions defined outside the component or hook that references them — at module scope, or in an enclosing factory, HOC, class method or `describe` callback — are treated as stable and are allowed directly.
 1. `useLatestCallback` (from `use-latest-callback`) and `useEvent` are accepted for either transform. They return a reference stable for the component's whole life and take no dependency array, so there is none to audit.
 
 `transformValue` represents a derived or computed value that should be stabilized to avoid expensive recomputations (hence `useMemo`), while `transformOnChange` is an event callback whose identity must be stable to prevent unnecessary re-renders or effect triggers in the adapted component (hence `useCallback`).
@@ -189,6 +189,88 @@ it('adapts the value', () => {
   }, Switch);
   expect(Adapted).toBeDefined();
 });
+```
+
+## Stability is measured against the component, not against module scope
+
+A transform is stable when its binding cannot change between two renders of the component that passes it, so the boundary that matters is the render boundary — not absolute scope depth. A helper declared in a component factory, an HOC, a class-method factory, an IIFE or a `describe` callback is created once per call of that outer function, and the component created in the same call closes over that one reference: every render hands `adaptValue` the identical function. There is nothing to memoize, and `useMemo` could not be called in the factory anyway, since a factory is neither a component nor a hook.
+
+The rule therefore reports a referenced helper only when its declaration shares a nearest enclosing function with the reference — that is, when the declaration re-runs with the render. A block is not a function boundary, and neither a custom hook nor a plain helper called during render counts as an outer boundary: both re-run on every render.
+
+### Examples of incorrect code for the render boundary
+
+```js
+// Mock component for demonstration
+const Switch = () => null;
+
+function Component() {
+  // Rebuilt by every render of Component
+  const convertToBoolean = (value) => Boolean(value);
+
+  // ❌ adaptValue receives a new transformValue identity on every render
+  return adaptValue({
+    valueKey: 'checked',
+    onChangeKey: 'onChange',
+    transformValue: convertToBoolean,
+  }, Switch);
+}
+```
+
+```js
+// Mock component for demonstration
+const Switch = () => null;
+
+export function useAdaptedSwitch() {
+  // A custom hook body re-runs with every render of its caller
+  const handleChange = (event) => event.target.checked;
+
+  // ❌ adaptValue receives a new transformOnChange identity on every render
+  return adaptValue({
+    valueKey: 'checked',
+    onChangeKey: 'onChange',
+    transformOnChange: handleChange,
+  }, Switch);
+}
+```
+
+### Examples of correct code for the render boundary
+
+```js
+// Mock component for demonstration
+const Switch = () => null;
+
+export function createBooleanAdapter() {
+  // ✅ Created once per createBooleanAdapter() call; AdaptedSwitch closes over
+  // that one reference, so no render recreates it
+  const convertToBoolean = (value) => Boolean(value);
+
+  return function AdaptedSwitch() {
+    return adaptValue({
+      valueKey: 'checked',
+      onChangeKey: 'onChange',
+      transformValue: convertToBoolean,
+    }, Switch);
+  };
+}
+```
+
+```js
+// Mock component for demonstration
+const Switch = () => null;
+
+export function withBooleanAdapter(Wrapped) {
+  // ✅ An HOC helper may close over the HOC's own parameters, so it cannot be
+  // hoisted to module scope — and it never changes for a given wrapped component
+  const convertToBoolean = (value) => Boolean(value);
+
+  return function AdaptedSwitch(props) {
+    return adaptValue({
+      valueKey: 'checked',
+      onChangeKey: 'onChange',
+      transformValue: convertToBoolean,
+    }, Wrapped);
+  };
+}
 ```
 
 ## When Not To Use It

@@ -13,6 +13,80 @@ type MemoHook = 'useMemo' | 'useCallback';
 const LATEST_CALLBACK_MODULE = 'use-latest-callback';
 const LATEST_CALLBACK_HOOK = 'useLatestCallback';
 
+function isFunctionNode(
+  node: TSESTree.Node | null | undefined,
+): node is
+  | TSESTree.ArrowFunctionExpression
+  | TSESTree.FunctionExpression
+  | TSESTree.FunctionDeclaration {
+  if (!node) return false;
+  return (
+    node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+    node.type === AST_NODE_TYPES.FunctionExpression ||
+    node.type === AST_NODE_TYPES.FunctionDeclaration
+  );
+}
+
+/**
+ * Nearest enclosing function of a node, or `null` when the node sits at module
+ * scope. Class and object methods are reached through their `FunctionExpression`
+ * value, so no separate `MethodDefinition` case is needed.
+ *
+ * The walk starts at the parent, so a `FunctionDeclaration` passed in as the
+ * declaration site reports the function that CONTAINS it rather than itself.
+ */
+function getEnclosingFunction(
+  node: TSESTree.Node,
+):
+  | TSESTree.ArrowFunctionExpression
+  | TSESTree.FunctionExpression
+  | TSESTree.FunctionDeclaration
+  | null {
+  let current: TSESTree.Node | undefined | null = node.parent;
+  while (current) {
+    if (isFunctionNode(current)) {
+      return current;
+    }
+    if (current.type === AST_NODE_TYPES.Program) {
+      return null;
+    }
+    current = current.parent;
+  }
+  return null;
+}
+
+/**
+ * The hazard is identity churn measured against the CONSUMER, not absolute scope
+ * depth: `adaptValue` only ever sees a new transform identity when the function
+ * that references it re-runs and rebuilds the binding on the way. That holds
+ * exactly when the declaration and the reference share a nearest enclosing
+ * function.
+ *
+ * When the declaration sits in a strictly outer function — a component factory,
+ * an HOC, a `describe` callback consumed from a nested `it`, a class-method
+ * factory, an IIFE — the binding is created once per outer call and the
+ * referencing function is created in that same call, so every render sees the
+ * identical reference. The message's remedy is also unavailable there: `useMemo`
+ * cannot legally be called in a factory that is neither a component nor a hook,
+ * and a helper closing over an outer parameter cannot be hoisted to module
+ * scope. Module scope is the degenerate case: the declaration has no enclosing
+ * function at all.
+ *
+ * Scope resolution guarantees the declaration's scope is on the reference's
+ * scope chain, so "not the same function" and "strictly encloses" coincide here.
+ *
+ * A custom hook is deliberately NOT special-cased, and neither is a plain helper
+ * called during render: both re-run per render, and when either also holds the
+ * reference the two functions coincide, so the same predicate reports it.
+ */
+function isStableForConsumer(
+  defNode: TSESTree.Node,
+  consumerFunction: TSESTree.Node | null,
+): boolean {
+  const definitionFunction = getEnclosingFunction(defNode);
+  return definitionFunction === null || definitionFunction !== consumerFunction;
+}
+
 export const enforceTransformMemoization = createRule<[], MessageIds>({
   name: 'enforce-transform-memoization',
   meta: {
@@ -103,6 +177,15 @@ export const enforceTransformMemoization = createRule<[], MessageIds>({
       return '';
     };
 
+    // Used ONLY by the dependency audit, where the question is "can this value
+    // differ between two renders", not "is this binding stable for its
+    // consumer". The consumer-relative predicate is deliberately not applied
+    // here: a hook call nested in a render callback (`keys.map((key) =>
+    // adaptValue({ transformValue: useMemo(...) }, Switch))`) has that callback
+    // as its nearest enclosing function, so measuring against it would drop the
+    // component's own props and state from the audit — a false negative. Naming
+    // one extra outer-scope value in the array, by contrast, is a legal and
+    // harmless remedy, so over-collection costs nothing here.
     const isTopLevelScope = (scope: TSESLint.Scope.Scope): boolean =>
       scope.type === 'global' || scope.type === 'module';
 
@@ -475,9 +558,17 @@ export const enforceTransformMemoization = createRule<[], MessageIds>({
           return { ok: true };
         }
 
+        // `every` rather than `some` on the stability test: a name bound more
+        // than once is only as stable as its least stable binding. It also keeps
+        // a variable with NO definition — an ambient global such as `console`,
+        // resolved in the global scope with an empty `defs` — exempt, since such
+        // a binding is created once for the program's lifetime.
+        const consumerFunction = getEnclosingFunction(unwrapped);
         if (
           variable.defs.some((def) => def.type === 'Parameter') ||
-          isTopLevelScope(variable.scope)
+          variable.defs.every((def) =>
+            isStableForConsumer(def.node, consumerFunction),
+          )
         ) {
           return { ok: true };
         }
