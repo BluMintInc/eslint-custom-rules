@@ -155,6 +155,58 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
         };
       `,
     },
+    // Template-literal import of a non-cloud module stays untracked
+    {
+      code: `
+        const remove = async () => {
+          const { someFunction } = await import(\`src/utils/helper\`);
+          const groupFilter = { name: 'test', filter() { return true; } };
+          await someFunction({ groupFilter });
+        };
+      `,
+    },
+    // Interpolated import path has no statically known module, so it stays
+    // untracked: tracking it would widen the rule beyond notation equivalence
+    {
+      code: `
+        const remove = async (functionName: string) => {
+          const { exitChannelGroupExternal } = await import(\`src/firebaseCloud/messaging/\${functionName}\`);
+          const groupFilter = { name: 'test', filter() { return true; } };
+          await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+    },
+    // Template-literal cloud import with a plain payload stays silent
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import(\`src/firebaseCloud/messaging/exitChannelGroupExternal\`);
+          const groupFilter = { name: 'test-group', filterType: 'prefix-test' };
+          await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+    },
+    // Computed spelling of the Object.create(null) escape hatch
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const groupFilter = Object['create'](null);
+          groupFilter.name = 'test';
+          await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+    },
+    // Computed spelling of the JSON.stringify escape hatch
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const groupFilter = JSON['stringify']({ name: 'test-group', filterType: 'prefix-test' });
+          await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+    },
   ],
   invalid: [
     // Object with RegExp literal (invalid since it's not serializable)
@@ -440,6 +492,70 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
           const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
           const instance = new MyClass();
           await exitChannelGroupExternal({ instance });
+        };
+      `,
+      errors: [error],
+    },
+    // String-literal import source (control for the template-literal pair below:
+    // the two cases differ only in how the module path is quoted)
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          await exitChannelGroupExternal({ fn: () => 1 });
+        };
+      `,
+      errors: [error],
+    },
+    // No-substitution template literal spells the same module path, so the
+    // import must register the cloud function just as the string literal does
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import(\`src/firebaseCloud/messaging/exitChannelGroupExternal\`);
+          await exitChannelGroupExternal({ fn: () => 1 });
+        };
+      `,
+      errors: [error],
+    },
+    // Template-literal import source with a complex nested payload
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import(\`src/firebaseCloud/messaging/exitChannelGroupExternal\`);
+          const groupFilter = { pattern: /test-.*/ };
+          await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+      errors: [error],
+    },
+    // Computed Object['create'] with a complex prototype is still flagged: the
+    // escape hatch is Object.create(null), not every Object.create call
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const baseFilter = {
+            validate() { return true; }
+          };
+          const groupFilter = Object['create'](baseFilter);
+          groupFilter.name = 'test';
+          await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+      errors: [error],
+    },
+    // Computed spelling of a bound function
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const validate = function() { return this.name === 'test'; };
+          const groupFilter = {
+            name: 'test',
+            check: validate['bind']({ name: 'test' })
+          };
+          await exitChannelGroupExternal({ groupFilter });
         };
       `,
       errors: [error],

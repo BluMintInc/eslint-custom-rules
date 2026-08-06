@@ -50,3 +50,27 @@ const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/e
 const groupFilter = JSON.stringify({ name: 'test-group', ids: [1, 2, 3] });
 await exitChannelGroupExternal({ groupFilter });
 ```
+
+## Detection scope
+
+A function is treated as a cloud function when it is destructured from a dynamic
+import whose module path contains `firebaseCloud`. The path may be written as a
+string literal or as a template literal without substitutions — both spell the
+same module, so both are tracked:
+
+```typescript
+const { exitChannelGroupExternal } = await import(
+  `src/firebaseCloud/messaging/exitChannelGroupExternal`
+);
+const groupFilter = { pattern: 'test-.*' };
+await exitChannelGroupExternal({ groupFilter });
+```
+
+An interpolated path such as
+``await import(`src/firebaseCloud/messaging/${name}`)`` resolves to a different
+module on each call, so its exports are not tracked and calls to them are not
+checked.
+
+The `JSON.stringify`, `Object.create(null)`, and `.bind` escape hatches are
+recognized through computed member access as well, so `Object['create'](null)`
+behaves the same as `Object.create(null)`.
