@@ -492,6 +492,232 @@ ruleTesterTs.run('enforce-transform-memoization', enforceTransformMemoization, {
         );
       }
     `,
+    // Valid: component factory. The helper is created once per factory call and
+    // the component closes over that one reference, so no render recreates it.
+    // useMemo is illegal in the factory, so the demanded remedy has nowhere to
+    // go (issue #1770).
+    `
+      const Switch = () => null;
+
+      export function createBooleanAdapter() {
+        const convertToBoolean = (value: unknown) => Boolean(value);
+        return function AdaptedSwitch() {
+          return adaptValue(
+            {
+              valueKey: 'checked',
+              onChangeKey: 'onChange',
+              transformValue: convertToBoolean,
+            },
+            Switch,
+          );
+        };
+      }
+    `,
+    // Valid: the same factory shape for transformOnChange
+    `
+      const Switch = () => null;
+
+      export function createBooleanAdapter() {
+        const handleChange = (event) => event.target.checked;
+        return function AdaptedSwitch() {
+          return adaptValue(
+            {
+              valueKey: 'checked',
+              onChangeKey: 'onChange',
+              transformOnChange: handleChange,
+            },
+            Switch,
+          );
+        };
+      }
+    `,
+    // Valid: HOC. The helper cannot be hoisted to module scope in the general
+    // case because a factory helper may close over the factory's parameters.
+    `
+      const Switch = () => null;
+
+      export function withBooleanAdapter(Wrapped) {
+        const convertToBoolean = (value: unknown) => Boolean(value);
+        return function AdaptedSwitch(props) {
+          return adaptValue(
+            {
+              valueKey: 'checked',
+              onChangeKey: 'onChange',
+              transformValue: convertToBoolean,
+            },
+            Wrapped,
+          );
+        };
+      }
+    `,
+    // Valid: describe-scope helper consumed from a component built in a nested
+    // it. The describe callback runs once, so the reference never changes.
+    `
+      const Switch = () => null;
+
+      describe('adaptValue', () => {
+        const convertToBoolean = (value: unknown) => Boolean(value);
+        it('adapts', () => {
+          const Adapted = () =>
+            adaptValue(
+              {
+                valueKey: 'checked',
+                onChangeKey: 'onChange',
+                transformValue: convertToBoolean,
+              },
+              Switch,
+            );
+          expect(Adapted).toBeDefined();
+        });
+      });
+    `,
+    // Valid: class-method factory. A class body is not a render path and hooks
+    // are illegal in it.
+    `
+      const Switch = () => null;
+
+      class AdapterFactory {
+        build() {
+          const convertToBoolean = (value: unknown) => Boolean(value);
+          return function AdaptedSwitch() {
+            return adaptValue(
+              {
+                valueKey: 'checked',
+                onChangeKey: 'onChange',
+                transformValue: convertToBoolean,
+              },
+              Switch,
+            );
+          };
+        }
+      }
+    `,
+    // Valid: an IIFE is a function boundary like any other
+    `
+      const Switch = () => null;
+
+      export const AdaptedSwitch = (() => {
+        const convertToBoolean = (value: unknown) => Boolean(value);
+        return function Adapted() {
+          return adaptValue(
+            {
+              valueKey: 'checked',
+              onChangeKey: 'onChange',
+              transformValue: convertToBoolean,
+            },
+            Switch,
+          );
+        };
+      })();
+    `,
+    // Valid: a bare block outside every function binds once for the program
+    `
+      const Switch = () => null;
+      {
+        const convertToBoolean = (value: unknown) => Boolean(value);
+        var Adapted = function AdaptedSwitch() {
+          return adaptValue(
+            {
+              valueKey: 'checked',
+              onChangeKey: 'onChange',
+              transformValue: convertToBoolean,
+            },
+            Switch,
+          );
+        };
+      }
+    `,
+    // Valid: the factory helper reached through an identifier chain — each hop
+    // is resolved against the same consumer
+    `
+      const Switch = () => null;
+
+      export function createBooleanAdapter() {
+        const convertToBoolean = (value: unknown) => Boolean(value);
+        const transformValue = convertToBoolean;
+        return function AdaptedSwitch() {
+          return adaptValue(
+            { valueKey: 'checked', onChangeKey: 'onChange', transformValue },
+            Switch,
+          );
+        };
+      }
+    `,
+    // Valid: a function declaration hoisted inside the factory
+    `
+      const Switch = () => null;
+
+      export function createBooleanAdapter() {
+        function convertToBoolean(value: unknown) {
+          return Boolean(value);
+        }
+        return function AdaptedSwitch() {
+          return adaptValue(
+            {
+              valueKey: 'checked',
+              onChangeKey: 'onChange',
+              transformValue: convertToBoolean,
+            },
+            Switch,
+          );
+        };
+      }
+    `,
+    // Valid: a factory helper produced by an arbitrary call — the call runs once
+    // per factory call, so its result is as stable as any other outer binding
+    `
+      const throttle = (fn: any, ms: number) => fn;
+      const TextInput = () => null;
+
+      export function createThrottledAdapter() {
+        const throttledTransform = throttle((value: number) => value.toString(), 200);
+        return function AdaptedInput() {
+          return adaptValue(
+            {
+              valueKey: 'value',
+              onChangeKey: 'onChange',
+              transformValue: throttledTransform,
+            },
+            TextInput,
+          );
+        };
+      }
+    `,
+    // Valid: the consumer is a custom hook rather than a component
+    `
+      const Switch = () => null;
+
+      export function createBooleanAdapter() {
+        const convertToBoolean = (value: unknown) => Boolean(value);
+        return function useAdaptedSwitch() {
+          return adaptValue(
+            {
+              valueKey: 'checked',
+              onChangeKey: 'onChange',
+              transformValue: convertToBoolean,
+            },
+            Switch,
+          );
+        };
+      }
+    `,
+    // Valid: a factory parameter keeps its own exemption
+    `
+      const Switch = () => null;
+
+      export function createBooleanAdapter(convertToBoolean) {
+        return function AdaptedSwitch() {
+          return adaptValue(
+            {
+              valueKey: 'checked',
+              onChangeKey: 'onChange',
+              transformValue: convertToBoolean,
+            },
+            Switch,
+          );
+        };
+      }
+    `,
   ],
   invalid: [
     {
@@ -929,6 +1155,228 @@ ruleTesterTs.run('enforce-transform-memoization', enforceTransformMemoization, {
       `,
       errors: [{ messageId: 'memoizeTransformValue' }],
     },
+    // A helper declared in the component's own body is rebuilt by every render,
+    // so the consumer-relative carve-out must not reach it. `output: null`
+    // asserts the report carries no autofix: this rule declares no `fixable`
+    // and hands the remediation to the author.
+    {
+      code: `
+        const Switch = () => null;
+        function Component() {
+          const convertToBoolean = (value: unknown) => Boolean(value);
+          return adaptValue(
+            {
+              valueKey: 'checked',
+              onChangeKey: 'onChange',
+              transformValue: convertToBoolean,
+            },
+            Switch,
+          );
+        }
+      `,
+      output: null,
+      errors: [{ messageId: 'memoizeTransformValue' }],
+    },
+    // A custom hook body re-runs on every render of its caller, so a helper
+    // declared there is exactly as unstable as one in a component
+    {
+      code: `
+        const Switch = () => null;
+        export function useAdaptedSwitch() {
+          const convertToBoolean = (value: unknown) => Boolean(value);
+          return adaptValue(
+            {
+              valueKey: 'checked',
+              onChangeKey: 'onChange',
+              transformValue: convertToBoolean,
+            },
+            Switch,
+          );
+        }
+      `,
+      output: null,
+      errors: [{ messageId: 'memoizeTransformValue' }],
+    },
+    // A block inside the component is not a function boundary: the declaration
+    // still re-runs with the render
+    {
+      code: `
+        const Switch = () => null;
+        function Component() {
+          {
+            const handleChange = (event) => event.target.checked;
+            return adaptValue(
+              {
+                valueKey: 'checked',
+                onChangeKey: 'onChange',
+                transformOnChange: handleChange,
+              },
+              Switch,
+            );
+          }
+        }
+      `,
+      output: null,
+      errors: [{ messageId: 'memoizeTransformOnChange' }],
+    },
+    // The factory carve-out is keyed on the declaration being OUTSIDE the
+    // component: moving the same helper inside it reports again
+    {
+      code: `
+        const Switch = () => null;
+        export function createBooleanAdapter() {
+          return function AdaptedSwitch() {
+            const convertToBoolean = (value: unknown) => Boolean(value);
+            return adaptValue(
+              {
+                valueKey: 'checked',
+                onChangeKey: 'onChange',
+                transformValue: convertToBoolean,
+              },
+              Switch,
+            );
+          };
+        }
+      `,
+      output: null,
+      errors: [{ messageId: 'memoizeTransformValue' }],
+    },
+    // The same plant for the HOC shape
+    {
+      code: `
+        const Switch = () => null;
+        export function withBooleanAdapter(Wrapped) {
+          return function AdaptedSwitch(props) {
+            const convertToBoolean = (value: unknown) => Boolean(value);
+            return adaptValue(
+              {
+                valueKey: 'checked',
+                onChangeKey: 'onChange',
+                transformValue: convertToBoolean,
+              },
+              Wrapped,
+            );
+          };
+        }
+      `,
+      output: null,
+      errors: [{ messageId: 'memoizeTransformValue' }],
+    },
+    // The same plant for the class-method factory shape
+    {
+      code: `
+        const Switch = () => null;
+        class AdapterFactory {
+          build() {
+            return function AdaptedSwitch() {
+              const convertToBoolean = (value: unknown) => Boolean(value);
+              return adaptValue(
+                {
+                  valueKey: 'checked',
+                  onChangeKey: 'onChange',
+                  transformValue: convertToBoolean,
+                },
+                Switch,
+              );
+            };
+          }
+        }
+      `,
+      output: null,
+      errors: [{ messageId: 'memoizeTransformValue' }],
+    },
+    // The same plant for the describe/it shape
+    {
+      code: `
+        const Switch = () => null;
+        describe('adaptValue', () => {
+          it('adapts', () => {
+            const Adapted = () => {
+              const convertToBoolean = (value: unknown) => Boolean(value);
+              return adaptValue(
+                {
+                  valueKey: 'checked',
+                  onChangeKey: 'onChange',
+                  transformValue: convertToBoolean,
+                },
+                Switch,
+              );
+            };
+            expect(Adapted).toBeDefined();
+          });
+        });
+      `,
+      output: null,
+      errors: [{ messageId: 'memoizeTransformValue' }],
+    },
+    // A plain helper called during render is a render path, not an outer
+    // boundary: the declaration it holds is rebuilt on every render
+    {
+      code: `
+        const Switch = () => null;
+        function Component() {
+          const build = () => {
+            const convertToBoolean = (value: unknown) => Boolean(value);
+            return adaptValue(
+              {
+                valueKey: 'checked',
+                onChangeKey: 'onChange',
+                transformValue: convertToBoolean,
+              },
+              Switch,
+            );
+          };
+          return build();
+        }
+      `,
+      output: null,
+      errors: [{ messageId: 'memoizeTransformValue' }],
+    },
+    // A hook call inside a factory-built component is still on a render path,
+    // so the hook-shape checks keep applying there
+    {
+      code: `
+        import { useCallback } from 'react';
+        const Switch = () => null;
+        export function createBooleanAdapter() {
+          return function AdaptedSwitch() {
+            return adaptValue(
+              {
+                valueKey: 'checked',
+                onChangeKey: 'onChange',
+                transformValue: useCallback((value) => Boolean(value), []),
+              },
+              Switch,
+            );
+          };
+        }
+      `,
+      output: null,
+      errors: [{ messageId: 'useCorrectHook' }],
+    },
+    // A factory-built component's own props still have to be declared as
+    // dependencies: the dependency audit is measured against the render
+    // boundary, not against the factory
+    {
+      code: `
+        import { useMemo } from 'react';
+        const Switch = () => null;
+        export function createBooleanAdapter() {
+          return function AdaptedSwitch({ formatter }) {
+            return adaptValue(
+              {
+                valueKey: 'value',
+                onChangeKey: 'onChange',
+                transformValue: useMemo(() => (value) => formatter(value), []),
+              },
+              Switch,
+            );
+          };
+        }
+      `,
+      output: null,
+      errors: [{ messageId: 'missingDependencies' }],
+    },
   ],
 });
 
@@ -1069,6 +1517,90 @@ function Component() {
 
     expect(output).toContain('useLatestCallback');
     expect(messages.map((message) => message.messageId)).toEqual([
+      'memoizeTransformValue',
+    ]);
+  });
+});
+
+// The consumer-relative carve-out (issue #1770) decides whether code is
+// REWRITTEN by a downstream `--fix` run, so the rule's own fix behaviour is
+// asserted directly rather than inferred: it declares no `fixable`, emits no
+// fix on either side of the boundary, and a fix pass therefore converges after
+// one round with the report count unchanged.
+describe('enforce-transform-memoization emits no autofix across the boundary', () => {
+  const FACTORY_HELPER = `const Switch = () => null;
+
+export function createBooleanAdapter() {
+  const convertToBoolean = (value: unknown) => Boolean(value);
+  return function AdaptedSwitch() {
+    return adaptValue(
+      { valueKey: 'checked', onChangeKey: 'onChange', transformValue: convertToBoolean },
+      Switch,
+    );
+  };
+}`;
+
+  const COMPONENT_HELPER = `const Switch = () => null;
+
+export function createBooleanAdapter() {
+  return function AdaptedSwitch() {
+    const convertToBoolean = (value: unknown) => Boolean(value);
+    return adaptValue(
+      { valueKey: 'checked', onChangeKey: 'onChange', transformValue: convertToBoolean },
+      Switch,
+    );
+  };
+}`;
+
+  const runAlone = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      'test/enforce-transform-memoization',
+      enforceTransformMemoization as unknown as Rule.RuleModule,
+    );
+    const config = {
+      parser: '@typescript-eslint/parser',
+      parserOptions: {
+        ecmaVersion: 2020 as const,
+        sourceType: 'module' as const,
+        ecmaFeatures: { jsx: true },
+      },
+      rules: { 'test/enforce-transform-memoization': 'error' as const },
+    };
+    const { fixed, output } = linter.verifyAndFix(code, config, 'Adapted.tsx');
+    return {
+      fixed,
+      output,
+      before: linter.verify(code, config, 'Adapted.tsx'),
+      after: linter.verify(output, config, 'Adapted.tsx'),
+    };
+  };
+
+  it('declares no fixer at all', () => {
+    expect(enforceTransformMemoization.meta.fixable).toBeUndefined();
+  });
+
+  it('leaves the factory-scoped helper untouched and silent', () => {
+    const { fixed, output, before, after } = runAlone(FACTORY_HELPER);
+    expect(before).toEqual([]);
+    expect(fixed).toBe(false);
+    expect(output).toBe(FACTORY_HELPER);
+    expect(after).toEqual([]);
+  });
+
+  it('reports the component-scoped helper without rewriting it, and converges', () => {
+    const { fixed, output, before, after } = runAlone(COMPONENT_HELPER);
+    expect(before.map((message) => message.messageId)).toEqual([
+      'memoizeTransformValue',
+    ]);
+    expect(fixed).toBe(false);
+    expect(output).toBe(COMPONENT_HELPER);
+    expect(after.map((message) => message.messageId)).toEqual([
       'memoizeTransformValue',
     ]);
   });
