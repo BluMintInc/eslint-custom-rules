@@ -1,3 +1,11 @@
+## [1.20.119](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.118...v1.20.119) (2026-08-06)
+
+
+### Bug Fixes
+
+* **prefer-block-comments-for-declarations:** join comment runs, ignore trailing comments (closes [#1778](https://github.com/BluMintInc/eslint-custom-rules/issues/1778), closes [#1779](https://github.com/BluMintInc/eslint-custom-rules/issues/1779)) ([5b5fde7](https://github.com/BluMintInc/eslint-custom-rules/commit/5b5fde71502d1cc4a3a0605859b9bd3f61865a2f))
+* **require-hooks-default-params:** resolve the options type in every statement container (closes [#1781](https://github.com/BluMintInc/eslint-custom-rules/issues/1781)) ([64af596](https://github.com/BluMintInc/eslint-custom-rules/commit/64af5966dcc26dd5c1aaa54c51fc5e4cb0b3e9a8)), closes [#1756](https://github.com/BluMintInc/eslint-custom-rules/issues/1756)
+
 ## [1.20.118](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.117...v1.20.118) (2026-08-06)
 
 

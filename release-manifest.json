@@ -1,5 +1,28 @@
 [
   {
+    "version": "1.20.119",
+    "date": "2026-08-06T04:34:04.981Z",
+    "rules": [
+      {
+        "name": "prefer-block-comments-for-declarations",
+        "changeType": "fix",
+        "issues": [
+          1778,
+          1779
+        ],
+        "summary": "join comment runs, ignore trailing comments (closes #1778, closes #1779)"
+      },
+      {
+        "name": "require-hooks-default-params",
+        "changeType": "fix",
+        "issues": [
+          1781
+        ],
+        "summary": "resolve the options type in every statement container (closes #1781)"
+      }
+    ]
+  },
+  {
     "version": "1.20.118",
     "date": "2026-08-06T03:08:14.815Z",
     "rules": [
