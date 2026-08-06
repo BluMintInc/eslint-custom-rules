@@ -697,6 +697,195 @@ import type { Wide } from './types';
 const pick = ({ a, b }: Readonly<Wide>) => ({ a, b });
 `,
     },
+
+    // Regression (#1769): a type declared in a function body binds its name
+    // exactly as a top-level one does, so the narrowing proof must reach it.
+    // Resolving only \`Program.body\` killed the carve-out here and autofixed the
+    // pick into a spread that re-adds \`c\` — the #1642 widening itself.
+    `
+function outer() {
+  type Wide = { a: string; b: string; c: string };
+  const pick = ({ a, b }: Wide) => ({ a, b });
+  return pick;
+}
+`,
+
+    // Regression (#1769): the arrow-bodied spelling of the same shape.
+    `
+const build = () => {
+  type Wide = { a: string; b: string; c: string };
+  const pick = ({ a, b }: Wide) => ({ a, b });
+  return pick;
+};
+`,
+
+    // Regression (#1769): a bare block binds a type declaration too.
+    `
+{
+  type Wide = { a: string; b: string; c: string };
+  const pick = ({ a, b }: Wide) => ({ a, b });
+  void pick;
+}
+`,
+
+    // Regression (#1769): a \`namespace\` body is a statement container of its
+    // own, a route the \`Program.body\` scan never reached.
+    `
+namespace Shapes {
+  type Wide = { a: string; b: string; c: string };
+  export const pick = ({ a, b }: Wide) => ({ a, b });
+}
+`,
+
+    // Regression (#1769): a type exported from inside a namespace is the same
+    // declaration one node deeper, so the \`export\` unwrap applies at every
+    // depth rather than only at the top level.
+    `
+namespace Shapes {
+  export type Wide = { a: string; b: string; c: string };
+  export const pick = ({ a, b }: Wide) => ({ a, b });
+}
+`,
+
+    // Regression (#1769): a \`switch\` case holds statements without a block.
+    `
+function outer(kind: string) {
+  switch (kind) {
+    case 'wide': {
+      type Wide = { a: string; b: string; c: string };
+      return ({ a, b }: Wide) => ({ a, b });
+    }
+  }
+  return null;
+}
+`,
+
+    // Regression (#1769): a class static block is a statement container as well.
+    `
+class Registry {
+  static {
+    type Wide = { a: string; b: string; c: string };
+    const pick = ({ a, b }: Wide) => ({ a, b });
+    void pick;
+  }
+}
+`,
+
+    // Regression (#1769): an interface nested in a function body enumerates the
+    // same way an alias does.
+    `
+function outer() {
+  interface Wide {
+    a: string;
+    b: string;
+    c: string;
+  }
+  const pick = ({ a, b }: Wide) => ({ a, b });
+  return pick;
+}
+`,
+
+    // Regression (#1769): the contextual route reads the receiver's element
+    // type through the same resolver, so a nested declaration reaches it too.
+    `
+function outer() {
+  type Unit = { a: string; b: string; c: string };
+  const units: Unit[] = [];
+  return units.map(({ a, b }) => ({ a, b }));
+}
+`,
+
+    // Regression (#1769): \`Array<Unit>\` spells the same nested receiver type.
+    `
+function outer() {
+  type Unit = { a: string; b: string; c: string };
+  const units: Array<Unit> = [];
+  return units.map(({ a, b }) => ({ a, b }));
+}
+`,
+
+    // Regression (#1769): so does \`readonly Unit[]\`.
+    `
+function outer() {
+  type Unit = { a: string; b: string; c: string };
+  const units: readonly Unit[] = [];
+  return units.map(({ a, b }) => ({ a, b }));
+}
+`,
+
+    // Regression (#1769): a JSX target widens the same way, so the nested
+    // declaration must silence it identically.
+    `
+function outer() {
+  type Wide = { a: string; b: string; c: string };
+  const Narrowed = ({ a, b }: Wide) => <Child a={a} b={b} />;
+  return Narrowed;
+}
+`,
+
+    // Regression (#1769): an alias chain confined to the nested scope resolves
+    // link by link, each from the scope that writes it.
+    `
+function outer() {
+  type Base = { a: string; b: string; c: string };
+  type Wide = Base;
+  const pick = ({ a, b }: Wide) => ({ a, b });
+  return pick;
+}
+`,
+
+    // Regression (#1769): a nested alias whose target is declared at the top
+    // level resolves outward through the scope chain.
+    `
+type Base = { a: string; b: string; c: string };
+function outer() {
+  type Wide = Base;
+  const pick = ({ a, b }: Wide) => ({ a, b });
+  return pick;
+}
+`,
+
+    // Regression (#1769): type declarations hoist, so an alias written below
+    // its own reference still resolves.
+    `
+function outer() {
+  const pick = ({ a, b }: Wide) => ({ a, b });
+  type Wide = { a: string; b: string; c: string };
+  return pick;
+}
+`,
+
+    // Regression (#1769): key-preserving unwrapping applies to a nested
+    // declaration exactly as it does to a top-level one.
+    `
+function outer() {
+  type Wide = { a: string; b: string; c: string };
+  const pick = ({ a, b }: Readonly<Wide>) => ({ a, b });
+  return pick;
+}
+`,
+
+    // Regression (#1769): the innermost declaration wins, so an inner WIDE type
+    // shadows an outer exhaustive one and the pick stays a narrowing.
+    `
+type Wide = { a: string; b: string };
+function outer() {
+  type Wide = { a: string; b: string; c: string };
+  const pick = ({ a, b }: Wide) => ({ a, b });
+  return pick;
+}
+`,
+
+    // Regression (#1769): a declaration two containers out is still in scope.
+    `
+function outer() {
+  type Wide = { a: string; b: string; c: string };
+  return () => {
+    const pick = ({ a, b }: Wide) => ({ a, b });
+    return pick;
+  };
+}
+`,
   ],
 
   invalid: [
@@ -1975,26 +2164,6 @@ const pick = (props: Wide) => ({ ...props });
 `,
     },
 
-    // Regression (#1642): only top-level declarations are resolved, so a type
-    // declared inside a function body proves nothing.
-    {
-      code: `
-const build = () => {
-  type Wide = { a: string; b: string; c: string };
-  const pick = ({ a, b }: Wide) => ({ a, b });
-  return pick;
-};
-`,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
-const build = () => {
-  type Wide = { a: string; b: string; c: string };
-  const pick = (props: Wide) => ({ ...props });
-  return pick;
-};
-`,
-    },
-
     // Regression (#1642): a pick naming a member the source type does not
     // declare proves no subset relation, so today's behavior stands.
     {
@@ -2387,6 +2556,199 @@ const pick = ({ a, b }: Wide) => ({ a, b });
       output: `
 import Wide from './types';
 const pick = (props: Wide) => ({ ...props });
+`,
+    },
+
+    // Regression (#1769): widening resolution must not disable the rule. A
+    // nested declaration the pick covers exhaustively is a behavior-preserving
+    // rewrite, so it still reports at the depth the resolver newly reaches.
+    {
+      code: `
+function outer() {
+  type Exact = { a: string; b: string };
+  const pick = ({ a, b }: Exact) => ({ a, b });
+  return pick;
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+function outer() {
+  type Exact = { a: string; b: string };
+  const pick = (props: Exact) => ({ ...props });
+  return pick;
+}
+`,
+    },
+
+    // Regression (#1769): the same at namespace depth.
+    {
+      code: `
+namespace Shapes {
+  type Exact = { a: string; b: string };
+  export const pick = ({ a, b }: Exact) => ({ a, b });
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+namespace Shapes {
+  type Exact = { a: string; b: string };
+  export const pick = (props: Exact) => ({ ...props });
+}
+`,
+    },
+
+    // Regression (#1769): and inside a bare block.
+    {
+      code: `
+{
+  type Exact = { a: string; b: string };
+  const pick = ({ a, b }: Exact) => ({ a, b });
+  void pick;
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+{
+  type Exact = { a: string; b: string };
+  const pick = (props: Exact) => ({ ...props });
+  void pick;
+}
+`,
+    },
+
+    // Regression (#1769): a declaration in a SIBLING scope is not in scope at
+    // the reference, so it proves nothing and the rule reports — the walk goes
+    // outward only, never sideways.
+    {
+      code: `
+function other() {
+  type Wide = { a: string; b: string; c: string };
+  return null as unknown as Wide;
+}
+function outer() {
+  const pick = ({ a, b }: Wide) => ({ a, b });
+  return pick;
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+function other() {
+  type Wide = { a: string; b: string; c: string };
+  return null as unknown as Wide;
+}
+function outer() {
+  const pick = (props: Wide) => ({ ...props });
+  return pick;
+}
+`,
+    },
+
+    // Regression (#1769): the innermost declaration wins in the reporting
+    // direction too — an inner EXHAUSTIVE type shadows an outer wide one, and
+    // reading the outer member list instead would silence a report the rule
+    // owes.
+    {
+      code: `
+type Wide = { a: string; b: string; c: string };
+function outer() {
+  type Wide = { a: string; b: string };
+  const pick = ({ a, b }: Wide) => ({ a, b });
+  return pick;
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Wide = { a: string; b: string; c: string };
+function outer() {
+  type Wide = { a: string; b: string };
+  const pick = (props: Wide) => ({ ...props });
+  return pick;
+}
+`,
+    },
+
+    // Regression (#1769): a self-referential alias in a nested scope terminates
+    // without proving anything rather than recurring forever.
+    {
+      code: `
+function outer() {
+  type Wide = Wide;
+  const pick = ({ a, b }: Wide) => ({ a, b });
+  return pick;
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+function outer() {
+  type Wide = Wide;
+  const pick = (props: Wide) => ({ ...props });
+  return pick;
+}
+`,
+    },
+
+    // Regression (#1769): a two-link cycle across scopes terminates as well.
+    {
+      code: `
+type Wide = Inner;
+function outer() {
+  type Inner = Wide;
+  const pick = ({ a, b }: Inner) => ({ a, b });
+  return pick;
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Wide = Inner;
+function outer() {
+  type Inner = Wide;
+  const pick = (props: Inner) => ({ ...props });
+  return pick;
+}
+`,
+    },
+
+    // Regression (#1769): a nested declaration that enumerates nothing — an
+    // index signature admits members that are never written down — still leaves
+    // the pick unproven.
+    {
+      code: `
+function outer() {
+  type Wide = { a: string; b: string; [key: string]: string };
+  const pick = ({ a, b }: Wide) => ({ a, b });
+  return pick;
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+function outer() {
+  type Wide = { a: string; b: string; [key: string]: string };
+  const pick = (props: Wide) => ({ ...props });
+  return pick;
+}
+`,
+    },
+
+    // Regression (#1769): a nested declaration of \`Readonly\` shadows the lib
+    // utility, and this one drops a key, so reading through it would silence an
+    // exhaustive reassembly.
+    {
+      code: `
+function outer() {
+  type Readonly<T> = Pick<T, 'a' | 'b'>;
+  type Big = { a: string; b: string; c: string };
+  const pick = ({ a, b }: Readonly<Big>) => ({ a, b });
+  return pick;
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+function outer() {
+  type Readonly<T> = Pick<T, 'a' | 'b'>;
+  type Big = { a: string; b: string; c: string };
+  const pick = (props: Readonly<Big>) => ({ ...props });
+  return pick;
+}
 `,
     },
   ],
