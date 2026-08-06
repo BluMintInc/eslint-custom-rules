@@ -575,83 +575,188 @@ function collectReturnIdentifierNames(
   return names;
 }
 
-function moduleScopeFunctions(
-  program: TSESTree.Program,
-): Map<string, FunctionWithBody> {
-  const functions = new Map<string, FunctionWithBody>();
+/**
+ * The statement list a container holds, or undefined for a node that holds
+ * none. These are every place a function can be declared as a direct child, so
+ * walking them outward reproduces TypeScript's own scope chain.
+ */
+function statementsOf(
+  node: TSESTree.Node,
+): readonly TSESTree.Node[] | undefined {
+  switch (node.type) {
+    case AST_NODE_TYPES.Program:
+    case AST_NODE_TYPES.BlockStatement:
+    case AST_NODE_TYPES.TSModuleBlock:
+    case AST_NODE_TYPES.StaticBlock:
+      return node.body;
+    case AST_NODE_TYPES.SwitchCase:
+      return node.consequent;
+    default:
+      return undefined;
+  }
+}
 
-  const statements = program.body.map((statement) => {
-    if (
-      statement.type === AST_NODE_TYPES.ExportNamedDeclaration ||
-      statement.type === AST_NODE_TYPES.ExportDefaultDeclaration
-    ) {
-      return statement.declaration ?? statement;
+/**
+ * What a statement list binds each of its names to: the function when the name
+ * denotes one, `null` when it denotes anything else.
+ *
+ * A non-function binding is recorded rather than skipped because it still
+ * shadows a same-named function in an enclosing scope, and a reference resolving
+ * to it reaches no function at all.
+ */
+function scopeBindings(
+  statements: readonly TSESTree.Node[],
+): Map<string, FunctionWithBody | null> {
+  const bindings = new Map<string, FunctionWithBody | null>();
+
+  const bind = (name: string, fn: FunctionWithBody | null): void => {
+    if (!bindings.has(name)) {
+      bindings.set(name, fn);
     }
-    return statement;
-  });
+  };
 
-  for (const statement of statements) {
-    if (
-      statement.type === AST_NODE_TYPES.FunctionDeclaration &&
-      statement.id &&
-      statement.body
-    ) {
-      functions.set(statement.id.name, statement);
+  for (const rawStatement of statements) {
+    // `export function f() {}` is the same declaration one AST node deeper, and
+    // the `export` keyword alone cannot decide whether a name is resolvable.
+    const statement =
+      (rawStatement.type === AST_NODE_TYPES.ExportNamedDeclaration ||
+        rawStatement.type === AST_NODE_TYPES.ExportDefaultDeclaration) &&
+      rawStatement.declaration
+        ? rawStatement.declaration
+        : rawStatement;
+
+    if (statement.type === AST_NODE_TYPES.FunctionDeclaration && statement.id) {
+      bind(statement.id.name, statement.body ? statement : null);
+      continue;
+    }
+
+    if (statement.type === AST_NODE_TYPES.ClassDeclaration && statement.id) {
+      bind(statement.id.name, null);
+      continue;
+    }
+
+    if (statement.type === AST_NODE_TYPES.ImportDeclaration) {
+      for (const specifier of statement.specifiers) {
+        bind(specifier.local.name, null);
+      }
       continue;
     }
 
     if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
       for (const declarator of statement.declarations) {
+        if (declarator.id.type !== AST_NODE_TYPES.Identifier) continue;
+
         const init = declarator.init;
-        if (
-          declarator.id.type === AST_NODE_TYPES.Identifier &&
+        const isFunction =
           init &&
           (init.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-            (init.type === AST_NODE_TYPES.FunctionExpression && init.body))
-        ) {
-          functions.set(declarator.id.name, init);
-        }
+            (init.type === AST_NODE_TYPES.FunctionExpression && init.body));
+        bind(
+          declarator.id.name,
+          isFunction ? (init as FunctionWithBody) : null,
+        );
       }
     }
   }
 
-  return functions;
+  return bindings;
 }
 
 /**
- * Maps each module-scope function name to the names it references from its own
- * return expressions. A cycle in this graph is mutual recursion, which triggers
- * the same TS7023 as direct self-reference.
+ * Walks the graph whose nodes are functions and whose edges run from a function
+ * to each function it names in its own return expressions. A cycle through that
+ * graph is mutual recursion, which triggers the same TS7023 as direct
+ * self-reference.
+ *
+ * Each edge is resolved from the referencing function's own body outward
+ * through every enclosing statement container, innermost first, so the nearest
+ * declaration shadows a same-named outer one — the resolution TypeScript itself
+ * performs. That keeps the graph honest in both directions: two same-named
+ * functions in sibling scopes cannot see each other and so never link, while a
+ * cycle crossing a scope boundary — an inner function returning a call to the
+ * enclosing one that returns it — still does.
+ *
+ * A function declared in a function body, a bare block, a `namespace` or a
+ * `switch` case binds its name just as effectively as a top-level one. Reading
+ * only `Program.body` left every one of those unresolvable, which killed this
+ * carve-out for any pair not written at the top level (#1771) — and since the
+ * fixer DELETES the annotation, the resulting report shipped code that does not
+ * compile.
+ *
+ * Every statement of a container is searched rather than only those preceding
+ * the reference, matching the hoisting that makes a mutually recursive pair
+ * legal in the first place.
+ *
+ * Bindings and edges are memoised per node: a file's annotations are walked one
+ * at a time, each walk re-reads the same enclosing containers, and a cycle is
+ * traversed once per member.
  */
-function buildReturnReferenceGraph(
-  program: TSESTree.Program,
-  visitorKeys: VisitorKeys,
-): Map<string, Set<string>> {
-  const graph = new Map<string, Set<string>>();
+function createReturnCycleResolver(visitorKeys: VisitorKeys) {
+  const edges = new Map<FunctionWithBody, FunctionWithBody[]>();
+  const bindings = new Map<
+    TSESTree.Node,
+    Map<string, FunctionWithBody | null>
+  >();
 
-  for (const [name, fn] of moduleScopeFunctions(program)) {
-    graph.set(name, collectReturnIdentifierNames(fn, visitorKeys));
-  }
+  const bindingsOf = (
+    container: TSESTree.Node,
+    statements: readonly TSESTree.Node[],
+  ): Map<string, FunctionWithBody | null> => {
+    const cached = bindings.get(container);
+    if (cached) return cached;
 
-  return graph;
-}
+    const computed = scopeBindings(statements);
+    bindings.set(container, computed);
+    return computed;
+  };
 
-function participatesInReturnCycle(
-  name: string,
-  graph: Map<string, Set<string>>,
-): boolean {
-  const seen = new Set<string>();
-  const stack = [...(graph.get(name) ?? [])];
+  const resolveFunctionInScope = (
+    from: TSESTree.Node,
+    name: string,
+  ): FunctionWithBody | undefined => {
+    let current: TSESTree.Node | undefined = from;
+    while (current) {
+      const statements = statementsOf(current);
+      if (statements) {
+        const scope = bindingsOf(current, statements);
+        if (scope.has(name)) {
+          return scope.get(name) ?? undefined;
+        }
+      }
+      current = current.parent as TSESTree.Node | undefined;
+    }
+    return undefined;
+  };
 
-  while (stack.length > 0) {
-    const current = stack.pop() as string;
-    if (current === name) return true;
-    if (seen.has(current)) continue;
-    seen.add(current);
-    stack.push(...(graph.get(current) ?? []));
-  }
+  const edgesOf = (fn: FunctionWithBody): FunctionWithBody[] => {
+    const cached = edges.get(fn);
+    if (cached) return cached;
 
-  return false;
+    const resolved: FunctionWithBody[] = [];
+    for (const name of collectReturnIdentifierNames(fn, visitorKeys)) {
+      const target = resolveFunctionInScope(fn.body, name);
+      if (target) {
+        resolved.push(target);
+      }
+    }
+    edges.set(fn, resolved);
+    return resolved;
+  };
+
+  return function participatesInReturnCycle(fn: FunctionWithBody): boolean {
+    const seen = new Set<FunctionWithBody>();
+    const stack = [...edgesOf(fn)];
+
+    while (stack.length > 0) {
+      const current = stack.pop() as FunctionWithBody;
+      if (current === fn) return true;
+      if (seen.has(current)) continue;
+      seen.add(current);
+      stack.push(...edgesOf(current));
+    }
+
+    return false;
+  };
 }
 
 /**
@@ -1049,9 +1154,9 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
        */
       const isReportSuppressed = createSuppressionChecker(context);
 
-      // Built at most once per file, and only when a direct self-reference has
-      // already been ruled out.
-      let returnReferenceGraph: Map<string, Set<string>> | undefined;
+      // Edges are resolved lazily, and only for functions a direct
+      // self-reference has already failed to explain.
+      const participatesInReturnCycle = createReturnCycleResolver(visitorKeys);
 
       /**
        * True when TypeScript cannot infer the return type because the function
@@ -1079,19 +1184,11 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
               reference.kind === 'identifier',
           )
           .map((reference) => reference.name);
+        // A function nothing can name cannot close a cycle, so the cheap
+        // name check stays ahead of the graph walk.
         if (identifierNames.length === 0) return false;
 
-        if (!returnReferenceGraph) {
-          returnReferenceGraph = buildReturnReferenceGraph(
-            sourceCode.ast,
-            visitorKeys,
-          );
-        }
-        const graph = returnReferenceGraph;
-
-        return identifierNames.some((name) =>
-          participatesInReturnCycle(name, graph),
-        );
+        return participatesInReturnCycle(fn);
       }
 
       if (

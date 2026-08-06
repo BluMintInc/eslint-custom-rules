@@ -3014,3 +3014,449 @@ describe('no-explicit-return-type --fix under eslint-disable', () => {
     expect(unusedBindings(output)).toEqual([]);
   });
 });
+
+// The mutual-recursion carve-out resolves its candidate pair through the scope
+// chain of the declaration that carries the annotation, not through
+// `Program.body`. `tsc` raises the same TS7023 for a pair in a function body, an
+// arrow body, a `namespace`, a bare block or a method body as it does for a
+// top-level pair, so nesting cannot decide whether an annotation is removable —
+// and because this rule's fixer DELETES the annotation, getting that wrong ships
+// code that does not compile (#1771).
+ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
+  valid: [
+    // The issue's own reproduction: mutually recursive local arrows in a
+    // function body. Stripping either annotation yields TS7023 on both.
+    `
+export function makeParity() {
+  const isEven = (n: number): boolean => (n === 0 ? true : isOdd(n - 1));
+  const isOdd = (n: number): boolean => (n === 0 ? false : isEven(n - 1));
+  return { isEven, isOdd };
+}
+`,
+    // The control the issue pairs it with, which was already silent. It stays
+    // silent, so the fix equalises the two rather than moving both.
+    `
+const isEven = (n: number): boolean => (n === 0 ? true : isOdd(n - 1));
+const isOdd = (n: number): boolean => (n === 0 ? false : isEven(n - 1));
+export const parity = { isEven, isOdd };
+`,
+    // The same pair inside an arrow-bodied factory.
+    `
+export const makeParity = () => {
+  const isEven = (n: number): boolean => (n === 0 ? true : isOdd(n - 1));
+  const isOdd = (n: number): boolean => (n === 0 ? false : isEven(n - 1));
+  return { isEven, isOdd };
+};
+`,
+    // A `namespace` body is a TSModuleBlock, a statement container the module
+    // scope walk reaches through the `export` wrapper on each declaration.
+    `
+export namespace Parity {
+  export function isEven(n: number): boolean {
+    return n === 0 ? true : isOdd(n - 1);
+  }
+  export function isOdd(n: number): boolean {
+    return n === 0 ? false : isEven(n - 1);
+  }
+}
+`,
+    // A bare block binds its function declarations exactly as a function body
+    // does.
+    `
+{
+  function isEven(n: number): boolean {
+    return n === 0 ? true : isOdd(n - 1);
+  }
+  function isOdd(n: number): boolean {
+    return n === 0 ? false : isEven(n - 1);
+  }
+  console.log(isEven(4));
+}
+`,
+    // A class method body.
+    `
+export class Parity {
+  public check(n: number) {
+    const isEven = (m: number): boolean => (m === 0 ? true : isOdd(m - 1));
+    const isOdd = (m: number): boolean => (m === 0 ? false : isEven(m - 1));
+    return isEven(n);
+  }
+}
+`,
+    // A `switch` case's consequent is a statement list of its own.
+    `
+export function parityOf(kind: string, n: number) {
+  switch (kind) {
+    case 'parity': {
+      const isEven = (m: number): boolean => (m === 0 ? true : isOdd(m - 1));
+      const isOdd = (m: number): boolean => (m === 0 ? false : isEven(m - 1));
+      return isEven(n);
+    }
+    default:
+      return false;
+  }
+}
+`,
+    // A class static block.
+    `
+export class Parity {
+  static readonly seed: boolean;
+  static {
+    const isEven = (m: number): boolean => (m === 0 ? true : isOdd(m - 1));
+    const isOdd = (m: number): boolean => (m === 0 ? false : isEven(m - 1));
+    Parity.seed = isEven(4);
+  }
+}
+`,
+    // The cycle crossing a scope boundary outward: the inner function returns a
+    // call to the outer one, which returns a call to the inner. `tsc` reports
+    // TS7023 on both, so the outward walk must keep reaching enclosing
+    // containers rather than stopping at the innermost one.
+    `
+export function outer(): number {
+  function inner(): number {
+    return outer();
+  }
+  return inner();
+}
+`,
+    // A cycle longer than a pair: the walk follows edges transitively, so three
+    // nested arrows closing a ring keep their annotations. `tsc` reports TS7023
+    // on all three without them.
+    `
+export function factory() {
+  const a = (n: number): number => b(n);
+  const b = (n: number): number => c(n);
+  const c = (n: number): number => a(n);
+  return { a, b, c };
+}
+`,
+    // Direct recursion nested in a function body never consulted the
+    // module-scope graph and stayed silent throughout; pinned so the rewrite
+    // cannot regress the path it did not touch.
+    `
+export function outer() {
+  const fact = (n: number): number => (n <= 1 ? 1 : n * fact(n - 1));
+  return fact;
+}
+`,
+  ],
+  invalid: [
+    // The isolating control for the whole carve-out: a nested annotation whose
+    // function is not recursive at all is still redundant, and is still
+    // reported and stripped.
+    {
+      code: `
+export function outer() {
+  const double = (n: number): number => n * 2;
+  return double;
+}
+`,
+      output: `
+export function outer() {
+  const double = (n: number) => n * 2;
+  return double;
+}
+`,
+      errors: [{ messageId: 'noExplicitReturnTypeInferable' }],
+    },
+    // Sibling scopes: two same-named helpers that cannot see each other are not
+    // a mutually recursive pair, however suggestive the names are. Reading the
+    // whole file instead of the scope chain would exempt both.
+    {
+      code: `
+export function first() {
+  const isEven = (n: number): boolean => n === 0;
+  return isEven;
+}
+export function second() {
+  const isOdd = (n: number): boolean => n !== 0;
+  return isOdd;
+}
+`,
+      output: `
+export function first() {
+  const isEven = (n: number) => n === 0;
+  return isEven;
+}
+export function second() {
+  const isOdd = (n: number) => n !== 0;
+  return isOdd;
+}
+`,
+      errors: [
+        { messageId: 'noExplicitReturnTypeInferable' },
+        { messageId: 'noExplicitReturnTypeInferable' },
+      ],
+    },
+    // The cycle broken: `isOdd` no longer references `isEven`, so neither
+    // annotation is load-bearing and both are stripped even though the pair is
+    // nested and the names are unchanged.
+    {
+      code: `
+export function makeParity() {
+  const isEven = (n: number): boolean => (n === 0 ? true : isOdd(n - 1));
+  const isOdd = (n: number): boolean => n % 2 === 1;
+  return { isEven, isOdd };
+}
+`,
+      output: `
+export function makeParity() {
+  const isEven = (n: number) => (n === 0 ? true : isOdd(n - 1));
+  const isOdd = (n: number) => n % 2 === 1;
+  return { isEven, isOdd };
+}
+`,
+      errors: [
+        { messageId: 'noExplicitReturnTypeInferable' },
+        { messageId: 'noExplicitReturnTypeInferable' },
+      ],
+    },
+    // A nested helper whose name matches a mutually recursive module-scope pair
+    // shadows it. The module-scope pair keeps its exemption; the shadowing
+    // helper, which references nothing, does not inherit one.
+    {
+      code: `
+const isEven = (n: number): boolean => (n === 0 ? true : isOdd(n - 1));
+const isOdd = (n: number): boolean => (n === 0 ? false : isEven(n - 1));
+export function outer() {
+  const isOdd = (n: number): boolean => n === 1;
+  return isOdd;
+}
+export const parity = { isEven, isOdd };
+`,
+      output: `
+const isEven = (n: number): boolean => (n === 0 ? true : isOdd(n - 1));
+const isOdd = (n: number): boolean => (n === 0 ? false : isEven(n - 1));
+export function outer() {
+  const isOdd = (n: number) => n === 1;
+  return isOdd;
+}
+export const parity = { isEven, isOdd };
+`,
+      errors: [{ messageId: 'noExplicitReturnTypeInferable' }],
+    },
+    // The shadow need not be a function. A `const other = 3` binds the name too,
+    // so the reference reaches a number rather than the cyclic module-scope
+    // `other`, and `tsc` accepts the strip.
+    {
+      code: `
+const helper = (n: number): number => other(n);
+const other = (n: number): number => helper(n);
+export function outer() {
+  const other = 3;
+  const helper = (n: number): number => n + other;
+  return helper;
+}
+export const pair = { helper, other };
+`,
+      output: `
+const helper = (n: number): number => other(n);
+const other = (n: number): number => helper(n);
+export function outer() {
+  const other = 3;
+  const helper = (n: number) => n + other;
+  return helper;
+}
+export const pair = { helper, other };
+`,
+      errors: [{ messageId: 'noExplicitReturnTypeInferable' }],
+    },
+    // An import binds its local name in module scope, so a nested helper naming
+    // it reaches the import rather than a same-named local function.
+    {
+      code: `
+import { other } from './other';
+export function outer() {
+  const helper = (n: number): number => other(n);
+  return helper;
+}
+`,
+      output: `
+import { other } from './other';
+export function outer() {
+  const helper = (n: number) => other(n);
+  return helper;
+}
+`,
+      errors: [{ messageId: 'noExplicitReturnTypeInferable' }],
+    },
+    // A chain of three closes no cycle when its last link returns a value, so
+    // every annotation in it is redundant even though the first two do
+    // reference a sibling.
+    {
+      code: `
+export function factory() {
+  const a = (n: number): number => b(n);
+  const b = (n: number): number => c(n);
+  const c = (n: number): number => n;
+  return { a, b, c };
+}
+`,
+      output: `
+export function factory() {
+  const a = (n: number) => b(n);
+  const b = (n: number) => c(n);
+  const c = (n: number) => n;
+  return { a, b, c };
+}
+`,
+      errors: [
+        { messageId: 'noExplicitReturnTypeInferable' },
+        { messageId: 'noExplicitReturnTypeInferable' },
+        { messageId: 'noExplicitReturnTypeInferable' },
+      ],
+    },
+  ],
+});
+
+/**
+ * A valid case proves only that no report was emitted. This rule's fix DELETES
+ * the annotation, so what a carve-out is actually protecting is the file's
+ * bytes: an exempt shape must come back byte-identical from a real `--fix` run,
+ * and a reported one must converge in a single pass rather than oscillating.
+ *
+ * Each exempt fixture here is a shape `tsc --noEmit --strict` accepts as written
+ * and rejects with TS7023 once the annotations are removed, so "no fix emitted"
+ * is the difference between a compiling file and a broken build.
+ */
+describe('no-explicit-return-type mutual recursion across scopes', () => {
+  const RULE_ID = '@blumintinc/blumint/no-explicit-return-type';
+
+  const fixWith = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      noExplicitReturnType as unknown as Rule.RuleModule,
+    );
+    return linter.verifyAndFix(
+      code,
+      {
+        parser: '@typescript-eslint/parser',
+        parserOptions: {
+          ecmaVersion: 2022 as const,
+          sourceType: 'module' as const,
+        },
+        rules: { [RULE_ID]: 'error' },
+      },
+      'x.ts',
+    );
+  };
+
+  const NESTED_PAIR = `export function makeParity() {
+  const isEven = (n: number): boolean => (n === 0 ? true : isOdd(n - 1));
+  const isOdd = (n: number): boolean => (n === 0 ? false : isEven(n - 1));
+  return { isEven, isOdd };
+}
+`;
+
+  const TOP_LEVEL_PAIR = `const isEven = (n: number): boolean => (n === 0 ? true : isOdd(n - 1));
+const isOdd = (n: number): boolean => (n === 0 ? false : isEven(n - 1));
+export const parity = { isEven, isOdd };
+`;
+
+  const NAMESPACE_PAIR = `export namespace Parity {
+  export function isEven(n: number): boolean {
+    return n === 0 ? true : isOdd(n - 1);
+  }
+  export function isOdd(n: number): boolean {
+    return n === 0 ? false : isEven(n - 1);
+  }
+}
+`;
+
+  const METHOD_BODY_PAIR = `export class Parity {
+  public check(n: number) {
+    const isEven = (m: number): boolean => (m === 0 ? true : isOdd(m - 1));
+    const isOdd = (m: number): boolean => (m === 0 ? false : isEven(m - 1));
+    return isEven(n);
+  }
+}
+`;
+
+  it.each([
+    ['a function body', NESTED_PAIR],
+    ['module scope', TOP_LEVEL_PAIR],
+    ['a namespace body', NAMESPACE_PAIR],
+    ['a class method body', METHOD_BODY_PAIR],
+  ])('emits no fix for a mutually recursive pair in %s', (_label, source) => {
+    const { output, fixed } = fixWith(source);
+
+    expect(fixed).toBe(false);
+    expect(output).toBe(source);
+    // The annotations are what `tsc` needs to break the inference cycle, so
+    // their survival is the property under test, not a side effect of it.
+    expect(output).toContain('isEven');
+    expect(output).toContain(': boolean');
+  });
+
+  // Non-vacuity: the same harness, on a shape with no cycle, must still rewrite.
+  // Without this, a rule that stopped reporting entirely would pass every
+  // assertion above.
+  it('still strips a nested annotation that no cycle requires', () => {
+    const source = `export function outer() {
+  const double = (n: number): number => n * 2;
+  return double;
+}
+`;
+    const { output, fixed } = fixWith(source);
+
+    expect(fixed).toBe(true);
+    expect(output).toBe(`export function outer() {
+  const double = (n: number) => n * 2;
+  return double;
+}
+`);
+    // Converged: re-running the fixer finds nothing left to change.
+    expect(fixWith(output).output).toBe(output);
+  });
+
+  // The one direction of this change that ADDS a report, and the one a
+  // downstream consumer feels: a nested helper shadowing a cyclic module-scope
+  // name used to inherit that name's exemption. `tsc --noEmit --strict` accepts
+  // the stripped form, so the addition is correct — and the pair it shadows must
+  // keep both of its own annotations through the same pass.
+  it('strips a nested shadow while the module-scope cycle it shadows survives', () => {
+    const source = `const isEven = (n: number): boolean => (n === 0 ? true : isOdd(n - 1));
+const isOdd = (n: number): boolean => (n === 0 ? false : isEven(n - 1));
+export function outer() {
+  const isOdd = (n: number): boolean => n === 1;
+  return isOdd;
+}
+export const parity = { isEven, isOdd };
+`;
+    const { output, fixed } = fixWith(source);
+
+    expect(fixed).toBe(true);
+    expect(output).toContain(
+      'const isEven = (n: number): boolean => (n === 0 ? true : isOdd(n - 1));',
+    );
+    expect(output).toContain(
+      'const isOdd = (n: number): boolean => (n === 0 ? false : isEven(n - 1));',
+    );
+    expect(output).toContain('const isOdd = (n: number) => n === 1;');
+    expect(fixWith(output).output).toBe(output);
+  });
+
+  it('still strips both annotations of a nested same-named sibling pair', () => {
+    const source = `export function first() {
+  const isEven = (n: number): boolean => n === 0;
+  return isEven;
+}
+export function second() {
+  const isOdd = (n: number): boolean => n !== 0;
+  return isOdd;
+}
+`;
+    const { output, fixed } = fixWith(source);
+
+    expect(fixed).toBe(true);
+    expect(output).not.toContain(': boolean');
+    expect(fixWith(output).output).toBe(output);
+  });
+});
