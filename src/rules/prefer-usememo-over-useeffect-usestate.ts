@@ -101,6 +101,34 @@ export const preferUseMemoOverUseEffectUseState = createRule({
       return node.type === 'Identifier';
     };
 
+    // The expression a lazy useState initializer produces, if it produces one.
+    // A concise arrow body and a single `return` statement declare the same
+    // initializer, so both spellings must resolve to the same expression rather
+    // than the exemption below recognizing only one of them. A block with any
+    // other shape does work beyond producing a value, which is outside what the
+    // exemption covers.
+    const lazyInitializerResult = (
+      node: TSESTree.Node,
+    ): TSESTree.Node | null => {
+      if (
+        node.type !== 'ArrowFunctionExpression' &&
+        node.type !== 'FunctionExpression'
+      ) {
+        return null;
+      }
+
+      if (node.body.type !== 'BlockStatement') {
+        return node.body;
+      }
+
+      if (node.body.body.length !== 1) {
+        return null;
+      }
+
+      const statement = node.body.body[0];
+      return statement.type === 'ReturnStatement' ? statement.argument : null;
+    };
+
     // Helper to check if this is a state synchronization pattern
     const isStateSynchronization = (
       initialValue: TSESTree.Node | null,
@@ -118,14 +146,14 @@ export const preferUseMemoOverUseEffectUseState = createRule({
         return true;
       }
 
-      // If the initial value is a function that references a prop and the setter argument
-      // is that same prop, this is likely state synchronization
+      // If the initial value is a lazy initializer producing a prop and the
+      // setter argument is that same prop, this is likely state synchronization
+      const lazyResult = initialValue && lazyInitializerResult(initialValue);
       if (
-        initialValue &&
-        initialValue.type === 'ArrowFunctionExpression' &&
-        initialValue.body.type === 'Identifier' &&
+        lazyResult &&
+        lazyResult.type === 'Identifier' &&
         isIdentifierReference(setterArgument) &&
-        initialValue.body.name === (setterArgument as TSESTree.Identifier).name
+        lazyResult.name === (setterArgument as TSESTree.Identifier).name
       ) {
         return true;
       }

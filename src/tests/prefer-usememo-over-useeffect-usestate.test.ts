@@ -118,6 +118,85 @@ ruleTesterJsx.run(
         }
       `,
       },
+      // Valid case: State synchronization with prop (block-bodied arrow initializer)
+      {
+        code: `
+        function Component({ isEditingProp }) {
+          const [isEditingInternal, setIsEditingInternal] = useState(() => { return isEditingProp; });
+
+          useEffect(() => {
+            setIsEditingInternal(isEditingProp);
+          }, [isEditingProp]);
+
+          return <div>{isEditingInternal ? 'Editing' : 'Viewing'}</div>;
+        }
+      `,
+      },
+      // Valid case: State synchronization with a block-bodied initializer spread over lines
+      {
+        code: `
+        function Component({ isEditingProp }) {
+          const [isEditingInternal, setIsEditingInternal] = useState(() => {
+            return isEditingProp;
+          });
+
+          useEffect(() => {
+            setIsEditingInternal(isEditingProp);
+          }, [isEditingProp]);
+
+          return <div>{isEditingInternal ? 'Editing' : 'Viewing'}</div>;
+        }
+      `,
+      },
+      // Valid case: a comment inside the initializer body must not change the verdict
+      {
+        code: `
+        function Component({ isEditingProp }) {
+          const [isEditingInternal, setIsEditingInternal] = useState(() => {
+            // Seeded from the prop, then kept in sync by the effect below
+            return isEditingProp;
+          });
+
+          useEffect(() => {
+            setIsEditingInternal(isEditingProp);
+          }, [isEditingProp]);
+
+          return <div>{isEditingInternal ? 'Editing' : 'Viewing'}</div>;
+        }
+      `,
+      },
+      // Valid case: State synchronization with a function expression initializer
+      {
+        code: `
+        function Component({ isEditingProp }) {
+          const [isEditingInternal, setIsEditingInternal] = useState(function () {
+            return isEditingProp;
+          });
+
+          useEffect(() => {
+            setIsEditingInternal(isEditingProp);
+          }, [isEditingProp]);
+
+          return <div>{isEditingInternal ? 'Editing' : 'Viewing'}</div>;
+        }
+      `,
+      },
+      // Valid case: State synchronization with a named function expression initializer
+      {
+        code: `
+        function Component({ isEditingProp }) {
+          const [isEditingInternal, setIsEditingInternal] = useState(function seedFromProp() {
+            return isEditingProp;
+          });
+
+          useEffect(() => {
+            setIsEditingInternal(isEditingProp);
+          }, [isEditingProp]);
+
+          return <div>{isEditingInternal ? 'Editing' : 'Viewing'}</div>;
+        }
+      `,
+      },
     ],
     invalid: [
       // Invalid case: simple computation in useEffect
@@ -477,6 +556,205 @@ ruleTesterJsx.run(
           {
             messageId: 'preferUseMemo',
             data: { stateName: 'displayData' },
+          },
+        ],
+        output: null, // Skip output checking
+      },
+      // Invalid case: a block-bodied initializer returning a DIFFERENT value than
+      // the effect syncs is derived state, not synchronization
+      {
+        code: `
+        function Component({ isEditingProp, defaultEditing }) {
+          const [isEditingInternal, setIsEditingInternal] = useState(() => { return defaultEditing; });
+
+          useEffect(() => {
+            setIsEditingInternal(isEditingProp);
+          }, [isEditingProp]);
+
+          return <div>{isEditingInternal ? 'Editing' : 'Viewing'}</div>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'preferUseMemo',
+            data: { stateName: 'isEditingInternal' },
+          },
+        ],
+        output: null, // Skip output checking
+      },
+      // Invalid case: a block-bodied initializer that computes rather than
+      // forwarding the synced value
+      {
+        code: `
+        function Component({ items }) {
+          const [visibleItems, setVisibleItems] = useState(() => { return computeVisible(items); });
+
+          useEffect(() => {
+            setVisibleItems(items.filter(item => item.isVisible));
+          }, [items]);
+
+          return <List items={visibleItems} />;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'preferUseMemo',
+            data: { stateName: 'visibleItems' },
+          },
+        ],
+        output: null, // Skip output checking
+      },
+      // Invalid case: the initializer body does work beyond producing the value,
+      // so it falls outside the synchronization exemption
+      {
+        code: `
+        function Component({ isEditingProp }) {
+          const [isEditingInternal, setIsEditingInternal] = useState(() => {
+            logInitialization();
+            return isEditingProp;
+          });
+
+          useEffect(() => {
+            setIsEditingInternal(isEditingProp);
+          }, [isEditingProp]);
+
+          return <div>{isEditingInternal ? 'Editing' : 'Viewing'}</div>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'preferUseMemo',
+            data: { stateName: 'isEditingInternal' },
+          },
+        ],
+        output: null, // Skip output checking
+      },
+      // Invalid case: a block body that produces no value cannot match the
+      // synced identifier
+      {
+        code: `
+        function Component({ isEditingProp }) {
+          const [isEditingInternal, setIsEditingInternal] = useState(() => { return; });
+
+          useEffect(() => {
+            setIsEditingInternal(isEditingProp);
+          }, [isEditingProp]);
+
+          return <div>{isEditingInternal ? 'Editing' : 'Viewing'}</div>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'preferUseMemo',
+            data: { stateName: 'isEditingInternal' },
+          },
+        ],
+        output: null, // Skip output checking
+      },
+      // Invalid case: an empty block body produces no value to compare
+      {
+        code: `
+        function Component({ isEditingProp }) {
+          const [isEditingInternal, setIsEditingInternal] = useState(() => {});
+
+          useEffect(() => {
+            setIsEditingInternal(isEditingProp);
+          }, [isEditingProp]);
+
+          return <div>{isEditingInternal ? 'Editing' : 'Viewing'}</div>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'preferUseMemo',
+            data: { stateName: 'isEditingInternal' },
+          },
+        ],
+        output: null, // Skip output checking
+      },
+      // Invalid case: the exemption matches bare identifiers only, so a member
+      // expression initializer reports whichever body style declares it
+      {
+        code: `
+        function Component({ config, isEditingProp }) {
+          const [isEditingInternal, setIsEditingInternal] = useState(() => { return config.isEditing; });
+
+          useEffect(() => {
+            setIsEditingInternal(isEditingProp);
+          }, [isEditingProp]);
+
+          return <div>{isEditingInternal ? 'Editing' : 'Viewing'}</div>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'preferUseMemo',
+            data: { stateName: 'isEditingInternal' },
+          },
+        ],
+        output: null, // Skip output checking
+      },
+      {
+        code: `
+        function Component({ config, isEditingProp }) {
+          const [isEditingInternal, setIsEditingInternal] = useState(() => config.isEditing);
+
+          useEffect(() => {
+            setIsEditingInternal(isEditingProp);
+          }, [isEditingProp]);
+
+          return <div>{isEditingInternal ? 'Editing' : 'Viewing'}</div>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'preferUseMemo',
+            data: { stateName: 'isEditingInternal' },
+          },
+        ],
+        output: null, // Skip output checking
+      },
+      // Invalid case: a conditional return is a computation, not a forward
+      {
+        code: `
+        function Component({ isEditingProp, fallbackEditing }) {
+          const [isEditingInternal, setIsEditingInternal] = useState(() => {
+            return isEditingProp ? isEditingProp : fallbackEditing;
+          });
+
+          useEffect(() => {
+            setIsEditingInternal(isEditingProp);
+          }, [isEditingProp]);
+
+          return <div>{isEditingInternal ? 'Editing' : 'Viewing'}</div>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'preferUseMemo',
+            data: { stateName: 'isEditingInternal' },
+          },
+        ],
+        output: null, // Skip output checking
+      },
+      // Invalid case: a block-bodied initializer forwarding the prop does not
+      // exempt an effect that stores a computed value instead
+      {
+        code: `
+        function Component({ isEditingProp }) {
+          const [isEditingInternal, setIsEditingInternal] = useState(() => { return isEditingProp; });
+
+          useEffect(() => {
+            setIsEditingInternal(deriveEditingState(isEditingProp));
+          }, [isEditingProp]);
+
+          return <div>{isEditingInternal ? 'Editing' : 'Viewing'}</div>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'preferUseMemo',
+            data: { stateName: 'isEditingInternal' },
           },
         ],
         output: null, // Skip output checking
