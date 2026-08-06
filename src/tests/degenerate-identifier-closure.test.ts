@@ -27,7 +27,8 @@
  *   on a value with content. This reaches #1811/#1813, and parseability cannot:
  *   `QUERY_KEY_` is a perfectly legal identifier, so the first arm's assertion
  *   is green on it by construction. Only the differential shows that the
- *   author's value vanished and the constant prefix is all that survived.
+ *   author's value vanished and the rule's constant affix is all that survived
+ *   — at whichever end the rule puts it (#1819).
  *
  * The first arm shipped alone, citing all three issues. Reverting #1811 and
  * #1813 left it green — the corpus could not express their trigger and the
@@ -402,16 +403,37 @@ type LiteralTotals = {
  * Does `degenerate` carry nothing of the literal that `control` carried?
  *
  * The test is differential rather than a naming predicate, so it needs no
- * per-rule prefix list and stays silent for a fixer that declines (a decline
- * invents no name at all). `QUERY_KEY_` against `QUERY_KEY_ORDINARYKEY` is a
- * strict prefix: everything the derivation contributed came from the constant
- * part, and the author's value vanished.
+ * per-rule affix list and stays silent for a fixer that declines (a decline
+ * invents no name at all).
+ *
+ * The question is whether the control's name survives DELETING the author's
+ * content from the middle of it: `degenerate` splits into `head + tail` with
+ * `control === head + <something non-empty> + tail`. Testing only
+ * `startsWith` answers it for a prefix builder and silently says no for every
+ * other affix position, which is the same defect with the constant part
+ * somewhere else (#1819):
+ *
+ *   QUERY_KEY_${n}   QUERY_KEY_ORDINARYKEY  vs QUERY_KEY_  head/tail = pre/''
+ *   ${n}_KEY         ORDINARYKEY_KEY        vs _KEY        head/tail = ''/suf
+ *   USE_${n}_KEY     USE_ORDINARYKEY_KEY    vs USE__KEY    head/tail = pre/suf
+ *
+ * A derivation that merely differs (`QUERY_KEY_FALLBACK`) admits no such split
+ * and stays silent.
  */
 const collapsedAgainst = (control: Set<string>, degenerate: Set<string>) => {
   for (const derived of degenerate) {
     for (const reference of control) {
-      if (reference !== derived && reference.startsWith(derived)) {
-        return { derivedDegenerate: derived, derivedControl: reference };
+      if (reference.length <= derived.length) continue;
+      for (let split = 0; split <= derived.length; split++) {
+        const head = derived.slice(0, split);
+        const tail = derived.slice(split);
+        if (
+          reference.startsWith(head) &&
+          reference.endsWith(tail) &&
+          reference.length > head.length + tail.length
+        ) {
+          return { derivedDegenerate: derived, derivedControl: reference };
+        }
       }
     }
   }
@@ -650,22 +672,33 @@ describe('degenerate-identifier fix closure', () => {
    * derivation #1811/#1813 live in.
    */
   it('actually drove name-from-literal derivations', () => {
+    const notDeriving = fixableRuleNames.filter(
+      (name) => !literalTotals.rulesDeriving.has(name),
+    );
     // eslint-disable-next-line no-console
     console.log(
       `[degenerate-literal] considered ${literalTotals.considered}, rewritten ${literalTotals.rewritten}, ` +
         `derivations ${literalTotals.derivationsObserved} across ${literalTotals.rulesDeriving.size} rule(s); ` +
         `discarded unparsable ${literalTotals.discardedUnparsable}, ` +
         `skipped unreadable comparisons ${literalTotals.skippedUnparsableComparison}\n` +
-        `  deriving rules: ${
+        `  deriving rules (${literalTotals.rulesDeriving.size}): ${
           [...literalTotals.rulesDeriving].join(', ') || '(none)'
-        }`,
+        }\n` +
+        // Naming the complement keeps the arm's reach quoted as ASSERTED rather
+        // than examined. The deriving count alone reads as "20 rules checked"
+        // when it means "20 rules where a name-from-literal derivation was
+        // observed at all" — the rest are unexercised, not certified clean.
+        `  never observed deriving a name from a literal (${
+          notDeriving.length
+        }): ${notDeriving.join(', ') || '(none)'}`,
     );
     expect(literalTotals.considered).toBeGreaterThan(1000);
     expect(literalTotals.rewritten).toBeGreaterThan(100);
     expect(literalTotals.derivationsObserved).toBeGreaterThan(0);
+    expect(literalTotals.rulesDeriving.size).toBeGreaterThanOrEqual(15);
   });
 
-  it('no fixer derives a name that collapses to its bare prefix', () => {
+  it('no fixer derives a name that collapses to its bare affix', () => {
     // Every affected rule is named before the truncated examples: slicing to the
     // first 20 findings otherwise hides whole rules behind whichever one the
     // sweep reached first, which is the difference between a report that says
@@ -794,5 +827,107 @@ describe('degenerate-identifier fix closure', () => {
         new Set(['QUERY_KEY_FALLBACK']),
       ),
     ).toBeNull();
+    // Nor an identical derivation, which carries the content unchanged.
+    expect(
+      collapsedAgainst(
+        new Set(['QUERY_KEY_ORDINARYKEY']),
+        new Set(['QUERY_KEY_ORDINARYKEY']),
+      ),
+    ).toBeNull();
+  });
+
+  /**
+   * The affix position is incidental to the defect but was load-bearing in the
+   * first predicate, which tested `startsWith` alone and so answered "clean" for
+   * every builder that puts its constant anywhere but the front (#1819).
+   */
+  it('catches a collapsed derivation at any affix position', () => {
+    expect(
+      collapsedAgainst(
+        new Set(['QUERY_KEY_ORDINARYKEY']),
+        new Set(['QUERY_KEY_']),
+      ),
+    ).toEqual({
+      derivedDegenerate: 'QUERY_KEY_',
+      derivedControl: 'QUERY_KEY_ORDINARYKEY',
+    });
+    expect(
+      collapsedAgainst(new Set(['ORDINARYKEY_KEY']), new Set(['_KEY'])),
+    ).toEqual({
+      derivedDegenerate: '_KEY',
+      derivedControl: 'ORDINARYKEY_KEY',
+    });
+    expect(
+      collapsedAgainst(new Set(['USE_ORDINARYKEY_KEY']), new Set(['USE__KEY'])),
+    ).toEqual({
+      derivedDegenerate: 'USE__KEY',
+      derivedControl: 'USE_ORDINARYKEY_KEY',
+    });
+  });
+
+  /**
+   * End-to-end for the affix positions the predicate unit test asserts, so the
+   * arm is shown to catch a real fixer emitting a suffix-built name and not just
+   * to compare two hand-written sets.
+   */
+  it('catches a planted suffix-building fixer end to end', () => {
+    const planted = {
+      meta: {
+        type: 'suggestion',
+        fixable: 'code',
+        schema: [],
+        messages: { key: 'key' },
+      },
+      create(context: { report: (descriptor: unknown) => void }) {
+        return {
+          Literal(node: {
+            value: unknown;
+            range: [number, number];
+            parent?: { type?: string };
+          }) {
+            if (typeof node.value !== 'string') return;
+            if (node.parent?.type !== 'Property') return;
+            const normalized = node.value
+              .toUpperCase()
+              .replace(/[^A-Z0-9]/g, '_')
+              .replace(/_+/g, '_')
+              .replace(/^_|_$/g, '');
+            context.report({
+              node,
+              messageId: 'key',
+              fix: (fixer: {
+                replaceTextRange: (
+                  range: [number, number],
+                  text: string,
+                ) => unknown;
+              }) => fixer.replaceTextRange(node.range, `${normalized}_KEY`),
+            });
+          },
+        };
+      },
+    };
+    linter.defineRule('planted/suffix', planted as never);
+    const config = {
+      parser: 'ts',
+      parserOptions: { ecmaVersion: 2022, sourceType: 'module' },
+      rules: { 'planted/suffix': 'error' },
+    } as never;
+
+    const sourceOf = (literal: string) => `use({ key: '${literal}' });\n`;
+    const fixOf = (literal: string) =>
+      linter.verifyAndFix(sourceOf(literal), config, 't.ts').output;
+
+    expect(fixOf(CONTROL_LITERAL)).toContain('ORDINARYKEY_KEY');
+    expect(fixOf('---')).toContain('_KEY');
+
+    const collapse = collapsedAgainst(
+      derivedNames(sourceOf(CONTROL_LITERAL), fixOf(CONTROL_LITERAL), false) ??
+        new Set<string>(),
+      derivedNames(sourceOf('---'), fixOf('---'), false) ?? new Set<string>(),
+    );
+    expect(collapse).toEqual({
+      derivedDegenerate: '_KEY',
+      derivedControl: 'ORDINARYKEY_KEY',
+    });
   });
 });
