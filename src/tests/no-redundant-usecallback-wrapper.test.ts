@@ -611,6 +611,139 @@ function C() {
       { assumeAllUseAreMemoized: boolean },
     ],
   },
+  // The suppression carve-out is a claim about what the wrapper does, and a
+  // concise body does exactly what the block spelling does.
+  {
+    code: `import { useCallback } from 'react';
+
+function C() {
+  const { preventDefault } = useEventHandlers();
+  const h = useCallback(() => preventDefault(), [preventDefault]);
+  return <button onClick={h}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+  },
+  // Returning the suppression call rather than calling it for effect changes
+  // nothing about the behaviour the hand-off would drop.
+  {
+    code: `import { useCallback } from 'react';
+
+function C() {
+  const { preventDefault } = useEventHandlers();
+  const h = useCallback(() => { return preventDefault(); }, [preventDefault]);
+  return <button onClick={h}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+  },
+  // The third spelling of the same wrapper, pinned beside the other two so the
+  // carve-out cannot regress to recognizing one statement kind.
+  {
+    code: `import { useCallback } from 'react';
+
+function C() {
+  const { preventDefault } = useEventHandlers();
+  const h = useCallback(() => { preventDefault(); }, [preventDefault]);
+  return <button onClick={h}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+  },
+  // A function-expression wrapper delivers the suppression call just as a block
+  // arrow does.
+  {
+    code: `import { useCallback } from 'react';
+
+function C() {
+  const { stopPropagation } = useEventHandlers();
+  const h = useCallback(function () { return stopPropagation(); }, [stopPropagation]);
+  return <button onClick={h}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+  },
+  // A receiver sourced from a hook is the shape the concise arm otherwise
+  // reports as a member wrapper, so the carve-out has to reach it too.
+  {
+    code: `import { useCallback } from 'react';
+
+function C() {
+  const evt = useEventHandlers();
+  const h = useCallback(() => evt.preventDefault(), [evt]);
+  return <button onClick={h}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+  },
+  {
+    code: `import { useCallback } from 'react';
+
+function C() {
+  const evt = useEventHandlers();
+  const h = useCallback(() => { return evt.stopPropagation(); }, [evt]);
+  return <button onClick={h}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+  },
+  {
+    code: `import { useCallback } from 'react';
+
+function C() {
+  const evt = useEventHandlers();
+  const h = useCallback(() => { evt.stopImmediatePropagation(); }, [evt]);
+  return <button onClick={h}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+  },
+  // Each suppression method carries the same weight, whichever body spells it.
+  {
+    code: `import { useCallback } from 'react';
+
+function C() {
+  const { stopImmediatePropagation } = useEventHandlers();
+  const h = useCallback(() => stopImmediatePropagation(), [stopImmediatePropagation]);
+  return <button onClick={h}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+  },
+  // An optional call still runs whenever the method is present, so reading
+  // through the chain keeps the carve-out from depending on the `?.` spelling.
+  {
+    code: `import { useCallback } from 'react';
+
+function C() {
+  const { preventDefault } = useEventHandlers();
+  const h = useCallback(() => preventDefault?.(), [preventDefault]);
+  return <button onClick={h}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+  },
+  {
+    code: `import { useCallback } from 'react';
+
+function C() {
+  const evt = useEventHandlers();
+  const h = useCallback(() => { return evt?.preventDefault?.(); }, [evt]);
+  return <button onClick={h}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+  },
 ];
 
 const invalid = [
@@ -1251,6 +1384,128 @@ function C() {
   return <button onClick={onClick}/>;
 }`,
   },
+  // The controls for the suppression carve-out: the same three body spellings
+  // over the same destructured hook prop, differing only in the callee's name.
+  // Without these the carve-out could be widened into a blanket exemption on
+  // any of the three arms and the valid fixtures would still pass.
+  {
+    code: `import { useCallback } from 'react';
+
+function C() {
+  const { submit } = useEventHandlers();
+  const h = useCallback(() => submit(), [submit]);
+  return <button onClick={h}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+    errors: [redundantError('submit')],
+    output: `import { useCallback } from 'react';
+
+function C() {
+  const { submit } = useEventHandlers();
+  const h = submit;
+  return <button onClick={h}/>;
+}`,
+  },
+  {
+    code: `import { useCallback } from 'react';
+
+function C() {
+  const { submit } = useEventHandlers();
+  const h = useCallback(() => { return submit(); }, [submit]);
+  return <button onClick={h}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+    errors: [redundantError('submit')],
+    output: `import { useCallback } from 'react';
+
+function C() {
+  const { submit } = useEventHandlers();
+  const h = submit;
+  return <button onClick={h}/>;
+}`,
+  },
+  {
+    code: `import { useCallback } from 'react';
+
+function C() {
+  const { submit } = useEventHandlers();
+  const h = useCallback(() => { submit(); }, [submit]);
+  return <button onClick={h}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+    errors: [redundantError('submit')],
+    output: `import { useCallback } from 'react';
+
+function C() {
+  const { submit } = useEventHandlers();
+  const h = submit;
+  return <button onClick={h}/>;
+}`,
+  },
+  {
+    code: `import { useCallback } from 'react';
+
+function C() {
+  const { submit } = useEventHandlers();
+  const h = useCallback(function () { return submit(); }, [submit]);
+  return <button onClick={h}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+    errors: [redundantError('submit')],
+    output: `import { useCallback } from 'react';
+
+function C() {
+  const { submit } = useEventHandlers();
+  const h = submit;
+  return <button onClick={h}/>;
+}`,
+  },
+  // The suppression names are matched exactly, so a callee that merely reads
+  // like one of them is still a redundant delegate.
+  {
+    code: `import { useCallback } from 'react';
+
+function C() {
+  const { preventDefaultAction } = useEventHandlers();
+  const h = useCallback(() => preventDefaultAction(), [preventDefaultAction]);
+  return <button onClick={h}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+    errors: [redundantError('preventDefaultAction')],
+    output: `import { useCallback } from 'react';
+
+function C() {
+  const { preventDefaultAction } = useEventHandlers();
+  const h = preventDefaultAction;
+  return <button onClick={h}/>;
+}`,
+  },
+  // A non-suppression member on a hook result reports in the concise spelling
+  // just as it does in the block spelling.
+  {
+    code: `import { useCallback } from 'react';
+
+function C() {
+  const evt = useEventHandlers();
+  const h = useCallback(() => evt.submit(), [evt]);
+  return <button onClick={h}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+    errors: [redundantError('evt.submit')],
+    output: null,
+  },
 ];
 
 ruleTesterJsx.run(
@@ -1815,9 +2070,10 @@ export function C({ onDone }) {
  * matrix asserts the branches agree, which is the property the per-shape
  * fixtures assume.
  *
- * Event suppression is deliberately absent from the matrix: only the block
- * branches carve it out, so those shapes do diverge by spelling, and folding
- * them in here would assert a claim the rule does not make.
+ * The event-suppression carve-out is a delegate test like any other and belongs
+ * in the matrix for the same reason: the wrapper is load-bearing because of what
+ * it calls, so a branch that grants the exemption while another withholds it
+ * reports a wrapper whose prescribed remedy does not exist.
  */
 describe('arrow-body spelling parity', () => {
   const OPTIONS = { assumeAllUseAreMemoized: true };
@@ -1931,6 +2187,24 @@ describe('arrow-body spelling parity', () => {
       setup:
         'const signIn = useMyCustomThing();\n  const local = () => signIn;',
       delegate: 'local()',
+      reports: false,
+    },
+    {
+      label: 'destructured suppression method',
+      setup: 'const { preventDefault } = useMyCustomThing();',
+      delegate: 'preventDefault()',
+      reports: false,
+    },
+    {
+      label: 'suppression method on a hook result',
+      setup: 'const evt = useMyCustomThing();',
+      delegate: 'evt.stopPropagation()',
+      reports: false,
+    },
+    {
+      label: 'optionally invoked suppression method',
+      setup: 'const { stopImmediatePropagation } = useMyCustomThing();',
+      delegate: 'stopImmediatePropagation?.()',
       reports: false,
     },
   ];
