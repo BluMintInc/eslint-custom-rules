@@ -134,6 +134,42 @@ nor crossed:
 `export type`, `export interface` and `export enum` unwrap to declarations this rule
 does not classify as pure values, so they keep acting as ordering barriers.
 
+### Type assertions are transparent
+
+`x as T`, `<T>x`, `x satisfies T`, `x!` and `f<T>` assert or instantiate a type
+without contributing a value, and all of them are erased before the code runs.
+Every classification the rule makes therefore reads straight through them: a
+declaration, a call and a receiver are the same declaration, call and receiver
+whichever type syntax is wrapped around them.
+
+This is not only about hand-written code. `global-const-style` and
+`enforce-object-literal-as-const` append ` as const` under `--fix`, so a check
+taken on the wrapper would go silent on the very statement `eslint --fix` had
+just rewritten.
+
+```typescript
+// ❌ Incorrect — reported and fixed exactly as `export const x = 1;` is
+export const x = 1 as const;
+const a = value + 2;
+const b = value + 3;
+use(x, a, b);
+```
+
+In the callee-resolving direction the transparency matters more than a report
+does. A callee the rule cannot resolve contributes none of the names its body
+reads, and the reordering would then hoist the call above them:
+
+```typescript
+// ✅ Correct — `handler` is read through the assertion, so `threshold` counts as
+// one of the call's dependencies and the call is not hoisted above it
+const handler = (() => { touch(threshold); }) as Handler;
+const threshold = 10;
+handler();
+```
+
+The hook carve-out reads through them for the same reason: `(useTrack as any)()`
+is a hook call and stays where it is.
+
 ### Sequential awaits are never split
 
 Two or more adjacent `await` statements are a run, and the search treats keeping that
@@ -168,6 +204,12 @@ withholds the autofix from runs that `parallelize-async-operations` would declin
 deliberate: reproducing that rule's dependency analysis and options from here would
 couple the two rules far more tightly than a withheld autofix costs. The violation is
 still reported, so nothing goes unflagged; the reordering just has to be made by hand.
+
+This is the one place assertions are **not** read through. `const x = (await f()) as T`
+is outside `parallelize-async-operations`' runs, because that rule matches an await
+initializer with the same bare check — so protecting it here would withhold an autofix
+to preserve a `Promise.all` rewrite that was never on offer. The narrowness is what
+keeps the two rules in step, and the suite asserts the pairing rather than assuming it.
 
 ## When Not To Use It
 
