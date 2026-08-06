@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { declarationOf, resolveInEnclosingScopes } from '../utils/lexicalScope';
 
 type MessageIds = 'preferBatch';
 
@@ -307,21 +308,6 @@ function isMapInstance(node: TSESTree.Node): boolean {
   return false;
 }
 
-/** Statements a declaration can be a direct child of, innermost outward. */
-function statementsOf(node: TSESTree.Node): TSESTree.Node[] | undefined {
-  switch (node.type) {
-    case AST_NODE_TYPES.Program:
-    case AST_NODE_TYPES.BlockStatement:
-    case AST_NODE_TYPES.TSModuleBlock:
-    case AST_NODE_TYPES.StaticBlock:
-      return (node as { body: TSESTree.Node[] }).body;
-    case AST_NODE_TYPES.SwitchCase:
-      return node.consequent;
-    default:
-      return undefined;
-  }
-}
-
 /**
  * Lexical lookup of a local declaration, innermost scope outward.
  *
@@ -335,16 +321,11 @@ function findVariableDeclaration(
   node: TSESTree.Node,
   varName: string,
 ): TSESTree.VariableDeclarator | undefined {
-  let current: TSESTree.Node | undefined = node;
-  while (current) {
-    const statements = statementsOf(current);
-    if (statements) {
+  return resolveInEnclosingScopes<TSESTree.VariableDeclarator>(
+    node,
+    (statements) => {
       for (const statement of statements) {
-        const declaration =
-          statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
-          statement.declaration
-            ? statement.declaration
-            : statement;
+        const declaration = declarationOf(statement);
         if (declaration.type !== AST_NODE_TYPES.VariableDeclaration) continue;
         for (const decl of declaration.declarations) {
           if (
@@ -355,10 +336,9 @@ function findVariableDeclaration(
           }
         }
       }
-    }
-    current = current.parent as TSESTree.Node;
-  }
-  return undefined;
+      return undefined;
+    },
+  );
 }
 
 function isSetterMethodCall(node: TSESTree.Node): {
@@ -510,21 +490,19 @@ export const preferBatchOperations = createRule<[], MessageIds>({
                 data: messageData,
               });
             }
-          }
-
-          /**
-           * For array methods, report on the first occurrence — one syntactic
-           * call inside a `map` callback still runs once per element.
-           *
-           * A direct `Promise.all([...])` is not that: its elements are written
-           * out, so a lone `set()` is a single write and the docs call it
-           * valid. `findLoopNode` stamps `isArrayMethod: 'map'` onto the
-           * Promise.all result, which used to route it here and report on the
-           * first call — and, by adding the node to `reportedLoops`, made the
-           * deferred second-occurrence branch below unreachable for every
-           * input. Excluding it hands the decision back to that branch.
-           */
-          else if (loopInfo.isArrayMethod && !loopInfo.isPromiseAll) {
+          } else if (loopInfo.isArrayMethod && !loopInfo.isPromiseAll) {
+            /**
+             * For array methods, report on the first occurrence — one syntactic
+             * call inside a `map` callback still runs once per element.
+             *
+             * A direct `Promise.all([...])` is not that: its elements are written
+             * out, so a lone `set()` is a single write and the docs call it
+             * valid. `findLoopNode` stamps `isArrayMethod: 'map'` onto the
+             * Promise.all result, which used to route it here and report on the
+             * first call — and, by adding the node to `reportedLoops`, made the
+             * deferred second-occurrence branch below unreachable for every
+             * input. Excluding it hands the decision back to that branch.
+             */
             if (!reportedLoops.has(loopInfo.node)) {
               reportedLoops.add(loopInfo.node);
               context.report({

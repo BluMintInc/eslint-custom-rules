@@ -6,6 +6,11 @@ import {
   planOrphanedImportRemoval,
   TextRange,
 } from '../utils/importRemoval';
+import {
+  BOUND_UNPROVABLE,
+  declarationOf,
+  resolveInEnclosingScopes,
+} from '../utils/lexicalScope';
 
 type MessageIds =
   | 'noExplicitReturnTypeInferable'
@@ -576,27 +581,6 @@ function collectReturnIdentifierNames(
 }
 
 /**
- * The statement list a container holds, or undefined for a node that holds
- * none. These are every place a function can be declared as a direct child, so
- * walking them outward reproduces TypeScript's own scope chain.
- */
-function statementsOf(
-  node: TSESTree.Node,
-): readonly TSESTree.Node[] | undefined {
-  switch (node.type) {
-    case AST_NODE_TYPES.Program:
-    case AST_NODE_TYPES.BlockStatement:
-    case AST_NODE_TYPES.TSModuleBlock:
-    case AST_NODE_TYPES.StaticBlock:
-      return node.body;
-    case AST_NODE_TYPES.SwitchCase:
-      return node.consequent;
-    default:
-      return undefined;
-  }
-}
-
-/**
  * What a statement list binds each of its names to: the function when the name
  * denotes one, `null` when it denotes anything else.
  *
@@ -618,12 +602,7 @@ function scopeBindings(
   for (const rawStatement of statements) {
     // `export function f() {}` is the same declaration one AST node deeper, and
     // the `export` keyword alone cannot decide whether a name is resolvable.
-    const statement =
-      (rawStatement.type === AST_NODE_TYPES.ExportNamedDeclaration ||
-        rawStatement.type === AST_NODE_TYPES.ExportDefaultDeclaration) &&
-      rawStatement.declaration
-        ? rawStatement.declaration
-        : rawStatement;
+    const statement = declarationOf(rawStatement);
 
     if (statement.type === AST_NODE_TYPES.FunctionDeclaration && statement.id) {
       bind(statement.id.name, statement.body ? statement : null);
@@ -713,20 +692,17 @@ function createReturnCycleResolver(visitorKeys: VisitorKeys) {
   const resolveFunctionInScope = (
     from: TSESTree.Node,
     name: string,
-  ): FunctionWithBody | undefined => {
-    let current: TSESTree.Node | undefined = from;
-    while (current) {
-      const statements = statementsOf(current);
-      if (statements) {
-        const scope = bindingsOf(current, statements);
-        if (scope.has(name)) {
-          return scope.get(name) ?? undefined;
-        }
-      }
-      current = current.parent as TSESTree.Node | undefined;
-    }
-    return undefined;
-  };
+  ): FunctionWithBody | undefined =>
+    resolveInEnclosingScopes<FunctionWithBody>(
+      from,
+      (statements, container) => {
+        const scope = bindingsOf(container, statements);
+        if (!scope.has(name)) return undefined;
+        // A non-function binding still shadows a same-named outer function, so
+        // it ends the search without yielding one.
+        return scope.get(name) ?? BOUND_UNPROVABLE;
+      },
+    );
 
   const edgesOf = (fn: FunctionWithBody): FunctionWithBody[] => {
     const cached = edges.get(fn);

@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { declarationOf, resolveInEnclosingScopes } from '../utils/lexicalScope';
 
 type Options = [
   {
@@ -17,21 +18,6 @@ const DEFAULT_FUNCTION_PATTERNS = [
   'on[A-Z].*',
 ];
 
-/** Statement containers a type alias can be a direct child of. */
-function statementsOf(node: TSESTree.Node): TSESTree.Node[] | undefined {
-  switch (node.type) {
-    case AST_NODE_TYPES.Program:
-    case AST_NODE_TYPES.BlockStatement:
-    case AST_NODE_TYPES.TSModuleBlock:
-    case AST_NODE_TYPES.StaticBlock:
-      return (node as { body: TSESTree.Node[] }).body;
-    case AST_NODE_TYPES.SwitchCase:
-      return node.consequent;
-    default:
-      return undefined;
-  }
-}
-
 /**
  * The type alias a statement declares under `name`, looking through `export`.
  *
@@ -44,11 +30,7 @@ function typeAliasNamed(
   statement: TSESTree.Node,
   name: string,
 ): TSESTree.TSTypeAliasDeclaration | undefined {
-  const declaration =
-    statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
-    statement.declaration
-      ? statement.declaration
-      : statement;
+  const declaration = declarationOf(statement);
   return declaration.type === AST_NODE_TYPES.TSTypeAliasDeclaration &&
     declaration.id.name === name
     ? declaration
@@ -72,20 +54,18 @@ function resolveTypeAlias(
   from: TSESTree.Node,
   name: string,
 ): TSESTree.TSTypeAliasDeclaration | undefined {
-  let current: TSESTree.Node | undefined = from;
-  while (current) {
-    const statements = statementsOf(current);
-    if (statements) {
+  return resolveInEnclosingScopes<TSESTree.TSTypeAliasDeclaration>(
+    from,
+    (statements) => {
       for (const statement of statements) {
         const alias = typeAliasNamed(statement, name);
         if (alias) {
           return alias;
         }
       }
-    }
-    current = current.parent as TSESTree.Node | undefined;
-  }
-  return undefined;
+      return undefined;
+    },
+  );
 }
 
 /**

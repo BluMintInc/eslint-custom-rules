@@ -10,6 +10,7 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
+import { declarationOf, resolveInEnclosingScopes } from '../utils/lexicalScope';
 
 type MessageIds = 'missingGeneric' | 'invalidGeneric';
 
@@ -51,21 +52,6 @@ type NamedTypeDeclaration =
   | TSESTree.TSInterfaceDeclaration
   | TSESTree.TSTypeAliasDeclaration;
 
-/** Statement containers a type declaration can be a direct child of. */
-function statementsOf(node: TSESTree.Node): TSESTree.Node[] | undefined {
-  switch (node.type) {
-    case AST_NODE_TYPES.Program:
-    case AST_NODE_TYPES.BlockStatement:
-    case AST_NODE_TYPES.TSModuleBlock:
-    case AST_NODE_TYPES.StaticBlock:
-      return (node as { body: TSESTree.Node[] }).body;
-    case AST_NODE_TYPES.SwitchCase:
-      return node.consequent;
-    default:
-      return undefined;
-  }
-}
-
 /**
  * The type declaration a statement makes, looking through `export`.
  *
@@ -78,11 +64,7 @@ function typeDeclarationNamed(
   statement: TSESTree.Node,
   name: string,
 ): NamedTypeDeclaration | undefined {
-  const declared =
-    statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
-    statement.declaration
-      ? statement.declaration
-      : statement;
+  const declared = declarationOf(statement);
 
   if (
     (declared.type === AST_NODE_TYPES.TSInterfaceDeclaration ||
@@ -108,20 +90,15 @@ function declarationOfType(
   from: TSESTree.Node,
   name: string,
 ): NamedTypeDeclaration | undefined {
-  let current: TSESTree.Node | undefined = from;
-  while (current) {
-    const statements = statementsOf(current);
-    if (statements) {
-      for (const statement of statements) {
-        const declaration = typeDeclarationNamed(statement, name);
-        if (declaration) {
-          return declaration;
-        }
+  return resolveInEnclosingScopes<NamedTypeDeclaration>(from, (statements) => {
+    for (const statement of statements) {
+      const declaration = typeDeclarationNamed(statement, name);
+      if (declaration) {
+        return declaration;
       }
     }
-    current = current.parent as TSESTree.Node | undefined;
-  }
-  return undefined;
+    return undefined;
+  });
 }
 
 /**

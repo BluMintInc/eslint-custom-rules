@@ -1,5 +1,11 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import {
+  BOUND_UNPROVABLE,
+  declarationOf,
+  resolveInEnclosingScopes,
+  ScopeMatch,
+} from '../utils/lexicalScope';
 
 type MessageIds = 'noObjectArrays';
 
@@ -22,40 +28,6 @@ const PRIMITIVE_TYPES = new Set([
 
 const UNKNOWN_FIELD_LABEL = '<unknown field>';
 
-/** Statements a declaration can be a direct child of, innermost outward. */
-const statementsOf = (node: TSESTree.Node): TSESTree.Node[] | undefined => {
-  switch (node.type) {
-    case AST_NODE_TYPES.Program:
-    case AST_NODE_TYPES.BlockStatement:
-    case AST_NODE_TYPES.TSModuleBlock:
-    case AST_NODE_TYPES.StaticBlock:
-      return (node as { body: TSESTree.Node[] }).body;
-    case AST_NODE_TYPES.SwitchCase:
-      return node.consequent;
-    default:
-      return undefined;
-  }
-};
-
-/**
- * The declaration a statement carries, looking through `export`.
- *
- * `export type Comment = ...` is the same declaration one AST node deeper,
- * inside an `ExportNamedDeclaration`. Reading the statement without unwrapping
- * would let the `export` keyword alone decide whether an element type is
- * resolvable, which says nothing about the shape it denotes.
- */
-const declarationOf = (statement: TSESTree.Node): TSESTree.Node => {
-  if (
-    (statement.type === AST_NODE_TYPES.ExportNamedDeclaration ||
-      statement.type === AST_NODE_TYPES.ExportDefaultDeclaration) &&
-    statement.declaration
-  ) {
-    return statement.declaration as TSESTree.Node;
-  }
-  return statement;
-};
-
 type ResolvedTypeName =
   | { kind: 'interface' }
   | { kind: 'enum' }
@@ -68,7 +40,7 @@ type ResolvedTypeName =
  * lexical search can never disagree with the fallback it precedes.
  */
 const typeDeclarationIn = (
-  statements: TSESTree.Node[],
+  statements: readonly TSESTree.Node[],
   name: string,
 ): ResolvedTypeName | undefined => {
   let interfaceMatch: ResolvedTypeName | undefined;
@@ -183,15 +155,14 @@ const unwrapExpressionAssertions = (
 
 /**
  * A same-named `const` binding shadows any outer one whether or not it holds an
- * array literal, so the lexical search must stop at it rather than reaching past
- * it to a binding the reference cannot denote.
+ * array literal, so the lexical search must stop at it — reported as
+ * `BOUND_UNPROVABLE` — rather than reaching past it to a binding the reference
+ * cannot denote, or falling back to the file-wide table.
  */
-const CONST_ARRAY_SHADOWED = 'shadowed' as const;
-
 const constArrayIn = (
-  statements: TSESTree.Node[],
+  statements: readonly TSESTree.Node[],
   name: string,
-): TSESTree.ArrayExpression | typeof CONST_ARRAY_SHADOWED | undefined => {
+): ScopeMatch<TSESTree.ArrayExpression> => {
   for (const statement of statements) {
     const declaration = declarationOf(statement);
     if (
@@ -207,11 +178,11 @@ const constArrayIn = (
       ) {
         continue;
       }
-      if (!declarator.init) return CONST_ARRAY_SHADOWED;
+      if (!declarator.init) return BOUND_UNPROVABLE;
       const init = unwrapExpressionAssertions(declarator.init);
       return init.type === AST_NODE_TYPES.ArrayExpression
         ? init
-        : CONST_ARRAY_SHADOWED;
+        : BOUND_UNPROVABLE;
     }
   }
   return undefined;
@@ -472,38 +443,29 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
     const resolveTypeName = (
       from: TSESTree.Node,
       name: string,
-    ): ResolvedTypeName | undefined => {
-      let current: TSESTree.Node | undefined = from;
-      while (current) {
-        const statements = statementsOf(current);
-        if (statements) {
-          const declared = typeDeclarationIn(statements, name);
-          if (declared) return declared;
-        }
-        current = current.parent as TSESTree.Node | undefined;
-      }
-      if (interfaceNames.has(name)) return { kind: 'interface' };
-      if (enumNames.has(name)) return { kind: 'enum' };
-      const aliased = aliasNameToType.get(name);
-      return aliased ? { kind: 'alias', typeAnnotation: aliased } : undefined;
-    };
+    ): ResolvedTypeName | undefined =>
+      resolveInEnclosingScopes<ResolvedTypeName>(
+        from,
+        (statements) => typeDeclarationIn(statements, name),
+        () => {
+          if (interfaceNames.has(name)) return { kind: 'interface' };
+          if (enumNames.has(name)) return { kind: 'enum' };
+          const aliased = aliasNameToType.get(name);
+          return aliased
+            ? { kind: 'alias', typeAnnotation: aliased }
+            : undefined;
+        },
+      );
 
     const resolveConstArray = (
       from: TSESTree.Node,
       name: string,
-    ): TSESTree.ArrayExpression | undefined => {
-      let current: TSESTree.Node | undefined = from;
-      while (current) {
-        const statements = statementsOf(current);
-        if (statements) {
-          const declared = constArrayIn(statements, name);
-          if (declared === CONST_ARRAY_SHADOWED) return undefined;
-          if (declared) return declared;
-        }
-        current = current.parent as TSESTree.Node | undefined;
-      }
-      return constArrayNameToLiteral.get(name);
-    };
+    ): TSESTree.ArrayExpression | undefined =>
+      resolveInEnclosingScopes<TSESTree.ArrayExpression>(
+        from,
+        (statements) => constArrayIn(statements, name),
+        () => constArrayNameToLiteral.get(name),
+      );
 
     // Keyed by resolved declaration rather than by name: one name can denote
     // different declarations in different scopes, so a name-keyed memo would
