@@ -138,6 +138,21 @@ const Parent = ({ title }: ParentProps) => (
 );
 ```
 
+Where the child is *declared* makes no difference. A component declared inside
+the very component that renders it — the shape
+[`memo-nested-react-components`](./memo-nested-react-components.md) presumes and
+requires you to memoize — is resolved the same way as a hoisted one:
+
+```tsx
+export type PanelProps = Readonly<{ title: string }>;
+
+export const Panel = memo(({ title }: PanelProps) => {
+  // Declared here rather than at the top of the file — still prop-less.
+  const Spinner = memo(() => <div />);
+  return <Card>{title}<Spinner /></Card>;
+});
+```
+
 A child **imported from a relative path** counts too, when the imported module
 proves it takes no props:
 
@@ -218,6 +233,40 @@ Verdicts are memoized per child module and stamped with the file's modification
 time and size, so adding props to a previously prop-less child takes effect on
 the next lint even under a long-lived host (the VS Code ESLint extension,
 `eslint_d`) — no restart required.
+
+### Where in-file declarations are resolved
+
+Every in-file name the rule resolves — the component's own `{Component}Props`
+alias, a rendered child's component function, and a child's `{Child}Props` alias
+— is looked up **lexically**: from the site that asks, outward through each
+enclosing statement container (`Program`, a block, a `namespace` body, a `static`
+block, a `switch` case), stopping at the first container that declares the name.
+An `export` wrapper is looked through, so `export type XProps = …` resolves
+exactly as `type XProps = …` does.
+
+The rule therefore checks a component wherever it is written. A component and its
+props alias declared inside a factory, a hook, or an `export namespace` are
+resolved and checked just like top-level ones:
+
+```tsx
+export namespace Widgets {
+  // Reported: WidgetButtonProps composes with nothing the button renders.
+  type WidgetButtonProps = { label: string };
+  export const WidgetButton = ({ label }: WidgetButtonProps) => (
+    <LoadingButton>{label}</LoadingButton>
+  );
+}
+```
+
+Two consequences follow from resolution being lexical rather than file-wide:
+
+- **The innermost declaration wins.** An alias declared beside the component
+  shadows a same-named one further out, so the verdict describes the type the
+  component actually annotates.
+- **A sibling scope is invisible.** A declaration in a scope the component cannot
+  see never answers for it. When the props type cannot be resolved at all, the
+  rule has nothing to test composition against and skips the component rather
+  than guessing.
 
 ## Options
 
