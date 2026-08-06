@@ -701,15 +701,31 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
     }
 
     /**
-     * Generate auto-fix suggestion for string literals
+     * The `QUERY_KEY_*` constant a key value names, or null when it names none.
+     *
+     * A key that is empty, or built only from the characters normalization
+     * folds into separators and then strips, leaves nothing after the prefix:
+     * the bare `QUERY_KEY_` that emitted is a name `queryKeys.ts` neither
+     * exports nor plausibly would, so applying it traded a report for a file
+     * that no longer compiles. Declining here leaves the report standing with
+     * no fix, which is the honest outcome — the author has to choose a real
+     * key, and no rewrite can choose one for them.
+     *
+     * The test is on the derived text alone, so it answers the same way for
+     * every notation the same value can be written in; putting it in
+     * `staticKeyOf` instead would gate the fix on content at the point that
+     * exists to keep notation out of the gate (#1803, #1813).
      */
     function generateAutoFix(keyValue: string): string | null {
-      // Simple heuristic to suggest query key constant names
       const normalizedKey = keyValue
         .toUpperCase()
         .replace(/[^A-Z0-9]/g, '_')
         .replace(/_+/g, '_')
         .replace(/^_|_$/g, '');
+
+      if (normalizedKey === '') {
+        return null;
+      }
 
       return `QUERY_KEY_${normalizedKey}`;
     }
