@@ -1,5 +1,59 @@
 [
   {
+    "version": "1.20.121",
+    "date": "2026-08-06T10:37:08.150Z",
+    "rules": [
+      {
+        "name": "enforce-dynamic-firebase-imports",
+        "changeType": "fix",
+        "issues": [
+          1790
+        ],
+        "summary": "remediate a concise-bodied async arrow (closes #1790)"
+      },
+      {
+        "name": "no-jsx-in-hooks",
+        "changeType": "fix",
+        "issues": [
+          1792
+        ],
+        "summary": "report a concise arrow body that is itself a memoized JSX call (closes #1792)"
+      },
+      {
+        "name": "no-redundant-usecallback-wrapper",
+        "changeType": "fix",
+        "issues": [
+          1793
+        ],
+        "summary": "consult hookReturnObjects from the block-body arm (closes #1793)"
+      },
+      {
+        "name": "no-undefined-null-passthrough",
+        "changeType": "fix",
+        "issues": [
+          1794
+        ],
+        "summary": "detect the guard shapes in a block-bodied arrow (closes #1794)"
+      },
+      {
+        "name": "prefer-usememo-over-useeffect-usestate",
+        "changeType": "fix",
+        "issues": [
+          1791
+        ],
+        "summary": "recognise a block-bodied lazy initializer as state synchronization (closes #1791)"
+      },
+      {
+        "name": "require-memo",
+        "changeType": "fix",
+        "issues": [
+          1789
+        ],
+        "summary": "wrap arrow and function-expression components in memo (closes #1789)"
+      }
+    ]
+  },
+  {
     "version": "1.20.120",
     "date": "2026-08-06T05:46:26.078Z",
     "rules": [

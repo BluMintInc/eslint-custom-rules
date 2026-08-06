@@ -1,3 +1,15 @@
+## [1.20.121](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.120...v1.20.121) (2026-08-06)
+
+
+### Bug Fixes
+
+* **enforce-dynamic-firebase-imports:** remediate a concise-bodied async arrow (closes [#1790](https://github.com/BluMintInc/eslint-custom-rules/issues/1790)) ([b9eaf43](https://github.com/BluMintInc/eslint-custom-rules/commit/b9eaf435e54d8efefbf7d089a5091e5edac63ed3))
+* **no-jsx-in-hooks:** report a concise arrow body that is itself a memoized JSX call (closes [#1792](https://github.com/BluMintInc/eslint-custom-rules/issues/1792)) ([7f4241f](https://github.com/BluMintInc/eslint-custom-rules/commit/7f4241f39c3bda4d37bd8d334d0950c95e354069))
+* **no-redundant-usecallback-wrapper:** consult hookReturnObjects from the block-body arm (closes [#1793](https://github.com/BluMintInc/eslint-custom-rules/issues/1793)) ([8cb2848](https://github.com/BluMintInc/eslint-custom-rules/commit/8cb28480cea168e7e99a639d3daad8935aacc622))
+* **no-undefined-null-passthrough:** detect the guard shapes in a block-bodied arrow (closes [#1794](https://github.com/BluMintInc/eslint-custom-rules/issues/1794)) ([2471f9b](https://github.com/BluMintInc/eslint-custom-rules/commit/2471f9b990e3e398cc82e816bfceb088bf620eb6))
+* **prefer-usememo-over-useeffect-usestate:** recognise a block-bodied lazy initializer as state synchronization (closes [#1791](https://github.com/BluMintInc/eslint-custom-rules/issues/1791)) ([05508bc](https://github.com/BluMintInc/eslint-custom-rules/commit/05508bc284d879ea675e6343c4e981ff6849bbbf))
+* **require-memo:** wrap arrow and function-expression components in memo (closes [#1789](https://github.com/BluMintInc/eslint-custom-rules/issues/1789)) ([531644b](https://github.com/BluMintInc/eslint-custom-rules/commit/531644b4dd68a7a2375b20df74bc1e6801ee1e9d))
+
 ## [1.20.120](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.119...v1.20.120) (2026-08-06)
 
 
