@@ -1,6 +1,10 @@
 import type { TSESLint } from '@typescript-eslint/utils';
+import { Linter, Rule } from 'eslint';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { noMarginProperties } from '../rules/no-margin-properties';
+import { enforceObjectLiteralAsConst } from '../rules/enforce-object-literal-as-const';
+import globalConstStyle from '../rules/global-const-style';
+import { preferUnionFromConstArray } from '../rules/prefer-union-from-const-array';
 
 const marginMessage = (property: string) =>
   `Margin property "${property}" in MUI styling fights container-controlled spacing (Stack/Grid spacing, gap, responsive gutters) and produces double gutters, misalignment, and overflow as layouts shift. Keep spacing inside the component with padding or let the parent handle separation via gap/spacing so layout remains predictable.`;
@@ -623,6 +627,49 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
 
         function App() {
           return <Box sx={{ '--custom-spacing': '16px', padding: 'var(--custom-spacing)' }} />;
+        }
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+    // An assertion wrapper does not turn a non-MUI object into a styling
+    // context: looking through `as const` must not widen WHERE the rule fires.
+    `
+    const styles = { margin: '10px', marginTop: 2 } as const;
+    `,
+    `
+    const styles = <const>{ margin: '10px' };
+    `,
+    // A wrapped, margin-carrying object handed to a non-`css` call stays valid
+    // even though the callee is now classified through its assertion.
+    `
+    const styles = (styled as any)({ margin: 2 });
+    `,
+    {
+      code: `
+        import Box from '@mui/material/Box';
+
+        const styles = { padding: 8 } as const;
+
+        function App() {
+          return <Box sx={styles} />;
+        }
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+    {
+      code: `
+        import Box from '@mui/material/Box';
+
+        function App() {
+          return <Box sx={{ padding: 8 } satisfies Record<string, number>} />;
         }
       `,
       parserOptions: {
@@ -1459,5 +1506,369 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         marginError('marginBottom'),
       ],
     },
+    // Every case below repeats a shape the suite already covers, with an
+    // assertion wrapper (`as const`, `satisfies`, `!`, `<T>`) added around the
+    // subject. The wrapper asserts a type and contributes no value, so the
+    // report must be identical to the unwrapped spelling. This is not a
+    // hypothetical spelling: `global-const-style`'s own autofix rewrites
+    // `const styles = { margin: 8 }` into `const STYLES = { margin: 8 } as
+    // const`, so a rule blind to the wrapper goes silent on code
+    // `eslint --fix` had just reported (Issue #1805).
+    {
+      // The exact output of the sibling fixer named in the issue.
+      code: `
+        import Box from '@mui/material/Box';
+
+        const STYLES = { margin: 8 } as const;
+
+        function App() {
+          return <Box sx={STYLES} />;
+        }
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('margin')],
+    },
+    {
+      code: `
+        import Box from '@mui/material/Box';
+
+        const styles = { marginTop: 2 } satisfies Record<string, number>;
+
+        function App() {
+          return <Box sx={styles} />;
+        }
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('marginTop')],
+    },
+    {
+      code: `
+        import Box from '@mui/material/Box';
+
+        const styles = ({ mx: 1 })!;
+
+        function App() {
+          return <Box sx={styles} />;
+        }
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('mx')],
+    },
+    {
+      // Chained assertions have to peel all the way down, not one layer.
+      code: `
+        import Box from '@mui/material/Box';
+
+        const styles = { mb: 2 } as const satisfies Record<string, number>;
+
+        function App() {
+          return <Box sx={styles} />;
+        }
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('mb')],
+    },
+    {
+      code: `
+        import Box from '@mui/material/Box';
+
+        const base = { marginLeft: 1 } as const;
+
+        function App() {
+          return <Box sx={{ ...base }} />;
+        }
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('marginLeft')],
+    },
+    {
+      code: `
+        import Box from '@mui/material/Box';
+
+        const base = { marginRight: 1 } satisfies Record<string, number>;
+
+        function App() {
+          return <Box sx={Object.assign({}, base)} />;
+        }
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('marginRight')],
+    },
+    {
+      code: `
+        import Box from '@mui/material/Box';
+
+        function App() {
+          return <Box sx={{ margin: 8 } as const} />;
+        }
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('margin')],
+    },
+    {
+      code: `
+        import Box from '@mui/material/Box';
+
+        function App() {
+          return <Box sx={(theme) => ({ mt: 2 } as const)} />;
+        }
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('mt')],
+    },
+    {
+      code: `
+        import Box from '@mui/material/Box';
+
+        function App() {
+          return <Box sx={() => { return { mb: 1 } satisfies Record<string, number>; }} />;
+        }
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('mb')],
+    },
+    {
+      code: `
+        import Box from '@mui/material/Box';
+
+        function App() {
+          return <Box sx={isCompact ? ({ my: 1 })! : ({ padding: 1 } as const)} />;
+        }
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('my')],
+    },
+    {
+      // The wrapper sits on the conditional itself, above both branches.
+      code: `
+        import Box from '@mui/material/Box';
+
+        function App() {
+          return <Box sx={(isCompact ? { ml: 1 } : { padding: 1 }) as const} />;
+        }
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('ml')],
+    },
+    {
+      // A computed key carries its own assertion.
+      code: `
+        import Box from '@mui/material/Box';
+
+        function App() {
+          return <Box sx={{ ['margin' as const]: 8 }} />;
+        }
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('margin')],
+    },
+    // `<T>x` only parses outside JSX, so its cases use the non-JSX styling
+    // contexts: the `css()` call and the `sx` object property.
+    {
+      code: `
+        import { css } from '@mui/system';
+
+        const styles = css(<const>{ margin: 2 });
+      `,
+      errors: [marginError('margin')],
+    },
+    {
+      code: `
+        const props = { sx: <const>{ margin: 1 } };
+      `,
+      errors: [marginError('margin')],
+    },
+    {
+      code: `
+        const props = { sx: { marginTop: 1 } as const };
+      `,
+      errors: [marginError('marginTop')],
+    },
+    // The assertion can also sit on the callee, which is the same blindness
+    // one level up: `css` still names MUI's css function.
+    {
+      code: `
+        import { css } from '@mui/system';
+
+        const styles = (css as any)({ marginTop: 1 });
+      `,
+      errors: [marginError('marginTop')],
+    },
+    {
+      code: `
+        import { css } from '@mui/system';
+
+        const styles = css!({ mb: 2 });
+      `,
+      errors: [marginError('mb')],
+    },
+    {
+      code: `
+        import { css } from '@mui/system';
+
+        const styles = (<any>css)({ ml: 3 });
+      `,
+      errors: [marginError('ml')],
+    },
   ],
+});
+
+/**
+ * The wrapped spellings above are reachable through the plugin's OWN `--fix`:
+ * three shipped rules append ` as const` to object literals, and
+ * `global-const-style` also renames the binding. Running them over the issue's
+ * snippet produces exactly the code this rule used to go silent on, so
+ * `eslint --fix` erased a report it had just made (Issue #1805).
+ *
+ * The shipped fix-closure guard counts reports a fixer INTRODUCES, so it is
+ * structurally blind to one a fixer removes; this pins the deletion direction
+ * for the pair.
+ */
+describe('no-margin-properties composed with the as-const-appending fixers', () => {
+  const MARGIN_ID = '@blumintinc/blumint/no-margin-properties';
+  const CULPRITS = {
+    '@blumintinc/blumint/enforce-object-literal-as-const':
+      enforceObjectLiteralAsConst,
+    '@blumintinc/blumint/global-const-style': globalConstStyle,
+    '@blumintinc/blumint/prefer-union-from-const-array':
+      preferUnionFromConstArray,
+  } as const;
+  const FILENAME = 'src/components/App.tsx';
+
+  const makeLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      MARGIN_ID,
+      noMarginProperties as unknown as Rule.RuleModule,
+    );
+    Object.entries(CULPRITS).forEach(([id, culprit]) => {
+      linter.defineRule(id, culprit as unknown as Rule.RuleModule);
+    });
+    return linter;
+  };
+
+  const configFor = (rules: Linter.RulesRecord): Linter.Config => ({
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      ecmaFeatures: { jsx: true },
+    },
+    rules,
+  });
+
+  const CULPRIT_RULES = Object.fromEntries(
+    Object.keys(CULPRITS).map((id) => [id, 'error']),
+  ) as Linter.RulesRecord;
+
+  const SOURCE = [
+    `import Box from '@mui/material/Box';`,
+    ``,
+    `const styles = { margin: 8 };`,
+    ``,
+    `function App() {`,
+    `  return <Box sx={styles} />;`,
+    `}`,
+    ``,
+  ].join('\n');
+
+  it('still reports the margin after the sibling fixers rewrite the source', () => {
+    const linter = makeLinter();
+    const marginReports = (code: string) =>
+      linter
+        .verify(code, configFor({ [MARGIN_ID]: 'error' }), FILENAME)
+        .map((message) => message.messageId);
+
+    expect(marginReports(SOURCE)).toEqual(['noMarginProperties']);
+
+    const fixed = linter.verifyAndFix(
+      SOURCE,
+      configFor(CULPRIT_RULES),
+      FILENAME,
+    );
+
+    // Without these the case passes vacuously the moment a culprit stops
+    // firing: the point is that the wrapper IS present in the linted input.
+    expect(fixed.fixed).toBe(true);
+    expect(fixed.output).toContain('as const');
+    expect(fixed.output).toContain('{ margin: 8 }');
+
+    expect(marginReports(fixed.output)).toEqual(['noMarginProperties']);
+
+    // Causal isolation: the only textual difference between these two inputs is
+    // the assertion, so a verdict that differs between them is the wrapper's
+    // doing rather than the rename's.
+    const withoutAssertion = fixed.output.replace(' as const', '');
+    expect(withoutAssertion).not.toContain('as const');
+    expect(marginReports(withoutAssertion)).toEqual(['noMarginProperties']);
+  });
+
+  it('converges: re-linting the fixed output changes nothing further', () => {
+    const linter = makeLinter();
+    const fixed = linter.verifyAndFix(
+      SOURCE,
+      configFor(CULPRIT_RULES),
+      FILENAME,
+    );
+    const refixed = linter.verifyAndFix(
+      fixed.output,
+      configFor(CULPRIT_RULES),
+      FILENAME,
+    );
+
+    expect(refixed.output).toBe(fixed.output);
+  });
 });
