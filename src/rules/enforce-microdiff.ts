@@ -46,6 +46,66 @@ const DIFF_FUNCTION_NAMES = new Set([
 ]);
 
 /**
+ * The names a hand-rolled comparison function is conventionally given. One
+ * shared set answers for both spellings of such a function — a `function`
+ * declaration and an arrow bound to a `const` — so neither can drift into
+ * recognising a name the other misses.
+ */
+const COMPARISON_FUNCTION_NAMES = new Set([
+  'detectChanges',
+  'hasConfigChanged',
+  'compareObjects',
+  'compareArrays',
+  'findChanges',
+  'detectDifferences',
+  'hasStateChanged',
+  'stateHasUpdated',
+  'arrayHasChanged',
+  'settingsChanged',
+]);
+
+/**
+ * The comparison function whose body the fix rewrites. A name alone does not
+ * fix what such a function returns — a boolean, the changed keys, the changes
+ * themselves — and a change list swapped in for the wrong one of those
+ * compiles, so the rest of the set is reported and left to its authors.
+ */
+const REWRITABLE_COMPARISON_NAME = 'hasConfigChanged';
+
+/**
+ * The markers that make a body look like a hand-rolled comparison. Text is
+ * enough to raise the report because the report says only that the body should
+ * be using microdiff; nothing is rewritten off these.
+ */
+function hasComparisonMarkers(bodyText: string): boolean {
+  return (
+    bodyText.includes('JSON.stringify') ||
+    bodyText.includes('Object.keys') ||
+    bodyText.includes('for (') ||
+    bodyText.includes('.some(') ||
+    bodyText.includes('.every(')
+  );
+}
+
+/**
+ * Whether a comparison function is one whose body the fix attempts. The gate is
+ * a text-level pre-filter over the name and the body: `collectStringifyComparisons`
+ * reads the AST afterwards and has the last word on whether a rewrite exists,
+ * so a body that clears this gate is still routinely left alone.
+ *
+ * The `!==` marker keeps the rewrite to bodies that phrase the question the way
+ * the name does — "has it changed?" — while an all-`===` body is reported and
+ * left for its author in either spelling.
+ */
+function isRewritableComparison(name: string, bodyText: string): boolean {
+  return (
+    name === REWRITABLE_COMPARISON_NAME &&
+    bodyText.includes('JSON.stringify') &&
+    bodyText.includes('!==')
+  );
+}
+
+/**
  * The exports of a competing library whose call sites this rule rewrites,
  * whatever local name the import binds them to.
  */
@@ -563,6 +623,79 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
       return `${DIFF_NAME}(${left}, ${right})${emptiness}`;
     }
 
+    /**
+     * The rewrite of a comparison function's body, or null when the body offers
+     * no single expression to replace or the emitted `diff` would not reach
+     * microdiff at `fn`.
+     *
+     * Exactly one comparison is the condition for a fix. With none there is no
+     * expression to rewrite, and with several the rule cannot tell which one the
+     * function's answer turns on, so the report stands on its own.
+     *
+     * Only the comparison's own range is rewritten. The signature keeps its type
+     * annotations, its modifiers and any `export` in front of it, and the body
+     * keeps everything the comparison shares it with: side effects, guard
+     * clauses, locals, and the comments around them. Re-emitting the body as a
+     * single return drops all of that silently — the fix compiles, so nothing
+     * downstream flags the loss.
+     *
+     * Replacing the comparison rather than the statement holding it is also what
+     * lets one implementation serve every spelling of the function: an arrow's
+     * concise expression body takes no `return` and no semicolon, and it needs
+     * none, because the text around the comparison is never part of the range.
+     */
+    function buildComparisonBodyFix(
+      fixer: TSESLint.RuleFixer,
+      fn: TSESTree.Node,
+      body: TSESTree.Node,
+    ): TSESLint.RuleFix | TSESLint.RuleFix[] | null {
+      const comparisons = collectStringifyComparisons(body);
+      if (comparisons.length !== 1 || !canEmitDiffAt(fn)) {
+        return null;
+      }
+
+      const bodyFix = fixer.replaceText(
+        comparisons[0].node,
+        buildDiffComparison(comparisons[0]),
+      );
+
+      const importFix = buildMicrodiffImportFix(fixer);
+      return importFix ? [importFix, bodyFix] : bodyFix;
+    }
+
+    /**
+     * Reports a hand-rolled comparison function, carrying the rewrite whenever
+     * its body offers one. Both spellings route through here so an identical
+     * violation is auto-remediable however it is written: a report with a fix in
+     * one spelling and without it in the other leaves the same code manual to
+     * resolve for no reason the author can see.
+     */
+    function reportComparisonFunction(
+      node: TSESTree.FunctionDeclaration | TSESTree.ArrowFunctionExpression,
+      name: string,
+      body: TSESTree.Node,
+    ): void {
+      const bodyText = sourceCode.getText(body);
+
+      if (isRewritableComparison(name, bodyText)) {
+        reportedNodes.add(node);
+        context.report({
+          node,
+          messageId: 'enforceMicrodiff',
+          fix: (fixer) => buildComparisonBodyFix(fixer, node, body),
+        });
+        return;
+      }
+
+      if (hasComparisonMarkers(bodyText)) {
+        reportedNodes.add(node);
+        context.report({
+          node,
+          messageId: 'enforceMicrodiff',
+        });
+      }
+    }
+
     // Add a specific set to track which import names are used
     const usedImportNames = new Set<string>();
 
@@ -862,86 +995,17 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
           return;
         }
 
-        // Look for functions that might be implementing diff logic
+        // Two parameters are what a comparison function needs, and what the
+        // `diff(a, b)` it is rewritten to needs as well.
         if (
-          node.id &&
-          [
-            'detectChanges',
-            'hasConfigChanged',
-            'compareObjects',
-            'compareArrays',
-            'findChanges',
-            'detectDifferences',
-            'hasStateChanged',
-            'stateHasUpdated',
-            'arrayHasChanged',
-            'settingsChanged',
-          ].includes(node.id.name)
+          !node.id ||
+          !COMPARISON_FUNCTION_NAMES.has(node.id.name) ||
+          node.params.length < 2
         ) {
-          // Check if function has two parameters that might be objects/arrays
-          if (node.params.length >= 2) {
-            const body = node.body;
-            const bodyText = sourceCode.getText(body);
-
-            // Check if the function body contains a JSON.stringify comparison
-            if (
-              node.id.name === 'hasConfigChanged' &&
-              bodyText.includes('JSON.stringify') &&
-              bodyText.includes('!==')
-            ) {
-              reportedNodes.add(node);
-              // Exactly one comparison is the condition for a fix. With none
-              // there is no expression to rewrite, and with several the rule
-              // cannot tell which one the function's answer turns on, so the
-              // report stands on its own.
-              const comparisons = collectStringifyComparisons(body);
-              const comparison =
-                comparisons.length === 1 ? comparisons[0] : null;
-
-              context.report({
-                node,
-                messageId: 'enforceMicrodiff',
-                fix(fixer) {
-                  if (!comparison || !canEmitDiffAt(node)) {
-                    return null;
-                  }
-
-                  // Only the comparison's own range is rewritten. The signature
-                  // keeps its type annotations, its modifiers and any `export`
-                  // in front of it, and the body keeps everything the
-                  // comparison shares it with: side effects, guard clauses,
-                  // locals, and the comments around them. Re-emitting the body
-                  // as a single return drops all of that silently — the fix
-                  // compiles, so nothing downstream flags the loss.
-                  const bodyFix = fixer.replaceText(
-                    comparison.node,
-                    buildDiffComparison(comparison),
-                  );
-
-                  const importFix = buildMicrodiffImportFix(fixer);
-                  return importFix ? [importFix, bodyFix] : bodyFix;
-                },
-              });
-              return;
-            }
-
-            // Look for patterns that suggest object/array comparison
-            const hasComparisonLogic =
-              bodyText.includes('JSON.stringify') ||
-              bodyText.includes('Object.keys') ||
-              bodyText.includes('for (') ||
-              bodyText.includes('.some(') ||
-              bodyText.includes('.every(');
-
-            if (hasComparisonLogic) {
-              reportedNodes.add(node);
-              context.report({
-                node,
-                messageId: 'enforceMicrodiff',
-              });
-            }
-          }
+          return;
         }
+
+        reportComparisonFunction(node, node.id.name, node.body);
       },
 
       // Check for custom deep comparison in arrow functions
@@ -951,47 +1015,20 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
           return;
         }
 
-        // Only check arrow functions assigned to variables with comparison-like names
+        // The name an arrow answers to is the one its declarator binds, so an
+        // arrow passed straight to a call names nothing and is left alone.
         const parent = node.parent;
         if (
-          parent &&
-          parent.type === AST_NODE_TYPES.VariableDeclarator &&
-          parent.id.type === AST_NODE_TYPES.Identifier &&
-          [
-            'detectChanges',
-            'hasConfigChanged',
-            'compareObjects',
-            'compareArrays',
-            'findChanges',
-            'detectDifferences',
-            'hasStateChanged',
-            'stateHasUpdated',
-            'arrayHasChanged',
-            'settingsChanged',
-          ].includes(parent.id.name)
+          !parent ||
+          parent.type !== AST_NODE_TYPES.VariableDeclarator ||
+          parent.id.type !== AST_NODE_TYPES.Identifier ||
+          !COMPARISON_FUNCTION_NAMES.has(parent.id.name) ||
+          node.params.length < 2
         ) {
-          // Check if function has two parameters that might be objects/arrays
-          if (node.params.length >= 2) {
-            const body = node.body;
-
-            // Look for patterns that suggest object/array comparison
-            const bodyText = sourceCode.getText(body);
-            const hasComparisonLogic =
-              bodyText.includes('JSON.stringify') ||
-              bodyText.includes('Object.keys') ||
-              bodyText.includes('for (') ||
-              bodyText.includes('.some(') ||
-              bodyText.includes('.every(');
-
-            if (hasComparisonLogic) {
-              reportedNodes.add(node);
-              context.report({
-                node,
-                messageId: 'enforceMicrodiff',
-              });
-            }
-          }
+          return;
         }
+
+        reportComparisonFunction(node, parent.id.name, node.body);
       },
     };
   },
