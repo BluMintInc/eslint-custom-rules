@@ -182,6 +182,27 @@ ruleTesterJsx.run('no-jsx-in-hooks', noJsxInHooks, {
         },
       ],
     },
+    // A concise arrow body carries no BlockStatement and no return type, so it
+    // is the only shape reaching the direct-JSX-return branch; every other JSX
+    // fixture here routes through the block scanner or the annotation check.
+    {
+      code: `const useThing = () => <div />;`,
+      errors: [
+        {
+          messageId: 'noJsxInHooks',
+          data: { hookName: 'useThing' },
+        },
+      ],
+    },
+    {
+      code: `const useFragmentThing = () => <><span /></>;`,
+      errors: [
+        {
+          messageId: 'noJsxInHooks',
+          data: { hookName: 'useFragmentThing' },
+        },
+      ],
+    },
     // Invalid hook with explicit ReactNode return type
     {
       code: `
