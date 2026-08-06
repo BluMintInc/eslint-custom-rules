@@ -398,6 +398,27 @@ ruleTesterJsx.run('extract-global-constants', extractGlobalConstants, {
         }
       `,
     },
+    // A BinaryExpression update whose right operand is 1 stays silent, like the
+    // AssignmentExpression form
+    {
+      code: `
+        function loopWithBinaryUpdateOfOne() {
+          for (let i = 0; i < array.length; i + 1) {
+            console.log(i);
+          }
+        }
+      `,
+    },
+    // "as const" also exempts the right operand of a BinaryExpression update
+    {
+      code: `
+        function loopWithBinaryUpdateAsConst() {
+          for (let i = 0; i < array.length; i + (2 as const)) {
+            console.log(i);
+          }
+        }
+      `,
+    },
     // Should allow while loops with 0 and 1
     {
       code: `
@@ -1013,6 +1034,18 @@ ruleTesterJsx.run('extract-global-constants', extractGlobalConstants, {
       code: `
         function loopWithMagicNumbers() {
           for (let i = 0; i < array.length; i += 2) {
+            console.log(i);
+          }
+        }
+      `,
+      errors: [buildRequireAsConstError(2)],
+    },
+    // Should flag numeric literals > 1 when the update is a BinaryExpression
+    // rather than the usual UpdateExpression / AssignmentExpression
+    {
+      code: `
+        function loopWithBinaryUpdate() {
+          for (let i = 0; i < array.length; i + 2) {
             console.log(i);
           }
         }

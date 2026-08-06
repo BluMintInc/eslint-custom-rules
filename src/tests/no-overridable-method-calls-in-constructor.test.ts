@@ -410,6 +410,72 @@ ruleTesterTs.run(
         errors: [error('getDetails', 'super')],
       },
 
+      // Abstract method REFERENCED (not called) in the constructor. A call routes
+      // through the CallExpression branch; reading the member as a value is the
+      // only shape that reaches the abstract arm of the property-access branch.
+      {
+        code: `
+        abstract class Vehicle {
+          constructor() {
+            const handler = this.getDetails;
+            void handler;
+          }
+
+          abstract getDetails(): string;
+        }
+        `,
+        errors: [error('getDetails')],
+      },
+
+      // Abstract getter read in the constructor
+      {
+        code: `
+        abstract class Vehicle {
+          constructor() {
+            console.log(this.type);
+          }
+
+          abstract get type(): string;
+        }
+        `,
+        errors: [error('type')],
+      },
+
+      // Abstract setter written in the constructor
+      {
+        code: `
+        abstract class Vehicle {
+          constructor() {
+            this.type = 'car';
+          }
+
+          abstract set type(value: string);
+        }
+        `,
+        errors: [error('type')],
+      },
+
+      // Abstract member referenced via super — the only property-access shape
+      // that reports target 'super'
+      {
+        code: `
+        abstract class Vehicle {
+          abstract getDetails(): string;
+        }
+
+        abstract class Car extends Vehicle {
+          constructor() {
+            super();
+            const handler = super.getDetails;
+            void handler;
+          }
+
+          abstract getDetails(): string;
+        }
+        `,
+        errors: [error('getDetails', 'super')],
+      },
+
       // Constructor with multiple overridable method calls
       {
         code: `
