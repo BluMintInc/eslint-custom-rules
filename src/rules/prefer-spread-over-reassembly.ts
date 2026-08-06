@@ -174,9 +174,9 @@ function collectLocallyBoundNames(
 
 /**
  * What member enumeration needs to know about the file it is reading: the
- * program a same-file alias resolves against, and whether a name is bound by
- * that file itself, which decides whether `Readonly<T>` names the lib utility or
- * the author's own declaration.
+ * program a same-file alias falls back to when the reference carries no lexical
+ * chain to walk, and whether a name is bound by that file itself, which decides
+ * whether `Readonly<T>` names the lib utility or the author's own declaration.
  *
  * `resolveImportedMembers` is the single hop off the file. It is present only on
  * the scope of the file under lint; the scope built for a sibling module leaves
@@ -271,28 +271,96 @@ type TypeDeclaration =
   | TSESTree.TSInterfaceDeclaration;
 
 /**
- * Finds a type alias or interface declared at the top level of a program,
- * including one that is exported.
+ * The statement list a container holds, or undefined for a node that holds
+ * none. These are every place a type declaration can be written as a direct
+ * child, so walking them outward reproduces TypeScript's own scope chain.
  */
-function findLocalTypeDeclaration(
-  program: TSESTree.Program,
+function statementsOf(
+  node: TSESTree.Node,
+): readonly TSESTree.Node[] | undefined {
+  switch (node.type) {
+    case AST_NODE_TYPES.Program:
+    case AST_NODE_TYPES.BlockStatement:
+    case AST_NODE_TYPES.TSModuleBlock:
+    case AST_NODE_TYPES.StaticBlock:
+      return node.body;
+    case AST_NODE_TYPES.SwitchCase:
+      return node.consequent;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * The type declaration a statement carries, looking through `export`.
+ *
+ * `export type Wide = ...` is the same declaration one AST node deeper. Reading
+ * the statement without unwrapping would let the `export` keyword alone decide
+ * whether a type is resolvable, which says nothing about the shape it denotes.
+ */
+function typeDeclarationOf(statement: TSESTree.Node): TypeDeclaration | null {
+  const declaration =
+    statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
+    statement.declaration
+      ? statement.declaration
+      : statement;
+  return declaration.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
+    declaration.type === AST_NODE_TYPES.TSInterfaceDeclaration
+    ? declaration
+    : null;
+}
+
+function typeDeclarationIn(
+  statements: readonly TSESTree.Node[],
   name: string,
 ): TypeDeclaration | null {
-  for (const statement of program.body) {
-    const declaration =
-      statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
-      statement.declaration
-        ? statement.declaration
-        : statement;
-    if (
-      (declaration.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
-        declaration.type === AST_NODE_TYPES.TSInterfaceDeclaration) &&
-      declaration.id.name === name
-    ) {
+  for (const statement of statements) {
+    const declaration = typeDeclarationOf(statement);
+    if (declaration && declaration.id.name === name) {
       return declaration;
     }
   }
   return null;
+}
+
+/**
+ * Finds the type alias or interface a name denotes at the point it is written,
+ * searching every enclosing statement container innermost outward so the nearest
+ * declaration shadows a same-named outer one — the resolution TypeScript itself
+ * performs.
+ *
+ * A declaration in a function body, a bare block, a `namespace` or a `switch`
+ * case binds its name just as effectively as a top-level one, which the rule
+ * already asserts in {@link collectLocallyBoundNames}. Reading only
+ * `Program.body` leaves every one of those unresolvable, and an unresolvable
+ * type kills the narrowing-pick proof — turning a carve-out into a report whose
+ * fix widens the payload (#1769).
+ *
+ * Every statement of a container is searched rather than only those preceding
+ * the reference, matching TypeScript's hoisting of type declarations.
+ *
+ * `Program.body` is consulted as a fallback because a sibling module is parsed
+ * without parent pointers, leaving its nodes with no chain to walk; a top-level
+ * declaration is in scope from anywhere in its file, so the fallback can only
+ * find what the walk would have.
+ */
+function findLocalTypeDeclaration(
+  program: TSESTree.Program,
+  from: TSESTree.Node,
+  name: string,
+): TypeDeclaration | null {
+  let current: TSESTree.Node | undefined = from;
+  while (current) {
+    const statements = statementsOf(current);
+    if (statements) {
+      const declaration = typeDeclarationIn(statements, name);
+      if (declaration) {
+        return declaration;
+      }
+    }
+    current = current.parent as TSESTree.Node | undefined;
+  }
+  return typeDeclarationIn(program.body, name);
 }
 
 /**
@@ -521,7 +589,7 @@ function findRelativeTypeImport(
 function memberNamesOf(
   typeNode: TSESTree.TypeNode,
   scope: TypeResolutionScope,
-  seen: Set<string> = new Set(),
+  seen: Set<TSESTree.Node> = new Set(),
 ): Set<string> | null {
   if (typeNode.type === AST_NODE_TYPES.TSTypeLiteral) {
     return namesOfMembers(typeNode.members);
@@ -549,18 +617,21 @@ function memberNamesOf(
     return memberNamesOf(typeNode.typeParameters.params[0], scope, seen);
   }
 
-  // A self-referential alias (`type T = T`) would otherwise recur forever.
-  if (seen.has(name)) {
-    return null;
-  }
-  seen.add(name);
-
-  const declaration = findLocalTypeDeclaration(scope.program, name);
+  const declaration = findLocalTypeDeclaration(scope.program, typeNode, name);
   if (!declaration) {
     // The file does not declare the name, so the only remaining source of a
     // written-down member list is the module it comes from.
     return scope.resolveImportedMembers?.(name) ?? null;
   }
+
+  // A self-referential alias (`type T = T`) would otherwise recur forever. The
+  // guard is keyed on the DECLARATION rather than the name: one name denotes
+  // different declarations in different scopes, and a name-keyed guard would
+  // abandon an outer type merely because an inner scope declares its name.
+  if (seen.has(declaration)) {
+    return null;
+  }
+  seen.add(declaration);
 
   return memberNamesOfDeclaration(declaration, scope, seen);
 }
@@ -573,7 +644,7 @@ function memberNamesOf(
 function memberNamesOfDeclaration(
   declaration: TypeDeclaration,
   scope: TypeResolutionScope,
-  seen: Set<string>,
+  seen: Set<TSESTree.Node>,
 ): Set<string> | null {
   if (declaration.typeParameters) {
     return null;
@@ -671,7 +742,7 @@ function readExportedTypeMembers(
   return memberNamesOfDeclaration(
     declaration,
     siblingScope,
-    new Set([exported]),
+    new Set([declaration as TSESTree.Node]),
   );
 }
 
