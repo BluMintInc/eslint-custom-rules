@@ -522,6 +522,22 @@ export default createRule<[], MessageIds>({
                   return null;
                 }
 
+                // The conversion degenerates on some names: one built only from
+                // underscores derives the empty string, and a leading
+                // underscore in front of a digit derives a name that starts
+                // with that digit. Applying either trades a naming report for a
+                // file that no longer parses — `const  = {…}` — and the rename
+                // rewrites every reference, so the damage spreads to each use
+                // site. Declining leaves the report standing with no fix, which
+                // is the honest outcome: the author has to choose a real name,
+                // and no mechanical rewrite can choose one for them. The test is
+                // the rule's own acceptance predicate, so a derivation that
+                // would only relocate the same report (`_$` to `$`) is declined
+                // on the same terms.
+                if (!isUpperSnakeCase(newName)) {
+                  return null;
+                }
+
                 // An exported binding's name is a cross-file contract: every
                 // importer spells it out in a file this single-file fixer
                 // cannot reach, so renaming the declaration breaks them all

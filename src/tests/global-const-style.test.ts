@@ -1,4 +1,5 @@
 import { Linter, Rule } from 'eslint';
+import * as ts from 'typescript';
 import { ruleTesterTs } from '../utils/ruleTester';
 import rule from '../rules/global-const-style';
 
@@ -1343,6 +1344,197 @@ ruleTesterTs.run('global-const-style', rule, {
       ],
       output: 'const GET_STATIC_PROPS = { revalidate: 60 } as const;',
     },
+    // Issue #1816: `toUpperSnakeCase` strips one leading underscore, so a name
+    // built only from underscores derives the empty string. Applying that
+    // rename emits `const  = …` and blanks every reference, so the fix is
+    // declined and the report stands alone. `output: null` is the assertion
+    // that no autofix is produced — omitting `output` verifies nothing.
+    {
+      code: `const _ = { a: 1 } as const;\nexport const useIt = () => _;\n`,
+      filename: 'test.ts',
+      errors: [{ messageId: 'upperSnakeCase' }],
+      output: null,
+    },
+    // Issue #1816: two underscores derive one, which is not UPPER_SNAKE either,
+    // so the rule would re-report and `--fix` would converge on the empty name
+    // across passes. Declining at the first pass stops that walk.
+    {
+      code: `const __ = { a: 1 } as const;\nexport const useIt = () => __;\n`,
+      filename: 'test.ts',
+      errors: [{ messageId: 'upperSnakeCase' }],
+      output: null,
+    },
+    {
+      code: `const ___ = { a: 1 } as const;\nexport const useIt = () => ___;\n`,
+      filename: 'test.ts',
+      errors: [{ messageId: 'upperSnakeCase' }],
+      output: null,
+    },
+    // Issue #1816: dropping the leading underscore in front of a digit leaves a
+    // name that starts with a digit — `const 1 = …` is a syntax error, not a
+    // rename.
+    {
+      code: `const _1 = { a: 1 } as const;\nexport const useIt = () => _1;\n`,
+      filename: 'test.ts',
+      errors: [{ messageId: 'upperSnakeCase' }],
+      output: null,
+    },
+    {
+      code: `const _2fa = { a: 1 } as const;\nexport const useIt = () => _2fa;\n`,
+      filename: 'test.ts',
+      errors: [{ messageId: 'upperSnakeCase' }],
+      output: null,
+    },
+    {
+      code: `const _0x = { a: 1 } as const;\nexport const useIt = () => _0x;\n`,
+      filename: 'test.ts',
+      errors: [{ messageId: 'upperSnakeCase' }],
+      output: null,
+    },
+    {
+      code: `const _9lives = { a: 1 } as const;\nexport const useIt = () => _9lives;\n`,
+      filename: 'test.ts',
+      errors: [{ messageId: 'upperSnakeCase' }],
+      output: null,
+    },
+    {
+      code: `const _1a = { a: 1 } as const;\nexport const useIt = () => _1a;\n`,
+      filename: 'test.ts',
+      errors: [{ messageId: 'upperSnakeCase' }],
+      output: null,
+    },
+    // Issue #1816: `$` survives the conversion untouched and is a legal
+    // identifier, but it is not UPPER_SNAKE, so renaming to it only relocates
+    // the same report onto a name the rule can never accept.
+    {
+      code: `const _$ = { a: 1 } as const;\nexport const useIt = () => _$;\n`,
+      filename: 'test.ts',
+      errors: [{ messageId: 'upperSnakeCase' }],
+      output: null,
+    },
+    // Issue #1816: a declined rename is a fix-level decision only. The sibling
+    // `as const` fix derives nothing from the name, so it still lands on the
+    // very declarations whose rename is withheld.
+    {
+      code: `const _1 = { a: 1 };\nexport const useIt = () => _1;\n`,
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: '_1', valueKind: 'an object literal' },
+        },
+        { messageId: 'upperSnakeCase' },
+      ],
+      output: `const _1 = { a: 1 } as const;\nexport const useIt = () => _1;\n`,
+    },
+    {
+      code: `const _ = [1, 2, 3];\nexport const useIt = () => _;\n`,
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: '_', valueKind: 'an array literal' },
+        },
+        { messageId: 'upperSnakeCase' },
+      ],
+      output: `const _ = [1, 2, 3] as const;\nexport const useIt = () => _;\n`,
+    },
+    // Issue #1816 positive controls: the guard tests the DERIVED name, so every
+    // name whose derivation is a usable identifier keeps renaming — declaration
+    // and references together. A guard that over-fires would turn each of these
+    // into a decline.
+    {
+      code: `const _privateThing = { a: 1 } as const;\nexport const useIt = () => _privateThing;\n`,
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: '_privateThing', suggestedName: 'PRIVATE_THING' },
+        },
+      ],
+      output: `const PRIVATE_THING = { a: 1 } as const;\nexport const useIt = () => PRIVATE_THING;\n`,
+    },
+    // Issue #1816: a leading underscore followed by a LETTER derives a legal
+    // name, which is the boundary the digit cases above sit on the far side of.
+    {
+      code: `const _a1 = { a: 1 } as const;\nexport const useIt = () => _a1;\n`,
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: '_a1', suggestedName: 'A1' },
+        },
+      ],
+      output: `const A1 = { a: 1 } as const;\nexport const useIt = () => A1;\n`,
+    },
+    {
+      code: `const _APIKey = { a: 1 } as const;\nexport const useIt = () => _APIKey;\n`,
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: '_APIKey', suggestedName: 'API_KEY' },
+        },
+      ],
+      output: `const API_KEY = { a: 1 } as const;\nexport const useIt = () => API_KEY;\n`,
+    },
+    {
+      code: `const _FOO = { a: 1 } as const;\nexport const useIt = () => _FOO;\n`,
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: '_FOO', suggestedName: 'FOO' },
+        },
+      ],
+      output: `const FOO = { a: 1 } as const;\nexport const useIt = () => FOO;\n`,
+    },
+    {
+      code: `const ok_name = { a: 1 } as const;\nexport const useIt = () => ok_name;\n`,
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'ok_name', suggestedName: 'OK_NAME' },
+        },
+      ],
+      output: `const OK_NAME = { a: 1 } as const;\nexport const useIt = () => OK_NAME;\n`,
+    },
+    {
+      code: `const foo = { a: 1 } as const;\nexport const useIt = () => foo;\n`,
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'foo', suggestedName: 'FOO' },
+        },
+      ],
+      output: `const FOO = { a: 1 } as const;\nexport const useIt = () => FOO;\n`,
+    },
+    {
+      code: `const httpServer = { a: 1 } as const;\nexport const useIt = () => httpServer;\n`,
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'httpServer', suggestedName: 'HTTP_SERVER' },
+        },
+      ],
+      output: `const HTTP_SERVER = { a: 1 } as const;\nexport const useIt = () => HTTP_SERVER;\n`,
+    },
+    // Issue #1816: a name carrying digits in the middle derives a legal
+    // identifier, so only a LEADING digit is disqualifying.
+    {
+      code: `const http2Server = { a: 1 } as const;\nexport const useIt = () => http2Server;\n`,
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'http2Server', suggestedName: 'HTTP2_SERVER' },
+        },
+      ],
+      output: `const HTTP2_SERVER = { a: 1 } as const;\nexport const useIt = () => HTTP2_SERVER;\n`,
+    },
   ],
 });
 
@@ -1438,5 +1630,91 @@ describe('global-const-style --fix convergence (Issue #1605)', () => {
     expect(fixed).not.toMatch(/__/);
     expect(fixed.length).toBeLessThanOrEqual(code.length + 1);
     expect(fixWith(fixed, rules)).toBe(fixed);
+  });
+});
+
+// Issue #1816: RuleTester applies a single fix pass, but `--fix` re-lints its
+// own output up to ten times, so a name that degenerates over several passes
+// (`__` -> `_` -> ``) needs the real loop to be observed. These cases also check
+// the emitted text against the TypeScript parser, because a rename to a
+// non-identifier is a *syntax* defect that a report-count assertion cannot see.
+describe('global-const-style --fix degeneracy (Issue #1816)', () => {
+  const RULE_ID = 'global-const-style';
+
+  const fixWith = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(RULE_ID, rule as unknown as Rule.RuleModule);
+    return linter.verifyAndFix(
+      code,
+      {
+        parser: '@typescript-eslint/parser',
+        parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+        rules: { [RULE_ID]: 'error' },
+      },
+      'constants.ts',
+    ).output;
+  };
+
+  const parseErrorCount = (code: string) =>
+    (
+      ts.createSourceFile(
+        'constants.ts',
+        code,
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TS,
+      ) as unknown as { parseDiagnostics: readonly unknown[] }
+    ).parseDiagnostics.length;
+
+  const DEGENERATE_NAMES = [
+    '_',
+    '__',
+    '___',
+    '_1',
+    '_2fa',
+    '_0x',
+    '_9lives',
+    '_1a',
+    '_$',
+  ];
+
+  it.each(DEGENERATE_NAMES)(
+    'leaves `%s` untouched instead of renaming it to a non-identifier',
+    (name) => {
+      const code = `const ${name} = { a: 1 } as const;\nexport const useIt = () => ${name};\n`;
+
+      const fixed = fixWith(code);
+
+      expect(fixed).toBe(code);
+      expect(parseErrorCount(fixed)).toBe(0);
+    },
+  );
+
+  // The decline must not be a blanket amnesty for underscore-prefixed or
+  // digit-carrying names: every derivation that yields a usable identifier
+  // still renames the declaration and each reference through the same loop.
+  it.each([
+    ['_privateThing', 'PRIVATE_THING'],
+    ['_APIKey', 'API_KEY'],
+    ['_FOO', 'FOO'],
+    ['_a1', 'A1'],
+    ['ok_name', 'OK_NAME'],
+    ['foo', 'FOO'],
+    ['httpServer', 'HTTP_SERVER'],
+    ['http2Server', 'HTTP2_SERVER'],
+  ])('still renames `%s` to `%s`', (name, expected) => {
+    const code = `const ${name} = { a: 1 } as const;\nexport const useIt = () => ${name};\n`;
+
+    const fixed = fixWith(code);
+
+    expect(fixed).toBe(
+      `const ${expected} = { a: 1 } as const;\nexport const useIt = () => ${expected};\n`,
+    );
+    expect(parseErrorCount(fixed)).toBe(0);
   });
 });
