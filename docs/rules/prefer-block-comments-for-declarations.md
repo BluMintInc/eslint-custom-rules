@@ -14,9 +14,12 @@ Line comments placed directly above a declaration look like documentation but Ty
 
 - Reports line comments immediately before declarations (functions, variables, types, interfaces, classes, properties, enums) except inside function bodies.
 - Covers exported declarations. A leading comment sits before the `export` keyword, so the comment is resolved against the `export` wrapper (`export`, `export default`) and an exported declaration is treated exactly like its unexported form. Exported declarations are the public API the rule exists to document, so an `export` must not hide the comment.
+- Requires the comment to start its own line. A trailing comment (`const SIDEBAR_WIDTH = 54; // was 72`) documents the statement it shares a line with, not the declaration underneath it, so it is out of scope — reporting it would move the text onto code it was never written about.
+- Treats a contiguous run of `//` lines as one comment. Consecutive line comments are separate AST nodes, so a rationale written as one paragraph — prose, a bullet list, an ASCII table — arrives as a run; converting only the line nearest the declaration would truncate the documentation and leave a mixed `//` + block header. The run ends at a blank line, a block comment, a directive, a change of indentation, or a trailing comment.
 - Leaves existing block comments untouched, including block ESLint directives.
 - Ignores ESLint directive comments so configuration comments remain untouched.
 - Auto-fix rewrites `//` comments into `/** ... */` while preserving the text; whitespace-only comments become `/** declaration comment */` as a generic label so the declaration still has a visible doc stub.
+- Auto-fix of a run swaps each `//` marker for ` *`, which is the same width, so indentation and column-aligned content such as a table survive verbatim. The fix is withheld — the report stands on its own — when the resulting block would contain the terminator `*/`, since escaping it would mean rewriting prose the rule does not own.
 
 ### ❌ Incorrect
 
@@ -46,6 +49,14 @@ export enum Direction {
   ASC,
   DESC,
 }
+
+// Spacing scale
+// ┌────────┬───────┐
+// │ Token  │ Value │
+// ├────────┼───────┤
+// │ tight  │ 4px   │
+// └────────┴───────┘
+export const SPACING = { tight: '4px' } as const;
 ```
 
 ### Exceptions
@@ -85,6 +96,20 @@ export enum Direction {
   ASC,
   DESC,
 }
+
+/**
+ * Spacing scale
+ * ┌────────┬───────┐
+ * │ Token  │ Value │
+ * ├────────┼───────┤
+ * │ tight  │ 4px   │
+ * └────────┴───────┘
+ */
+export const SPACING = { tight: '4px' } as const;
+
+/** A trailing comment documents the statement it shares a line with */
+export const SIDEBAR_WIDTH = 54 as const; // was 72
+export const DRAWER_WIDTH = 72 as const;
 
 /* Block comments of any kind are not checked by this rule */
 /* eslint-disable no-console */

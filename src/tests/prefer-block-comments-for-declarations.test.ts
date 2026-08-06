@@ -95,6 +95,48 @@ ruleTesterTs.run(
     function multiLineCommentFunction() {
       return true;
     }`,
+
+      // A trailing comment documents the statement it shares a line with, not
+      // the declaration below it, so it is out of scope
+      `const a = 1; // x
+const b = 2;`,
+
+      // The issue's shape: the note explains the value on its own line
+      `export const SIDEBAR_WIDTH = 54 as const; // was 72
+export const DRAWER_WIDTH = 72 as const;`,
+
+      // A trailing comment on a line carrying only a closing brace still
+      // belongs to the block it closes
+      `function helper() {
+  return 1;
+} // end helper
+export const AFTER = 1;`,
+
+      // A trailing comment after the terminating semicolon of a type
+      `type Legacy = { id: number }; // superseded by User
+type User = { id: string };`,
+
+      // Trailing comment on a class member, with a member below it
+      `class Config {
+  timeout = 5000; // milliseconds
+  retries = 3;
+}`,
+
+      // The joined output of a multi-line run is itself valid, so the fix
+      // converges in a single pass
+      `/**
+ * first line
+ * second line
+ */
+export const X = 1;`,
+
+      // The joined output of the ASCII-table run converges too
+      `/**
+ * ┌─────────────┬───────┐
+ * │ Constant    │ Value │
+ * └─────────────┴───────┘
+ */
+export const BORDER_RADIUS = { none: '0px' } as const;`,
     ],
     invalid: [
       // Function with line comment
@@ -632,9 +674,9 @@ export default class Widget {}`,
 }`,
       },
 
-      // A multi-line // run before an exported declaration converts only the
-      // adjacent comment, exactly as it does for an unexported declaration, and
-      // the `export` keyword is left untouched.
+      // A multi-line // run before an exported declaration converts as one
+      // block, exactly as it does for an unexported declaration, and the
+      // `export` keyword is left untouched.
       {
         code: `// Creates the rule
 // with a docs url
@@ -642,11 +684,13 @@ export const createRule = ESLintUtils.RuleCreator(getUrl);`,
         errors: [
           {
             messageId: 'preferBlockComment',
-            data: { commentText: 'with a docs url' },
+            data: { commentText: 'Creates the rule' },
           },
         ],
-        output: `// Creates the rule
-/** with a docs url */
+        output: `/**
+ * Creates the rule
+ * with a docs url
+ */
 export const createRule = ESLintUtils.RuleCreator(getUrl);`,
       },
 
@@ -658,11 +702,13 @@ const createRule = ESLintUtils.RuleCreator(getUrl);`,
         errors: [
           {
             messageId: 'preferBlockComment',
-            data: { commentText: 'with a docs url' },
+            data: { commentText: 'Creates the rule' },
           },
         ],
-        output: `// Creates the rule
-/** with a docs url */
+        output: `/**
+ * Creates the rule
+ * with a docs url
+ */
 const createRule = ESLintUtils.RuleCreator(getUrl);`,
       },
 
@@ -727,6 +773,475 @@ export interface User {
   id: number;
   /** Name of user */
   name: string;
+}`,
+      },
+    ],
+  },
+);
+
+// Trailing comments: a comment sharing a line with code documents THAT code.
+// Line adjacency alone hands it to the declaration below, so the text ends up
+// describing something it was never written about.
+ruleTesterTs.run(
+  'prefer-block-comments-for-declarations (trailing comments)',
+  preferBlockCommentsForDeclarations,
+  {
+    valid: [
+      // The issue's shape
+      `export const SIDEBAR_WIDTH = 54 as const; // was 72
+export const DRAWER_WIDTH = 72 as const;`,
+
+      // Unexported counterpart
+      `const a = 1; // x
+const b = 2;`,
+
+      // A line carrying only a closing brace still counts as code
+      `function helper() {
+  return 1;
+} // end helper
+export const AFTER = 1;`,
+
+      // Trailing comment on an interface member, with a member below it
+      `interface Config {
+  timeout: number; // milliseconds
+  retries: number;
+}`,
+
+      // Trailing comment on a class property, with a property below it
+      `class Config {
+  timeout = 5000; // milliseconds
+  retries = 3;
+}`,
+
+      // Trailing comment on an enum member, with a declaration below it
+      `enum Role {
+  ADMIN, // full access
+}
+const DEFAULT_ROLE = Role.ADMIN;`,
+
+      // A block comment sharing the line makes the following line comment a
+      // trailing one too
+      `/* mode */ // legacy
+const value = 1;`,
+
+      // Trailing comment on the last line of a multi-line initializer
+      `const config = {
+  retries: 3,
+}; // tuned for flaky uploads
+const other = 1;`,
+    ],
+    invalid: [
+      // A trailing comment on the declaration's own line is untouched while its
+      // leading comment converts
+      {
+        code: `// doc
+const a = 1; // trailing`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'doc' },
+          },
+        ],
+        output: `/** doc */
+const a = 1; // trailing`,
+      },
+
+      // The run walk must stop at a trailing comment rather than swallowing it
+      // into the block, which would move it off the statement it describes
+      {
+        code: `const a = 1; // trailing
+// leading
+const b = 2;`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'leading' },
+          },
+        ],
+        output: `const a = 1; // trailing
+/** leading */
+const b = 2;`,
+      },
+    ],
+  },
+);
+
+// Contiguous `//` runs: consecutive line comments are separate comment nodes,
+// so a rationale written as one paragraph must convert as one block. Converting
+// only the adjacent node truncates the documentation to its last line.
+ruleTesterTs.run(
+  'prefer-block-comments-for-declarations (comment runs)',
+  preferBlockCommentsForDeclarations,
+  {
+    valid: [
+      // Converted runs are themselves valid, so the fix converges in one pass
+      `/**
+ * one
+ * two
+ * three
+ */
+const X = 1;`,
+
+      `interface User {
+  /**
+   * the user's
+   * display name
+   */
+  name: string;
+}`,
+
+      // A run that ends a line short of the declaration is not attached to it
+      `// a standalone note
+// spanning two lines
+
+const X = 1;`,
+    ],
+    invalid: [
+      // Two-line run
+      {
+        code: `// first line
+// second line
+export const X = 1;`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'first line' },
+          },
+        ],
+        output: `/**
+ * first line
+ * second line
+ */
+export const X = 1;`,
+      },
+
+      // Three-line run
+      {
+        code: `// one
+// two
+// three
+const X = 1;`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'one' },
+          },
+        ],
+        output: `/**
+ * one
+ * two
+ * three
+ */
+const X = 1;`,
+      },
+
+      // The ASCII-table shape from src/styles/layout.ts, where converting only
+      // the last line turned the table's closing row into the whole comment.
+      // The ` *` marker is the same width as `//`, so every column holds.
+      {
+        code: `// =============================================================================
+// BORDER RADIUS
+// =============================================================================
+// M3 Shape Scale — full 10-level shape system.
+// ┌─────────────┬───────┬───────────────────────────┐
+// │ Constant    │ Value │ Use Case                  │
+// ├─────────────┼───────┼───────────────────────────┤
+// │ none        │ 0px   │ Sharp corners             │
+// └─────────────┴───────┴───────────────────────────┘
+export const BORDER_RADIUS = { none: '0px' } as const;`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: {
+              commentText:
+                '=============================================================================',
+            },
+          },
+        ],
+        output: `/**
+ * =============================================================================
+ * BORDER RADIUS
+ * =============================================================================
+ * M3 Shape Scale — full 10-level shape system.
+ * ┌─────────────┬───────┬───────────────────────────┐
+ * │ Constant    │ Value │ Use Case                  │
+ * ├─────────────┼───────┼───────────────────────────┤
+ * │ none        │ 0px   │ Sharp corners             │
+ * └─────────────┴───────┴───────────────────────────┘
+ */
+export const BORDER_RADIUS = { none: '0px' } as const;`,
+      },
+
+      // A bare `//` line inside a run is a paragraph break: it stays as an
+      // empty line rather than being dropped or labelled
+      {
+        code: `// one
+//
+// three
+const X = 1;`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'one' },
+          },
+        ],
+        output: `/**
+ * one
+ *
+ * three
+ */
+const X = 1;`,
+      },
+
+      // A run that opens with a bare `//` takes its label from the first line
+      // carrying text
+      {
+        code: `//
+// actual text
+const X = 1;`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'actual text' },
+          },
+        ],
+        output: `/**
+ *
+ * actual text
+ */
+const X = 1;`,
+      },
+
+      // A blank line separates two blocks, so only the attached one converts
+      {
+        code: `// standalone note
+
+// attached doc
+const X = 1;`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'attached doc' },
+          },
+        ],
+        output: `// standalone note
+
+/** attached doc */
+const X = 1;`,
+      },
+
+      // A directive's `//` form is load-bearing, so the walk stops there
+      {
+        code: `// eslint-disable-next-line no-unused-vars
+// attached doc
+const X = 1;`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'attached doc' },
+          },
+        ],
+        output: `// eslint-disable-next-line no-unused-vars
+/** attached doc */
+const X = 1;`,
+      },
+
+      // A block comment above the run is already a block: it is not re-wrapped
+      {
+        code: `/* a block */
+// attached doc
+const X = 1;`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'attached doc' },
+          },
+        ],
+        output: `/* a block */
+/** attached doc */
+const X = 1;`,
+      },
+
+      // Differently-indented comments are not one visual block, and joining
+      // them would re-indent text this rule does not own
+      {
+        code: `  // indented
+// flush
+const X = 1;`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'flush' },
+          },
+        ],
+        output: `  // indented
+/** flush */
+const X = 1;`,
+      },
+
+      // An indented run inside an interface keeps its indentation
+      {
+        code: `interface User {
+  // the user's
+  // display name
+  name: string;
+}`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: "the user's" },
+          },
+        ],
+        output: `interface User {
+  /**
+   * the user's
+   * display name
+   */
+  name: string;
+}`,
+      },
+
+      // Tab indentation survives, because the indent is taken from the source
+      // rather than rebuilt from the column
+      {
+        code: `class C {
+\t// one
+\t// two
+\tvalue = 1;
+}`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'one' },
+          },
+        ],
+        output: `class C {
+\t/**
+\t * one
+\t * two
+\t */
+\tvalue = 1;
+}`,
+      },
+
+      // Interior indentation is content, so it is preserved verbatim
+      {
+        code: `// Options:
+//   - alpha
+//   - beta
+const X = 1;`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'Options:' },
+          },
+        ],
+        output: `/**
+ * Options:
+ *   - alpha
+ *   - beta
+ */
+const X = 1;`,
+      },
+
+      // A run carrying the block terminator anywhere is reported but not fixed
+      {
+        code: `// closes */ here
+// second line
+const X = 1;`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'closes */ here' },
+          },
+        ],
+        output: null,
+      },
+
+      // A run line whose text starts with `/` would form the terminator against
+      // the ` *` marker, so the fix is withheld rather than the text respaced
+      {
+        code: `// doc
+/// not a directive
+const X = 1;`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'doc' },
+          },
+        ],
+        output: null,
+      },
+
+      // A `/` after the marker's space is safe
+      {
+        code: `// doc
+// /usr/local/bin
+const X = 1;`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'doc' },
+          },
+        ],
+        output: `/**
+ * doc
+ * /usr/local/bin
+ */
+const X = 1;`,
+      },
+
+      // Independent runs in one file convert independently
+      {
+        code: `// first declaration
+// second line
+const A = 1;
+
+// third declaration
+// fourth line
+function b() {}`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'first declaration' },
+          },
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'third declaration' },
+          },
+        ],
+        output: `/**
+ * first declaration
+ * second line
+ */
+const A = 1;
+
+/**
+ * third declaration
+ * fourth line
+ */
+function b() {}`,
+      },
+
+      // A run before an exported declaration inside a namespace
+      {
+        code: `namespace Api {
+  // Request timeout
+  // in milliseconds
+  export const TIMEOUT = 5000;
+}`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'Request timeout' },
+          },
+        ],
+        output: `namespace Api {
+  /**
+   * Request timeout
+   * in milliseconds
+   */
+  export const TIMEOUT = 5000;
 }`,
       },
     ],
