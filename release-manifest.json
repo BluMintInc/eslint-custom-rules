@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.123",
+    "date": "2026-08-06T11:53:46.588Z",
+    "rules": [
+      {
+        "name": "enforce-mock-firestore",
+        "changeType": "fix",
+        "issues": [
+          1798
+        ],
+        "summary": "resolve the jest.mock factory's returned object in every body form (closes #1798)"
+      }
+    ]
+  },
+  {
     "version": "1.20.122",
     "date": "2026-08-06T11:06:53.595Z",
     "rules": [

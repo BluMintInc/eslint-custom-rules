@@ -1,3 +1,10 @@
+## [1.20.123](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.122...v1.20.123) (2026-08-06)
+
+
+### Bug Fixes
+
+* **enforce-mock-firestore:** resolve the jest.mock factory's returned object in every body form (closes [#1798](https://github.com/BluMintInc/eslint-custom-rules/issues/1798)) ([257dca7](https://github.com/BluMintInc/eslint-custom-rules/commit/257dca7b666fb58fd6a7273c5f8c48f296672253))
+
 ## [1.20.122](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.121...v1.20.122) (2026-08-06)
 
 
