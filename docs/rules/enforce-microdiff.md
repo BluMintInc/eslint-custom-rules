@@ -30,6 +30,11 @@ function hasConfigChanged(oldConfig, newConfig) {
 }
 ```
 
+```ts
+export const hasConfigChanged = (oldConfig, newConfig) =>
+  JSON.stringify(oldConfig) !== JSON.stringify(newConfig);
+```
+
 ### Examples of **correct** code
 
 ```ts
@@ -129,7 +134,18 @@ function hasConfigChanged(oldConfig, newConfig) {
 }
 ```
 
+Both spellings of a comparison function carry the same rewrite — a `function` declaration and an arrow bound to a `const` — so an identical violation is auto-remediable however it is written. The signature is outside the replaced range in either spelling, so the `export`, the parameters and their annotations all survive, and an arrow's concise expression body needs no `return` and no semicolon because the body is never part of the range:
+
+```ts
+import diff from '@blumintinc/microdiff';
+
+export const hasConfigChanged = (oldConfig, newConfig) =>
+  diff(oldConfig, newConfig).length > 0;
+```
+
 The fix is declined, leaving the report for the author, when the body holds no such comparison or more than one — there is either nothing to rewrite or no way to tell which comparison the answer turns on — and when either `JSON.stringify` call has no argument to pass on. A comparison inside a nested callback is left alone too, since the check that `diff` is emittable inspects the reported function's scope rather than the callback's.
+
+A comparison function whose body compares only with `===` is reported without a rewrite in either spelling: the rewrite follows bodies that phrase the question the way the name does, `!==`. The sense of what is emitted still comes off the comparison's own operator, so an `===` comparison reached past a `!==` guard becomes `.length === 0`.
 
 ### lodash's difference family is report-only
 

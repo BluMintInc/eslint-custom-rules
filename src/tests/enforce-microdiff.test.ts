@@ -1308,5 +1308,168 @@ function hasConfigChanged(oldConfig, newConfig) {
   return diff(formatConfig(oldConfig), newConfig).length > 0;
 }`,
     },
+    {
+      // An arrow carries the same rewrite its `function` twin gets: the same
+      // violation is auto-remediable in either spelling. A concise body needs
+      // no `return` and no semicolon, which the rewrite never has to reason
+      // about because it replaces the comparison rather than the body.
+      code: `export const hasConfigChanged = (a, b) => JSON.stringify(a) !== JSON.stringify(b);`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: `import diff from '@blumintinc/microdiff';
+
+export const hasConfigChanged = (a, b) => diff(a, b).length > 0;`,
+    },
+    {
+      // A concise body split across lines keeps its layout: only the
+      // comparison's own range moves.
+      code: `export const hasConfigChanged = (oldConfig, newConfig) =>
+  JSON.stringify(oldConfig) !== JSON.stringify(newConfig);`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: `import diff from '@blumintinc/microdiff';
+
+export const hasConfigChanged = (oldConfig, newConfig) =>
+  diff(oldConfig, newConfig).length > 0;`,
+    },
+    {
+      // A block-bodied arrow behaves exactly as the declaration does, down to
+      // the statements the comparison shares the body with.
+      code: `export const hasConfigChanged = (oldConfig, newConfig) => {
+  recordComparison(oldConfig, newConfig);
+  return JSON.stringify(oldConfig) !== JSON.stringify(newConfig);
+};`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: `import diff from '@blumintinc/microdiff';
+
+export const hasConfigChanged = (oldConfig, newConfig) => {
+  recordComparison(oldConfig, newConfig);
+  return diff(oldConfig, newConfig).length > 0;
+};`,
+    },
+    {
+      // The signature is outside the replaced range, so the `export`, the
+      // parameter annotations and the return annotation all survive.
+      code: `export const hasConfigChanged = (oldConfig: object, newConfig: object): boolean =>
+  JSON.stringify(oldConfig) !== JSON.stringify(newConfig);`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: `import diff from '@blumintinc/microdiff';
+
+export const hasConfigChanged = (oldConfig: object, newConfig: object): boolean =>
+  diff(oldConfig, newConfig).length > 0;`,
+    },
+    {
+      // An existing microdiff import is reused rather than duplicated: a second
+      // binding of `diff` is TS2300.
+      code: `import diff from '@blumintinc/microdiff';
+
+export const hasConfigChanged = (oldConfig, newConfig) =>
+  JSON.stringify(oldConfig) !== JSON.stringify(newConfig);`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: `import diff from '@blumintinc/microdiff';
+
+export const hasConfigChanged = (oldConfig, newConfig) =>
+  diff(oldConfig, newConfig).length > 0;`,
+    },
+    {
+      // The sense comes off the comparison's own operator in an arrow too, so
+      // an `===` body reached through an unrelated `!==` inverts to an empty
+      // change list.
+      code: `export const hasConfigChanged = (oldConfig, newConfig) => {
+  if (oldConfig.id !== newConfig.id) {
+    return true;
+  }
+  return JSON.stringify(oldConfig) === JSON.stringify(newConfig);
+};`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: `import diff from '@blumintinc/microdiff';
+
+export const hasConfigChanged = (oldConfig, newConfig) => {
+  if (oldConfig.id !== newConfig.id) {
+    return true;
+  }
+  return diff(oldConfig, newConfig).length === 0;
+};`,
+    },
+    {
+      // A nested arrow takes the import to module scope, where the grammar
+      // allows it.
+      code: `export function outer() {
+  const hasConfigChanged = (oldConfig, newConfig) =>
+    JSON.stringify(oldConfig) !== JSON.stringify(newConfig);
+  return hasConfigChanged;
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: `import diff from '@blumintinc/microdiff';
+
+export function outer() {
+  const hasConfigChanged = (oldConfig, newConfig) =>
+    diff(oldConfig, newConfig).length > 0;
+  return hasConfigChanged;
+}`,
+    },
+    {
+      // A parameter named `diff` captures the emitted call, so the arrow
+      // declines the fix exactly as the declaration does.
+      code: `export const hasConfigChanged = (diff, newConfig) =>
+  JSON.stringify(diff) !== JSON.stringify(newConfig);`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: null,
+    },
+    {
+      // Two comparisons leave the rule no way to tell which one the arrow's
+      // answer turns on, so the report stands without a fix.
+      code: `export const hasConfigChanged = (oldConfig, newConfig) => {
+  if (JSON.stringify(oldConfig.a) !== JSON.stringify(newConfig.a)) {
+    return true;
+  }
+  return JSON.stringify(oldConfig.b) !== JSON.stringify(newConfig.b);
+};`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: null,
+    },
+    {
+      // A comparison inside a callback sits in a scope the emit guard never
+      // inspects, so the walk stops at the function boundary and the arrow is
+      // left for the author.
+      code: `export const hasConfigChanged = (oldConfig, newConfig) =>
+  newConfig.entries.some((entry, index) =>
+    JSON.stringify(oldConfig.entries[index]) !== JSON.stringify(entry),
+  );`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: null,
+    },
+    {
+      // An all-`===` body is reported without a fix in either spelling: the
+      // arrow mirrors the declaration's gate rather than widening it.
+      code: `export const hasConfigChanged = (oldConfig, newConfig) =>
+  JSON.stringify(oldConfig) === JSON.stringify(newConfig);`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: null,
+    },
+    {
+      // The control for that gate: the same all-`===` body as a declaration is
+      // reported without a fix too.
+      code: `export function hasConfigChanged(oldConfig, newConfig) {
+  return JSON.stringify(oldConfig) === JSON.stringify(newConfig);
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: null,
+    },
+    {
+      // The rewrite is keyed on one name in either spelling, so the other
+      // comparison-ish names keep reporting without a fix.
+      code: `export const compareObjects = (oldConfig, newConfig) =>
+  JSON.stringify(oldConfig) !== JSON.stringify(newConfig);`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: null,
+    },
+    {
+      // The control for that one: the declaration spelling of the same name is
+      // reported without a fix as well.
+      code: `export function compareObjects(oldConfig, newConfig) {
+  return JSON.stringify(oldConfig) !== JSON.stringify(newConfig);
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: null,
+    },
   ],
 });
