@@ -220,6 +220,22 @@ const onClick = useCallback(() => svc.handle(), [svc]);
 
 ```tsx
 // eslint-options: {"assumeAllUseAreMemoized": true}
+// ✖ A hook that returns the callback itself, wrapped the same way
+const submit = useSomething();
+const onClick = useCallback(() => submit(), [submit]);
+```
+
+```tsx
+// eslint-options: {"assumeAllUseAreMemoized": true}
+// ✖ The same wrapper spelled with a block body
+const submit = useSomething();
+const onClick = useCallback(() => {
+  return submit();
+}, [submit]);
+```
+
+```tsx
+// eslint-options: {"assumeAllUseAreMemoized": true}
 // ✖ Same redundant wrapper under the useLatestCallback spelling
 import useLatestCallback from 'use-latest-callback';
 
@@ -252,7 +268,8 @@ Where safe, the rule removes the redundant `useCallback` wrapper and passes the 
 
 ## Edge Cases Handled
 
-- Identifies callbacks destructured from hook results.
+- Identifies callbacks destructured from hook results, and callbacks a hook returns directly.
+- Answers alike whichever body the wrapper's function is spelled with: a concise arrow, a block body returning the delegate, a block body calling it, or a function expression.
 - Reports re-wrapping of a callback memoized in the same file (`useCallback`, `useLatestCallback`, or a `useMemo` yielding a function literal) without any configuration, since that memoization is proven in-source.
 - Resolves such a binding through scope analysis, so a shadowing parameter or a same-named prop in another component is not mistaken for the memoized one.
 - Leaves a `let` binding alone: it can be reassigned, so the value read at the wrapper need not be the one the memoizing call produced.

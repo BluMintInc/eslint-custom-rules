@@ -544,10 +544,17 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
                     const callee = unwrapChainExpression<TSESTree.Expression>(
                       expr.callee,
                     );
+                    // A bare identifier is a memoized callback whether the hook
+                    // handed it back directly (`const signIn = useThing()`) or
+                    // through a destructuring pattern, so both sets answer here.
+                    // The arrow-body spelling is not part of the question: a
+                    // block body delegating to the same callback is the same
+                    // redundant wrapper the concise spelling is.
                     const isHookProp =
                       callee &&
                       callee.type === AST_NODE_TYPES.Identifier &&
-                      (hookReturnProps.has(callee.name) ||
+                      (hookReturnObjects.has(callee.name) ||
+                        hookReturnProps.has(callee.name) ||
                         isLocallyMemoizedCallback(callee, node));
                     const isHookObjMember =
                       callee &&
