@@ -304,7 +304,7 @@ function initializesFirestore(
  * deeper, inside an `ExportNamedDeclaration`. Reading the statement without
  * unwrapping makes the `export` keyword alone decide whether the file's
  * Firestore evidence is visible, which is not a distinction a `db` handle knows
- * anything about — `classBodiesByName()` already unwraps it for the same
+ * anything about — `resolveClassBody()` unwraps it for the same
  * "find the in-file declaration that carries the evidence" purpose.
  */
 function declaresFirestoreInstance(statement: TSESTree.Node): boolean {
@@ -377,16 +377,30 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
     let plannedSetDocBinding = false;
 
     /**
-     * Top-level classes by name, so a field inherited from a superclass declared
-     * in the same file resolves to the declaration that carries its evidence.
+     * Classes declared directly in one statement container, by name — both the
+     * `class X {}` spelling and the `const X = class {}` one, each looked
+     * through its optional `export` wrapper.
+     *
+     * The memo hangs off the container rather than off the file. What a single
+     * container declares is the same answer for every call site that asks, so
+     * caching it is safe, whereas a file-wide name map is not: lexical
+     * resolution is position dependent, and one map computed for whichever site
+     * asked first would hand that site's answer to every other one.
      */
-    let topLevelClasses: Map<string, TSESTree.ClassBody> | null = null;
-    function classBodiesByName(): Map<string, TSESTree.ClassBody> {
-      if (topLevelClasses) {
-        return topLevelClasses;
+    const classesByContainer = new WeakMap<
+      TSESTree.Node,
+      Map<string, TSESTree.ClassBody>
+    >();
+    function containerClasses(
+      container: TSESTree.Node,
+      statements: TSESTree.Node[],
+    ): Map<string, TSESTree.ClassBody> {
+      const cached = classesByContainer.get(container);
+      if (cached) {
+        return cached;
       }
-      topLevelClasses = new Map();
-      for (const statement of sourceCode.ast.body) {
+      const classes = new Map<string, TSESTree.ClassBody>();
+      for (const statement of statements) {
         const declaration =
           statement.type === AST_NODE_TYPES.ExportNamedDeclaration ||
           statement.type === AST_NODE_TYPES.ExportDefaultDeclaration
@@ -396,7 +410,7 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
           declaration?.type === AST_NODE_TYPES.ClassDeclaration &&
           declaration.id
         ) {
-          topLevelClasses.set(declaration.id.name, declaration.body);
+          classes.set(declaration.id.name, declaration.body);
           continue;
         }
         if (declaration?.type === AST_NODE_TYPES.VariableDeclaration) {
@@ -405,12 +419,46 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
               declarator.id.type === AST_NODE_TYPES.Identifier &&
               declarator.init?.type === AST_NODE_TYPES.ClassExpression
             ) {
-              topLevelClasses.set(declarator.id.name, declarator.init.body);
+              classes.set(declarator.id.name, declarator.init.body);
             }
           }
         }
       }
-      return topLevelClasses;
+      classesByContainer.set(container, classes);
+      return classes;
+    }
+
+    /**
+     * The class a superclass reference names, searched from the reference
+     * outward through every enclosing statement container so the declaration
+     * that carries the field's evidence is found wherever it sits.
+     *
+     * Scanning `Program.body` alone made the `export` keyword and the depth of a
+     * declaration decide whether a base class is visible, which is not a
+     * distinction an inherited field knows anything about. This map feeds the
+     * Realtime Database carve-out, so a miss switches the exemption off and
+     * turns a call the rule cannot legally rewrite into a report — the same
+     * hole `hasFirestoreInstanceInScope` closes for the detection direction,
+     * and the two must agree. The innermost container wins, so a nested class
+     * shadowing an outer one of the same name answers for the code that sees
+     * the shadow.
+     */
+    function resolveClassBody(
+      name: string,
+      reference: TSESTree.Node,
+    ): TSESTree.ClassBody | null {
+      let current: TSESTree.Node | undefined = reference;
+      while (current) {
+        const statements = statementsOf(current);
+        if (statements) {
+          const found = containerClasses(current, statements).get(name);
+          if (found) {
+            return found;
+          }
+        }
+        current = current.parent as TSESTree.Node | undefined;
+      }
+      return null;
     }
 
     function enclosingClassBody(
@@ -448,7 +496,7 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
       if (superClass?.type !== AST_NODE_TYPES.Identifier) {
         return false;
       }
-      const superBody = classBodiesByName().get(superClass.name);
+      const superBody = resolveClassBody(superClass.name, superClass);
       return superBody ? classBindsRealtime(superBody, name, seen) : false;
     }
 

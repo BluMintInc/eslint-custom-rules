@@ -40,7 +40,14 @@ scope. Either one is enough:
    `realtimeDb.RealtimeBatchManager`) on the field, the variable, or a
    constructor parameter, including one the constructor only forwards to
    `super()`. A superclass declared in the same file counts too, since a subclass
-   inherits the field.
+   inherits the field. The superclass is resolved lexically, from the `extends`
+   clause outward through every enclosing statement container — a function body,
+   a namespace, a static block, a switch case, or the module itself — so a base
+   class written beside its subclass inside a function is as visible as a
+   top-level one, exported or not, and is found under either the
+   `class Base {}` or the `const Base = class {}` spelling. The innermost
+   declaration wins, so a nested class shadowing an outer one of the same name
+   answers for the code that sees the shadow.
 2. **The data argument is a primitive literal** — a boolean, number, string,
    template literal, or one of those behind an assertion. Firestore's update
    data is an object of field updates, so a primitive in that position proves the
@@ -129,6 +136,26 @@ export class ReadMessageProcessor extends MessageProcessor {
     // A primitive data argument identifies the receiver on its own
     this.batchManager.update(path, 0);
   }
+}
+```
+
+```ts
+import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+
+export function buildProcessor() {
+  // The base class is resolved from the `extends` clause outward, so nesting it
+  // beside its subclass does not hide the evidence it carries
+  class MessageProcessor {
+    protected readonly batchManager = new RealtimeBatchManager();
+  }
+
+  class ReadMessageProcessor extends MessageProcessor {
+    public markRead(path: string, counts: { unread: number }) {
+      this.batchManager.update(path, counts);
+    }
+  }
+
+  return ReadMessageProcessor;
 }
 ```
 

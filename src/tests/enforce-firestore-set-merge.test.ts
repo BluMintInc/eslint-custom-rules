@@ -220,6 +220,162 @@ ruleTesterTs.run('enforce-firestore-set-merge', enforceFirestoreSetMerge, {
         }
       `,
     },
+    // Issue #1773: the superclass search reads every enclosing statement
+    // container, not `Program.body` alone. A base class declared beside its
+    // subclass inside a function body carries the same evidence a top-level one
+    // does, and this map feeds an exemption, so a miss reports a call the rule
+    // cannot legally rewrite.
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        function processMessages() {
+          class MessageProcessor {
+            protected readonly batchManager = new RealtimeBatchManager();
+          }
+          class ReadMessageProcessor extends MessageProcessor {
+            public markRead(path: string, counts: { unread: number }) {
+              this.batchManager.update(path, counts);
+            }
+          }
+          return ReadMessageProcessor;
+        }
+      `,
+    },
+    // The same nesting written as an arrow body.
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        export const buildProcessor = () => {
+          class MessageProcessor {
+            protected readonly batchManager = new RealtimeBatchManager();
+          }
+          class ReadMessageProcessor extends MessageProcessor {
+            public markRead(path: string, counts: { unread: number }) {
+              this.batchManager.update(path, counts);
+            }
+          }
+          return ReadMessageProcessor;
+        };
+      `,
+    },
+    // A namespace body is a statement container too.
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        namespace Messaging {
+          class MessageProcessor {
+            protected readonly batchManager = new RealtimeBatchManager();
+          }
+          export class ReadMessageProcessor extends MessageProcessor {
+            public markRead(path: string, counts: { unread: number }) {
+              this.batchManager.update(path, counts);
+            }
+          }
+        }
+      `,
+    },
+    // The class-expression spelling of the base resolves at depth as well.
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        function buildProcessor() {
+          const BaseProcessor = class {
+            protected readonly batchManager = new RealtimeBatchManager();
+          };
+          class PulsateProcessor extends BaseProcessor {
+            public pulsate(path: string, counts: { unread: number }) {
+              this.batchManager.update(path, counts);
+            }
+          }
+          return PulsateProcessor;
+        }
+      `,
+    },
+    // A switch case holds statements without a block of its own.
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        export function pick(kind: string) {
+          switch (kind) {
+            case 'read':
+              class MessageProcessor {
+                protected readonly batchManager = new RealtimeBatchManager();
+              }
+              class ReadMessageProcessor extends MessageProcessor {
+                public markRead(path: string, counts: { unread: number }) {
+                  this.batchManager.update(path, counts);
+                }
+              }
+              return ReadMessageProcessor;
+            default:
+              return null;
+          }
+        }
+      `,
+    },
+    // A static block is a statement container as well.
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        export class Registry {
+          static processor: unknown;
+          static {
+            class MessageProcessor {
+              protected readonly batchManager = new RealtimeBatchManager();
+            }
+            class ReadMessageProcessor extends MessageProcessor {
+              public markRead(path: string, counts: { unread: number }) {
+                this.batchManager.update(path, counts);
+              }
+            }
+            Registry.processor = ReadMessageProcessor;
+          }
+        }
+      `,
+    },
+    // The base sits one container further out than the subclass, so the search
+    // has to keep climbing rather than answer from the innermost scope alone.
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        export function outer() {
+          class MessageProcessor {
+            protected readonly batchManager = new RealtimeBatchManager();
+          }
+          function inner() {
+            class ReadMessageProcessor extends MessageProcessor {
+              public markRead(path: string, counts: { unread: number }) {
+                this.batchManager.update(path, counts);
+              }
+            }
+            return ReadMessageProcessor;
+          }
+          return inner;
+        }
+      `,
+    },
+    // Shadowing control: the innermost declaration wins, so a nested realtime
+    // base answers for the nested subclass even though an outer class of the
+    // same name holds a Firestore manager.
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        class MessageProcessor {
+          protected readonly batchManager = new BatchManager();
+        }
+        export function buildRealtime() {
+          class MessageProcessor {
+            protected readonly batchManager = new RealtimeBatchManager();
+          }
+          class ReadMessageProcessor extends MessageProcessor {
+            public markRead(path: string, counts: { unread: number }) {
+              this.batchManager.update(path, counts);
+            }
+          }
+          return ReadMessageProcessor;
+        }
+      `,
+    },
     // A bare receiver is not a member expression, so it never reaches the batch
     // manager branch at all; its binding resolves the same way if it ever does.
     {
@@ -895,6 +1051,154 @@ export async function save(args) {
         }
         export class FirestoreSyncer {
           private readonly batchManager = new BatchManager();
+          public sync(notificationRef, updates) {
+            this.batchManager.set({
+          ref: notificationRef,
+          data: updates,
+          merge: true,
+        });
+          }
+        }
+      `,
+    },
+    // Issue #1773: widening the superclass search to every enclosing container
+    // resolves more declarations, not more exemptions. A nested base holding a
+    // Firestore manager still reports at each nesting depth.
+    {
+      code: `
+        function buildSyncer() {
+          class BaseSyncer {
+            protected readonly batchManager = new BatchManager();
+          }
+          class FirestoreSyncer extends BaseSyncer {
+            public sync(notificationRef, updates) {
+              this.batchManager.update(notificationRef, updates);
+            }
+          }
+          return FirestoreSyncer;
+        }
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        function buildSyncer() {
+          class BaseSyncer {
+            protected readonly batchManager = new BatchManager();
+          }
+          class FirestoreSyncer extends BaseSyncer {
+            public sync(notificationRef, updates) {
+              this.batchManager.set({
+          ref: notificationRef,
+          data: updates,
+          merge: true,
+        });
+            }
+          }
+          return FirestoreSyncer;
+        }
+      `,
+    },
+    {
+      code: `
+        namespace Syncing {
+          const BaseSyncer = class {
+            protected readonly batchManager = new BatchManager();
+          };
+          export class FirestoreSyncer extends BaseSyncer {
+            public sync(notificationRef, updates) {
+              this.batchManager.update(notificationRef, updates);
+            }
+          }
+        }
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        namespace Syncing {
+          const BaseSyncer = class {
+            protected readonly batchManager = new BatchManager();
+          };
+          export class FirestoreSyncer extends BaseSyncer {
+            public sync(notificationRef, updates) {
+              this.batchManager.set({
+          ref: notificationRef,
+          data: updates,
+          merge: true,
+        });
+            }
+          }
+        }
+      `,
+    },
+    // Shadowing control in the reporting direction: an outer realtime base does
+    // not exempt a subclass whose own scope declares a Firestore-holding class
+    // of the same name.
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        class BaseSyncer {
+          protected readonly batchManager = new RealtimeBatchManager();
+        }
+        export function buildSyncer() {
+          class BaseSyncer {
+            protected readonly batchManager = new BatchManager();
+          }
+          class FirestoreSyncer extends BaseSyncer {
+            public sync(notificationRef, updates) {
+              this.batchManager.update(notificationRef, updates);
+            }
+          }
+          return FirestoreSyncer;
+        }
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        class BaseSyncer {
+          protected readonly batchManager = new RealtimeBatchManager();
+        }
+        export function buildSyncer() {
+          class BaseSyncer {
+            protected readonly batchManager = new BatchManager();
+          }
+          class FirestoreSyncer extends BaseSyncer {
+            public sync(notificationRef, updates) {
+              this.batchManager.set({
+          ref: notificationRef,
+          data: updates,
+          merge: true,
+        });
+            }
+          }
+          return FirestoreSyncer;
+        }
+      `,
+    },
+    // A realtime base declared in a sibling function body is out of the
+    // subclass's scope chain entirely, so it exempts nothing.
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        function makeRealtime() {
+          class BaseSyncer {
+            protected readonly batchManager = new RealtimeBatchManager();
+          }
+          return BaseSyncer;
+        }
+        export class FirestoreSyncer extends BaseSyncer {
+          public sync(notificationRef, updates) {
+            this.batchManager.update(notificationRef, updates);
+          }
+        }
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        function makeRealtime() {
+          class BaseSyncer {
+            protected readonly batchManager = new RealtimeBatchManager();
+          }
+          return BaseSyncer;
+        }
+        export class FirestoreSyncer extends BaseSyncer {
           public sync(notificationRef, updates) {
             this.batchManager.set({
           ref: notificationRef,
