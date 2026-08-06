@@ -18,7 +18,9 @@ The rule reports when:
 
 - An error dialog (`severity: 'error'`) is opened without a `console.error` in the containing function scope.
 - A warning dialog (`severity: 'warning'`) is opened without a `console.warn` in the containing function scope.
-- `severity` is dynamic or non-literal and the containing function scope is missing either `console.error` or `console.warn`, so one of the severity branches would emit no telemetry.
+- `severity` is only known at runtime (a variable, a call, an interpolated template) and the containing function scope is missing either `console.error` or `console.warn`, so one of the severity branches would emit no telemetry.
+
+A severity pinned at compile time counts as static regardless of how it is spelled: a quoted literal, a template with no substitutions (`` `error` ``), and a literal behind a type assertion (`'error' as const`, `'error' satisfies Severity`, `<const>'error'`, `'error'!`) all name one severity, so the rule demands only that severity's console method.
 
 ## How to Fix
 

@@ -72,6 +72,56 @@ export const enforceConsoleError = createRule<[], MessageIds>({
       );
     }
 
+    /**
+     * A type assertion carries no runtime behaviour, so `'error' as const`,
+     * `'error' satisfies Severity`, `<const>'error'` and `'error'!` all evaluate
+     * to exactly the string their inner expression evaluates to. Reading through
+     * the wrapper keeps a severity that is pinned at compile time out of the
+     * `dynamic` bucket, whose report demands both console methods and asserts
+     * the severity may render either dialog. The wrappers nest, so unwrap until
+     * a non-assertion node is reached.
+     */
+    function unwrapTypeAssertions(node: TSESTree.Node): TSESTree.Node {
+      let current = node;
+      while (
+        current.type === AST_NODE_TYPES.TSAsExpression ||
+        current.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+        current.type === AST_NODE_TYPES.TSNonNullExpression ||
+        current.type === AST_NODE_TYPES.TSTypeAssertion
+      ) {
+        current = current.expression;
+      }
+      return current;
+    }
+
+    /**
+     * Reads a severity that is fixed at compile time, or null when the value can
+     * only be known at runtime. A template with no substitutions denotes a
+     * single constant string exactly as a quoted literal does; only an
+     * INTERPOLATED template is genuinely dynamic.
+     */
+    function getStaticSeverityValue(node: TSESTree.Node): string | null {
+      const value = unwrapTypeAssertions(node);
+
+      if (
+        value.type === AST_NODE_TYPES.Literal &&
+        typeof value.value === 'string'
+      ) {
+        return value.value;
+      }
+
+      if (
+        value.type === AST_NODE_TYPES.TemplateLiteral &&
+        value.expressions.length === 0 &&
+        value.quasis.length === 1 &&
+        typeof value.quasis[0].value.cooked === 'string'
+      ) {
+        return value.quasis[0].value.cooked;
+      }
+
+      return null;
+    }
+
     function getSeverityFromObjectExpression(
       node: TSESTree.ObjectExpression,
     ): string | null {
@@ -95,13 +145,11 @@ export const enforceConsoleError = createRule<[], MessageIds>({
           }
 
           if (isSeverityProperty) {
-            if (
-              prop.value.type === AST_NODE_TYPES.Literal &&
-              typeof prop.value.value === 'string'
-            ) {
-              return prop.value.value;
+            const staticSeverity = getStaticSeverityValue(prop.value);
+            if (staticSeverity !== null) {
+              return staticSeverity;
             }
-            // If severity is not a literal, treat as dynamic
+            // A severity only known at runtime forces the stricter dynamic path
             return 'dynamic';
           }
         }
