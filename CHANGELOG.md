@@ -1,3 +1,11 @@
+## [1.20.126](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.125...v1.20.126) (2026-08-06)
+
+
+### Bug Fixes
+
+* **ensure-pointer-events-none:** read every selector, name, value and offset through expression assertions (closes [#1814](https://github.com/BluMintInc/eslint-custom-rules/issues/1814)) ([09483b0](https://github.com/BluMintInc/eslint-custom-rules/commit/09483b0c881084e5bac3d1a2026f1d295424fc26))
+* **global-const-style:** decline the rename when the derived name is not an identifier (closes [#1816](https://github.com/BluMintInc/eslint-custom-rules/issues/1816)) ([e9b8a5f](https://github.com/BluMintInc/eslint-custom-rules/commit/e9b8a5f42739b1f31abcb4ae3d6e595edfe3a113)), closes [#1313](https://github.com/BluMintInc/eslint-custom-rules/issues/1313) [#1811](https://github.com/BluMintInc/eslint-custom-rules/issues/1811) [#1813](https://github.com/BluMintInc/eslint-custom-rules/issues/1813)
+
 ## [1.20.125](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.124...v1.20.125) (2026-08-06)
 
 

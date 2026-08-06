@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.20.126",
+    "date": "2026-08-06T22:42:22.372Z",
+    "rules": [
+      {
+        "name": "ensure-pointer-events-none",
+        "changeType": "fix",
+        "issues": [
+          1814
+        ],
+        "summary": "read every selector, name, value and offset through expression assertions (closes #1814)"
+      },
+      {
+        "name": "global-const-style",
+        "changeType": "fix",
+        "issues": [
+          1816
+        ],
+        "summary": "decline the rename when the derived name is not an identifier (closes #1816)"
+      }
+    ]
+  },
+  {
     "version": "1.20.125",
     "date": "2026-08-06T17:33:56.677Z",
     "rules": [
