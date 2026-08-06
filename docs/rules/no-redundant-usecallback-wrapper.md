@@ -155,6 +155,13 @@ const onClick = useCallback((e) => {
 
 ```tsx
 // eslint-options: {"assumeAllUseAreMemoized": true}
+// The suppression call is what the wrapper is for, whichever body spells it
+const { preventDefault } = useEventHandlers();
+const onClick = useCallback(() => preventDefault(), [preventDefault]);
+```
+
+```tsx
+// eslint-options: {"assumeAllUseAreMemoized": true}
 // Recognizing useLatestCallback is not an amnesty on the wrapper: this callback
 // comes from props, so the wrapper is the only thing making it stable
 import useLatestCallback from 'use-latest-callback';
@@ -276,7 +283,7 @@ Where safe, the rule removes the redundant `useCallback` wrapper and passes the 
 - Leaves a wrapper that reads the binding it is initializing alone, rather than collapsing it to `const x = x`.
 - Allows substantial logic in wrappers.
 - Allows wrappers that transform parameters or supply arguments.
-- Allows wrappers that call `preventDefault`, `stopPropagation` or `stopImmediatePropagation`: passing the memoized callback directly drops the suppression call and hands the event to a callback that took no arguments, so the wrapper is doing work.
+- Allows wrappers that call `preventDefault`, `stopPropagation` or `stopImmediatePropagation`: passing the memoized callback directly drops the suppression call and hands the event to a callback that took no arguments, so the wrapper is doing work. The carve-out is decided from the call, so it reaches every body spelling — `() => preventDefault()`, `() => { return e.preventDefault(); }` and `() => { e.preventDefault(); }` alike — and reads through an optional call.
 - Allows a wrapper whose body sequences a second statement: the memoized callback alone does not perform it, so collapsing the wrapper would drop it.
 - Detects object member calls from hook results and avoids unsafe auto-fixes.
 - Treats `useLatestCallback` as a memoization wrapper alongside `useCallback` and `React.useCallback`, resolving the local binding from the `use-latest-callback` module so aliases such as `useLatestCallback2` are recognized. Every carve-out above applies to that spelling unchanged.

@@ -137,10 +137,18 @@ const EVENT_SUPPRESSION_METHODS = new Set([
  * arguments. Such a wrapper is not redundant, so the receiver is deliberately
  * unconstrained — deleting `x.preventDefault()` changes behaviour whether `x`
  * is a parameter, a captured value or a nested member.
+ *
+ * The question is asked of the call itself rather than of a statement, because
+ * the behaviour that makes the wrapper load-bearing is identical whether the
+ * author spelled it as a concise arrow body, a `return` or an expression
+ * statement — and a predicate that recognizes only one of those spellings
+ * reports the other two while prescribing a remedy that does not exist.
  */
-function isEventSuppressionCall(stmt: TSESTree.Statement): boolean {
-  if (stmt.type !== AST_NODE_TYPES.ExpressionStatement) return false;
-  const expr = unwrapChainExpression<TSESTree.Expression>(stmt.expression);
+function isEventSuppressionCall(
+  expression: TSESTree.Node | null | undefined,
+): boolean {
+  if (!expression) return false;
+  const expr = unwrapChainExpression<TSESTree.Expression>(expression);
   if (!expr || expr.type !== AST_NODE_TYPES.CallExpression) return false;
   const callee = unwrapChainExpression<TSESTree.Expression>(expr.callee);
   if (!callee) return false;
@@ -154,6 +162,20 @@ function isEventSuppressionCall(stmt: TSESTree.Statement): boolean {
     callee.property.type === AST_NODE_TYPES.Identifier
   ) {
     return EVENT_SUPPRESSION_METHODS.has(callee.property.name);
+  }
+  return false;
+}
+
+/**
+ * The statement carrying a wrapper's effective call, so the suppression test
+ * reads the same expression from either statement kind.
+ */
+function isEventSuppressionStatement(stmt: TSESTree.Statement): boolean {
+  if (stmt.type === AST_NODE_TYPES.ExpressionStatement) {
+    return isEventSuppressionCall(stmt.expression);
+  }
+  if (stmt.type === AST_NODE_TYPES.ReturnStatement) {
+    return isEventSuppressionCall(stmt.argument);
   }
   return false;
 }
@@ -469,6 +491,10 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
               fn.type === AST_NODE_TYPES.ArrowFunctionExpression &&
               fn.body.type !== AST_NODE_TYPES.BlockStatement
             ) {
+              // An event-suppression call disqualifies the wrapper outright: no
+              // spelling of "pass the callback directly" keeps it, so reporting
+              // here would prescribe a remedy that does not exist.
+              if (isEventSuppressionCall(fn.body)) return;
               const bodyExpr = unwrapChainExpression<TSESTree.Expression>(
                 fn.body,
               );
@@ -524,8 +550,10 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
               const stmts = fn.body.body.filter(Boolean);
               // An event-suppression call disqualifies the wrapper outright: no
               // spelling of "pass the callback directly" keeps it, so reporting
-              // here would prescribe a remedy that does not exist.
-              if (stmts.some(isEventSuppressionCall)) return;
+              // here would prescribe a remedy that does not exist. Any statement
+              // carrying one is enough — the call is load-bearing wherever in
+              // the body it sits.
+              if (stmts.some(isEventSuppressionStatement)) return;
               // Exactly one statement. A wrapper that sequences a second call is
               // doing work the delegate alone does not, so collapsing it would
               // drop that call — only the branch's own statement is ever read,
