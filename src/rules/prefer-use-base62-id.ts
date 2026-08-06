@@ -173,6 +173,32 @@ function hasEmptyDepsArray(callNode: TSESTree.CallExpression): boolean {
 }
 
 /**
+ * Wrappers that exist purely at the type level: they leave the wrapped
+ * expression's runtime value untouched, so a value wrapped in them is still the
+ * value the enclosing declarator binds.
+ */
+const TYPE_ONLY_WRAPPERS = new Set<AST_NODE_TYPES>([
+  AST_NODE_TYPES.TSAsExpression,
+  AST_NODE_TYPES.TSSatisfiesExpression,
+  AST_NODE_TYPES.TSNonNullExpression,
+  AST_NODE_TYPES.TSTypeAssertion,
+]);
+
+/**
+ * Returns the nearest ancestor that carries runtime meaning, skipping the
+ * type-only wrappers that may sit between an expression and its binding site.
+ * A double assertion (`as unknown as T`) nests two of them, so the climb loops
+ * rather than peeling a single layer.
+ */
+function getRuntimeParent(node: TSESTree.Node): TSESTree.Node | undefined {
+  let current: TSESTree.Node | undefined = node.parent;
+  while (current && TYPE_ONLY_WRAPPERS.has(current.type)) {
+    current = current.parent;
+  }
+  return current;
+}
+
+/**
  * Checks whether the given identifier (the ref variable name) has its
  * `.current` property assigned anywhere in the enclosing function body.
  * This mirrors the useState setter-usage heuristic for useRef.
@@ -514,8 +540,13 @@ export const preferUseBase62Id = createRule<Options, MessageIds>({
           if (!isAtComponentTopLevel(node)) return;
           if (!useRefArgContainsUuid(node, trackedUuidNames)) return;
 
-          // Find the variable name assigned to the ref
-          const parent = node.parent;
+          // Find the variable name assigned to the ref. A type assertion
+          // between the call and its declarator is semantically neutral, so the
+          // name stays knowable through it and the `.current`-reassignment
+          // exemption still applies. Genuinely nameless shapes — a destructure,
+          // a discarded call, a returned ref — leave `refName` null and keep
+          // the conservative report.
+          const parent = getRuntimeParent(node);
           let refName: string | null = null;
           if (
             parent?.type === AST_NODE_TYPES.VariableDeclarator &&

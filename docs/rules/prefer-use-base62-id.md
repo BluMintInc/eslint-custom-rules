@@ -22,6 +22,7 @@ Detects `uuidv4Base62()` combined with `useState`, `useRef`, or `useMemo` for st
 ### What the rule allows
 
 - `useState(() => uuidv4Base62())` where the setter IS used elsewhere (regeneration pattern)
+- `useRef(uuidv4Base62())` where `ref.current` IS reassigned in the component scope (the ref is a mutable slot, not a stable ID). Type-only wrappers around the call — `as T`, `satisfies T`, `<T>expr`, a trailing `!`, or any nesting of them — leave this exemption intact, since they change nothing at runtime
 - `uuidv4Base62()` inside `useCallback`, event handlers, async functions, or `useEffect` (per-operation uniqueness)
 - `useMemo(() => uuidv4Base62(), [dep])` with a non-empty dependency array
 - Files outside the configured `targetPaths` (e.g. `src/util/`, backend code)

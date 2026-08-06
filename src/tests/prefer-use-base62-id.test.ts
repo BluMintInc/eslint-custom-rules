@@ -1,4 +1,4 @@
-import { ruleTesterJsx } from '../utils/ruleTester';
+import { ruleTesterJsx, ruleTesterTs } from '../utils/ruleTester';
 import { preferUseBase62Id } from '../rules/prefer-use-base62-id';
 
 const IN_SCOPE_FILE = 'src/components/example/ExamplePanel.tsx';
@@ -358,6 +358,89 @@ const MyComponent = () => {
   const id = uuidv4Base62();
   return id;
 };
+`,
+    },
+
+    // 23. A type assertion between the useRef call and its declarator is
+    // semantically neutral, so the reassignment exemption of case 16 must
+    // survive it (issue #1782).
+    {
+      filename: IN_SCOPE_HOOK,
+      code: `
+import { useRef, MutableRefObject } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+export function useMyHook() {
+  const idRef = useRef(uuidv4Base62()) as MutableRefObject<string>;
+  const handleReset = () => {
+    idRef.current = uuidv4Base62();
+  };
+  return { id: idRef.current, handleReset };
+}
+`,
+    },
+
+    // 24. `satisfies` is likewise type-only.
+    {
+      filename: IN_SCOPE_HOOK,
+      code: `
+import { useRef, MutableRefObject } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+export function useMyHook() {
+  const idRef = useRef(uuidv4Base62()) satisfies MutableRefObject<string>;
+  const handleReset = () => {
+    idRef.current = uuidv4Base62();
+  };
+  return { id: idRef.current, handleReset };
+}
+`,
+    },
+
+    // 25. A double assertion nests two TSAsExpression nodes, so unwrapping the
+    // wrappers must loop rather than peel a single layer.
+    {
+      filename: IN_SCOPE_HOOK,
+      code: `
+import { useRef, MutableRefObject } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+export function useMyHook() {
+  const idRef = useRef(uuidv4Base62()) as unknown as MutableRefObject<string>;
+  const handleReset = () => {
+    idRef.current = uuidv4Base62();
+  };
+  return { id: idRef.current, handleReset };
+}
+`,
+    },
+
+    // 26. The non-null assertion is the third type-only wrapper.
+    {
+      filename: IN_SCOPE_HOOK,
+      code: `
+import { useRef } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+export function useMyHook() {
+  const idRef = useRef(uuidv4Base62())!;
+  const handleReset = () => {
+    idRef.current = uuidv4Base62();
+  };
+  return { id: idRef.current, handleReset };
+}
+`,
+    },
+
+    // 27. Parentheses around the assertion must not hide the declarator either.
+    {
+      filename: IN_SCOPE_HOOK,
+      code: `
+import { useRef, MutableRefObject } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+export function useMyHook() {
+  const idRef = (useRef(uuidv4Base62()) as MutableRefObject<string>)!;
+  const handleReset = () => {
+    idRef.current = uuidv4Base62();
+  };
+  return { id: idRef.current, handleReset };
+}
 `,
     },
   ],
@@ -781,5 +864,148 @@ const SessionPanel = () => {
 `,
       errors: [{ messageId: 'preferUseBase62IdHook' }],
     },
+
+    // 30. Anti-vacuity control for valid case 23: looking through the assertion
+    // must still leave a never-reassigned ref reportable.
+    {
+      filename: IN_SCOPE_HOOK,
+      code: `
+import { useRef, MutableRefObject } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+export function useMyHook() {
+  const idRef = useRef(uuidv4Base62()) as MutableRefObject<string>;
+  return { id: idRef.current };
+}
+`,
+      errors: [{ messageId: 'preferUseBase62IdHook' }],
+    },
+
+    // 31. Same control for `satisfies`.
+    {
+      filename: IN_SCOPE_HOOK,
+      code: `
+import { useRef, MutableRefObject } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+export function useMyHook() {
+  const idRef = useRef(uuidv4Base62()) satisfies MutableRefObject<string>;
+  return { id: idRef.current };
+}
+`,
+      errors: [{ messageId: 'preferUseBase62IdHook' }],
+    },
+
+    // 32. Same control for the double assertion.
+    {
+      filename: IN_SCOPE_HOOK,
+      code: `
+import { useRef, MutableRefObject } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+export function useMyHook() {
+  const idRef = useRef(uuidv4Base62()) as unknown as MutableRefObject<string>;
+  return { id: idRef.current };
+}
+`,
+      errors: [{ messageId: 'preferUseBase62IdHook' }],
+    },
+
+    // 33. Same control for the non-null assertion.
+    {
+      filename: IN_SCOPE_HOOK,
+      code: `
+import { useRef } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+export function useMyHook() {
+  const idRef = useRef(uuidv4Base62())!;
+  return { id: idRef.current };
+}
+`,
+      errors: [{ messageId: 'preferUseBase62IdHook' }],
+    },
+
+    // 34. A destructured ref has no name to track reassignment through, so the
+    // conservative report stands.
+    {
+      filename: IN_SCOPE_HOOK,
+      code: `
+import { useRef } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+export function useMyHook() {
+  const { current } = useRef(uuidv4Base62());
+  return { id: current };
+}
+`,
+      errors: [{ messageId: 'preferUseBase62IdHook' }],
+    },
+
+    // 35. A useRef whose result is never bound is equally untrackable.
+    {
+      filename: IN_SCOPE_HOOK,
+      code: `
+import { useRef } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+export function useMyHook() {
+  useRef(uuidv4Base62());
+  return null;
+}
+`,
+      errors: [{ messageId: 'preferUseBase62IdHook' }],
+    },
+
+    // 36. Returning the ref directly escapes it from the analyzable scope.
+    {
+      filename: IN_SCOPE_HOOK,
+      code: `
+import { useRef } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+export function useMyHook() {
+  return useRef(uuidv4Base62());
+}
+`,
+      errors: [{ messageId: 'preferUseBase62IdHook' }],
+    },
   ],
 });
+
+/**
+ * The angle-bracket assertion is the fourth type-only wrapper, and it only
+ * parses where JSX is off, so it needs the non-JSX tester.
+ */
+ruleTesterTs.run(
+  'prefer-use-base62-id (angle-bracket assertion)',
+  preferUseBase62Id,
+  {
+    valid: [
+      // The reassignment exemption survives the assertion.
+      {
+        filename: IN_SCOPE_HOOK,
+        code: `
+import { useRef, MutableRefObject } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+export function useMyHook() {
+  const idRef = <MutableRefObject<string>>useRef(uuidv4Base62());
+  const handleReset = () => {
+    idRef.current = uuidv4Base62();
+  };
+  return { id: idRef.current, handleReset };
+}
+`,
+      },
+    ],
+
+    invalid: [
+      // Anti-vacuity control: without a reassignment the report stands.
+      {
+        filename: IN_SCOPE_HOOK,
+        code: `
+import { useRef, MutableRefObject } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+export function useMyHook() {
+  const idRef = <MutableRefObject<string>>useRef(uuidv4Base62());
+  return { id: idRef.current };
+}
+`,
+        errors: [{ messageId: 'preferUseBase62IdHook' }],
+      },
+    ],
+  },
+);
