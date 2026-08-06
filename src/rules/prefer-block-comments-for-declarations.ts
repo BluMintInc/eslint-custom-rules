@@ -73,6 +73,36 @@ export const preferBlockCommentsForDeclarations: TSESLint.RuleModule<
     };
 
     /**
+     * Resolve the node that owns the declaration's leading comments.
+     *
+     * A leading comment sits before the first token of the whole statement, so
+     * an `export` wrapper takes ownership of it: the `export` keyword becomes
+     * the token preceding the inner declaration and `getCommentsBefore` on that
+     * declaration returns nothing. Walking out to the wrapper keeps exported
+     * declarations — the public API this rule exists to document — in scope.
+     *
+     * Only the visitors for the inner declaration types are registered, so
+     * unwrapping here reports each declaration once; registering the export
+     * node types as extra visitors instead would report the same comment twice.
+     */
+    const resolveCommentAnchor = (node: TSESTree.Node): TSESTree.Node => {
+      let anchor = node;
+      let parent = anchor.parent;
+
+      while (
+        parent &&
+        (parent.type === 'ExportNamedDeclaration' ||
+          parent.type === 'ExportDefaultDeclaration') &&
+        parent.declaration === anchor
+      ) {
+        anchor = parent;
+        parent = anchor.parent;
+      }
+
+      return anchor;
+    };
+
+    /**
      * Process a node that might have a declaration comment
      */
     const checkNodeForLineComments = (node: TSESTree.Node) => {
@@ -82,12 +112,13 @@ export const preferBlockCommentsForDeclarations: TSESLint.RuleModule<
       }
 
       const sourceCode = context.sourceCode;
-      const comments = sourceCode.getCommentsBefore(node);
+      const anchor = resolveCommentAnchor(node);
+      const comments = sourceCode.getCommentsBefore(anchor);
 
       // Find the closest comment to the node
       const lastComment = comments[comments.length - 1];
 
-      if (lastComment && isLineCommentBeforeDeclaration(lastComment, node)) {
+      if (lastComment && isLineCommentBeforeDeclaration(lastComment, anchor)) {
         const commentText = lastComment.value.trim();
         const commentLabel = commentText || 'declaration comment';
 

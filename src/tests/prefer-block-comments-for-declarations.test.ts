@@ -324,3 +324,411 @@ const unused = 0;`,
     invalid: [],
   },
 );
+
+// Exported declarations: the `export` keyword owns the leading comment, so the
+// rule must resolve comments against the export wrapper rather than the inner
+// declaration. Every shape below must match its unexported counterpart.
+ruleTesterTs.run(
+  'prefer-block-comments-for-declarations (exported declarations)',
+  preferBlockCommentsForDeclarations,
+  {
+    valid: [
+      // Block comment before an exported declaration stays untouched
+      `/** This function fetches user data */
+export function getUser() {
+  return fetch('/api/user');
+}`,
+
+      // Declarations inside a function body remain out of scope
+      `function process() {
+  // This is an inline comment that should be ignored
+  const x = 5;
+  // Nested declarations are not documentation targets
+  function inner() {
+    return x;
+  }
+  return inner;
+}`,
+
+      // A comment separated from the exported declaration by a blank line is
+      // not attached to it
+      `// A standalone note about the module
+
+export const BASE_URL = 'https://api.example.com';`,
+
+      // ESLint directive before an exported declaration
+      `// eslint-disable-next-line no-unused-vars
+export const unused = 0;`,
+
+      // TypeScript directive before an exported declaration
+      `// @ts-expect-error legacy shape
+export const legacy = globalThis.legacy;`,
+
+      // Triple-slash directive before an exported declaration
+      `/// <reference types="node" />
+export type NodeEnv = typeof process.env;`,
+
+      // Export specifier lists carry no declaration to document
+      `const a = 1;
+// Re-export the value
+export { a };`,
+
+      // A default-exported expression is not a declaration
+      `// The answer
+export default 42;`,
+    ],
+    invalid: [
+      // export function
+      {
+        code: `// This function fetches user data
+export function getUser() {
+  return fetch('/api/user');
+}`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'This function fetches user data' },
+          },
+        ],
+        output: `/** This function fetches user data */
+export function getUser() {
+  return fetch('/api/user');
+}`,
+      },
+
+      // export async function
+      {
+        code: `// Loads the session
+export async function loadSession() {
+  return null;
+}`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'Loads the session' },
+          },
+        ],
+        output: `/** Loads the session */
+export async function loadSession() {
+  return null;
+}`,
+      },
+
+      // export const
+      {
+        code: `// API base URL
+export const BASE_URL = 'https://api.example.com';`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'API base URL' },
+          },
+        ],
+        output: `/** API base URL */
+export const BASE_URL = 'https://api.example.com';`,
+      },
+
+      // export interface, including a nested property comment
+      {
+        code: `// User type
+export interface User {
+  id: number;
+  // Name of user
+  name: string;
+}`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'User type' },
+          },
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'Name of user' },
+          },
+        ],
+        output: `/** User type */
+export interface User {
+  id: number;
+  /** Name of user */
+  name: string;
+}`,
+      },
+
+      // export type
+      {
+        code: `// User type alias
+export type UserType = {
+  id: number;
+};`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'User type alias' },
+          },
+        ],
+        output: `/** User type alias */
+export type UserType = {
+  id: number;
+};`,
+      },
+
+      // export class, including a class property comment
+      {
+        code: `// User class
+export class User {
+  // User ID
+  id: number;
+}`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'User class' },
+          },
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'User ID' },
+          },
+        ],
+        output: `/** User class */
+export class User {
+  /** User ID */
+  id: number;
+}`,
+      },
+
+      // export abstract class
+      {
+        code: `// Base repository
+export abstract class Repository {}`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'Base repository' },
+          },
+        ],
+        output: `/** Base repository */
+export abstract class Repository {}`,
+      },
+
+      // export enum
+      {
+        code: `// User roles
+export enum Role {
+  ADMIN,
+  USER
+}`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'User roles' },
+          },
+        ],
+        output: `/** User roles */
+export enum Role {
+  ADMIN,
+  USER
+}`,
+      },
+
+      // export const enum
+      {
+        code: `// Sort direction
+export const enum Direction {
+  ASC,
+  DESC
+}`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'Sort direction' },
+          },
+        ],
+        output: `/** Sort direction */
+export const enum Direction {
+  ASC,
+  DESC
+}`,
+      },
+
+      // export declare const
+      {
+        code: `// Injected at build time
+export declare const BUILD_ID: string;`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'Injected at build time' },
+          },
+        ],
+        output: `/** Injected at build time */
+export declare const BUILD_ID: string;`,
+      },
+
+      // export default function
+      {
+        code: `// Default handler
+export default function handler() {
+  return null;
+}`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'Default handler' },
+          },
+        ],
+        output: `/** Default handler */
+export default function handler() {
+  return null;
+}`,
+      },
+
+      // export default anonymous function
+      {
+        code: `// Default anonymous handler
+export default function () {
+  return null;
+}`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'Default anonymous handler' },
+          },
+        ],
+        output: `/** Default anonymous handler */
+export default function () {
+  return null;
+}`,
+      },
+
+      // export default class
+      {
+        code: `// Default widget
+export default class Widget {}`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'Default widget' },
+          },
+        ],
+        output: `/** Default widget */
+export default class Widget {}`,
+      },
+
+      // Exported declaration inside a namespace
+      {
+        code: `namespace Api {
+  // Request timeout
+  export const TIMEOUT = 5000;
+}`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'Request timeout' },
+          },
+        ],
+        output: `namespace Api {
+  /** Request timeout */
+  export const TIMEOUT = 5000;
+}`,
+      },
+
+      // A multi-line // run before an exported declaration converts only the
+      // adjacent comment, exactly as it does for an unexported declaration, and
+      // the `export` keyword is left untouched.
+      {
+        code: `// Creates the rule
+// with a docs url
+export const createRule = ESLintUtils.RuleCreator(getUrl);`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'with a docs url' },
+          },
+        ],
+        output: `// Creates the rule
+/** with a docs url */
+export const createRule = ESLintUtils.RuleCreator(getUrl);`,
+      },
+
+      // The same run before an unexported declaration behaves identically
+      {
+        code: `// Creates the rule
+// with a docs url
+const createRule = ESLintUtils.RuleCreator(getUrl);`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'with a docs url' },
+          },
+        ],
+        output: `// Creates the rule
+/** with a docs url */
+const createRule = ESLintUtils.RuleCreator(getUrl);`,
+      },
+
+      // Comment containing a closing token is still reported but not fixed
+      {
+        code: `// closes */ comment
+export const value = 1;`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'closes */ comment' },
+          },
+        ],
+        output: null,
+      },
+
+      // The issue's module: every exported declaration reports, matching the
+      // unexported form report for report
+      {
+        code: `// This function fetches user data
+export function getUser() {
+  return fetch('/api/user');
+}
+
+// API base URL
+export const BASE_URL = 'https://api.example.com';
+
+// User type
+export interface User {
+  id: number;
+  // Name of user
+  name: string;
+}`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'This function fetches user data' },
+          },
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'API base URL' },
+          },
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'User type' },
+          },
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'Name of user' },
+          },
+        ],
+        output: `/** This function fetches user data */
+export function getUser() {
+  return fetch('/api/user');
+}
+
+/** API base URL */
+export const BASE_URL = 'https://api.example.com';
+
+/** User type */
+export interface User {
+  id: number;
+  /** Name of user */
+  name: string;
+}`,
+      },
+    ],
+  },
+);
