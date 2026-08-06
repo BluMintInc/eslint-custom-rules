@@ -226,10 +226,46 @@ const userID = 1 as const;            const USER_ID = 1 as const;
 
 When a safe rename cannot be guaranteed, the violation is still reported but the
 fix is withheld (report-only) rather than risk changing behavior. That happens
-when the new name would collide with or shadow an existing binding, or when the
+when the new name would collide with or shadow an existing binding, when the
+suggested name is not itself a valid `UPPER_SNAKE_CASE` identifier, or when the
 symbol crosses a file boundary — **any** exported declaration, whether an inline
 `export const` or a re-export such as `export { fooBar }` — where a single-file
 fixer cannot reach the importers.
+
+### Names the suggestion cannot be derived from
+
+The leading underscore is dropped so the suggested name passes the rule's own
+`UPPER_SNAKE_CASE` test, but for two shapes dropping it leaves something that is
+not an identifier at all: a name built only from underscores derives the empty
+string, and an underscore in front of a digit derives a name that starts with
+that digit. Renaming to either emits code that does not parse — and because the
+fix rewrites every reference, each use site is corrupted along with the
+declaration. The fix is therefore declined and the report stands unfixed:
+
+```ts
+// Reported, never autofixed — pick a name by hand.
+const _ = { a: 1 } as const;
+const __ = { a: 1 } as const;
+const _1 = { a: 1 } as const;
+const _2fa = { a: 1 } as const;
+const _9lives = { a: 1 } as const;
+```
+
+The same test covers a derivation that stays a legal identifier yet is still not
+`UPPER_SNAKE_CASE` (`_$` derives `$`), where renaming would only relocate the
+identical report onto a name the rule can never accept. Only the rename is
+withheld — `as const` is still enforced and still autofixed on these
+declarations, because it derives nothing from the name.
+
+An underscore in front of a *letter* derives a usable name, so those constants
+are renamed as usual:
+
+```ts
+// Before                             // After --fix
+const _privateThing = 1 as const;     const PRIVATE_THING = 1 as const;
+const _APIKey = 1 as const;           const API_KEY = 1 as const;
+const _a1 = 1 as const;               const A1 = 1 as const;
+```
 
 An exported name is a contract spelled out in other files, so the rename is
 withheld regardless of whether the declaring file also uses the name: a
