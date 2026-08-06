@@ -338,6 +338,18 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
       errors: [error('data')],
     },
 
+    // A bare-identifier body is the only shape reaching the identity branch;
+    // every other implicit-return fixture here has a conditional or logical
+    // body and is answered before it.
+    {
+      code: `const identity = (value) => value;`,
+      errors: [error('value')],
+    },
+    {
+      code: `const passThrough = (payload = null) => payload;`,
+      errors: [error('payload')],
+    },
+
     // Function with multiple parameters and early return
     {
       code: `function processData(data, options) {
