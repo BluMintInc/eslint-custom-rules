@@ -134,6 +134,21 @@ ruleTesterTs.run('enforce-positive-naming', enforcePositiveNaming, {
       ],
     },
 
+    // Boolean PARAMETER names with negative prefixes. Parameters are checked by
+    // their own visitor, independent of the function-name check above.
+    {
+      code: 'export function check(isNotValid: boolean) { return isNotValid; }',
+      errors: [
+        {
+          messageId: 'avoidNegativeNaming',
+          data: {
+            name: 'isNotValid',
+            alternatives: 'isValid',
+          },
+        },
+      ],
+    },
+
     // Boolean property names with negative prefixes
     {
       code: `

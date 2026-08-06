@@ -608,6 +608,30 @@ switch ("a") {
 `,
     errors: [expectAlwaysTrue('value')],
   },
+  // Literal discriminant against a MATCHING literal case test. Spelling the case
+  // test as a literal rather than an identifier is what reaches the
+  // literal-vs-literal branch instead of the identifier-resolution one.
+  {
+    code: `
+switch ("a") {
+  case "a":
+    doSomething();
+    break;
+}
+`,
+    errors: [expectAlwaysTrue('"a"')],
+  },
+  // Literal discriminant against a NON-matching literal case test
+  {
+    code: `
+switch (42) {
+  case 99:
+    doSomething();
+    break;
+}
+`,
+    errors: [expectAlwaysFalse('99')],
+  },
   // "as const" around a compared literal
   {
     code: `

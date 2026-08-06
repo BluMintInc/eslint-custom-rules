@@ -1719,6 +1719,14 @@ ruleTesterTs.run(
         code: `const userRef = db.collection<User>('users').doc<any>(userId);`,
         errors: [invalidGenericError('DocumentReference')],
       },
+      // The same invalid generic on a .doc() call whose receiver is an UNTYPED
+      // collection. A typed receiver short-circuits into its own branch, so this
+      // is the only shape that reaches the invalid-generic check on the
+      // untyped-receiver path.
+      {
+        code: `const userRef = db.collection('users').doc<any>('user123');`,
+        errors: [invalidGenericError('DocumentReference')],
+      },
       // Invalid generic type in .collection() call
       {
         code: `const usersCollection = db.collection<{}>("users");`,

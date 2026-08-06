@@ -547,6 +547,20 @@ const x: TokenMetadata<'offchain', Date> = {
         filename: 'src/hooks/useExample.ts',
         errors: [{ messageId: 'useServerTimestamp' }],
       },
+      // Ternary with new Date() in the CONSEQUENT branch — the mirror of the
+      // case above, which only covers the alternate branch
+      {
+        code: `
+import type { TokenMetadata } from 'functions/src/types/firestore/TokenMetadata';
+const isOnline = true;
+const x: TokenMetadata<'offchain', Date> = {
+  id: 'abc',
+  createdAt: isOnline ? new Date() : serverTimestamp(),
+};
+`,
+        filename: 'src/hooks/useExample.ts',
+        errors: [{ messageId: 'useServerTimestamp' }],
+      },
       // Multiple Firestore type imports from same path
       {
         code: `
