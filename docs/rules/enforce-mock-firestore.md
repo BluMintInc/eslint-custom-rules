@@ -13,6 +13,8 @@ This rule reports when:
 - A `jest.mock(...)` targets `firebase-admin` (or `functions/src/config/firebaseAdmin`) and returns `db`, `firestore`, or `getFirestore` objects inline.
 - Code imports `mockFirebase` from `firestore-jest-mock` instead of the shared `mockFirestore` helper.
 
+The factory's body form is irrelevant: a concise arrow, a block-bodied arrow, and a `function` expression that all return the same object are the same mock, and all three report. A factory whose body does more than return that object is out of scope, since the module it produces can no longer be read off a single expression.
+
 ### Examples of **incorrect** code for this rule:
 
 ```ts
@@ -20,6 +22,16 @@ This rule reports when:
 jest.mock('firebase-admin', () => ({
   firestore: () => ({ collection: jest.fn(), doc: jest.fn() }),
 }));
+
+// The same mock, written with a block body
+jest.mock('firebase-admin', () => {
+  return { firestore: () => ({ collection: jest.fn(), doc: jest.fn() }) };
+});
+
+// The same mock, written as a function expression
+jest.mock('firebase-admin', function () {
+  return { db: { collection: jest.fn() } };
+});
 
 // Using firestore-jest-mock
 import { mockFirebase } from 'firestore-jest-mock';

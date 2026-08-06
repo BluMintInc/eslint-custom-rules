@@ -94,6 +94,92 @@ ruleTesterTs.run('enforce-mock-firestore', enforceFirestoreMock, {
         }));
       `,
     },
+    // Firestore-shaped object returned for an unrelated module
+    {
+      code: `
+        jest.mock('../../../../functions/src/config/analytics', () => {
+          return { db: { collection: jest.fn() } };
+        });
+      `,
+    },
+    // Function expression factory for an unrelated module
+    {
+      code: `
+        jest.mock('./localCache', function () {
+          return { firestore: () => ({ collection: jest.fn() }) };
+        });
+      `,
+    },
+    // Block-bodied factory whose returned object holds no Firestore keys
+    {
+      code: `
+        jest.mock('firebase-admin', () => {
+          return { messaging: jest.fn(), storage: jest.fn() };
+        });
+      `,
+    },
+    // Multi-statement factory: the produced object is out of reach
+    {
+      code: `
+        jest.mock('firebase-admin', () => {
+          const db = { collection: jest.fn() };
+          return { db };
+        });
+      `,
+    },
+    // Multi-statement function expression factory
+    {
+      code: `
+        jest.mock('../../../../functions/src/config/firebaseAdmin', function () {
+          jest.requireActual('../../../../functions/src/config/firebaseAdmin');
+          return { firestore: () => ({ collection: jest.fn() }) };
+        });
+      `,
+    },
+    // Factory returning a non-object expression
+    {
+      code: `
+        import { mockFirestore } from '__test-utils__/mockFirestore';
+
+        jest.mock('firebase-admin', () => mockFirestore);
+      `,
+    },
+    // Block-bodied factory returning a non-object expression
+    {
+      code: `
+        import { mockFirestore } from '__test-utils__/mockFirestore';
+
+        jest.mock('firebase-admin', () => {
+          return mockFirestore;
+        });
+      `,
+    },
+    // Block-bodied factory with a bare return
+    {
+      code: `
+        jest.mock('firebase-admin', () => {
+          return;
+        });
+      `,
+    },
+    // Empty factory body
+    {
+      code: `
+        jest.mock('firebase-admin', () => {});
+      `,
+    },
+    // jest.mock with no factory at all
+    {
+      code: `
+        jest.mock('firebase-admin');
+      `,
+    },
+    // Factory that is neither an arrow nor a function expression
+    {
+      code: `
+        jest.mock('firebase-admin', firestoreFactory);
+      `,
+    },
   ],
   invalid: [
     // Invalid use of mockFirebase
@@ -117,6 +203,27 @@ ruleTesterTs.run('enforce-mock-firestore', enforceFirestoreMock, {
             collection: jest.fn(),
           },
         }));
+      `,
+      errors: [{ messageId: 'noManualFirestoreMock' }],
+    },
+    // Invalid manual mock via a block-bodied arrow returning a parenthesized object
+    {
+      code: `
+        jest.mock('../../../../functions/src/config/firebaseAdmin', () => { return ({ db: { collection: jest.fn() } }); });
+      `,
+      errors: [{ messageId: 'noManualFirestoreMock' }],
+    },
+    // Invalid manual mock via a block-bodied arrow returning a bare object
+    {
+      code: `
+        jest.mock('../../../../functions/src/config/firebaseAdmin', () => { return { db: { collection: jest.fn() } }; });
+      `,
+      errors: [{ messageId: 'noManualFirestoreMock' }],
+    },
+    // Invalid manual mock via a function expression factory
+    {
+      code: `
+        jest.mock('../../../../functions/src/config/firebaseAdmin', function () { return { db: { collection: jest.fn() } }; });
       `,
       errors: [{ messageId: 'noManualFirestoreMock' }],
     },
