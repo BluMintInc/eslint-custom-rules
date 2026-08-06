@@ -3,6 +3,12 @@ import path from 'path';
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { minimatch } from 'minimatch';
 import { createRule } from '../utils/createRule';
+import {
+  BOUND_UNPROVABLE,
+  declarationOf,
+  resolveInEnclosingScopes,
+  ScopeMatch,
+} from '../utils/lexicalScope';
 
 type MessageIds = 'missingPropsComposition';
 
@@ -116,40 +122,6 @@ function typeReferenceContainsPickOrOmit(
   }
 
   return false;
-}
-
-/**
- * The statement list a declaration can sit directly inside. A node that holds no
- * statement list yields undefined, so a lexical walk simply steps past it.
- */
-function statementsOf(node: TSESTree.Node): TSESTree.Node[] | undefined {
-  switch (node.type) {
-    case AST_NODE_TYPES.Program:
-    case AST_NODE_TYPES.BlockStatement:
-    case AST_NODE_TYPES.TSModuleBlock:
-    case AST_NODE_TYPES.StaticBlock:
-      return (node as { body: TSESTree.Node[] }).body;
-    case AST_NODE_TYPES.SwitchCase:
-      return node.consequent;
-    default:
-      return undefined;
-  }
-}
-
-/**
- * Look through an `export` wrapper to the declaration it carries. `export type
- * XProps = …` and `export const X = …` are the same declaration one AST node
- * deeper, and the `export` keyword says nothing about what the declaration
- * declares.
- */
-function unwrapExport(statement: TSESTree.Node): TSESTree.Node | null {
-  if (
-    statement.type === AST_NODE_TYPES.ExportNamedDeclaration ||
-    statement.type === AST_NODE_TYPES.ExportDefaultDeclaration
-  ) {
-    return statement.declaration ?? null;
-  }
-  return statement;
 }
 
 /**
@@ -547,28 +519,23 @@ type ComponentFunctionLookup = {
 
 /**
  * A statement list either binds the name or it does not, and the two must not be
- * conflated: `null` means "not declared here, keep walking outward", while a
- * `declared` result ends the search even when it proves no function.
+ * conflated: `undefined` means "not declared here, keep walking outward", while
+ * a `declared` result ends the search even when it proves no function.
  *
  * A name bound to something unprovable — `const Spinner = lazy(…)` under the
- * zero-parameter proof — has to STOP the walk. Letting it fall through would let
- * an outer, unrelated `Spinner` answer for the inner binding the JSX actually
- * resolves to, which is precisely the masquerade the zero-parameter proof exists
- * to prevent (issue #1316).
+ * zero-parameter proof — has to STOP the walk, which is what `BOUND_UNPROVABLE`
+ * says. Letting it fall through would let an outer, unrelated `Spinner` answer
+ * for the inner binding the JSX actually resolves to, which is precisely the
+ * masquerade the zero-parameter proof exists to prevent (issue #1316).
  */
-type StatementLookup = { fn: ComponentFunction | null } | null;
-
-const UNPROVABLE: StatementLookup = { fn: null };
-
 function findComponentFunctionInStatements(
-  statements: TSESTree.Node[],
+  statements: readonly TSESTree.Node[],
   name: string,
   lookup: ComponentFunctionLookup,
   nextLookup: ComponentFunctionLookup,
-): StatementLookup {
+): ScopeMatch<ComponentFunction> {
   for (const stmt of statements) {
-    const decl = unwrapExport(stmt);
-    if (!decl) continue;
+    const decl = declarationOf(stmt);
 
     if (
       (decl.type === AST_NODE_TYPES.FunctionDeclaration ||
@@ -578,8 +545,8 @@ function findComponentFunctionInStatements(
       // A class component binds the name without being a ComponentFunction, so
       // it proves nothing and still ends the search.
       return decl.type === AST_NODE_TYPES.FunctionDeclaration
-        ? { fn: decl }
-        : UNPROVABLE;
+        ? decl
+        : BOUND_UNPROVABLE;
     }
 
     if (decl.type === AST_NODE_TYPES.VariableDeclaration) {
@@ -592,13 +559,13 @@ function findComponentFunctionInStatements(
         }
         const init = declarator.init;
         if (!init) {
-          return UNPROVABLE;
+          return BOUND_UNPROVABLE;
         }
         if (
           init.type === AST_NODE_TYPES.ArrowFunctionExpression ||
           init.type === AST_NODE_TYPES.FunctionExpression
         ) {
-          return { fn: init };
+          return init;
         }
         if (init.type === AST_NODE_TYPES.CallExpression) {
           if (
@@ -607,7 +574,7 @@ function findComponentFunctionInStatements(
           ) {
             // The binding IS this call, and the call is not known to preserve
             // props — so nothing about its props surface is provable.
-            return UNPROVABLE;
+            return BOUND_UNPROVABLE;
           }
           const arg0 = init.arguments[0];
           if (
@@ -615,23 +582,25 @@ function findComponentFunctionInStatements(
             (arg0.type === AST_NODE_TYPES.ArrowFunctionExpression ||
               arg0.type === AST_NODE_TYPES.FunctionExpression)
           ) {
-            return { fn: arg0 };
+            return arg0;
           }
-          return UNPROVABLE;
+          return BOUND_UNPROVABLE;
         }
         if (init.type === AST_NODE_TYPES.Identifier) {
           // The alias target is resolved from the alias's own declaration site,
           // which is the scope the alias was written in — not the site that
-          // asked, which may sit several containers deeper.
-          return {
-            fn: findComponentFunction(declarator, init.name, nextLookup),
-          };
+          // asked, which may sit several containers deeper. An alias resolving
+          // to nothing still binds the name here, so it ends the search.
+          return (
+            findComponentFunction(declarator, init.name, nextLookup) ??
+            BOUND_UNPROVABLE
+          );
         }
-        return UNPROVABLE;
+        return BOUND_UNPROVABLE;
       }
     }
   }
-  return null;
+  return undefined;
 }
 
 /**
@@ -656,23 +625,11 @@ function findComponentFunction(
   if (seen.has(name)) return null;
   seen.add(name);
 
-  let current: TSESTree.Node | undefined = scope;
-  while (current) {
-    const statements = statementsOf(current);
-    if (statements) {
-      const resolved = findComponentFunctionInStatements(
-        statements,
-        name,
-        lookup,
-        nextLookup,
-      );
-      if (resolved) {
-        return resolved.fn;
-      }
-    }
-    current = current.parent as TSESTree.Node | undefined;
-  }
-  return null;
+  return (
+    resolveInEnclosingScopes<ComponentFunction>(scope, (statements) =>
+      findComponentFunctionInStatements(statements, name, lookup, nextLookup),
+    ) ?? null
+  );
 }
 
 /**
@@ -1803,21 +1760,21 @@ function findPropsTypeAliasByName(
   scope: TSESTree.Node,
   typeName: string,
 ): TSESTree.TSTypeAliasDeclaration | null {
-  let current: TSESTree.Node | undefined = scope;
-  while (current) {
-    const statements = statementsOf(current);
-    if (statements) {
-      for (const stmt of statements) {
-        const declaration = unwrapExport(stmt);
-        if (
-          declaration?.type === AST_NODE_TYPES.TSTypeAliasDeclaration &&
-          declaration.id.name === typeName
-        ) {
-          return declaration;
+  return (
+    resolveInEnclosingScopes<TSESTree.TSTypeAliasDeclaration>(
+      scope,
+      (statements) => {
+        for (const stmt of statements) {
+          const declaration = declarationOf(stmt);
+          if (
+            declaration.type === AST_NODE_TYPES.TSTypeAliasDeclaration &&
+            declaration.id.name === typeName
+          ) {
+            return declaration;
+          }
         }
-      }
-    }
-    current = current.parent as TSESTree.Node | undefined;
-  }
-  return null;
+        return undefined;
+      },
+    ) ?? null
+  );
 }

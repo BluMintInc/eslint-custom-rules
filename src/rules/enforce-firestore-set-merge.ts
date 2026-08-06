@@ -7,6 +7,7 @@ import {
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
 import { createSuppressionChecker } from '../utils/disableDirectives';
+import { declarationOf, resolveInEnclosingScopes } from '../utils/lexicalScope';
 
 type MessageIds = 'preferSetMerge';
 
@@ -269,21 +270,6 @@ function isPrimitiveLiteral(node: TSESTree.Node | undefined): boolean {
   );
 }
 
-/** Statement containers a declaration can be a direct child of. */
-function statementsOf(node: TSESTree.Node): TSESTree.Node[] | undefined {
-  switch (node.type) {
-    case AST_NODE_TYPES.Program:
-    case AST_NODE_TYPES.BlockStatement:
-    case AST_NODE_TYPES.TSModuleBlock:
-    case AST_NODE_TYPES.StaticBlock:
-      return (node as { body: TSESTree.Node[] }).body;
-    case AST_NODE_TYPES.SwitchCase:
-      return node.consequent;
-    default:
-      return undefined;
-  }
-}
-
 /** Whether a declarator is initialized from a `<x>.firestore()` call. */
 function initializesFirestore(
   declarator: TSESTree.VariableDeclarator,
@@ -308,11 +294,7 @@ function initializesFirestore(
  * "find the in-file declaration that carries the evidence" purpose.
  */
 function declaresFirestoreInstance(statement: TSESTree.Node): boolean {
-  const declaration =
-    statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
-    statement.declaration
-      ? statement.declaration
-      : statement;
+  const declaration = declarationOf(statement);
   return (
     declaration.type === AST_NODE_TYPES.VariableDeclaration &&
     declaration.declarations.some(initializesFirestore)
@@ -331,15 +313,13 @@ function declaresFirestoreInstance(statement: TSESTree.Node): boolean {
  * falls through to the next one out instead of answering for the whole chain.
  */
 function hasFirestoreInstanceInScope(node: TSESTree.Node): boolean {
-  let current: TSESTree.Node | undefined = node;
-  while (current) {
-    const statements = statementsOf(current);
-    if (statements?.some(declaresFirestoreInstance)) {
-      return true;
-    }
-    current = current.parent as TSESTree.Node | undefined;
-  }
-  return false;
+  return (
+    resolveInEnclosingScopes<true>(node, (statements) =>
+      statements.some((statement) => declaresFirestoreInstance(statement))
+        ? true
+        : undefined,
+    ) === true
+  );
 }
 
 export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
@@ -393,7 +373,7 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
     >();
     function containerClasses(
       container: TSESTree.Node,
-      statements: TSESTree.Node[],
+      statements: readonly TSESTree.Node[],
     ): Map<string, TSESTree.ClassBody> {
       const cached = classesByContainer.get(container);
       if (cached) {
@@ -401,19 +381,15 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
       }
       const classes = new Map<string, TSESTree.ClassBody>();
       for (const statement of statements) {
-        const declaration =
-          statement.type === AST_NODE_TYPES.ExportNamedDeclaration ||
-          statement.type === AST_NODE_TYPES.ExportDefaultDeclaration
-            ? statement.declaration
-            : statement;
+        const declaration = declarationOf(statement);
         if (
-          declaration?.type === AST_NODE_TYPES.ClassDeclaration &&
+          declaration.type === AST_NODE_TYPES.ClassDeclaration &&
           declaration.id
         ) {
           classes.set(declaration.id.name, declaration.body);
           continue;
         }
-        if (declaration?.type === AST_NODE_TYPES.VariableDeclaration) {
+        if (declaration.type === AST_NODE_TYPES.VariableDeclaration) {
           for (const declarator of declaration.declarations) {
             if (
               declarator.id.type === AST_NODE_TYPES.Identifier &&
@@ -447,18 +423,13 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
       name: string,
       reference: TSESTree.Node,
     ): TSESTree.ClassBody | null {
-      let current: TSESTree.Node | undefined = reference;
-      while (current) {
-        const statements = statementsOf(current);
-        if (statements) {
-          const found = containerClasses(current, statements).get(name);
-          if (found) {
-            return found;
-          }
-        }
-        current = current.parent as TSESTree.Node | undefined;
-      }
-      return null;
+      return (
+        resolveInEnclosingScopes<TSESTree.ClassBody>(
+          reference,
+          (statements, container) =>
+            containerClasses(container, statements).get(name),
+        ) ?? null
+      );
     }
 
     function enclosingClassBody(

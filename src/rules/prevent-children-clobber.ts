@@ -2,6 +2,7 @@ import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import * as ts from 'typescript';
 import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
+import { declarationOf, enclosingStatementLists } from '../utils/lexicalScope';
 
 type MessageIds = 'childrenClobbered';
 type Options = [];
@@ -121,39 +122,8 @@ type AliasResolution = {
   resolve: AliasResolver;
 };
 
-/** Statements a type alias can be a direct child of, innermost outward. */
-function statementsOf(node: TSESTree.Node): TSESTree.Node[] | undefined {
-  switch (node.type) {
-    case AST_NODE_TYPES.Program:
-    case AST_NODE_TYPES.BlockStatement:
-    case AST_NODE_TYPES.TSModuleBlock:
-    case AST_NODE_TYPES.StaticBlock:
-      return node.body as TSESTree.Node[];
-    case AST_NODE_TYPES.SwitchCase:
-      return node.consequent as TSESTree.Node[];
-    default:
-      return undefined;
-  }
-}
-
-/** The alias a statement declares, looking through `export`. */
-function aliasDeclarationNamed(
-  statement: TSESTree.Node,
-  name: string,
-): TSESTree.TSTypeAliasDeclaration | undefined {
-  const declared =
-    statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
-    statement.declaration
-      ? statement.declaration
-      : statement;
-  return declared.type === AST_NODE_TYPES.TSTypeAliasDeclaration &&
-    declared.id.name === name
-    ? declared
-    : undefined;
-}
-
 /**
- * The statement lists enclosing a node, innermost outward.
+ * The alias a statement declares, looking through `export`.
  *
  * Collecting aliases from `Program.body` alone made two everyday spellings
  * unresolvable — `export type Props = ...`, whose alias hides inside an
@@ -162,17 +132,15 @@ function aliasDeclarationNamed(
  * switched the exemption off and the rule reported, so the hole manufactured
  * false positives rather than silence.
  */
-function enclosingStatementLists(from: TSESTree.Node): TSESTree.Node[][] {
-  const lists: TSESTree.Node[][] = [];
-  let current: TSESTree.Node | undefined = from;
-  while (current) {
-    const statements = statementsOf(current);
-    if (statements) {
-      lists.push(statements);
-    }
-    current = current.parent as TSESTree.Node | undefined;
-  }
-  return lists;
+function aliasDeclarationNamed(
+  statement: TSESTree.Node,
+  name: string,
+): TSESTree.TSTypeAliasDeclaration | undefined {
+  const declared = declarationOf(statement);
+  return declared.type === AST_NODE_TYPES.TSTypeAliasDeclaration &&
+    declared.id.name === name
+    ? declared
+    : undefined;
 }
 
 /**
@@ -184,7 +152,7 @@ function enclosingStatementLists(from: TSESTree.Node): TSESTree.Node[][] {
  * resolve it.
  */
 function aliasResolverFrom(
-  lists: readonly TSESTree.Node[][],
+  lists: readonly (readonly TSESTree.Node[])[],
   startIndex = 0,
 ): AliasResolver {
   return (name) => {

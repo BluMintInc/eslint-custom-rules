@@ -8,6 +8,7 @@ import {
 } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
+import { declarationOf, resolveInEnclosingScopes } from '../utils/lexicalScope';
 
 type MessageIds = 'preferSpread';
 
@@ -271,27 +272,6 @@ type TypeDeclaration =
   | TSESTree.TSInterfaceDeclaration;
 
 /**
- * The statement list a container holds, or undefined for a node that holds
- * none. These are every place a type declaration can be written as a direct
- * child, so walking them outward reproduces TypeScript's own scope chain.
- */
-function statementsOf(
-  node: TSESTree.Node,
-): readonly TSESTree.Node[] | undefined {
-  switch (node.type) {
-    case AST_NODE_TYPES.Program:
-    case AST_NODE_TYPES.BlockStatement:
-    case AST_NODE_TYPES.TSModuleBlock:
-    case AST_NODE_TYPES.StaticBlock:
-      return node.body;
-    case AST_NODE_TYPES.SwitchCase:
-      return node.consequent;
-    default:
-      return undefined;
-  }
-}
-
-/**
  * The type declaration a statement carries, looking through `export`.
  *
  * `export type Wide = ...` is the same declaration one AST node deeper. Reading
@@ -299,11 +279,7 @@ function statementsOf(
  * whether a type is resolvable, which says nothing about the shape it denotes.
  */
 function typeDeclarationOf(statement: TSESTree.Node): TypeDeclaration | null {
-  const declaration =
-    statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
-    statement.declaration
-      ? statement.declaration
-      : statement;
+  const declaration = declarationOf(statement);
   return declaration.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
     declaration.type === AST_NODE_TYPES.TSInterfaceDeclaration
     ? declaration
@@ -349,18 +325,13 @@ function findLocalTypeDeclaration(
   from: TSESTree.Node,
   name: string,
 ): TypeDeclaration | null {
-  let current: TSESTree.Node | undefined = from;
-  while (current) {
-    const statements = statementsOf(current);
-    if (statements) {
-      const declaration = typeDeclarationIn(statements, name);
-      if (declaration) {
-        return declaration;
-      }
-    }
-    current = current.parent as TSESTree.Node | undefined;
-  }
-  return typeDeclarationIn(program.body, name);
+  return (
+    resolveInEnclosingScopes<TypeDeclaration>(
+      from,
+      (statements) => typeDeclarationIn(statements, name) ?? undefined,
+      () => typeDeclarationIn(program.body, name) ?? undefined,
+    ) ?? null
+  );
 }
 
 /**
