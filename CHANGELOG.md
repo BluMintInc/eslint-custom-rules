@@ -1,3 +1,10 @@
+## [1.20.122](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.121...v1.20.122) (2026-08-06)
+
+
+### Bug Fixes
+
+* **no-redundant-usecallback-wrapper:** exempt a suppression wrapper in every body spelling (closes [#1796](https://github.com/BluMintInc/eslint-custom-rules/issues/1796)) ([ac48a52](https://github.com/BluMintInc/eslint-custom-rules/commit/ac48a52499efdca5e1e1d34b8b3118ad2ee0c4b2))
+
 ## [1.20.121](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.120...v1.20.121) (2026-08-06)
 
 

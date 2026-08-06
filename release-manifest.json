@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.122",
+    "date": "2026-08-06T11:06:53.595Z",
+    "rules": [
+      {
+        "name": "no-redundant-usecallback-wrapper",
+        "changeType": "fix",
+        "issues": [
+          1796
+        ],
+        "summary": "exempt a suppression wrapper in every body spelling (closes #1796)"
+      }
+    ]
+  },
+  {
     "version": "1.20.121",
     "date": "2026-08-06T10:37:08.150Z",
     "rules": [
