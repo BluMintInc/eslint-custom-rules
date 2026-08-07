@@ -103,6 +103,76 @@ const DEGENERATE_KEY_SPELLINGS = [
  */
 const SILENT_DEGENERATE_KEY_SPELLINGS = ['``', '`-`', '`_`'];
 
+/**
+ * Every notation for asserting a type onto an expression. A type is erased
+ * before anything runs, so each of these denotes exactly the expression it
+ * wraps, and the rule owes the same verdict with one as without (#1840).
+ *
+ * The angle-bracket form `<T>expr` is missing here because it is unparsable
+ * once JSX is enabled, which this suite's tester does for every case; it is
+ * carried by its own pair of cases that turn JSX off instead.
+ */
+const ASSERTION_SPELLINGS = [
+  (expression: string) => `${expression} as const`,
+  (expression: string) => `${expression} as string`,
+  (expression: string) => `${expression} satisfies string`,
+  (expression: string) => `${expression}!`,
+];
+
+/**
+ * The routes a key takes to the hook. Resolving an alias to its initializer and
+ * judging what is written at the call site are separate code paths, so a
+ * spelling proven on one of them is unproven on the other (#1836) — which is
+ * why the spellings above are crossed with all of these rather than with the
+ * aliased route the report cited.
+ */
+const INLINE_ROUTING = {
+  name: 'written inline',
+  body: (expression: string) =>
+    `const [value] = useRouterState({ key: ${expression} });`,
+};
+
+const ALIAS_ROUTINGS = [
+  {
+    name: 'aliased and passed shorthand',
+    body: (expression: string) =>
+      `const key = ${expression};\n  const [value] = useRouterState({ key });`,
+  },
+  {
+    name: 'aliased and passed by name',
+    body: (expression: string) =>
+      `const key = ${expression};\n  const [value] = useRouterState({ key: key });`,
+  },
+];
+
+const KEY_ROUTINGS = [INLINE_ROUTING, ...ALIAS_ROUTINGS];
+
+/**
+ * Component bodies free of JSX, so the same text is the case for the tester's
+ * JSX parsing and for the angle-bracket cases that switch JSX off.
+ */
+const approvedKeyCode = (
+  expression: string,
+  routing: { body: (expression: string) => string },
+) => `
+import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
+function Component() {
+  ${routing.body(expression)}
+  return value;
+}
+`;
+
+const unapprovedKeyCode = (
+  expression: string,
+  routing: { body: (expression: string) => string },
+) => `
+function Component({ config }) {
+  ${routing.body(expression)}
+  return value;
+}
+`;
+
 ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
   valid: [
     // 1. Basic valid cases - using imported QUERY_KEY constants
@@ -894,6 +964,137 @@ export const useGroupIdMap = () => {
           return <div>{value}</div>;
         }
       `,
+    },
+
+    // ------------------------------------------------------------------
+    // Issue #1840: writing a type onto an approved constant withdrew the
+    // carve-out that constant has. `const key = QUERY_KEY_USER_PROFILE as
+    // const` stored a `TSAsExpression` as the alias's initializer, a type the
+    // usage check does not name, so the alias resolved to nothing and drew a
+    // report telling the author to import the constant they had imported —
+    // while `prefer-global-router-state-key`, pinned to the same contract,
+    // accepts that very file. A type is erased before anything runs, so it
+    // cannot change where a key comes from, which is the only question asked
+    // here. The invalid mirrors that keep this from becoming a blanket escape
+    // hatch are cases 86-97.
+    // ------------------------------------------------------------------
+
+    // 57. The report as filed, verbatim.
+    {
+      name: 'the reported spelling: an approved constant aliased through `as const`',
+      code: `
+import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
+function Component() {
+  const key = QUERY_KEY_USER_PROFILE as const;
+  const [value] = useRouterState({ key });
+  return value;
+}
+`,
+    },
+
+    // 58-69. Every assertion notation on every route to the hook. The report
+    // cited one cell of this grid; the rest are the same claim, and the inline
+    // column is the one a fix proven only on an alias leaves unproven.
+    ...ASSERTION_SPELLINGS.flatMap((assert) =>
+      KEY_ROUTINGS.map((routing) => ({
+        name: `an approved constant spelled \`${assert('KEY')}\` and ${
+          routing.name
+        } is allowed`,
+        code: approvedKeyCode(assert('QUERY_KEY_USER_PROFILE'), routing),
+      })),
+    ),
+
+    // 70. The inline route through the template feeder, which unlike a bare
+    // inline key does reach the usage check — the assertion has to resolve
+    // there too, not merely be ignored by the report site.
+    {
+      name: 'an asserted approved constant inside a separator-only template is allowed',
+      code: `
+import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
+function Component({ id }) {
+  const [value] = useRouterState({ key: \`\${QUERY_KEY_USER_PROFILE as const}-\${id}\` });
+  return value;
+}
+`,
+    },
+
+    // 71. The same through a concatenation, whose operands are judged
+    // individually.
+    {
+      name: 'an asserted approved constant in a concatenation is allowed',
+      code: `
+import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
+function Component({ id }) {
+  const [value] = useRouterState({ key: (QUERY_KEY_USER_PROFILE as const) + '-' + id });
+  return value;
+}
+`,
+    },
+
+    // 72. The angle-bracket notation, which denotes the same assertion and is
+    // legal only where JSX is off — hence the `.ts` filename and the parser
+    // options, without which the file does not parse at all.
+    {
+      name: 'an approved constant asserted with the angle-bracket form is allowed',
+      filename: 'Component.ts',
+      parserOptions: { ecmaFeatures: { jsx: false } },
+      code: `
+import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
+function Component() {
+  const key = <string>QUERY_KEY_USER_PROFILE;
+  const [value] = useRouterState({ key });
+  return value;
+}
+`,
+    },
+
+    // 73. Stacked assertions unwrap all the way down rather than one layer.
+    {
+      name: 'an approved constant under stacked assertions is allowed',
+      code: `
+import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
+function Component() {
+  const key = (QUERY_KEY_USER_PROFILE! as string) as const;
+  const [value] = useRouterState({ key });
+  return value;
+}
+`,
+    },
+
+    // 74. Twin of case 56: an assertion sitting over an optional chain resolves
+    // through both wrappers, which is the composition of this fix with #1832.
+    {
+      name: 'an asserted optional member of a queryKeys namespace import is allowed',
+      code: `
+import * as queryKeys from 'src/util/routing/queryKeys';
+
+function Component() {
+  const matchKey = queryKeys?.QUERY_KEY_MATCH as const;
+  const [value] = useRouterState({ key: matchKey });
+  return value;
+}
+`,
+    },
+
+    // 75. Each link of an assignment chain carries its own assertion, so the
+    // resolution has to survive being applied repeatedly.
+    {
+      name: 'an approved constant asserted at every link of an alias chain is allowed',
+      code: `
+import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
+function Component() {
+  const baseKey = QUERY_KEY_USER_PROFILE as const;
+  const key = baseKey as string;
+  const [value] = useRouterState({ key });
+  return value;
+}
+`,
     },
   ],
 
@@ -2354,6 +2555,122 @@ function Component({ config }) {
   const [derived] = useRouterState({ key: derivedKey });
   const [stream] = useRouterState({ key: QUERY_KEY_STREAM_VIEW });
   return <div>{derived}{stream}</div>;
+}`,
+    },
+
+    // ------------------------------------------------------------------
+    // Issue #1840: an assertion resolves to the expression underneath, which is
+    // the opposite of waving it through. These are the mirrors of the valid
+    // cases 57-75: a source the unasserted spelling reports still reports with
+    // any type written onto it, and the fix the rule emits is unchanged by an
+    // assertion elsewhere in the file. A rule that simply fell silent on
+    // anything asserted would satisfy every one of those valid cases and fail
+    // every one of these.
+    //
+    // The inline route is absent from this list on purpose: the report site
+    // reports only a bare identifier or a literal, so an inline
+    // `key: config.queryKey` draws nothing to begin with and an assertion
+    // cannot change that.
+    // ------------------------------------------------------------------
+
+    // 86-93. Every assertion notation over an unapproved source, on both
+    // aliased routes — the exact grid the valid cases clear, with only the
+    // source changed.
+    ...ASSERTION_SPELLINGS.flatMap((assert) =>
+      ALIAS_ROUTINGS.map((routing) => ({
+        name: `an unapproved source spelled \`${assert(
+          'config.queryKey',
+        )}\` and ${routing.name} still reports`,
+        code: unapprovedKeyCode(assert('config.queryKey'), routing),
+        errors: [
+          {
+            messageId: 'enforceQueryKeyConstant' as const,
+            data: { variableName: 'key' },
+          },
+        ],
+        output: null,
+      })),
+    ),
+
+    // 94. A raw string is a raw string under any type: the assertion says
+    // nothing about where the key came from, and it came from nowhere.
+    {
+      name: 'a string literal aliased through an assertion still reports',
+      code: `
+function Component() {
+  const key = 'user-profile' as const;
+  const [value] = useRouterState({ key });
+  return value;
+}
+`,
+      errors: [
+        {
+          messageId: 'enforceQueryKeyConstant',
+          data: { variableName: 'key' },
+        },
+      ],
+      output: null,
+    },
+
+    // 95. Mirror of case 70: resolving through the assertion covers the
+    // expression it wraps, not the static text sitting beside it.
+    {
+      name: 'static template content around an asserted constant still reports',
+      code: `
+import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
+function Component() {
+  const [value] = useRouterState({ key: \`user-profile-\${QUERY_KEY_USER_PROFILE as const}\` });
+  return value;
+}
+`,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: null,
+    },
+
+    // 96. Mirror of case 72: the angle-bracket notation resolves the same way,
+    // which means reporting the same unapproved source.
+    {
+      name: 'an unapproved source asserted with the angle-bracket form still reports',
+      filename: 'Component.ts',
+      parserOptions: { ecmaFeatures: { jsx: false } },
+      code: `
+function Component({ config }) {
+  const key = <string>config.queryKey;
+  const [value] = useRouterState({ key });
+  return value;
+}
+`,
+      errors: [
+        {
+          messageId: 'enforceQueryKeyConstant',
+          data: { variableName: 'key' },
+        },
+      ],
+      output: null,
+    },
+
+    // 97. Both directions in one file: the asserted alias stops reporting while
+    // the literal beside it keeps its report and extends the file's queryKeys
+    // import, so the widening cannot be silencing the file wholesale.
+    {
+      name: 'a literal key beside an asserted approved alias still fixes',
+      code: `import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
+function Component() {
+  const key = QUERY_KEY_USER_PROFILE as const;
+  const [profile] = useRouterState({ key });
+  const [stream] = useRouterState({ key: 'stream-view' });
+  return [profile, stream];
+}`,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: `import { QUERY_KEY_USER_PROFILE, QUERY_KEY_STREAM_VIEW } from '@/util/routing/queryKeys';
+
+function Component() {
+  const key = QUERY_KEY_USER_PROFILE as const;
+  const [profile] = useRouterState({ key });
+  const [stream] = useRouterState({ key: QUERY_KEY_STREAM_VIEW });
+  return [profile, stream];
 }`,
     },
   ],
