@@ -51,6 +51,29 @@ export const noCircularReferences = createRule<[], MessageIds>({
         : null;
     }
 
+    /**
+     * The expression a runtime-transparent wrapper stands in for.
+     *
+     * `a?.b` parses as a `ChainExpression` around the member read, and
+     * resolution has to see through it: the optional link records that the
+     * access short-circuits, not that it names something else. Whenever the
+     * receiver is non-nullish — and an object literal bound to a `const` always
+     * is — `cfg?.node` evaluates to exactly `cfg.node`, so it aliases the same
+     * object and belongs to the same cycle. Stopping at the wrapper drops the
+     * alias, and a real cycle goes unreported.
+     *
+     * Local rather than folded into `ASTHelpers.unwrapTSAssertions`, because
+     * that helper answers "which assertions restate this expression" for five
+     * other rules, and a chain is a different question for each of them.
+     */
+    function unwrapTransparent(node: TSESTree.Node): TSESTree.Node {
+      let current = ASTHelpers.unwrapTSAssertions(node);
+      while (current.type === AST_NODE_TYPES.ChainExpression) {
+        current = ASTHelpers.unwrapTSAssertions(current.expression);
+      }
+      return current;
+    }
+
     function isIdentifier(node: TSESTree.Node): node is TSESTree.Identifier {
       return node.type === AST_NODE_TYPES.Identifier;
     }
@@ -95,7 +118,7 @@ export const noCircularReferences = createRule<[], MessageIds>({
       visitedVariables = new Set<TSESLint.Scope.Variable>(),
       visitedNodes = new Set<TSESTree.Node>(),
     ): TSESTree.Node | null {
-      const current = ASTHelpers.unwrapTSAssertions(node);
+      const current = unwrapTransparent(node);
       if (visitedNodes.has(current)) return null;
       visitedNodes.add(current);
 
@@ -185,19 +208,24 @@ export const noCircularReferences = createRule<[], MessageIds>({
           }
 
           if (propValue) {
-            const unwrappedValue = getUnwrappedObjectOrArray(propValue);
+            // The stored value keeps whatever notation it was written with, so
+            // the dispatch below asks its question of the expression that
+            // notation stands for — `{ b: level1?.a }` reaches here as a
+            // ChainExpression and would otherwise match no arm at all.
+            const resolvedValue = unwrapTransparent(propValue);
+            const unwrappedValue = getUnwrappedObjectOrArray(resolvedValue);
             if (unwrappedValue) return unwrappedValue;
             if (
-              isIdentifier(propValue) ||
-              propValue.type === AST_NODE_TYPES.MemberExpression
+              isIdentifier(resolvedValue) ||
+              resolvedValue.type === AST_NODE_TYPES.MemberExpression
             ) {
               return getReferencedObject(
-                propValue,
+                resolvedValue,
                 visitedVariables,
                 visitedNodes,
               );
             }
-            if (isFunction(propValue) || isPrimitive(propValue)) {
+            if (isFunction(resolvedValue) || isPrimitive(resolvedValue)) {
               return null;
             }
           }
