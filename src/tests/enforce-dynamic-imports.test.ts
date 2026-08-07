@@ -1,13 +1,13 @@
 import fs from 'fs';
 import path from 'path';
 import { builtinModules } from 'module';
-import { Minimatch } from 'minimatch';
 import { parse, TSESTree } from '@typescript-eslint/typescript-estree';
 import { ruleTesterTs } from '../utils/ruleTester';
 import rule, {
   RULE_NAME,
   DEFAULT_IGNORED_LIBRARIES,
   DEFAULT_INTERNAL_PREFIXES,
+  buildLibraryMatcher,
 } from '../rules/enforce-dynamic-imports';
 
 const ruleTester = ruleTesterTs;
@@ -48,6 +48,17 @@ ruleTester.run(RULE_NAME, rule, {
     `import isEqual from 'fast-deep-equal';`,
     `import dynamic from 'next/dynamic';`,
 
+    // ─── An ignored entry covers the package's subpath entry points ──────────
+    // Upstream's documented ESM entry is `fast-deep-equal/es6`, which is the
+    // spelling `fast-deep-equal-over-microdiff` steers code toward, so the
+    // bare-name entry has to reach it (#1845).
+    `import isEqual from 'fast-deep-equal/es6';`,
+    `import isEqual from 'fast-deep-equal/es6/react';`,
+    `import isEqual from '@blumintinc/fast-deep-equal';`,
+    `import isEqual from '@blumintinc/fast-deep-equal/es6';`,
+    `import { diff } from '@blumintinc/microdiff/dist/index';`,
+    `import { twMerge } from 'tailwind-merge/dist/lib';`,
+
     // ─── Custom ignoredLibraries ─────────────────────────────────────────────
     {
       code: `import { Heavy } from 'heavy-lib';`,
@@ -56,6 +67,37 @@ ruleTester.run(RULE_NAME, rule, {
     {
       code: `import { Sub } from 'scoped/sub';`,
       options: [{ ignoredLibraries: ['scoped/*'] }],
+    },
+    {
+      // A user-supplied entry covers its subpaths too, not just the root
+      code: `import { Sub } from 'heavy-lib/sub';`,
+      options: [{ ignoredLibraries: ['heavy-lib'] }],
+    },
+    {
+      code: `import { Deep } from 'heavy-lib/sub/nested/deep';`,
+      options: [{ ignoredLibraries: ['heavy-lib'] }],
+    },
+    {
+      // Scoped package: root and subpath both covered by the one entry
+      code: `import { Thing } from '@scope/pkg';`,
+      options: [{ ignoredLibraries: ['@scope/pkg'] }],
+    },
+    {
+      code: `import { Thing } from '@scope/pkg/es6';`,
+      options: [{ ignoredLibraries: ['@scope/pkg'] }],
+    },
+    {
+      // An entry that is itself a subpath covers what sits below it
+      code: `import { Thing } from '@scope/pkg/es6/react';`,
+      options: [{ ignoredLibraries: ['@scope/pkg/es6'] }],
+    },
+    {
+      // Explicit glob entries keep their minimatch semantics
+      code: `import { Deep } from 'globbed/a/b/c';`,
+      options: [{ ignoredLibraries: ['globbed/**'] }],
+    },
+    {
+      code: `import { Thing } from '@emotion/react';`,
     },
 
     // ─── Type imports ────────────────────────────────────────────────────────
@@ -128,6 +170,14 @@ ruleTester.run(RULE_NAME, rule, {
       code: `import { Heavy } from 'very-heavy-lib';`,
       options: [{ libraries: [] }],
     },
+    {
+      // Whitelist mode keeps exact/glob semantics: subpath covering applies to
+      // `ignoredLibraries` (which only ever REMOVES reports). Widening the
+      // whitelist would ADD reports for consumers on a pre-1.16.0 config, and
+      // those consumers already spell subpath coverage as a glob (`pkg/**`).
+      code: `import { Sub } from '@stream-io/video-react-sdk/sub';`,
+      options: [{ libraries: ['@stream-io/video-react-sdk'] }],
+    },
 
     // ─── Backwards-compat: { libraries, allowImportType } must not throw ─────
     // (RuleTester surfaces schema errors as failures, so this pins facet #1)
@@ -190,6 +240,59 @@ ruleTester.run(RULE_NAME, rule, {
       code: `import { Heavy } from 'heavy-lib';`,
       options: [{ ignoredLibraries: ['react'] }],
       errors: [buildError('heavy-lib')],
+    },
+
+    // ─── Subpath covering stops at the '/' boundary, never mid-name ──────────
+    // These are the controls that separate "the entry covers its subpaths"
+    // from "the entry is a substring match": a package whose name merely
+    // starts with an ignored entry is a DIFFERENT package on the registry and
+    // has to stay enforced (#1845).
+    {
+      code: `import isEqual from 'fast-deep-equal-extra';`,
+      errors: [buildError('fast-deep-equal-extra')],
+    },
+    {
+      code: `import isEqual from 'fast-deep-equal-extra/es6';`,
+      errors: [buildError('fast-deep-equal-extra/es6')],
+    },
+    {
+      code: `import { thing } from 'reactive-lib';`,
+      errors: [buildError('reactive-lib')],
+    },
+    {
+      code: `import NextAuth from 'next-auth';`,
+      errors: [buildError('next-auth')],
+    },
+    {
+      code: `import { diff } from 'microdiff-extra';`,
+      errors: [buildError('microdiff-extra')],
+    },
+    {
+      // Scoped: the sibling package under the same scope is not covered
+      code: `import { thing } from '@blumintinc/fast-deep-equal-extra';`,
+      errors: [buildError('@blumintinc/fast-deep-equal-extra')],
+    },
+    {
+      code: `import { Heavy } from 'heavy-lib-extra';`,
+      options: [{ ignoredLibraries: ['heavy-lib'] }],
+      errors: [buildError('heavy-lib-extra')],
+    },
+    {
+      code: `import { Thing } from '@scope/pkg-extra';`,
+      options: [{ ignoredLibraries: ['@scope/pkg'] }],
+      errors: [buildError('@scope/pkg-extra')],
+    },
+    {
+      // An unrelated package is still enforced when a subpath entry is ignored
+      code: `import { Other } from 'other-lib/sub';`,
+      options: [{ ignoredLibraries: ['heavy-lib'] }],
+      errors: [buildError('other-lib/sub')],
+    },
+    {
+      // A glob entry does not gain prefix covering: '@ignored/*' is one segment
+      code: `import { thing } from '@ignored-other/lib';`,
+      options: [{ ignoredLibraries: ['@ignored/*'] }],
+      errors: [buildError('@ignored-other/lib')],
     },
 
     // ─── allowImportType: false makes type-only imports invalid ──────────────
@@ -439,11 +542,11 @@ const isExternal = (specifier: string): boolean =>
   !NODE_BUILTINS.has(specifier.split('/')[0]) &&
   !DEFAULT_INTERNAL_PREFIXES.some((prefix) => specifier.startsWith(prefix));
 
-const isIgnoredByDefault = (specifier: string): boolean =>
-  DEFAULT_IGNORED_LIBRARIES.some(
-    (pattern) =>
-      pattern === specifier || new Minimatch(pattern).match(specifier),
-  );
+// Reuses the rule's own matcher rather than restating it, so the proxy check
+// cannot drift from the semantics the rule actually applies to the list.
+const isIgnoredByDefault = buildLibraryMatcher(DEFAULT_IGNORED_LIBRARIES, {
+  coverSubpaths: true,
+});
 
 const externalInjected = [
   ...new Set(

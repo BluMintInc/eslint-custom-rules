@@ -92,6 +92,8 @@ The rule accepts an options object with the following properties:
 
 Activates **whitelist mode**. Only imports whose source matches one of these patterns are reported. All other imports — including heavy external packages — are silently allowed. Supports exact strings and glob patterns (via [minimatch](https://github.com/isaacs/minimatch)).
 
+Unlike `ignoredLibraries`, an entry here does **not** reach the package's subpaths: listing `pkg` enforces `pkg` but leaves `pkg/sub` alone. This list decides what is *reported*, so covering subpaths implicitly would add errors to configurations that predate the behaviour. Write `pkg/**` when you want the subpaths enforced too.
+
 When `libraries` is provided, `ignoredLibraries` and `internalPrefixes` are not consulted.
 
 Use this option to preserve compatibility with configurations written before 1.16.0:
@@ -108,6 +110,21 @@ Use this option to preserve compatibility with configurations written before 1.1
 ### `ignoredLibraries` (array, optional)
 
 Used in **enforce-by-default mode** (when `libraries` is absent). An array of library names or glob patterns that are allowed to be imported statically.
+
+A plain (non-glob) entry covers the package **and everything published under it**, because a subpath entry point is the same dependency as its root: `fast-deep-equal` also allows `fast-deep-equal/es6`, upstream's documented ESM build. The boundary is the `/` separator, never a bare substring, so a *different* package whose name merely starts with an entry is still reported — `fast-deep-equal` does not allow `fast-deep-equal-extra`.
+
+Glob entries keep their [minimatch](https://github.com/isaacs/minimatch) semantics unchanged, since a pattern already states how far it reaches: `@ignored/*` matches one segment and nothing beyond it.
+
+```js
+// ignoredLibraries: ["fast-deep-equal", "@ignored/*"]
+
+import isEqual from "fast-deep-equal"; // ✅ the package root
+import isEqualEs6 from "fast-deep-equal/es6"; // ✅ a subpath of an ignored package
+import isEqualReact from "fast-deep-equal/es6/react"; // ✅ a deeper subpath
+import thing from "@ignored/lib"; // ✅ matched by the glob
+import extra from "fast-deep-equal-extra"; // ❌ a different package
+import deep from "@ignored/lib/deep"; // ❌ '@ignored/*' spans one segment
+```
 
 Defaults to: `react`, `react/**`, `react-dom`, `react-dom/**`, `next`, `next/**`, `@mui/material`, `@mui/material/**`, `@mui/icons-material`, `@mui/icons-material/**`, `@emotion/**`, `clsx`, `tailwind-merge`, `use-latest-callback`, `@blumintinc/typescript-memoize`, `@blumintinc/use-deep-compare`, `microdiff`, `safe-stable-stringify`, `fast-deep-equal`.
 

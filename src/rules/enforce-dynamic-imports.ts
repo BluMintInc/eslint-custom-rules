@@ -53,6 +53,45 @@ export const DEFAULT_IGNORED_LIBRARIES = [
 
 export const DEFAULT_INTERNAL_PREFIXES = ['src/', 'functions/'];
 
+/**
+ * Builds an O(1) + glob matcher from a list of library patterns.
+ *
+ * With `coverSubpaths`, a non-glob entry stands for the package *and*
+ * everything published under it. A package's subpath entry point is the same
+ * dependency as its root — `fast-deep-equal/es6` is upstream's documented ESM
+ * build, and the spelling `fast-deep-equal-over-microdiff` steers code toward —
+ * so exempting the root while enforcing the subpath left the pair of rules
+ * jointly unsatisfiable (#1845).
+ *
+ * The boundary is `entry + '/'`, never a bare substring: `fast-deep-equal-extra`
+ * is a different package on the registry and stays enforced. Glob entries keep
+ * their minimatch semantics untouched, since a pattern already says how far it
+ * reaches.
+ */
+export const buildLibraryMatcher = (
+  list: string[],
+  { coverSubpaths }: { coverSubpaths: boolean },
+) => {
+  const exactSet = new Set<string>();
+  const subpathPrefixes: string[] = [];
+  const globs: Minimatch[] = [];
+  for (const lib of list) {
+    const mm = new Minimatch(lib);
+    if (mm.hasMagic()) {
+      globs.push(mm);
+    } else {
+      exactSet.add(lib);
+      if (coverSubpaths) {
+        subpathPrefixes.push(lib.endsWith('/') ? lib : `${lib}/`);
+      }
+    }
+  }
+  return (source: string): boolean =>
+    exactSet.has(source) ||
+    subpathPrefixes.some((prefix) => source.startsWith(prefix)) ||
+    globs.some((mm) => mm.match(source));
+};
+
 // Pre-built set of Node.js core module names for O(1) lookup.
 const NODE_BUILTINS = new Set(builtinModules);
 
@@ -128,26 +167,22 @@ export default createRule<Options, 'dynamicImportRequired'>({
     // all external imports are flagged unless in `ignoredLibraries`.
     const isWhitelistMode = libraries !== undefined;
 
-    // Build an O(1) + glob matcher from a list of library patterns.
-    const buildMatcher = (list: string[]) => {
-      const exactSet = new Set<string>();
-      const globs: Minimatch[] = [];
-      for (const lib of list) {
-        const mm = new Minimatch(lib);
-        if (mm.hasMagic()) {
-          globs.push(mm);
-        } else {
-          exactSet.add(lib);
-        }
-      }
-      return (source: string): boolean =>
-        exactSet.has(source) || globs.some((mm) => mm.match(source));
-    };
-
     // In whitelist mode, `libraries` is defined (checked above). In
     // enforce-by-default mode, `ignoredLibraries` is used instead.
-    const isListedInWhitelist = buildMatcher(libraries ?? []);
-    const isIgnoredLibrary = buildMatcher(ignoredLibraries);
+    //
+    // Subpath covering is asymmetric between the two lists because the lists
+    // point in opposite directions. Widening `ignoredLibraries` only ever
+    // REMOVES reports, so it can safely absorb a package's subpath entry
+    // points. Widening `libraries` would ADD reports — a consumer who listed
+    // `pkg` to restore pre-1.16.0 behaviour would start failing on `pkg/sub` —
+    // so the whitelist keeps exact + glob semantics, and consumers who do want
+    // the subpaths enforced spell that as a glob (`pkg/**`), which still works.
+    const isListedInWhitelist = buildLibraryMatcher(libraries ?? [], {
+      coverSubpaths: false,
+    });
+    const isIgnoredLibrary = buildLibraryMatcher(ignoredLibraries, {
+      coverSubpaths: true,
+    });
 
     // A source is external only if it looks like an npm package specifier AND
     // is not a known-internal path. Node builtins and configured internal
