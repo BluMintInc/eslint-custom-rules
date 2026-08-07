@@ -30,7 +30,8 @@ This rule disallows embedding type information in identifier names (Hungarian no
 - **Interior `SCREAMING_SNAKE_CASE` segments.** A full type word buried in the middle of a constant name (any segment that is neither the first nor the last) qualifies a variant rather than tagging the entity's type, e.g. `EDITABLE_WRAPPER_NUMBER_PROPS_DEFAULT`, `CADENCE_NUMBER_EDITORS`. This mirrors the camelCase/PascalCase branch, which never flags a full type word in a middle segment. Abbreviation markers (`STR`, `ARR`, `OBJ`, ...) are still flagged in any position.
 - **Type names that denote a type concept or conversion.** A full type word used as one descriptive segment of a type alias / interface / class name reads as a concept, comparable to `PhoneNumber`, e.g. `StringToNumber`, `CapitalizedString`, `PromiseOrValue`, `FuncKeys`. Abbreviation markers (`str`, `arr`, `obj`, ...) are still flagged in type names because no English word is spelled that way (e.g. `UserStrName` is flagged).
 - **PascalCase declarations whose type word qualifies a different head noun.** A component, class, function, or type name where a built-in type word modifies a distinct head noun is a domain compound, not a type tag — the value is a component or props type, never a number/bigint. Examples: `NumberAmountEditor`, `BigIntAmountEditor`, `BigIntAmountEditorProps`, mirroring `Intl.NumberFormat`, `StringBuilder`, and `NumberFormatter`. This is the leading-position analog of the `<entity>Number` carve-out and applies in any segment position (e.g. `CadenceBigIntEditor`). It is scoped to PascalCase (leading capital): a lowercase-initial variable such as `numberCount` or `stringValue` *is* naming its own value's type and stays flagged.
-- **Type annotations.** The rule judges only the identifier name, never the annotation, so `type TeamSize = Readonly<Range<number>>` is allowed.
+- **Glyph-domain `Symbol` compounds.** A trailing `Symbol` whose head noun names something that is *written with a glyph* denotes that printed character (`"$"`, `"BTC"`, `"kg"`, `"Fe"`), not the JavaScript `symbol` primitive — the value is a string, so there is no type marker to strip, and stripping it yields a wrong name (`currency` is the currency, not the character it is written with). ISO 4217 and CLDR call the glyph a *currency symbol*. Examples: `currencySymbol`, `getCurrencySymbol`, `tickerSymbol`, `tokenSymbol`, `unitSymbol`, `elementSymbol`, `CURRENCY_SYMBOL`. This is the `Symbol` analog of the `<entity>Number` carve-out. The `Symbol` marker is otherwise intact: head nouns whose value really is a JS symbol keep firing (`idSymbol`, `cacheSymbol`, `brandSymbol`), as does any use in *prefix* position (`symbolKey`, `SYMBOL_TABLE`).
+- **Type annotations.** The rule judges only the identifier name, never the annotation, so `type TeamSize = Readonly<Range<number>>` is allowed. The one exception is the glyph carve-out above: a declaration that syntactically proves a JS `symbol` — an explicit `: symbol` / `unique symbol` annotation, or a `Symbol()` initializer — withdraws it, so `const currencySymbol: symbol = Symbol('currency')` is still flagged.
 
 ### How to fix
 
@@ -108,6 +109,15 @@ const EDITABLE_WRAPPER_NUMBER_PROPS_DEFAULT = { isEditing: true };
 const NumberAmountEditor = () => null;
 const BigIntAmountEditor = () => null;
 type BigIntAmountEditorProps = { maxValue: string };
+
+// "Symbol" as the glyph a currency/ticker/unit is written with is a domain
+// noun, not the JS `symbol` type — the value is a string
+const currencySymbol = '$';
+const tickerSymbol = 'BTC';
+const CURRENCY_SYMBOL = '$';
+function getCurrencySymbol(): string {
+  return '$';
+}
 
 // The rule judges the name, never the type annotation
 type TeamSize = Readonly<Range<number>>;

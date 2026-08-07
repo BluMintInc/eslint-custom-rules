@@ -1412,3 +1412,105 @@ ruleTesterTs.run(
     ],
   },
 );
+
+// Issue #1835: <domain>Symbol compounds where "symbol" is the GLYPH a thing is
+// written with ("$", "BTC", "kg", "Fe") are not Hungarian notation — the value is
+// a string, so there is no type marker to strip, and CLDR/ISO 4217 call the glyph
+// a *currency symbol*. Same shape as the <entity>Number carve-out (#1277), and it
+// keeps the `Symbol` marker alive: the head noun must be a glyph domain, the
+// exemption applies in SUFFIX position only, and any declaration that
+// syntactically proves a real `symbol` (annotation or `Symbol()` factory) vetoes
+// it.
+ruleTesterTs.run('no-hungarian-domain-symbol-compounds', noHungarian, {
+  valid: [
+    // The four spellings from the issue.
+    `const currencySymbol = '$';`,
+    `function getCurrencySymbol(): string { return '$'; }`,
+    `const tickerSymbol = 'BTC';`,
+    `const CURRENCY_SYMBOL = '$';`,
+    // The agora site: a class getter returning the Intl-extracted glyph.
+    `class WalletTokenFormatter {
+  public get currencySymbol() {
+    const parts = this.currencyFormatter.formatToParts(0);
+    return parts.find((part) => part.type === 'currency')?.value;
+  }
+}`,
+    // Other identifier positions for the same name.
+    `function format(currencySymbol: string) { return currencySymbol; }`,
+    `class Money { currencySymbol = '$'; }`,
+    // Further glyph domains from the whitelist.
+    `const unitSymbol = 'kg';`,
+    `const elementSymbol = 'Fe';`,
+    `const tokenSymbol = 'ETH';`,
+    `const mathSymbol = '\\u2211';`,
+    // Prefixed variants generalize via the LAST head segment.
+    `const localizedCurrencySymbol = '\\u20ac';`,
+    `const TOKEN_TICKER_SYMBOL = 'BTC';`,
+  ],
+  invalid: [
+    // CONTROL from the issue: a genuine type marker on a real `symbol` reports.
+    {
+      code: `const idSymbol: symbol = Symbol('id');`,
+      errors: [errorFor('idSymbol')],
+    },
+    // The head noun is not a glyph domain, so the suffix reads as a type tag
+    // even without any type information.
+    { code: `const cacheSymbol = 'x';`, errors: [errorFor('cacheSymbol')] },
+    { code: `const brandSymbol = 'x';`, errors: [errorFor('brandSymbol')] },
+    // PREFIX position is untouched by the carve-out.
+    {
+      code: `const symbolKey = Symbol('k');`,
+      errors: [errorFor('symbolKey')],
+    },
+    { code: 'const SYMBOL_TABLE = {};', errors: [errorFor('SYMBOL_TABLE')] },
+    {
+      code: `const ID_SYMBOL = Symbol('id');`,
+      errors: [errorFor('ID_SYMBOL')],
+    },
+
+    // VETO: an ANNOTATED `: symbol` (or a Symbol() factory) proves the name
+    // really does encode the value's type, so even a glyph-domain head fires.
+    {
+      code: `const currencySymbol: symbol = Symbol('currency');`,
+      errors: [errorFor('currencySymbol')],
+    },
+    {
+      code: `const currencySymbol = Symbol('currency');`,
+      errors: [errorFor('currencySymbol')],
+    },
+    {
+      code: `const CURRENCY_SYMBOL: symbol = Symbol('currency');`,
+      errors: [errorFor('CURRENCY_SYMBOL')],
+    },
+    {
+      code: `function getCurrencySymbol(): symbol { return Symbol('c'); }`,
+      errors: [errorFor('getCurrencySymbol')],
+    },
+    {
+      code: `const getCurrencySymbol = (): symbol => Symbol('c');`,
+      errors: [errorFor('getCurrencySymbol')],
+    },
+    {
+      code: `function register(currencySymbol: symbol) { return currencySymbol; }`,
+      errors: [errorFor('currencySymbol')],
+    },
+    {
+      code: `class Money { currencySymbol: symbol = Symbol('c'); }`,
+      errors: [errorFor('currencySymbol')],
+    },
+    {
+      code: `class Money { public get currencySymbol(): symbol { return Symbol('c'); } }`,
+      errors: [errorFor('currencySymbol')],
+    },
+    {
+      code: `class Money { static readonly tickerSymbol: unique symbol = Symbol('t'); }`,
+      errors: [errorFor('tickerSymbol')],
+    },
+
+    // The carve-out is scoped to the `Symbol` marker: every other marker is
+    // unchanged.
+    { code: 'const strName = "John";', errors: [errorFor('strName')] },
+    { code: 'const countNumber = 5;', errors: [errorFor('countNumber')] },
+    { code: 'const nameString = "x";', errors: [errorFor('nameString')] },
+  ],
+});
