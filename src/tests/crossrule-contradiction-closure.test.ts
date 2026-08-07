@@ -195,6 +195,11 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
       'PIPELINE: the fixtures annotate an inferable return only to display the boolean under test; `--fix` strips it on 44 of 49 and the prefix check reads the name either way.',
     cases: { noExplicitReturnTypeInferable: 49 },
   },
+  'no-inline-component-prop::global-const-style': {
+    reason:
+      'PIPELINE: the module-scope wrapper fixtures declare plain `const` bindings to exercise the allowModuleScopeFactories carve-out, without regard to naming or `as const`; `--fix` supplies both and converges with ZERO residual reports (measured), and the component check reads the object identically through `unwrapExpression`. Surviving that converged spelling is exactly what #1864 fixed.',
+    cases: { asConst: 3, upperSnakeCase: 5 },
+  },
   'enforce-centralized-mock-firestore::global-const-style': {
     reason:
       'PIPELINE: the mock fixtures declare module-scope consts without `as const` or SCREAMING_SNAKE; `--fix` supplies both on all 9 and centralization is untouched.',

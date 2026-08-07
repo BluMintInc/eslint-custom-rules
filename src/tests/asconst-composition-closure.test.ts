@@ -220,25 +220,7 @@ const EXEMPT: Record<string, string> = {
  * Surfaced by the #1859 widening — these rules were never probed because the
  * type-aware exclusion dropped them wholesale.
  */
-const KNOWN_DEFECTS: Record<string, string> = {
-  /**
-   * TODO(#NNNN — filed from the #1859 widening): the member-expression branch
-   * tests `defNode.init.type !== ObjectExpression` directly
-   * (`no-inline-component-prop.ts`) instead of going through the file's own
-   * `unwrapExpression`, so `global-const-style`'s `as const` hides the object.
-   * `allowModuleScopeFactories: false` then silently stops enforcing:
-   *
-   *   const wrappers = {
-   *     CatalogWrapper: (p: { children: JSX.Element }) => <div>{p.children}</div>,
-   *   } as const;
-   *   function Page() {
-   *     return <AlgoliaLayout CatalogWrapper={wrappers.CatalogWrapper} />;
-   *   }
-   *
-   * Reports `inlineComponentProp` without the assertion, nothing with it.
-   */
-  'no-inline-component-prop': 'as const hides the object; TODO(#NNNN)',
-};
+const KNOWN_DEFECTS: Record<string, string> = {};
 
 /** Both lists at once: the suite flags exactly the rules recorded here. */
 const ACCEPTED: Record<string, string> = { ...EXEMPT, ...KNOWN_DEFECTS };

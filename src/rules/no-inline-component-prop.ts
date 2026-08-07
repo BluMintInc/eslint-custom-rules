@@ -521,12 +521,13 @@ export const noInlineComponentProp = createRule<Options, MessageIds>({
       );
       if (!definition) return;
       const defNode = definition.node;
-      if (
-        !defNode ||
-        defNode.type !== AST_NODE_TYPES.VariableDeclarator ||
-        !defNode.init ||
-        defNode.init.type !== AST_NODE_TYPES.ObjectExpression
-      ) {
+      if (!defNode || defNode.type !== AST_NODE_TYPES.VariableDeclarator) {
+        return;
+      }
+      // `global-const-style` autofixes a module-scope object literal to
+      // `as const`, so reading `init` raw lets one fixer silence this rule.
+      const holder = unwrapExpression(defNode.init);
+      if (!holder || holder.type !== AST_NODE_TYPES.ObjectExpression) {
         return;
       }
 
@@ -537,10 +538,7 @@ export const noInlineComponentProp = createRule<Options, MessageIds>({
         return;
       }
 
-      const fnNode = findObjectPropertyFunction(
-        defNode.init,
-        member.property.name,
-      );
+      const fnNode = findObjectPropertyFunction(holder, member.property.name);
       if (
         fnNode &&
         isComponentLikeFunction(fnNode, context, member.property.name)
