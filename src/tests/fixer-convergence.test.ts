@@ -781,7 +781,12 @@ describe('suggestions must clear the trigger they are offered for', () => {
   });
 
   it.each(suggestionRules)('%s', (rule) => {
-    const { findings } = suggestionResults.get(rule)!;
+    const { applied, findings } = suggestionResults.get(rule)!;
+    // The row asserts it did work before it asserts a zero. The check above
+    // covers the same ground in aggregate, but a green row named after a rule
+    // whose suggestions were never applied reads as evidence that rule was
+    // checked (#1861), so the row states it for itself.
+    expect(applied).toBeGreaterThan(0);
     // A finding means the suggestion must clear its own trigger, or decline.
     expect(findings.length === 0 ? '' : reportOf(findings)).toBe('');
   });

@@ -403,6 +403,22 @@ type ProbeResult = {
   sharedMessageIds: number;
   /** Concise/block pairs compared — the detection census's own floor. */
   bodyComparisons: number;
+  /** Shared-messageId pairs where at least one side carried a fix. */
+  fixableComparisons: number;
+  /** Body pairs where at least one side reported at all. */
+  reportingBodyComparisons: number;
+  /**
+   * Why a case contributed nothing, carried so a rule whose row can never fail
+   * names the reason rather than leaving it to inference. A variant that was
+   * never built and one the rule was silent on are different failures.
+   */
+  variants: number;
+  comparedVariants: number;
+  /** The baseline lint succeeded; false means a fatal parse or a crash. */
+  lintable: boolean;
+  reported: boolean;
+  /** The rule offered a fix on the untouched fixture. */
+  offeredFix: boolean;
 };
 
 const EMPTY: ProbeResult = {
@@ -410,6 +426,13 @@ const EMPTY: ProbeResult = {
   detectionFindings: [],
   sharedMessageIds: 0,
   bodyComparisons: 0,
+  fixableComparisons: 0,
+  reportingBodyComparisons: 0,
+  variants: 0,
+  comparedVariants: 0,
+  lintable: false,
+  reported: false,
+  offeredFix: false,
 };
 
 /**
@@ -427,11 +450,20 @@ const probeCase = (rule: string, testCase: FixtureCase): ProbeResult => {
     detectionFindings: [],
     sharedMessageIds: 0,
     bodyComparisons: 0,
+    fixableComparisons: 0,
+    reportingBodyComparisons: 0,
+    variants: 0,
+    comparedVariants: 0,
+    lintable: true,
+    reported: before.size > 0,
+    offeredFix: [...before.values()].some((state) => state.withFix > 0),
   };
 
   for (const variant of variantsOf(testCase.code, jsx)) {
+    result.variants++;
     const after = fixStatesOf(rule, variant.code, testCase, filename);
     if (!after) continue;
+    result.comparedVariants++;
 
     const context = {
       rule,
@@ -445,6 +477,9 @@ const probeCase = (rule: string, testCase: FixtureCase): ProbeResult => {
 
     if (BODY_TRANSFORMS.has(variant.transform)) {
       result.bodyComparisons++;
+      // A pair silent on BOTH sides cannot produce a one-sided report, so it is
+      // not a comparison that could ever have failed.
+      if (before.size || after.size) result.reportingBodyComparisons++;
       for (const messageId of new Set([...before.keys(), ...after.keys()])) {
         const inOriginal = before.has(messageId);
         if (inOriginal === after.has(messageId)) continue;
@@ -464,6 +499,11 @@ const probeCase = (rule: string, testCase: FixtureCase): ProbeResult => {
       const variantState = after.get(messageId);
       if (!variantState) continue;
       result.sharedMessageIds++;
+      // A finding is a polarity FLIP, so a pair where neither side carries a
+      // fix cannot produce one however the two sides differ.
+      if (originalState.withFix > 0 || variantState.withFix > 0) {
+        result.fixableComparisons++;
+      }
 
       const cleanlyFixable = (state: FixState) =>
         state.withFix > 0 && state.withoutFix === 0;
@@ -540,7 +580,44 @@ let sharedMessageIds = 0;
 let bodyComparisons = 0;
 const rulesCompared = new Set<string>();
 
+/**
+ * Per-rule bookkeeping, so each rule's row can assert the probe reached it.
+ *
+ * `sharedMessageIds` is the only counter a FIX finding can come out of and
+ * `bodyComparisons` the only one a DETECTION finding can; the rest exist to say
+ * WHY a rule was never reached, which is what turns a dark row into a
+ * reviewable exemption instead of a green one.
+ */
+type Drive = {
+  tsCases: number;
+  lintableCases: number;
+  reportingCases: number;
+  fixOfferingCases: number;
+  variants: number;
+  comparedVariants: number;
+  sharedMessageIds: number;
+  bodyComparisons: number;
+  fixableComparisons: number;
+  reportingBodyComparisons: number;
+};
+const emptyDrive = (): Drive => ({
+  tsCases: 0,
+  lintableCases: 0,
+  reportingCases: 0,
+  fixOfferingCases: 0,
+  variants: 0,
+  comparedVariants: 0,
+  sharedMessageIds: 0,
+  bodyComparisons: 0,
+  fixableComparisons: 0,
+  reportingBodyComparisons: 0,
+});
+const driveByRule = new Map<string, Drive>(
+  probeRules.map((rule) => [rule, emptyDrive()]),
+);
+
 for (const rule of probeRules) {
+  const drive = driveByRule.get(rule)!;
   for (const testCase of corpus.byRule.get(rule) || []) {
     if (testCase.language !== 'ts') {
       nonTypeScriptSkipped++;
@@ -549,6 +626,16 @@ for (const rule of probeRules) {
     }
     const result = probeCase(rule, testCase);
     casesConsidered++;
+    drive.tsCases++;
+    if (result.lintable) drive.lintableCases++;
+    if (result.reported) drive.reportingCases++;
+    if (result.offeredFix) drive.fixOfferingCases++;
+    drive.variants += result.variants;
+    drive.comparedVariants += result.comparedVariants;
+    drive.sharedMessageIds += result.sharedMessageIds;
+    drive.bodyComparisons += result.bodyComparisons;
+    drive.fixableComparisons += result.fixableComparisons;
+    drive.reportingBodyComparisons += result.reportingBodyComparisons;
     sharedMessageIds += result.sharedMessageIds;
     bodyComparisons += result.bodyComparisons;
     if (result.sharedMessageIds > 0) rulesCompared.add(rule);
@@ -560,6 +647,206 @@ for (const rule of probeRules) {
 const detectionRules = [
   ...new Set(detectionFindings.map((f) => f.rule)),
 ].sort();
+
+/**
+ * Why a rule's per-rule row could never fail, read off the counters above.
+ *
+ * A row that renders green having compared nothing is worse than a missing row:
+ * it names the rule in the jest output, so the next reader takes it as evidence
+ * the rule WAS checked. Each rule therefore either asserts it drove at least one
+ * comparison, or it is a NAMED SKIP carrying the measured reason — the same
+ * non-vacuity check the controls at the bottom of this file already carry
+ * (`sharedMessageIds + bodyComparisons > 0`), applied to the ~190 rows it was
+ * never applied to (#1861).
+ *
+ * The causes are ordered from the outermost precondition inwards, so the one
+ * named is the FIRST that failed: a rule with no TypeScript fixture is not also
+ * "silent", it was never linted.
+ */
+const UNDRIVEN_CAUSES = {
+  noFixer:
+    'declares no meta.fixable, so it can never offer the fix whose availability this census diffs',
+  noTsFixture:
+    'declares no TypeScript fixture, and a function spelling is a TypeScript question',
+  unlintable: 'every fixture fails to lint, so no baseline exists to compare',
+  noRespelling:
+    'no fixture contains a function this probe can respell (declaration, unnamed function expression or arrow)',
+  variantUnlintable:
+    'every respelling of every fixture fails to lint, so no pair was ever compared',
+  silent: 'reports on none of its own fixtures under this harness',
+  noSharedMessageId:
+    'no messageId it reports survives into a respelling, so no pair states both sides of a fix question',
+  noFixEverOffered:
+    'declares meta.fixable yet offers no fix on any of its own fixtures here, so the fix channel is untested by its corpus',
+  noFixInComparedPair:
+    'offers a fix somewhere in its corpus, but never on a fixture whose respelling shares a messageId',
+  noBodyRespelling:
+    'no fixture contains a concise arrow body or a single-return block arrow, the pair this census diffs',
+  silentOnBodyPairs:
+    'reports on neither spelling of any concise/block pair its fixtures yield',
+} as const;
+type UndrivenCause = keyof typeof UNDRIVEN_CAUSES;
+
+/** A rule with no fixer cannot offer one, so the whole fix census skips it. */
+const fixableRuleNames = new Set(
+  probeRules.filter((rule) => plugin.rules[rule]?.meta?.fixable),
+);
+
+const fixCauseOf = (rule: string): UndrivenCause | null => {
+  const drive = driveByRule.get(rule)!;
+  if (!fixableRuleNames.has(rule)) return 'noFixer';
+  if (drive.tsCases === 0) return 'noTsFixture';
+  if (drive.lintableCases === 0) return 'unlintable';
+  if (drive.variants === 0) return 'noRespelling';
+  if (drive.comparedVariants === 0) return 'variantUnlintable';
+  if (drive.reportingCases === 0) return 'silent';
+  if (drive.sharedMessageIds === 0) return 'noSharedMessageId';
+  if (drive.fixableComparisons > 0) return null;
+  return drive.fixOfferingCases === 0
+    ? 'noFixEverOffered'
+    : 'noFixInComparedPair';
+};
+
+const detectionCauseOf = (rule: string): UndrivenCause | null => {
+  const drive = driveByRule.get(rule)!;
+  if (drive.tsCases === 0) return 'noTsFixture';
+  if (drive.lintableCases === 0) return 'unlintable';
+  if (drive.bodyComparisons === 0) return 'noBodyRespelling';
+  if (drive.reportingBodyComparisons === 0) return 'silentOnBodyPairs';
+  return null;
+};
+
+const measuredUndriven = (
+  causeOf: (rule: string) => UndrivenCause | null,
+  skip?: UndrivenCause,
+): Record<string, UndrivenCause> =>
+  Object.fromEntries(
+    probeRules
+      .map((rule) => [rule, causeOf(rule)] as const)
+      .filter(
+        (entry): entry is readonly [string, UndrivenCause] =>
+          !!entry[1] && entry[1] !== skip,
+      ),
+  );
+
+/**
+ * Rules the FIX census cannot drive, each with the measured cause.
+ *
+ * `noFixer` is derived from `meta.fixable` rather than listed, because a rule
+ * that gains a fixer must enter the census automatically; every other cause is
+ * a fact about the CORPUS, which no metadata announces, so it is named here and
+ * asserted to still hold. Both directions and the cause itself are checked
+ * below, so an entry cannot outlive what it describes.
+ */
+const FIX_UNDRIVEN: Record<string, UndrivenCause> = {
+  // 22 of 22 `funcExpression->arrow` rewrites of its fixtures are discarded as
+  // unparsable (#1870); the concise/block pairs that do survive report a
+  // different messageId on each side, since reordering is what it measures.
+  'class-methods-read-top-to-bottom': 'noSharedMessageId',
+  'enforce-date-ttime': 'noSharedMessageId',
+  'enforce-firestore-rules-get-access': 'noRespelling',
+  'enforce-typescript-markdown-code-blocks': 'noTsFixture',
+  'jsdoc-above-field': 'noRespelling',
+  'no-unnecessary-destructuring': 'noSharedMessageId',
+  'no-unpinned-dependencies': 'noTsFixture',
+  // Reports 4 times over 105 fixtures and fixes none of them, so nothing in its
+  // corpus exercises the fixer this census diffs.
+  'no-usememo-for-pass-by-value': 'noFixEverOffered',
+  'omit-index-html': 'noRespelling',
+  'prefer-clone-deep': 'noFixInComparedPair',
+  'prefer-fragment-shorthand': 'noRespelling',
+  // All 41 `funcExpression->arrow` attempts on its fixtures are discarded as
+  // unparsable and it has no other respellable site, so #1870 is the whole of
+  // this entry: fixing that transform should retire it.
+  'prefer-getter-over-parameterless-method': 'noRespelling',
+  'prefer-params-over-parent-id': 'noFixInComparedPair',
+  'sync-onwrite-name-func': 'noRespelling',
+  'use-custom-link': 'noRespelling',
+};
+
+/**
+ * Rules the DETECTION census cannot drive, each with the measured cause.
+ *
+ * Every entry here is a fact about the rule's fixtures, not about the rule:
+ * `noBodyRespelling` means no fixture contains either body form to swap, and
+ * `silentOnBodyPairs` means the fixtures that do contain one are fixtures the
+ * rule says nothing about. Both are legitimate — but they are recorded rather
+ * than rendered as a passing row, because a reader cannot tell the two apart in
+ * jest output.
+ */
+const DETECTION_UNDRIVEN: Record<string, UndrivenCause> = {
+  'array-methods-this-context': 'silentOnBodyPairs',
+  'avoid-utils-directory': 'noBodyRespelling',
+  'class-methods-read-top-to-bottom': 'silentOnBodyPairs',
+  'dynamic-https-errors': 'silentOnBodyPairs',
+  'enforce-centralized-mock-firestore': 'noBodyRespelling',
+  'enforce-cloud-function-id-length': 'noBodyRespelling',
+  'enforce-date-ttime': 'noBodyRespelling',
+  'enforce-dynamic-file-naming': 'noBodyRespelling',
+  'enforce-dynamic-imports': 'silentOnBodyPairs',
+  'enforce-early-destructuring': 'silentOnBodyPairs',
+  'enforce-empty-object-check': 'noBodyRespelling',
+  'enforce-fieldpath-syntax-in-docsetter': 'noBodyRespelling',
+  'enforce-firestore-path-utils': 'noBodyRespelling',
+  'enforce-firestore-rules-get-access': 'noBodyRespelling',
+  'enforce-id-capitalization': 'silentOnBodyPairs',
+  'enforce-identifiable-firestore-type': 'noBodyRespelling',
+  'enforce-m3-sentence-case': 'noBodyRespelling',
+  'enforce-memoize-getters': 'silentOnBodyPairs',
+  'enforce-realtimedb-path-utils': 'noBodyRespelling',
+  'enforce-serializable-params': 'silentOnBodyPairs',
+  'enforce-singular-type-names': 'noBodyRespelling',
+  'enforce-storage-context': 'noBodyRespelling',
+  'enforce-timestamp-now': 'noBodyRespelling',
+  'enforce-types-directory-placement': 'silentOnBodyPairs',
+  'enforce-typescript-markdown-code-blocks': 'noTsFixture',
+  'export-if-in-doubt': 'silentOnBodyPairs',
+  'extract-global-constants': 'silentOnBodyPairs',
+  'flatten-push-calls': 'noBodyRespelling',
+  'generic-starts-with-t': 'noBodyRespelling',
+  'jsdoc-above-field': 'noBodyRespelling',
+  'logical-top-to-bottom-grouping': 'silentOnBodyPairs',
+  'no-always-true-false-conditions': 'silentOnBodyPairs',
+  'no-async-foreach': 'noBodyRespelling',
+  'no-circular-references': 'noBodyRespelling',
+  'no-class-instance-destructuring': 'noBodyRespelling',
+  'no-conditional-literals-in-jsx': 'noBodyRespelling',
+  'no-curly-brackets-around-commented-properties': 'silentOnBodyPairs',
+  'no-fill-template-mutation': 'silentOnBodyPairs',
+  'no-filter-without-return': 'silentOnBodyPairs',
+  'no-firestore-object-arrays': 'noBodyRespelling',
+  'no-harness-coupled-disables': 'noBodyRespelling',
+  'no-memoize-on-static': 'noBodyRespelling',
+  'no-misused-switch-case': 'noBodyRespelling',
+  'no-overridable-method-calls-in-constructor': 'silentOnBodyPairs',
+  'no-passthrough-getters': 'silentOnBodyPairs',
+  'no-redundant-boolean-callback-props': 'noBodyRespelling',
+  'no-restricted-properties-fix': 'silentOnBodyPairs',
+  'no-separate-loading-state': 'noBodyRespelling',
+  'no-single-dismiss-dialog-button': 'noBodyRespelling',
+  'no-stablehash-react-nodes': 'silentOnBodyPairs',
+  'no-static-constants-in-dynamic-files': 'silentOnBodyPairs',
+  'no-try-catch-already-exists-in-transaction': 'silentOnBodyPairs',
+  'no-unnecessary-destructuring': 'silentOnBodyPairs',
+  'no-unpinned-dependencies': 'noTsFixture',
+  'omit-index-html': 'noBodyRespelling',
+  'prefer-block-comments-for-declarations': 'noBodyRespelling',
+  'prefer-destructuring-no-class': 'silentOnBodyPairs',
+  'prefer-document-flattening': 'noBodyRespelling',
+  'prefer-fragment-shorthand': 'noBodyRespelling',
+  'prefer-getter-over-parameterless-method': 'noBodyRespelling',
+  'prefer-type-alias-over-typeof-constant': 'noBodyRespelling',
+  'prefer-type-over-interface': 'noBodyRespelling',
+  'prefer-union-from-const-array': 'noBodyRespelling',
+  'prefer-url-tostring-over-tojson': 'noBodyRespelling',
+  'prefer-use-theme': 'noBodyRespelling',
+  'require-dynamic-firebase-imports': 'silentOnBodyPairs',
+  'require-https-error': 'noBodyRespelling',
+  'require-https-error-cause': 'silentOnBodyPairs',
+  'sync-onwrite-name-func': 'noBodyRespelling',
+  'test-file-location-enforcement': 'noBodyRespelling',
+  'use-custom-link': 'noBodyRespelling',
+};
 
 /**
  * Rules whose concise/block detection asymmetry is a known, filed decision
@@ -756,6 +1043,27 @@ const plantedCase = (code: string): FixtureCase => ({
   bucket: 'invalid',
 });
 
+const measuredFixUndriven = measuredUndriven(fixCauseOf, 'noFixer');
+const measuredDetectionUndriven = measuredUndriven(detectionCauseOf);
+
+/** The rows that CAN fail: every rule the census actually drove. */
+const fixDrivenRules = probeRules.filter((rule) => !fixCauseOf(rule));
+const detectionDrivenRules = probeRules.filter(
+  (rule) => !detectionCauseOf(rule),
+);
+
+/**
+ * A skipped row, titled with the rule and the measured reason. Jest renders
+ * these as `○ skipped`, which is the point: a rule the probe never drove must
+ * be visibly absent from the result rather than indistinguishable from a clean
+ * one (#1861).
+ */
+const skipTitles = (causeOf: (rule: string) => UndrivenCause | null) =>
+  probeRules
+    .map((rule) => [rule, causeOf(rule)] as const)
+    .filter((entry): entry is readonly [string, UndrivenCause] => !!entry[1])
+    .map(([rule, cause]) => `${rule} — NOT DRIVEN: ${UNDRIVEN_CAUSES[cause]}`);
+
 console.log(
   [
     `[fix-spelling-asymmetry] ${probeRules.length} rules probed, ` +
@@ -763,10 +1071,14 @@ console.log(
     `  corpus: ${corpus.totalCases} cases from ${corpus.suitesUsed} suites, ` +
       `${corpus.failures.length} failed`,
     `  fix census: ${sharedMessageIds} shared messageIds, ` +
-      `${fixFindings.length} finding(s)`,
+      `${fixFindings.length} finding(s); ${fixDrivenRules.length} rule(s) ` +
+      `driven, ${probeRules.length - fixDrivenRules.length} named skip(s)`,
     `  detection census: ${bodyComparisons} body pairs, ` +
       `${detectionFindings.length} finding(s) across ` +
-      `${detectionRules.length} rule(s)`,
+      `${detectionRules.length} rule(s); ${detectionDrivenRules.length} rule(s) ` +
+      `driven, ${
+        probeRules.length - detectionDrivenRules.length
+      } named skip(s)`,
   ].join('\n'),
 );
 
@@ -796,6 +1108,10 @@ describe('fix availability must not depend on how a function is spelled', () => 
     expect(sharedMessageIds).toBeGreaterThan(3000);
     expect(bodyComparisons).toBeGreaterThan(2000);
     expect(rulesCompared.size).toBeGreaterThan(100);
+    // The rows that can actually fail, floored separately: the counts above
+    // survive intact even if every comparison piles onto a handful of rules.
+    expect(fixDrivenRules.length).toBeGreaterThan(50);
+    expect(detectionDrivenRules.length).toBeGreaterThan(100);
   });
 
   /** Both directions, so a fixed rule must be removed rather than lingering. */
@@ -805,14 +1121,67 @@ describe('fix availability must not depend on how a function is spelled', () => 
     );
   });
 
-  it.each(probeRules.filter((rule) => !(rule in FIX_KNOWN_DEFECTS)))(
+  /**
+   * Two-way accounting for the skipped rows, cause included.
+   *
+   * A rule that becomes drivable fails as a stale entry; a rule that stops
+   * being drivable fails as an unrecorded skip; and a rule that stays dark for
+   * a DIFFERENT reason fails too, because the recorded cause is the claim being
+   * made about it and a changed cause is a changed claim.
+   */
+  it('accounts for every rule the fix census cannot drive', () => {
+    expect(measuredFixUndriven).toEqual(FIX_UNDRIVEN);
+  });
+
+  it('derives the fixer-less skip from meta rather than a list', () => {
+    // `noFixer` is the one cause not written down, so it must be exactly the
+    // rules with no `meta.fixable` — and no fix finding may ever come from one,
+    // or deriving the skip would be hiding a finding rather than a vacuum.
+    expect(
+      probeRules.filter((rule) => fixCauseOf(rule) === 'noFixer').sort(),
+    ).toEqual(probeRules.filter((rule) => !fixableRuleNames.has(rule)).sort());
+    expect(
+      [...new Set(fixFindings.map((f) => f.rule))].filter(
+        (rule) => !fixableRuleNames.has(rule),
+      ),
+    ).toEqual([]);
+    expect(fixableRuleNames.size).toBeGreaterThan(50);
+  });
+
+  /** Both maps at once: an unexplained or unmeasurable entry is dead weight. */
+  it('explains every cause it records', () => {
+    const causes = [
+      ...Object.values(FIX_UNDRIVEN),
+      ...Object.values(DETECTION_UNDRIVEN),
+    ];
+    expect(causes.filter((cause) => !UNDRIVEN_CAUSES[cause])).toEqual([]);
+    // An entry naming a rule that is not probed is an exemption nothing can
+    // retire, so it would sit there forever absorbing the next regression.
+    const probed = new Set(probeRules);
+    expect(
+      [...Object.keys(FIX_UNDRIVEN), ...Object.keys(DETECTION_UNDRIVEN)].filter(
+        (rule) => !probed.has(rule),
+      ),
+    ).toEqual([]);
+  });
+
+  it.each(fixDrivenRules.filter((rule) => !(rule in FIX_KNOWN_DEFECTS)))(
     '%s',
     (rule) => {
+      // The row asserts it did work before it asserts a zero: an `expect('')
+      // .toBe('')` over a rule the probe never compared is a green row that
+      // validated nothing (#1861).
+      expect(driveByRule.get(rule)!.fixableComparisons).toBeGreaterThan(0);
       // A rule reaching here reports a violation in both spellings and remedies
       // only one; the cure is to fix both or decline on both.
       expect(reportOf(findingsFor(rule, fixFindings))).toBe('');
     },
   );
+
+  const fixSkips = skipTitles(fixCauseOf);
+  if (fixSkips.length) {
+    it.skip.each(fixSkips)('%s', () => undefined);
+  }
 });
 
 describe('a concise and a block arrow body must be seen alike', () => {
@@ -820,14 +1189,27 @@ describe('a concise and a block arrow body must be seen alike', () => {
     expect(detectionRules).toEqual(Object.keys(DETECTION_EXEMPT).sort());
   });
 
-  it.each(probeRules.filter((rule) => !(rule in DETECTION_EXEMPT)))(
+  /** Both directions and the cause, exactly as the fix census does above. */
+  it('accounts for every rule the detection census cannot drive', () => {
+    expect(measuredDetectionUndriven).toEqual(DETECTION_UNDRIVEN);
+  });
+
+  it.each(detectionDrivenRules.filter((rule) => !(rule in DETECTION_EXEMPT)))(
     '%s',
     (rule) => {
+      expect(driveByRule.get(rule)!.reportingBodyComparisons).toBeGreaterThan(
+        0,
+      );
       // Reported one way and silent the other: either a remedy is withheld, or
       // code the rule flags is blessed one rewrite away.
       expect(reportOf(findingsFor(rule, detectionFindings))).toBe('');
     },
   );
+
+  const detectionSkips = skipTitles(detectionCauseOf);
+  if (detectionSkips.length) {
+    it.skip.each(detectionSkips)('%s', () => undefined);
+  }
 });
 
 describe('both detectors are load-bearing', () => {

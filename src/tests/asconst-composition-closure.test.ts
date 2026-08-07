@@ -124,23 +124,39 @@ type ProbeResult = {
   findings: Finding[];
   /** Cases a culprit actually rewrote — the only number that can assert. */
   rewritten: number;
+  /**
+   * Whether the rule reported on the untouched fixture, which is the
+   * precondition for a report to be LOST. Carried, along with `asserted`, so a
+   * rule the probe never reached can NAME the reason instead of leaving it to
+   * inference — the two are different failures and only one is legitimate.
+   */
+  reported: boolean;
+  /** Whether a culprit's `--fix` added an assertion to this fixture at all. */
+  asserted: boolean;
 };
 
 const probeCase = (rule: string, testCase: FixtureCase): ProbeResult => {
   const filename = defaultFilenameFor(testCase);
   const before = reportsOf(rule, testCase.code, testCase, filename);
-  if (!before || before.size === 0) return { findings: [], rewritten: 0 };
+  const blank = (): ProbeResult => ({
+    findings: [],
+    rewritten: 0,
+    reported: false,
+    asserted: false,
+  });
+  if (!before || before.size === 0) return blank();
 
   const rewritten = afterCulpritFix(testCase, filename);
   if (!rewritten || !/\bas const\b/.test(rewritten)) {
-    return { findings: [], rewritten: 0 };
+    return { ...blank(), reported: true };
   }
 
   const after = reportsOf(rule, rewritten, testCase, filename);
-  if (!after) return { findings: [], rewritten: 0 };
+  if (!after) return { ...blank(), reported: true, asserted: true };
 
+  const base = { reported: true, asserted: true };
   const lost = [...before].filter((id) => !after.has(id));
-  if (!lost.length) return { findings: [], rewritten: 1 };
+  if (!lost.length) return { ...base, findings: [], rewritten: 1 };
 
   /**
    * The isolation: the SAME rewrite with only the assertion removed. A report
@@ -149,9 +165,10 @@ const probeCase = (rule: string, testCase: FixtureCase): ProbeResult => {
    */
   const stripped = rewritten.replace(/ as const\b/g, '');
   const restored = reportsOf(rule, stripped, testCase, filename);
-  if (!restored) return { findings: [], rewritten: 1 };
+  if (!restored) return { ...base, findings: [], rewritten: 1 };
 
   return {
+    ...base,
     rewritten: 1,
     findings: lost
       .filter((messageId) => restored.has(messageId))
@@ -212,20 +229,196 @@ let casesRewritten = 0;
 let nonTypeScriptSkipped = 0;
 const rulesWithNonTypeScriptFixtures = new Set<string>();
 
+/**
+ * Per-rule bookkeeping, so a rule's row can assert that the probe reached it.
+ *
+ * `rewritten` is the only counter a finding can come out of; `tsCases` and
+ * `reporting` exist to say WHY a rule was never reached, which is what turns a
+ * dark row into a reviewable exemption rather than a silent one.
+ */
+type Drive = {
+  tsCases: number;
+  reporting: number;
+  asserted: number;
+  rewritten: number;
+};
+const driveByRule = new Map<string, Drive>(
+  victims.map((rule) => [
+    rule,
+    { tsCases: 0, reporting: 0, asserted: 0, rewritten: 0 },
+  ]),
+);
+
 for (const victim of victims) {
+  const drive = driveByRule.get(victim)!;
   for (const testCase of corpus.byRule.get(victim) || []) {
     if (testCase.language !== 'ts') {
       nonTypeScriptSkipped++;
       rulesWithNonTypeScriptFixtures.add(victim);
       continue;
     }
+    drive.tsCases++;
     const result = probeCase(victim, testCase);
+    if (result.reported) drive.reporting++;
+    if (result.asserted) drive.asserted++;
+    drive.rewritten += result.rewritten;
     casesRewritten += result.rewritten;
     findings.push(...result.findings);
   }
 }
 
 const flaggedRules = [...new Set(findings.map((f) => f.rule))].sort();
+
+/**
+ * Why a rule's per-rule row could never fail, read off the counters rather than
+ * guessed.
+ *
+ * A row that renders green having rewritten nothing is worse than a missing
+ * row: it names the rule in the jest output, so the next reader takes it as
+ * evidence the rule WAS checked. Each rule therefore either asserts a culprit
+ * actually wrapped one of its fixtures, or it is a NAMED SKIP carrying the
+ * measured reason — the same non-vacuity check the controls at the bottom of
+ * this file already carry (`result.rewritten === 1`), applied to the ~190 rows
+ * it was never applied to (#1861).
+ *
+ * Ordered from the outermost precondition inwards, so the cause named is the
+ * FIRST one that failed: a rule with no TypeScript fixture is not also
+ * "unreported", it was never linted.
+ */
+const UNDRIVEN_CAUSES = {
+  noTsFixture:
+    'declares no TypeScript fixture, and an `as const` assertion is a TypeScript expression',
+  silent: 'reports on none of its own fixtures under this harness',
+  noAssertionAdded:
+    'no fixture it reports on is one the `as const` fixers rewrite, so the assertion never lands on code it had an opinion about',
+  lintFailedOnRewrite:
+    'every assertion-carrying rewrite failed to lint, so no after-state exists to compare',
+} as const;
+type UndrivenCause = keyof typeof UNDRIVEN_CAUSES;
+
+const causeOf = (rule: string): UndrivenCause | null => {
+  const drive = driveByRule.get(rule)!;
+  if (drive.tsCases === 0) return 'noTsFixture';
+  if (drive.reporting === 0) return 'silent';
+  if (drive.asserted === 0) return 'noAssertionAdded';
+  if (drive.rewritten === 0) return 'lintFailedOnRewrite';
+  return null;
+};
+
+/**
+ * Rules this guard cannot drive, each with the measured cause.
+ *
+ * Nearly all are `noAssertionAdded`, which is a fact about the CORPUS and not
+ * about the rule: the probe is causal — it asks what a culprit's real `--fix`
+ * does to code the victim reports on — so a rule whose fixtures contain no
+ * module-scope object constant, no returned object literal and no `as const`
+ * array simply has no subject here. Synthesising an assertion instead would
+ * answer a question no `eslint --fix` run can pose.
+ *
+ * Both directions and the cause itself are asserted below, so an entry cannot
+ * outlive what it describes: a rule that becomes drivable fails as stale, and a
+ * rule that goes dark fails as unrecorded.
+ */
+const UNDRIVEN: Record<string, UndrivenCause> = {
+  'array-methods-this-context': 'noAssertionAdded',
+  'class-methods-read-top-to-bottom': 'noAssertionAdded',
+  'dynamic-https-errors': 'noAssertionAdded',
+  'enforce-assert-throws': 'noAssertionAdded',
+  'enforce-boolean-naming-prefixes': 'noAssertionAdded',
+  'enforce-date-ttime': 'noAssertionAdded',
+  'enforce-dynamic-file-naming': 'noAssertionAdded',
+  'enforce-dynamic-imports': 'noAssertionAdded',
+  'enforce-early-destructuring': 'noAssertionAdded',
+  'enforce-empty-object-check': 'noAssertionAdded',
+  'enforce-f-extension-for-entry-points': 'noAssertionAdded',
+  'enforce-fieldpath-syntax-in-docsetter': 'noAssertionAdded',
+  'enforce-firestore-path-utils': 'noAssertionAdded',
+  'enforce-firestore-set-merge': 'noAssertionAdded',
+  'enforce-is-prefix-validators': 'noAssertionAdded',
+  'enforce-m3-sentence-case': 'noAssertionAdded',
+  'enforce-realtimedb-path-utils': 'noAssertionAdded',
+  'enforce-render-hits-memoization': 'noAssertionAdded',
+  'enforce-serializable-params': 'noAssertionAdded',
+  'enforce-single-exported-unit-per-file': 'noAssertionAdded',
+  'enforce-stable-hash-spread-props': 'noAssertionAdded',
+  'enforce-transform-memoization': 'noAssertionAdded',
+  'enforce-typescript-markdown-code-blocks': 'noTsFixture',
+  'fast-deep-equal-over-microdiff': 'noAssertionAdded',
+  'generic-starts-with-t': 'noAssertionAdded',
+  'key-only-outermost-element': 'noAssertionAdded',
+  'memo-compare-deeply-complex-props': 'noAssertionAdded',
+  'memoize-root-level-hocs': 'noAssertionAdded',
+  'no-async-array-filter': 'noAssertionAdded',
+  'no-async-foreach': 'noAssertionAdded',
+  'no-complex-cloud-params': 'noAssertionAdded',
+  'no-conditional-literals-in-jsx': 'noAssertionAdded',
+  'no-excessive-parent-chain': 'noAssertionAdded',
+  'no-fill-template-mutation': 'noAssertionAdded',
+  'no-filter-without-return': 'noAssertionAdded',
+  'no-firestore-jest-mock': 'noAssertionAdded',
+  'no-jsx-in-hooks': 'noAssertionAdded',
+  'no-jsx-whitespace-literal': 'noAssertionAdded',
+  'no-memoize-on-static': 'noAssertionAdded',
+  'no-misused-switch-case': 'noAssertionAdded',
+  'no-passthrough-getters': 'noAssertionAdded',
+  'no-portal-inside-tooltip': 'noAssertionAdded',
+  'no-redundant-boolean-callback-props': 'noAssertionAdded',
+  'no-res-error-status-in-onrequest': 'noAssertionAdded',
+  'no-separate-loading-state': 'noAssertionAdded',
+  'no-stablehash-react-nodes': 'noAssertionAdded',
+  'no-try-catch-already-exists-in-transaction': 'noAssertionAdded',
+  'no-unmemoized-memo-without-props': 'noAssertionAdded',
+  'no-unnecessary-destructuring': 'noAssertionAdded',
+  'no-unpinned-dependencies': 'noTsFixture',
+  'no-unused-props': 'noAssertionAdded',
+  'no-unused-usestate': 'noAssertionAdded',
+  'no-useless-fragment': 'noAssertionAdded',
+  'no-useless-usememo-primitives': 'noAssertionAdded',
+  'no-usememo-for-pass-by-value': 'noAssertionAdded',
+  'no-uuidv4-base62-as-key': 'noAssertionAdded',
+  'parallelize-loop-awaits': 'noAssertionAdded',
+  'prefer-batch-operations': 'noAssertionAdded',
+  'prefer-fragment-shorthand': 'noAssertionAdded',
+  'prefer-params-over-parent-id': 'noAssertionAdded',
+  'prefer-type-over-interface': 'noAssertionAdded',
+  'prefer-use-theme': 'noAssertionAdded',
+  'prefer-usememo-over-useeffect-usestate': 'noAssertionAdded',
+  'prevent-children-clobber': 'noAssertionAdded',
+  'react-usememo-should-be-component': 'noAssertionAdded',
+  'require-hooks-default-params': 'noAssertionAdded',
+  'require-https-error': 'noAssertionAdded',
+  'require-https-error-cause': 'noAssertionAdded',
+  'require-image-optimized': 'noAssertionAdded',
+  'require-memoize-jsx-returners': 'noAssertionAdded',
+  'require-migration-script-metadata': 'noAssertionAdded',
+  'require-props-composition': 'noAssertionAdded',
+  'test-file-location-enforcement': 'noAssertionAdded',
+  'use-custom-link': 'noAssertionAdded',
+  'use-custom-memo': 'noAssertionAdded',
+  'use-custom-router': 'noAssertionAdded',
+};
+
+const measuredUndriven: Record<string, UndrivenCause> = Object.fromEntries(
+  victims
+    .map((rule) => [rule, causeOf(rule)] as const)
+    .filter(
+      (entry): entry is readonly [string, UndrivenCause] => entry[1] !== null,
+    ),
+);
+
+/** The rows that CAN fail: every rule a culprit's `--fix` actually reached. */
+const drivenVictims = victims.filter((rule) => !causeOf(rule));
+
+/**
+ * A skipped row, titled with the rule and the measured reason. Jest renders
+ * these as `○ skipped`, which is the point: a rule the probe never drove must
+ * be visibly absent from the result rather than indistinguishable from a clean
+ * one.
+ */
+const skipTitles = victims
+  .map((rule) => [rule, causeOf(rule)] as const)
+  .filter((entry): entry is readonly [string, UndrivenCause] => !!entry[1])
+  .map(([rule, cause]) => `${rule} — NOT DRIVEN: ${UNDRIVEN_CAUSES[cause]}`);
 
 /**
  * Rules whose silence under an assertion is correct, not a defect.
@@ -341,6 +534,8 @@ console.log(
     `[asconst-composition] ${victims.length} victims, ` +
       `${casesRewritten} cases rewritten by a culprit --fix`,
     `  ${findings.length} finding(s) across ${flaggedRules.length} rule(s)`,
+    `  ${drivenVictims.length} victim(s) driven, ` +
+      `${skipTitles.length} named skip(s)`,
   ].join('\n'),
 );
 
@@ -355,6 +550,12 @@ describe("a sibling fixer's assertion must not silence a rule", () => {
      * while examining nothing.
      */
     expect(casesRewritten).toBeGreaterThan(200);
+    /**
+     * …and a second floor on the rows that can actually fail. The count above
+     * survives intact even if every rewrite piles onto a handful of rules,
+     * which is exactly the state in which most per-rule rows go vacuous.
+     */
+    expect(drivenVictims.length).toBeGreaterThan(90);
   });
 
   it('flags exactly the rules whose silence is a filed decision', () => {
@@ -374,9 +575,41 @@ describe("a sibling fixer's assertion must not silence a rule", () => {
     expect(nonTypeScriptSkipped).toBeGreaterThan(0);
   });
 
-  it.each(victims.filter((rule) => !(rule in ACCEPTED)))('%s', (rule) => {
+  /**
+   * Two-way accounting for the skipped rows, cause included.
+   *
+   * A rule that becomes drivable fails as a stale entry; a rule that stops
+   * being drivable fails as an unrecorded skip; and a rule that stays dark for
+   * a DIFFERENT reason fails too, because the recorded cause is the claim being
+   * made about it and a changed cause is a changed claim.
+   */
+  it('accounts for every victim this guard cannot drive', () => {
+    expect(measuredUndriven).toEqual(UNDRIVEN);
+  });
+
+  it('explains every cause it records, for victims that exist', () => {
+    expect(
+      Object.values(UNDRIVEN).filter((cause) => !UNDRIVEN_CAUSES[cause]),
+    ).toEqual([]);
+    // An entry naming a rule outside the victim set is never measured by the
+    // assertion above, so it would sit there forever absorbing the next one.
+    const known = new Set(victims);
+    expect(Object.keys(UNDRIVEN).filter((rule) => !known.has(rule))).toEqual(
+      [],
+    );
+  });
+
+  it.each(drivenVictims.filter((rule) => !(rule in ACCEPTED)))('%s', (rule) => {
+    // The row asserts it did work before it asserts a zero: an `expect('')
+    // .toBe('')` over a rule no culprit ever rewrote is a green row that
+    // validated nothing (#1861).
+    expect(driveByRule.get(rule)!.rewritten).toBeGreaterThan(0);
     expect(reportOf(rule)).toBe('');
   });
+
+  if (skipTitles.length) {
+    it.skip.each(skipTitles)('%s', () => undefined);
+  }
 });
 
 describe('the detector is load-bearing', () => {
