@@ -6,7 +6,7 @@ import {
   harvestFixtureCorpus,
   parserOptionsFor,
   severityWithOptions,
-  typeAwareRuleNames,
+  silentWithoutProgramRuleNames,
 } from '../utils/fixtureCorpus';
 
 // Using require to avoid test build-time ESM interop issues; the test runner
@@ -502,8 +502,12 @@ const rulesProbed = [...results.values()].filter((r) => r.probed > 0).length;
  */
 const REASONS = {
   noFixtures: 'declares no fixture this TypeScript harness can lint',
-  typeAware:
-    'is type-aware, and a bare Linter has no program, so it reports nothing here',
+  // Held for a rule that measurably produces nothing here. The old wording
+  // ("is type-aware, and a bare Linter has no program") was a premise, not a
+  // measurement, and a false one: the parser builds an isolated program and all
+  // 16 checker-touching rules report over their own fixtures (#1859).
+  undrivable:
+    'is measurably silent under this harness, so it reports nothing here',
   neverReports: 'never reports on any of its own fixtures',
   noTransform: 'reports on its own fixtures but offers no fix or suggestion',
   noEnclosingBlock:
@@ -520,11 +524,10 @@ type Reason = typeof REASONS[keyof typeof REASONS];
 const unprobedReasonFor = (rule: string): Reason => {
   const { cases, reach } = results.get(rule)!;
   if (cases === 0) return REASONS.noFixtures;
-  // Type-awareness outranks the report counts: a rule that asks the checker a
-  // question answers a different one without a program, so whatever it did or
-  // did not report here is not evidence about the rule.
+  // Undrivability outranks the report counts: a rule that produces nothing at
+  // all here says nothing about itself, so its counts are not evidence.
   if (reach.actionable === 0) {
-    if (typeAwareRuleNames.has(rule)) return REASONS.typeAware;
+    if (silentWithoutProgramRuleNames.has(rule)) return REASONS.undrivable;
     return reach.reported === 0 ? REASONS.neverReports : REASONS.noTransform;
   }
   if (reach.enclosed === 0) return REASONS.noEnclosingBlock;
@@ -556,8 +559,11 @@ const UNPROBED_RULES: Record<string, Reason> = {
   'enforce-typescript-markdown-code-blocks': REASONS.noFixtures,
   'no-unpinned-dependencies': REASONS.noFixtures,
 
-  // Type-aware: without a program it offers no transform at all.
-  'no-usememo-for-pass-by-value': REASONS.typeAware,
+  // Reports here but offers no transform. Its 105 fixtures declare
+  // `parserOptions.project` against the repo tsconfig, which the corpus strips;
+  // the isolated program that remains types the returned expression as `any`,
+  // so the classification is indeterminate and the fixer never runs (#1859).
+  'no-usememo-for-pass-by-value': REASONS.noTransform,
 
   // Every report sits outside a function block — at module or class level,
   // or in a concise arrow body — so there is nowhere to declare a shadow.

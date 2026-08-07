@@ -6,7 +6,7 @@ import {
   harvestFixtureCorpus,
   parserOptionsFor,
   severityWithOptions,
-  typeAwareRuleNames,
+  silentWithoutProgramRuleNames,
 } from '../utils/fixtureCorpus';
 
 /**
@@ -265,7 +265,19 @@ const conciseArrowToBlock = (source: string, ast: any): Edit[] => {
   return edits;
 };
 
-/** `(p) => { return expr; }` to `(p) => expr`. */
+/**
+ * `(p) => { return expr; }` to `(p) => expr`.
+ *
+ * Declines when the block holds anything besides the return statement, which in
+ * practice means a COMMENT. A comment is not decoration to a linter: the block
+ * bodies in the corpus carry `eslint-disable-next-line react-hooks/exhaustive-deps`
+ * and other directives, and a rewrite that drops one changes which rules fire.
+ * Every finding it manufactured was of that shape — a rule that declines to fix
+ * rather than delete a comment (`no-useless-usememo-primitives`), or one whose
+ * exemption carrier is the comment itself (`no-entire-object-hook-deps`) —
+ * so the perturbation, not the rule, was the asymmetry (#1859). The same
+ * neutrality discipline `isNeutral` applies to `this`/`arguments`/`super`.
+ */
 const blockArrowToConcise = (source: string, ast: any): Edit[] => {
   const edits: Edit[] = [];
   walk(ast, (node) => {
@@ -275,6 +287,10 @@ const blockArrowToConcise = (source: string, ast: any): Edit[] => {
     if (statements.length !== 1) return;
     const only = statements[0];
     if (only.type !== 'ReturnStatement' || !only.argument) return;
+    const inner = source
+      .slice(node.body.range[0] + 1, node.body.range[1] - 1)
+      .trim();
+    if (inner !== source.slice(only.range[0], only.range[1]).trim()) return;
     const argument = source.slice(
       only.argument.range[0],
       only.argument.range[1],
@@ -479,11 +495,14 @@ const probeCase = (rule: string, testCase: FixtureCase): ProbeResult => {
 const corpus = harvestFixtureCorpus();
 
 /**
- * Type-aware rules are excluded: a bare `Linter` builds no program, so they
- * report nothing here and would contribute a false clean rather than a finding.
+ * Only rules that measurably report NOTHING under this harness are excluded —
+ * currently none. The wider "mentions the type checker" set was excluded before
+ * on the theory that a bare `Linter` builds no program; it builds an isolated
+ * single-file one, and all 16 of those rules report over their own fixtures, so
+ * the exclusion suppressed live coverage rather than a false clean (#1859).
  */
 const probeRules = Object.keys(plugin.rules)
-  .filter((name) => !typeAwareRuleNames.has(name))
+  .filter((name) => !silentWithoutProgramRuleNames.has(name))
   .sort();
 
 const fixFindings: Finding[] = [];
@@ -530,6 +549,46 @@ const DETECTION_EXEMPT: Record<string, string> = {
   // identity shape is deliberately still concise-only, because widening it
   // would ship a second copy of behaviour whose boundary is unsettled.
   'no-undefined-null-passthrough': 'identity shape deferred, tracked as #1785',
+  // Reports in BOTH spellings and swaps `preferMap` for `preferMapManual` when
+  // the dispatch sits in a concise body, whose message names the reason: there
+  // is no statement position to place the `Record` in, so the fix is withheld
+  // and the developer is told to extract it. The census keys on messageId, so a
+  // deliberate fixable/manual split reads as two one-sided detections.
+  // Surfaced by the #1859 widening.
+  'prefer-map-over-conditional-dispatch':
+    'deliberate fixable/manual split on an expression body',
+};
+
+/**
+ * Rules whose FIX asymmetry is a real defect, recorded so the census stays
+ * actionable while each is filed and fixed. Deliberately separate from
+ * `DETECTION_EXEMPT`, which records design decisions: merging the two would let
+ * a bug retire under a "filed decision" label.
+ *
+ * Surfaced by the #1859 widening — these rules were never probed, because the
+ * type-aware exclusion dropped them wholesale.
+ */
+const FIX_KNOWN_DEFECTS: Record<string, string> = {
+  /**
+   * TODO(#NNNN — filed from the #1859 widening): the fix is withheld when the
+   * local hook it would orphan is a `function` declaration and applied when the
+   * same hook is a `const` arrow, because `planOrphanedImportRemoval`
+   * (`src/utils/importRemoval.ts`) treats a declarator's own initializer WRITE
+   * as a surviving reference. The `const` spelling therefore never looks
+   * orphaned, and the rewrite strands the local binding:
+   *
+   *   const useMemo = (factory: () => number, deps: unknown[]) => {
+   *     return factory();
+   *   };
+   *   const v = useMemo(() => 1, [{ a: 1 }, 2]);
+   *
+   * fixes to `useDeepCompareMemo(...)` plus a new import, leaving `useMemo`
+   * unused — exactly what the suite's `function useMemo` twin exists to
+   * prevent. Shared helper, so `enforce-date-ttime` and
+   * `no-redundant-annotation-assertion` sit on the same edge.
+   */
+  'prefer-use-deep-compare-memo':
+    'declarator write hides an orphan; TODO(#NNNN)',
 };
 
 const reportOf = (findings: Finding[]) =>
@@ -692,11 +751,21 @@ describe('fix availability must not depend on how a function is spelled', () => 
     expect(rulesCompared.size).toBeGreaterThan(100);
   });
 
-  it.each(probeRules)('%s', (rule) => {
-    // A rule reaching here reports a violation in both spellings and remedies
-    // only one; the cure is to fix both or decline on both.
-    expect(reportOf(findingsFor(rule, fixFindings))).toBe('');
+  /** Both directions, so a fixed rule must be removed rather than lingering. */
+  it('flags exactly the rules whose fix asymmetry is recorded', () => {
+    expect([...new Set(fixFindings.map((f) => f.rule))].sort()).toEqual(
+      Object.keys(FIX_KNOWN_DEFECTS).sort(),
+    );
   });
+
+  it.each(probeRules.filter((rule) => !(rule in FIX_KNOWN_DEFECTS)))(
+    '%s',
+    (rule) => {
+      // A rule reaching here reports a violation in both spellings and remedies
+      // only one; the cure is to fix both or decline on both.
+      expect(reportOf(findingsFor(rule, fixFindings))).toBe('');
+    },
+  );
 });
 
 describe('a concise and a block arrow body must be seen alike', () => {

@@ -6,7 +6,7 @@ import {
   harvestFixtureCorpus,
   parserOptionsFor,
   severityWithOptions,
-  typeAwareRuleNames,
+  silentWithoutProgramRuleNames,
 } from '../utils/fixtureCorpus';
 
 // Using require to avoid test build-time ESM interop issues; the test runner
@@ -339,8 +339,12 @@ const rulesChecked = [...results.values()].filter((r) => r.checked > 0).length;
  */
 const REASONS = {
   noFixtures: 'declares no fixture this TypeScript harness can lint',
-  typeAware:
-    'is type-aware, and a bare Linter has no program, so its fixer is unreachable here',
+  // Held for a rule that measurably produces nothing here. The old wording
+  // ("is type-aware, and a bare Linter has no program") was a premise, not a
+  // measurement, and a false one: the parser builds an isolated program and all
+  // 16 checker-touching rules report over their own fixtures (#1859).
+  undrivable:
+    'is measurably silent under this harness, so its fixer is unreachable here',
   neverReports: 'never reports on any of its own fixtures',
   reportsWithoutFix: 'reports on its own fixtures but never offers a fix',
 } as const;
@@ -350,7 +354,7 @@ type Reason = typeof REASONS[keyof typeof REASONS];
 const reasonFor = (rule: string): Reason => {
   const result = results.get(rule)!;
   if (result.cases === 0) return REASONS.noFixtures;
-  if (typeAwareRuleNames.has(rule)) return REASONS.typeAware;
+  if (silentWithoutProgramRuleNames.has(rule)) return REASONS.undrivable;
   if (result.reported === 0) return REASONS.neverReports;
   return REASONS.reportsWithoutFix;
 };
@@ -372,9 +376,12 @@ const UNREACHED_FIXERS: Record<string, Reason> = {
   'enforce-typescript-markdown-code-blocks': REASONS.noFixtures,
   // Its fixtures are `package.json` bodies, declared under `ruleTesterJson`.
   'no-unpinned-dependencies': REASONS.noFixtures,
-  // Reports 4 times without a checker and offers no fix; its fixtures declare
-  // `parserOptions.project`, which a bare Linter cannot honour.
-  'no-usememo-for-pass-by-value': REASONS.typeAware,
+  // Reports 4 times here and offers no fix. Its 105 fixtures declare
+  // `parserOptions.project` against the repo tsconfig, which the corpus strips;
+  // the isolated program that remains resolves the returned expression to `any`,
+  // so `classifyUseMemoReturnType` is indeterminate and the fixer never runs
+  // (#1859). The report count is real, the fix silence is the harness.
+  'no-usememo-for-pass-by-value': REASONS.reportsWithoutFix,
 };
 
 const observedUnreached = Object.fromEntries(

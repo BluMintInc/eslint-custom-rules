@@ -8,7 +8,7 @@ import {
   harvestFixtureCorpus,
   parserOptionsFor,
   severityWithOptions,
-  typeAwareRuleNames,
+  silentWithoutProgramRuleNames,
 } from '../utils/fixtureCorpus';
 
 // Using require to avoid test build-time ESM interop issues; the test runner
@@ -965,8 +965,12 @@ const casesFor = (rule: string) => {
 const REASONS = {
   noFixtures: 'declares no fixture this TypeScript harness can lint',
   sharedScope: 'every one of its fixtures declares into the shared scope',
-  typeAware:
-    'is type-aware, and a bare Linter has no program, so its fixer is unreachable here',
+  // Held for a rule that measurably produces nothing here. The old wording
+  // ("is type-aware, and a bare Linter has no program") was a premise, not a
+  // measurement, and a false one: the parser builds an isolated program and all
+  // 16 checker-touching rules report over their own fixtures (#1859).
+  undrivable:
+    'is measurably silent under this harness, so its fixer is unreachable here',
   neverReports: 'never reports on any of its own fixtures',
   reportsWithoutFix: 'reports on its own fixtures but never offers a fix',
   fixDiscarded: 'offers a fix that the fix loop then discards',
@@ -1011,7 +1015,7 @@ const noFixReasonFor = (rule: string, cases: FixtureCase[]): Reason => {
     }
   }
   if (offeredFix) return REASONS.fixDiscarded;
-  if (typeAwareRuleNames.has(rule)) return REASONS.typeAware;
+  if (silentWithoutProgramRuleNames.has(rule)) return REASONS.undrivable;
   if (reported) return REASONS.reportsWithoutFix;
   return REASONS.neverReports;
 };
@@ -1133,7 +1137,9 @@ for (const rule of suggestionRules) {
   if (!emitted) {
     suggestionExplanation.set(
       rule,
-      typeAwareRuleNames.has(rule) ? REASONS.typeAware : REASONS.neverReports,
+      silentWithoutProgramRuleNames.has(rule)
+        ? REASONS.undrivable
+        : REASONS.neverReports,
     );
   }
 }

@@ -3,7 +3,7 @@ import {
   harvestFixtureCorpus,
   defaultFilenameFor,
   parserOptionsFor,
-  typeAwareRuleNames,
+  silentWithoutProgramRuleNames,
   FixtureCase,
 } from '../utils/fixtureCorpus';
 
@@ -86,6 +86,39 @@ const BASELINE: Record<string, readonly string[]> = {
     'allowComplexBodies',
     'allowFunctionFactories',
   ],
+};
+
+/**
+ * Options that are live in production and undrivable HERE, per (rule, option).
+ *
+ * Categorically different from `BASELINE`, which records options that do
+ * nothing for anyone; these do something, and this harness is what cannot see
+ * it. Folding them together would let a genuinely dead option retire under an
+ * "artifact" label. Kept per option rather than per rule, so a rule's other
+ * options stay gated (#1839).
+ *
+ * `harvestFixtureCorpus` strips `parserOptions.project`, leaving the isolated
+ * single-file program the parser builds. That program has no lib types, so a
+ * branch reached only through a resolved lib type is unreachable — which is a
+ * fact about the probe, not about the option. Each entry must name the fixture
+ * that proves liveness under the suite's own configuration.
+ *
+ * Asserted both ways below: an entry that becomes live here, or whose option
+ * stops existing, must be deleted.
+ */
+const PROGRAM_ONLY_OPTIONS: Record<string, readonly string[]> = {
+  // `ignoreCallExpressions` gates an early return on a syntactic
+  // `containsCallExpression`, but flipping it only changes the verdict once the
+  // classifier can type the call's result. Without lib types every call
+  // classifies as non-primitive anyway, so both values are silent.
+  // `ignoreSymbol` is consulted only under `TypeFlags.ESSymbol`
+  // (`src/utils/tsTypeClassifier.ts`), which no untyped expression carries.
+  // Both are live under `typedParserOptions`:
+  // `no-useless-usememo-primitives.test.ts` asserts `uselessUseMemoPrimitive`
+  // for `useMemo(() => computeLabel(status), [status])` with
+  // `ignoreCallExpressions: false`, and for
+  // `useMemo((): symbol => Symbol('tracked'), [])` with `ignoreSymbol: false`.
+  'no-useless-usememo-primitives': ['ignoreCallExpressions', 'ignoreSymbol'],
 };
 
 type Probe = {
@@ -405,7 +438,7 @@ const corpus = harvestFixtureCorpus();
 const inert: string[] = [];
 const live: string[] = [];
 const liveViaFixOnly: string[] = [];
-const typeAwareSkipped: string[] = [];
+const undrivableSkipped: string[] = [];
 const noCorpus: string[] = [];
 let fixturesConsidered = 0;
 
@@ -413,13 +446,15 @@ for (const [name, rule] of Object.entries(plugin.rules)) {
   const probes = probesOf(rule);
   if (!probes.length) continue;
   /**
-   * A type-aware rule has no program under a bare `Linter`, so it reports
-   * nothing and every one of its options would read as inert — a manufactured
-   * finding rather than a missing one. Counted out loud so the exclusion cannot
-   * quietly grow to swallow the corpus.
+   * A rule that reports nothing at all here would read every one of its options
+   * as inert — a manufactured finding rather than a missing one. That set is
+   * measured and currently empty; it used to be "every rule whose source
+   * mentions the checker", which withheld 16 rules on a premise that holds for
+   * none of them (#1859). Counted out loud so the exclusion cannot quietly grow
+   * to swallow the corpus.
    */
-  if (typeAwareRuleNames.has(name)) {
-    typeAwareSkipped.push(name);
+  if (silentWithoutProgramRuleNames.has(name)) {
+    undrivableSkipped.push(name);
     continue;
   }
   const cases = corpus.byRule.get(name) || [];
@@ -446,6 +481,12 @@ const baselined = new Set(
   ),
 );
 
+const programOnly = new Set(
+  Object.entries(PROGRAM_ONLY_OPTIONS).flatMap(([rule, options]) =>
+    options.map((option) => `${rule}:${option}`),
+  ),
+);
+
 const CONTROL_CASE: FixtureCase = {
   code: 'const alpha = 1;\nconst beta = alpha + 1;\n',
   tester: 'ruleTesterTs',
@@ -463,7 +504,9 @@ const controlProbe = (key: string): Probe => ({
 
 describe('option liveness', () => {
   it('every declared option can change an outcome on its own corpus', () => {
-    expect(inert.filter((entry) => !baselined.has(entry))).toEqual([]);
+    expect(
+      inert.filter((entry) => !baselined.has(entry) && !programOnly.has(entry)),
+    ).toEqual([]);
   });
 
   it('no baselined option has become live (shrink the baseline)', () => {
@@ -477,6 +520,18 @@ describe('option liveness', () => {
   });
 
   /**
+   * Same contract on the program-only list. An entry that becomes drivable here
+   * has had its reason retired and must be deleted, or it would absorb the next
+   * genuinely dead option on the same rule.
+   */
+  it('no program-only option has become drivable or vanished', () => {
+    const liveSet = new Set(live);
+    const known = new Set([...inert, ...live]);
+    expect([...programOnly].filter((entry) => liveSet.has(entry))).toEqual([]);
+    expect([...programOnly].filter((entry) => !known.has(entry))).toEqual([]);
+  });
+
+  /**
    * Anti-vacuity. Each floor is one the guard would fall straight through if the
    * corpus stopped arriving: a harvest that silently returns nothing lints zero
    * fixtures, finds zero inert options, and passes every assertion above.
@@ -484,7 +539,7 @@ describe('option liveness', () => {
   it('probed a real corpus', () => {
     expect(live.length).toBeGreaterThanOrEqual(135);
     expect(fixturesConsidered).toBeGreaterThanOrEqual(5000);
-    expect(typeAwareSkipped.length).toBeLessThanOrEqual(8);
+    expect(undrivableSkipped.length).toBeLessThanOrEqual(8);
     expect(noCorpus).toEqual([]);
   });
 

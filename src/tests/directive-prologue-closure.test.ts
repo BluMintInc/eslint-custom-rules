@@ -42,12 +42,15 @@ import {
   defaultFilenameFor,
   severityWithOptions,
   suggestionEditsOf,
-  typeAwareRuleNames,
+  silentWithoutProgramRuleNames,
 } from '../utils/fixtureCorpus';
 
 /* eslint-disable @typescript-eslint/no-var-requires */
 const plugin = require('../index') as {
-  rules: Record<string, { meta?: { fixable?: string; hasSuggestions?: boolean } }>;
+  rules: Record<
+    string,
+    { meta?: { fixable?: string; hasSuggestions?: boolean } }
+  >;
 };
 /* eslint-enable @typescript-eslint/no-var-requires */
 
@@ -75,16 +78,20 @@ for (const [name, rule] of Object.entries(plugin.rules)) {
  * edit this guard exists to police. `--fix` never applies a suggestion, so the
  * fix channel cannot reach them.
  *
- * A type-aware rule is excluded for the opposite reason: a bare `Linter` has no
- * program, so it reports nothing and would manufacture a false clean. Both
- * skipped populations are counted and printed rather than dropped.
+ * A rule that measurably reports NOTHING here is excluded for the opposite
+ * reason: it would manufacture a false clean. That set is currently empty. The
+ * wider "mentions the type checker" set was excluded before, on the theory that
+ * a bare `Linter` has no program; it has one (isolated, single-file), and 11 of
+ * the 12 rewriting rules among those 16 measurably rewrite under this very
+ * harness, so the exclusion withheld live coverage (#1859). Both skipped
+ * populations are counted and printed rather than dropped.
  */
 const REWRITING_RULES = new Set(
   Object.entries(plugin.rules)
     .filter(
       ([name, rule]) =>
         (rule.meta?.fixable || rule.meta?.hasSuggestions) &&
-        !typeAwareRuleNames.has(name),
+        !silentWithoutProgramRuleNames.has(name),
     )
     .map(([name]) => name),
 );
@@ -125,7 +132,11 @@ const configFor = (rules: Record<string, unknown>, tc: FixtureCase) =>
     rules,
   } as never);
 
-const fixOf = (code: string, rules: Record<string, unknown>, tc: FixtureCase) => {
+const fixOf = (
+  code: string,
+  rules: Record<string, unknown>,
+  tc: FixtureCase,
+) => {
   try {
     return linter.verifyAndFix(code, configFor(rules, tc), {
       filename: defaultFilenameFor(tc),
@@ -197,13 +208,17 @@ const stats = {
   rulesProbed: new Set<string>(),
   rulesFixing: new Set<string>(),
   rulesSuggesting: new Set<string>(),
-  skippedTypeAware: 0,
+  skippedUndrivable: 0,
   skippedInert: 0,
 };
 
 const findings: Finding[] = [];
 
-const verify = (code: string, rules: Record<string, unknown>, tc: FixtureCase) => {
+const verify = (
+  code: string,
+  rules: Record<string, unknown>,
+  tc: FixtureCase,
+) => {
   try {
     return linter.verify(code, configFor(rules, tc), {
       filename: defaultFilenameFor(tc),
@@ -283,8 +298,8 @@ const probeCase = (name: string, tc: FixtureCase, collect: Finding[]) => {
 };
 
 for (const [name, cases] of corpus.byRule) {
-  if (typeAwareRuleNames.has(name)) {
-    stats.skippedTypeAware++;
+  if (silentWithoutProgramRuleNames.has(name)) {
+    stats.skippedUndrivable++;
     continue;
   }
   if (!REWRITING_RULES.has(name)) {
@@ -330,7 +345,12 @@ describe('directive prologue and shebang survive every fixer', () => {
 
   it('flags a fixer that inserts above the prologue (positive control)', () => {
     const rogue = {
-      meta: { type: 'problem', fixable: 'code', schema: [], messages: { x: 'x' } },
+      meta: {
+        type: 'problem',
+        fixable: 'code',
+        schema: [],
+        messages: { x: 'x' },
+      },
       create(context: never) {
         const ctx = context as unknown as {
           report: (d: unknown) => void;
@@ -342,8 +362,9 @@ describe('directive prologue and shebang survive every fixer', () => {
             ctx.report({
               node,
               messageId: 'x',
-              fix: (fixer: { insertTextAfterRange: (r: number[], t: string) => unknown }) =>
-                fixer.insertTextAfterRange([0, 0], "import x from 'y';\n"),
+              fix: (fixer: {
+                insertTextAfterRange: (r: number[], t: string) => unknown;
+              }) => fixer.insertTextAfterRange([0, 0], "import x from 'y';\n"),
             });
           },
         };
@@ -396,7 +417,8 @@ describe('directive prologue and shebang survive every fixer', () => {
                   messageId: 's',
                   fix: (fixer: {
                     insertTextAfterRange: (r: number[], t: string) => unknown;
-                  }) => fixer.insertTextAfterRange([0, 0], "import x from 'y';\n"),
+                  }) =>
+                    fixer.insertTextAfterRange([0, 0], "import x from 'y';\n"),
                 },
               ],
             });
@@ -429,17 +451,25 @@ describe('directive prologue and shebang survive every fixer', () => {
 
   it('clears a fixer that edits below the prologue (negative control)', () => {
     const polite = {
-      meta: { type: 'problem', fixable: 'code', schema: [], messages: { x: 'x' } },
+      meta: {
+        type: 'problem',
+        fixable: 'code',
+        schema: [],
+        messages: { x: 'x' },
+      },
       create(context: never) {
         const ctx = context as unknown as { report: (d: unknown) => void };
         return {
-          VariableDeclarator(node: { init?: { type: string; range: number[] } }) {
+          VariableDeclarator(node: {
+            init?: { type: string; range: number[] };
+          }) {
             if (node.init?.type !== 'Literal') return;
             ctx.report({
               node,
               messageId: 'x',
-              fix: (fixer: { replaceTextRange: (r: number[], t: string) => unknown }) =>
-                fixer.replaceTextRange(node.init!.range, '2'),
+              fix: (fixer: {
+                replaceTextRange: (r: number[], t: string) => unknown;
+              }) => fixer.replaceTextRange(node.init!.range, '2'),
             });
           },
         };
@@ -503,7 +533,7 @@ afterAll(() => {
     `\n[directive-prologue] rules=${stats.rulesProbed.size} ` +
       `considered=${stats.considered} baseFixed=${stats.baseFixed} ` +
       `variantFixed=${stats.variantFixed} suggested=${stats.variantSuggested} findings=${findings.length} ` +
-      `skipped(typeAware)=${stats.skippedTypeAware} ` +
+      `skipped(undrivable)=${stats.skippedUndrivable} ` +
       `skipped(inert)=${stats.skippedInert}\n`,
   );
 });

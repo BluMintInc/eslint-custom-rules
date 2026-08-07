@@ -58,7 +58,7 @@ import {
   harvestFixtureCorpus,
   defaultFilenameFor,
   parserOptionsFor,
-  typeAwareRuleNames,
+  silentWithoutProgramRuleNames,
   ruleNameByIdentity,
   severityWithOptions,
   FixtureCase,
@@ -76,6 +76,12 @@ import {
  *     one nobody writes (`useState?.()`, `this?.value`, `Object?.keys(x)`, an
  *     optional link on an array literal). Filing these would add code for
  *     inputs that do not occur.
+ *   - DEFECT: a spelling a developer WOULD write reaches it, so the entry is a
+ *     placeholder holding the suite actionable until the filed issue is fixed —
+ *     never a decision. Each carries the writable spelling that reproduces it,
+ *     because "only reachable via `?.`" is the claim an ARTIFACT makes and a
+ *     DEFECT refutes; the difference was established by probing the realistic
+ *     sub-spelling, not by reading the perturbed fixture.
  *
  * Keyed `rule::arm`, never on the rule alone. Three entries here are the
  * `call`-arm residue of a `member`-arm fix (#1824, #1825, #1826); a rule-keyed
@@ -127,6 +133,10 @@ const KNOWN_DIVERGENT: Record<string, string> = {
     'ARTIFACT: only reached via `createElement?.()`',
   'enforce-verb-noun-naming::member':
     'ARTIFACT: only reached via `React?.createElement`',
+  'enforce-empty-object-check::call':
+    'ARTIFACT: only reached via `Object.keys?.(x)`; the writable `Object.keys(x)?.length === 0` stays silent (measured)',
+  'enforce-empty-object-check::member':
+    'ARTIFACT: only reached via `Object?.keys`; the writable `u?.name` in the same fixture stays silent (measured)',
   'fast-deep-equal-over-microdiff::call':
     'ARTIFACT: residue of #1825 — the binary arm is fixed; only `diff?.(a, b)`, an optional call on a static import binding, remains',
   'firestore-transaction-reads-before-writes::call':
@@ -138,6 +148,10 @@ const KNOWN_DIVERGENT: Record<string, string> = {
   'global-const-style::call':
     'ARTIFACT: only reached via `memo?.()` / `forwardRef?.()`',
   'global-const-style::member': 'ARTIFACT: only reached via `React?.memo`',
+  'memo-compare-deeply-complex-props::call':
+    'ARTIFACT: only reached via `memo<any, Props>?.(Comp)`, an optional call on the React memo binding',
+  'memo-compare-deeply-complex-props::member':
+    'ARTIFACT: only reached via `React?.forwardRef`, an optional link on the namespace import',
   'memo-nested-react-components::call':
     'ARTIFACT: only reached via `describe?.()` / `it?.()`',
   'memo-nested-react-components::member':
@@ -166,10 +180,18 @@ const KNOWN_DIVERGENT: Record<string, string> = {
     'ARTIFACT: only reached via `External?.Handler` in a type-ish position',
   'no-hungarian::call':
     'ARTIFACT: only reached via `Symbol?.(...)`, an optional call on the global',
+  'no-inline-component-prop::call':
+    'ARTIFACT: only reached via `React.forwardRef<T, P>?.(render)`, an optional call on forwardRef',
   'no-jsx-in-hooks::call': 'ARTIFACT: only reached via a hook callee',
   'no-margin-properties::call':
     'ARTIFACT: only reached via `Object.assign?.()`',
   'no-margin-properties::member': 'ARTIFACT: only reached via `Object?.assign`',
+  'no-object-values-on-strings::call':
+    'DEFECT TODO(#NNNN — filed from the #1859 widening): the blindness is on the ARGUMENT, not the callee. `Object.values("x".toUpperCase?.())` and the writable `Object.values(s?.toUpperCase())` both go silent, while `Object.values?.(...)` and `Object?.values(...)` still report — so the argument reader misses a ChainExpression',
+  'no-object-values-on-strings::member':
+    'DEFECT TODO(#NNNN — filed from the #1859 widening): same argument reader as the call arm; `Object.values("x"?.toUpperCase())` goes silent',
+  'no-passthrough-getters::member':
+    'DEFECT TODO(#NNNN — filed from the #1859 widening): `private get x() { return this.settings?.x; }` — the idiomatic spelling for an optional field — is not seen as a passthrough, while `this.settings.x` is',
   'no-redundant-this-params::member':
     'ARTIFACT: only reached via `this?.value` / `this?.method`',
   'no-redundant-usecallback-wrapper::call':
@@ -195,8 +217,14 @@ const KNOWN_DIVERGENT: Record<string, string> = {
     'ARTIFACT: only reached via `React?.useState`',
   'prefer-destructuring-no-class::member':
     'CORRECT: `const { name } = user` throws when `user` is nullish, so the remedy is not equivalent to `user?.name`',
+  'prefer-map-over-conditional-dispatch::member':
+    'DEFECT TODO(#NNNN — filed from the #1859 widening): a switch that NARROWS its union is correctly silent on `switch (result.kind)` and reports `preferMapManual` ("a collision-free lookup name could not be derived") on `switch (result?.kind)`. The remedy it then urges breaks the narrowing that `result.data` depends on, and the nullable discriminant is the case where `?.` is written',
   'prefer-next-dynamic::call': 'ARTIFACT: only reached via `useDynamic?.()`',
+  'prefer-nullish-coalescing-boolean-props::call':
+    'ARTIFACT: only reached via `useState?.(a || b)`, an optional call on the hook that carries the exemption',
   'prefer-use-base62-id::call': 'ARTIFACT: only reached via `uuidv4Base62?.()`',
+  'prefer-use-deep-compare-memo::call':
+    'ARTIFACT: only reached via `useMemo?.(factory, deps)`, an optional call on the hook',
   'prefer-usecallback-over-usememo-for-functions::call':
     'ARTIFACT: only reached via `useMemo?.()`',
   'prefer-usememo-over-useeffect-usestate::call':
@@ -466,8 +494,15 @@ type Divergence = {
   output: string;
 };
 
+/**
+ * Only rules that measurably report NOTHING under this harness are excluded —
+ * currently none. The wider "mentions the type checker" set was excluded before
+ * on the theory that a bare `Linter` builds no program; it builds an isolated
+ * single-file one, and all 16 of those rules report over their own fixtures, so
+ * the exclusion suppressed live coverage rather than a false clean (#1859).
+ */
 const guardedRuleNames = [...ruleByName.keys()]
-  .filter((name) => !typeAwareRuleNames.has(name))
+  .filter((name) => !silentWithoutProgramRuleNames.has(name))
   .sort();
 
 describe('optional-chaining closure', () => {

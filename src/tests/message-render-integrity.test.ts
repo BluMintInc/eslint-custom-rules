@@ -28,7 +28,7 @@ import { Linter } from 'eslint';
 import * as tsParser from '@typescript-eslint/parser';
 import {
   harvestFixtureCorpus,
-  typeAwareRuleNames,
+  silentWithoutProgramRuleNames,
   defaultFilenameFor,
   parserOptionsFor,
   severityWithOptions,
@@ -105,10 +105,14 @@ const corpus = harvestFixtureCorpus();
 
 for (const [ruleName, cases] of corpus.byRule) {
   /**
-   * Type-aware rules have no program under a bare `Linter`, so they report
-   * nothing and would contribute a false clean rather than a finding.
+   * Only rules that measurably report NOTHING under this harness are skipped —
+   * currently none. The wider "mentions the type checker" set was skipped
+   * before, on the theory that a bare `Linter` has no program; it has one (an
+   * isolated single-file program), and all 16 of those rules render messages
+   * over their own fixtures, so the skip withheld 22 declared messageIds — 21
+   * of them placeholder-bearing — from both arms below (#1859).
    */
-  if (typeAwareRuleNames.has(ruleName)) continue;
+  if (silentWithoutProgramRuleNames.has(ruleName)) continue;
   stats.rulesProbed++;
   const ruleId = PREFIX + ruleName;
   let reportsForRule = 0;
@@ -154,20 +158,51 @@ for (const [ruleName, cases] of corpus.byRule) {
   if (!reportsForRule) stats.rulesSilent.push(ruleName);
 }
 
+/**
+ * Messages whose branch this harness genuinely cannot reach, keyed
+ * `rule::messageId` rather than by rule — a rule-keyed entry would un-gate the
+ * rule's OTHER messages, which is the #1839 mistake.
+ *
+ * Not a decision and not a defect: an ARTIFACT of the harness. Both the reason
+ * and the evidence must be recorded, so an entry can be retired the moment its
+ * premise stops holding.
+ */
+const PROGRAM_ONLY_MESSAGE_IDS: Record<string, string> = {
+  /**
+   * Emitted only when `classifyUseMemoReturnType` gets a DETERMINATE type for
+   * the `useMemo(...)` call, via `checker.getTypeAtLocation`. Its 40-odd
+   * fixtures declare `parserOptions.project` against the repo tsconfig, which
+   * `harvestFixtureCorpus` strips; the isolated single-file program that
+   * remains resolves `slug.toUpperCase()` and the ambient `react` shim to
+   * `any`, so every case classifies as indeterminate and returns before the
+   * report. The message is live under the configuration its suite declares —
+   * `no-usememo-for-pass-by-value.test.ts` asserts it 40 times — so a dead-code
+   * finding here would be about the probe, not the rule.
+   */
+  'no-usememo-for-pass-by-value::primitiveMemo':
+    'needs a real program to classify the return type',
+};
+
 const declaredIds: string[] = [];
 const deadIds: string[] = [];
+/** Asserted below, so a stale artifact entry fails instead of holding open. */
+const unusedProgramOnly: string[] = [];
 for (const [ruleName, rule] of Object.entries(plugin.rules)) {
-  if (typeAwareRuleNames.has(ruleName)) continue;
+  if (silentWithoutProgramRuleNames.has(ruleName)) continue;
   /**
    * A rule whose suite declares under `ruleTesterJson`/`Markdown` never reaches
    * `byRule`, so it has no corpus here and cannot be judged on one.
    */
   if (!corpus.byRule.has(ruleName)) continue;
   for (const messageId of Object.keys(rule.meta?.messages ?? {})) {
-    declaredIds.push(`${ruleName}::${messageId}`);
-    if (!renderedIds.has(`${ruleName}::${messageId}`)) {
-      deadIds.push(`${ruleName}::${messageId}`);
+    const key = `${ruleName}::${messageId}`;
+    declaredIds.push(key);
+    if (renderedIds.has(key)) {
+      if (key in PROGRAM_ONLY_MESSAGE_IDS) unusedProgramOnly.push(key);
+      continue;
     }
+    if (key in PROGRAM_ONLY_MESSAGE_IDS) continue;
+    deadIds.push(key);
   }
 }
 
@@ -322,5 +357,19 @@ describe('message render integrity', () => {
   it('emits every message it declares', () => {
     expect(declaredIds.length).toBeGreaterThanOrEqual(200);
     expect(deadIds).toEqual([]);
+  });
+
+  /**
+   * The artifact list, asserted in the other direction: a message that starts
+   * rendering here must lose its entry, or the exemption outlives its reason.
+   */
+  it('holds no stale program-only exemption', () => {
+    expect(unusedProgramOnly).toEqual([]);
+    // Each entry must still name a declared message, or it exempts nothing.
+    expect(
+      Object.keys(PROGRAM_ONLY_MESSAGE_IDS).filter(
+        (key) => !declaredIds.includes(key),
+      ),
+    ).toEqual([]);
   });
 });
