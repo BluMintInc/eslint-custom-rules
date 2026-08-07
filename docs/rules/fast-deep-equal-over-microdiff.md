@@ -23,6 +23,7 @@ This rule enforces that boolean equality checks use `fast-deep-equal` instead of
 - Comparisons such as `microdiff(a, b).length === 0`, `0 === diff(a, b).length`, or `!diff(a, b).length`.
 - Comparisons that use a variable assigned to `diff(...)` when that variable is only used for `.length` checks.
 - Aliased imports of both microdiff and the deep-equality function.
+- The same comparisons written with an optional chain — `changes?.length === 0`, `diff(a, b)?.length === 0`, `!changes?.length`. The rule reports only after establishing that the receiver is a `diff(...)` result, and `diff()` returns an array, so the `?.` branch never runs and the check means exactly what its unchained spelling means. Enforcing on one spelling and not the other would leave a whole idiom unenforced.
 
 ### Which imports count as microdiff
 
@@ -132,6 +133,21 @@ import diff, { Difference } from '@blumintinc/microdiff';
 export function isSame(a: object, b: object) {
   const changes: Difference[] = diff(a, b);
   return changes.length === 0;
+}
+```
+
+An optional chain on the length access does not change the check:
+
+```ts
+import diff from '@blumintinc/microdiff';
+
+export function isSame(a: object, b: object) {
+  const changes = diff(a, b);
+  return changes?.length === 0;
+}
+
+export function isSameDirect(a: object, b: object) {
+  return diff(a, b)?.length === 0;
 }
 ```
 

@@ -271,6 +271,69 @@ function isSame(a, b) {
   return microdiff.default(a, b).length === 0;
 }`,
     },
+    // Issue #1825: unwrapping the ChainExpression must not widen the arms past
+    // the carve-outs the unchained spelling already respects.
+    {
+      name: 'an optional-chained length compared to a non-zero literal is not flagged',
+      code: `import diff from 'microdiff';
+
+function hasOneChange(a, b) {
+  const changes = diff(a, b);
+  return changes?.length === 1;
+}`,
+    },
+    {
+      name: 'an optional-chained length check is not flagged when the diff itself is read',
+      code: `import diff from 'microdiff';
+
+function summarize(a, b) {
+  const changes = diff(a, b);
+  if (changes?.length === 0) {
+    return [];
+  }
+  return changes;
+}`,
+    },
+    {
+      name: 'an optional-chained length ordering comparison is not flagged',
+      code: `import diff from 'microdiff';
+
+function hasChanged(a, b) {
+  return diff(a, b)?.length > 0;
+}`,
+    },
+    {
+      name: 'an optional-chained computed length access is not flagged',
+      code: `import diff from 'microdiff';
+
+function areSame(a, b) {
+  const changes = diff(a, b);
+  return changes?.['length'] === 0;
+}`,
+    },
+    {
+      name: 'an optional-chained length check on a reassigned variable is not flagged',
+      code: `import diff from 'microdiff';
+
+function maybeEqual(a, b) {
+  let changes = diff(a, b);
+  changes = [];
+  return changes?.length === 0;
+}`,
+    },
+    {
+      name: 'an optional-chained length check on a local diff is not flagged',
+      code: `
+function diff(a, b) {
+  return [{ a, b }];
+}
+
+function isSame(a, b) {
+  const changes = diff(a, b);
+  return changes?.length === 0;
+}
+`,
+    },
   ],
   invalid: [
     // Using microdiff for equality check with .length === 0
@@ -1865,6 +1928,134 @@ import * as fastDeepEqual from '@blumintinc/fast-deep-equal';
 
 function areSame(a, b) {
   return fastDeepEqual && isEqual(a, b);
+}`,
+    },
+    // Issue #1825: `?.` interposes a ChainExpression between the operand and
+    // the comparison, which the BinaryExpression arm did not unwrap — so every
+    // comparison spelling below reported nothing at all, while the unary arm
+    // (which already unwrapped) kept firing. `diff()` returns an array, so the
+    // optional branch is dead and the remedy is the same call it is without the
+    // `?.`.
+    {
+      name: 'an optional-chained length on a diff variable is flagged (issue #1825)',
+      code: `import diff from 'microdiff';
+
+function areObjectsEqual(a, b) {
+  const changes = diff(a, b);
+  return changes?.length === 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+import isEqual from '@blumintinc/fast-deep-equal';
+
+function areObjectsEqual(a, b) {
+  return isEqual(a, b);
+}`,
+    },
+    {
+      name: 'an optional-chained length on the diff call itself is flagged (issue #1825)',
+      code: `import diff from 'microdiff';
+
+function areObjectsEqual(a, b) {
+  return diff(a, b)?.length === 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+import isEqual from '@blumintinc/fast-deep-equal';
+
+function areObjectsEqual(a, b) {
+  return isEqual(a, b);
+}`,
+    },
+    {
+      name: 'an optional-chained length inequality is flagged (issue #1825)',
+      code: `import diff from 'microdiff';
+
+function objectsAreDifferent(a, b) {
+  const changes = diff(a, b);
+  return changes?.length !== 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+import isEqual from '@blumintinc/fast-deep-equal';
+
+function objectsAreDifferent(a, b) {
+  return !isEqual(a, b);
+}`,
+    },
+    {
+      name: 'an optional-chained length with the literal on the left is flagged (issue #1825)',
+      code: `import diff from 'microdiff';
+
+function eq(a, b) {
+  const changes = diff(a, b);
+  return 0 === changes?.length;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+import isEqual from '@blumintinc/fast-deep-equal';
+
+function eq(a, b) {
+  return isEqual(a, b);
+}`,
+    },
+    {
+      name: 'an optional-chained length in an if test is flagged (issue #1825)',
+      code: `import diff from 'microdiff';
+
+function doSomething(before, after) {
+  const changes = diff(before, after);
+  if (changes?.length === 0) {
+    return;
+  }
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+import isEqual from '@blumintinc/fast-deep-equal';
+
+function doSomething(before, after) {
+  if (isEqual(before, after)) {
+    return;
+  }
+}`,
+    },
+    // The unary arm already reported on this shape, but `getLengthIdentifierFromNode`
+    // read `node.argument` unwrapped, so `findRedundantDeclaration` never
+    // matched and the fix left a dead `const changes = diff(a, b);` behind.
+    {
+      name: 'an optional-chained unary length check also drops the redundant declaration (issue #1825)',
+      code: `import diff from 'microdiff';
+
+function areSame(x, y) {
+  const changes = diff(x, y);
+  return !changes?.length;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+import isEqual from '@blumintinc/fast-deep-equal';
+
+function areSame(x, y) {
+  return isEqual(x, y);
+}`,
+    },
+    // The optional-call arm. Nobody writes `diff?.(a, b)` against a static
+    // import, but the same unwrap reaches it, and the fixer rewrites only the
+    // callee token — so the `?.` survives into the output. That is correct
+    // (`isEqual` is an import binding, never nullish) and pinned here so the
+    // shape is asserted rather than incidental.
+    {
+      name: 'an optional call to diff is flagged and keeps its optional call (issue #1825)',
+      code: `import diff from 'microdiff';
+
+function areObjectsEqual(a, b) {
+  return diff?.(a, b).length === 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+import isEqual from '@blumintinc/fast-deep-equal';
+
+function areObjectsEqual(a, b) {
+  return isEqual?.(a, b);
 }`,
     },
   ],
