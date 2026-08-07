@@ -173,6 +173,91 @@ function Component({ config }) {
 }
 `;
 
+/**
+ * Every notation a key can be written in at the call site: bare, then each way
+ * of asserting a type onto it. A type is erased before anything runs, so one
+ * verdict is owed across the whole list — and generating the bare spelling
+ * from that list too is what makes the agreement structural. A base key whose
+ * asserted spellings answered differently from its plain one cannot be
+ * recorded below; it can only fail (#1842).
+ *
+ * The angle-bracket entry parses only where JSX is off, so it carries the case
+ * fields that switch JSX off with it. Every body generated from these is
+ * JSX-free, which is what lets the same text be a case either way.
+ */
+type SpellingOverrides = {
+  filename?: string;
+  parserOptions?: { ecmaFeatures: { jsx: boolean } };
+};
+
+const INLINE_KEY_SPELLINGS: {
+  spell: (expression: string) => string;
+  overrides: SpellingOverrides;
+}[] = [
+  { spell: (expression: string) => expression, overrides: {} },
+  ...ASSERTION_SPELLINGS.map((assert) => ({ spell: assert, overrides: {} })),
+  {
+    spell: (expression: string) => `<string>${expression}`,
+    overrides: {
+      filename: 'Component.ts',
+      parserOptions: { ecmaFeatures: { jsx: false } },
+    },
+  },
+];
+
+/**
+ * One call site whose only variable part is the text spelling the key. The
+ * queryKeys import is present from the start so that the fix these cases
+ * assert is the rewrite of the key alone — where the import lands is a
+ * separate question with its own cases.
+ */
+const inlineKeyCode = (spelling: string) => `
+import { QUERY_KEY_USER_PROFILE } from 'src/util/routing/queryKeys';
+import { SOMETHING } from './other';
+
+function Component({ config, id, keyParam }) {
+  const [value] = useRouterState({ key: ${spelling} });
+  return value;
+}
+`;
+
+/**
+ * The single fixed state every fixable spelling of the same key must reach.
+ * Pointing all of them at ONE constant states the fixer's contract: the
+ * constant is written over the whole key expression, assertion included, so no
+ * spelling can leave a fragment of one behind (#1803, #1842).
+ */
+const INLINE_KEY_FIXED = inlineKeyCode('QUERY_KEY_USER_PROFILE');
+
+/**
+ * Key sources the rule is silent about, and stays silent about under a type:
+ * an approved constant, a call whose value it cannot see, a parameter the
+ * caller chooses, a member of an unapproved object (which no arm reports), and
+ * a template that is approved constants and separators only. Widening the
+ * dispatch to look through assertions is a widening, so what it must not do is
+ * start reporting these.
+ */
+const SILENT_KEY_BASES = [
+  { name: 'an approved constant', expression: 'QUERY_KEY_USER_PROFILE' },
+  { name: 'a call expression', expression: 'buildQueryKey()' },
+  { name: 'a parameter binding', expression: 'keyParam' },
+  { name: 'a member of an unapproved object', expression: 'config.queryKey' },
+  {
+    name: 'a separator-only template of approved constants',
+    expression: '`${QUERY_KEY_USER_PROFILE}-${id}`',
+  },
+];
+
+/**
+ * The two notations for the same static key, both of which the rule reports
+ * and fixes; a fix withheld from either under an assertion is a failure
+ * against `INLINE_KEY_FIXED` rather than a difference.
+ */
+const FIXABLE_KEY_BASES = [
+  { name: 'a quoted string', expression: `'user-profile'` },
+  { name: 'an expression-free template', expression: '`user-profile`' },
+];
+
 ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
   valid: [
     // 1. Basic valid cases - using imported QUERY_KEY constants
@@ -1095,6 +1180,57 @@ function Component() {
   return value;
 }
 `,
+    },
+
+    // ------------------------------------------------------------------
+    // Issue #1842: the report site dispatched on the key node as written, so a
+    // key that carried a type matched neither arm and left the rule entirely.
+    // Looking through the assertion is a WIDENING, and these are what it must
+    // not sweep up: every source the rule is silent about, in every notation.
+    // Each base contributes its bare spelling here beside its asserted ones, so
+    // the pair is one generated set and cannot drift apart.
+    // ------------------------------------------------------------------
+
+    // 76-105. Silent sources under every notation.
+    ...SILENT_KEY_BASES.flatMap((base) =>
+      INLINE_KEY_SPELLINGS.map((spelling) => ({
+        name: `${base.name} spelled \`${spelling.spell(
+          'KEY',
+        )}\` inline is allowed`,
+        code: inlineKeyCode(spelling.spell(base.expression)),
+        ...spelling.overrides,
+      })),
+    ),
+
+    // 106. Assertions compose, so looking through one layer is not enough —
+    // and an approved constant stays approved however many are stacked on it.
+    {
+      name: 'an approved constant under stacked assertions inline is allowed',
+      code: inlineKeyCode('(QUERY_KEY_USER_PROFILE! as string) as const'),
+    },
+
+    // 107. The template feeder judges its expressions one by one, so an
+    // assertion written on an operand rather than on the whole key has to
+    // resolve there too.
+    {
+      name: 'an approved constant asserted inside a separator-only template is allowed',
+      code: inlineKeyCode('`${QUERY_KEY_USER_PROFILE as const}-${id}`'),
+    },
+
+    // 108. The same for a concatenation, whose operands are judged
+    // individually.
+    {
+      name: 'an approved constant asserted inside a concatenation is allowed',
+      code: inlineKeyCode(`(QUERY_KEY_USER_PROFILE as const) + '-' + id`),
+    },
+
+    // 109. Both branches of a ternary are required to be valid, and an
+    // assertion on one of them does not withdraw its validity.
+    {
+      name: 'an asserted approved constant in both ternary branches is allowed',
+      code: inlineKeyCode(
+        'id ? (QUERY_KEY_USER_PROFILE as const) : QUERY_KEY_USER_PROFILE',
+      ),
     },
   ],
 
@@ -2672,6 +2808,177 @@ function Component() {
   const [stream] = useRouterState({ key: QUERY_KEY_STREAM_VIEW });
   return [profile, stream];
 }`,
+    },
+
+    // ------------------------------------------------------------------
+    // Issue #1842: the mirrors of the valid cases 76-109. An invalid key is
+    // invalid under any type written onto it, and both arms of the dispatch
+    // owe the same verdict they give the bare spelling — the literal arm with
+    // its fix, the identifier arm with its name. Writing `as const` on a raw
+    // string key is the idiom for narrowing a literal, so this is the spelling
+    // an author reaches for first, and it drew nothing at all.
+    //
+    // Every fixable case points at one shared `INLINE_KEY_FIXED`, which is what
+    // states the fixer's contract: the constant is written over the whole key
+    // expression, so the assertion is DROPPED rather than kept. Keeping it
+    // would emit `QUERY_KEY_USER_PROFILE as const`, which TypeScript rejects
+    // outright (TS1355: a const assertion cannot be applied to a reference),
+    // and the constant `queryKeys.ts` exports is already the narrowed literal
+    // the assertion was written to obtain.
+    // ------------------------------------------------------------------
+
+    // 98-109. A static key in both notations, under every spelling, reaching
+    // one fixed state.
+    ...FIXABLE_KEY_BASES.flatMap((base) =>
+      INLINE_KEY_SPELLINGS.map((spelling) => ({
+        name: `${base.name} spelled \`${spelling.spell(
+          'KEY',
+        )}\` inline reports and fixes`,
+        code: inlineKeyCode(spelling.spell(base.expression)),
+        errors: [{ messageId: 'enforceQueryKeyImport' as const }],
+        output: INLINE_KEY_FIXED,
+        ...spelling.overrides,
+      })),
+    ),
+
+    // 110-115. An unapproved import under every spelling. The identifier arm
+    // names the variable in its message, so the assertion must be unwrapped
+    // before the name is read or the report would name nothing.
+    ...INLINE_KEY_SPELLINGS.map((spelling) => ({
+      name: `an unapproved import spelled \`${spelling.spell(
+        'KEY',
+      )}\` inline reports`,
+      code: inlineKeyCode(spelling.spell('SOMETHING')),
+      errors: [
+        {
+          messageId: 'enforceQueryKeyConstant' as const,
+          data: { variableName: 'SOMETHING' },
+        },
+      ],
+      output: null,
+      ...spelling.overrides,
+    })),
+
+    // 116. Assertions compose, so unwrapping one layer would leave the next
+    // one hiding the same literal.
+    {
+      name: 'a static key under stacked assertions reports and fixes',
+      code: inlineKeyCode(`('user-profile'! as string) as const`),
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: INLINE_KEY_FIXED,
+    },
+
+    // 117. Mirror of case 107: an assertion on a template operand is looked
+    // through, which means the static content beside it is still weighed.
+    {
+      name: 'static template content around an asserted constant reports inline',
+      code: inlineKeyCode('`user-profile-${QUERY_KEY_USER_PROFILE as const}`'),
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      // A template with expressions holds no single value, so no constant can
+      // be derived and the report stands unfixed.
+      output: null,
+    },
+
+    // 118. Mirror of case 108: a literal operand of a concatenation is a raw
+    // key whether or not a type is written onto it.
+    {
+      name: 'an asserted literal operand of a concatenation reports',
+      code: inlineKeyCode(`('user-profile' as const) + id`),
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: null,
+    },
+
+    // 119. Mirror of case 109, on the branches of a ternary.
+    {
+      name: 'asserted literal ternary branches report',
+      code: inlineKeyCode(`id ? ('a-key' as const) : ('b-key' as const)`),
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: null,
+    },
+
+    // 120. A template WITH expressions holds no single value, so the assertion
+    // changes neither the report nor the absence of a fix behind it.
+    {
+      name: 'an asserted dynamic template reports without a fix',
+      code: inlineKeyCode('`user-profile-${id}` as const'),
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: null,
+    },
+
+    // 121. A key that normalizes to nothing names no constant, and a type
+    // written onto it does not change what it names (#1813).
+    {
+      name: 'an asserted degenerate key reports without a fix',
+      code: inlineKeyCode(`'' as const`),
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: null,
+    },
+
+    // 122. The fix's other half: an asserted key in a file with no queryKeys
+    // import still carries the import that makes its substitution resolve.
+    {
+      name: 'an asserted key with no existing import carries one',
+      code: `function Component() {
+  const [value] = useRouterState({ key: 'playback-id' as const });
+  return value;
+}
+`,
+      filename: '/repo/src/components/Widget.tsx',
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: `import { QUERY_KEY_PLAYBACK_ID } from '../util/routing/queryKeys';
+
+function Component() {
+  const [value] = useRouterState({ key: QUERY_KEY_PLAYBACK_ID });
+  return value;
+}
+`,
+    },
+
+    // 123. Two asserted keys in one file: both are rewritten and one import
+    // collects both constants, so the widening reaches the buffered plan
+    // rather than only the first report.
+    {
+      name: 'two asserted keys share a single injected import',
+      filename: '/repo/src/components/Widget.tsx',
+      code: `function Component() {
+  const [a] = useRouterState({ key: 'playback-id' as const });
+  const [b] = useRouterState({ key: \`stream-view\` satisfies string });
+  return [a, b];
+}
+`,
+      errors: [
+        { messageId: 'enforceQueryKeyImport' },
+        { messageId: 'enforceQueryKeyImport' },
+      ],
+      output: `import { QUERY_KEY_PLAYBACK_ID, QUERY_KEY_STREAM_VIEW } from '../util/routing/queryKeys';
+
+function Component() {
+  const [a] = useRouterState({ key: QUERY_KEY_PLAYBACK_ID });
+  const [b] = useRouterState({ key: QUERY_KEY_STREAM_VIEW });
+  return [a, b];
+}
+`,
+    },
+
+    // 124. The span the constant is written over reaches from the literal past
+    // the assertion, so a comment sitting between them is text the fix would
+    // delete without being able to say what it meant. The report stands and
+    // the fix is declined, which leaves the author holding both.
+    {
+      name: 'a comment inside the asserted key withholds the fix',
+      code: inlineKeyCode(`'user-profile' /* the legacy key */ as const`),
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: null,
+    },
+
+    // 125. Control for 124: a comment outside that span is untouched by the
+    // rewrite, so declining there would be a fix lost to a comment that was
+    // never at risk.
+    {
+      name: 'a comment beside the asserted key does not withhold the fix',
+      code: inlineKeyCode(`'user-profile' as const /* the legacy key */`),
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+      output: inlineKeyCode('QUERY_KEY_USER_PROFILE /* the legacy key */'),
     },
   ],
 });

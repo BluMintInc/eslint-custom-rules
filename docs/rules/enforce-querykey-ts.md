@@ -72,6 +72,12 @@ function Component() {
   const [value] = useRouterState({ key: WRONG_PATTERN });
   return <div>{value}</div>;
 }
+
+// A type written onto an invalid key changes nothing about it
+function Component() {
+  const [value] = useRouterState({ key: 'playback-id' as const });
+  return <div>{value}</div>;
+}
 ```
 
 ### ✅ Correct
@@ -166,6 +172,14 @@ function Component() {
   const [user] = useRouterState({ key: userKey });
   return <div>{user}</div>;
 }
+
+// A type written onto an approved constant leaves it approved
+import { QUERY_KEY_SESSION } from 'src/util/routing/queryKeys';
+
+function ComponentWithAssertedKey() {
+  const [session] = useRouterState({ key: QUERY_KEY_SESSION satisfies string });
+  return <div>{session}</div>;
+}
 ```
 
 ## Edge Cases Handled
@@ -232,6 +246,28 @@ literal that carries static content of its own names a key of its own and is
 still reported — including when the call inside it is optional. A key read from
 a source the rule does not approve is likewise still reported through the chain:
 `config?.queryKey` reports exactly as `config.queryKey` does.
+
+### 5. Keys carrying a type assertion
+
+Every notation for writing a type onto a key — `as const`, `as string`,
+`satisfies string`, `!`, and `<string>key` — is erased before anything runs, so
+the key under one is the key. The rule answers the same way with an assertion as
+without it, in both directions:
+
+```typescript
+import { QUERY_KEY_USER_PROFILE } from 'src/util/routing/queryKeys';
+
+// Allowed, exactly as the unasserted spelling is
+const [profile] = useRouterState({ key: QUERY_KEY_USER_PROFILE satisfies string });
+
+// Reported, exactly as the unasserted spelling is
+const [stream] = useRouterState({ key: 'stream-view' as const });
+```
+
+This holds wherever the assertion sits — on the key itself, on an operand of a
+concatenation or a ternary, on an interpolated expression, or stacked several
+deep — and it holds for a key reached through a variable, whose initializer
+carries the assertion.
 
 ## Valid Import Sources
 

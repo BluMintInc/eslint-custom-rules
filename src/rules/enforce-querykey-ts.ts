@@ -50,6 +50,41 @@ const APPROVED_REEXPORT_SOURCES = new Set(['constants', 'constants/index']);
 const normalizeSpecifier = (source: string) =>
   source.replace(/^@\/|^src\//, '').replace(/^(\.\/|\.\.\/)+/, '');
 
+/**
+ * Every notation for writing a type onto an expression. All four are erased
+ * before anything runs, so each denotes exactly the expression it wraps: a key
+ * is the same key with one as without.
+ *
+ * One shared set keeps the two questions this rule asks about a key — where it
+ * comes from (`isValidQueryKeyUsage`) and whether it is a bare string
+ * (`containsInvalidStringLiteral`, and the dispatch that consults it) — unable
+ * to disagree about what an assertion is. Naming assertions on only the first
+ * of them made an asserted key resolve correctly and then never be asked about
+ * (#1840 vs #1842).
+ */
+type AssertionExpression =
+  | TSESTree.TSAsExpression
+  | TSESTree.TSSatisfiesExpression
+  | TSESTree.TSNonNullExpression
+  | TSESTree.TSTypeAssertion;
+
+const ASSERTION_NODE_TYPES = new Set<AST_NODE_TYPES>([
+  AST_NODE_TYPES.TSAsExpression,
+  AST_NODE_TYPES.TSSatisfiesExpression,
+  AST_NODE_TYPES.TSNonNullExpression,
+  AST_NODE_TYPES.TSTypeAssertion,
+]);
+
+const isTypeAssertion = (node: TSESTree.Node): node is AssertionExpression =>
+  ASSERTION_NODE_TYPES.has(node.type);
+
+/**
+ * The expression an assertion — or a stack of them, since they compose — is
+ * written onto.
+ */
+const unwrapTypeAssertions = (node: TSESTree.Node): TSESTree.Node =>
+  isTypeAssertion(node) ? unwrapTypeAssertions(node.expression) : node;
+
 const toPosixPath = (filePath: string) => filePath.replace(/\\/g, '/');
 
 const ensureRelativeSpecifier = (specifier: string) =>
@@ -127,7 +162,12 @@ type PendingReport = {
   data?: { variableName: string };
   /** Present only where the key's value is statically known, hence fixable. */
   substitution?: {
-    keyNode: TSESTree.Literal | TSESTree.TemplateLiteral;
+    /**
+     * The span the constant is written over: the literal together with any
+     * assertions on it, so the constant replaces the whole key expression
+     * rather than landing inside one.
+     */
+    keyNode: TSESTree.Node;
     constant: string;
     scope: TSESLint.Scope.Scope;
   };
@@ -548,12 +588,7 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
       // written — so a type spelled onto an alias of an approved constant
       // withdrew the carve-out that same alias has without one, reporting a key
       // `prefer-global-router-state-key` accepts (#1840).
-      if (
-        node.type === AST_NODE_TYPES.TSAsExpression ||
-        node.type === AST_NODE_TYPES.TSSatisfiesExpression ||
-        node.type === AST_NODE_TYPES.TSNonNullExpression ||
-        node.type === AST_NODE_TYPES.TSTypeAssertion
-      ) {
+      if (isTypeAssertion(node)) {
         return isValidQueryKeyUsage(node.expression);
       }
 
@@ -641,6 +676,16 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
      * Check if a node contains string literals that should be reported
      */
     function containsInvalidStringLiteral(node: TSESTree.Node): boolean {
+      // A type says nothing about where a key came from, and a literal under
+      // one came from nowhere just the same. Answering on the assertion node
+      // instead of what it wraps let `'key' as const` — and an asserted operand
+      // of a concatenation or a ternary — pass for something other than a
+      // string literal, so the only bare-key detector this rule has never ran
+      // on it (#1842).
+      if (isTypeAssertion(node)) {
+        return containsInvalidStringLiteral(node.expression);
+      }
+
       // Direct string literal
       if (
         node.type === AST_NODE_TYPES.Literal &&
@@ -726,6 +771,35 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
         return typeof cooked === 'string' ? { node, text: cooked } : null;
       }
       return null;
+    }
+
+    /**
+     * The span a substituted constant is written over: the literal together
+     * with every assertion written onto it.
+     *
+     * The assertion is dropped rather than kept because it exists to shape the
+     * literal, and the literal is what leaves. `as const` is illegal on a
+     * reference (TS1355), so writing the constant *inside* the assertion would
+     * trade a report for a file that no longer compiles; the other notations
+     * survive that but only to restate a type the constant already has, since
+     * `queryKeys.ts` exports it narrowed. Replacing the whole span is therefore
+     * both the only uniformly compiling choice and the smaller edit to read.
+     *
+     * Null where a comment sits in the span the constant would cover: no
+     * rewrite can know what a comment beside a key meant, and deleting it is
+     * text this fixer does not own. The report then stands unfixed, which
+     * leaves the author holding both the key and the comment.
+     */
+    function substitutionSpanOf(
+      keyExpression: TSESTree.Node,
+      staticKeyNode: TSESTree.Node,
+    ): TSESTree.Node | null {
+      if (keyExpression === staticKeyNode) {
+        return keyExpression;
+      }
+      return sourceCode.getCommentsInside(keyExpression).length === 0
+        ? keyExpression
+        : null;
     }
 
     /**
@@ -829,7 +903,18 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
 
               // If key property exists, check its value
               if (keyProperty && keyProperty.value) {
-                const keyValue = keyProperty.value;
+                const keyExpression = keyProperty.value;
+                // A type written onto the key is erased before anything runs,
+                // so what the arms below have to judge is the key underneath
+                // it. Dispatching on the node as written asked about the
+                // assertion — a node type neither arm names — so an invalid key
+                // escaped the rule altogether merely by carrying one, while the
+                // resolver behind `isValidQueryKeyUsage` had long since seen
+                // through it: detecting and resolving are separate paths, and
+                // widening one leaves the other exactly as it was (#1842).
+                // Reporting the unwrapped node puts the report on the same key
+                // the unasserted spelling reports.
+                const keyValue = unwrapTypeAssertions(keyExpression);
 
                 // Check if it's a valid query key usage
                 if (!isValidQueryKeyUsage(keyValue)) {
@@ -840,13 +925,16 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
                     const suggestedConstant = staticKey
                       ? generateAutoFix(staticKey.text)
                       : null;
+                    const span = staticKey
+                      ? substitutionSpanOf(keyExpression, staticKey.node)
+                      : null;
                     pendingReports.push({
                       node: keyValue,
                       messageId: 'enforceQueryKeyImport',
                       substitution:
-                        staticKey && suggestedConstant
+                        span && suggestedConstant
                           ? {
-                              keyNode: staticKey.node,
+                              keyNode: span,
                               constant: suggestedConstant,
                               scope: scopeOf(keyValue),
                             }
