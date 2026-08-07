@@ -34,6 +34,26 @@ function isUuidv4Base62Module(source: unknown): boolean {
   return basename === UUIDV4_BASE62_MODULE;
 }
 
+/**
+ * Reads through an optional chain to the member access or call it holds.
+ * `items?.map(...)` and `item?.key` each parse as a `ChainExpression` wrapping
+ * the node the rule matches on, so a test for a bare `CallExpression` or
+ * `MemberExpression` sees the wrapper and recognizes nothing — the producer is
+ * never tracked and the key it feeds is never judged.
+ *
+ * Reading through it does not weaken the verdict, because the optional link is
+ * orthogonal to the defect. On the branch where the receiver is nullish nothing
+ * renders, or the key evaluates to `undefined` — which is a worse React key than
+ * a fresh UUID, never an acceptable one. On the branch where it is defined the
+ * emitted keys are exactly the ones the plain spelling emits: minted by
+ * `uuidv4Base62()` inside render, so React cannot reconcile the list. The rule
+ * only reports — it rewrites nothing — so the advice it gives ("use a stable
+ * identifier from your data") stands unchanged under the short-circuit.
+ */
+function unwrapOptionalChain(node: TSESTree.Node): TSESTree.Node {
+  return node.type === AST_NODE_TYPES.ChainExpression ? node.expression : node;
+}
+
 export const noUuidv4Base62AsKey = createRule<[], MessageIds>({
   name: 'no-uuidv4-base62-as-key',
   meta: {
@@ -125,8 +145,14 @@ export const noUuidv4Base62AsKey = createRule<[], MessageIds>({
     }
 
     // Helper to check if a function call contains uuidv4Base62() as an argument
-    function containsUuidV4Base62Call(node: TSESTree.Node): boolean {
-      if (!node) return false;
+    function containsUuidV4Base62Call(candidate: TSESTree.Node): boolean {
+      if (!candidate) return false;
+
+      // An optional call still evaluates its arguments on the branch that runs,
+      // so `formatKey?.(uuidv4Base62())` mints the same per-render UUID as
+      // `formatKey(uuidv4Base62())`. Descending through the chain keeps the
+      // recursion from stopping short of the arguments.
+      const node = unwrapOptionalChain(candidate);
 
       // Direct call
       if (isUuidV4Base62Call(node)) return true;
@@ -194,7 +220,7 @@ export const noUuidv4Base62AsKey = createRule<[], MessageIds>({
           attr.value &&
           attr.value.type === AST_NODE_TYPES.JSXExpressionContainer
         ) {
-          const { expression } = attr.value;
+          const expression = unwrapOptionalChain(attr.value.expression);
 
           // Direct uuidv4Base62() call in key
           if (containsUuidV4Base62Call(expression)) {
@@ -273,15 +299,17 @@ export const noUuidv4Base62AsKey = createRule<[], MessageIds>({
     ): boolean {
       if (!node.init) return false;
 
+      const init = unwrapOptionalChain(node.init);
+
       // Check for the pattern: items.map(item => ({ ...item, key: uuidv4Base62() }))
       if (
-        node.init.type === AST_NODE_TYPES.CallExpression &&
-        node.init.callee.type === AST_NODE_TYPES.MemberExpression &&
-        node.init.callee.property.type === AST_NODE_TYPES.Identifier &&
-        node.init.callee.property.name === 'map'
+        init.type === AST_NODE_TYPES.CallExpression &&
+        init.callee.type === AST_NODE_TYPES.MemberExpression &&
+        init.callee.property.type === AST_NODE_TYPES.Identifier &&
+        init.callee.property.name === 'map'
       ) {
         // The first argument should be the map callback
-        const callback = node.init.arguments[0];
+        const callback = init.arguments[0];
         if (!callback) return false;
 
         // Handle arrow functions and regular functions
@@ -385,13 +413,14 @@ export const noUuidv4Base62AsKey = createRule<[], MessageIds>({
             declarator.id.type === AST_NODE_TYPES.Identifier &&
             declarator.id.name === 'itemKeys'
           ) {
+            const init =
+              declarator.init && unwrapOptionalChain(declarator.init);
             if (
-              declarator.init &&
-              declarator.init.type === AST_NODE_TYPES.CallExpression &&
-              declarator.init.callee.type === AST_NODE_TYPES.MemberExpression &&
-              declarator.init.callee.property.type ===
-                AST_NODE_TYPES.Identifier &&
-              declarator.init.callee.property.name === 'map'
+              init &&
+              init.type === AST_NODE_TYPES.CallExpression &&
+              init.callee.type === AST_NODE_TYPES.MemberExpression &&
+              init.callee.property.type === AST_NODE_TYPES.Identifier &&
+              init.callee.property.name === 'map'
             ) {
               // The test case pattern detected
               variablesWithUuidv4Base62Keys.add('itemKeys');
@@ -474,19 +503,25 @@ export const noUuidv4Base62AsKey = createRule<[], MessageIds>({
 
               for (const attr of attributes) {
                 if (
-                  attr.type === AST_NODE_TYPES.JSXAttribute &&
-                  attr.name.type === AST_NODE_TYPES.JSXIdentifier &&
-                  attr.name.name === 'key' &&
-                  attr.value &&
-                  attr.value.type === AST_NODE_TYPES.JSXExpressionContainer &&
-                  attr.value.expression.type ===
-                    AST_NODE_TYPES.MemberExpression &&
-                  attr.value.expression.property.type ===
-                    AST_NODE_TYPES.Identifier &&
-                  attr.value.expression.property.name === 'key'
+                  attr.type !== AST_NODE_TYPES.JSXAttribute ||
+                  attr.name.type !== AST_NODE_TYPES.JSXIdentifier ||
+                  attr.name.name !== 'key' ||
+                  !attr.value ||
+                  attr.value.type !== AST_NODE_TYPES.JSXExpressionContainer
+                ) {
+                  continue;
+                }
+
+                const keyExpression = unwrapOptionalChain(
+                  attr.value.expression,
+                );
+                if (
+                  keyExpression.type === AST_NODE_TYPES.MemberExpression &&
+                  keyExpression.property.type === AST_NODE_TYPES.Identifier &&
+                  keyExpression.property.name === 'key'
                 ) {
                   // The test case - directly report this element
-                  reportViolation(returnExpr, attr.value.expression);
+                  reportViolation(returnExpr, keyExpression);
                   break;
                 }
               }
