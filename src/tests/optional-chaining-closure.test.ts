@@ -23,10 +23,20 @@
  * Both directions of the exemption are enforced, which is what keeps the list
  * honest:
  *
- *   - a rule NOT in the map may not diverge (a new defect fails the build);
- *   - a rule IN the map MUST still diverge (fixing one and leaving the entry
- *     behind fails too, so the map cannot silently accumulate dead exemptions
- *     that would mask a future regression).
+ *   - a rule/arm NOT in the map may not diverge (a new defect fails the build);
+ *   - a rule/arm IN the map MUST still diverge (fixing one and leaving the
+ *     entry behind fails too, so the map cannot silently accumulate dead
+ *     exemptions that would mask a future regression).
+ *
+ * The unit of both directions is `rule::arm`, not the rule. A mutation audit —
+ * reverting each of the eleven fixes above in turn — found 4 invisible while
+ * this file stayed green (#1839). Three were rule-keyed exemptions covering a
+ * `call`-arm residue that also exempted the `member` arm the fix was on
+ * (#1824, #1825, #1826). The fourth was #1836, whose subject sits in an
+ * object-literal value — a slot `inForbiddenContext` skipped wholesale as if it
+ * were a destructuring target, withholding 901 sites and hiding two live
+ * divergences (`no-circular-references`, filed as #1838, and an artifact in
+ * `no-unsafe-firestore-spread`).
  *
  * Anti-vacuity, in the order these have gone wrong before:
  *
@@ -55,7 +65,7 @@ import {
 } from '../utils/fixtureCorpus';
 
 /**
- * Rules whose reports legitimately change under `?.`, with the reason.
+ * Rule/arm pairs whose reports legitimately change under `?.`, with the reason.
  *
  * Two kinds, and the distinction matters when one of these is revisited:
  *
@@ -63,85 +73,142 @@ import {
  *     be nullish, so going silent is the right answer. These must never be
  *     "fixed".
  *   - ARTIFACT: the blindness is real but the only spelling that reaches it is
- *     one nobody writes (`useState?.()`, `this?.value`, `Object?.keys(x)`).
- *     Filing these would add code for inputs that do not occur.
+ *     one nobody writes (`useState?.()`, `this?.value`, `Object?.keys(x)`, an
+ *     optional link on an array literal). Filing these would add code for
+ *     inputs that do not occur.
+ *
+ * Keyed `rule::arm`, never on the rule alone. Three entries here are the
+ * `call`-arm residue of a `member`-arm fix (#1824, #1825, #1826); a rule-keyed
+ * map exempted the fixed arm too, so reverting any of those three reintroduced
+ * the defect with this file fully green (#1839).
  */
 const KNOWN_DIVERGENT: Record<string, string> = {
-  'array-methods-this-context': 'ARTIFACT: only reached via `this?.method`',
-  'enforce-assert-throws':
+  'array-methods-this-context::call':
+    'ARTIFACT: `.map?.()` / `.bind?.(this)`, optional calls on array and function methods that always exist',
+  'array-methods-this-context::member':
+    'ARTIFACT: `this?.method` and `[...]?.map`, optional links on a receiver that is never nullish',
+  'enforce-assert-throws::call':
     'ARTIFACT: only reached via `process.exit?.()` / `this?.assertX()`',
-  'enforce-callback-memo': 'ARTIFACT: only reached via `useCallback?.()`',
-  'enforce-console-error': 'ARTIFACT: only reached via `console?.error()`',
-  'enforce-css-media-queries': 'ARTIFACT: only reached via a hook callee',
-  'enforce-exported-function-types':
+  'enforce-assert-throws::member':
+    'ARTIFACT: only reached via `process?.exit` / `process?.env`, optional links on the Node global',
+  'enforce-callback-memo::call': 'ARTIFACT: only reached via `useCallback?.()`',
+  'enforce-console-error::call':
+    'ARTIFACT: only reached via an optional hook callee',
+  'enforce-css-media-queries::call': 'ARTIFACT: only reached via a hook callee',
+  'enforce-exported-function-types::call':
     'ARTIFACT: only reached via `memo?.()` / `forwardRef?.()`',
-  'enforce-firestore-doc-ref-generic':
+  'enforce-exported-function-types::member':
+    'ARTIFACT: only reached via `React?.memo`, an optional link on the namespace import',
+  'enforce-firestore-doc-ref-generic::call':
     'ARTIFACT: residue of #1826 — the member arm is fixed; only `db.collection<T>?.(...)`, an optional call on a generic method, remains',
-  'enforce-firestore-facade':
-    'ARTIFACT: reached only via a facade-function callee nobody writes optional',
-  'enforce-microdiff':
+  'enforce-firestore-facade::call':
+    'ARTIFACT: `db.collection?.()` / `ref.set?.()`, optional calls on Firestore methods that always exist',
+  'enforce-firestore-facade::member':
+    'ARTIFACT: reached only via a facade handle nobody writes optional',
+  'enforce-microdiff::call':
+    'ARTIFACT: needs both `JSON.stringify?.()` sites perturbed at once',
+  'enforce-microdiff::member':
     'ARTIFACT: needs both `JSON?.stringify` sites perturbed at once',
-  'enforce-mock-firestore': 'ARTIFACT: only reached via a mock-helper callee',
-  'enforce-render-hits-memoization': 'ARTIFACT: only reached via a hook callee',
-  'enforce-single-exported-unit-per-file':
+  'enforce-mock-firestore::member':
+    'ARTIFACT: only reached via `jest?.mock` / `jest?.fn`, optional links on the Jest global',
+  'enforce-render-hits-memoization::call':
+    'ARTIFACT: only reached via a hook callee',
+  'enforce-single-exported-unit-per-file::call':
     'ARTIFACT: only reached via `memo?.()` / `forwardRef?.()`',
-  'enforce-snapshot-state-narrowing':
+  'enforce-snapshot-state-narrowing::call':
     'ARTIFACT: only reached via `useDocSnapshot?.()`',
-  'enforce-timestamp-now': 'ARTIFACT: only reached via `Date.now?.()`',
-  'enforce-transform-memoization':
+  'enforce-timestamp-now::call':
+    'ARTIFACT: only reached via `Date.now?.()` / `Timestamp.fromMillis?.()`',
+  'enforce-timestamp-now::member':
+    'ARTIFACT: only reached via `Date?.now` / `Timestamp?.fromMillis`',
+  'enforce-transform-memoization::call':
     'ARTIFACT: only reached via `forwardRef?.()`',
-  'enforce-verb-noun-naming': 'ARTIFACT: only reached via `createElement?.()`',
-  'fast-deep-equal-over-microdiff':
+  'enforce-verb-noun-naming::call':
+    'ARTIFACT: only reached via `createElement?.()`',
+  'enforce-verb-noun-naming::member':
+    'ARTIFACT: only reached via `React?.createElement`',
+  'fast-deep-equal-over-microdiff::call':
     'ARTIFACT: residue of #1825 — the binary arm is fixed; only `diff?.(a, b)`, an optional call on a static import binding, remains',
-  'firestore-transaction-reads-before-writes':
-    'ARTIFACT: only reached via `assertSafe?.()`',
-  'flatten-push-calls':
-    'CORRECT: `arr?.push(a); arr.push(b)` is a mixed group, and `arr?.push(a, b)` is not equivalent to the pair',
-  'global-const-style':
+  'firestore-transaction-reads-before-writes::call':
+    'ARTIFACT: only reached via `runTransaction?.()` / `transaction.set?.()`',
+  'flatten-push-calls::call':
+    'CORRECT: `arr.push?.(a); arr.push?.(b)` is a mixed group, and `arr.push?.(a, b)` is not equivalent to the pair',
+  'flatten-push-calls::member':
+    'CORRECT: `arr?.push(a); arr?.push(b)` is a mixed group, and `arr?.push(a, b)` is not equivalent to the pair',
+  'global-const-style::call':
     'ARTIFACT: only reached via `memo?.()` / `forwardRef?.()`',
-  'memo-nested-react-components':
-    'ARTIFACT: only reached via `memo?.()` / `it.each?.()`',
-  'no-always-true-false-conditions':
+  'global-const-style::member': 'ARTIFACT: only reached via `React?.memo`',
+  'memo-nested-react-components::call':
+    'ARTIFACT: only reached via `describe?.()` / `it?.()`',
+  'memo-nested-react-components::member':
+    'ARTIFACT: only reached via `it?.each`',
+  'no-always-true-false-conditions::call':
     'CORRECT: `?.` introduces a nullish branch, so a condition that was statically decidable no longer is',
-  'no-complex-cloud-params': 'ARTIFACT: only reached via a hook/global callee',
-  'no-console-error': 'ARTIFACT: only reached via `console?.error()`',
-  'no-direct-function-state':
+  'no-always-true-false-conditions::member':
+    'CORRECT: `?.` introduces a nullish branch, so a condition that was statically decidable no longer is',
+  'no-complex-cloud-params::call':
+    'ARTIFACT: only reached via a hook/global callee',
+  'no-complex-cloud-params::member':
+    'ARTIFACT: only reached via an optional link on a payload receiver nobody writes optional',
+  'no-console-error::call':
+    'ARTIFACT: only reached via an optional hook callee',
+  'no-direct-function-state::call':
     'ARTIFACT: residue of #1824 — the argument readers are fixed; only `useState<T>?.(...)`, an optional hook call, remains',
-  'no-empty-dependency-use-callbacks':
+  'no-empty-dependency-use-callbacks::call':
     'ARTIFACT: only reached via `useCallback?.()`',
-  'no-excessive-parent-chain':
+  'no-excessive-parent-chain::member':
     'CORRECT-ISH: `event?.data` is unreachable — the four BluMint wrapper types this rule targets instantiate the data generic without `| undefined`, so strict TS never forces the optional link (refuted #1832-era triage)',
-  'no-fill-template-mutation': 'ARTIFACT: only reached via `fillTemplate?.()`',
-  'no-handler-suffix':
+  'no-fill-template-mutation::call':
+    'ARTIFACT: only reached via `fillTemplate?.()`',
+  'no-fill-template-mutation::member':
+    'ARTIFACT: only reached via `ns?.fillTemplate` on a namespace import',
+  'no-handler-suffix::member':
     'ARTIFACT: only reached via `External?.Handler` in a type-ish position',
-  'no-hungarian':
+  'no-hungarian::call':
     'ARTIFACT: only reached via `Symbol?.(...)`, an optional call on the global',
-  'no-jsx-in-hooks': 'ARTIFACT: only reached via a hook callee',
-  'no-margin-properties': 'ARTIFACT: only reached via a global/hook callee',
-  'no-redundant-this-params': 'ARTIFACT: only reached via `this?.value`',
-  'no-redundant-usecallback-wrapper':
+  'no-jsx-in-hooks::call': 'ARTIFACT: only reached via a hook callee',
+  'no-margin-properties::call':
+    'ARTIFACT: only reached via `Object.assign?.()`',
+  'no-margin-properties::member': 'ARTIFACT: only reached via `Object?.assign`',
+  'no-redundant-this-params::member':
+    'ARTIFACT: only reached via `this?.value` / `this?.method`',
+  'no-redundant-usecallback-wrapper::call':
     'CORRECT: `useCallback(() => f?.(), [f])` is not equivalent to passing `f`, which is undefined when f is nullish',
-  'no-separate-loading-state': 'ARTIFACT: only reached via `useState?.()`',
-  'no-stale-state-across-await': 'ARTIFACT: only reached via `useState?.()`',
-  'no-undefined-null-passthrough':
+  'no-redundant-usecallback-wrapper::member':
+    'CORRECT: `useCallback(() => svc?.handle(), [])` is not equivalent to passing `svc.handle`, which throws when svc is nullish',
+  'no-separate-loading-state::call':
+    'ARTIFACT: only reached via `useState?.()`',
+  'no-stale-state-across-await::call':
+    'ARTIFACT: only reached via `useState?.()`',
+  'no-undefined-null-passthrough::call':
     'ARTIFACT: only reached via an imported transform callee',
-  'no-unused-usestate': 'ARTIFACT: only reached via `useState?.()`',
-  'optimize-object-boolean-conditions':
-    'ARTIFACT: only reached via `Object?.keys(x)` / `React?.useState()`',
-  'prefer-destructuring-no-class':
+  'no-undefined-null-passthrough::member':
+    'ARTIFACT: only reached via `Object?.keys`',
+  'no-unsafe-firestore-spread::call':
+    'ARTIFACT: only reached via `[...arr].filter?.()` / `ref.set?.()`; every realistic chain — `[...props?.tags].filter(f)`, `[...(props?.tags ?? [])]`, `userDoc?.ref?.set` — still reports',
+  'no-unsafe-firestore-spread::member':
+    'ARTIFACT: only reached via `[...arr]?.filter()`, an optional link on an array literal, which is never nullish',
+  'no-unused-usestate::call': 'ARTIFACT: only reached via `useState?.()`',
+  'optimize-object-boolean-conditions::call':
+    'ARTIFACT: only reached via `useState?.()` / `useMemo?.()`',
+  'optimize-object-boolean-conditions::member':
+    'ARTIFACT: only reached via `React?.useState`',
+  'prefer-destructuring-no-class::member':
     'CORRECT: `const { name } = user` throws when `user` is nullish, so the remedy is not equivalent to `user?.name`',
-  'prefer-next-dynamic': 'ARTIFACT: only reached via `useDynamic?.()`',
-  'prefer-use-base62-id': 'ARTIFACT: only reached via `uuidv4Base62?.()`',
-  'prefer-usecallback-over-usememo-for-functions':
+  'prefer-next-dynamic::call': 'ARTIFACT: only reached via `useDynamic?.()`',
+  'prefer-use-base62-id::call': 'ARTIFACT: only reached via `uuidv4Base62?.()`',
+  'prefer-usecallback-over-usememo-for-functions::call':
     'ARTIFACT: only reached via `useMemo?.()`',
-  'prefer-usememo-over-useeffect-usestate':
-    'ARTIFACT: only reached via a state setter callee',
-  'react-usememo-should-be-component':
+  'prefer-usememo-over-useeffect-usestate::call':
+    'ARTIFACT: only reached via `useState?.()` / `useEffect?.()`',
+  'react-usememo-should-be-component::call':
     'ARTIFACT: only reached via `useMemo?.()`',
-  'require-props-composition': 'ARTIFACT: only reached via `memo?.()`',
-  'use-latest-callback': 'ARTIFACT: only reached via `useLatestCallback?.()`',
-  'warn-https-error-message-user-friendly':
-    'ARTIFACT: only reached via a single-letter local callee',
+  'require-props-composition::call': 'ARTIFACT: only reached via `memo?.()`',
+  'use-latest-callback::call': 'ARTIFACT: only reached via `useCallback?.()`',
+  'use-latest-callback::member':
+    'ARTIFACT: only reached via `React?.useCallback`',
+  'warn-https-error-message-user-friendly::call':
+    'ARTIFACT: only reached via a single-letter local callee written optional',
 };
 
 const ruleByName = new Map<string, unknown>(
@@ -247,11 +314,22 @@ const inForbiddenContext = (node: Node): boolean => {
     case 'ClassDeclaration':
     case 'ClassExpression':
       return slotIs('superClass');
-    case 'Decorator':
     case 'Property':
+      // A `Property` is a binding target only inside an `ObjectPattern`. Inside
+      // an `ObjectExpression` its value is an ordinary expression slot — and
+      // the most common one in this corpus, since every options bag, props
+      // object and Firestore payload is written that way. Treating the two
+      // alike withheld that whole shape from the sweep rather than avoiding a
+      // syntax error, which is how #1836's regression stayed invisible here.
+      // A computed key is an ordinary expression in either parent.
+      return parentOf(parent)?.type === 'ObjectPattern' && slotIs('value');
+    case 'AssignmentPattern':
+      // `left` is the binding target; `right` is the default, an ordinary
+      // expression that may be optional-chained.
+      return slotIs('left');
+    case 'Decorator':
     case 'ArrayPattern':
     case 'ObjectPattern':
-    case 'AssignmentPattern':
     case 'RestElement':
       return true;
     default:
@@ -366,6 +444,17 @@ const signatureOf = (messages: readonly Linter.LintMessage[]) => {
   );
 };
 
+/**
+ * Exemptions are keyed on the ARM, not on the rule.
+ *
+ * Three of the entries below exist because a rule was fixed on one arm and
+ * still diverges on a residual spelling on the other. A rule-keyed map exempts
+ * the fixed arm too, so reverting that fix reintroduced the defect with this
+ * file fully green — measured for #1824, #1825 and #1826, whose fixes were all
+ * on `member` while their residues are all on `call` (#1839).
+ */
+const pairKey = (rule: string, arm: Arm) => `${rule}::${arm}`;
+
 type Divergence = {
   rule: string;
   arm: Arm;
@@ -385,7 +474,7 @@ describe('optional-chaining closure', () => {
   const corpus = harvestFixtureCorpus();
 
   const divergences: Divergence[] = [];
-  const divergentRules = new Set<string>();
+  const divergentPairs = new Set<string>();
   const rulesReporting = new Set<string>();
   const rulesPerturbed = new Set<string>();
   let casesConsidered = 0;
@@ -461,11 +550,15 @@ describe('optional-chaining closure', () => {
           const after = signatureOf(variant);
           if (after === before) continue;
 
-          divergentRules.add(rule);
-          // One example PER RULE, not the first N overall: a flat cap lets a
-          // chatty rule crowd out every example for a quiet one, and the
-          // failure message then names a rule it cannot illustrate.
-          if (!divergences.some((existing) => existing.rule === rule)) {
+          divergentPairs.add(pairKey(rule, arm));
+          // One example PER RULE+ARM, not the first N overall: a flat cap lets
+          // a chatty rule crowd out every example for a quiet one, and the
+          // failure message then names a pair it cannot illustrate.
+          if (
+            !divergences.some(
+              (existing) => existing.rule === rule && existing.arm === arm,
+            )
+          ) {
             divergences.push({
               rule,
               arm,
@@ -485,11 +578,11 @@ describe('optional-chaining closure', () => {
   it('reaches enough of the corpus for a clean result to mean something', () => {
     // A rule that never fired on its own baseline cannot LOSE a report, so a
     // clean run over a silent corpus asserts nothing.
-    expect(rulesReporting.size).toBeGreaterThan(150);
-    expect(casesWithBaselineReports).toBeGreaterThan(5000);
-    expect(rulesPerturbed.size).toBeGreaterThan(140);
-    expect(sitesRewritten).toBeGreaterThan(20000);
-    expect(casesConsidered).toBeGreaterThan(10000);
+    expect(rulesReporting.size).toBeGreaterThan(170);
+    expect(casesWithBaselineReports).toBeGreaterThan(6500);
+    expect(rulesPerturbed.size).toBeGreaterThan(155);
+    expect(sitesRewritten).toBeGreaterThan(26000);
+    expect(casesConsidered).toBeGreaterThan(13200);
     // Skips are how a sweep silently loses coverage, so each is asserted on its
     // own rather than summed. Only an unparsable BASELINE is legitimate — the
     // corpus declares a couple of deliberately malformed fixtures — and even
@@ -508,16 +601,18 @@ describe('optional-chaining closure', () => {
   });
 
   it('no rule changes its verdict under optional chaining', () => {
-    const unexpected = [...divergentRules]
-      .filter((rule) => !(rule in KNOWN_DIVERGENT))
+    const unexpected = [...divergentPairs]
+      .filter((key) => !(key in KNOWN_DIVERGENT))
       .sort();
 
     if (unexpected.length) {
       const detail = unexpected
-        .map((rule) => {
-          const example = divergences.find((d) => d.rule === rule);
+        .map((key) => {
+          const example = divergences.find(
+            (d) => pairKey(d.rule, d.arm) === key,
+          );
           return [
-            `  ${rule} (${example?.arm} arm, ${example?.bucket} fixture from ${example?.origin})`,
+            `  ${key} (${example?.bucket} fixture from ${example?.origin})`,
             `    ${example?.before}  ->  ${example?.after}`,
             `    input:   ${example?.input.replace(/\s+/g, ' ').slice(0, 160)}`,
             `    variant: ${example?.output
@@ -527,7 +622,7 @@ describe('optional-chaining closure', () => {
         })
         .join('\n');
       throw new Error(
-        `${unexpected.length} rule(s) change their verdict when a receiver is written with \`?.\`.\n` +
+        `${unexpected.length} rule/arm pair(s) change their verdict when a receiver is written with \`?.\`.\n` +
           `ESTree wraps \`a?.b\` in a ChainExpression, so a bare MemberExpression/CallExpression\n` +
           `match — or a \`node.parent\` read — sees something else. Unwrap it, or add the rule to\n` +
           `KNOWN_DIVERGENT with a reason if the change is CORRECT (the remedy stops being\n` +
@@ -541,9 +636,52 @@ describe('optional-chaining closure', () => {
     // An entry left behind after a fix would mask the next regression in that
     // rule, so the map is required to be exactly the divergent set.
     const stale = Object.keys(KNOWN_DIVERGENT)
-      .filter((rule) => !divergentRules.has(rule))
+      .filter((key) => !divergentPairs.has(key))
       .sort();
     expect({ stale }).toEqual({ stale: [] });
+  });
+
+  /**
+   * The expression slots a pattern-shaped context test can wrongly swallow.
+   *
+   * Asserted here rather than left to the corpus floors, because the floors
+   * cannot see this: restoring the blanket `Property` skip removes 901 of
+   * ~27000 sites, which still clears any floor loose enough to survive corpus
+   * churn. The withheld shape read as "nothing to perturb" instead of as lost
+   * coverage, and it hid #1836's regression plus two live divergences (#1839).
+   */
+  it('perturbs an expression slot that sits beside a binding target', () => {
+    const cases: [string, Arm, string][] = [
+      // Object-literal values: where every options bag, props object and
+      // Firestore payload puts its expressions.
+      ['({ key: a.b });', 'member', '({ key: a?.b });'],
+      ['({ key: f(1) });', 'call', '({ key: f?.(1) });'],
+      ['const o = { m: x.y };', 'member', 'const o = { m: x?.y };'],
+      [
+        'useRouterState({ key: k.u });',
+        'member',
+        'useRouterState({ key: k?.u });',
+      ],
+      // A default is an ordinary expression, in a pattern or a parameter list.
+      ['function g(a = d.e) {}', 'member', 'function g(a = d?.e) {}'],
+      ['const { a = d.e } = x;', 'member', 'const { a = d?.e } = x;'],
+      // A computed key is an ordinary expression under either parent.
+      ['({ [k.n]: 1 });', 'member', '({ [k?.n]: 1 });'],
+      // ...while the binding targets beside them stay untouched, since `?.` is
+      // a syntax error in a destructuring position.
+      ['const { a } = obj;', 'member', 'const { a } = obj;'],
+      ['const { a: b } = obj;', 'member', 'const { a: b } = obj;'],
+      ['const [x] = arr;', 'member', 'const [x] = arr;'],
+      ['({ a: b.c } = x);', 'member', '({ a: b.c } = x);'],
+    ];
+    for (const [code, arm, expected] of cases) {
+      const ast = astOf(code, false);
+      expect({
+        code,
+        arm,
+        output: ast && applySites(code, sitesOf(code, ast, arm)),
+      }).toEqual({ code, arm, output: expected });
+    }
   });
 
   /**
@@ -617,6 +755,16 @@ describe('optional-chaining closure', () => {
       'f<T>(1);',
       'delete a.b;',
       '({ ...a.b });',
+      // Property/AssignmentPattern slots: an expression position in an object
+      // literal or a default is perturbable, the binding target beside it is not.
+      '({ key: a.b });',
+      'const o = { m: x.y, n: f(1) };',
+      '({ a: b.c } = x);',
+      'const { a = d.e } = x;',
+      'function g(a = d.e) {}',
+      'const { [k.n]: v } = x;',
+      '({ [k.n]: 1 });',
+      'const [{ p }] = arr;',
     ];
     for (const code of cases) {
       const baselineErrors = parseErrorCount(code, 'f.ts');
