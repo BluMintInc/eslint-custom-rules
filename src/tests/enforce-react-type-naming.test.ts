@@ -1,3 +1,5 @@
+import { Linter } from 'eslint';
+import * as tsParser from '@typescript-eslint/parser';
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { enforceReactTypeNaming } from '../rules/enforce-react-type-naming';
 
@@ -153,11 +155,41 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
 
       const forwardedElement: JSX.Element = <ForwardedComponent />;
     `,
+
+    // ISSUE #1846 — the carve-out for `global-const-style`.
+    //
+    // A non-exported module-scope `const` has its name governed by
+    // `global-const-style`, which demands UPPER_SNAKE_CASE. This rule used to
+    // demand a lowercase initial for the same identifier, so no spelling
+    // satisfied both and the two autofixers oscillated until `--fix` wrote a
+    // mangled `e_LEMENT` to disk. The UPPER_SNAKE spelling below is the one the
+    // sibling drives to, and it must be silent HERE — otherwise the pair is
+    // still unsatisfiable, just in the other direction.
+    'const ELEMENT: JSX.Element = <div>Hello</div>;',
+    'const CONTENT: ReactNode = null;',
+    'const NODE_LIST: ReactNode = <span>Text</span>;',
+    // The literal input from #1846 before `global-const-style` renames it: this
+    // rule stays out of the way at every point on that rename path.
+    'const Element: JSX.Element = <div>Hello</div>;',
+    // The component branch yields on the same terms. `global-const-style`'s
+    // UPPER_SNAKE target already starts uppercase, so the two agree once it has
+    // run; this rule reporting in the meantime only adds a competing fixer.
+    'const WIDGET: FC = {} as FC;',
+    // Every declarator in a list is governed when none of them holds a function
+    // value, so the JSX-typed one yields along with the rest.
+    'const Element: JSX.Element = <div />, OTHER_THING = 1;',
   ],
   invalid: [
+    // The rename-fixer fixtures below declare their subject with `let` rather
+    // than `const`. That is not incidental: a non-exported module-scope `const`
+    // is `global-const-style`'s to name (#1846) and this rule yields there, so a
+    // `const` subject would silence the very reports these cases exist to pin.
+    // `let` keeps the module-scope topology every collision/capture case
+    // depends on while leaving the sibling's contract untouched.
+
     // Issue #1357 repro: annotation must survive and references must follow.
     {
-      code: `const Content: ReactNode = null;\nrender(Content);`,
+      code: `let Content: ReactNode = null;\nrender(Content);`,
       errors: [
         {
           messageId: 'reactNodeShouldBeLowercase',
@@ -167,7 +199,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
           },
         },
       ],
-      output: `const content: ReactNode = null;\nrender(content);`,
+      output: `let content: ReactNode = null;\nrender(content);`,
     },
 
     // Issue #1357 repro, the opposite direction: a component type renamed
@@ -252,7 +284,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
     // A shorthand property is both key and value; expanding it keeps the
     // object's shape while renaming only the value.
     {
-      code: `const Content: ReactNode = null;\nconst wrapper = { Content };`,
+      code: `let Content: ReactNode = null;\nconst wrapper = { Content };`,
       errors: [
         {
           messageId: 'reactNodeShouldBeLowercase',
@@ -262,13 +294,13 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
           },
         },
       ],
-      output: `const content: ReactNode = null;\nconst wrapper = { Content: content };`,
+      output: `let content: ReactNode = null;\nconst wrapper = { Content: content };`,
     },
 
     // The target name is already bound in the declaration scope: renaming would
     // redeclare it, so the report stands without a fix.
     {
-      code: `const Content: ReactNode = null;\nconst content = 1;\nrender(Content, content);`,
+      code: `let Content: ReactNode = null;\nconst content = 1;\nrender(Content, content);`,
       errors: [
         {
           messageId: 'reactNodeShouldBeLowercase',
@@ -284,7 +316,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
     // A reference from a nested scope renames along with the declaration when
     // nothing on the scope chain binds the target name.
     {
-      code: `const Content: ReactNode = null;\nfunction read() { return Content; }`,
+      code: `let Content: ReactNode = null;\nfunction read() { return Content; }`,
       errors: [
         {
           messageId: 'reactNodeShouldBeLowercase',
@@ -294,13 +326,13 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
           },
         },
       ],
-      output: `const content: ReactNode = null;\nfunction read() { return content; }`,
+      output: `let content: ReactNode = null;\nfunction read() { return content; }`,
     },
 
     // A binding of the target name sits between a reference and the
     // declaration, so the rewritten reference would resolve to it instead.
     {
-      code: `const Content: ReactNode = null;\nfunction read() { const content = 1; return [Content, content]; }`,
+      code: `let Content: ReactNode = null;\nfunction read() { const content = 1; return [Content, content]; }`,
       errors: [
         {
           messageId: 'reactNodeShouldBeLowercase',
@@ -316,7 +348,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
     // A nested scope already uses the target name for something else, so the
     // rename would capture it.
     {
-      code: `const Content: ReactNode = null;\nfunction read() { const content = 1; return content; }\nrender(Content);`,
+      code: `let Content: ReactNode = null;\nfunction read() { const content = 1; return content; }\nrender(Content);`,
       errors: [
         {
           messageId: 'reactNodeShouldBeLowercase',
@@ -364,7 +396,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
     // A re-export specifier binds the public export name to this identifier;
     // rewriting it would rename the export itself.
     {
-      code: `const Content: ReactNode = null;\nexport { Content };`,
+      code: `let Content: ReactNode = null;\nexport { Content };`,
       errors: [
         {
           messageId: 'reactNodeShouldBeLowercase',
@@ -394,21 +426,114 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
     },
 
     // The non-exported twin of the bare `export const` above still renames:
-    // the guard is scoped to the export contract, not blanket.
+    // the export guard is scoped to the export contract, not blanket.
     {
-      code: 'const Content: ReactNode = null;',
+      code: 'let Content: ReactNode = null;',
       errors: [
         {
           messageId: 'reactNodeShouldBeLowercase',
           data: { type: 'ReactNode', suggestion: 'content' },
         },
       ],
-      output: 'const content: ReactNode = null;',
+      output: 'let content: ReactNode = null;',
+    },
+
+    // ISSUE #1846 NEGATIVE CONTROLS — the carve-out must match
+    // `global-const-style`'s ACTUAL governance, not "module-scope const". Each
+    // case below is a module-scope declaration that rule declines to name, so
+    // yielding on it would leave the declaration governed by NOTHING.
+
+    // `let`/`var` are outside `global-const-style` entirely.
+    {
+      code: 'var Element: JSX.Element = <div>Hello</div>;',
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: { type: 'JSX.Element', suggestion: 'element' },
+        },
+      ],
+      output: 'var element: JSX.Element = <div>Hello</div>;',
+    },
+
+    // A dynamic initializer silences the sibling's rename check.
+    {
+      code: 'const Element: JSX.Element = renderIt();',
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: { type: 'JSX.Element', suggestion: 'element' },
+        },
+      ],
+      output: 'const element: JSX.Element = renderIt();',
+    },
+
+    // So does a bare identifier initializer, which merely aliases a binding.
+    {
+      code: 'const Element: JSX.Element = other;',
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: { type: 'JSX.Element', suggestion: 'element' },
+        },
+      ],
+      output: 'const element: JSX.Element = other;',
+    },
+
+    // A declaration with no initializer is skipped there before the name is
+    // ever examined.
+    {
+      code: 'declare const Element: JSX.Element;',
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: { type: 'JSX.Element', suggestion: 'element' },
+        },
+      ],
+      output: 'declare const element: JSX.Element;',
+    },
+
+    // A function value anywhere in the declaration LIST makes the sibling skip
+    // every declarator in it, so this rule keeps the whole list.
+    {
+      code: 'const handler = () => null, Element: JSX.Element = <div />;',
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: { type: 'JSX.Element', suggestion: 'element' },
+        },
+      ],
+      output: 'const handler = () => null, element: JSX.Element = <div />;',
+    },
+
+    // Not module scope: a component-local declaration is this rule's alone.
+    {
+      code: 'function Wrapper() { const Element: JSX.Element = <div />; return Element; }',
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: { type: 'JSX.Element', suggestion: 'element' },
+        },
+      ],
+      output:
+        'function Wrapper() { const element: JSX.Element = <div />; return element; }',
+    },
+
+    // Exported: `global-const-style` withholds only the FIX there, so neither
+    // rule renames and no `--fix` loop can form. This rule keeps its report.
+    {
+      code: 'export const Element: JSX.Element = <div>Hello</div>;',
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: { type: 'JSX.Element', suggestion: 'element' },
+        },
+      ],
+      output: null,
     },
 
     // Invalid uppercase names for ReactNode
     {
-      code: 'const MyComponent: ReactNode = <div>Hello</div>;',
+      code: 'let MyComponent: ReactNode = <div>Hello</div>;',
       errors: [
         {
           messageId: 'reactNodeShouldBeLowercase',
@@ -418,10 +543,10 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
           },
         },
       ],
-      output: 'const myComponent: ReactNode = <div>Hello</div>;',
+      output: 'let myComponent: ReactNode = <div>Hello</div>;',
     },
     {
-      code: 'const Element: JSX.Element = <div>Hello</div>;',
+      code: 'let Element: JSX.Element = <div>Hello</div>;',
       errors: [
         {
           messageId: 'reactNodeShouldBeLowercase',
@@ -431,7 +556,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
           },
         },
       ],
-      output: 'const element: JSX.Element = <div>Hello</div>;',
+      output: 'let element: JSX.Element = <div>Hello</div>;',
     },
 
     // Invalid lowercase names for ComponentType and FC
@@ -543,7 +668,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
     // Multiple errors in one file
     {
       code: `
-        const Button: ReactNode = <button>Click</button>;
+        let Button: ReactNode = <button>Click</button>;
         const card: ComponentType = () => <div>Card</div>;
         function render(Element: JSX.Element, component: FC) {
           return <component>{Element}</component>;
@@ -584,7 +709,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
       // rename (nested between them) overlap; a single pass keeps the first and
       // defers the other to the next pass.
       output: `
-        const button: ReactNode = <button>Click</button>;
+        let button: ReactNode = <button>Click</button>;
         const Card: ComponentType = () => <div>Card</div>;
         function render(element: JSX.Element, component: FC) {
           return <component>{element}</component>;
@@ -952,4 +1077,174 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
       `,
     },
   ],
+});
+
+/**
+ * ISSUE #1846 — the pair `enforce-react-type-naming` + `global-const-style`
+ * must reach a FIXPOINT, and that fixpoint must be clean under both.
+ *
+ * Neither rule's own `RuleTester` suite can express this. A single-rule case
+ * sees one fixer; the defect was two fixers rewriting the same identifier in
+ * opposite directions across passes (`element` -> `ELEMENT` -> `eLEMENT` ->
+ * `E_LEMENT` -> `e_LEMENT` -> …) until ESLint's ten-pass cap gave up and wrote
+ * the mangled name to disk. `verifyAndFix` returns `fixed: true` with no signal
+ * that it never converged, which is why it reached a consumer's source.
+ *
+ * `src/tests/fixer-convergence.test.ts` cannot see it either: it probes one
+ * rule at a time, and each of these two converges alone.
+ *
+ * Both rules are registered under their real `@blumintinc/blumint/` ids and
+ * read out of the shipped plugin, so this exercises the objects a consumer gets
+ * rather than a local copy.
+ */
+/* eslint-disable @typescript-eslint/no-var-requires */
+const plugin = require('../index') as {
+  rules: Record<string, unknown>;
+  configs: { recommended: { rules: Record<string, string> } };
+};
+/* eslint-enable @typescript-eslint/no-var-requires */
+
+const PREFIX = '@blumintinc/blumint/';
+const PAIR = ['enforce-react-type-naming', 'global-const-style'] as const;
+const PAIR_IDS = PAIR.map((name) => `${PREFIX}${name}`);
+
+const pairLinter = new Linter();
+pairLinter.defineParser('ts', tsParser as never);
+for (const name of PAIR) {
+  pairLinter.defineRule(`${PREFIX}${name}`, plugin.rules[name] as never);
+}
+
+const PAIR_CONFIG = {
+  parser: 'ts',
+  parserOptions: {
+    ecmaVersion: 2022,
+    sourceType: 'module',
+    ecmaFeatures: { jsx: true },
+  },
+  rules: Object.fromEntries(PAIR_IDS.map((id) => [id, 'error'])),
+} as unknown as Linter.Config;
+
+const FILENAME = '/repo/src/components/Component.tsx';
+
+const lintPair = (code: string) =>
+  pairLinter
+    .verify(code, PAIR_CONFIG, FILENAME)
+    .map(
+      (message) => `${message.ruleId}:${message.messageId ?? message.message}`,
+    );
+
+/**
+ * The declared name of every `const`/`let`/`var` in the source.
+ *
+ * Asserted independently of the expected output text, because the symptom is
+ * not "the wrong name" but "a name no human convention produces": `e_LEMENT` is
+ * neither camel/Pascal nor UPPER_SNAKE, and only a fixer fighting another fixer
+ * writes one.
+ */
+const DECLARED_NAMES = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g;
+const WELL_FORMED = /^(?:[A-Za-z_$][A-Za-z0-9$]*|[A-Z][A-Z0-9_$]*)$/;
+const mangledNamesIn = (code: string) =>
+  [...code.matchAll(DECLARED_NAMES)]
+    .map((match) => match[1])
+    .filter((name) => !WELL_FORMED.test(name));
+
+type PairCase = { name: string; code: string; output: string };
+
+const PAIR_CASES: PairCase[] = [
+  {
+    name: 'the reported input: a JSX.Element const',
+    code: 'const element: JSX.Element = <div>Hello</div>;\n',
+    output: 'const ELEMENT: JSX.Element = <div>Hello</div>;\n',
+  },
+  {
+    name: 'the same const already spelled PascalCase',
+    code: 'const Element: JSX.Element = <div>Hello</div>;\n',
+    output: 'const ELEMENT: JSX.Element = <div>Hello</div>;\n',
+  },
+  {
+    name: 'the ReactNode annotation',
+    code: 'const content: ReactNode = null;\n',
+    output: 'const CONTENT: ReactNode = null;\n',
+  },
+  {
+    name: 'the ReactNode annotation, PascalCase',
+    code: 'const Content: ReactNode = null;\n',
+    output: 'const CONTENT: ReactNode = null;\n',
+  },
+  {
+    name: 'the FC annotation on a non-function value',
+    code: 'const widget: FC = {} as FC;\n',
+    output: 'const WIDGET: FC = {} as FC;\n',
+  },
+  {
+    name: 'references follow the rename',
+    code: 'const element: JSX.Element = <div />;\nrender(element);\n',
+    output: 'const ELEMENT: JSX.Element = <div />;\nrender(ELEMENT);\n',
+  },
+  {
+    // The control the issue names: with no React annotation only
+    // `global-const-style` speaks, and it converged even before the fix. A
+    // regression that silenced BOTH rules would pass every case above while
+    // failing this one.
+    name: 'control: no React annotation, `global-const-style` alone',
+    code: 'const element = { a: 1 };\n',
+    output: 'const ELEMENT = { a: 1 } as const;\n',
+  },
+  {
+    // The other side of the carve-out: a function value is outside
+    // `global-const-style`, so this rule alone names it — and must still fix.
+    name: 'control: a function value stays this rule s to name',
+    code: 'const button: FC = () => <button />;\n',
+    output: 'const Button: FC = () => <button />;\n',
+  },
+];
+
+describe('enforce-react-type-naming and global-const-style converge (#1846)', () => {
+  it('ships both rules as errors in the recommended config', () => {
+    // The contradiction only reaches a consumer because both are on by default.
+    expect(PAIR_IDS.map((id) => plugin.configs.recommended.rules[id])).toEqual([
+      'error',
+      'error',
+    ]);
+  });
+
+  it.each(PAIR_CASES)('$name', ({ code, output }) => {
+    const result = pairLinter.verifyAndFix(code, PAIR_CONFIG, FILENAME);
+
+    expect(result.output).toBe(output);
+    // (a) the written file is clean under BOTH rules...
+    expect(lintPair(result.output)).toEqual([]);
+    // (b) ...and carries no identifier a fixer war produced.
+    expect(mangledNamesIn(result.output)).toEqual([]);
+    // Re-fixing a fixpoint is a no-op; anything else means the pass cap, not
+    // agreement, is what stopped the loop.
+    expect(
+      pairLinter.verifyAndFix(result.output, PAIR_CONFIG, FILENAME).output,
+    ).toBe(output);
+  });
+
+  it('detects a mangled identifier (control)', () => {
+    // The exact name `--fix` wrote before this fix. A `toEqual([])` assertion
+    // over a predicate that accepts everything passes forever.
+    expect(
+      mangledNamesIn('const e_LEMENT: JSX.Element = <div>Hello</div>;\n'),
+    ).toEqual(['e_LEMENT']);
+    expect(mangledNamesIn('const ELEMENT = 1;\nlet myThing = 2;\n')).toEqual(
+      [],
+    );
+  });
+
+  it('hears from both rules (machinery control)', () => {
+    // A misassembled config reports nothing and makes every case above pass
+    // vacuously, so each rule is made to speak on an input only it objects to.
+    expect(
+      lintPair('function f(Child: ReactNode) { return Child; }\n'),
+    ).toEqual([
+      `${PREFIX}enforce-react-type-naming:reactNodeShouldBeLowercase`,
+    ]);
+    expect(lintPair('const thing = { a: 1 };\n')).toEqual([
+      `${PREFIX}global-const-style:asConst`,
+      `${PREFIX}global-const-style:upperSnakeCase`,
+    ]);
+  });
 });

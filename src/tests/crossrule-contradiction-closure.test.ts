@@ -242,8 +242,8 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
   },
   'enforce-react-type-naming::global-const-style': {
     reason:
-      'INCIDENTAL: the fixtures put a JSX-typed value in a camelCase module-scope const to display the TYPE annotation under test; SCREAMING_SNAKE satisfies both, and `--fix` reaches 6 of 17.',
-    cases: { asConst: 3, upperSnakeCase: 17 },
+      'PIPELINE: the fixtures put a JSX/ReactNode-typed value in a camelCase module-scope const to display the TYPE annotation under test; `--fix` supplies SCREAMING_SNAKE/`as const` and BOTH rules fall silent on all 15 (measured). The previous entry claimed the same thing and was FALSE: this rule demanded a lowercase initial for the very identifier the sibling demanded in SCREAMING_SNAKE, no spelling satisfied either, and the two fixers oscillated to a mangled `e_LEMENT` at the ten-pass cap — the one genuine contradiction this guard found (#1846). It is resolved by this rule yielding for the non-exported module-scope consts `global-const-style` governs, which leaves the sibling as the only renamer. Was `{asConst: 3, upperSnakeCase: 17}` with `--fix` reaching 6 of 17.',
+    cases: { asConst: 4, upperSnakeCase: 15 },
   },
   'enforce-render-hits-memoization::no-empty-dependency-use-callbacks': {
     reason:

@@ -12,6 +12,203 @@ const LOWERCASE_TYPES = ['ReactNode', 'JSX.Element'];
 // Types that should have uppercase variable names
 const UPPERCASE_TYPES = ['ComponentType', 'FC', 'FunctionComponent'];
 
+/**
+ * `global-const-style` owns the NAME of a non-exported module-scope `const`, and
+ * the two rules cannot both be satisfied there: it demands UPPER_SNAKE_CASE,
+ * this rule demands a lowercase initial for `ReactNode`/`JSX.Element`. Every
+ * spelling reports under one or the other, and because BOTH renamers autofix,
+ * `--fix` oscillates (`element` -> `ELEMENT` -> `eLEMENT` -> `E_LEMENT` ->
+ * `e_LEMENT` -> …) until ESLint's ten-pass cap and writes the mangled
+ * identifier to disk (Issue #1846).
+ *
+ * The pair is resolved by this rule yielding: module-scope constant naming is
+ * `global-const-style`'s universal contract, while this rule's purpose —
+ * telling an element VALUE apart from a COMPONENT — is about local and
+ * parameter naming, where nothing competes with it. Do not re-open the
+ * carve-out without changing `global-const-style` in the same breath.
+ *
+ * The predicate below mirrors `global-const-style`'s ACTUAL governance rather
+ * than "module-scope const", because that rule declines on several shapes and
+ * yielding on one of those would leave the declaration governed by nothing:
+ *
+ *   - `let`/`var`, and any non-module scope, are outside it entirely;
+ *   - an EXPORTED declaration keeps its report there, so this rule keeps its
+ *     own (neither renames it, so nothing oscillates);
+ *   - a function value or a `memo`/`forwardRef` call makes it skip the whole
+ *     declaration list — `const button: FC = () => …` is this rule's alone;
+ *   - an absent initializer, a dynamic value, a binding alias and a
+ *     `jest.Mock*` cast each silence its rename check.
+ *
+ * When any of that cannot be established the answer is `false`: keeping a
+ * report is recoverable, silently governing nothing is not.
+ */
+const VALUE_WRAPPER_TYPES = new Set([
+  AST_NODE_TYPES.TSAsExpression,
+  AST_NODE_TYPES.TSTypeAssertion,
+  AST_NODE_TYPES.TSSatisfiesExpression,
+  AST_NODE_TYPES.TSNonNullExpression,
+]);
+
+type ValueWrapper =
+  | TSESTree.TSAsExpression
+  | TSESTree.TSTypeAssertion
+  | TSESTree.TSSatisfiesExpression
+  | TSESTree.TSNonNullExpression;
+
+const isValueWrapper = (node: TSESTree.Node): node is ValueWrapper =>
+  VALUE_WRAPPER_TYPES.has(node.type);
+
+const unwrapValueWrappers = (node: TSESTree.Node): TSESTree.Node => {
+  let target: TSESTree.Node = node;
+  while (isValueWrapper(target)) {
+    target = target.expression;
+  }
+  return target;
+};
+
+// `global-const-style` unwraps only `as`/`<T>` casts before classifying an
+// initializer as dynamic or as a binding alias, so the mirror does the same.
+const unwrapCasts = (node: TSESTree.Node): TSESTree.Node => {
+  let target = node;
+  while (
+    target.type === AST_NODE_TYPES.TSTypeAssertion ||
+    target.type === AST_NODE_TYPES.TSAsExpression
+  ) {
+    target = target.expression;
+  }
+  return target;
+};
+
+const COMPONENT_FACTORY_NAMES = new Set(['forwardRef', 'memo']);
+
+const isComponentFactoryCall = (node: TSESTree.Node): boolean => {
+  if (node.type !== AST_NODE_TYPES.CallExpression) {
+    return false;
+  }
+  const { callee } = node;
+  if (callee.type === AST_NODE_TYPES.Identifier) {
+    return COMPONENT_FACTORY_NAMES.has(callee.name);
+  }
+  return (
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    !callee.computed &&
+    callee.property.type === AST_NODE_TYPES.Identifier &&
+    COMPONENT_FACTORY_NAMES.has(callee.property.name)
+  );
+};
+
+const isFunctionValue = (node: TSESTree.Node): boolean =>
+  node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+  node.type === AST_NODE_TYPES.FunctionExpression;
+
+const isDynamicValue = (node: TSESTree.Node): boolean => {
+  const target = unwrapCasts(node);
+
+  if (
+    target.type === AST_NODE_TYPES.CallExpression ||
+    target.type === AST_NODE_TYPES.NewExpression ||
+    target.type === AST_NODE_TYPES.BinaryExpression
+  ) {
+    return true;
+  }
+  if (target.type === AST_NODE_TYPES.ChainExpression) {
+    return isDynamicValue(target.expression);
+  }
+  if (target.type === AST_NODE_TYPES.MemberExpression) {
+    return isDynamicValue(target.object);
+  }
+  return false;
+};
+
+const PRIMITIVE_VALUE_GLOBALS = new Set(['undefined', 'NaN', 'Infinity']);
+
+const isBindingAlias = (node: TSESTree.Node): boolean => {
+  const target = unwrapCasts(node);
+  return (
+    target.type === AST_NODE_TYPES.Identifier &&
+    !PRIMITIVE_VALUE_GLOBALS.has(target.name)
+  );
+};
+
+const JEST_MOCK_TYPE_NAMES = new Set([
+  'Mock',
+  'MockedFunction',
+  'Mocked',
+  'MockedClass',
+]);
+
+const isJestMockTypeReference = (
+  typeAnnotation: TSESTree.TypeNode,
+): boolean => {
+  if (typeAnnotation.type !== AST_NODE_TYPES.TSTypeReference) {
+    return false;
+  }
+  const { typeName } = typeAnnotation;
+  return (
+    typeName.type === AST_NODE_TYPES.TSQualifiedName &&
+    typeName.left.type === AST_NODE_TYPES.Identifier &&
+    typeName.left.name === 'jest' &&
+    typeName.right.type === AST_NODE_TYPES.Identifier &&
+    JEST_MOCK_TYPE_NAMES.has(typeName.right.name)
+  );
+};
+
+const isJestMockCast = (node: TSESTree.Node): boolean => {
+  let current: TSESTree.Node = node;
+  while (isValueWrapper(current)) {
+    if (
+      current.type === AST_NODE_TYPES.TSAsExpression &&
+      isJestMockTypeReference(current.typeAnnotation)
+    ) {
+      return true;
+    }
+    current = current.expression;
+  }
+  return false;
+};
+
+const isGlobalConstStyleGoverned = (
+  declarator: TSESTree.VariableDeclarator,
+): boolean => {
+  const declaration = declarator.parent;
+  if (
+    !declaration ||
+    declaration.type !== AST_NODE_TYPES.VariableDeclaration ||
+    declaration.kind !== 'const'
+  ) {
+    return false;
+  }
+
+  // Module scope only, and not exported: `global-const-style` withholds the
+  // rename FIX for an exported binding (#1700) but keeps reporting it, so both
+  // rules stay report-only there and no `--fix` loop can form.
+  if (declaration.parent?.type !== AST_NODE_TYPES.Program) {
+    return false;
+  }
+
+  // The function-value / component-factory skip is evaluated over the whole
+  // declaration LIST there, so `const a = () => {}, b = <div />;` exempts both.
+  const listSkipped = declaration.declarations.some((one) => {
+    if (one.id.type !== AST_NODE_TYPES.Identifier || !one.init) {
+      return false;
+    }
+    const target = unwrapValueWrappers(one.init);
+    return isFunctionValue(target) || isComponentFactoryCall(target);
+  });
+  if (listSkipped) {
+    return false;
+  }
+
+  const { init } = declarator;
+  if (!init) {
+    return false;
+  }
+
+  return (
+    !isDynamicValue(init) && !isBindingAlias(init) && !isJestMockCast(init)
+  );
+};
+
 // Every node shape whose declared identifiers this rule renames. Each one is a
 // node `getDeclaredVariables` understands, which is what lets the fixer resolve
 // the symbol behind the reported identifier.
@@ -161,6 +358,12 @@ export const enforceReactTypeNaming = createRule<[], MessageIds>({
 
       // Skip destructured variables
       if (isDestructured(id)) return;
+
+      // Yield the name to `global-const-style` where it governs (Issue #1846).
+      // Both branches yield: its UPPER_SNAKE_CASE target already satisfies the
+      // component branch's "starts uppercase", so nothing is lost there, and
+      // the element branch is the one that cannot coexist with it at all.
+      if (isGlobalConstStyleGoverned(node)) return;
 
       const variableName = id.name;
 
