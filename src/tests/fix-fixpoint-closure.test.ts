@@ -59,16 +59,24 @@
  * interface into `export default type X = …`, fixed in #1850 — and
  * `KNOWN_FATAL_OUTPUTS` is the empty allowlist that keeps the next one visible.
  *
- * SCOPE, stated rather than sampled. Probed: all 10,050 `valid` fixtures and
- * declared `output`/suggestion-outputs — the states a consumer's source is
- * supposed to already be in, which is where a fix that keeps moving is pure
- * damage. NOT probed: the 7,193-snippet `invalid` bucket, written to be
- * rewritten. That is a bucket boundary, not a sample — no fixture is dropped for
- * being slow, big or awkward, every fixture inside the boundary is probed, and
- * the last test below PRINTS the excluded bucket with its size so the omission
- * cannot read as coverage. Extending to it is the `BUCKETS` constant below.
+ * SCOPE, stated rather than sampled: the WHOLE corpus, all three buckets. No
+ * fixture is dropped for being slow, big or awkward, and the last test below
+ * prints any bucket left out with its size, so an omission cannot read as
+ * coverage.
  *
- * RUNTIME, the deliberate call: ~97s (10,050 fixtures x 188 rules x the
+ * The `invalid` bucket earns its place rather than merely fitting: it is where
+ * fixers actually RUN. Adding it took the corpus 10,050 -> 17,297 but the
+ * rewritten count 3,771 -> 8,194, so it more than doubles the text this gate
+ * ever sees a fixer produce. The prior boundary excluded it as "written to be
+ * rewritten", which is a sound reason to expect a residual REPORT and no reason
+ * at all to expect a parsable one — and parsability is the axis that matters
+ * here. #1850 is the proof: `prefer-type-over-interface` emitted unparsable
+ * `export default type X = …`, its own suite declared no `export default` case,
+ * and the fixture that caught it was a DIFFERENT rule's `output`. A violation
+ * is also what a consumer's source actually holds when they reach for `--fix`,
+ * which makes this bucket the closer model of that source, not the further one.
+ *
+ * RUNTIME, the deliberate call: ~190s (17,297 fixtures x 188 rules x the
  * multi-pass fix loop), kept PER-PR rather than on a schedule. The class it
  * catches is the plugin's own autofix corrupting a consumer's source, and a
  * scheduled sweep finds that after the release that shipped it — which is
@@ -120,7 +128,7 @@ for (const [id, severity] of Object.entries(plugin.configs.recommended.rules)) {
  * Which buckets are swept. See SCOPE above — this is the whole of the exclusion,
  * in one place, rather than a filter buried in the loop.
  */
-const BUCKETS = new Set<FixtureBucket>(['valid', 'output']);
+const BUCKETS = new Set<FixtureBucket>(['valid', 'output', 'invalid']);
 
 /**
  * Fixtures write `// eslint-disable-next-line <rule>` with a BARE name, because
@@ -463,13 +471,13 @@ describe("the recommended config's --fix reaches a fixpoint", () => {
         `(${stats.looseOscillations} would fail the loose test)`,
     );
 
-    // Measured 10,050 probed / 3,771 rewritten at 1.20.132. Each floor is
+    // Measured 17,297 probed / 8,194 rewritten at 1.20.132. Each floor is
     // separate because each fails differently: a probe count with nothing
     // rewritten means the fix pass never ran (the parser, filename or options
     // plumbing lost), and a corpus that reaches few owners says nothing about
     // the rest of the config however many snippets it holds.
-    expect(stats.probed).toBeGreaterThan(4000);
-    expect(stats.rewritten).toBeGreaterThan(1000);
+    expect(stats.probed).toBeGreaterThan(12000);
+    expect(stats.rewritten).toBeGreaterThan(6000);
     expect(stats.owners.size).toBeGreaterThan(150);
     expect(corpus.failures).toEqual([]);
     // The skipped-re-lint fast path must not have swallowed the slow path: the
@@ -722,7 +730,7 @@ describe("the recommended config's --fix reaches a fixpoint", () => {
   });
 
   it('swept the buckets it claims to and no others', () => {
-    // The exclusion is stated, not sampled: everything outside `BUCKETS` is
+    // Nothing is outside `BUCKETS`, but anything that ever falls outside is
     // named here with its size, so nobody has to read the loop to learn what is
     // not covered.
     const byBucket = new Map<FixtureBucket, number>();
@@ -751,6 +759,14 @@ describe("the recommended config's --fix reaches a fixpoint", () => {
     // partial one wearing its name.
     expect(stats.considered).toBe(swept);
     expect(stats.probed).toBe(swept);
-    expect(skipped).toEqual([`invalid=${byBucket.get('invalid')}`]);
+    expect(skipped).toEqual([]);
+
+    // An empty `skipped` is also what a bucket VANISHING from the harvest looks
+    // like, so name each one and floor it. Without this the strongest assertion
+    // in the file is the one most easily satisfied by a broken corpus.
+    expect([...byBucket.keys()].sort()).toEqual(['invalid', 'output', 'valid']);
+    expect(byBucket.get('valid')).toBeGreaterThan(5000);
+    expect(byBucket.get('invalid')).toBeGreaterThan(5000);
+    expect(byBucket.get('output')).toBeGreaterThan(1000);
   });
 });
