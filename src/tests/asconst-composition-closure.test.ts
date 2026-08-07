@@ -222,7 +222,7 @@ const EXEMPT: Record<string, string> = {
  */
 const KNOWN_DEFECTS: Record<string, string> = {
   /**
-   * TODO(#NNNN — filed from the #1859 widening): the member-expression branch
+   * TODO(#1864): the member-expression branch
    * tests `defNode.init.type !== ObjectExpression` directly
    * (`no-inline-component-prop.ts`) instead of going through the file's own
    * `unwrapExpression`, so `global-const-style`'s `as const` hides the object.
@@ -237,7 +237,7 @@ const KNOWN_DEFECTS: Record<string, string> = {
    *
    * Reports `inlineComponentProp` without the assertion, nothing with it.
    */
-  'no-inline-component-prop': 'as const hides the object; TODO(#NNNN)',
+  'no-inline-component-prop': 'as const hides the object; TODO(#1864)',
 };
 
 /** Both lists at once: the suite flags exactly the rules recorded here. */

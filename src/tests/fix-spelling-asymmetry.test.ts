@@ -570,7 +570,7 @@ const DETECTION_EXEMPT: Record<string, string> = {
  */
 const FIX_KNOWN_DEFECTS: Record<string, string> = {
   /**
-   * TODO(#NNNN — filed from the #1859 widening): the fix is withheld when the
+   * TODO(#1868): the fix is withheld when the
    * local hook it would orphan is a `function` declaration and applied when the
    * same hook is a `const` arrow, because `planOrphanedImportRemoval`
    * (`src/utils/importRemoval.ts`) treats a declarator's own initializer WRITE
@@ -588,7 +588,7 @@ const FIX_KNOWN_DEFECTS: Record<string, string> = {
    * `no-redundant-annotation-assertion` sit on the same edge.
    */
   'prefer-use-deep-compare-memo':
-    'declarator write hides an orphan; TODO(#NNNN)',
+    'declarator write hides an orphan; TODO(#1868)',
 };
 
 const reportOf = (findings: Finding[]) =>

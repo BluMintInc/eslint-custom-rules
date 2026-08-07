@@ -187,11 +187,11 @@ const KNOWN_DIVERGENT: Record<string, string> = {
     'ARTIFACT: only reached via `Object.assign?.()`',
   'no-margin-properties::member': 'ARTIFACT: only reached via `Object?.assign`',
   'no-object-values-on-strings::call':
-    'DEFECT TODO(#NNNN — filed from the #1859 widening): the blindness is on the ARGUMENT, not the callee. `Object.values("x".toUpperCase?.())` and the writable `Object.values(s?.toUpperCase())` both go silent, while `Object.values?.(...)` and `Object?.values(...)` still report — so the argument reader misses a ChainExpression',
+    'DEFECT TODO(#1865): the blindness is on the ARGUMENT, not the callee. `Object.values("x".toUpperCase?.())` and the writable `Object.values(s?.toUpperCase())` both go silent, while `Object.values?.(...)` and `Object?.values(...)` still report — so the argument reader misses a ChainExpression',
   'no-object-values-on-strings::member':
-    'DEFECT TODO(#NNNN — filed from the #1859 widening): same argument reader as the call arm; `Object.values("x"?.toUpperCase())` goes silent',
+    'DEFECT TODO(#1865): same argument reader as the call arm; `Object.values("x"?.toUpperCase())` goes silent',
   'no-passthrough-getters::member':
-    'DEFECT TODO(#NNNN — filed from the #1859 widening): `private get x() { return this.settings?.x; }` — the idiomatic spelling for an optional field — is not seen as a passthrough, while `this.settings.x` is',
+    'DEFECT TODO(#1866): `private get x() { return this.settings?.x; }` — the idiomatic spelling for an optional field — is not seen as a passthrough, while `this.settings.x` is',
   'no-redundant-this-params::member':
     'ARTIFACT: only reached via `this?.value` / `this?.method`',
   'no-redundant-usecallback-wrapper::call':
@@ -218,7 +218,7 @@ const KNOWN_DIVERGENT: Record<string, string> = {
   'prefer-destructuring-no-class::member':
     'CORRECT: `const { name } = user` throws when `user` is nullish, so the remedy is not equivalent to `user?.name`',
   'prefer-map-over-conditional-dispatch::member':
-    'DEFECT TODO(#NNNN — filed from the #1859 widening): a switch that NARROWS its union is correctly silent on `switch (result.kind)` and reports `preferMapManual` ("a collision-free lookup name could not be derived") on `switch (result?.kind)`. The remedy it then urges breaks the narrowing that `result.data` depends on, and the nullable discriminant is the case where `?.` is written',
+    'DEFECT TODO(#1867): a switch that NARROWS its union is correctly silent on `switch (result.kind)` and reports `preferMapManual` ("a collision-free lookup name could not be derived") on `switch (result?.kind)`. The remedy it then urges breaks the narrowing that `result.data` depends on, and the nullable discriminant is the case where `?.` is written',
   'prefer-next-dynamic::call': 'ARTIFACT: only reached via `useDynamic?.()`',
   'prefer-nullish-coalescing-boolean-props::call':
     'ARTIFACT: only reached via `useState?.(a || b)`, an optional call on the hook that carries the exemption',
