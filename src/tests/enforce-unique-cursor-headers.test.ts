@@ -234,6 +234,28 @@ export const ROUTES = ['/home'];
     },
   ],
   invalid: [
+    /**
+     * `null` written out explicitly, which is both schema-legal for this option
+     * and its documented default. `applyDefault` deep-merges the consumer's
+     * options over the rule's before `create` runs, and its `deepMerge` treats
+     * `null` as an object, so a null on both sides used to reach
+     * `Object.keys(null)` and throw while LOADING the rule — aborting the lint
+     * for the file and taking every other rule with it. The assertion is that
+     * the rule still reports normally; the regression it pins is the run
+     * surviving at all.
+     */
+    {
+      code: `
+import { HttpsError } from '../errors/HttpsError';
+
+export const validateUser = (userId: string) => {
+  return !!userId;
+};
+      `,
+      filename: '/workspace/src/missing-header.ts',
+      options: [{ headerTemplate: null }],
+      errors: [{ messageId: 'missingHeader' }],
+    },
     {
       code: `
 import { HttpsError } from '../errors/HttpsError';
