@@ -253,6 +253,33 @@ const run = shouldRun(1); // → rename to shouldRun / isRunning
 
   Property reads are the exception: property names are only enforced under [`enforceForPropertySignatures`](#enforceforpropertysignatures), so an unprefixed property may legitimately hold a boolean and the callee's name keeps its say (`function canRead(source: { flag: unknown }) { return source.flag; }` leaves `const readOutcome = canRead(input);` flagged).
 
+#### Optional chaining in an initializer
+
+An optional link (`user?.isLoggedIn`, `canDelete?.('x')`) is read through, so a
+chained initializer is judged exactly like its plain spelling.
+
+```ts
+// Flagged — same as `user.isLoggedIn`.
+declare const user: { isLoggedIn: boolean } | undefined;
+const loggedIn = user?.isLoggedIn;
+
+// Flagged — same as `canDelete('x')`.
+declare const canDelete: ((id: string) => boolean) | undefined;
+const deletable = canDelete?.('x');
+
+// Not flagged — neither the property nor the callee suggests a boolean.
+declare const account: { name: string } | undefined;
+const name = account?.name;
+```
+
+The chain makes the value `boolean | undefined` rather than `boolean`, and the
+prefix is still required: this rule already demands one of `enabled?: boolean`
+on a parameter, class property or method, and of `const loggedIn = user && user.isLoggedIn`,
+whose type is the same. A value that may be absent is where an unprefixed name
+misleads most, since a falsy result no longer distinguishes "false" from
+"receiver was missing". The remedy is a rename of the binding, which never
+changes how the initializer short-circuits.
+
 #### Private/Internal Properties with Underscore Prefix
 
 Properties that start with an underscore (`_`) are treated as internal state and are exempt from this rule:

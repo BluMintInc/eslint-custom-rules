@@ -338,33 +338,60 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     }
 
     /**
+     * An optional link wraps the member access or call it belongs to in a
+     * `ChainExpression`, so `user?.isLoggedIn` and `canDelete?.('x')` reach a
+     * value check as a wrapper node rather than as the member/call the check
+     * looks for.
+     *
+     * Unwrapping is the right answer for THIS rule even though `a?.b` is
+     * `boolean | undefined` where `a.b` is `boolean`: the rule's remedy is a
+     * rename of the binding, which never changes how the initializer
+     * short-circuits, and the rule already requires the prefix on
+     * possibly-undefined booleans elsewhere — `deletable?: boolean` on a
+     * parameter, class property or method all report, and so does
+     * `const loggedIn = user && user.isLoggedIn`, whose type is exactly the
+     * `boolean | undefined` an optional chain produces. A value that may be
+     * absent is where an unprefixed name misleads most, because a falsy result
+     * no longer distinguishes "false" from "receiver was missing".
+     */
+    function unwrapChainExpression(
+      expression: TSESTree.Expression,
+    ): TSESTree.Expression {
+      return expression.type === AST_NODE_TYPES.ChainExpression
+        ? expression.expression
+        : expression;
+    }
+
+    /**
      * Check if a node is initialized with a boolean value
      */
     function hasInitialBooleanValue(node: TSESTree.Node): boolean {
       if (node.type === AST_NODE_TYPES.VariableDeclarator && node.init) {
+        const init = unwrapChainExpression(node.init);
+
         // Check for direct boolean literal initialization
         if (
-          node.init.type === AST_NODE_TYPES.Literal &&
-          typeof node.init.value === 'boolean'
+          init.type === AST_NODE_TYPES.Literal &&
+          typeof init.value === 'boolean'
         ) {
           return true;
         }
 
         // Check for logical expressions that typically return boolean
         if (
-          node.init.type === AST_NODE_TYPES.BinaryExpression &&
-          BOOLEANISH_BINARY_OPERATORS.has(node.init.operator)
+          init.type === AST_NODE_TYPES.BinaryExpression &&
+          BOOLEANISH_BINARY_OPERATORS.has(init.operator)
         ) {
           return true;
         }
 
         // Check for logical expressions (&&)
         if (
-          node.init.type === AST_NODE_TYPES.LogicalExpression &&
-          node.init.operator === '&&'
+          init.type === AST_NODE_TYPES.LogicalExpression &&
+          init.operator === '&&'
         ) {
-          const left = evaluateBooleanishExpression(node.init.left);
-          const right = evaluateBooleanishExpression(node.init.right);
+          const left = evaluateBooleanishExpression(init.left);
+          const right = evaluateBooleanishExpression(init.right);
 
           // If both sides are boolean, the result is boolean.
           if (left === 'boolean' && right === 'boolean') {
@@ -386,11 +413,11 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         // 1. It's used with boolean literals or
         // 2. It's not used with array/object literals as fallbacks
         if (
-          node.init.type === AST_NODE_TYPES.LogicalExpression &&
-          node.init.operator === '||'
+          init.type === AST_NODE_TYPES.LogicalExpression &&
+          init.operator === '||'
         ) {
           // Check if right side is a non-boolean literal (array, object, string, number)
-          const rightSide = node.init.right;
+          const rightSide = init.right;
           if (
             rightSide.type === AST_NODE_TYPES.ArrayExpression ||
             rightSide.type === AST_NODE_TYPES.ObjectExpression ||
@@ -410,7 +437,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
 
           // For other cases, we need to be more careful
           // If we can determine the left side is a boolean, then it's a boolean variable
-          const leftSide = node.init.left;
+          const leftSide = unwrapChainExpression(init.left);
           if (
             (leftSide.type === AST_NODE_TYPES.Literal &&
               typeof leftSide.value === 'boolean') ||
@@ -445,25 +472,25 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
 
         // Check for unary expressions with ! operator
         if (
-          node.init.type === AST_NODE_TYPES.UnaryExpression &&
-          node.init.operator === '!'
+          init.type === AST_NODE_TYPES.UnaryExpression &&
+          init.operator === '!'
         ) {
           return true;
         }
 
         // Check for function calls that might return boolean
         if (
-          node.init.type === AST_NODE_TYPES.CallExpression &&
-          node.init.callee.type === AST_NODE_TYPES.Identifier
+          init.type === AST_NODE_TYPES.CallExpression &&
+          init.callee.type === AST_NODE_TYPES.Identifier
         ) {
           // A coercion through the global `Boolean` is as definitive as `!!x`,
           // and its callee carries no approved prefix for the name heuristic
           // below to recognize.
-          if (isGlobalBooleanCall(node.init)) {
+          if (isGlobalBooleanCall(init)) {
             return true;
           }
 
-          const calleeName = node.init.callee.name;
+          const calleeName = init.callee.name;
           const lowerCallee = calleeName.toLowerCase();
 
           // For assert*-style utilities, only treat as boolean if we can confirm boolean return type
@@ -1507,7 +1534,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         variableDeclarator?.type === AST_NODE_TYPES.VariableDeclarator &&
         variableDeclarator.init
       ) {
-        const init = variableDeclarator.init;
+        const init = unwrapChainExpression(variableDeclarator.init);
 
         // Check for direct boolean initialization
         if (
