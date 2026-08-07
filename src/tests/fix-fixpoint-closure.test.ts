@@ -49,15 +49,17 @@
  * The first conjunct — a residual report that still CARRIES a fix — is equally
  * load-bearing in the other direction. `fixed: true` plus some report remaining
  * is ordinary (an unrelated unfixable report survives an unrelated fix); it
- * describes 3,768 of the 3,772 fixtures `--fix` rewrote here, and the loose test
+ * describes 3,768 of the 3,771 fixtures `--fix` rewrote here, and the loose test
  * calls every one of them an oscillation.
  *
  * A fix that emits UNPARSABLE text is counted on its own axis and never folded
  * into convergence: a fatal carries no `ruleId`, so a rule-keyed residual filter
- * reads corruption as silence. There is exactly one today, and it is a live
- * defect rather than an artifact — see `KNOWN_FATAL_OUTPUTS` and #1850.
+ * reads corruption as silence. The corpus holds none — the one this sweep found
+ * on its first run was `prefer-type-over-interface` rewriting a default-exported
+ * interface into `export default type X = …`, fixed in #1850 — and
+ * `KNOWN_FATAL_OUTPUTS` is the empty allowlist that keeps the next one visible.
  *
- * SCOPE, stated rather than sampled. Probed: all 10,040 `valid` fixtures and
+ * SCOPE, stated rather than sampled. Probed: all 10,050 `valid` fixtures and
  * declared `output`/suggestion-outputs — the states a consumer's source is
  * supposed to already be in, which is where a fix that keeps moving is pure
  * damage. NOT probed: the 7,193-snippet `invalid` bucket, written to be
@@ -66,13 +68,13 @@
  * the last test below PRINTS the excluded bucket with its size so the omission
  * cannot read as coverage. Extending to it is the `BUCKETS` constant below.
  *
- * RUNTIME, the deliberate call: ~97s (10,040 fixtures x 188 rules x the
+ * RUNTIME, the deliberate call: ~97s (10,050 fixtures x 188 rules x the
  * multi-pass fix loop), kept PER-PR rather than on a schedule. The class it
  * catches is the plugin's own autofix corrupting a consumer's source, and a
  * scheduled sweep finds that after the release that shipped it — which is
  * exactly how #1846 reached agora. The one honest saving is taken and documented
  * at `classifyFixpoint`: a fixture `--fix` never touched cannot need re-linting.
- * That is 6,268 of the 10,040 second lints, measured at 131s -> 97s (-26%), and
+ * That is 6,279 of the 10,050 second lints, measured at 131s -> 97s (-26%), and
  * it costs no coverage — the skipped lint is provably identical to one already
  * performed. Nothing else was cut; sampling the corpus was rejected outright,
  * since a partial sweep that reads as complete is worse than no sweep.
@@ -191,8 +193,8 @@ const labelOf = (message: Linter.LintMessage) =>
  * THE ONE SAVING, and why it costs no coverage: when `verifyAndFix` reports
  * `fixed: false` it applied nothing on any pass, so `output === source` and the
  * one lint it already performed IS the lint of the output. Re-linting would
- * reproduce those messages verbatim. Skipping that duplicate for the 6,268
- * untouched fixtures took the sweep from 131s to 97s; the other 3,772 take the
+ * reproduce those messages verbatim. Skipping that duplicate for the 6,279
+ * untouched fixtures took the sweep from 131s to 97s; the other 3,771 take the
  * full two-lint path, so the re-lint arm stays exercised on thousands of real
  * fixtures (floored below) rather than by the controls alone. This rests on the
  * documented meaning of `fixed`, not on `verifyAndFix` internals, and the
@@ -354,23 +356,21 @@ type KnownFatal = {
 /**
  * Fixtures whose FIXED output no longer parses, keyed `owner <- origin`.
  *
- * AN ENTRY IS NOT A WAY TO MAKE A BUILD GREEN. Each records a fixture whose
- * lint-after-fix is fatal, with the issue that owns it. A `causedByFix` entry is
- * live source corruption: it is here only so the sweep's OTHER findings stay
- * visible while the cited issue is drained, never as an acceptance.
+ * SHIPS EMPTY, and an entry is not a way to make a build green. Each would
+ * record a fixture whose lint-after-fix is fatal, with the issue that owns it. A
+ * `causedByFix` entry is live source corruption: it belongs here only so the
+ * sweep's OTHER findings stay visible while the cited issue is drained, never as
+ * an acceptance. The sole entry this sweep ever carried — `prefer-type-over-
+ * interface` rewriting `export default interface Opts {…}` into the unparsable
+ * `export default type Opts = {…}` — was deleted when #1850 made that rule
+ * decline the fix, which is the intended lifetime of an entry.
  *
  * Asserted exactly, in three directions: a new fatal fails, an entry whose
  * fixture stopped going fatal fails (a dead exemption is what masks the next
  * regression, #1839), and a `causedByFix` flag that no longer matches the
  * measurement fails.
  */
-const KNOWN_FATAL_OUTPUTS: Record<string, KnownFatal> = {
-  'require-hooks-default-params <- require-hooks-default-params.test.ts': {
-    reason:
-      "#1850. `prefer-type-over-interface` rewrites `export default interface Opts {…}` to `export default type Opts = {…}`, which is a syntax error — the keyword swap targets the interface node, whose range starts after `export default`. Reproduced with that rule ALONE, so it is not a composition artifact. TypeScript has no default-exported type alias, so the fix has no in-place remedy and the rule has to decline. Reached through this fixture because `prefer-type-over-interface`'s own suite declares no `export default` case.",
-    causedByFix: true,
-  },
-};
+const KNOWN_FATAL_OUTPUTS: Record<string, KnownFatal> = {};
 
 describe("the recommended config's --fix reaches a fixpoint", () => {
   it('leaves no fixture with a fix still pending when --fix stops', () => {
@@ -440,6 +440,14 @@ describe("the recommended config's --fix reaches a fixpoint", () => {
     );
   });
 
+  // The allowlist above silences a LIVE corruption finding, so growing it is
+  // meant to cost a second, deliberate edit rather than happen quietly. Pinning
+  // the empty state is what makes that cost real; with the map empty, the two
+  // staleness directions asserted above have nothing to bite on.
+  it('ships with an empty allowlist, so every fatal output is a failure', () => {
+    expect(Object.keys(KNOWN_FATAL_OUTPUTS)).toEqual([]);
+  });
+
   it('never let a probe throw instead of producing a verdict', () => {
     expect(stats.threw).toEqual([]);
   });
@@ -455,7 +463,7 @@ describe("the recommended config's --fix reaches a fixpoint", () => {
         `(${stats.looseOscillations} would fail the loose test)`,
     );
 
-    // Measured 10,040 probed / 3,772 rewritten at 1.20.132. Each floor is
+    // Measured 10,050 probed / 3,771 rewritten at 1.20.132. Each floor is
     // separate because each fails differently: a probe count with nothing
     // rewritten means the fix pass never ran (the parser, filename or options
     // plumbing lost), and a corpus that reaches few owners says nothing about

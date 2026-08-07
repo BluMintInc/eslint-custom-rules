@@ -39,6 +39,31 @@ interface TeamMember /* audited quarterly */ extends UserProfile {
 
 Move the comment above the declaration or inside the body to make the declaration autofixable.
 
+### Autofix limitation: default-exported interfaces
+
+`export default interface X { ... }` is reported without a fix. TypeScript has no default-exported type alias — `export default type X = ...` is a syntax error in every form — so the keyword swap the fix performs has nowhere to land, and applying it would leave a file that no longer parses.
+
+The conversion is still available, as a two-statement restructure the autofix cannot express:
+
+```typescript
+// reported, but not autofixed
+export default interface Options {
+  retries: number;
+}
+```
+
+```typescript
+// the conversion, applied by hand
+type Options = {
+  retries: number;
+};
+export type { Options as default };
+```
+
+Written this way the module keeps its default export, so every existing `import Options from './options'` goes on resolving exactly as it did against the interface, and the declaration type-checks under `isolatedModules` and `verbatimModuleSyntax` alike. A named export (`export type Options = { ... }`) is equally valid and often clearer, at the cost of updating each import site to `import type { Options }`.
+
+Unlike a merged declaration, this shape is not exempted outright: the report is actionable, because the author can perform the conversion — only the mechanical rewrite is unavailable.
+
 ### Exemption: module augmentations
 
 Interfaces inside a module augmentation are not reported. Declaration merging is the entire purpose of such a block and only `interface` can merge, so the rewrite is not a style change: the alias stops augmenting anything, collides with the declaration it was meant to extend (`TS2300: Duplicate identifier`), and the added members silently disappear (`TS2339: Property ... does not exist`).

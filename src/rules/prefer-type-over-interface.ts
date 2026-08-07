@@ -59,6 +59,24 @@ function isInsideModuleAugmentation(node: TSESTree.Node): boolean {
   return false;
 }
 
+type MessageIds = 'preferType' | 'preferTypeDefaultExport';
+
+/**
+ * `export default interface X {…}` is the only spelling TypeScript has for a
+ * default-exported type: `export default type X = …` is a syntax error in every
+ * form, so the keyword swap has no landing site. It lands there anyway because
+ * the `TSInterfaceDeclaration`'s range starts at `interface` while
+ * `export default` belongs to the parent node, which made `eslint --fix` write
+ * a file that no longer parses (#1850).
+ *
+ * The conversion is still available to the author, as a two-statement
+ * restructure a keyword swap cannot express, so the report stands and carries
+ * that remedy instead of a fix.
+ */
+function isDefaultExported(node: TSESTree.TSInterfaceDeclaration): boolean {
+  return node.parent?.type === AST_NODE_TYPES.ExportDefaultDeclaration;
+}
+
 /**
  * Declaration merging is what `interface` can do and `type` cannot, so a name
  * carrying more than one declaration is not a stylistic choice: rewriting one
@@ -79,7 +97,7 @@ function isInsideModuleAugmentation(node: TSESTree.Node): boolean {
  * table.
  */
 function isMergedDeclaration(
-  context: Readonly<TSESLint.RuleContext<'preferType', never[]>>,
+  context: Readonly<TSESLint.RuleContext<MessageIds, never[]>>,
   node: TSESTree.TSInterfaceDeclaration,
 ): boolean {
   // The variable is located by the definition that points back at *this*
@@ -98,104 +116,124 @@ function isMergedDeclaration(
   return declared !== undefined && declared.defs.length > 1;
 }
 
-export const preferTypeOverInterface: TSESLint.RuleModule<
-  'preferType',
-  never[]
-> = createRule({
-  name: 'prefer-type-over-interface',
-  meta: {
-    type: 'suggestion',
-    docs: {
-      description: 'Prefer using type alias over interface',
-      recommended: 'error',
-    },
-    schema: [],
-    messages: {
-      preferType:
-        'Interface "{{interfaceName}}" should be declared as a type alias. ' +
-        'Interfaces can merge across declarations and extend in chains, which fragments the resulting shape across files and makes composition harder to predict and trace. ' +
-        'Replace `interface` with `type` and use intersections (for example, `type {{interfaceName}} = Base & { field: string }`) to keep the contract closed and predictable.',
-    },
-    fixable: 'code',
-  },
-  defaultOptions: [],
-
-  create(context) {
-    return {
-      TSInterfaceDeclaration(node: TSESTree.TSInterfaceDeclaration) {
-        if (isInsideModuleAugmentation(node)) {
-          return;
-        }
-
-        // Reporting without a fix would be unactionable here — the author
-        // cannot honour it without collapsing the merge by hand — and an
-        // unactionable report is what manufactures `eslint-disable` (#1568).
-        if (isMergedDeclaration(context, node)) {
-          return;
-        }
-
-        context.report({
-          node,
-          messageId: 'preferType',
-          data: {
-            interfaceName: node.id.name,
-          },
-          fix(fixer) {
-            const sourceCode = context.sourceCode;
-            // The `=` must land after the entire declaration header (the
-            // name plus any type-parameter list); anchoring on the
-            // identifier alone emits unparseable `type Name =<T> {`.
-            const header = node.typeParameters ?? node.id;
-            const keywordSpan: TSESTree.Range = [
-              node.range[0],
-              node.id.range[0],
-            ];
-            // Everything between the header and the opening brace is
-            // rewritten wholesale rather than patched token by token: the
-            // heritage list needs `,` turned into `&` and the `extends`
-            // keyword dropped, and surgical edits leave the separators and
-            // the keyword's surrounding whitespace behind. The body starts at
-            // the opening brace, so this span cannot swallow a `{` belonging
-            // to a heritage type argument or a type-parameter constraint.
-            const headerSpan: TSESTree.Range = [
-              header.range[1],
-              node.body.range[0],
-            ];
-
-            // Both rewritten spans are replaced in full, so a comment sitting
-            // inside either one would be silently destroyed (and a line
-            // comment would even swallow the `=` that follows it). Reporting
-            // without a fix preserves the author's prose; the conversion is
-            // then made by hand.
-            const clobbersComment = sourceCode
-              .getAllComments()
-              .some((comment) =>
-                [keywordSpan, headerSpan].some(
-                  ([start, end]) =>
-                    comment.range[0] < end && comment.range[1] > start,
-                ),
-              );
-            if (clobbersComment) {
-              return null;
-            }
-
-            const heritage = node.extends ?? [];
-            // `getText` round-trips type arguments and qualified names, so
-            // `extends ns.B<T>, C` becomes `ns.B<T> & C`.
-            const intersection = heritage
-              .map((clause) => sourceCode.getText(clause))
-              .join(' & ');
-
-            return [
-              fixer.replaceTextRange(keywordSpan, 'type '),
-              fixer.replaceTextRange(
-                headerSpan,
-                heritage.length > 0 ? ` = ${intersection} & ` : ' = ',
-              ),
-            ];
-          },
-        });
+export const preferTypeOverInterface: TSESLint.RuleModule<MessageIds, never[]> =
+  createRule({
+    name: 'prefer-type-over-interface',
+    meta: {
+      type: 'suggestion',
+      docs: {
+        description: 'Prefer using type alias over interface',
+        recommended: 'error',
       },
-    };
-  },
-});
+      schema: [],
+      messages: {
+        preferType:
+          'Interface "{{interfaceName}}" should be declared as a type alias. ' +
+          'Interfaces can merge across declarations and extend in chains, which fragments the resulting shape across files and makes composition harder to predict and trace. ' +
+          'Replace `interface` with `type` and use intersections (for example, `type {{interfaceName}} = Base & { field: string }`) to keep the contract closed and predictable.',
+        preferTypeDefaultExport:
+          'Interface "{{interfaceName}}" should be declared as a type alias, but a default-exported interface has no in-place conversion, so no autofix is offered here. ' +
+          'Interfaces can merge across declarations and extend in chains, which fragments the resulting shape across files and makes composition harder to predict and trace. ' +
+          'TypeScript has no default-exported type alias — `export default type {{interfaceName}} = ...` is a syntax error — so the conversion takes two statements: `type {{interfaceName}} = { field: string };` followed by `export type { {{interfaceName}} as default };`, which keeps every existing `import {{interfaceName}} from ...` working. ' +
+          'A named `export type {{interfaceName}} = ...` works too, once the import sites are switched to `import type { {{interfaceName}} }`.',
+      },
+      fixable: 'code',
+    },
+    defaultOptions: [],
+
+    create(context) {
+      return {
+        TSInterfaceDeclaration(node: TSESTree.TSInterfaceDeclaration) {
+          if (isInsideModuleAugmentation(node)) {
+            return;
+          }
+
+          // Reporting without a fix would be unactionable here — the author
+          // cannot honour it without collapsing the merge by hand — and an
+          // unactionable report is what manufactures `eslint-disable` (#1568).
+          if (isMergedDeclaration(context, node)) {
+            return;
+          }
+
+          // Withholding the fix rather than emitting a broken one: every rewrite
+          // below assumes the `interface` keyword can become `type` where it
+          // stands, and under `export default` that position accepts no
+          // declaration at all. The report is kept because the author *can* act
+          // on it — unlike a merge, the shape converts by hand — and the remedy
+          // travels in the message.
+          if (isDefaultExported(node)) {
+            context.report({
+              node,
+              messageId: 'preferTypeDefaultExport',
+              data: {
+                interfaceName: node.id.name,
+              },
+            });
+            return;
+          }
+
+          context.report({
+            node,
+            messageId: 'preferType',
+            data: {
+              interfaceName: node.id.name,
+            },
+            fix(fixer) {
+              const sourceCode = context.sourceCode;
+              // The `=` must land after the entire declaration header (the
+              // name plus any type-parameter list); anchoring on the
+              // identifier alone emits unparseable `type Name =<T> {`.
+              const header = node.typeParameters ?? node.id;
+              const keywordSpan: TSESTree.Range = [
+                node.range[0],
+                node.id.range[0],
+              ];
+              // Everything between the header and the opening brace is
+              // rewritten wholesale rather than patched token by token: the
+              // heritage list needs `,` turned into `&` and the `extends`
+              // keyword dropped, and surgical edits leave the separators and
+              // the keyword's surrounding whitespace behind. The body starts at
+              // the opening brace, so this span cannot swallow a `{` belonging
+              // to a heritage type argument or a type-parameter constraint.
+              const headerSpan: TSESTree.Range = [
+                header.range[1],
+                node.body.range[0],
+              ];
+
+              // Both rewritten spans are replaced in full, so a comment sitting
+              // inside either one would be silently destroyed (and a line
+              // comment would even swallow the `=` that follows it). Reporting
+              // without a fix preserves the author's prose; the conversion is
+              // then made by hand.
+              const clobbersComment = sourceCode
+                .getAllComments()
+                .some((comment) =>
+                  [keywordSpan, headerSpan].some(
+                    ([start, end]) =>
+                      comment.range[0] < end && comment.range[1] > start,
+                  ),
+                );
+              if (clobbersComment) {
+                return null;
+              }
+
+              const heritage = node.extends ?? [];
+              // `getText` round-trips type arguments and qualified names, so
+              // `extends ns.B<T>, C` becomes `ns.B<T> & C`.
+              const intersection = heritage
+                .map((clause) => sourceCode.getText(clause))
+                .join(' & ');
+
+              return [
+                fixer.replaceTextRange(keywordSpan, 'type '),
+                fixer.replaceTextRange(
+                  headerSpan,
+                  heritage.length > 0 ? ` = ${intersection} & ` : ' = ',
+                ),
+              ];
+            },
+          });
+        },
+      };
+    },
+  });

@@ -53,6 +53,28 @@ describe('prefer-type-over-interface fixed-output parse guard', () => {
       asParseable('export type A = B & C & {\n  a: string;\n};'),
     ).not.toThrow();
   });
+
+  // Issue #1850: the keyword swap under `export default` produced this. It is
+  // not a near-miss the parser tolerates — there is no default-exported type
+  // alias in TypeScript at all — which is why the fix is declined rather than
+  // re-anchored.
+  it('rejects the pre-fix broken shape `export default type X = {…}`', () => {
+    expect(() =>
+      asParseable('export default type Opts = { a?: string }'),
+    ).toThrow();
+  });
+
+  // The remedy the `preferTypeDefaultExport` message names. Parsing is the
+  // weaker half of the claim; the stronger half — that it type-checks and that
+  // existing `import Opts from '...'` sites keep working — was verified with
+  // `tsc` under `strict`, `isolatedModules` and `verbatimModuleSyntax`.
+  it('accepts the two-statement remedy `type X = …; export type { X as default };`', () => {
+    expect(() =>
+      asParseable(
+        'type Opts = { a?: string };\nexport type { Opts as default };',
+      ),
+    ).not.toThrow();
+  });
 });
 
 /**
@@ -112,6 +134,55 @@ describe('prefer-type-over-interface augmentation AST shape', () => {
     );
     expect(declaration.id.type).toBe(AST_NODE_TYPES.Identifier);
     expect(declaration.global).toBeUndefined();
+  });
+});
+
+/**
+ * Issue #1850: the decline keys off the interface's PARENT being an
+ * `ExportDefaultDeclaration`, and on the fact that `export default` sits
+ * outside the interface's own range. Both are parser-spelling facts, so they
+ * are pinned here: a parser bump that moved either would otherwise silently
+ * re-enable the fix that writes `export default type X = …` to disk.
+ */
+describe('prefer-type-over-interface default-export AST shape', () => {
+  const interfaceOf = (code: string) => {
+    const program = parse(code, PARSE_OPTIONS) as unknown as TSESTree.Program;
+    const [statement] = program.body;
+    return statement as TSESTree.ExportDefaultDeclaration;
+  };
+
+  it('parents the interface on an ExportDefaultDeclaration', () => {
+    const statement = interfaceOf(
+      'export default interface Opts { a?: string }',
+    );
+    expect(statement.type).toBe(AST_NODE_TYPES.ExportDefaultDeclaration);
+    expect(statement.declaration.type).toBe(
+      AST_NODE_TYPES.TSInterfaceDeclaration,
+    );
+  });
+
+  it('starts the interface range after `export default`, where the swap lands', () => {
+    const code = 'export default interface Opts { a?: string }';
+    const statement = interfaceOf(code);
+    const declaration =
+      statement.declaration as TSESTree.TSInterfaceDeclaration;
+    expect(code.slice(declaration.range[0], declaration.range[0] + 9)).toBe(
+      'interface',
+    );
+    // The text the keyword swap would leave in front of `type`, spelled out.
+    expect(code.slice(0, declaration.range[0])).toBe('export default ');
+  });
+
+  // A named export keeps the keyword inside the statement's own range, which is
+  // why that arm converts cleanly and must stay fixable.
+  it('keeps `export interface` reachable by the same swap', () => {
+    const code = 'export interface Opts { a?: string }';
+    const program = parse(code, PARSE_OPTIONS) as unknown as TSESTree.Program;
+    const statement = program.body[0] as TSESTree.ExportNamedDeclaration;
+    expect(statement.type).toBe(AST_NODE_TYPES.ExportNamedDeclaration);
+    expect(statement.declaration?.type).toBe(
+      AST_NODE_TYPES.TSInterfaceDeclaration,
+    );
   });
 });
 
@@ -241,6 +312,22 @@ export const widget: Widget = null as any;`,
     `function Adapter() {}
 interface Adapter {
   id: string;
+}`,
+    // Issue #1850: a default export that is not an interface is none of this
+    // rule's business, and must stay untouched by the decline added for the
+    // interface form.
+    'export default class Widget { id = ""; }',
+    'export default function build() {}',
+    'export default { a: 1 };',
+    `type Opts = { a?: string };
+export type { Opts as default };`,
+    // A default-exported interface inside an augmentation stays silent: the
+    // augmentation guard runs first, so the decline does not become the reason
+    // this is skipped.
+    `declare module 'pkg' {
+  export default interface Opts {
+    a?: string;
+  }
 }`,
     // Merging inside `declare global` is doubly exempt: the augmentation guard
     // already covers it, and this pins that the merge case does not somehow
@@ -730,6 +817,163 @@ interface Standalone { id: string }`,
       output: asParseable(`function handler() {}
 type Standalone = { id: string }`),
     },
+    // Issue #1850: a default-exported interface still reports — the conversion
+    // is available to the author — but carries NO fix, because there is no
+    // position for the keyword swap to land in. `output: null` is the whole
+    // assertion here: omitting `output` asserts nothing at all, and the fix
+    // this replaces produced `export default type Opts = ...`, which does not
+    // parse.
+    {
+      code: 'export default interface Opts { a?: string }',
+      errors: [
+        {
+          messageId: 'preferTypeDefaultExport',
+          data: { interfaceName: 'Opts' },
+        },
+      ],
+      output: null,
+    },
+    // Type parameters: the header anchor the fix would use is irrelevant when
+    // the whole declaration position is wrong.
+    {
+      code: 'export default interface Box<T> { v: T }',
+      errors: [
+        {
+          messageId: 'preferTypeDefaultExport',
+          data: { interfaceName: 'Box' },
+        },
+      ],
+      output: null,
+    },
+    {
+      code: 'export default interface Lookup<T extends keyof U, U> { key: T; source: U; }',
+      errors: [
+        {
+          messageId: 'preferTypeDefaultExport',
+          data: { interfaceName: 'Lookup' },
+        },
+      ],
+      output: null,
+    },
+    // A heritage clause is the one part of the rewrite that would otherwise
+    // have produced valid-looking text, so it gets its own case.
+    {
+      code: 'export default interface Opts extends Base { a?: string }',
+      errors: [
+        {
+          messageId: 'preferTypeDefaultExport',
+          data: { interfaceName: 'Opts' },
+        },
+      ],
+      output: null,
+    },
+    {
+      code: 'export default interface Opts extends Base, Other { a?: string }',
+      errors: [
+        {
+          messageId: 'preferTypeDefaultExport',
+          data: { interfaceName: 'Opts' },
+        },
+      ],
+      output: null,
+    },
+    // Empty body
+    {
+      code: 'export default interface Empty {}',
+      errors: [
+        {
+          messageId: 'preferTypeDefaultExport',
+          data: { interfaceName: 'Empty' },
+        },
+      ],
+      output: null,
+    },
+    // Multi-line body
+    {
+      code: `export default interface Options {
+  retries: number;
+  timeout?: number;
+  onDone(): void;
+}`,
+      errors: [
+        {
+          messageId: 'preferTypeDefaultExport',
+          data: { interfaceName: 'Options' },
+        },
+      ],
+      output: null,
+    },
+    // A header comment would already have declined the fix. The messageId still
+    // has to be the default-export one, or the developer is handed the
+    // "move the comment" remedy for a declaration that stays unfixable after
+    // they move it.
+    {
+      code: 'export default interface Opts /* keep */ extends Base { a?: string }',
+      errors: [
+        {
+          messageId: 'preferTypeDefaultExport',
+          data: { interfaceName: 'Opts' },
+        },
+      ],
+      output: null,
+    },
+    // NEGATIVE CONTROL for the narrowing, in one file: the default-exported
+    // interface keeps its (unfixable) report while its plain sibling is still
+    // rewritten. A decline that leaked one node wider would leave `Local`
+    // alone too, and a suite of `output: null` cases alone could not tell.
+    {
+      code: `export default interface Opts { a?: string }
+interface Local { b: string }`,
+      errors: [
+        {
+          messageId: 'preferTypeDefaultExport',
+          data: { interfaceName: 'Opts' },
+        },
+        { messageId: 'preferType', data: { interfaceName: 'Local' } },
+      ],
+      output: asParseable(`export default interface Opts { a?: string }
+type Local = { b: string }`),
+    },
+    // NEGATIVE CONTROLS: every other export form still reports AND still
+    // autofixes. These are the arms the decline must not reach.
+    {
+      code: 'export interface Opts { a?: string }',
+      errors: [{ messageId: 'preferType', data: { interfaceName: 'Opts' } }],
+      output: asParseable('export type Opts = { a?: string }'),
+    },
+    {
+      code: 'interface Opts { a?: string }',
+      errors: [{ messageId: 'preferType', data: { interfaceName: 'Opts' } }],
+      output: asParseable('type Opts = { a?: string }'),
+    },
+    // `declare` marks the declaration ambient and is dropped by the rewrite,
+    // which changes nothing: an interface and a type alias are both type-only
+    // and emit nothing either way.
+    {
+      code: 'declare interface Opts { a?: string }',
+      errors: [{ messageId: 'preferType', data: { interfaceName: 'Opts' } }],
+      output: asParseable('type Opts = { a?: string }'),
+    },
+    // An interface declared then default-exported by NAME is not a
+    // default-exported interface: the keyword sits in its own statement, the
+    // swap lands where it always did, and `export default Opts` keeps
+    // referring to the alias.
+    {
+      code: `interface Opts { a?: string }
+export default Opts;`,
+      errors: [{ messageId: 'preferType', data: { interfaceName: 'Opts' } }],
+      output: asParseable(`type Opts = { a?: string }
+export default Opts;`),
+    },
+    // A namespaced interface is fixable as before; `export default` is the
+    // only export form that moves the keyword out of reach.
+    {
+      code: 'namespace Internal { export interface Helper { id: string } }',
+      errors: [{ messageId: 'preferType', data: { interfaceName: 'Helper' } }],
+      output: asParseable(
+        'namespace Internal { export type Helper = { id: string } }',
+      ),
+    },
   ],
 });
 
@@ -772,6 +1016,26 @@ describe('prefer-type-over-interface leaves module augmentations untouched under
     makeLinter()
       .verify(code, CONFIG, 'declarations.d.ts')
       .filter((message) => message.ruleId === RULE_ID).length;
+
+  const messageIds = (code: string) =>
+    makeLinter()
+      .verify(code, CONFIG, 'declarations.d.ts')
+      .filter((message) => message.ruleId === RULE_ID)
+      .map((message) => message.messageId);
+
+  /**
+   * The #1850 detector, scoped to this rule: lint the FIXED text and report the
+   * parse failure. A fatal carries no `ruleId`, so a rule-keyed report count
+   * reads corrupted output as silence — which is exactly how the broken fix
+   * survived this suite.
+   */
+  const fatalAfterFix = (code: string) => {
+    const output = fix(code);
+    const fatal = makeLinter()
+      .verify(output, CONFIG, 'declarations.d.ts')
+      .find((message) => message.fatal);
+    return fatal ? fatal.message : null;
+  };
 
   const GLOBAL_AUGMENTATION = `export {};
 declare global {
@@ -863,6 +1127,55 @@ export const widget: Widget = null as any;
 
   // Same-named interfaces in sibling scopes never merge, so the exemption must
   // not reach them. Without this the fix above could be "no reports anywhere".
+  /**
+   * Issue #1850. `RuleTester` applies a single pass and asserts the fix that
+   * did not arrive; this drives the loop a developer actually runs and asserts
+   * what landed on disk still parses. The detector is deliberately the parse of
+   * the OUTPUT rather than the byte comparison alone, because a future fixer
+   * for this shape may legitimately rewrite the text — what it may never do is
+   * emit source TypeScript cannot read.
+   */
+  const DEFAULT_EXPORTED = `export default interface Opts {
+  a?: string;
+}
+`;
+
+  const DEFAULT_EXPORTED_GENERIC = `export default interface Box<T> extends Base<T> {
+  value: T;
+}
+`;
+
+  it.each([
+    ['a default-exported interface', DEFAULT_EXPORTED],
+    [
+      'a generic default-exported interface with heritage',
+      DEFAULT_EXPORTED_GENERIC,
+    ],
+    [
+      'an empty default-exported interface',
+      'export default interface Empty {}\n',
+    ],
+  ])('leaves %s byte-identical and parsable under --fix', (_label, code) => {
+    expect(fatalAfterFix(code)).toBeNull();
+    expect(fix(code)).toBe(code);
+  });
+
+  it('reports the default-exported interface rather than falling silent', () => {
+    expect(messageIds(DEFAULT_EXPORTED)).toEqual(['preferTypeDefaultExport']);
+    expect(messageIds(DEFAULT_EXPORTED_GENERIC)).toEqual([
+      'preferTypeDefaultExport',
+    ]);
+  });
+
+  // The control that makes the assertion above non-vacuous: `fatalAfterFix` has
+  // to be able to see corruption. It is fed the exact text the old fixer wrote,
+  // which is what `--fix` left on disk before this decline.
+  it('control: the text the old fixer emitted is detected as unparsable', () => {
+    expect(
+      fatalAfterFix('export default type Opts = { a?: string }\n'),
+    ).toMatch(/Parsing error/);
+  });
+
   it('still rewrites same-named interfaces in sibling function scopes', () => {
     const code = `function one() {
   interface Config { a: string }
