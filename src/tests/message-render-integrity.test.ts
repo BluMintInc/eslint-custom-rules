@@ -25,11 +25,12 @@
  * guaranteed to trigger it — `agora` cannot reach a rule it never fires on.
  */
 import { Linter } from 'eslint';
-import * as tsParser from '@typescript-eslint/parser';
 import {
   harvestFixtureCorpus,
   silentWithoutProgramRuleNames,
   defaultFilenameFor,
+  defineCorpusParsers,
+  parserKeyFor,
   parserOptionsFor,
   severityWithOptions,
 } from '../utils/fixtureCorpus';
@@ -49,7 +50,7 @@ const mustachesIn = (text: string): string[] =>
   [...text.matchAll(MUSTACHE)].map((match) => match[1].trim());
 
 const linter = new Linter();
-linter.defineParser('ts', tsParser as never);
+defineCorpusParsers(linter);
 for (const [name, rule] of Object.entries(plugin.rules)) {
   linter.defineRule(PREFIX + name, rule as never);
 }
@@ -124,7 +125,10 @@ for (const [ruleName, cases] of corpus.byRule) {
       messages = linter.verify(
         testCase.code,
         {
-          parser: 'ts',
+          // A JSON or Markdown fixture read by the TypeScript parser is a fatal
+          // carrying no `ruleId`, which this loop skips as if the rule had
+          // stayed silent — so its messages would read as dead (#1860).
+          parser: parserKeyFor(testCase),
           parserOptions: parserOptionsFor(testCase),
           rules: { [ruleId]: severityWithOptions(testCase) as never },
         },
@@ -190,8 +194,9 @@ const unusedProgramOnly: string[] = [];
 for (const [ruleName, rule] of Object.entries(plugin.rules)) {
   if (silentWithoutProgramRuleNames.has(ruleName)) continue;
   /**
-   * A rule whose suite declares under `ruleTesterJson`/`Markdown` never reaches
-   * `byRule`, so it has no corpus here and cannot be judged on one.
+   * A rule with no corpus at all cannot be judged on one.
+   * `src/tests/fixture-corpus-accounting.test.ts` asserts there is none, so
+   * this skip is a guard against a future hole rather than a live exclusion.
    */
   if (!corpus.byRule.has(ruleName)) continue;
   for (const messageId of Object.keys(rule.meta?.messages ?? {})) {

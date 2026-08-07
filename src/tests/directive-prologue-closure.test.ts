@@ -297,6 +297,35 @@ const probeCase = (name: string, tc: FixtureCase, collect: Finding[]) => {
   }
 };
 
+/**
+ * Fixtures this guard's probe cannot be applied to, named per (guard, rule)
+ * with the reason.
+ *
+ * The probe prepends a TypeScript directive prologue (`'use client'`, a
+ * shebang) to a fixture and asks whether the fixer still edits below it. A
+ * `package.json` body and a Markdown document have no prologue and no
+ * TypeScript AST, so a case in either language cannot pose the question.
+ * Skipping by LANGUAGE rather than by parse failure is what keeps the skip
+ * honest: a Markdown fence is an empty template literal, so several of those
+ * fixtures do parse as TypeScript and would otherwise answer a TypeScript
+ * question by accident (#1860).
+ *
+ * A rule-global exclusion would be the wrong instrument — it would un-gate every
+ * other arm these rules participate in (#1839) — so the entry is scoped to this
+ * guard and asserted in both directions below.
+ */
+const NON_TYPESCRIPT_FIXTURES: Record<string, string> = {
+  'enforce-typescript-markdown-code-blocks':
+    'declares only Markdown documents, under ruleTesterMarkdown',
+  'no-unpinned-dependencies':
+    'declares only package.json bodies, under ruleTesterJson',
+  'prefer-nullish-coalescing-boolean-props':
+    'declares one package.json body under ruleTesterJson alongside its TypeScript fixtures',
+};
+
+let nonTypeScriptSkipped = 0;
+const rulesWithNonTypeScriptFixtures = new Set<string>();
+
 for (const [name, cases] of corpus.byRule) {
   if (silentWithoutProgramRuleNames.has(name)) {
     stats.skippedUndrivable++;
@@ -308,6 +337,11 @@ for (const [name, cases] of corpus.byRule) {
   }
   stats.rulesProbed.add(name);
   for (const tc of cases) {
+    if (tc.language !== 'ts') {
+      nonTypeScriptSkipped++;
+      rulesWithNonTypeScriptFixtures.add(name);
+      continue;
+    }
     if (tc.bucket !== 'invalid') continue;
     stats.considered++;
     probeCase(name, tc, findings);
@@ -315,6 +349,19 @@ for (const [name, cases] of corpus.byRule) {
 }
 
 describe('directive prologue and shebang survive every fixer', () => {
+  /**
+   * The non-TypeScript skip, both ways. An unlisted rule whose fixtures get
+   * skipped is a silent loss of coverage; a listed rule whose fixtures stop
+   * being skipped is a dead entry that would absorb the next one. The count
+   * floor keeps the set equality from passing vacuously.
+   */
+  it('skips only the named non-TypeScript fixtures', () => {
+    expect([...rulesWithNonTypeScriptFixtures].sort()).toEqual(
+      Object.keys(NON_TYPESCRIPT_FIXTURES).sort(),
+    );
+    expect(nonTypeScriptSkipped).toBeGreaterThan(0);
+  });
+
   it('harvested the suite corpus', () => {
     expect(corpus.failures).toEqual([]);
     expect(corpus.filesLoaded).toBeGreaterThanOrEqual(250);

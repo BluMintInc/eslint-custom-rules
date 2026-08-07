@@ -73,7 +73,7 @@ const TESTS_DIR = path.join(__dirname, '..', 'tests');
  * (`const jsx = ruleTesterJsx`) before calling `run`, so a call-site pattern
  * drops it.
  */
-const IMPORTS_SHARED_TESTER = /from\s+'\.\.\/utils\/ruleTester'/;
+export const IMPORTS_SHARED_TESTER = /from\s+'\.\.\/utils\/ruleTester'/;
 
 /**
  * Jest registers a test for every `describe`/`it` a loaded module calls, so
@@ -109,7 +109,36 @@ const withEach = (fn: any) => {
   return fn;
 };
 
+/**
+ * Guards against a harvest starting while one is already running.
+ *
+ * Admission is "the file imports the shared tester", and a guard that harvests
+ * may well import it too — at which point the outer harvest LOADS that guard,
+ * its module scope harvests again, and the nested run finds every suite already
+ * in the require cache. Requiring a cached module re-executes nothing, so its
+ * `run` never fires and the nested harvest returns only the suites the outer one
+ * had not reached yet. Measured: a corpus of 316 suites collapsing to 188 and
+ * then 128, with `filesLoaded` still reporting 272 and `failures` empty. Every
+ * downstream guard then swept a corpus two thirds gone and reported clean.
+ *
+ * Throwing is the only safe answer: the nested caller cannot be handed a partial
+ * corpus, and the outer harvest records the throw in `failures`, which the
+ * corpus guards assert is empty. A collapse that used to be invisible becomes a
+ * build failure naming the file that caused it.
+ */
+let harvesting = false;
+
 export function harvestRuleTesterCases(): HarvestResult {
+  if (harvesting) {
+    throw new Error(
+      'harvestRuleTesterCases() was re-entered while a harvest is already in ' +
+        'progress. A nested harvest sees only the suites the outer one has not ' +
+        'loaded yet, so it silently returns a partial corpus. A guard that ' +
+        'harvests must not import the shared tester module, or the harvest ' +
+        'loads the guard itself.',
+    );
+  }
+  harvesting = true;
   const suites: HarvestedSuite[] = [];
   const failures: string[] = [];
   let currentFile = '';
@@ -195,6 +224,7 @@ export function harvestRuleTesterCases(): HarvestResult {
       }
     }
   } finally {
+    harvesting = false;
     process.chdir(realCwd);
     fs.rmSync(scratchRoot, { recursive: true, force: true });
     for (const [key, tester] of testerEntries) {

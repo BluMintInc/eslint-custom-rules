@@ -321,6 +321,35 @@ const fixableRuleNames = [...ruleByName]
 
 const corpus = harvestFixtureCorpus();
 
+/**
+ * Fixtures this guard's probe cannot be applied to, named per (guard, rule)
+ * with the reason.
+ *
+ * The probe renames a fixture's declared TypeScript identifiers to degenerate
+ * ones and asks what the fixer derives from them. That needs TypeScript
+ * bindings and a TypeScript AST.
+ * A `package.json` body and a Markdown document have neither, so a case in
+ * either language cannot pose the question. Skipping by LANGUAGE rather than by
+ * parse failure is what keeps the skip honest: a Markdown fence is an empty
+ * template literal, so several of those fixtures do parse as TypeScript and
+ * would otherwise answer a TypeScript question by accident (#1860).
+ *
+ * A rule-global exclusion would be the wrong instrument — it would un-gate every
+ * other arm these rules participate in (#1839) — so the entry is scoped to this
+ * guard and asserted in both directions below.
+ */
+const NON_TYPESCRIPT_FIXTURES: Record<string, string> = {
+  'enforce-typescript-markdown-code-blocks':
+    'declares only Markdown documents, under ruleTesterMarkdown',
+  'no-unpinned-dependencies':
+    'declares only package.json bodies, under ruleTesterJson',
+  'prefer-nullish-coalescing-boolean-props':
+    'declares one package.json body under ruleTesterJson alongside its TypeScript fixtures',
+};
+
+let nonTypeScriptSkipped = 0;
+const rulesWithNonTypeScriptFixtures = new Set<string>();
+
 const sweep = (ruleNames: string[]): Totals => {
   const totals: Totals = {
     findings: [],
@@ -332,7 +361,14 @@ const sweep = (ruleNames: string[]): Totals => {
 
   for (const rule of ruleNames) {
     const cases = (corpus.byRule.get(rule) || []).filter(
-      (testCase: FixtureCase) => testCase.bucket === 'invalid',
+      (testCase: FixtureCase) => {
+        if (testCase.language !== 'ts') {
+          nonTypeScriptSkipped++;
+          rulesWithNonTypeScriptFixtures.add(rule);
+          return false;
+        }
+        return testCase.bucket === 'invalid';
+      },
     );
     for (const testCase of cases) {
       const filename = testCase.filename ?? defaultFilenameFor(testCase);
@@ -496,7 +532,14 @@ const sweepLiterals = (ruleNames: string[]): LiteralTotals => {
 
   for (const rule of ruleNames) {
     const cases = (corpus.byRule.get(rule) || []).filter(
-      (testCase: FixtureCase) => testCase.bucket === 'invalid',
+      (testCase: FixtureCase) => {
+        if (testCase.language !== 'ts') {
+          nonTypeScriptSkipped++;
+          rulesWithNonTypeScriptFixtures.add(rule);
+          return false;
+        }
+        return testCase.bucket === 'invalid';
+      },
     );
     for (const testCase of cases) {
       const filename = testCase.filename ?? defaultFilenameFor(testCase);
@@ -604,6 +647,19 @@ const sweepLiterals = (ruleNames: string[]): LiteralTotals => {
 const literalTotals = sweepLiterals(fixableRuleNames);
 
 describe('degenerate-identifier fix closure', () => {
+  /**
+   * The non-TypeScript skip, both ways. An unlisted rule whose fixtures get
+   * skipped is a silent loss of coverage; a listed rule whose fixtures stop
+   * being skipped is a dead entry that would absorb the next one. The count
+   * floor keeps the set equality from passing vacuously.
+   */
+  it('skips only the named non-TypeScript fixtures', () => {
+    expect([...rulesWithNonTypeScriptFixtures].sort()).toEqual(
+      Object.keys(NON_TYPESCRIPT_FIXTURES).sort(),
+    );
+    expect(nonTypeScriptSkipped).toBeGreaterThan(0);
+  });
+
   it('harvested a corpus at all', () => {
     expect(corpus.failures).toEqual([]);
     expect(corpus.filesLoaded).toBeGreaterThan(250);

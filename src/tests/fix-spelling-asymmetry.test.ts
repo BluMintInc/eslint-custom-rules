@@ -505,15 +505,48 @@ const probeRules = Object.keys(plugin.rules)
   .filter((name) => !silentWithoutProgramRuleNames.has(name))
   .sort();
 
+/**
+ * Fixtures this guard's probe cannot be applied to, named per (guard, rule)
+ * with the reason.
+ *
+ * The probe respells a fixture's TypeScript expressions — member access as a
+ * computed key, an arrow body as a block — and asks whether the fix survives
+ * the respelling. That needs TypeScript syntax to respell.
+ * A `package.json` body and a Markdown document have neither, so a case in
+ * either language cannot pose the question. Skipping by LANGUAGE rather than by
+ * parse failure is what keeps the skip honest: a Markdown fence is an empty
+ * template literal, so several of those fixtures do parse as TypeScript and
+ * would otherwise answer a TypeScript question by accident (#1860).
+ *
+ * A rule-global exclusion would be the wrong instrument — it would un-gate every
+ * other arm these rules participate in (#1839) — so the entry is scoped to this
+ * guard and asserted in both directions below.
+ */
+const NON_TYPESCRIPT_FIXTURES: Record<string, string> = {
+  'enforce-typescript-markdown-code-blocks':
+    'declares only Markdown documents, under ruleTesterMarkdown',
+  'no-unpinned-dependencies':
+    'declares only package.json bodies, under ruleTesterJson',
+  'prefer-nullish-coalescing-boolean-props':
+    'declares one package.json body under ruleTesterJson alongside its TypeScript fixtures',
+};
+
 const fixFindings: Finding[] = [];
 const detectionFindings: Finding[] = [];
 let casesConsidered = 0;
+let nonTypeScriptSkipped = 0;
+const rulesWithNonTypeScriptFixtures = new Set<string>();
 let sharedMessageIds = 0;
 let bodyComparisons = 0;
 const rulesCompared = new Set<string>();
 
 for (const rule of probeRules) {
   for (const testCase of corpus.byRule.get(rule) || []) {
+    if (testCase.language !== 'ts') {
+      nonTypeScriptSkipped++;
+      rulesWithNonTypeScriptFixtures.add(rule);
+      continue;
+    }
     const result = probeCase(rule, testCase);
     casesConsidered++;
     sharedMessageIds += result.sharedMessageIds;
@@ -718,6 +751,7 @@ for (const control of CONTROLS) {
 const plantedCase = (code: string): FixtureCase => ({
   code,
   tester: 'ruleTesterTs',
+  language: 'ts',
   origin: 'planted control',
   bucket: 'invalid',
 });
@@ -742,6 +776,19 @@ describe('fix availability must not depend on how a function is spelled', () => 
    * comparison only happens where a messageId appears on both sides, so that
    * is the number whose collapse would make every assertion below vacuous.
    */
+  /**
+   * The non-TypeScript skip, both ways. An unlisted rule whose fixtures get
+   * skipped is a silent loss of coverage; a listed rule whose fixtures stop
+   * being skipped is a dead entry that would absorb the next one. The count
+   * floor keeps the set equality from passing vacuously.
+   */
+  it('skips only the named non-TypeScript fixtures', () => {
+    expect([...rulesWithNonTypeScriptFixtures].sort()).toEqual(
+      Object.keys(NON_TYPESCRIPT_FIXTURES).sort(),
+    );
+    expect(nonTypeScriptSkipped).toBeGreaterThan(0);
+  });
+
   it('compares enough to make a zero mean something', () => {
     expect(corpus.failures).toEqual([]);
     expect(probeRules.length).toBeGreaterThan(150);

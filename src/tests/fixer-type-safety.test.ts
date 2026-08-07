@@ -946,13 +946,28 @@ const suggestionRules = Object.entries(plugin.rules)
 
 const corpus = harvestFixtureCorpus();
 
-/** The `declare`-free subset of a rule's fixtures, plus what that cost. */
+/**
+ * The type-checkable subset of a rule's fixtures, plus what each exclusion cost.
+ *
+ * Two exclusions, different in kind. A `declare module` fixture is dropped to
+ * protect the SHARED program — it would retype every other rule's pairs. A JSON
+ * or Markdown fixture is dropped because the question does not apply to it:
+ * `tsc` has nothing to say about a `package.json` body or a `.md` file, so a
+ * pair built from one could only manufacture noise. Counted separately so the
+ * reason a rule ends up uncovered names which exclusion did it (#1860).
+ */
 const casesFor = (rule: string) => {
   const all = corpus.byRule.get(rule) || [];
-  const usable = all.filter(
+  const typescript = all.filter((testCase) => testCase.language === 'ts');
+  const usable = typescript.filter(
     (testCase) => !DECLARES_INTO_SHARED_SCOPE.test(testCase.code),
   );
-  return { total: all.length, usable, dropped: all.length - usable.length };
+  return {
+    total: all.length,
+    nonTypeScript: all.length - typescript.length,
+    usable,
+    dropped: typescript.length - usable.length,
+  };
 };
 
 /**
@@ -965,6 +980,8 @@ const casesFor = (rule: string) => {
 const REASONS = {
   noFixtures: 'declares no fixture this TypeScript harness can lint',
   sharedScope: 'every one of its fixtures declares into the shared scope',
+  nonTypeScript:
+    'every one of its fixtures is JSON or Markdown, which tsc cannot type-check',
   // Held for a rule that measurably produces nothing here. The old wording
   // ("is type-aware, and a bare Linter has no program") was a premise, not a
   // measurement, and a false one: the parser builds an isolated program and all
@@ -1034,19 +1051,26 @@ const pairs: Pair[] = [];
 let harvested = 0;
 let capped = 0;
 let sharedScopeDropped = 0;
+let nonTypeScriptDropped = 0;
 
 for (const rule of fixableRules) {
-  const { total, usable, dropped } = casesFor(rule);
+  const { total, nonTypeScript, usable, dropped } = casesFor(rule);
   sharedScopeDropped += dropped;
+  nonTypeScriptDropped += nonTypeScript;
   if (!usable.length) {
     coverage.noFixtures.push(rule);
     explanation.set(
       rule,
-      total === 0 ? REASONS.noFixtures : REASONS.sharedScope,
+      total === 0
+        ? REASONS.noFixtures
+        : nonTypeScript === total
+        ? REASONS.nonTypeScript
+        : REASONS.sharedScope,
     );
     detail.set(
       rule,
-      `${total} case(s) harvested, ${dropped} declaring into the shared scope`,
+      `${total} case(s) harvested, ${nonTypeScript} non-TypeScript, ` +
+        `${dropped} declaring into the shared scope`,
     );
     continue;
   }
@@ -1335,10 +1359,16 @@ const uncovered = [
  * fall out of the corpus.
  */
 const UNCOVERED_FIXERS: Record<string, Reason> = {
-  // Its fixtures are markdown, declared under `ruleTesterMarkdown`.
-  'enforce-typescript-markdown-code-blocks': REASONS.noFixtures,
-  // Its fixtures are `package.json` bodies, declared under `ruleTesterJson`.
-  'no-unpinned-dependencies': REASONS.noFixtures,
+  /**
+   * Its only fixtures are Markdown documents (`ruleTesterMarkdown`). `tsc`
+   * cannot type-check a `.md` file, so "does the fix still compile" is not a
+   * question about this rule — a pair built from one would compare diagnostics
+   * of a file that was never TypeScript. Its fix loop IS exercised, by
+   * `fixer-convergence`, which re-parses the output with the Markdown parser.
+   */
+  'enforce-typescript-markdown-code-blocks': REASONS.nonTypeScript,
+  /** Its only fixtures are `package.json` bodies (`ruleTesterJson`); same. */
+  'no-unpinned-dependencies': REASONS.nonTypeScript,
   // All 105 of its cases embed a `typedPrelude` that declares `module 'react'`,
   // which would retype every other file in the shared program.
   'no-usememo-for-pass-by-value': REASONS.sharedScope,
@@ -1394,6 +1424,7 @@ console.log(
         coverage.cappedTail.join(', ') || 'none'
       }`,
     `  ${sharedScopeDropped} case(s) dropped for declaring into the shared scope`,
+    `  ${nonTypeScriptDropped} case(s) dropped for not being TypeScript`,
     `  ${
       pairs.length - assertedPairs.length
     } pair(s) held out for an input that does not type-check, in ${
