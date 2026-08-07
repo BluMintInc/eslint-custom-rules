@@ -1,3 +1,10 @@
+## [1.20.133](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.132...v1.20.133) (2026-08-07)
+
+
+### Bug Fixes
+
+* **parallelize-async-operations:** treat a fold accumulator await as a sequencing barrier (closes [#1851](https://github.com/BluMintInc/eslint-custom-rules/issues/1851)) ([aa096e3](https://github.com/BluMintInc/eslint-custom-rules/commit/aa096e3fdd5dff6c8330fe8285cb4da3fa3fea91))
+
 ## [1.20.132](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.131...v1.20.132) (2026-08-07)
 
 

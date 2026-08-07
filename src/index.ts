@@ -222,7 +222,7 @@ function noFrontendImportsFromFunctionsPatterns(pattern: string) {
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '1.20.132',
+    version: '1.20.133',
   },
   parseOptions: {
     ecmaVersion: 2020,
