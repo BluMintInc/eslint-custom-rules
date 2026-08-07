@@ -8,7 +8,7 @@ type Options = [
   },
 ];
 
-type MessageIds = 'noDirectFunctionState';
+type MessageIds = 'noDirectFunctionState' | 'noDirectFunctionStateAssertion';
 
 const DEFAULT_FUNCTION_PATTERNS = [
   'callback',
@@ -138,12 +138,71 @@ function useStateHasFunctionTypeParam(
 }
 
 /**
+ * The expression a runtime-transparent wrapper stands in for.
+ *
+ * `a?.b` parses as a `ChainExpression` around the member read, and `x as T`,
+ * `<T>x`, `x satisfies T`, `x!` and `fn<T>` each wrap their operand in a node
+ * that is erased before execution. Every one of them evaluates to exactly what
+ * its operand evaluates to, so a question about what a setter argument *is* has
+ * to be asked of the operand — asking the wrapper answers about the wrapper and
+ * silently loses the argument, in whichever direction the caller's default
+ * happens to point.
+ *
+ * Recursive because the wrappers stack: `props?.onClose as any` is a
+ * `TSAsExpression` over a `ChainExpression` over the member read.
+ */
+function unwrapTransparent(node: TSESTree.Node): TSESTree.Node {
+  switch (node.type) {
+    case AST_NODE_TYPES.ChainExpression:
+    case AST_NODE_TYPES.TSAsExpression:
+    case AST_NODE_TYPES.TSSatisfiesExpression:
+    case AST_NODE_TYPES.TSTypeAssertion:
+    case AST_NODE_TYPES.TSNonNullExpression:
+    case AST_NODE_TYPES.TSInstantiationExpression:
+      return unwrapTransparent(node.expression);
+    default:
+      return node;
+  }
+}
+
+/**
+ * Whether wrapping this argument in a thunk would leave an arrow whose body is
+ * a type assertion.
+ *
+ * `no-type-assertion-returns` is `error` in the same recommended config and
+ * reports exactly that shape, so emitting `setX(() => props.onClose as any)`
+ * would trade one error for another and leave `eslint --fix` non-converging.
+ * Moving the assertion outside the thunk instead — `(() => x) as T` — is not an
+ * option either: it asserts a different value, and for a `T` that is neither
+ * assignable to nor from `() => T` it does not even compile. So the report
+ * stands without a fix and names the hoist that does converge (verified end to
+ * end under the whole recommended config).
+ *
+ * Only a top-level assertion matters. An assertion nested inside the argument
+ * (`(props as any).onClose`) leaves the thunk returning a member read, which
+ * that rule exempts.
+ */
+function thunkWouldReturnAssertion(arg: TSESTree.Node): boolean {
+  return (
+    arg.type === AST_NODE_TYPES.TSAsExpression ||
+    arg.type === AST_NODE_TYPES.TSTypeAssertion
+  );
+}
+
+/**
  * Returns true when the AST node is a safe value to pass to a setter — i.e.,
  * NOT a bare identifier or member expression that could be a function reference.
  * Arrow/function expressions are always safe (they are intentional).
  * Literals, null, undefined, call expressions, arrays, objects are all safe.
+ *
+ * The argument is unwrapped first so the carve-outs below are decided by what
+ * actually reaches the setter. Without it a wrapped argument falls to the
+ * `default` arm, which is the *unsafe* verdict — so `factory?.build()` would
+ * lose the deliberate CallExpression exemption and be rewritten into
+ * `() => factory?.build()`, deferring the call into a React updater.
  */
-function isDefinitelySafeArg(node: TSESTree.Node): boolean {
+function isDefinitelySafeArg(argNode: TSESTree.Node): boolean {
+  const node = unwrapTransparent(argNode);
   switch (node.type) {
     case AST_NODE_TYPES.ArrowFunctionExpression:
     case AST_NODE_TYPES.FunctionExpression:
@@ -170,18 +229,6 @@ function isDefinitelySafeArg(node: TSESTree.Node): boolean {
     case AST_NODE_TYPES.ArrayExpression:
     case AST_NODE_TYPES.ObjectExpression:
       return true;
-    case AST_NODE_TYPES.TSAsExpression:
-    case AST_NODE_TYPES.TSTypeAssertion:
-    case AST_NODE_TYPES.TSNonNullExpression:
-      // Unwrap type assertions and recurse
-      return isDefinitelySafeArg(
-        (
-          node as
-            | TSESTree.TSAsExpression
-            | TSESTree.TSTypeAssertion
-            | TSESTree.TSNonNullExpression
-        ).expression,
-      );
     default:
       // MemberExpression, Identifier (non-undefined), etc. are NOT definitely safe
       return false;
@@ -210,8 +257,14 @@ function matchesFunctionPattern(name: string, patterns: string[]): boolean {
  * Extracts the identifier name from an argument node for pattern matching.
  * For MemberExpression like `obj.handler`, returns `handler`.
  * For Identifier like `myCallback`, returns `myCallback`.
+ *
+ * The argument is unwrapped first: `props?.onClose` and `props.onClose as any`
+ * name the same property as `props.onClose`. Under an untyped `useState` the
+ * name pattern is the only live signal, so returning `null` for a wrapped
+ * argument silences the rule entirely rather than merely weakening it.
  */
-function getArgName(node: TSESTree.Node): string | null {
+function getArgName(argNode: TSESTree.Node): string | null {
+  const node = unwrapTransparent(argNode);
   if (node.type === AST_NODE_TYPES.Identifier) {
     return node.name;
   }
@@ -287,6 +340,11 @@ export const noDirectFunctionState = createRule<Options, MessageIds>({
         'What\'s wrong: "{{argText}}" is passed directly to "{{setterName}}", but React invokes a function argument as a functional updater (prev => next) instead of storing it. ' +
         'Why it matters: The function will be called with the previous state value and its return value stored — a silent bug with no error. ' +
         'How to fix: Wrap it in a thunk so React stores the function as a value: {{setterName}}(() => {{argText}})',
+      noDirectFunctionStateAssertion:
+        'What\'s wrong: "{{argText}}" is passed directly to "{{setterName}}", but React invokes a function argument as a functional updater (prev => next) instead of storing it. ' +
+        'Why it matters: The function will be called with the previous state value and its return value stored — a silent bug with no error. ' +
+        'How to fix: Give the asserted value a name, then store that name through a thunk: const value = {{argText}}; {{setterName}}(() => value). ' +
+        'The assertion is hoisted out because a thunk that returned it would be an arrow returning a cast, which no-type-assertion-returns reports.',
     },
   },
   defaultOptions: [{ functionPatterns: DEFAULT_FUNCTION_PATTERNS }],
@@ -306,15 +364,20 @@ export const noDirectFunctionState = createRule<Options, MessageIds>({
       VariableDeclarator(node) {
         // Look for `const [state, setter] = useState<T>(...)` or
         // `const [state, setter] = React.useState<T>(...)`.
-        if (
-          node.id.type !== AST_NODE_TYPES.ArrayPattern ||
-          !node.init ||
-          node.init.type !== AST_NODE_TYPES.CallExpression
-        ) {
+        if (node.id.type !== AST_NODE_TYPES.ArrayPattern || !node.init) {
           return;
         }
 
-        const callNode = node.init;
+        // `React?.useState(...)` and `useState?.(...)` wrap the call in a
+        // ChainExpression. Reading `init` without unwrapping registers no
+        // setter, which blinds every setter call in the file rather than just
+        // this declaration.
+        const init = unwrapTransparent(node.init);
+        if (init.type !== AST_NODE_TYPES.CallExpression) {
+          return;
+        }
+
+        const callNode = init;
         const callee = callNode.callee;
 
         const isUseStateCall =
@@ -371,7 +434,8 @@ export const noDirectFunctionState = createRule<Options, MessageIds>({
         // skip without further checks
         if (isDefinitelySafeArg(arg)) return;
 
-        // At this point arg is an Identifier (non-undefined) or MemberExpression.
+        // At this point arg is an Identifier (non-undefined) or MemberExpression,
+        // possibly behind transparent wrappers (`?.`, `as`, `!`).
         // Decide whether it is a function reference.
 
         const isFunctionTypedState =
@@ -393,13 +457,16 @@ export const noDirectFunctionState = createRule<Options, MessageIds>({
           return;
         }
 
-        // Check if the identifier is bound to a function in scope
+        // Check if the identifier is bound to a function in scope. This reads
+        // the same argument the two signals above do, so it has to see through
+        // the same wrappers: `myCallback!` still references `myCallback`.
+        const unwrappedArg = unwrapTransparent(arg);
         if (
-          arg.type === AST_NODE_TYPES.Identifier &&
-          arg.name !== 'undefined'
+          unwrappedArg.type === AST_NODE_TYPES.Identifier &&
+          unwrappedArg.name !== 'undefined'
         ) {
           const scope = context.getScope();
-          if (isIdentifierBoundToFunction(arg.name, scope)) {
+          if (isIdentifierBoundToFunction(unwrappedArg.name, scope)) {
             reportAndFix(node, arg, setterName, context);
             return;
           }
@@ -417,15 +484,21 @@ function reportAndFix(
 ): void {
   const sourceCode = context.getSourceCode();
   const argText = sourceCode.getText(arg);
+  const returnsAssertion = thunkWouldReturnAssertion(arg);
 
   context.report({
     node: callNode,
-    messageId: 'noDirectFunctionState',
+    messageId: returnsAssertion
+      ? 'noDirectFunctionStateAssertion'
+      : 'noDirectFunctionState',
     data: {
       argText,
       setterName,
     },
     fix(fixer) {
+      if (returnsAssertion) {
+        return null;
+      }
       return fixer.replaceText(arg, `() => ${argText}`);
     },
   });
