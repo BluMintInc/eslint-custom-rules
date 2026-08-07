@@ -150,6 +150,10 @@ function isInsideMockFactory(node: TSESTree.Node): boolean {
  *
  * The peel repeats because the wrappers nest: `(x as any)!` is a non-null
  * assertion over a type assertion.
+ *
+ * Everything peeled here erases before the code runs, which is why the peel is
+ * unconditional. An optional chain does not, so it is handled apart from these
+ * — see `unwrapOptionalChain`.
  */
 function unwrapKeyExpression(node: TSESTree.Node): TSESTree.Node {
   let current = node;
@@ -167,6 +171,45 @@ function unwrapKeyExpression(node: TSESTree.Node): TSESTree.Node {
       default:
         return current;
     }
+  }
+}
+
+/**
+ * Reads through an optional chain to the member access or call it holds.
+ * `source?.key` parses as a `ChainExpression` wrapping the member expression,
+ * so a classification that matches a bare `MemberExpression` — or a numeric
+ * proof that matches `.length` — sees the wrapper and recognizes nothing.
+ *
+ * Kept apart from `unwrapKeyExpression` rather than folded into it because the
+ * two make different claims. Those wrappers are gone before the code runs; `?.`
+ * survives and short-circuits, so it is read through only where the question is
+ * "what value names this property", never where the question is what the
+ * expression does. That value is what the chain evaluates to, `undefined`
+ * included — and the chain guards a nullish RECEIVER, not a hostile KEY:
+ * `"__proto__"` is a perfectly non-nullish string, so `store[req.body?.key]`
+ * reaches the prototype surface exactly as `store[req.body.key]` does.
+ */
+function unwrapOptionalChain(node: TSESTree.Node): TSESTree.Node {
+  return node.type === AST_NODE_TYPES.ChainExpression ? node.expression : node;
+}
+
+/**
+ * The key expression stripped of every wrapper standing between it and the
+ * value that names the property: the compile-time assertions and the `await`
+ * that `unwrapKeyExpression` peels, plus an optional chain.
+ *
+ * The peel repeats because the two kinds nest in either order — `source?.key as
+ * string` is an assertion over a chain, `(source as Raw)?.key` a chain over an
+ * assertion.
+ */
+function unwrapWrittenKey(node: TSESTree.Node): TSESTree.Node {
+  let current = node;
+  for (;;) {
+    const peeled = unwrapOptionalChain(unwrapKeyExpression(current));
+    if (peeled === current) {
+      return current;
+    }
+    current = peeled;
   }
 }
 
@@ -630,7 +673,8 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       });
 
     /**
-     * Reports a key whose written form may carry assertion or await wrappers.
+     * Reports a key whose written form may carry assertion or await wrappers or
+     * an optional chain.
      *
      * The report and the fix sit on the outermost written node, so the wrapper
      * the author put there survives the rewrite: `m[assertSafe(k as string)]`
@@ -638,7 +682,10 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
      * own. `assertSafe` is identity-typed (`<T extends PropertyKey>(key: T): T`),
      * so wrapping the asserted expression preserves the key's type, and wrapping
      * an `await` keeps the validation on the resolved key rather than moving it
-     * onto the promise.
+     * onto the promise. Wrapping the whole chain is what keeps the short-circuit
+     * intact: `m[assertSafe(source?.key)]` evaluates `source?.key` once, in the
+     * position the author wrote it, and hands assertSafe what it produces — the
+     * rewrite adds a validation, it does not move a dereference.
      *
      * A key written without a wrapper keeps the narrower argument the fix has
      * always emitted: `String(id)` and `` `${id}` `` collapse to `id`, whose
@@ -669,9 +716,12 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       const variable = ASTHelpers.findVariableInScope(scope, node.name);
       if (!variable) return false;
       return variable.defs.some((def) => {
+        // `assertSafe?.(rawKey)` produces the very same validated key as
+        // `assertSafe(rawKey)` — the chain guards only a nullish callee — so
+        // the exemption reads through it rather than re-reporting the binding.
         const init =
-          def.node.type === AST_NODE_TYPES.VariableDeclarator
-            ? def.node.init
+          def.node.type === AST_NODE_TYPES.VariableDeclarator && def.node.init
+            ? unwrapOptionalChain(def.node.init)
             : null;
         return (
           !!init &&
@@ -697,8 +747,11 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       // An assertion or an await around an operand leaves its run-time value
       // alone, so the proof reads through to what the wrapper holds. The
       // annotation on the binding underneath is what proves the key numeric —
-      // an assertion asserts and proves nothing on its own.
-      const target = unwrapKeyExpression(node);
+      // an assertion asserts and proves nothing on its own. An optional chain
+      // is read through as well: `xs?.length` is the same `.length` proof, and
+      // its short-circuit yields `undefined`, which stringifies to "undefined"
+      // and so still names no field of the prototype surface.
+      const target = unwrapWrittenKey(node);
       switch (target.type) {
         case AST_NODE_TYPES.Literal:
           return typeof target.value === 'number';
@@ -800,7 +853,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       Property(node: TSESTree.Property) {
         if (node.computed && node.key) {
           const written = node.key;
-          const key = unwrapKeyExpression(written);
+          const key = unwrapWrittenKey(written);
 
           // Check for String(id) pattern
           if (
@@ -831,7 +884,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       BinaryExpression(node: TSESTree.BinaryExpression) {
         if (node.operator === 'in') {
           const written = node.left;
-          const left = unwrapKeyExpression(written);
+          const left = unwrapWrittenKey(written);
 
           // Check for String(id) pattern
           if (
@@ -862,9 +915,9 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
         if (node.computed) {
           const written = node.property;
           // The written key may sit under assertion or await wrappers that erase
-          // at run time; what they hold is what names the property, so that is
-          // what the branches below classify.
-          const property = unwrapKeyExpression(written);
+          // at run time, or under an optional chain; what they hold is what
+          // names the property, so that is what the branches below classify.
+          const property = unwrapWrittenKey(written);
 
           // Skip if already using assertSafe
           if (

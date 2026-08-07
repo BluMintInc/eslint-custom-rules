@@ -601,6 +601,91 @@ const at = (buffer, compute) => {
 const at = (buffer, index: number = compute()) => buffer[index];
       `,
     },
+    // ------------------------------------------------------------------
+    // Issue #1830: `source?.key` parses as a ChainExpression wrapping the
+    // member access, so every carve-out the rule grants has to survive that
+    // wrapper too — otherwise reading through the chain turns the rule's own
+    // exemptions into noise.
+    // ------------------------------------------------------------------
+    {
+      // The false positive #1830 reports: `.length` is the numeric proof
+      // whether or not the read is chained, so the counter stays exempt.
+      name: 'a `.length` numeric proof survives an optional chain',
+      code: `
+const walk = (xs, step) => {
+  let i = xs?.length;
+  const first = xs[i];
+  i -= step;
+  return first;
+};
+      `,
+    },
+    {
+      name: 'a chained `.length` used directly as a key is numeric',
+      code: `
+const last = (rows) => {
+  const i = rows?.length;
+  return rows[i];
+};
+      `,
+    },
+    {
+      name: 'a Math call is proven numeric through an optional call',
+      code: `
+const sample = (palette, t) => palette[Math?.floor(t * 255)];
+      `,
+    },
+    {
+      // The second false positive #1830 reports: the binding still holds the
+      // value assertSafe returned, so it needs no second validation.
+      name: 'an assertSafe-initialised binding stays exempt under an optional call',
+      code: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (m, rawKey) => {
+  const safeKey = assertSafe?.(rawKey);
+  return m[safeKey];
+};
+      `,
+    },
+    {
+      name: 'an optionally-called assertSafe at the key position needs no second validation',
+      code: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (m, k) => m[assertSafe?.(k)];
+      `,
+    },
+    {
+      // The fix's own output: reading through the chain must not make the
+      // wrapped key report a second time.
+      name: 'a wrapped chained key is left alone on a second pass',
+      code: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (m, source) => m[assertSafe(source?.key)];
+      `,
+    },
+    {
+      name: 'an array-ish receiver keeps its carve-out under an optional chain',
+      code: `
+const read = (items, source) => items[source?.key];
+      `,
+    },
+    {
+      name: 'a complex template literal keeps its carve-out under an optional chain',
+      code: `
+const read = (m, id) => m[\`prefix_\${id?.raw}_suffix\`];
+      `,
+    },
+    {
+      // The destructuring visitor claims only String(...) and `${...}` keys, so
+      // reading through the chain must not widen it to bare member reads.
+      name: 'a chained member key in computed destructuring stays exempt',
+      code: `
+const read = (obj, source) => {
+  const { [source?.key]: value } = obj;
+  return value;
+};
+      `,
+    },
   ],
   invalid: [
     {
@@ -2586,6 +2671,196 @@ const read = (m, k, id) => [m[k as string], m[id!]];
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const read = (m, k, id) => [m[assertSafe(k as string)], m[assertSafe(id!)]];
+      `,
+    },
+    // ------------------------------------------------------------------
+    // Issue #1830: an optional chain in the key position wraps the member or
+    // call in a ChainExpression, which matched none of the classification
+    // branches — so the rule went silent on exactly the defensively-chained
+    // payload reads it exists for. `?.` guards a nullish RECEIVER; this rule
+    // guards a hostile KEY, and `"__proto__"` is a perfectly non-nullish
+    // string. The fix wraps the whole chain, so the short-circuit is evaluated
+    // once, in place, and its result is what assertSafe validates.
+    // ------------------------------------------------------------------
+    {
+      name: 'a chained member key is reported',
+      code: `
+const read = (m, source) => m[source?.key];
+      `,
+      errors: [lintError('source?.key')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (m, source) => m[assertSafe(source?.key)];
+      `,
+    },
+    {
+      // An HTTP payload read as an object key is the prototype-pollution
+      // vector, and `req.body?.` is how it is written in practice.
+      name: 'a chained request-body key is reported',
+      code: `
+const read = (store, req) => store[req.body?.key];
+      `,
+      errors: [lintError('req.body?.key')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (store, req) => store[assertSafe(req.body?.key)];
+      `,
+    },
+    {
+      name: 'a chained Firestore snapshot key is reported',
+      code: `
+const read = (store, change) => store[change.after?.data().userId];
+      `,
+      errors: [lintError('change.after?.data().userId')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (store, change) => store[assertSafe(change.after?.data().userId)];
+      `,
+    },
+    {
+      name: 'two chained links in one key are reported once, wrapped whole',
+      code: `
+const read = (store, payload) => store[payload?.body?.userId];
+      `,
+      errors: [lintError('payload?.body?.userId')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (store, payload) => store[assertSafe(payload?.body?.userId)];
+      `,
+    },
+    {
+      name: 'an optionally-called key is reported',
+      code: `
+const read = (m, getKey) => m[getKey?.()];
+      `,
+      errors: [lintError('getKey?.()')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (m, getKey) => m[assertSafe(getKey?.())];
+      `,
+    },
+    {
+      // Issue #1712 meets #1830: an assertion over a chain. Both wrappers are
+      // read through, and both survive into the emitted call.
+      name: 'an assertion over a chained key is reported',
+      code: `
+const read = (m, source) => m[source?.key as string];
+      `,
+      errors: [lintError('source?.key as string')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (m, source) => m[assertSafe(source?.key as string)];
+      `,
+    },
+    {
+      // The other nesting order: a chain over an assertion.
+      name: 'a chain over an asserted receiver is reported',
+      code: `
+const read = (m, source) => m[(source as any)?.key];
+      `,
+      errors: [lintError('(source as any)?.key')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (m, source) => m[assertSafe((source as any)?.key)];
+      `,
+    },
+    {
+      name: 'an awaited chained key is reported',
+      code: `
+const read = async (m, source) => m[await source?.key];
+      `,
+      errors: [lintError('await source?.key')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = async (m, source) => m[assertSafe(await source?.key)];
+      `,
+    },
+    {
+      // The String(...) conversion is kept rather than collapsed to `id`: the
+      // optional call is text the fixer does not own.
+      name: 'an optionally-called String(...) key keeps the call',
+      code: `
+const read = (m, id) => m[String?.(id)];
+      `,
+      errors: [lintError('String?.(id)')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (m, id) => m[assertSafe(String?.(id))];
+      `,
+    },
+    {
+      name: 'an optionally-called String(...) key in computed destructuring is reported',
+      code: `
+const read = (obj, id) => {
+  const { [String?.(id)]: value } = obj;
+  return value;
+};
+      `,
+      errors: [lintError('String?.(id)')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (obj, id) => {
+  const { [assertSafe(String?.(id))]: value } = obj;
+  return value;
+};
+      `,
+    },
+    {
+      name: 'an optionally-called String(...) operand of `in` is reported',
+      code: `
+const has = (obj, id) => (String?.(id)) in obj;
+      `,
+      errors: [lintError('String?.(id)')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const has = (obj, id) => (assertSafe(String?.(id))) in obj;
+      `,
+    },
+    {
+      // A chained receiver on the OBJECT side already reported; a chain on both
+      // sides must report exactly once, on the key.
+      name: 'a chained lookup of a chained key is reported on the key',
+      code: `
+const read = (m, source) => m?.[source?.key];
+      `,
+      errors: [lintError('source?.key')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (m, source) => m?.[assertSafe(source?.key)];
+      `,
+    },
+    {
+      // FENCE for the numeric carve-out: reading through the chain proves
+      // `.length`, not every chained member. A chained read of anything else is
+      // as unproven as its unchained spelling.
+      name: 'a chained member that is not `.length` stays unproven',
+      code: `
+const at = (buffer, source) => buffer[source?.offset];
+      `,
+      errors: [lintError('source?.offset')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const at = (buffer, source) => buffer[assertSafe(source?.offset)];
+      `,
+    },
+    {
+      // FENCE for the assertSafe exemption: the chain is read through to the
+      // callee's NAME, so an optional call to anything else is still a
+      // violation rather than a way past the check.
+      name: 'a binding initialised from an optional call to another helper reports',
+      code: `
+const read = (m, rawKey, sanitize) => {
+  const safeKey = sanitize?.(rawKey);
+  return m[safeKey];
+};
+      `,
+      errors: [lintError('safeKey')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (m, rawKey, sanitize) => {
+  const safeKey = sanitize?.(rawKey);
+  return m[assertSafe(safeKey)];
+};
       `,
     },
   ],

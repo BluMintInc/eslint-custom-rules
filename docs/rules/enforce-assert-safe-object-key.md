@@ -216,6 +216,38 @@ expression *inside* the wrapper instead would move an `await` to the wrong side
 of the call: `await assertSafe(p)` validates the promise rather than the key it
 resolves to.
 
+### Optional chains are read through
+
+`?.` guards a nullish **receiver**; this rule guards a hostile **key**, and
+`"__proto__"` is a perfectly non-nullish string. `store[req.body?.key]` reaches
+the prototype surface exactly as `store[req.body.key]` does, so the chain is read
+through to the member access or call it holds and the key underneath is judged as
+usual — a defensively chained payload read is the shape most likely to carry
+untrusted input, not a reason to go quiet.
+
+The fix wraps the **whole chain**, never the receiver inside it, so the
+short-circuit is evaluated once in the position the author wrote it and its
+result is what gets validated:
+
+```js
+// ❌ Reported
+store[change.after?.data().userId] = entry;
+
+// ✅ Fixed — a validation is added; no dereference is moved
+store[assertSafe(change.after?.data().userId)] = entry;
+```
+
+The numeric carve-out reads through in the same direction: `xs?.length` is the
+same `.length` proof `xs.length` is, and a short-circuit to `undefined`
+stringifies to `"undefined"`, which names no field of the prototype surface
+either.
+
+```js
+// ✅ Exempt: the chained `.length` still proves the counter numeric
+let i = xs?.length;
+const first = xs[i];
+```
+
 ### Interaction with inline disable comments
 
 The `import { assertSafe } from '...';` statement is added once per file,
