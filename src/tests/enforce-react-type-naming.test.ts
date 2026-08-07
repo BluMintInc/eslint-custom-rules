@@ -178,6 +178,33 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
     // Every declarator in a list is governed when none of them holds a function
     // value, so the JSX-typed one yields along with the rest.
     'const Element: JSX.Element = <div />, OTHER_THING = 1;',
+
+    // ISSUE #1847 — the same carve-out for the EXPORTED form.
+    //
+    // `global-const-style` withholds only its rename FIX for an exported
+    // binding (#1700); it still REPORTS `upperSnakeCase` there, so its naming
+    // contract covers exports and governance has to follow the report, not the
+    // fix. While this rule kept its own report on exports, no spelling was
+    // clean under both — `element` drew `upperSnakeCase`, `ELEMENT` drew
+    // `reactNodeShouldBeLowercase`, `Element` drew both — and a consumer
+    // exporting a React-typed constant had no way to satisfy the config.
+    // Neither rule renames an export, so nothing oscillated: the damage was a
+    // permanently unsatisfiable pair of reports.
+    //
+    // These are the spellings the sibling drives toward, and they must be
+    // silent HERE or the pair is unsatisfiable in the other direction.
+    'export const ELEMENT: JSX.Element = <div>Hi</div>;',
+    'export const CONTENT: ReactNode = null;',
+    'export const NODE_LIST: ReactNode = <span>Text</span>;',
+    'export const WIDGET: FC = {} as FC;',
+    // The list-level yield holds under an inline `export` too.
+    'export const ELEMENT: JSX.Element = <div />, OTHER_THING = 1 as const;',
+    // Only the EXPORT name is a Next.js contract, so the sibling's reserved
+    // -name exemption is gated on the export and a module-scope `config` is
+    // still its to name (it renames this to `CONFIG`). This rule must yield
+    // here: a reserved-name check written without that gate would silence the
+    // sibling's contract and hand the identifier back to this rule.
+    'const config: FC = {} as FC;',
   ],
   invalid: [
     // The rename-fixer fixtures below declare their subject with `let` rather
@@ -362,9 +389,12 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
     },
 
     // An exported declaration with in-file references is a cross-file contract
-    // a single-file fixer cannot complete.
+    // a single-file fixer cannot complete. Declared `let` for the same reason
+    // the block above gives, extended to exports by #1847: an exported module
+    // -scope `const` is `global-const-style`'s to name, so a `const` subject
+    // here would be silent and pin nothing about the export guard.
     {
-      code: `export const Content: ReactNode = null;\nrender(Content);`,
+      code: `export let Content: ReactNode = null;\nrender(Content);`,
       errors: [
         {
           messageId: 'reactNodeShouldBeLowercase',
@@ -380,7 +410,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
     // A bare exported declaration is the most exposed shape, not the safest:
     // its importers all spell the name in files this fixer cannot reach.
     {
-      code: 'export const Content: ReactNode = null;',
+      code: 'export let Content: ReactNode = null;',
       errors: [
         {
           messageId: 'reactNodeShouldBeLowercase',
@@ -518,10 +548,17 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
         'function Wrapper() { const element: JSX.Element = <div />; return element; }',
     },
 
-    // Exported: `global-const-style` withholds only the FIX there, so neither
-    // rule renames and no `--fix` loop can form. This rule keeps its report.
+    // ISSUE #1847 NEGATIVE CONTROLS — the carve-out now covers EXPORTED
+    // module-scope consts, which is most of what this rule used to name at
+    // module scope. Each case below is an EXPORTED declaration
+    // `global-const-style` declines to name, so this rule must keep reporting
+    // or the identifier ends up governed by nothing. Every one of them is
+    // report-only: this rule withholds a rename for an exported binding on the
+    // same cross-file grounds the sibling does.
+
+    // `let`/`var` are outside `global-const-style` whether exported or not.
     {
-      code: 'export const Element: JSX.Element = <div>Hello</div>;',
+      code: 'export let Element: JSX.Element = <div>Hello</div>;',
       errors: [
         {
           messageId: 'reactNodeShouldBeLowercase',
@@ -529,6 +566,106 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
         },
       ],
       output: null,
+    },
+    {
+      code: 'export var Element: JSX.Element = <div>Hello</div>;',
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: { type: 'JSX.Element', suggestion: 'element' },
+        },
+      ],
+      output: null,
+    },
+
+    // A dynamic initializer silences the sibling's rename check.
+    {
+      code: 'export const Element: JSX.Element = renderIt();',
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: { type: 'JSX.Element', suggestion: 'element' },
+        },
+      ],
+      output: null,
+    },
+
+    // So does a bare identifier initializer, which merely aliases a binding —
+    // and an exported alias is the shape the sibling's #1418 carve-out exists
+    // for, so nothing over there will ever name it.
+    {
+      code: 'export const Element: JSX.Element = other;',
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: { type: 'JSX.Element', suggestion: 'element' },
+        },
+      ],
+      output: null,
+    },
+
+    // A function value makes the sibling skip the whole declaration list, so an
+    // exported component is this rule's alone.
+    {
+      code: 'export const button: FC = () => <button />;',
+      errors: [
+        {
+          messageId: 'componentTypeShouldBeUppercase',
+          data: { type: 'FC', suggestion: 'Button' },
+        },
+      ],
+      output: null,
+    },
+    {
+      code: 'export const handler = () => null, Element: JSX.Element = <div />;',
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: { type: 'JSX.Element', suggestion: 'element' },
+        },
+      ],
+      output: null,
+    },
+
+    // A Next.js reserved EXPORT name. `global-const-style` declines the rename
+    // outright (#1257) because the framework matches the literal identifier, so
+    // nothing over there governs the name and this rule keeps its report. The
+    // report is report-only, so the framework contract survives `--fix`; the
+    // author decides whether to rename by hand. Note the exemption is keyed on
+    // the export name, so `Config`/`CONFIG` are NOT reserved and the sibling
+    // reports on them — `CONFIG` is the spelling clean under both (measured).
+    {
+      code: 'export const config: FC = {} as FC;',
+      errors: [
+        {
+          messageId: 'componentTypeShouldBeUppercase',
+          data: { type: 'FC', suggestion: 'Config' },
+        },
+      ],
+      output: null,
+    },
+    {
+      code: 'export const middleware: ComponentType = {} as ComponentType;',
+      errors: [
+        {
+          messageId: 'componentTypeShouldBeUppercase',
+          data: { type: 'ComponentType', suggestion: 'Middleware' },
+        },
+      ],
+      output: null,
+    },
+    // Neither the sibling's contract nor its reserved-export exemption reaches
+    // inside a component, so a component-local `config` is this rule's to name
+    // AND to fix.
+    {
+      code: 'function Page() { const config: FC = {} as FC; return config; }',
+      errors: [
+        {
+          messageId: 'componentTypeShouldBeUppercase',
+          data: { type: 'FC', suggestion: 'Config' },
+        },
+      ],
+      output: 'function Page() { const Config: FC = {} as FC; return Config; }',
     },
 
     // Invalid uppercase names for ReactNode
@@ -1197,6 +1334,111 @@ const PAIR_CASES: PairCase[] = [
     code: 'const button: FC = () => <button />;\n',
     output: 'const Button: FC = () => <button />;\n',
   },
+  // ISSUE #1847 — the EXPORTED form. Neither rule renames an export (the name
+  // is a cross-file contract), so `--fix` is a no-op and these are asserted as
+  // FIXPOINTS that are clean under both. That they are reachable at all is the
+  // fix: before it, `ELEMENT` drew `reactNodeShouldBeLowercase` here, `element`
+  // drew `upperSnakeCase`, and `Element` drew both.
+  {
+    name: 'exported: the spelling the sibling asks for is clean under both',
+    code: 'export const ELEMENT: JSX.Element = <div>Hi</div>;\n',
+    output: 'export const ELEMENT: JSX.Element = <div>Hi</div>;\n',
+  },
+  {
+    name: 'exported: the ReactNode annotation',
+    code: 'export const CONTENT: ReactNode = null;\n',
+    output: 'export const CONTENT: ReactNode = null;\n',
+  },
+  {
+    name: 'exported: the FC annotation on a non-function value',
+    code: 'export const WIDGET: FC = {} as FC;\n',
+    output: 'export const WIDGET: FC = {} as FC;\n',
+  },
+  {
+    name: 'exported: references are untouched at the fixpoint',
+    code: 'export const ELEMENT: JSX.Element = <div />;\nrender(ELEMENT);\n',
+    output: 'export const ELEMENT: JSX.Element = <div />;\nrender(ELEMENT);\n',
+  },
+];
+
+/**
+ * ISSUE #1847 — the exported spellings that are NOT yet the fixpoint.
+ *
+ * `--fix` cannot carry these to it: both rules withhold a rename for an
+ * exported binding, whose importers a single-file fixer cannot reach. So the
+ * assertion is different in kind from the cases above, and weaker assertions
+ * would be dishonest here:
+ *
+ *   (a) `--fix` is a byte-identical no-op — nothing is mangled on the way to a
+ *       cap that is never hit;
+ *   (b) exactly ONE rule speaks, and it is `global-const-style` — the pair is no
+ *       longer in contradiction, it is one rule asking for one rename;
+ *   (c) the name that rule asks for is clean under BOTH, which is the property
+ *       #1847 was filed about and the one a regression would take away.
+ */
+const EXPORTED_UNSATISFIED: {
+  name: string;
+  code: string;
+  satisfying: string;
+}[] = [
+  {
+    name: 'the reported input: an exported JSX.Element const',
+    code: 'export const element: JSX.Element = <div>Hi</div>;\n',
+    satisfying: 'export const ELEMENT: JSX.Element = <div>Hi</div>;\n',
+  },
+  {
+    name: 'the same const already spelled PascalCase',
+    code: 'export const Element: JSX.Element = <div>Hi</div>;\n',
+    satisfying: 'export const ELEMENT: JSX.Element = <div>Hi</div>;\n',
+  },
+  {
+    name: 'the exported ReactNode annotation',
+    code: 'export const content: ReactNode = null;\n',
+    satisfying: 'export const CONTENT: ReactNode = null;\n',
+  },
+  {
+    name: 'the exported FC annotation on a non-function value',
+    code: 'export const widget: FC = {} as FC;\n',
+    satisfying: 'export const WIDGET: FC = {} as FC;\n',
+  },
+];
+
+/**
+ * Exported shapes `global-const-style` genuinely declines, where this rule must
+ * KEEP its report or the identifier is governed by nothing. Without these the
+ * carve-out could be widened to "any exported module-scope const" — which
+ * silences the rule across most of module scope — and every assertion above
+ * would still pass.
+ */
+const EXPORTED_STILL_OURS: { name: string; code: string }[] = [
+  {
+    name: 'exported let',
+    code: 'export let Element: JSX.Element = <div />;\n',
+  },
+  {
+    name: 'exported var',
+    code: 'export var Element: JSX.Element = <div />;\n',
+  },
+  {
+    name: 'dynamic initializer',
+    code: 'export const Element: JSX.Element = renderIt();\n',
+  },
+  {
+    name: 'binding alias',
+    code: 'export const Element: JSX.Element = other;\n',
+  },
+  {
+    name: 'function value',
+    code: 'export const button: FC = () => <button />;\n',
+  },
+  {
+    name: 'a function value anywhere in the declaration list',
+    code: 'export const handler = () => null, Element: JSX.Element = <div />;\n',
+  },
+  {
+    name: 'a Next.js reserved export name',
+    code: 'export const config: FC = {} as FC;\n',
+  },
 ];
 
 describe('enforce-react-type-naming and global-const-style converge (#1846)', () => {
@@ -1222,6 +1464,45 @@ describe('enforce-react-type-naming and global-const-style converge (#1846)', ()
       pairLinter.verifyAndFix(result.output, PAIR_CONFIG, FILENAME).output,
     ).toBe(output);
   });
+
+  it.each(EXPORTED_UNSATISFIED)(
+    'exported, not yet the fixpoint: $name',
+    ({ code, satisfying }) => {
+      const result = pairLinter.verifyAndFix(code, PAIR_CONFIG, FILENAME);
+
+      // (a) neither rule renames an export, so nothing reaches disk...
+      expect(result.output).toBe(code);
+      expect(mangledNamesIn(result.output)).toEqual([]);
+      // (b) ...and exactly one rule speaks, the one that owns the name.
+      expect(lintPair(result.output)).toEqual([
+        `${PREFIX}global-const-style:upperSnakeCase`,
+      ]);
+      // (c) the rename it asks for is clean under BOTH — the property #1847
+      // was filed about. Before the fix this drew
+      // `enforce-react-type-naming:reactNodeShouldBeLowercase` instead, and no
+      // third spelling existed.
+      expect(lintPair(satisfying)).toEqual([]);
+    },
+  );
+
+  it.each(EXPORTED_STILL_OURS)(
+    'exported shape the sibling declines stays ours: $name',
+    ({ code }) => {
+      // The sibling is silent, so this rule is the only thing naming it. A
+      // carve-out widened to "any exported module-scope const" reports NOTHING
+      // here, which is how a fix for #1847 would silently gut the rule.
+      const reports = lintPair(code);
+      expect(reports).toHaveLength(1);
+      expect(reports[0]).toMatch(
+        new RegExp(`^${PREFIX}enforce-react-type-naming:`),
+      );
+      // Report-only: an exported name is a cross-file contract, so `--fix`
+      // leaves the framework/importer contract alone.
+      expect(pairLinter.verifyAndFix(code, PAIR_CONFIG, FILENAME).output).toBe(
+        code,
+      );
+    },
+  );
 
   it('detects a mangled identifier (control)', () => {
     // The exact name `--fix` wrote before this fix. A `toEqual([])` assertion
