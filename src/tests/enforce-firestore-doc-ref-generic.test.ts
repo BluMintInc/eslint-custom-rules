@@ -1647,6 +1647,140 @@ ruleTesterTs.run(
       {
         code: `const groupRef = doc as FirebaseFirestore.DocumentReference<TGroup>;`,
       },
+      /**
+       * Optional links (issue #1826). `a?.b` interposes a `ChainExpression`
+       * between the member/call and its parent, and that link perturbs
+       * nullability, not the document schema: `db?.collection<T>('x')` is
+       * `CollectionReference<T> | undefined`, still carrying `T`. Every
+       * `.doc()` below therefore inherits a schema and needs no generic of its
+       * own — asking for one is uncompilable, since `CollectionReference<T>
+       * .doc(path: string)` declares zero type parameters.
+       */
+      {
+        code: `
+        interface Product {
+          name: string;
+        }
+        const productsCollection = db?.collection<Product>('products');
+        const productRef = productsCollection.doc('id');
+      `,
+      },
+      {
+        code: `
+        interface Product {
+          name: string;
+        }
+        db?.collection<Product>('products').doc('id');
+      `,
+      },
+      {
+        code: `
+        interface Product {
+          name: string;
+        }
+        db.collection<Product>('products')?.doc('id');
+      `,
+      },
+      // An optional link in the middle of a multi-line chain: the schema the
+      // last `.collection<UserData>` states is what the trailing `.doc()`
+      // inherits, whichever link is optional.
+      {
+        code: `
+        interface TenantData {
+          name: string;
+        }
+        interface UserData {
+          name: string;
+        }
+        const usersCollection = db
+          .collection<TenantData>('tenants')
+          .doc('1')
+          ?.collection<UserData>('users');
+        const userDoc = usersCollection.doc('123');
+      `,
+      },
+      {
+        code: `
+        interface TenantData {
+          name: string;
+        }
+        interface UserData {
+          name: string;
+        }
+        const usersCollection = db
+          ?.collection<TenantData>('tenants')
+          .doc('1')
+          .collection<UserData>('users');
+        const userDoc = usersCollection.doc('123');
+      `,
+      },
+      // A typed class property reached through an optional link.
+      {
+        code: `
+        interface TaskDoc {
+          title: string;
+        }
+        class TaskService {
+          private _collection: CollectionReference<TaskDoc>;
+          constructor() {
+            this._collection = db.collection<TaskDoc>('tasks');
+          }
+          getDoc(id: string) {
+            return this._collection?.doc(id);
+          }
+        }
+      `,
+      },
+      // Parenthesizing ends the chain, so the ChainExpression lands directly on
+      // the `.doc()` receiver rather than wrapping the whole expression.
+      {
+        code: `
+        interface Product {
+          name: string;
+        }
+        const productRef = (db?.collection<Product>('products')).doc('id');
+      `,
+      },
+      // The getter's returned expression is the fallback evidence once
+      // `no-explicit-return-type` has stripped the annotation, and an optional
+      // link does not change the collection it hands back.
+      {
+        code: `
+        interface GetterDoc {
+          content: string;
+        }
+        class GetterService {
+          private _collection: CollectionReference<GetterDoc>;
+          constructor() {
+            this._collection = db.collection<GetterDoc>('getter');
+          }
+          get collection() {
+            return this?._collection;
+          }
+          getDoc(id: string) {
+            return this.collection.doc(id);
+          }
+        }
+      `,
+      },
+      {
+        code: `
+        interface Doc {
+          value: string;
+        }
+        class DocService {
+          private getInner() {
+            return db.collection<Doc>('things');
+          }
+          private getOuter() {
+            return this?.getInner();
+          }
+          getDoc(id: string) {
+            return this.getOuter().doc(id);
+          }
+        }
+      `,
+      },
     ],
     invalid: [
       /**
@@ -2763,6 +2897,67 @@ ruleTesterTs.run(
         const userDoc = usersCollection.doc<any>('123');
       `,
         errors: [invalidGenericError('DocumentReference')],
+      },
+      /**
+       * The mirrors of the optional-link valid cases (issue #1826). Looking
+       * through a `ChainExpression` must not become a blanket exemption: a
+       * chained receiver with no schema to inherit still has to report, or the
+       * unwrap would silently switch the rule off for every `?.` spelling.
+       */
+      {
+        code: `
+        const productsCollection = db?.collection('products');
+        const productRef = productsCollection.doc('id');
+      `,
+        errors: [
+          missingGenericError('CollectionReference'),
+          missingGenericError('DocumentReference'),
+        ],
+      },
+      {
+        code: `db?.collection('products').doc('id');`,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      {
+        code: `db.collection('products')?.doc('id');`,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // A reassignable binding can hold an untyped collection by the time it
+      // reaches `.doc()`, and an optional link does not make it immutable.
+      {
+        code: `
+        type Product = {
+          name: string;
+        };
+        let productsCollection = db?.collection<Product>('products');
+        const productRef = productsCollection.doc('id');
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // An explicit `any` on the derived document reference is reported whether
+      // or not the collection it came from was reached through `?.`.
+      {
+        code: `
+        type Product = {
+          name: string;
+        };
+        const productsCollection = db?.collection<Product>('products');
+        const productRef = productsCollection.doc<any>('id');
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      /**
+       * The dedup contract holds across an optional link: an `any` argument is
+       * reported once, on the collection call that states it, and not a second
+       * time on the document reference derived from it. The error count is the
+       * assertion that matters here.
+       */
+      {
+        code: `
+        const usersCollection = db?.collection<any>('users');
+        const userDoc = usersCollection.doc('123');
+      `,
+        errors: [invalidGenericError('CollectionReference')],
       },
     ],
   },

@@ -47,6 +47,23 @@ const referenceTypeNameOf = (
   return undefined;
 };
 
+/**
+ * The expression an optional link wraps, so a receiver spelled with `?.` is
+ * read as the expression it actually evaluates.
+ *
+ * `a?.b` interposes a `ChainExpression` between the member/call and its real
+ * parent. That link perturbs nullability, not the document schema:
+ * `db?.collection<T>('x')` has type `CollectionReference<T> | undefined`, whose
+ * schema is still `T`, never `DocumentData`. Leaving the wrapper in place makes
+ * a typed collection look unrecognizable, and the `.doc()` that inherits its
+ * schema draws a missing-generic report whose only remedy — `doc<T>(...)` —
+ * does not compile, since `CollectionReference<T>.doc` declares no type
+ * parameters.
+ */
+function unwrapOptionalChain(node: TSESTree.Node): TSESTree.Node {
+  return node.type === AST_NODE_TYPES.ChainExpression ? node.expression : node;
+}
+
 /** The declaration spellings a named document schema can be written in. */
 type NamedTypeDeclaration =
   | TSESTree.TSInterfaceDeclaration
@@ -417,8 +434,9 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
 
     const isTypedCollectionReferenceCache = new Map<TSESTree.Node, boolean>();
 
-    function isTypedCollectionReference(node: TSESTree.Node): boolean {
-      if (!node) return false;
+    function isTypedCollectionReference(receiver: TSESTree.Node): boolean {
+      if (!receiver) return false;
+      const node = unwrapOptionalChain(receiver);
       if (isTypedCollectionReferenceCache.has(node)) {
         return isTypedCollectionReferenceCache.get(node)!;
       }
@@ -646,11 +664,13 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
     }
 
     function isTypedCollectionInitializer(
-      init: TSESTree.Expression | null | undefined,
+      initializer: TSESTree.Expression | null | undefined,
     ): boolean {
-      if (!init) {
+      if (!initializer) {
         return false;
       }
+
+      const init = unwrapOptionalChain(initializer);
 
       // An explicit assertion states the schema just as an annotation does.
       if (init.type === AST_NODE_TYPES.TSAsExpression) {
