@@ -58,12 +58,43 @@
  *     `ednl` / line-comment spellings that the whole defect was about — trips the
  *     primary test, naming `enforce-dynamic-file-naming::require-dynamic-firebase-imports`.
  *
+ * MUTATION AUDIT of the convergence half, every arm of the classifier broken in
+ * turn, guard re-run:
+ *
+ *   Second conjunct weakened to the literal `verifyAndFix(output).output !==
+ *     output` RED: the two-cycle positive control drops to NO-OP. That is the
+ *     #1846 shape, so this mutation is the defect the pass exists to catch.
+ *   First conjunct dropped (the loose `fixed: true` + a residual report) RED
+ *     twice: the negative control turns NO-OP into OSCILLATED, and the primary
+ *     test fires on 11 ordinary corpus fixtures — the false-positive rate the
+ *     conjunction exists to remove, measured rather than asserted.
+ *   A signed-off standoff count moved 3 -> 4 RED, naming the pair and printing
+ *     its three fixtures.
+ *   The convergence loop fed an empty divergence list RED twice, on the probe
+ *     floors and on the standoff set. A pass that examines nothing cannot go
+ *     green.
+ *
+ * SECOND HALF — CONVERGENCE. Everything above is static, and static accounting
+ * is what let #1846 through: `enforce-react-type-naming` and `global-const-style`
+ * were exempted here with a reason that was FALSE ("SCREAMING_SNAKE satisfies
+ * both"), and their fixers traded one identifier back and forth until ESLint's
+ * ten-pass cap wrote `const e_LEMENT` to disk. Every exemption's reason claims a
+ * satisfying spelling exists; the convergence pass below runs the config's own
+ * `--fix` over every diverging fixture with both rules enabled and refuses to
+ * let a pair that never reaches a fixpoint be recorded as acceptable. It reuses
+ * the divergence scan rather than re-deriving it, which is why the whole file
+ * still runs in ~15s. The exact classification, and the measurement proving the
+ * obvious way to write it is blind to #1846, are documented at that section.
+ *
  * TRIAGE, before filing anything this guard reports: a disagreement is only a
  * defect if NO spelling satisfies both rules. Run the input through
  * `Linter.verifyAndFix` with both rules enabled — sibling rules here are usually
  * sequential steps of one pipeline (`useMemo` -> `useCallback` ->
  * `useLatestCallback`) that `--fix` converges. That question killed 7 of the 9
- * pairs triaged when this axis was opened.
+ * pairs triaged when this axis was opened. It is not sufficient on its own:
+ * asking it ONLY of pairs where `--fix` converged on zero fixtures is how #1846
+ * was mis-triaged, since that pair converged on 6 of 17 and was classified from
+ * its convergent half. Partial convergence is where a mixed pair hides.
  *
  * Traps this harness encodes, each of which faked a result before it did:
  *
@@ -535,6 +566,8 @@ type Divergence = {
   filename: string;
   messageIds: string[];
   code: string;
+  /** Carried so the convergence pass re-lints under the case's OWN config. */
+  testCase: FixtureCase;
 };
 
 const stats = {
@@ -644,6 +677,7 @@ function scanOwner(
         filename,
         messageIds: [...messageIds].sort(),
         code: testCase.code,
+        testCase,
       });
     }
   }
@@ -705,6 +739,267 @@ const sortedCounts = (counts: Record<string, number>) =>
   Object.fromEntries(
     Object.entries(counts).sort(([a], [b]) => (a < b ? -1 : 1)),
   );
+
+/**
+ * ============================ CONVERGENCE PASS ============================
+ *
+ * Everything above is STATIC: who reports on whose blessed text. It says
+ * nothing about what the config's own `--fix` DOES to that text, which is where
+ * #1846 lived: `enforce-react-type-naming` and `global-const-style` demanded
+ * incompatible spellings of one identifier and their fixers traded it back and
+ * forth until ESLint's ten-pass cap wrote `const e_LEMENT` to disk with
+ * `fixed: true` and no signal it never converged. Every `KNOWN_DIVERGENT`
+ * reason above asserts a satisfying spelling exists; this pass is what stops one
+ * of those claims from being false the way that one was.
+ *
+ * `fixer-convergence` cannot see this class: it probes ONE rule at a time, and
+ * an oscillation between two fixers is a property of the pair.
+ *
+ * CLASSIFICATION, per diverging fixture, both rules enabled:
+ *
+ *   CONVERGED   the fixed output re-lints clean. Nothing to record.
+ *   NO-OP       a report remains but nothing pending would move the text; the
+ *               developer hand-edits to the spelling the entry's reason names.
+ *               Legitimate.
+ *   OSCILLATED  a residual report STILL CARRIES A FIX and the fix loop had not
+ *               reached a fixpoint when it stopped. ESLint would have applied
+ *               that fix unless it hit the pass cap, so what landed on disk is
+ *               an arbitrary intermediate state. MUST FAIL.
+ *
+ * The `residualFixable` conjunct is load-bearing. `fixed: true` with a residual
+ * report ALONE is not oscillation — an unrelated fix may have applied while an
+ * unfixable report remains, which is ordinary and describes 139 fixtures here.
+ * The loose test calls 11 of them oscillations; this one calls none.
+ *
+ * THE SECOND CONJUNCT IS "the loop did not settle", NOT "the text moved again".
+ * That distinction was measured against #1846 itself, with its pre-fix rule
+ * source restored:
+ *
+ *   pass 1  global-const-style        element  -> ELEMENT
+ *   pass 2  enforce-react-type-naming ELEMENT  -> eLEMENT
+ *   pass 3  global-const-style        eLEMENT  -> E_LEMENT
+ *   pass 4  enforce-react-type-naming E_LEMENT -> e_LEMENT
+ *   passes 5-10 alternate E_LEMENT / e_LEMENT
+ *
+ * The cycle has length TWO and ESLint's cap is TEN, so re-fixing the output
+ * runs another even number of flips and lands on the SAME text:
+ * `verifyAndFix(output).output !== output` is FALSE for the very defect this
+ * pass exists to catch, and a text-inequality test would have classified #1846
+ * NO-OP. `verifyAndFix(output).fixed` is TRUE — measured — because the loop
+ * exits only when a whole pass applies nothing, so a re-fix that applies
+ * anything at all proves the first call stopped at the cap with movement still
+ * pending. Both signals are kept: the weaker one is asserted FALSE in the
+ * positive control, so the strengthening cannot be quietly undone.
+ *
+ * The scratch harness this pass was folded in from also flagged MANGLED
+ * IDENTIFIERS (`/\b[A-Za-z]_[A-Z]/`, the human-visible tell of `e_LEMENT`).
+ * Dropped rather than carried: its one hit on this corpus is the legitimate
+ * generated constant `A_VALUES`, from a single-letter type `A`. A cosmetic
+ * signal with a known false positive is a maintenance tax, and the convergence
+ * verdict already covers everything it detected.
+ */
+type FixVerdict = 'CONVERGED' | 'NO-OP' | 'OSCILLATED';
+
+type FixOutcome = {
+  verdict: FixVerdict;
+  /** `rule:messageId` for every report the fixed output still draws. */
+  residual: string[];
+  /** Rules still reporting after the fix; two of them is a live standoff. */
+  stillReporting: string[];
+  /** Whether `--fix` changed the text at all, floored so the pass is not idle. */
+  rewritten: boolean;
+  /** `verifyAndFix` applied a fix somewhere, the LOOSE and wrong signal. */
+  fixed: boolean;
+  /** The literal "text moved again" test, kept to prove it is insufficient. */
+  refixMovesText: boolean;
+  /** The real signal: the fix loop had not reached a fixpoint. */
+  refixAppliesAFix: boolean;
+  /** A fixer that produced unparsable text; read as silence if ignored. */
+  fatalOutput: boolean;
+  output: string;
+};
+
+function classifyFixOutcome(
+  source: string,
+  filename: string,
+  config: unknown,
+  enabledIds: ReadonlySet<string>,
+): FixOutcome {
+  const fixedResult = linter.verifyAndFix(source, config as never, filename);
+  const messages = linter.verify(fixedResult.output, config as never, filename);
+  const residualMessages = messages.filter(
+    (message) => message.ruleId && enabledIds.has(message.ruleId),
+  );
+  const residualFixable = residualMessages.some((message) => message.fix);
+
+  // Paid for only when a fix is still pending, which no corpus fixture is
+  // today: all 139 residuals carry no fix. The second `verifyAndFix` therefore
+  // costs the sweep nothing and is exercised by the controls alone.
+  let refixMovesText = false;
+  let refixAppliesAFix = false;
+  if (residualFixable) {
+    const refixed = linter.verifyAndFix(
+      fixedResult.output,
+      config as never,
+      filename,
+    );
+    refixMovesText = refixed.output !== fixedResult.output;
+    refixAppliesAFix = refixed.fixed;
+  }
+
+  const verdict: FixVerdict = !residualMessages.length
+    ? 'CONVERGED'
+    : residualFixable && (refixAppliesAFix || refixMovesText)
+    ? 'OSCILLATED'
+    : 'NO-OP';
+
+  const label = (message: Linter.LintMessage) =>
+    `${String(message.ruleId).slice(PREFIX.length)}:${
+      message.messageId || message.message
+    }`;
+
+  return {
+    verdict,
+    residual: [...new Set(residualMessages.map(label))].sort(),
+    stillReporting: [
+      ...new Set(
+        residualMessages.map((message) =>
+          String(message.ruleId).slice(PREFIX.length),
+        ),
+      ),
+    ].sort(),
+    rewritten: fixedResult.output !== source,
+    fixed: fixedResult.fixed,
+    refixMovesText,
+    refixAppliesAFix,
+    fatalOutput: messages.some((message) => message.fatal),
+    output: fixedResult.output,
+  };
+}
+
+type ConvergenceRow = Divergence & { outcome: FixOutcome };
+
+const convergenceStats = {
+  probes: 0,
+  rewritten: 0,
+  pairs: new Set<string>(),
+  fatalOutputs: [] as string[],
+  looseOscillations: 0,
+};
+
+const convergence: ConvergenceRow[] = [];
+for (const found of divergences) {
+  const { testCase } = found;
+  const ownerId = `${PREFIX}${found.owner}`;
+  const reporterId = `${PREFIX}${found.reporter}`;
+  const enabledIds = new Set([ownerId, reporterId]);
+  // Exactly the two rules of the pair, which is what an entry's reason claims
+  // is jointly satisfiable. A wider config would attribute a third rule's fix
+  // to this pair.
+  const config = {
+    parser: 'ts',
+    parserOptions: parserOptionsFor(testCase),
+    rules: {
+      [ownerId]: severityWithOptions(testCase),
+      [reporterId]: ENABLED.get(found.reporter),
+    },
+  };
+  let outcome;
+  try {
+    outcome = classifyFixOutcome(
+      prefixDirectives(testCase.code),
+      found.filename,
+      config,
+      enabledIds,
+    );
+  } catch {
+    // A throw here is a broken probe, not a verdict; counted as a fatal so it
+    // cannot pass for convergence.
+    convergenceStats.fatalOutputs.push(
+      `${found.owner}::${found.reporter} <- ${found.origin} (threw)`,
+    );
+    continue;
+  }
+  convergenceStats.probes++;
+  convergenceStats.pairs.add(`${found.owner}::${found.reporter}`);
+  if (outcome.rewritten) convergenceStats.rewritten++;
+  if (outcome.fatalOutput) {
+    convergenceStats.fatalOutputs.push(
+      `${found.owner}::${found.reporter} <- ${found.origin}`,
+    );
+  }
+  if (outcome.fixed && outcome.residual.length) {
+    convergenceStats.looseOscillations++;
+  }
+  convergence.push({ ...found, outcome });
+}
+
+/** Fixtures where BOTH rules of the pair still report after the composed fix. */
+const standoffs = convergence.filter(
+  (row) => row.outcome.stillReporting.length > 1,
+);
+
+/**
+ * The eight fixtures on which both rules of a pair are still speaking once the
+ * composed `--fix` has run — the small, hand-checked set where the NEXT
+ * contradiction will surface, since a pair that cannot be silenced by fixing is
+ * one hand-edit away from being unsatisfiable.
+ *
+ * Keyed `owner::reporter` and then by the RESIDUAL SIGNATURE (both rules'
+ * messageIds, sorted), not by a per-pair total. The #1840 lesson applies here
+ * exactly as it does to `KNOWN_DIVERGENT.cases`: a pair-level count lets a new
+ * fixture join an already-signed-off standoff in silence, and a signature-level
+ * count also catches a fixture that swaps one complaint for another while the
+ * total holds.
+ *
+ * Each reason names a spelling measured clean under BOTH rules. That is the
+ * whole burden of proof: a standoff is legitimate exactly when the developer
+ * has somewhere to go.
+ */
+const KNOWN_STANDOFFS: Record<
+  string,
+  { reason: string; residuals: Record<string, number> }
+> = {
+  'enforce-global-constants::react-memoize-literals': {
+    reason:
+      'Two INDEPENDENT complaints about different expressions, neither fixable: a second destructuring default the hoist rule declines (`a_b = 2`, kept snake_case to pin how the constant NAME is derived; `debounceMs = 10`, whose derived `DEFAULT_DEBOUNCE_MS` already exists as a module-scope `let` — a deliberate name collision), and the returned array literal, which is `react-memoize-literals` domain. Hoisting the second default under a free name and memoizing the return is clean under both (measured).',
+    residuals: {
+      'enforce-global-constants:extractDefaultToGlobalConstant + react-memoize-literals:componentLiteral': 1,
+      'enforce-global-constants:extractDefaultToGlobalConstant + react-memoize-literals:hookReturnLiteral': 1,
+    },
+  },
+  'enforce-microdiff::enforce-dynamic-imports': {
+    reason:
+      'The `lodash` import the microdiff fixer deliberately declines to rewrite (`_.difference` is not a deep diff) draws BOTH complaints — the static import and the lodash call are the same remedy. Dropping lodash for `@blumintinc/microdiff`, which is on `DEFAULT_IGNORED_LIBRARIES`, is clean under both (measured).',
+    residuals: {
+      'enforce-dynamic-imports:dynamicImportRequired + enforce-microdiff:enforceMicrodiff': 1,
+    },
+  },
+  'enforce-querykey-ts::prefer-global-router-state-key': {
+    reason:
+      "Degenerate `useRouterState` keys the query-key parser is written to pin — a raw literal shadowed by a local `QUERY_KEY_*` const, an empty string, and a parameterized `'prefix-' + id`. Both rules want the SAME thing (the key must come from the global module) and neither offers a fix, so they speak together until it is done by hand: `` `${QUERY_KEY_PLAYBACK_ID}-${id}` `` from an imported constant is clean under both (measured).",
+    residuals: {
+      'enforce-querykey-ts:enforceQueryKeyImport + prefer-global-router-state-key:preferGlobalRouterStateKey': 3,
+    },
+  },
+  'prefer-global-router-state-key::enforce-querykey-ts': {
+    reason:
+      "The mirror direction, on this rule's own carve-out fixtures: a raw key beside a stale local `QUERY_KEY_USER_PROFILE = 'stale-key'`, and an import written AFTER its use. Importing the constant, and hoisting the import above the component, is clean under both (measured).",
+    residuals: {
+      'enforce-querykey-ts:enforceQueryKeyImport + prefer-global-router-state-key:preferGlobalRouterStateKey': 1,
+      'enforce-querykey-ts:enforceQueryKeyConstant + prefer-global-router-state-key:invalidQueryKeySource': 1,
+    },
+  },
+};
+
+const observedStandoffs = new Map<string, Record<string, number>>();
+for (const row of standoffs) {
+  const pair = `${row.owner}::${row.reporter}`;
+  const counts = observedStandoffs.get(pair) || {};
+  const signature = row.outcome.residual.join(' + ');
+  counts[signature] = (counts[signature] || 0) + 1;
+  observedStandoffs.set(pair, counts);
+}
 
 describe('documented rule pairs do not contradict each other', () => {
   it('reports no divergence outside KNOWN_DIVERGENT', () => {
@@ -795,6 +1090,304 @@ describe('documented rule pairs do not contradict each other', () => {
         ].join('\n'),
       );
     }
+  });
+});
+
+describe('exempted pairs converge under the composed --fix', () => {
+  it('has no pair whose two fixers oscillate', () => {
+    const oscillated = convergence.filter(
+      (row) => row.outcome.verdict === 'OSCILLATED',
+    );
+    if (oscillated.length) {
+      throw new Error(
+        [
+          `${oscillated.length} exempted fixture(s) do not reach a fixpoint under`,
+          "the config's own `--fix` with both rules of the pair enabled.",
+          '',
+          'This is the #1846 shape: ESLint applies fixes until its ten-pass cap',
+          'and writes whatever that pass produced to disk, with `fixed: true` and',
+          'no signal it never converged. The two rules must AGREE — one has to',
+          'yield for the shape they share. Bumping a count here fixes nothing.',
+          '',
+          ...oscillated
+            .slice(0, 5)
+            .map((row) =>
+              [
+                `  ${row.owner}::${row.reporter}`,
+                `    fixture from src/tests/${row.origin} as ${row.filename}`,
+                `    in:  ${row.code.replace(/\s+/g, ' ').slice(0, 160)}`,
+                `    out: ${row.outcome.output
+                  .replace(/\s+/g, ' ')
+                  .slice(0, 160)}`,
+                `    still reports: ${row.outcome.residual.join(', ')}`,
+              ].join('\n'),
+            ),
+        ].join('\n'),
+      );
+    }
+    // Exactly zero, never a threshold: "no pair oscillates" is a property that
+    // does not decay as rules are added, whereas a tuned ceiling absorbs the
+    // next one silently.
+    expect(oscillated).toEqual([]);
+  });
+
+  it('leaves both rules reporting on exactly the hand-verified fixtures', () => {
+    const drifted = [
+      ...new Set([
+        ...observedStandoffs.keys(),
+        ...Object.keys(KNOWN_STANDOFFS),
+      ]),
+    ]
+      .sort()
+      .map((pair) => ({
+        pair,
+        signedOff: sortedCounts(KNOWN_STANDOFFS[pair]?.residuals || {}),
+        observed: sortedCounts(observedStandoffs.get(pair) || {}),
+      }))
+      .filter(
+        (entry) =>
+          JSON.stringify(entry.signedOff) !== JSON.stringify(entry.observed),
+      );
+
+    if (drifted.length) {
+      throw new Error(
+        [
+          `${drifted.length} pair(s) leave both rules reporting on a different set`,
+          'of fixtures than the eight that were hand-checked.',
+          '',
+          'A standoff is a fixture the composed `--fix` cannot silence: both rules',
+          'still speak and the developer must hand-edit. That is legitimate ONLY',
+          'while a spelling satisfying both exists. This is the smallest set in',
+          'this guard and the likeliest place for the next unsatisfiable pair, so',
+          'find the spelling and record it before touching the number.',
+          '',
+          ...drifted.map((entry) =>
+            [
+              `  ${entry.pair}`,
+              `    signed off: ${JSON.stringify(entry.signedOff, null, 2)}`,
+              `    observed:   ${JSON.stringify(entry.observed, null, 2)}`,
+              ...standoffs
+                .filter((row) => `${row.owner}::${row.reporter}` === entry.pair)
+                .slice(0, 3)
+                .map(
+                  (row) =>
+                    `    e.g. ${row.origin}: ${row.outcome.output
+                      .replace(/\s+/g, ' ')
+                      .slice(0, 160)}`,
+                ),
+            ].join('\n'),
+          ),
+        ].join('\n'),
+      );
+    }
+  });
+
+  it('fixed and re-linted the exempted corpus (non-vacuity)', () => {
+    const byVerdict: Record<FixVerdict, number> = {
+      CONVERGED: 0,
+      'NO-OP': 0,
+      OSCILLATED: 0,
+    };
+    for (const row of convergence) byVerdict[row.outcome.verdict]++;
+
+    // 631 probes over 56 pairs, 503 of them rewritten by the fix, at the time
+    // of writing. Each floor is separate because each fails differently: a
+    // probe count with nothing rewritten means the fix pass never ran (the
+    // options or parser plumbing lost), and a pair count without probes means
+    // the divergence scan collapsed.
+    expect(convergenceStats.probes).toBeGreaterThanOrEqual(550);
+    expect(convergenceStats.rewritten).toBeGreaterThanOrEqual(400);
+    expect(convergenceStats.pairs.size).toBeGreaterThanOrEqual(50);
+    expect(byVerdict.CONVERGED).toBeGreaterThanOrEqual(400);
+    expect(byVerdict['NO-OP']).toBeGreaterThanOrEqual(100);
+    // A fixer that produced unparsable text would leave a fatal carrying no
+    // `ruleId`, which the residual filter drops — i.e. it would read as
+    // CONVERGED. Asserted rather than counted.
+    expect(convergenceStats.fatalOutputs).toEqual([]);
+    // The sharpening is live on REAL fixtures, not only in the plant below: the
+    // loose "`fixed: true` and something still reports" test fires on 11 of
+    // these, every one of them ordinary. If this ever reaches zero the two
+    // tests have stopped differing here and the sharp one is no longer being
+    // exercised against its own false-positive class.
+    expect(convergenceStats.looseOscillations).toBeGreaterThan(0);
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[convergence] ${convergenceStats.probes} fixture(s) of ` +
+        `${convergenceStats.pairs.size} exempted pair(s) fixed and re-linted: ` +
+        `${byVerdict.CONVERGED} converged, ${byVerdict['NO-OP']} no-op, ` +
+        `${byVerdict.OSCILLATED} oscillated ` +
+        `(${convergenceStats.rewritten} rewritten, ` +
+        `${convergenceStats.looseOscillations} would fail the loose test, ` +
+        `${standoffs.length} leave both rules reporting)`,
+    );
+  });
+
+  it('catches two fixers that never reach a fixpoint (positive control)', () => {
+    // The corpus cannot exercise the OSCILLATED branch — it is zero by design,
+    // and #1846's own input is fixed — so the branch is proved on a plant that
+    // goes through the SAME `classifyFixOutcome` the corpus does.
+    const renamer = (from: string, to: string): Rule.RuleModule => ({
+      meta: {
+        type: 'problem',
+        schema: [],
+        fixable: 'code',
+        messages: { rename: `rename ${from}` },
+      },
+      create: (context) => ({
+        Identifier(node) {
+          if ((node as { name?: string }).name !== from) return;
+          context.report({
+            node,
+            messageId: 'rename',
+            fix: (fixer) => fixer.replaceText(node, to),
+          });
+        },
+      }),
+    });
+    const configFor = (ids: string[]) => ({
+      parser: 'ts',
+      parserOptions: { ecmaVersion: 2022, sourceType: 'module' },
+      rules: Object.fromEntries(ids.map((id) => [id, 'error'])),
+    });
+
+    // TWO-CYCLE, which is #1846's exact shape: `a` -> `b` -> `a`. ESLint's cap
+    // is an EVEN ten passes, so the text lands back where it started and
+    // `verifyAndFix(output).output !== output` is FALSE. Asserting that here is
+    // the point of the control: the literal text-inequality test — the obvious
+    // way to write this check — is blind to the very defect that motivated it.
+    const UP = `${PREFIX}control-oscillate-up`;
+    const DOWN = `${PREFIX}control-oscillate-down`;
+    linter.defineRule(UP, renamer('oscillate', 'OSCILLATE'));
+    linter.defineRule(DOWN, renamer('OSCILLATE', 'oscillate'));
+    const twoCycle = classifyFixOutcome(
+      'const oscillate = 1;\n',
+      'file.ts',
+      configFor([UP, DOWN]),
+      new Set([UP, DOWN]),
+    );
+    expect({
+      verdict: twoCycle.verdict,
+      refixMovesText: twoCycle.refixMovesText,
+      refixAppliesAFix: twoCycle.refixAppliesAFix,
+    }).toEqual({
+      verdict: 'OSCILLATED',
+      refixMovesText: false,
+      refixAppliesAFix: true,
+    });
+
+    // THREE-CYCLE (`a` -> `b` -> `c` -> `a`), where ten passes do NOT return to
+    // the start, so the text-inequality arm of the disjunction is the one that
+    // fires. Both arms are therefore load-bearing and neither can be dropped.
+    const FORWARD = `${PREFIX}control-cycle-forward`;
+    const BACKWARD = `${PREFIX}control-cycle-backward`;
+    const forward: Rule.RuleModule = {
+      meta: {
+        type: 'problem',
+        schema: [],
+        fixable: 'code',
+        messages: { rename: 'rename' },
+      },
+      create: (context) => ({
+        Identifier(node) {
+          const name = (node as { name?: string }).name;
+          const next = name === 'aaa' ? 'bbb' : name === 'ccc' ? 'aaa' : null;
+          if (!next) return;
+          context.report({
+            node,
+            messageId: 'rename',
+            fix: (fixer) => fixer.replaceText(node, next),
+          });
+        },
+      }),
+    };
+    linter.defineRule(FORWARD, forward);
+    linter.defineRule(BACKWARD, renamer('bbb', 'ccc'));
+    const threeCycle = classifyFixOutcome(
+      'const aaa = 1;\n',
+      'file.ts',
+      configFor([FORWARD, BACKWARD]),
+      new Set([FORWARD, BACKWARD]),
+    );
+    expect({
+      verdict: threeCycle.verdict,
+      refixMovesText: threeCycle.refixMovesText,
+    }).toEqual({ verdict: 'OSCILLATED', refixMovesText: true });
+  });
+
+  it('calls an unfixable residual a NO-OP, not an oscillation (negative control)', () => {
+    // The sharpness half. A fixture where `--fix` DID rewrite something while
+    // an unrelated, unfixable report remains is ordinary — 139 of the corpus's
+    // fixtures are exactly this — and the loose test calls it an oscillation.
+    const FIXES = `${PREFIX}control-fixes-once`;
+    const UNFIXABLE = `${PREFIX}control-reports-unfixable`;
+    const QUIET = `${PREFIX}control-reports-never`;
+    linter.defineRule(FIXES, {
+      meta: {
+        type: 'problem',
+        schema: [],
+        fixable: 'code',
+        messages: { rename: 'rename' },
+      },
+      create: (context) => ({
+        Identifier(node) {
+          if ((node as { name?: string }).name !== 'stale') return;
+          context.report({
+            node,
+            messageId: 'rename',
+            fix: (fixer) => fixer.replaceText(node, 'fresh'),
+          });
+        },
+      }),
+    });
+    linter.defineRule(UNFIXABLE, {
+      meta: { type: 'problem', schema: [], messages: { saw: 'hand-edit me' } },
+      create: (context) => ({
+        VariableDeclaration(node) {
+          context.report({ node, messageId: 'saw' });
+        },
+      }),
+    });
+    linter.defineRule(QUIET, {
+      meta: { type: 'problem', schema: [], messages: { saw: 'saw a class' } },
+      create: (context) => ({
+        ClassDeclaration(node) {
+          context.report({ node, messageId: 'saw' });
+        },
+      }),
+    });
+    const config = (ids: string[]) => ({
+      parser: 'ts',
+      parserOptions: { ecmaVersion: 2022, sourceType: 'module' },
+      rules: Object.fromEntries(ids.map((id) => [id, 'error'])),
+    });
+
+    const noop = classifyFixOutcome(
+      'const stale = 1;\n',
+      'file.ts',
+      config([FIXES, UNFIXABLE]),
+      new Set([FIXES, UNFIXABLE]),
+    );
+    expect({
+      verdict: noop.verdict,
+      // What the LOOSE test sees, spelled out: a fix applied and something
+      // still reports. Sharpness is this pair of expectations disagreeing.
+      looseWouldFail: noop.fixed && noop.residual.length > 0,
+      rewritten: noop.rewritten,
+    }).toEqual({ verdict: 'NO-OP', looseWouldFail: true, rewritten: true });
+
+    // And the classifier can still say CONVERGED, so a NO-OP verdict is a
+    // finding about the input rather than the only answer it knows.
+    const converged = classifyFixOutcome(
+      'const stale = 1;\n',
+      'file.ts',
+      config([FIXES, QUIET]),
+      new Set([FIXES, QUIET]),
+    );
+    expect({ verdict: converged.verdict, output: converged.output }).toEqual({
+      verdict: 'CONVERGED',
+      output: 'const fresh = 1;\n',
+    });
   });
 });
 
