@@ -122,6 +122,12 @@
  *   counter read clean (#1820). A counter placed past the skip it is meant to
  *   measure can only ever report zero.
  *
+ * NON-VACUITY IS PER-RULE AS WELL AS PER-KIND (#1863). The four rule-dimension
+ * floors — 70 of 80 rewritten, 5 of 7 suggesting, 28 of 38 deriving, 4 of 4
+ * through suggestions — are global sums that a subset can leave in silence, so
+ * each arm additionally accounts for its whole population: a rule is driven, or
+ * it is named with a measured cause that fails when it goes stale.
+ *
  * SCOPE, as a to-do rather than as coverage: the rename channel asks only
  * whether the output parses, so a suggestion that emits a legal-but-empty name
  * is caught by the literal channel or not at all; and the literal channel
@@ -577,6 +583,14 @@ type Totals = {
   fatals: number;
   fatalDetails: string[];
   rulesRewritten: Set<string>;
+  /**
+   * Rules a perturbation was ever built for, and rules that then SPOKE. Both
+   * exist so a rule missing from `rulesRewritten` can be told apart from one
+   * the sweep never reached — a rule-dimension floor conflates the two, and the
+   * conflation is what lets a subset go dark inside a passing sum (#1863).
+   */
+  rulesConsidered: Set<string>;
+  rulesReporting: Set<string>;
   kindsRewritten: Map<string, number>;
 };
 
@@ -597,6 +611,8 @@ const emptyTotals = (): Totals => ({
   fatals: 0,
   fatalDetails: [],
   rulesRewritten: new Set(),
+  rulesConsidered: new Set(),
+  rulesReporting: new Set(),
   kindsRewritten: new Map(),
 });
 
@@ -719,6 +735,7 @@ const probeCase = (
         continue;
       }
       totals.considered++;
+      totals.rulesConsidered.add(rule);
 
       if (channel === 'fix') {
         let result;
@@ -740,6 +757,15 @@ const probeCase = (
               result.messages.find((message) => message.fatal)?.message
             }`,
           );
+        }
+        // `verifyAndFix` returns the RESIDUAL messages, so they are the whole
+        // lint only when nothing was applied. A rule that fixed obviously
+        // spoke, which covers the other branch.
+        if (
+          result.fixed ||
+          result.messages.some((message) => message.ruleId === ruleId)
+        ) {
+          totals.rulesReporting.add(rule);
         }
         if (!result.fixed || result.output === input) continue;
         totals.rewritten++;
@@ -784,6 +810,9 @@ const probeCase = (
             messages.find((message) => message.fatal)?.message
           }`,
         );
+      }
+      if (messages.some((message) => message.ruleId === ruleId)) {
+        totals.rulesReporting.add(rule);
       }
       const edits = suggestionEditsOf(input, messages, ruleId);
       if (!edits.length) continue;
@@ -871,6 +900,9 @@ type LiteralTotals = {
   crashes: number;
   crashDetails: string[];
   rulesDeriving: Set<string>;
+  /** As above: reached, rewrote, derived are three different failures. */
+  rulesConsidered: Set<string>;
+  rulesRewritten: Set<string>;
 };
 
 const emptyLiteralTotals = (): LiteralTotals => ({
@@ -884,6 +916,8 @@ const emptyLiteralTotals = (): LiteralTotals => ({
   crashes: 0,
   crashDetails: [],
   rulesDeriving: new Set(),
+  rulesConsidered: new Set(),
+  rulesRewritten: new Set(),
 });
 
 /**
@@ -1070,6 +1104,7 @@ const sweepLiterals = (
             continue;
           }
           literalTotals.considered++;
+          literalTotals.rulesConsidered.add(rule);
           const degenerate = runChannel(input, control.invented.size > 0);
           if (!degenerate) {
             literalTotals.skippedUnparsableComparison++;
@@ -1077,6 +1112,7 @@ const sweepLiterals = (
           }
           if (!degenerate.outputs.length) continue;
           literalTotals.rewritten++;
+          literalTotals.rulesRewritten.add(rule);
 
           const broken = degenerate.outputs.find(
             (output) => parseErrorCount(output, filename) > 0,
@@ -1125,6 +1161,185 @@ const literalSuggestionTotals = sweepLiterals(
   suggestingRuleNames,
   'suggestion',
 );
+
+/* ------------------------- TWO-WAY DRIVE ACCOUNTING ----------------------- */
+
+/**
+ * Why a rule could never have been driven on degenerate input, read off the
+ * counters above rather than asserted by hand.
+ *
+ * Ordered outermost precondition first, so the cause named is the FIRST that
+ * failed: a rule with no TypeScript fixture is not also "declines", it was
+ * never linted here at all.
+ */
+const UNDRIVEN_CAUSES = {
+  noTsFixture:
+    'declares no TypeScript `invalid` fixture, and both perturbations are TypeScript edits',
+  noPerturbableSite:
+    'has TypeScript fixtures, but none of them holds a binding (or a string literal) this probe can degenerate',
+  silentOnDegenerateInput:
+    'reports on none of the degenerate inputs built from its fixtures, so it offers nothing to inspect',
+  declinesOnDegenerateInput:
+    'reports on degenerate input yet rewrites none of it, so no output exists to read a derived name out of',
+  inventsNoName:
+    'rewrites degenerate input without introducing any identifier absent from it, so there is no derived name to collapse',
+} as const;
+type UndrivenCause = keyof typeof UNDRIVEN_CAUSES;
+
+/**
+ * Read straight off the corpus, NOT through `invalidTypeScriptCases`: that
+ * helper increments the non-TypeScript skip counters as a side effect, and
+ * calling it again would double every one of them.
+ */
+const hasTypeScriptFixture = (rule: string) =>
+  (corpus.byRule.get(rule) || []).some(
+    (testCase: FixtureCase) =>
+      testCase.language === 'ts' && testCase.bucket === 'invalid',
+  );
+
+const bindingCauseOf =
+  (measured: Totals) =>
+  (rule: string): UndrivenCause | null => {
+    if (measured.rulesRewritten.has(rule)) return null;
+    if (!measured.rulesConsidered.has(rule)) {
+      return hasTypeScriptFixture(rule) ? 'noPerturbableSite' : 'noTsFixture';
+    }
+    if (!measured.rulesReporting.has(rule)) return 'silentOnDegenerateInput';
+    return 'declinesOnDegenerateInput';
+  };
+
+const literalCauseOf =
+  (measured: LiteralTotals) =>
+  (rule: string): UndrivenCause | null => {
+    if (measured.rulesDeriving.has(rule)) return null;
+    if (!measured.rulesConsidered.has(rule)) {
+      return hasTypeScriptFixture(rule) ? 'noPerturbableSite' : 'noTsFixture';
+    }
+    if (!measured.rulesRewritten.has(rule)) return 'declinesOnDegenerateInput';
+    return 'inventsNoName';
+  };
+
+const measuredUndriven = (
+  ruleNames: string[],
+  causeOf: (rule: string) => UndrivenCause | null,
+): Record<string, UndrivenCause> =>
+  Object.fromEntries(
+    [...ruleNames]
+      .sort()
+      .map((rule) => [rule, causeOf(rule)] as const)
+      .filter((entry): entry is readonly [string, UndrivenCause] => !!entry[1]),
+  );
+
+const measuredBindingUndriven = measuredUndriven(
+  fixableRuleNames,
+  bindingCauseOf(totals),
+);
+const measuredBindingSuggestionUndriven = measuredUndriven(
+  suggestingRuleNames,
+  bindingCauseOf(suggestionTotals),
+);
+const measuredLiteralUndriven = measuredUndriven(
+  fixableRuleNames,
+  literalCauseOf(literalTotals),
+);
+const measuredLiteralSuggestionUndriven = measuredUndriven(
+  suggestingRuleNames,
+  literalCauseOf(literalSuggestionTotals),
+);
+
+/**
+ * Rules no degenerate BINDING rename ever made rewrite anything, each with the
+ * measured cause.
+ *
+ * `rulesRewritten.size >= 70` against an actual 80 says the sweep drove some
+ * fixers; it cannot say it drove a PARTICULAR one, and ten rules can fall out
+ * of it in silence (#1863). Asserted as an exact map, so an unrecorded skip, a
+ * stale entry and a changed cause all fail.
+ */
+const BINDING_UNDRIVEN: Record<string, UndrivenCause> = {
+  'enforce-typescript-markdown-code-blocks': 'noTsFixture',
+  'no-unpinned-dependencies': 'noTsFixture',
+  // Declares `fixable: 'code'` and emits no fix over any of its 105 fixtures
+  // (#1871), so nothing it does can be inspected here.
+  'no-usememo-for-pass-by-value': 'declinesOnDegenerateInput',
+  // Its fixtures are bare JSX fragments; none of them declares a binding this
+  // probe can rename, so no degenerate input was ever built for it.
+  'prefer-fragment-shorthand': 'noPerturbableSite',
+};
+
+/** The suggestion channel of the same arm. SHIPS EMPTY: all seven are driven. */
+const BINDING_SUGGESTION_UNDRIVEN: Record<string, UndrivenCause> = {};
+
+/**
+ * Rules that derive no name from a string LITERAL, each with the measured
+ * cause.
+ *
+ * `inventsNoName` is neither a defect nor a decision: it is what a fixer that
+ * only deletes, moves or re-spells existing text does, and the collapse this
+ * arm hunts needs an invented name to collapse. `declinesOnDegenerateInput` and
+ * `noPerturbableSite` are facts about the FIXTURES — a rule whose corpus holds
+ * no string literal to degenerate, or whose fixer stops firing once one is
+ * replaced — and neither is announced by any metadata, which is why each is
+ * recorded rather than counted. `rulesDeriving.size >= 28` against an actual 38
+ * lets ten rules go dark unheard, and a rule LEAVING this list has started
+ * deriving a name from author content, which is exactly the population #1811
+ * and #1813 came out of.
+ */
+const LITERAL_UNDRIVEN: Record<string, UndrivenCause> = {
+  'enforce-typescript-markdown-code-blocks': 'noTsFixture',
+  'no-unpinned-dependencies': 'noTsFixture',
+  'class-methods-read-top-to-bottom': 'inventsNoName',
+  'enforce-centralized-mock-firestore': 'inventsNoName',
+  'enforce-dynamic-firebase-imports': 'inventsNoName',
+  'enforce-early-destructuring': 'inventsNoName',
+  'enforce-exported-function-types': 'inventsNoName',
+  'enforce-fieldpath-syntax-in-docsetter': 'inventsNoName',
+  'enforce-firestore-rules-get-access': 'declinesOnDegenerateInput',
+  'enforce-id-capitalization': 'inventsNoName',
+  'enforce-react-type-naming': 'noPerturbableSite',
+  'enforce-unique-cursor-headers': 'declinesOnDegenerateInput',
+  'flatten-push-calls': 'noPerturbableSite',
+  'jsdoc-above-field': 'inventsNoName',
+  'key-only-outermost-element': 'inventsNoName',
+  'logical-top-to-bottom-grouping': 'inventsNoName',
+  'no-curly-brackets-around-commented-properties': 'inventsNoName',
+  'no-direct-function-state': 'inventsNoName',
+  'no-empty-dependency-use-callbacks': 'inventsNoName',
+  'no-entire-object-hook-deps': 'inventsNoName',
+  'no-explicit-return-type': 'inventsNoName',
+  'no-firestore-jest-mock': 'declinesOnDegenerateInput',
+  'no-redundant-annotation-assertion': 'inventsNoName',
+  'no-redundant-param-types': 'inventsNoName',
+  'no-redundant-usecallback-wrapper': 'inventsNoName',
+  'no-unnecessary-destructuring': 'noPerturbableSite',
+  'no-unnecessary-destructuring-rename': 'inventsNoName',
+  'no-unused-usestate': 'inventsNoName',
+  'no-useless-fragment': 'noPerturbableSite',
+  'no-useless-usememo-primitives': 'inventsNoName',
+  'no-usememo-for-pass-by-value': 'declinesOnDegenerateInput',
+  'omit-index-html': 'declinesOnDegenerateInput',
+  'prefer-block-comments-for-declarations': 'inventsNoName',
+  'prefer-destructuring-no-class': 'inventsNoName',
+  'prefer-fragment-shorthand': 'noPerturbableSite',
+  'prefer-getter-over-parameterless-method': 'inventsNoName',
+  'prefer-nullish-coalescing-boolean-props': 'inventsNoName',
+  'prefer-params-over-parent-id': 'declinesOnDegenerateInput',
+  'prefer-type-over-interface': 'inventsNoName',
+  'require-hooks-default-params': 'inventsNoName',
+  'require-image-optimized': 'inventsNoName',
+  'sync-onwrite-name-func': 'inventsNoName',
+  'use-custom-link': 'declinesOnDegenerateInput',
+  'use-custom-memo': 'inventsNoName',
+  'use-custom-router': 'declinesOnDegenerateInput',
+  'vertically-group-related-functions': 'inventsNoName',
+};
+
+/** The suggestion channel of the literal arm. */
+const LITERAL_SUGGESTION_UNDRIVEN: Record<string, UndrivenCause> = {
+  'enforce-dynamic-firebase-imports': 'inventsNoName',
+  'enforce-m3-sentence-case': 'declinesOnDegenerateInput',
+  'enforce-safe-stringify': 'inventsNoName',
+};
 
 /** Binding shapes the widened collector must be shown to have DRIVEN a fixer with. */
 const REQUIRED_KINDS = [
@@ -1253,6 +1468,52 @@ describe('degenerate-identifier fix closure', () => {
     expect(totals.considered).toBeGreaterThan(40000);
     expect(totals.rewritten).toBeGreaterThan(25000);
     expect(totals.rulesRewritten.size).toBeGreaterThanOrEqual(70);
+  });
+
+  /**
+   * Per rule, which is the unit the floor above cannot express: an unlisted
+   * rule that stops being driven fails as an unrecorded skip, and a listed rule
+   * that starts being driven fails as a stale entry, so an exemption cannot
+   * outlive its reason (#1839).
+   */
+  it('accounts for every fixable rule no degenerate binding could drive', () => {
+    expect(measuredBindingUndriven).toEqual(BINDING_UNDRIVEN);
+  });
+
+  it('accounts for every suggesting rule no degenerate binding could drive', () => {
+    expect(measuredBindingSuggestionUndriven).toEqual(
+      BINDING_SUGGESTION_UNDRIVEN,
+    );
+  });
+
+  it('explains every cause it records, on a rule it actually probes', () => {
+    const causes = [
+      ...Object.values(BINDING_UNDRIVEN),
+      ...Object.values(BINDING_SUGGESTION_UNDRIVEN),
+      ...Object.values(LITERAL_UNDRIVEN),
+      ...Object.values(LITERAL_SUGGESTION_UNDRIVEN),
+    ];
+    expect(causes.filter((cause) => !UNDRIVEN_CAUSES[cause])).toEqual([]);
+    // An entry naming a rule outside the arm's own population is an exemption
+    // nothing can retire, so it would absorb the next absence forever.
+    expect(
+      [
+        ...Object.keys(BINDING_UNDRIVEN),
+        ...Object.keys(LITERAL_UNDRIVEN),
+      ].filter((rule) => !fixableRuleNames.includes(rule)),
+    ).toEqual([]);
+    expect(
+      [
+        ...Object.keys(BINDING_SUGGESTION_UNDRIVEN),
+        ...Object.keys(LITERAL_SUGGESTION_UNDRIVEN),
+      ].filter((rule) => !suggestingRuleNames.includes(rule)),
+    ).toEqual([]);
+  });
+
+  it.each(
+    [...fixableRuleNames].sort().filter((rule) => !(rule in BINDING_UNDRIVEN)),
+  )('drove %s with a degenerate binding name', (rule) => {
+    expect(totals.rulesRewritten.has(rule)).toBe(true);
   });
 
   /**
@@ -1716,6 +1977,17 @@ describe('degenerate-identifier fix closure', () => {
     expect(literalTotals.rulesDeriving.size).toBeGreaterThanOrEqual(28);
   });
 
+  /** The literal arm, per rule, both directions. */
+  it('accounts for every fixable rule that derives no name from a literal', () => {
+    expect(measuredLiteralUndriven).toEqual(LITERAL_UNDRIVEN);
+  });
+
+  it.each(
+    [...fixableRuleNames].sort().filter((rule) => !(rule in LITERAL_UNDRIVEN)),
+  )('derived a name from a literal for %s', (rule) => {
+    expect(literalTotals.rulesDeriving.has(rule)).toBe(true);
+  });
+
   /**
    * The same floor for the suggestion channel. A run that invents no name at
    * all cannot show a collapse, so the deriving count is the only evidence the
@@ -1738,6 +2010,13 @@ describe('degenerate-identifier fix closure', () => {
     expect(literalSuggestionTotals.derivationsObserved).toBeGreaterThan(100);
     expect(literalSuggestionTotals.rulesDeriving.size).toBeGreaterThanOrEqual(
       4,
+    );
+  });
+
+  /** And the suggestion channel of the literal arm, per rule, both directions. */
+  it('accounts for every suggesting rule that derives no name from a literal', () => {
+    expect(measuredLiteralSuggestionUndriven).toEqual(
+      LITERAL_SUGGESTION_UNDRIVEN,
     );
   });
 

@@ -24,6 +24,17 @@
  * `recommended: 'error'`, autofixing rules have (#1860) — and handing those to
  * `@typescript-eslint/parser` is a fatal in exactly the same invisible way. Each
  * case is parsed by the parser its own tester declared.
+ *
+ * NON-VACUITY IS PER-RULE, NOT A GLOBAL FLOOR (#1863). "No fixture is
+ * unparsable" is trivially true of a corpus that shrank, and a floor of 10,000
+ * against 14,586 cases leaves a third of the corpus free to vanish inside a
+ * still-passing sum. Worse, the harvest's OWN failure list was never asserted:
+ * a fifth of the suites could fail to load while this gate swept the shrunken
+ * remainder and called it clean — the exact shape that let a partial harvest go
+ * unnoticed. So the check is closed both ways against the plugin's rule map,
+ * which is the one population outside the corpus: every registered rule must
+ * contribute a parsed fixture or be a named skip carrying a measured cause, and
+ * a named skip that becomes parsable fails as stale.
  */
 import { Linter } from 'eslint';
 import {
@@ -33,7 +44,12 @@ import {
   parserKeyFor,
   parserOptionsFor,
   FixtureCase,
+  FixtureLanguage,
 } from '../utils/fixtureCorpus';
+
+/* eslint-disable @typescript-eslint/no-var-requires */
+const plugin = require('../index') as { rules: Record<string, unknown> };
+/* eslint-enable @typescript-eslint/no-var-requires */
 
 const linter = new Linter();
 defineCorpusParsers(linter);
@@ -60,19 +76,112 @@ const parseErrorFor = (testCase: FixtureCase, filename: string) => {
   }
 };
 
-describe('fixture corpus parsability', () => {
-  const corpus = harvestFixtureCorpus();
-  const cases = [...corpus.byRule].flatMap(([rule, ruleCases]) =>
-    ruleCases
-      .filter((testCase) => testCase.bucket !== 'output')
-      .map((testCase) => ({ rule, testCase })),
-  );
+const corpus = harvestFixtureCorpus();
+const registeredRules = Object.keys(plugin.rules).sort();
 
+const cases = [...corpus.byRule].flatMap(([rule, ruleCases]) =>
+  ruleCases
+    .filter((testCase) => testCase.bucket !== 'output')
+    .map((testCase) => ({ rule, testCase })),
+);
+
+/**
+ * Why a registered rule could contribute no parsed fixture, read off the
+ * corpus rather than asserted by hand.
+ *
+ * `noCorpus` is derived from the corpus itself, so a rule that loses its
+ * fixtures enters the accounting automatically; `onlyAlreadyFixedFixtures` is a
+ * fact about which BUCKETS a rule declares, which no metadata announces.
+ */
+const UNPARSED_CAUSES = {
+  noCorpus:
+    'the harvest holds no fixture for it at all, so there is nothing here to parse',
+  onlyAlreadyFixedFixtures:
+    'declares only `output` states, which this gate excludes because an output is a fixed copy of a case it already parsed',
+} as const;
+type UnparsedCause = keyof typeof UNPARSED_CAUSES;
+
+/** Cases actually handed to a parser, per rule and per language. */
+const parsedByRule = new Map<string, number>();
+const parsedByLanguage = new Map<FixtureLanguage, number>();
+for (const { rule, testCase } of cases) {
+  parsedByRule.set(rule, (parsedByRule.get(rule) || 0) + 1);
+  parsedByLanguage.set(
+    testCase.language,
+    (parsedByLanguage.get(testCase.language) || 0) + 1,
+  );
+}
+
+const unparsedCauseOf = (rule: string): UnparsedCause | null => {
+  if (parsedByRule.get(rule)) return null;
+  return corpus.byRule.get(rule)?.length
+    ? 'onlyAlreadyFixedFixtures'
+    : 'noCorpus';
+};
+
+const measuredUnparsed: Record<string, UnparsedCause> = Object.fromEntries(
+  registeredRules
+    .map((rule) => [rule, unparsedCauseOf(rule)] as const)
+    .filter((entry): entry is readonly [string, UnparsedCause] => !!entry[1]),
+);
+
+/**
+ * Registered rules with no fixture this gate parses, each with the measured
+ * cause.
+ *
+ * SHIPS EMPTY: all 194 registered rules contribute at least one `valid` or
+ * `invalid` fixture. It is the place a skip must be written down, because a rule
+ * dropping out of the corpus is otherwise indistinguishable from a rule whose
+ * fixtures all parse — both leave this gate green. Asserted as an exact map, so
+ * an unrecorded skip, a stale entry and a changed cause all fail.
+ */
+const UNPARSED_RULES: Record<string, UnparsedCause> = {};
+
+describe('fixture corpus parsability', () => {
   it('harvests a corpus big enough for the check to mean anything', () => {
+    // The harvest's own failures, asserted rather than inherited: a suite that
+    // throws while loading contributes nothing, and this gate would sweep the
+    // shrunken remainder and report zero unparsable fixtures.
+    expect(corpus.failures).toEqual([]);
     // Guards against the require-cache collapse that makes a second harvest
     // return zero suites and every downstream assertion vacuously true.
     expect(corpus.suitesUsed).toBeGreaterThan(250);
     expect(cases.length).toBeGreaterThan(10000);
+  });
+
+  /**
+   * The rule dimension, closed both ways against `plugin.rules` — the one
+   * population that is not derived from the corpus, so a corpus that collapsed
+   * cannot satisfy it by shrinking both sides together.
+   */
+  it('parses a fixture for every registered rule', () => {
+    expect(measuredUnparsed).toEqual(UNPARSED_RULES);
+    expect(registeredRules.length).toBeGreaterThan(150);
+    // Every cause recorded must be one this file knows how to measure, and
+    // every entry must name a registered rule, or it is an exemption nothing
+    // can ever retire.
+    expect(
+      Object.values(UNPARSED_RULES).filter((cause) => !UNPARSED_CAUSES[cause]),
+    ).toEqual([]);
+    expect(
+      Object.keys(UNPARSED_RULES).filter(
+        (rule) => !registeredRules.includes(rule),
+      ),
+    ).toEqual([]);
+  });
+
+  /**
+   * The parser dimension, per member rather than in the aggregate. A language
+   * whose fixtures stopped being harvested leaves its parser untested while the
+   * total case count barely moves — TypeScript is 99% of the corpus, so the
+   * JSON and Markdown arms are exactly what an aggregate floor cannot see.
+   */
+  it('parses a fixture in every language the corpus carries', () => {
+    const languages: FixtureLanguage[] = ['ts', 'json', 'markdown'];
+    expect(
+      languages.filter((language) => !parsedByLanguage.get(language)),
+    ).toEqual([]);
+    expect(parsedByLanguage.get('ts')).toBeGreaterThan(10000);
   });
 
   it('assigns every case a filename its own syntax can parse', () => {

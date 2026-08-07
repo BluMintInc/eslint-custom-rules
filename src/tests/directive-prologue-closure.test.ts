@@ -29,6 +29,12 @@
  * of the seven rules offering one are not `meta.fixable`, so a guard keyed on
  * `meta.fixable` alone leaves them to nobody — the #1733 decay. Three of those
  * six emit a top-of-file import, which is the exact edit policed here.
+ *
+ * NON-VACUITY IS PER-RULE (#1863). `variantFixed > 2000` against 13,895 is a
+ * global sum: the 26 lowest-yield rules can go silent inside it without moving
+ * it. Every member of `REWRITING_RULES` therefore has to have rewritten a
+ * prologue-bearing source, or be named below with a measured cause that fails
+ * when it goes stale.
  */
 import fs from 'fs';
 import path from 'path';
@@ -212,6 +218,38 @@ const stats = {
   skippedInert: 0,
 };
 
+type Drive = {
+  /** TypeScript `invalid` fixtures reaching `probeCase`. */
+  considered: number;
+  /** Those not already carrying a shebang or a directive of their own. */
+  probeable: number;
+  /** Those the rule rewrites through EITHER channel before any prefix. */
+  baseRewrites: number;
+  /** Rewrites observed with a prologue prepended — the actual measurement. */
+  variantRewrites: number;
+  /**
+   * The suggestion channel alone. `--fix` never applies a suggestion, so rolled
+   * into the count above the fix channel's thousands of rewrites would cover for
+   * it reaching zero — the #1733 decay, at the per-rule scale.
+   */
+  variantSuggestions: number;
+};
+
+const driveByRule = new Map<string, Drive>();
+const driveOf = (name: string): Drive => {
+  const existing = driveByRule.get(name);
+  if (existing) return existing;
+  const fresh: Drive = {
+    considered: 0,
+    probeable: 0,
+    baseRewrites: 0,
+    variantRewrites: 0,
+    variantSuggestions: 0,
+  };
+  driveByRule.set(name, fresh);
+  return fresh;
+};
+
 const findings: Finding[] = [];
 
 const verify = (
@@ -248,10 +286,12 @@ const suggestionOutputs = (
 
 const probeCase = (name: string, tc: FixtureCase, collect: Finding[]) => {
   const rules = { [PREFIX + name]: severityWithOptions(tc) as never };
+  const drive = driveOf(name);
 
   // A fixture that already opens with either token would make the invariant
   // ambiguous about which copy moved.
   if (tc.code.startsWith('#!') || /^\s*['"]use /.test(tc.code)) return;
+  drive.probeable++;
 
   // A case the rule rewrites through NEITHER channel proves nothing about
   // placement, so it is not counted as probed.
@@ -259,6 +299,7 @@ const probeCase = (name: string, tc: FixtureCase, collect: Finding[]) => {
   const baseFixed = Boolean(base?.fixed);
   const baseSuggests = suggestionOutputs(name, tc.code, rules, tc).length > 0;
   if (!baseFixed && !baseSuggests) return;
+  drive.baseRewrites++;
   if (baseFixed) {
     stats.baseFixed++;
     stats.rulesFixing.add(name);
@@ -287,11 +328,14 @@ const probeCase = (name: string, tc: FixtureCase, collect: Finding[]) => {
     const fixed = fixOf(source, rules, tc);
     if (fixed?.fixed) {
       stats.variantFixed++;
+      drive.variantRewrites++;
       record(variant, fixed.output, source);
     }
 
     for (const output of suggestionOutputs(name, source, rules, tc)) {
       stats.variantSuggested++;
+      drive.variantRewrites++;
+      drive.variantSuggestions++;
       record(variant, output, source);
     }
   }
@@ -344,9 +388,101 @@ for (const [name, cases] of corpus.byRule) {
     }
     if (tc.bucket !== 'invalid') continue;
     stats.considered++;
+    driveOf(name).considered++;
     probeCase(name, tc, findings);
   }
 }
+
+/**
+ * Why a rewriting rule could never have been driven with a prologue in front of
+ * it, read off the counters above rather than asserted by hand.
+ *
+ * Ordered outermost precondition first, so the cause named is the FIRST that
+ * failed: a rule with no TypeScript fixture is not also "declines once a
+ * prologue is present", it was never linted here at all.
+ */
+const UNDRIVEN_CAUSES = {
+  noCorpus:
+    'the harvest holds no fixture for it, so nothing was ever handed to its fixer',
+  noTsFixture:
+    'declares no TypeScript `invalid` fixture, and a directive prologue is a TypeScript question',
+  everyFixtureHasItsOwnPrologue:
+    'every fixture already opens with a shebang or a directive, which makes it ambiguous which copy moved',
+  neverRewritesItsOwnFixtures:
+    'declares a fix or a suggestion yet offers neither on any of its own fixtures, so no rewrite exists to place',
+  declinesOnceProloguePresent:
+    'rewrites its own fixtures but produces nothing once a prologue is prepended',
+  neverSuggestsOnItsOwnFixtures:
+    'declares meta.hasSuggestions yet offers no suggestion on any of its own fixtures, so the suggestion channel has nothing to place',
+} as const;
+type UndrivenCause = keyof typeof UNDRIVEN_CAUSES;
+
+const undrivenCauseOf = (name: string): UndrivenCause | null => {
+  const drive = driveByRule.get(name);
+  if (!corpus.byRule.has(name)) return 'noCorpus';
+  if (!drive || drive.considered === 0) return 'noTsFixture';
+  if (drive.probeable === 0) return 'everyFixtureHasItsOwnPrologue';
+  if (drive.baseRewrites === 0) return 'neverRewritesItsOwnFixtures';
+  if (drive.variantRewrites === 0) return 'declinesOnceProloguePresent';
+  return null;
+};
+
+const measuredUndriven: Record<string, UndrivenCause> = Object.fromEntries(
+  [...REWRITING_RULES]
+    .sort()
+    .map((name) => [name, undrivenCauseOf(name)] as const)
+    .filter((entry): entry is readonly [string, UndrivenCause] => !!entry[1]),
+);
+
+/**
+ * Rewriting rules this probe never drove with a prologue present, each with the
+ * measured cause.
+ *
+ * The floors below say the sweep produced ~13,900 variant rewrites across ~81
+ * rules; they cannot say that any PARTICULAR rule contributed one, and a rule
+ * whose fixer went silent drops to zero inside a five-figure sum without moving
+ * it (#1863). This map is the other direction: every member of
+ * `REWRITING_RULES` either measurably rewrote a prologue-bearing source, or is
+ * named here. Asserted as an exact map, so an unrecorded skip, a stale entry and
+ * a changed cause all fail.
+ */
+const UNDRIVEN_RULES: Record<string, UndrivenCause> = {
+  'enforce-typescript-markdown-code-blocks': 'noTsFixture',
+  'no-unpinned-dependencies': 'noTsFixture',
+  // Declares `fixable: 'code'` and emits no fix over any of its 105 fixtures
+  // (#1871), so there is no rewrite whose placement could be judged. Fixing that
+  // rule retires this entry.
+  'no-usememo-for-pass-by-value': 'neverRewritesItsOwnFixtures',
+};
+
+/**
+ * The suggestion channel, accounted separately for the reason its floor is
+ * separate: `--fix` never applies a suggestion, and the fix channel's ~13,900
+ * rewrites would cover for every suggestion-capable rule going silent at once.
+ */
+const suggestionRules = Object.entries(plugin.rules)
+  .filter(([, rule]) => rule.meta?.hasSuggestions)
+  .map(([name]) => name)
+  .sort();
+
+const suggestionCauseOf = (name: string): UndrivenCause | null => {
+  const drive = driveByRule.get(name);
+  if (drive?.variantSuggestions) return null;
+  return undrivenCauseOf(name) ?? 'neverSuggestsOnItsOwnFixtures';
+};
+
+const measuredSuggestionUndriven: Record<string, UndrivenCause> =
+  Object.fromEntries(
+    suggestionRules
+      .map((name) => [name, suggestionCauseOf(name)] as const)
+      .filter((entry): entry is readonly [string, UndrivenCause] => !!entry[1]),
+  );
+
+/**
+ * Suggestion-offering rules whose suggestions this probe never placed under a
+ * prologue, each with the measured cause. SHIPS EMPTY: all seven offer one.
+ */
+const SUGGESTION_UNDRIVEN_RULES: Record<string, UndrivenCause> = {};
 
 describe('directive prologue and shebang survive every fixer', () => {
   /**
@@ -380,6 +516,37 @@ describe('directive prologue and shebang survive every fixer', () => {
   });
 
   /**
+   * Per rule, which is the unit the floors above cannot express. Both
+   * directions: an unlisted rule that stops rewriting fails as an unrecorded
+   * skip, and a listed rule that starts rewriting fails as a stale entry —
+   * which is what keeps an exemption from outliving its reason (#1839).
+   */
+  it('accounts for every rewriting rule it could not drive', () => {
+    expect(measuredUndriven).toEqual(UNDRIVEN_RULES);
+    expect(
+      Object.values(UNDRIVEN_RULES).filter((cause) => !UNDRIVEN_CAUSES[cause]),
+    ).toEqual([]);
+    // An entry outside `REWRITING_RULES` is never measured by the equality
+    // above, so it would be an exemption nothing can retire.
+    expect(
+      Object.keys(UNDRIVEN_RULES).filter((name) => !REWRITING_RULES.has(name)),
+    ).toEqual([]);
+    expect(REWRITING_RULES.size).toBeGreaterThanOrEqual(80);
+  });
+
+  /**
+   * And every rule NOT listed must have driven a variant rewrite, stated as its
+   * own assertion rather than left implicit in the map equality: a row that
+   * renders green having rewritten nothing is worse than a missing row, because
+   * it names the rule in the jest output (#1861).
+   */
+  it.each(
+    [...REWRITING_RULES].sort().filter((name) => !(name in UNDRIVEN_RULES)),
+  )('drove %s with a prologue in front of it', (name) => {
+    expect(driveByRule.get(name)?.variantRewrites || 0).toBeGreaterThan(0);
+  });
+
+  /**
    * The suggestion channel gets its OWN floor. Rolled into the aggregate above,
    * the ~2,000 fix-channel rewrites would cover for it going to zero — which is
    * exactly how it stayed unmeasured in four other guards until #1733.
@@ -388,6 +555,17 @@ describe('directive prologue and shebang survive every fixer', () => {
     expect(stats.rulesSuggesting.size).toBeGreaterThanOrEqual(3);
     expect(stats.baseSuggested).toBeGreaterThanOrEqual(20);
     expect(stats.variantSuggested).toBeGreaterThanOrEqual(100);
+  });
+
+  /** Per rule, so one chatty suggester cannot cover for the other six. */
+  it('accounts for every suggestion-offering rule', () => {
+    expect(measuredSuggestionUndriven).toEqual(SUGGESTION_UNDRIVEN_RULES);
+    expect(suggestionRules.length).toBeGreaterThanOrEqual(5);
+    expect(
+      Object.keys(SUGGESTION_UNDRIVEN_RULES).filter(
+        (name) => !suggestionRules.includes(name),
+      ),
+    ).toEqual([]);
   });
 
   it('flags a fixer that inserts above the prologue (positive control)', () => {
