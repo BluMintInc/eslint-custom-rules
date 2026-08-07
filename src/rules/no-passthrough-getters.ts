@@ -537,8 +537,16 @@ export const noPassthroughGetters = createRule({
         return true;
       }
 
-      // Check for optional chaining like this.settings?.property
-      if (node.type === 'MemberExpression' && node.optional) {
+      // Check for optional chaining like this.settings?.property. `a?.b` parses
+      // as a ChainExpression wrapping the member access, so the wrapper has to
+      // be stripped here or this arm never fires — the shape stays silent only
+      // because the member walker cannot follow it, which would reverse the
+      // moment that walker learns to.
+      let unchained: TSESTree.Node = node;
+      while (unchained.type === 'ChainExpression') {
+        unchained = unchained.expression;
+      }
+      if (unchained.type === 'MemberExpression' && unchained.optional) {
         return true;
       }
 

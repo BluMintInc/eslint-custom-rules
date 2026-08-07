@@ -187,7 +187,7 @@ const KNOWN_DIVERGENT: Record<string, string> = {
     'ARTIFACT: only reached via `Object.assign?.()`',
   'no-margin-properties::member': 'ARTIFACT: only reached via `Object?.assign`',
   'no-passthrough-getters::member':
-    'DEFECT TODO(#1866): `private get x() { return this.settings?.x; }` — the idiomatic spelling for an optional field — is not seen as a passthrough, while `this.settings.x` is',
+    'CORRECT: `return this.settings?.x` does not throw when settings is nullish, so the getter adds behaviour and is not a passthrough. `hasNullUndefinedHandling` exempts it deliberately, alongside `||` and `??` (measured: all three silent, the plain read reports). Filed as #1866 and closed as not-a-defect',
   'no-redundant-this-params::member':
     'ARTIFACT: only reached via `this?.value` / `this?.method`',
   'no-redundant-usecallback-wrapper::call':
