@@ -529,6 +529,17 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
      * Check if a node represents a valid query key usage
      */
     function isValidQueryKeyUsage(node: TSESTree.Node): boolean {
+      // `config?.getQueryKey()` parses as a `ChainExpression` wrapping the call,
+      // a type this switch does not name — so the optional spelling alone fell
+      // through to `return false` and bypassed the carve-outs below, reporting a
+      // key the plain spelling is allowed to build (#1832). Optionality is
+      // orthogonal to what this function asks: the question is where the key
+      // comes from, and a short-circuit changes only whether the same source is
+      // evaluated, never which source it is.
+      if (node.type === AST_NODE_TYPES.ChainExpression) {
+        return isValidQueryKeyUsage(node.expression);
+      }
+
       if (node.type === AST_NODE_TYPES.Identifier) {
         const importInfo = queryKeyImports.get(node.name);
         if (importInfo && isQueryKeysSource(importInfo.source)) {
