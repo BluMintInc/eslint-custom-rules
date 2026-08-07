@@ -239,6 +239,135 @@ const KNOWN_DIVERGENT: Record<string, string> = {
     'ARTIFACT: only reached via a single-letter local callee written optional',
 };
 
+/**
+ * Why a rule/arm row could never fail, read off the counters rather than
+ * guessed.
+ *
+ * A pair the sweep never compared is indistinguishable from one it compared and
+ * found clean: both leave the pair absent from `divergentPairs`, so the
+ * divergence check passes over it and the stale-exemption check has nothing to
+ * say about it. The population then LOOKS like every registered rule on both
+ * arms while a fifth of it was never driven (#1861). Each pair therefore either
+ * asserts a real comparison happened, or it is a NAMED SKIP carrying the
+ * measured reason.
+ *
+ * Ordered from the outermost precondition inwards, so the cause named is the
+ * FIRST one that failed.
+ */
+const UNDRIVEN_CAUSES = {
+  noTsFixture:
+    'declares no lintable TypeScript fixture, and `?.` is a TypeScript spelling',
+  noSite:
+    'no fixture contains a perturbable link of this kind — every candidate is absent, already optional, or in a position where `?.` is a syntax error',
+  perturbationDeclined:
+    'every perturbation of every fixture failed to parse, so no variant was ever linted',
+  variantFatal:
+    'every perturbed variant was a fatal parse, so no after-state exists to compare',
+  silentBothSides:
+    'the rule says nothing about either spelling of any fixture that has a perturbable link, so no verdict can change',
+} as const;
+type UndrivenCause = keyof typeof UNDRIVEN_CAUSES;
+
+/**
+ * Rule/arm pairs this sweep cannot drive, each with the measured cause.
+ *
+ * Keyed `rule::arm` for the same reason `KNOWN_DIVERGENT` is: a rule-keyed
+ * entry would exempt the arm that IS driven alongside the one that is not, and
+ * that is exactly how #1824-#1826 hid behind a green file (#1839).
+ *
+ * `noSite` dominates and is a fact about the CORPUS: 47 of the 49 pairs have
+ * literally zero member/call nodes in any fixture, and the other two
+ * (`jsdoc-above-field::call`, `no-memoize-on-static::member`) have only sites
+ * sitting directly under a `@decorator`, where `?.` is a syntax error.
+ * `silentBothSides` is the same kind of fact one step further in: the fixtures
+ * that do carry a perturbable link are fixtures the rule has no opinion about.
+ *
+ * Both directions and the cause itself are asserted below, so an entry cannot
+ * outlive what it describes.
+ */
+const UNDRIVEN: Record<string, UndrivenCause> = {
+  'avoid-utils-directory::call': 'noSite',
+  'avoid-utils-directory::member': 'noSite',
+  'enforce-cloud-function-id-length::call': 'silentBothSides',
+  'enforce-cloud-function-id-length::member': 'noSite',
+  'enforce-date-ttime::call': 'noSite',
+  'enforce-date-ttime::member': 'noSite',
+  'enforce-dynamic-imports::call': 'silentBothSides',
+  'enforce-dynamic-imports::member': 'noSite',
+  'enforce-f-extension-for-entry-points::member': 'silentBothSides',
+  'enforce-firestore-rules-get-access::call': 'noSite',
+  'enforce-firestore-rules-get-access::member': 'noSite',
+  'enforce-identifiable-firestore-type::call': 'noSite',
+  'enforce-identifiable-firestore-type::member': 'noSite',
+  'enforce-m3-sentence-case::call': 'noSite',
+  'enforce-m3-sentence-case::member': 'noSite',
+  'enforce-mui-rounded-icons::call': 'silentBothSides',
+  'enforce-mui-rounded-icons::member': 'silentBothSides',
+  'enforce-object-literal-as-const::member': 'silentBothSides',
+  'enforce-serializable-params::call': 'noSite',
+  'enforce-serializable-params::member': 'noSite',
+  'enforce-singular-type-names::call': 'noSite',
+  'enforce-singular-type-names::member': 'noSite',
+  'enforce-types-directory-placement::call': 'silentBothSides',
+  'enforce-types-directory-placement::member': 'silentBothSides',
+  'enforce-typescript-markdown-code-blocks::call': 'noTsFixture',
+  'enforce-typescript-markdown-code-blocks::member': 'noTsFixture',
+  'generic-starts-with-t::call': 'noSite',
+  'generic-starts-with-t::member': 'noSite',
+  'jsdoc-above-field::call': 'noSite',
+  'jsdoc-above-field::member': 'noSite',
+  'no-circular-references::call': 'noSite',
+  'no-compositing-layer-props::call': 'noSite',
+  'no-compositing-layer-props::member': 'noSite',
+  'no-curly-brackets-around-commented-properties::member': 'noSite',
+  'no-firestore-object-arrays::call': 'noSite',
+  'no-firestore-object-arrays::member': 'silentBothSides',
+  'no-harness-coupled-disables::call': 'noSite',
+  'no-harness-coupled-disables::member': 'noSite',
+  'no-memoize-on-static::member': 'noSite',
+  'no-misleading-boolean-prefixes::call': 'silentBothSides',
+  'no-misused-switch-case::member': 'noSite',
+  'no-passthrough-getters::call': 'silentBothSides',
+  'no-portal-inside-tooltip::call': 'silentBothSides',
+  'no-portal-inside-tooltip::member': 'noSite',
+  'no-redundant-boolean-callback-props::call': 'noSite',
+  'no-redundant-boolean-callback-props::member': 'noSite',
+  'no-single-dismiss-dialog-button::call': 'silentBothSides',
+  'no-single-dismiss-dialog-button::member': 'noSite',
+  'no-static-constants-in-dynamic-files::member': 'silentBothSides',
+  'no-unnecessary-destructuring-rename::member': 'silentBothSides',
+  'no-unpinned-dependencies::call': 'noTsFixture',
+  'no-unpinned-dependencies::member': 'noTsFixture',
+  'no-useless-fragment::call': 'silentBothSides',
+  'no-useless-fragment::member': 'silentBothSides',
+  'no-useless-usememo-primitives::member': 'silentBothSides',
+  'no-usememo-for-pass-by-value::member': 'silentBothSides',
+  'omit-index-html::call': 'noSite',
+  'omit-index-html::member': 'noSite',
+  'prefer-destructuring-no-class::call': 'silentBothSides',
+  'prefer-field-paths-in-transforms::call': 'silentBothSides',
+  'prefer-flat-transform-each-keys::call': 'silentBothSides',
+  'prefer-fragment-shorthand::call': 'noSite',
+  'prefer-fragment-shorthand::member': 'silentBothSides',
+  'prefer-next-dynamic::member': 'silentBothSides',
+  'prefer-type-alias-over-typeof-constant::call': 'noSite',
+  'prefer-type-alias-over-typeof-constant::member': 'noSite',
+  'prefer-type-over-interface::call': 'noSite',
+  'prefer-use-theme::call': 'silentBothSides',
+  'prefer-use-theme::member': 'silentBothSides',
+  'require-hooks-default-params::call': 'noSite',
+  'require-hooks-default-params::member': 'noSite',
+  'require-migration-script-metadata::call': 'noSite',
+  'require-migration-script-metadata::member': 'noSite',
+  'sync-onwrite-name-func::call': 'noSite',
+  'sync-onwrite-name-func::member': 'noSite',
+  'test-file-location-enforcement::member': 'noSite',
+  'use-custom-link::call': 'noSite',
+  'use-custom-link::member': 'noSite',
+  'use-custom-router::member': 'noSite',
+  'warn-https-error-message-user-friendly::member': 'silentBothSides',
+};
+
 const ruleByName = new Map<string, unknown>(
   [...ruleNameByIdentity].map(([rule, name]) => [name, rule]),
 );
@@ -483,6 +612,14 @@ const signatureOf = (messages: readonly Linter.LintMessage[]) => {
  */
 const pairKey = (rule: string, arm: Arm) => `${rule}::${arm}`;
 
+type PairDrive = {
+  tsCases: number;
+  sites: number;
+  perturbed: number;
+  compared: number;
+  reporting: number;
+};
+
 type Divergence = {
   rule: string;
   arm: Arm;
@@ -535,6 +672,25 @@ describe('optional-chaining closure', () => {
 
   const divergences: Divergence[] = [];
   const divergentPairs = new Set<string>();
+  /**
+   * Per-pair bookkeeping, so each rule/arm row can assert the probe reached it.
+   *
+   * `compared` is the only counter a divergence can come out of; the rest exist
+   * to say WHY a pair was never reached, which is what turns a dark pair into a
+   * reviewable named skip instead of a silent member of a swept population.
+   */
+  const driveByPair = new Map<string, PairDrive>();
+  for (const rule of guardedRuleNames) {
+    for (const arm of ARMS) {
+      driveByPair.set(pairKey(rule, arm), {
+        tsCases: 0,
+        sites: 0,
+        perturbed: 0,
+        compared: 0,
+        reporting: 0,
+      });
+    }
+  }
   const rulesReporting = new Set<string>();
   const rulesPerturbed = new Set<string>();
   let casesConsidered = 0;
@@ -547,7 +703,12 @@ describe('optional-chaining closure', () => {
   let skippedNonTypeScript = 0;
   const rulesWithNonTypeScriptFixtures = new Set<string>();
 
-  beforeAll(() => {
+  /**
+   * Run at collection time rather than in `beforeAll`, because the rule/arm
+   * rows below are `it.each` over the MEASURED sets: a `beforeAll` populates
+   * them after jest has already decided which rows exist.
+   */
+  const sweep = () => {
     for (const rule of guardedRuleNames) {
       for (const testCase of corpus.byRule.get(rule) || []) {
         if (testCase.language !== 'ts') {
@@ -596,8 +757,11 @@ describe('optional-chaining closure', () => {
         }
 
         for (const arm of ARMS) {
+          const drive = driveByPair.get(pairKey(rule, arm))!;
+          drive.tsCases++;
           const sites = sitesOf(testCase.code, ast, arm);
           if (!sites.length) continue;
+          drive.sites++;
           casesConsidered++;
           const output = perturb(
             testCase.code,
@@ -606,6 +770,7 @@ describe('optional-chaining closure', () => {
             baselineErrors,
           );
           if (!output || output === testCase.code) continue;
+          drive.perturbed++;
           sitesRewritten += sites.length;
           rulesPerturbed.add(rule);
 
@@ -615,6 +780,10 @@ describe('optional-chaining closure', () => {
             continue;
           }
           const after = signatureOf(variant);
+          drive.compared++;
+          // A pair silent on BOTH spellings cannot show a changed verdict, so
+          // it is not a comparison that could ever have failed.
+          if (before !== '<none>' || after !== '<none>') drive.reporting++;
           if (after === before) continue;
 
           divergentPairs.add(pairKey(rule, arm));
@@ -640,7 +809,46 @@ describe('optional-chaining closure', () => {
         }
       }
     }
-  }, 1800000);
+  };
+  sweep();
+
+  const causeOf = (key: string): UndrivenCause | null => {
+    const drive = driveByPair.get(key)!;
+    if (drive.tsCases === 0) return 'noTsFixture';
+    if (drive.sites === 0) return 'noSite';
+    if (drive.perturbed === 0) return 'perturbationDeclined';
+    if (drive.compared === 0) return 'variantFatal';
+    if (drive.reporting === 0) return 'silentBothSides';
+    return null;
+  };
+
+  const allPairs = [...driveByPair.keys()].sort();
+  /** The rows that CAN fail: every pair the sweep actually compared. */
+  const drivenPairs = allPairs.filter((key) => !causeOf(key));
+  const measuredUndriven: Record<string, UndrivenCause> = Object.fromEntries(
+    allPairs
+      .map((key) => [key, causeOf(key)] as const)
+      .filter(
+        (entry): entry is readonly [string, UndrivenCause] => entry[1] !== null,
+      ),
+  );
+  /**
+   * A skipped row, titled with the pair and the measured reason. Jest renders
+   * these as `○ skipped`, which is the point: a pair the sweep never compared
+   * must be visibly absent from the result rather than indistinguishable from
+   * one it compared and found clean.
+   */
+  const skipTitles = allPairs
+    .map((key) => [key, causeOf(key)] as const)
+    .filter((entry): entry is readonly [string, UndrivenCause] => !!entry[1])
+    .map(([key, cause]) => `${key} — NOT DRIVEN: ${UNDRIVEN_CAUSES[cause]}`);
+
+  // eslint-disable-next-line no-console
+  console.log(
+    `[optional-chaining-closure] ${allPairs.length} rule/arm pairs, ` +
+      `${drivenPairs.length} compared, ${skipTitles.length} named skip(s), ` +
+      `${divergentPairs.size} divergent`,
+  );
 
   it('reaches enough of the corpus for a clean result to mean something', () => {
     // A rule that never fired on its own baseline cannot LOSE a report, so a
@@ -665,6 +873,12 @@ describe('optional-chaining closure', () => {
       skippedVariantFatal: 0,
     });
     expect(skippedBaselineUnparsable).toBeLessThan(5);
+    /**
+     * …and a floor on the rows that can actually fail. Every count above
+     * survives intact even if the whole corpus piles onto a handful of pairs,
+     * which is the state in which most rule/arm rows go vacuous.
+     */
+    expect(drivenPairs.length).toBeGreaterThan(250);
   });
 
   /**
@@ -712,6 +926,51 @@ describe('optional-chaining closure', () => {
       );
     }
   });
+
+  /**
+   * Two-way accounting for the pairs the sweep cannot compare, cause included.
+   *
+   * A pair that becomes drivable fails as a stale entry; a pair that stops
+   * being drivable fails as an unrecorded skip; and a pair that stays dark for
+   * a DIFFERENT reason fails too, because the recorded cause is the claim being
+   * made about it and a changed cause is a changed claim. Without this, an
+   * uncompared pair is silently absent from `divergentPairs` and both checks
+   * below pass over it (#1861).
+   */
+  it('accounts for every rule/arm pair the sweep cannot compare', () => {
+    expect(measuredUndriven).toEqual(UNDRIVEN);
+  });
+
+  it('explains every cause it records, for pairs that exist', () => {
+    expect(
+      Object.values(UNDRIVEN).filter((cause) => !UNDRIVEN_CAUSES[cause]),
+    ).toEqual([]);
+    // An entry naming a pair outside the population is never measured by the
+    // assertion above, so it would sit there forever absorbing the next one.
+    const known = new Set(allPairs);
+    expect(Object.keys(UNDRIVEN).filter((key) => !known.has(key))).toEqual([]);
+    // …and the same for the divergence map, which has the same failure mode.
+    expect(
+      Object.keys(KNOWN_DIVERGENT).filter((key) => !known.has(key)),
+    ).toEqual([]);
+  });
+
+  /**
+   * Per-pair rows, each asserting it did work before it asserts a verdict. The
+   * aggregate check above names the remedy; these make the population visible,
+   * so a pair that stops being compared shows up as a skip rather than as one
+   * fewer silent member of a set nobody prints.
+   */
+  it.each(drivenPairs)('%s', (key) => {
+    expect(driveByPair.get(key)!.reporting).toBeGreaterThan(0);
+    expect(
+      divergentPairs.has(key) && !(key in KNOWN_DIVERGENT) ? key : '',
+    ).toBe('');
+  });
+
+  if (skipTitles.length) {
+    it.skip.each(skipTitles)('%s', () => undefined);
+  }
 
   it('carries no stale exemptions', () => {
     // An entry left behind after a fix would mask the next regression in that
