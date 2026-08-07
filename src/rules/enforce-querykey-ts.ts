@@ -540,6 +540,23 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
         return isValidQueryKeyUsage(node.expression);
       }
 
+      // The same argument, and it holds more strongly for an assertion: `as
+      // const`, `satisfies string`, `!` and `<string>KEY` are erased before
+      // anything runs, so what they evaluate to is the very key they wrap.
+      // Naming none of these types made an asserted key fall through to
+      // `return false`, and an alias records its initializer exactly as
+      // written — so a type spelled onto an alias of an approved constant
+      // withdrew the carve-out that same alias has without one, reporting a key
+      // `prefer-global-router-state-key` accepts (#1840).
+      if (
+        node.type === AST_NODE_TYPES.TSAsExpression ||
+        node.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+        node.type === AST_NODE_TYPES.TSNonNullExpression ||
+        node.type === AST_NODE_TYPES.TSTypeAssertion
+      ) {
+        return isValidQueryKeyUsage(node.expression);
+      }
+
       if (node.type === AST_NODE_TYPES.Identifier) {
         const importInfo = queryKeyImports.get(node.name);
         if (importInfo && isQueryKeysSource(importInfo.source)) {
