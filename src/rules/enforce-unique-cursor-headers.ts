@@ -58,6 +58,27 @@ const DEFAULT_OPTIONS: NormalizedOptions = {
 };
 
 /**
+ * What the consumer's options are deep-merged over, with every null-valued
+ * default removed.
+ *
+ * `applyDefault` merges before `create` runs, and its `deepMerge` classifies
+ * `null` as an object (`typeof null === 'object'`), so a key that is null on
+ * both sides is recursed into and reaches `Object.keys(null)`. That throws
+ * while LOADING the rule, which aborts the lint for the whole file and takes
+ * every other rule with it. `headerTemplate` is exactly that shape: `null` is
+ * both its schema-legal value and its documented default, so a consumer who
+ * writes the documented default out explicitly crashes their own run.
+ *
+ * Omitting the key leaves the merge nothing to recurse into. Nothing is lost —
+ * `normalizeOptions` reads the default straight from `DEFAULT_OPTIONS`, so an
+ * absent key and a null one already resolve identically.
+ */
+const MERGEABLE_DEFAULT_OPTIONS: Partial<NormalizedOptions> =
+  Object.fromEntries(
+    Object.entries(DEFAULT_OPTIONS).filter(([, value]) => value !== null),
+  );
+
+/**
  * Maximum number of characters to scan at the beginning of a file to detect generated markers.
  */
 const GENERATED_MARKER_SCAN_LENGTH = 500;
@@ -657,7 +678,7 @@ export const enforceUniqueCursorHeaders = createRule<Options, MessageIds>({
         'Cursor header metadata is split across adjacent comment blocks → Fragmented headers are easy to miss and let required tags drift out of sync → Merge the fragments into a single top-of-file header containing: {{tags}}.',
     },
   },
-  defaultOptions: [DEFAULT_OPTIONS],
+  defaultOptions: [MERGEABLE_DEFAULT_OPTIONS],
   create(context, [userOptions]) {
     const options = normalizeOptions(userOptions);
     const fileName = context.getFilename();
