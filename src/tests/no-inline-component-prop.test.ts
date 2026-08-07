@@ -26,6 +26,20 @@ const MODULE_SCOPE_WRAPPER_OBJECT = `
     }
     `;
 
+// `global-const-style` autofixes a module-scope object literal to `as const`, so
+// under the recommended config this spelling is what the member-expression
+// branch actually receives. Reading `init` without unwrapping made the
+// annotation silence the rule, which let one fixer disable another.
+const MODULE_SCOPE_WRAPPER_OBJECT_AS_CONST = `
+    const wrappers = {
+      CatalogWrapper: (props: { children: JSX.Element }) => <div>{props.children}</div>,
+    } as const;
+
+    function Page() {
+      return <AlgoliaLayout CatalogWrapper={wrappers.CatalogWrapper} />;
+    }
+    `;
+
 ruleTesterJsx.run('no-inline-component-prop', noInlineComponentProp, {
   valid: [
     `
@@ -127,6 +141,10 @@ ruleTesterJsx.run('no-inline-component-prop', noInlineComponentProp, {
     },
     {
       code: MODULE_SCOPE_WRAPPER_OBJECT,
+      options: [{ allowModuleScopeFactories: true }],
+    },
+    {
+      code: MODULE_SCOPE_WRAPPER_OBJECT_AS_CONST,
       options: [{ allowModuleScopeFactories: true }],
     },
     // A definition in a STRICTLY OUTER function is created once per call of that
@@ -387,6 +405,27 @@ ruleTesterJsx.run('no-inline-component-prop', noInlineComponentProp, {
     },
     {
       code: MODULE_SCOPE_WRAPPER_OBJECT,
+      options: [{ allowModuleScopeFactories: false }],
+      errors: [{ messageId: 'inlineComponentProp' }],
+    },
+    // An `as const` on the holding object must not change the verdict: the
+    // annotation is a type-level assertion and the object is still recreated.
+    {
+      code: MODULE_SCOPE_WRAPPER_OBJECT_AS_CONST,
+      options: [{ allowModuleScopeFactories: false }],
+      errors: [{ messageId: 'inlineComponentProp' }],
+    },
+    // `satisfies` reaches the same branch through the same wrapper.
+    {
+      code: `
+      const wrappers = {
+        CatalogWrapper: (props: { children: JSX.Element }) => <div {...props} />,
+      } satisfies Record<string, unknown>;
+
+      function Page() {
+        return <AlgoliaLayout CatalogWrapper={wrappers.CatalogWrapper} />;
+      }
+      `,
       options: [{ allowModuleScopeFactories: false }],
       errors: [{ messageId: 'inlineComponentProp' }],
     },
