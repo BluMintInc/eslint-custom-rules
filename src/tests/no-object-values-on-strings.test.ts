@@ -87,6 +87,27 @@ ruleTesterTs.run('no-object-values-on-strings', noObjectValuesOnStrings, {
       code: `Object.values("hello");`,
       errors: [unexpectedError('"hello"')],
     },
+
+    // Optional chaining in the ARGUMENT. `a?.b()` parses as a ChainExpression
+    // wrapping the call, and that wrapper is where a nullable receiver is
+    // written, so the rule has to see through it or it is blind on the exact
+    // shape `?.` exists for. The callee side already reported.
+    {
+      code: `Object.values("hello"?.toUpperCase());`,
+      errors: [unexpectedError('"hello"?.toUpperCase()')],
+    },
+    {
+      code: `Object.values("hello".toUpperCase?.());`,
+      errors: [unexpectedError('"hello".toUpperCase?.()')],
+    },
+    {
+      code: `declare const s: string | undefined; Object.values(s?.toUpperCase());`,
+      errors: [unexpectedError('s?.toUpperCase()')],
+    },
+    {
+      code: `declare const o: { s: string } | undefined; Object.values(o?.s);`,
+      errors: [unexpectedError('o?.s')],
+    },
     {
       code: `Object.values(\`template literal\`);`,
       errors: [unexpectedError('`template literal`')],

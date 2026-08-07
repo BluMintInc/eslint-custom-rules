@@ -1,6 +1,5 @@
 import { createRule } from '../utils/createRule';
-import { TSESLint, TSESTree } from '@typescript-eslint/utils';
-import { AST_NODE_TYPES } from '@typescript-eslint/utils';
+import { TSESLint, TSESTree, AST_NODE_TYPES } from '@typescript-eslint/utils';
 import * as ts from 'typescript';
 
 export const noObjectValuesOnStrings: TSESLint.RuleModule<
@@ -62,20 +61,36 @@ export const noObjectValuesOnStrings: TSESLint.RuleModule<
     }
 
     /**
+     * `a?.b()` parses as a ChainExpression wrapping the call. The wrapper is
+     * ESTree-only, so it has no TypeScript node: leaving it in place defeats
+     * both the syntactic tests below and `getTypeAtLocation`, and a nullable
+     * receiver is exactly where `?.` gets written.
+     */
+    function unwrapChain(node: TSESTree.Node): TSESTree.Node {
+      let current = node;
+      while (current.type === AST_NODE_TYPES.ChainExpression) {
+        current = current.expression;
+      }
+      return current;
+    }
+
+    /**
      * Checks if a node is a string literal or template literal
      */
     function isStringLiteral(node: TSESTree.Node): boolean {
+      const inner = unwrapChain(node);
       return (
-        (node.type === AST_NODE_TYPES.Literal &&
-          typeof (node as TSESTree.Literal).value === 'string') ||
-        node.type === AST_NODE_TYPES.TemplateLiteral
+        (inner.type === AST_NODE_TYPES.Literal &&
+          typeof (inner as TSESTree.Literal).value === 'string') ||
+        inner.type === AST_NODE_TYPES.TemplateLiteral
       );
     }
 
     /**
      * Checks if a node is likely to produce a string value based on AST patterns
      */
-    function isLikelyStringExpression(node: TSESTree.Node): boolean {
+    function isLikelyStringExpression(maybeChained: TSESTree.Node): boolean {
+      const node = unwrapChain(maybeChained);
       // Check for string concatenation
       if (
         node.type === AST_NODE_TYPES.BinaryExpression &&
@@ -211,8 +226,12 @@ export const noObjectValuesOnStrings: TSESLint.RuleModule<
       CallExpression(node: TSESTree.CallExpression) {
         // Check if the call is Object.values()
         if (isObjectValuesCall(node)) {
-          const argument = node.arguments[0];
-          const argumentText = sourceCode.getText(argument);
+          // The message quotes what the author wrote, so text comes from the
+          // original node while every test below reads through the chain.
+          const argumentText = sourceCode.getText(node.arguments[0]);
+          const argument = unwrapChain(
+            node.arguments[0],
+          ) as TSESTree.Expression;
 
           // Quick check for string literals and template literals
           if (isStringLiteral(argument)) {
