@@ -122,6 +122,49 @@ const DOMAIN_NUMBER_HEAD_NOUNS = new Set([
   'badge',
 ]);
 
+// Domain head nouns that legitimately precede a "Symbol" suffix. In
+// <domain>Symbol the trailing "Symbol" is the HEAD NOUN of the domain concept —
+// the printed GLYPH that writes a currency/ticker/unit/element ("$", "BTC",
+// "kg", "Fe") — not the JS `symbol` primitive bolted onto the name. ISO 4217 and
+// CLDR literally call that glyph a *currency symbol*, and the value is a string,
+// so there is no type marker to strip: removing it yields a wrong name
+// (`currency` denotes the currency itself, not the character it is written
+// with). Same reasoning as the <entity>Number carve-out (#1277), applied to the
+// glyph sense of "symbol" (#1835).
+//
+// Nouns whose <noun>Symbol really does name a JS `symbol` — id, key, cache,
+// brand, tag, marker, meta, registry, slot, field, instance — are intentionally
+// ABSENT, so idSymbol / cacheSymbol / brandSymbol stay flagged, as do all
+// PREFIX uses (symbolKey, symbolValue). The carve-out is additionally vetoed
+// whenever the declaration syntactically proves a `symbol` value (see
+// isSymbolTypedDeclaration).
+const DOMAIN_SYMBOL_HEAD_NOUNS = new Set([
+  // Finance / markets: the glyph or ticker a traded thing is written with.
+  'currency',
+  'ticker',
+  'token',
+  'coin',
+  'asset',
+  'stock',
+  'share',
+  'market',
+  'commodity',
+  // Measurement and science: "kg", "°", "Fe".
+  'unit',
+  'degree',
+  'element',
+  'chemical',
+  // Typography / notation / character sets: printed operator, punctuation and
+  // phonetic glyphs.
+  'math',
+  'operator',
+  'punctuation',
+  'phonetic',
+  'musical',
+  'unicode',
+  'ascii',
+]);
+
 // Common built-in JavaScript prototype methods
 const BUILT_IN_METHODS = new Set([
   // String methods
@@ -377,6 +420,115 @@ function isDomainNumberCompound(name: string): boolean {
   );
 }
 
+// Is `name` a domain compound of the form <domain>Symbol, where the word
+// directly before the trailing "Symbol" names a thing that is WRITTEN with a
+// glyph (currencySymbol, tickerSymbol, unitSymbol)? Only the LAST head segment
+// is consulted, so prefixed and accessor variants generalize
+// (getCurrencySymbol, localizedCurrencySymbol pass) while names whose value is a
+// real JS symbol keep firing (idSymbol -> head segment "Id", not a glyph
+// domain).
+function isDomainSymbolCompound(name: string): boolean {
+  if (!name.endsWith('Symbol')) {
+    return false;
+  }
+  const head = name.slice(0, -'Symbol'.length);
+  if (head.length === 0) {
+    return false;
+  }
+  const segments = splitCamelSegments(head);
+  const lastSegment = segments[segments.length - 1];
+  return (
+    !!lastSegment && DOMAIN_SYMBOL_HEAD_NOUNS.has(lastSegment.toLowerCase())
+  );
+}
+
+// Does a type annotation denote the JS `symbol` primitive (`symbol` or the
+// declaration-site form `unique symbol`)?
+function isSymbolTypeAnnotation(node: TSESTree.TypeNode | undefined): boolean {
+  if (!node) {
+    return false;
+  }
+  if (node.type === AST_NODE_TYPES.TSSymbolKeyword) {
+    return true;
+  }
+  return (
+    node.type === AST_NODE_TYPES.TSTypeOperator &&
+    node.operator === 'unique' &&
+    node.typeAnnotation?.type === AST_NODE_TYPES.TSSymbolKeyword
+  );
+}
+
+// Is the initializer a call to the `Symbol` factory (Symbol('x'), Symbol.for)?
+function isSymbolFactoryCall(node: TSESTree.Node | null | undefined): boolean {
+  if (!node || node.type !== AST_NODE_TYPES.CallExpression) {
+    return false;
+  }
+  const { callee } = node;
+  if (callee.type === AST_NODE_TYPES.Identifier) {
+    return callee.name === 'Symbol';
+  }
+  return (
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    callee.object.type === AST_NODE_TYPES.Identifier &&
+    callee.object.name === 'Symbol'
+  );
+}
+
+// Does the declaration site PROVE, syntactically, that the named value is a JS
+// `symbol`? Only an explicit `symbol`/`unique symbol` annotation or a `Symbol()`
+// factory initializer are conclusive without type information — an inferred
+// `string` (the currencySymbol getter returns `part.value`) is invisible here,
+// which is precisely why the glyph carve-out is keyed on the head noun rather
+// than on the type. When this holds, the trailing "Symbol" genuinely encodes the
+// value's type and the DOMAIN_SYMBOL_HEAD_NOUNS carve-out is vetoed, so
+// `const currencySymbol: symbol = Symbol('currency')` still reports.
+function isSymbolTypedDeclaration(node: TSESTree.Identifier): boolean {
+  if (isSymbolTypeAnnotation(node.typeAnnotation?.typeAnnotation)) {
+    return true;
+  }
+  const parent = node.parent;
+  if (!parent) {
+    return false;
+  }
+  switch (parent.type) {
+    case AST_NODE_TYPES.VariableDeclarator: {
+      if (parent.id !== node) {
+        return false;
+      }
+      if (isSymbolFactoryCall(parent.init)) {
+        return true;
+      }
+      // A named accessor/factory arrow describes its RETURNED value, so an
+      // explicit `(): symbol` return type is the same proof.
+      const init = parent.init;
+      return (
+        !!init &&
+        (init.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+          init.type === AST_NODE_TYPES.FunctionExpression) &&
+        isSymbolTypeAnnotation(init.returnType?.typeAnnotation)
+      );
+    }
+    case AST_NODE_TYPES.PropertyDefinition:
+      return (
+        parent.key === node &&
+        (isSymbolTypeAnnotation(parent.typeAnnotation?.typeAnnotation) ||
+          isSymbolFactoryCall(parent.value))
+      );
+    case AST_NODE_TYPES.MethodDefinition:
+      return (
+        parent.key === node &&
+        isSymbolTypeAnnotation(parent.value.returnType?.typeAnnotation)
+      );
+    case AST_NODE_TYPES.FunctionDeclaration:
+      return (
+        parent.id === node &&
+        isSymbolTypeAnnotation(parent.returnType?.typeAnnotation)
+      );
+    default:
+      return false;
+  }
+}
+
 // Rebuild a SCREAMING_SNAKE_CASE identifier's segments into a PascalCase compound
 // (["MATCH","NUMBER"] -> "MatchNumber") so the snake-case branch can reuse the
 // camelCase isDomainNumberCompound / DOMAIN_NUMBER_HEAD_NOUNS exemption verbatim,
@@ -416,7 +568,13 @@ export const noHungarian = createRule<[], MessageIds>({
     // Check if a variable name contains a type marker with proper word boundaries.
     // `isTypeName` is true for PascalCase type declarations (type aliases,
     // interfaces, classes), enabling the semantic-type-concept exemption.
-    function hasTypeMarker(variableName: string, isTypeName = false): boolean {
+    // `isSymbolTyped` is true when the declaration syntactically proves a JS
+    // `symbol` value, which vetoes the <domain>Symbol glyph exemption.
+    function hasTypeMarker(
+      variableName: string,
+      isTypeName = false,
+      isSymbolTyped = false,
+    ): boolean {
       // Type names whose type-word denotes a concept/relation (StringToNumber,
       // CapitalizedString, FuncKeys, PromiseOrValue) are not Hungarian — the word
       // is part of the type's meaning, like the allowed compound noun PhoneNumber.
@@ -540,6 +698,19 @@ export const noHungarian = createRule<[], MessageIds>({
             ) {
               return false;
             }
+            // A trailing "..._SYMBOL" whose preceding head noun names a thing
+            // written with a glyph (CURRENCY_SYMBOL, TICKER_SYMBOL) is a domain
+            // compound, not a type tag — same carve-out as camelCase
+            // currencySymbol (#1835), routed through the shared PascalCase
+            // helper so the two casings cannot diverge (the #1294 asymmetry).
+            if (
+              normalizedMarker === 'symbol' &&
+              index === lastIndex &&
+              !isSymbolTyped &&
+              isDomainSymbolCompound(screamingSnakePartsToPascalCase(parts))
+            ) {
+              return false;
+            }
             return true;
           });
         });
@@ -614,6 +785,21 @@ export const noHungarian = createRule<[], MessageIds>({
           if (
             normalizedMarker === 'number' &&
             isDomainNumberCompound(variableName)
+          ) {
+            return false;
+          }
+          // A trailing "...Symbol" whose head noun names a thing WRITTEN with a
+          // glyph (currencySymbol, tickerSymbol, unitSymbol) is a domain
+          // compound: the suffix names WHAT the value is (the glyph OF a
+          // currency — CLDR/ISO 4217 vocabulary), and the value is a string, so
+          // there is no type to strip (#1835). Scoped to the full-word `Symbol`
+          // marker in SUFFIX position only, and vetoed when the declaration
+          // proves a real `symbol`, so idSymbol / cacheSymbol / symbolKey and
+          // any annotated `: symbol` keep firing.
+          if (
+            normalizedMarker === 'symbol' &&
+            !isSymbolTyped &&
+            isDomainSymbolCompound(variableName)
           ) {
             return false;
           }
@@ -708,7 +894,7 @@ export const noHungarian = createRule<[], MessageIds>({
       if (isExternalOrBuiltIn(node)) return;
 
       // Check for type markers
-      if (hasTypeMarker(name, isTypeName)) {
+      if (hasTypeMarker(name, isTypeName, isSymbolTypedDeclaration(node))) {
         context.report({
           node,
           messageId: 'noHungarian',
