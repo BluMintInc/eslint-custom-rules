@@ -47,6 +47,7 @@ type JsonSchema = {
   default?: unknown;
   properties?: Record<string, JsonSchema>;
   items?: JsonSchema;
+  anyOf?: JsonSchema[];
 };
 
 type RuleShape = {
@@ -88,42 +89,113 @@ const BASELINE: Record<string, readonly string[]> = {
 };
 
 type Probe = {
+  /** Dotted for a nested option, e.g. `hashImport.source`. */
   key: string;
+  /** The same key as a path, so the payload is rebuilt at the right depth. */
+  path: string[];
   kind: string;
   enumValues: unknown[];
   defaultValue: unknown;
 };
 
-const probesOf = (name: string, rule: RuleShape): Probe[] => {
+/**
+ * Option names a schema declares that this guard has no way to drive, recorded
+ * per rule rather than skipped in silence.
+ *
+ * A guard that quietly stops probing an option shape reports "0 inert" for it
+ * forever. The count is asserted below, so widening a schema into a shape the
+ * contrast builder cannot express fails here instead of vanishing.
+ */
+const unprobed: string[] = [];
+
+const isStringArray = (spec: JsonSchema | undefined): boolean =>
+  spec?.items?.type === 'string' ||
+  (spec?.items?.anyOf || []).some((entry) => entry?.type === 'string');
+
+const probesOf = (rule: RuleShape): Probe[] => {
   const schema = rule?.meta?.schema;
   if (!schema) return [];
   const arr = Array.isArray(schema) ? schema : [schema];
-  if (arr.length !== 1) return [];
-  const props = arr[0]?.properties;
-  if (!props) return [];
+  const props = arr.length === 1 ? arr[0]?.properties : undefined;
+  if (!props) {
+    /**
+     * A positional or non-object schema — `no-restricted-properties-fix` takes
+     * an array of restriction entries as its whole payload. Driving one means
+     * synthesizing entries rather than substituting a value, which the contrast
+     * builder does not do.
+     */
+    for (const name of schemaOptionNames(schema)) unprobed.push(name);
+    return [];
+  }
   const declaredDefaults = (rule.defaultOptions?.[0] || {}) as Record<
     string,
     unknown
   >;
+
   const out: Probe[] = [];
-  for (const [key, spec] of Object.entries(props)) {
-    const type = Array.isArray(spec?.type) ? spec.type[0] : spec?.type;
-    const defaultValue = declaredDefaults[key] ?? spec?.default;
-    const probe = (kind: string, enumValues: unknown[] = []) =>
-      out.push({ key, kind, enumValues, defaultValue });
-    if (spec?.enum) probe('enum', spec.enum);
-    else if (type === 'boolean') probe('boolean');
-    else if (type === 'array' && spec?.items?.type === 'string') probe('array');
-    else if (type === 'number' || type === 'integer')
-      probe('number', [
-        typeof spec.minimum === 'number' ? spec.minimum : 0,
-        40,
-        999,
-      ]);
-    else if (type === 'string') probe('string');
-  }
+  const collect = (
+    props_: Record<string, JsonSchema>,
+    path: string[],
+    defaults: Record<string, unknown>,
+  ) => {
+    for (const [key, spec] of Object.entries(props_)) {
+      const type = Array.isArray(spec?.type) ? spec.type[0] : spec?.type;
+      const defaultValue = defaults?.[key] ?? spec?.default;
+      const probe = (kind: string, enumValues: unknown[] = []) =>
+        out.push({
+          key: [...path, key].join('.'),
+          path: [...path, key],
+          kind,
+          enumValues,
+          defaultValue,
+        });
+      if (spec?.enum) probe('enum', spec.enum);
+      else if (type === 'boolean') probe('boolean');
+      else if (type === 'array' && spec?.items?.enum)
+        probe('enumArray', spec.items.enum);
+      else if (type === 'array' && isStringArray(spec)) probe('array');
+      else if (type === 'number' || type === 'integer')
+        probe('number', [
+          typeof spec.minimum === 'number' ? spec.minimum : 0,
+          40,
+          999,
+        ]);
+      else if (type === 'string') probe('string');
+      else if (type === 'object' && spec?.properties) {
+        // One level of nesting, which is where `hashImport.source` lives — the
+        // shape the coverage guard names and this one used to skip whole.
+        collect(
+          spec.properties,
+          [...path, key],
+          (defaults?.[key] || {}) as Record<string, unknown>,
+        );
+      } else unprobed.push([...path, key].join('.'));
+    }
+  };
+  collect(props as Record<string, JsonSchema>, [], declaredDefaults);
   return out;
 };
+
+/** Every property name a schema declares, at any depth. */
+function schemaOptionNames(schema: unknown, acc = new Set<string>()) {
+  if (!schema || typeof schema !== 'object') return acc;
+  if (Array.isArray(schema)) {
+    schema.forEach((entry) => schemaOptionNames(entry, acc));
+    return acc;
+  }
+  const node = schema as Record<string, unknown>;
+  if (node.properties && typeof node.properties === 'object')
+    for (const [key, sub] of Object.entries(node.properties)) {
+      acc.add(key);
+      schemaOptionNames(sub, acc);
+    }
+  for (const key of ['items', 'additionalProperties'])
+    if (node[key] && typeof node[key] === 'object')
+      schemaOptionNames(node[key], acc);
+  for (const key of ['oneOf', 'anyOf', 'allOf'])
+    if (Array.isArray(node[key])) schemaOptionNames(node[key], acc);
+  return acc;
+}
 
 const identsOf = (code: string): string[] => {
   const names = new Set<string>();
@@ -174,6 +246,17 @@ const valuesFor = (
         return probe.enumValues.slice(0, 5);
       case 'number':
         return probe.enumValues;
+      /**
+       * An ordered enum list (`groupOrder`). Reversing it is the contrast that
+       * matters: a rule consuming the ORDER emits different fixer output for the
+       * same members, which membership changes alone would not reveal.
+       */
+      case 'enumArray':
+        return [
+          probe.enumValues,
+          [...probe.enumValues].reverse(),
+          probe.enumValues.slice(0, 1),
+        ];
       case 'array':
         return [
           [],
@@ -257,12 +340,30 @@ const classify = (
     const filename = defaultFilenameFor(testCase);
     const parserOptions = parserOptionsFor(testCase);
 
+    /** Rebuilds the payload at the probe's depth, so a nested option is set
+     * inside its parent object rather than as a bogus dotted top-level key. */
+    const withValue = (value: unknown): Record<string, unknown> => {
+      const [head, ...rest] = probe.path;
+      if (!rest.length) return { ...declared, [head]: value };
+      const parent = (declared[head] || {}) as Record<string, unknown>;
+      return { ...declared, [head]: { ...parent, [rest.join('.')]: value } };
+    };
+
     const configFor = (value: unknown) =>
       ({
         parser: '@typescript-eslint/parser',
         parserOptions,
-        rules: { [ruleId]: ['error', { ...declared, [probe.key]: value }] },
+        rules: { [ruleId]: ['error', withValue(value)] },
       } as never);
+
+    /** The fixture's own value for THIS option, read at the probe's depth. */
+    const declaredValue = probe.path.reduce<unknown>(
+      (node, segment) =>
+        node && typeof node === 'object'
+          ? (node as Record<string, unknown>)[segment]
+          : undefined,
+      declared,
+    );
 
     const reports: string[] = [];
     const fixes: string[] = [];
@@ -270,7 +371,7 @@ const classify = (
       probe,
       testCase.code,
       filename,
-      declared[probe.key],
+      declaredValue,
     )) {
       try {
         reports.push(
@@ -309,7 +410,7 @@ const noCorpus: string[] = [];
 let fixturesConsidered = 0;
 
 for (const [name, rule] of Object.entries(plugin.rules)) {
-  const probes = probesOf(name, rule);
+  const probes = probesOf(rule);
   if (!probes.length) continue;
   /**
    * A type-aware rule has no program under a bare `Linter`, so it reports
@@ -354,6 +455,7 @@ const CONTROL_CASE: FixtureCase = {
 
 const controlProbe = (key: string): Probe => ({
   key,
+  path: [key],
   kind: 'boolean',
   enumValues: [],
   defaultValue: undefined,
@@ -380,10 +482,28 @@ describe('option liveness', () => {
    * fixtures, finds zero inert options, and passes every assertion above.
    */
   it('probed a real corpus', () => {
-    expect(live.length).toBeGreaterThanOrEqual(125);
-    expect(fixturesConsidered).toBeGreaterThanOrEqual(2500);
+    expect(live.length).toBeGreaterThanOrEqual(135);
+    expect(fixturesConsidered).toBeGreaterThanOrEqual(5000);
     expect(typeAwareSkipped.length).toBeLessThanOrEqual(8);
     expect(noCorpus).toEqual([]);
+  });
+
+  /**
+   * The options this guard cannot drive, pinned by NAME rather than by count.
+   *
+   * All five are `no-restricted-properties-fix`, whose whole payload is an array
+   * of restriction entries — driving it means synthesizing entries, not
+   * substituting a value. Pinning the names is what makes a schema that grows a
+   * shape the contrast builder cannot express fail here, instead of silently
+   * dropping out of the sweep and reporting "0 inert" for it forever.
+   */
+  it('leaves nothing unprobed but the known non-substitutable shape', () => {
+    expect([...new Set(unprobed)].sort()).toEqual([
+      'allowObjects',
+      'message',
+      'object',
+      'property',
+    ]);
   });
 
   /**
@@ -391,7 +511,7 @@ describe('option liveness', () => {
    * If this floor reaches zero the guard has quietly become report-only.
    */
   it('exercises the fix channel', () => {
-    expect(liveViaFixOnly.length).toBeGreaterThanOrEqual(3);
+    expect(liveViaFixOnly.length).toBeGreaterThanOrEqual(7);
   });
 
   it('classifies a planted live option as live', () => {
