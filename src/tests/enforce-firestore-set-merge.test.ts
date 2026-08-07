@@ -490,6 +490,58 @@ ruleTesterTs.run('enforce-firestore-set-merge', enforceFirestoreSetMerge, {
         }
       `,
     },
+    // Issue #1827: looking through the optional link widens which initializers
+    // count as evidence, not which calls are reachable. Every other constraint
+    // on the evidence scan holds identically on the chained spelling.
+    {
+      code: `
+        const db = admin?.database();
+        someRef.update({ theme: 'dark' });
+      `,
+    },
+    // A chained reference to the method is not a call to it, so it produces no
+    // instance — exactly as `admin.firestore` does not.
+    {
+      code: `
+        const db = admin?.firestore;
+        someRef.update({ theme: 'dark' });
+      `,
+    },
+    {
+      code: `
+        function other() {
+          const db = admin?.firestore();
+        }
+        function saveTheme(someRef) {
+          someRef.update({ theme: 'dark' });
+        }
+      `,
+    },
+    // The evidence scan is the last resort, so an earlier carve-out still
+    // answers first: a hash digest is not a Firestore write however the file's
+    // Firestore handle is spelled.
+    {
+      code: `
+        import { createHash } from 'crypto';
+        const db = admin?.firestore();
+        const hash = createHash('sha256').update('some string').digest('hex');
+      `,
+    },
+    // The Realtime Database carve-out is unaffected: its manager exposes no
+    // `set`, so its calls stay out of the rule even in a file that does prove
+    // Firestore is in play.
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        const db = admin?.firestore();
+        export class MessageProcessor {
+          protected readonly batchManager = new RealtimeBatchManager();
+          public markRead(path: string, counts: { unread: number }) {
+            this.batchManager?.update(path, counts);
+          }
+        }
+      `,
+    },
   ],
   invalid: [
     // Invalid cases using update
@@ -1330,6 +1382,85 @@ export async function save(args) {
             const db = admin.firestore();
             someRef.set({ theme: 'dark' }, { merge: true });
         }
+      `,
+    },
+    // Issue #1827: an optional link changes when the handle is produced, never
+    // which instance it is, so `admin?.firestore()` is the same evidence as
+    // `admin.firestore()`. The report and its fix land on the `update()` call,
+    // which the optional link never touches.
+    {
+      code: `
+        const db = admin?.firestore();
+        await someRef.update({ theme: 'dark' });
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        const db = admin?.firestore();
+        await someRef.set({ theme: 'dark' }, { merge: true });
+      `,
+    },
+    // The optional-call arm parses into the same wrapper, one level deeper.
+    {
+      code: `
+        const db = admin.firestore?.();
+        await someRef.update({ theme: 'dark' });
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        const db = admin.firestore?.();
+        await someRef.set({ theme: 'dark' }, { merge: true });
+      `,
+    },
+    // Only the outermost node of a chain carries the wrapper, so the idiomatic
+    // admin-SDK singleton bootstrap — an optional link deep inside the callee —
+    // reads as the same handle.
+    {
+      code: `
+        const db = admin.apps[0]?.firestore();
+        const userRef = db.collection('users').doc(userId);
+        await userRef.update({ theme: 'dark' });
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        const db = admin.apps[0]?.firestore();
+        const userRef = db.collection('users').doc(userId);
+        await userRef.set({ theme: 'dark' }, { merge: true });
+      `,
+    },
+    // The chain wrapper composes with the `export` one rather than replacing it.
+    {
+      code: `
+        export const db = admin.app()?.firestore();
+        await someRef.update({ theme: 'dark' });
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        export const db = admin.app()?.firestore();
+        await someRef.set({ theme: 'dark' }, { merge: true });
+      `,
+    },
+    // An assertion may wrap the chain or sit inside it, so both nesting orders
+    // have to unwrap to the same call.
+    {
+      code: `
+        const db = admin?.firestore() as Firestore;
+        await someRef.update({ theme: 'dark' });
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        const db = admin?.firestore() as Firestore;
+        await someRef.set({ theme: 'dark' }, { merge: true });
+      `,
+    },
+    {
+      code: `
+        const db = admin?.firestore()!;
+        await someRef.update({ theme: 'dark' });
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        const db = admin?.firestore()!;
+        await someRef.set({ theme: 'dark' }, { merge: true });
       `,
     },
   ],
