@@ -19,6 +19,39 @@ This rule flags getters that only forward a constructor-injected object property
 - Access the constructor parameter directly where you use it.
 - If indirection is valuable, add logic that earns the getter: memoization, validation, transformations, or defensive defaults.
 
+### Visibility is what makes a getter redundant
+
+The rule compares the getter's accessibility against the accessibility of the
+member it forwards, and only reports when the getter reaches no further than
+that member. A `private get` over a `private readonly settings` is redundant
+because every caller it has already reads `this.settings.uid`; the same holds
+for `protected` over `protected` and `public` over `public`.
+
+A getter that reaches **further** than its root is the encapsulation boundary
+rather than indirection over it, and is not reported:
+
+```typescript
+export class WalletTokenFormatter {
+  constructor(private readonly props: WalletTokenFormatterProps) {}
+
+  // Allowed: `props` is private, so this getter is the only read path
+  // an external caller — or a subclass — has for the ticker.
+  public get ticker() {
+    return this.props.metadata.ticker;
+  }
+}
+```
+
+Neither remedy above exists in that shape. An external caller cannot write
+`formatter.props.metadata.ticker`, and TypeScript rejects `this.props` outright
+inside a subclass of a class that declares `props` private, so the only way to
+follow "access the constructor parameter directly" is to widen the parameter
+itself and expose the whole injected object.
+
+The root is resolved whether it is a constructor parameter property, a
+separately declared field, an accessor, an `#`-private field, or a member
+inherited from a base class.
+
 ## Examples
 
 ### ❌ Incorrect
@@ -111,8 +144,10 @@ Use a getter only when it adds behavior beyond simple property access, for examp
 1. **Handle null/undefined values**
 1. **Include type assertions or casting**
 1. **Access parent class properties** (using `super`)
+1. **Expose a less visible member to a wider audience** (a `public` getter over a `private` field)
 
-Simple property access alone does not justify a getter.
+Simple property access alone does not justify a getter, unless the getter is the
+audience's only access path.
 
 ## Edge Cases the Rule Ignores
 
@@ -124,3 +159,5 @@ The rule intentionally allows getters that already add meaningful handling:
 - Access to parent class properties via `super`
 - Optional chaining
 - Any getter whose body contains anything besides a single bare `return` statement
+- Getters required to satisfy an implemented interface or an inherited member
+- Getters that are more visible than the member they forward
