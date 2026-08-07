@@ -1283,6 +1283,192 @@ async function plainFunctionCallbackWriteThenRead(runner) {
   await persist(captured);
 }
 `,
+    // ------------------------------------------------------------------
+    // Fold-accumulator serialization barrier. `arr.reduce(async (promise, x)
+    // => { await promise; ... }, Promise.resolve())` is the canonical idiom for
+    // FORCING sequential execution over a collection: the first parameter is
+    // the previous iteration's completion, so awaiting it is a serialization
+    // point rather than an operation. Parallelizing it discards the exact
+    // guarantee the idiom exists to provide. (#1851)
+    // ------------------------------------------------------------------
+    // The issue's own reproduction.
+    `
+async function persistAll(documents, collectionRef) {
+  const setter = new DocSetter(collectionRef);
+  await documents.reduce(async (promise, doc) => {
+    await promise;
+    await setter.set(doc);
+  }, Promise.resolve());
+}
+`,
+    // The accumulator is resolved through the scope chain, not matched against a
+    // name list, so every spelling of it is a barrier. (#1851)
+    `
+async function accumulatorNamedAcc(documents) {
+  await documents.reduce(async (acc, doc) => {
+    await acc;
+    await sendEmail(doc);
+  }, Promise.resolve());
+}
+`,
+    `
+async function accumulatorNamedPrevious(documents) {
+  await documents.reduce(async (previous, doc) => {
+    await previous;
+    await sendEmail(doc);
+  }, Promise.resolve());
+}
+`,
+    `
+async function accumulatorNamedPrev(documents) {
+  await documents.reduce(async (prev, doc) => {
+    await prev;
+    await sendEmail(doc);
+  }, Promise.resolve());
+}
+`,
+    `
+async function accumulatorNamedChain(documents) {
+  await documents.reduce(async (chain, doc) => {
+    await chain;
+    await sendEmail(doc);
+  }, Promise.resolve());
+}
+`,
+    // A spelling no name list would ever contain still resolves to parameter
+    // zero of the fold callback. (#1851)
+    `
+async function accumulatorNamedArbitrarily(documents) {
+  await documents.reduce(async (soFar, doc) => {
+    await soFar;
+    await sendEmail(doc);
+  }, Promise.resolve());
+}
+`,
+    // Everything after the barrier is blocked, not merely the adjacent pair:
+    // each of these operations would start before the previous iteration
+    // finished. (#1851)
+    `
+async function multipleStepsAfterBarrier(documents) {
+  await documents.reduce(async (promise, doc) => {
+    await promise;
+    await stepOne(doc);
+    await stepTwo(doc);
+    await stepThree(doc);
+  }, Promise.resolve());
+}
+`,
+    // `reduceRight` folds the same chain in the opposite direction, so its
+    // accumulator carries the same contract. (#1851)
+    `
+async function reduceRightAccumulator(documents) {
+  await documents.reduceRight(async (chain, doc) => {
+    await chain;
+    await sendEmail(doc);
+  }, Promise.resolve());
+}
+`,
+    // A computed string key names the same method. (#1851)
+    `
+async function computedReduceKey(documents) {
+  await documents['reduce'](async (promise, doc) => {
+    await promise;
+    await sendEmail(doc);
+  }, Promise.resolve());
+}
+`,
+    // An optional call reaches the same fold. (#1851)
+    `
+async function optionalReduceCall(documents) {
+  await documents?.reduce(async (promise, doc) => {
+    await promise;
+    await sendEmail(doc);
+  }, Promise.resolve());
+}
+`,
+    // A default on the accumulator still binds it first. (#1851)
+    `
+async function accumulatorWithDefault(documents) {
+  await documents.reduce(async (acc = Promise.resolve(), doc) => {
+    await acc;
+    await sendEmail(doc);
+  }, Promise.resolve());
+}
+`,
+    // A function expression is a fold callback exactly as an arrow is. (#1851)
+    `
+async function functionExpressionCallback(documents) {
+  await documents.reduce(async function (acc, doc) {
+    await acc;
+    await sendEmail(doc);
+  }, Promise.resolve());
+}
+`,
+    // Depth does not dilute the barrier: awaiting the accumulator inside a
+    // nested closure still serializes that closure behind the previous
+    // iteration. (#1851)
+    `
+async function accumulatorAwaitedInNestedClosure(documents) {
+  await documents.reduce(async (acc, doc) => {
+    await withRetry(async () => {
+      await acc;
+      await sendEmail(doc);
+    });
+  }, Promise.resolve());
+}
+`,
+    // TS-only wrappers read the same binding. (#1851)
+    `
+async function nonNullAssertedAccumulator(documents) {
+  await documents.reduce(async (acc, doc) => {
+    await acc!;
+    await sendEmail(doc);
+  }, Promise.resolve());
+}
+`,
+    `
+async function assertedAccumulator(documents) {
+  await documents.reduce(async (acc, doc) => {
+    await (acc as Promise<void>);
+    await sendEmail(doc);
+  }, Promise.resolve());
+}
+`,
+    // A fold over a member-expression receiver, which is how the idiom usually
+    // appears in production code. (#1851)
+    `
+async function foldOverMemberReceiver(batch) {
+  await batch.documents.reduce(async (promise, doc) => {
+    await promise;
+    await store(doc);
+  }, Promise.resolve());
+}
+`,
+    // Nested folds: the inner callback's own accumulator is the barrier for the
+    // inner run. (#1851)
+    `
+async function nestedFolds(groups) {
+  await groups.reduce(async (outerPromise, group) => {
+    await outerPromise;
+    await group.items.reduce(async (innerPromise, item) => {
+      await innerPromise;
+      await store(item);
+    }, Promise.resolve());
+  }, Promise.resolve());
+}
+`,
+    // A for...of loop is the other spelling of the same sequential intent, and
+    // is already exempt through the loop barrier. Held here as the contrast
+    // case, so a change that removed the loop barrier would surface next to the
+    // fold one. (#1851)
+    `
+async function sequentialForOf(documents, setter) {
+  for (const doc of documents) {
+    await validateDoc(doc);
+    await setter.store(doc);
+  }
+}
+`,
   ],
   invalid: [
     // Control: different receivers, genuinely independent -> still flagged.
@@ -2752,6 +2938,283 @@ async function localDeclarationIsNotAWrite(runner, sink) {
   }),
     sink.persist(captured)
   ]);
+}
+`,
+    },
+    // ------------------------------------------------------------------
+    // Negative controls for the fold-accumulator barrier (#1851). Each one is a
+    // shape the barrier must NOT reach: a fold whose callback never awaits its
+    // accumulator, an await of some other binding that merely sits inside a
+    // fold, and a `promise`-named parameter outside a fold. A barrier drawn any
+    // wider than "awaits parameter zero of a directly-passed fold callback"
+    // silently switches the rule off across all of these.
+    // ------------------------------------------------------------------
+    // A fold callback that never awaits its accumulator serializes nothing: the
+    // two operations are genuinely independent within one iteration. (#1851)
+    {
+      code: `
+async function foldWithoutAccumulatorAwait(documents) {
+  await documents.reduce(async (acc, doc) => {
+    await loadDoc(doc);
+    await store(doc);
+    return acc;
+  }, Promise.resolve());
+}
+`,
+      errors: [error(2)],
+      output: `
+async function foldWithoutAccumulatorAwait(documents) {
+  await documents.reduce(async (acc, doc) => {
+    await Promise.all([
+      loadDoc(doc),
+      store(doc)
+    ]);
+    return acc;
+  }, Promise.resolve());
+}
+`,
+    },
+    // Awaiting the ELEMENT parameter is an ordinary data read, not a
+    // serialization point -- only parameter zero carries the chain. (#1851)
+    {
+      code: `
+async function foldAwaitingTheElement(documents) {
+  await documents.reduce(async (acc, doc) => {
+    await doc;
+    await notify(doc);
+    return acc;
+  }, Promise.resolve());
+}
+`,
+      errors: [error(2)],
+      output: `
+async function foldAwaitingTheElement(documents) {
+  await documents.reduce(async (acc, doc) => {
+    await Promise.all([
+      doc,
+      notify(doc)
+    ]);
+    return acc;
+  }, Promise.resolve());
+}
+`,
+    },
+    // The barrier blocks the run it sits in, not the whole callback: a later,
+    // separate run of genuinely independent awaits in the SAME fold callback is
+    // still reported and still fixed. (#1851)
+    {
+      code: `
+async function independentRunAfterTheBarrier(documents, setter) {
+  await documents.reduce(async (promise, doc) => {
+    await promise;
+    await setter.store(doc);
+    const derived = compute(doc);
+    await logStart(derived);
+    await logFinish(derived);
+  }, Promise.resolve());
+}
+`,
+      errors: [error(2)],
+      output: `
+async function independentRunAfterTheBarrier(documents, setter) {
+  await documents.reduce(async (promise, doc) => {
+    await promise;
+    await setter.store(doc);
+    const derived = compute(doc);
+    await Promise.all([
+      logStart(derived),
+      logFinish(derived)
+    ]);
+  }, Promise.resolve());
+}
+`,
+    },
+    // Resolution is lexical, so a local that merely borrows the accumulator's
+    // usual spelling is not the accumulator. A name-matching barrier would
+    // suppress this. (#1851)
+    {
+      code: `
+async function localShadowNamedPromise(documents) {
+  await documents.reduce(async (acc, doc) => {
+    const promise = loadDoc(doc);
+    await promise;
+    await store(doc);
+    return acc;
+  }, Promise.resolve());
+}
+`,
+      errors: [error(2)],
+      output: `
+async function localShadowNamedPromise(documents) {
+  await documents.reduce(async (acc, doc) => {
+    const promise = loadDoc(doc);
+    await Promise.all([
+      promise,
+      store(doc)
+    ]);
+    return acc;
+  }, Promise.resolve());
+}
+`,
+    },
+    // `map` hands its callback an element first, so parameter zero there is not
+    // an accumulator. (#1851)
+    {
+      code: `
+async function mapCallbackAwaitingItsElement(documents) {
+  await Promise.all(documents.map(async (doc, index) => {
+    await doc;
+    await store(index);
+  }));
+}
+`,
+      errors: [error(2)],
+      output: `
+async function mapCallbackAwaitingItsElement(documents) {
+  await Promise.all(documents.map(async (doc, index) => {
+    await Promise.all([
+      doc,
+      store(index)
+    ]);
+  }));
+}
+`,
+    },
+    // Neither does `forEach`, even when its first parameter is spelled
+    // `promise`. (#1851)
+    {
+      code: `
+function forEachCallbackParamNamedPromise(documents) {
+  documents.forEach(async (promise, index) => {
+    await promise;
+    await store(index);
+  });
+}
+`,
+      errors: [error(2)],
+      output: `
+function forEachCallbackParamNamedPromise(documents) {
+  documents.forEach(async (promise, index) => {
+    await Promise.all([
+      promise,
+      store(index)
+    ]);
+  });
+}
+`,
+    },
+    // A `promise`-named parameter of an ordinary function is not a fold
+    // accumulator at all. (#1851)
+    {
+      code: `
+async function plainFunctionParamNamedPromise(promise, doc) {
+  await promise;
+  await store(doc);
+}
+`,
+      errors: [error(2)],
+      output: `
+async function plainFunctionParamNamedPromise(promise, doc) {
+  await Promise.all([
+    promise,
+    store(doc)
+  ]);
+}
+`,
+    },
+    // Only a callback passed DIRECTLY to the fold qualifies; the barrier does
+    // not chase a binding, so this keeps reporting exactly as before. (#1851)
+    {
+      code: `
+const step = async (acc, doc) => {
+  await acc;
+  await store(doc);
+};
+async function foldCallbackBoundToAName(documents) {
+  await documents.reduce(step, Promise.resolve());
+}
+`,
+      errors: [error(2)],
+      output: `
+const step = async (acc, doc) => {
+  await Promise.all([
+    acc,
+    store(doc)
+  ]);
+};
+async function foldCallbackBoundToAName(documents) {
+  await documents.reduce(step, Promise.resolve());
+}
+`,
+    },
+    // Position matters: an accumulator await with nothing after it in the run
+    // gates nothing, because the operation before it had already started
+    // without waiting for the previous iteration. (#1851)
+    {
+      code: `
+async function accumulatorAwaitedLast(documents) {
+  await documents.reduce(async (acc, doc) => {
+    await store(doc);
+    await acc;
+  }, Promise.resolve());
+}
+`,
+      errors: [error(2)],
+      output: `
+async function accumulatorAwaitedLast(documents) {
+  await documents.reduce(async (acc, doc) => {
+    await Promise.all([
+      store(doc),
+      acc
+    ]);
+  }, Promise.resolve());
+}
+`,
+    },
+    // A method whose name merely STARTS with `reduce` is not a fold. (#1851)
+    {
+      code: `
+async function nonFoldMethodNamedReduceBy(documents) {
+  await documents.reduceBy(async (acc, doc) => {
+    await acc;
+    await store(doc);
+  }, Promise.resolve());
+}
+`,
+      errors: [error(2)],
+      output: `
+async function nonFoldMethodNamedReduceBy(documents) {
+  await documents.reduceBy(async (acc, doc) => {
+    await Promise.all([
+      acc,
+      store(doc)
+    ]);
+  }, Promise.resolve());
+}
+`,
+    },
+    // A fold parameter named `promise` in the ELEMENT slot is still not the
+    // accumulator: the barrier is keyed on position, not spelling. (#1851)
+    {
+      code: `
+async function secondParameterNamedPromise(documents) {
+  await documents.reduce(async (acc, promise, index) => {
+    await promise;
+    await store(index);
+    return acc;
+  }, Promise.resolve());
+}
+`,
+      errors: [error(2)],
+      output: `
+async function secondParameterNamedPromise(documents) {
+  await documents.reduce(async (acc, promise, index) => {
+    await Promise.all([
+      promise,
+      store(index)
+    ]);
+    return acc;
+  }, Promise.resolve());
 }
 `,
     },

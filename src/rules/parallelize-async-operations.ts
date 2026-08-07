@@ -490,6 +490,129 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     }
 
     /**
+     * The array folds whose callback receives the PREVIOUS iteration's result as
+     * its first parameter. `reduceRight` carries the same contract as `reduce`;
+     * only the traversal order differs, so both fold a chain the same way.
+     *
+     * `map`/`forEach`/`filter` are deliberately absent: their callbacks receive
+     * an ELEMENT first, and awaiting an element is an ordinary data read rather
+     * than a serialization point.
+     */
+    const SEQUENTIAL_FOLD_METHODS = new Set(['reduce', 'reduceRight']);
+
+    /**
+     * Reports whether a function node is the callback a fold folds WITH -- the
+     * first argument of a `.reduce(...)` / `.reduceRight(...)` call.
+     *
+     * Only a direct argument qualifies. A callback bound to a name first
+     * (`const step = async (promise, doc) => {...}; items.reduce(step, seed)`)
+     * is left alone rather than chased through the binding, which keeps the
+     * barrier to the shape it can prove.
+     */
+    function isFoldCallback(fn: TSESTree.Node): boolean {
+      const call = fn.parent;
+      if (
+        !call ||
+        call.type !== AST_NODE_TYPES.CallExpression ||
+        call.arguments[0] !== fn
+      ) {
+        return false;
+      }
+
+      const callee = call.callee;
+      if (callee.type !== AST_NODE_TYPES.MemberExpression) {
+        return false;
+      }
+
+      const property = callee.property;
+      const methodName = callee.computed
+        ? property.type === AST_NODE_TYPES.Literal &&
+          typeof property.value === 'string'
+          ? property.value
+          : null
+        : property.type === AST_NODE_TYPES.Identifier
+        ? property.name
+        : null;
+
+      return !!methodName && SEQUENTIAL_FOLD_METHODS.has(methodName);
+    }
+
+    /**
+     * Reports whether a parameter binding is the FIRST parameter of a function
+     * -- the accumulator slot of a fold callback.
+     *
+     * Keyed on position rather than on the binding's name, because the
+     * accumulator is spelled `promise`, `acc`, `previous`, `prev`, `chain` or
+     * anything else the author preferred, and matching a name list would both
+     * miss the unlisted spellings and fire on an element parameter that happens
+     * to be called `promise`. A default (`async (acc = Promise.resolve(), doc)`)
+     * still binds the accumulator first, so the pattern is unwrapped.
+     */
+    function isAccumulatorParameter(
+      fn: TSESTree.Node,
+      binding: TSESTree.Node,
+    ): boolean {
+      if (!FUNCTION_BOUNDARY_TYPES.has(fn.type)) {
+        return false;
+      }
+
+      const [first] = (
+        fn as
+          | TSESTree.FunctionDeclaration
+          | TSESTree.FunctionExpression
+          | TSESTree.ArrowFunctionExpression
+      ).params;
+      if (!first) {
+        return false;
+      }
+
+      const target =
+        first.type === AST_NODE_TYPES.AssignmentPattern ? first.left : first;
+      return target === binding;
+    }
+
+    /**
+     * Reports whether an awaited expression is a bare read of the ACCUMULATOR
+     * parameter of an enclosing fold callback.
+     *
+     * The parameter is resolved through the scope chain rather than matched by
+     * name, so a local that merely shadows the accumulator's spelling
+     * (`const promise = fetchThing(); await promise;` inside the callback) is
+     * correctly NOT the accumulator, and an accumulator under any spelling is.
+     * TS-only wrappers are unwrapped because `await acc!` and
+     * `await acc as Promise<void>` read the same binding.
+     */
+    function isFoldAccumulatorAwait(
+      awaitExpr: TSESTree.AwaitExpression,
+    ): boolean {
+      let argument: TSESTree.Node = awaitExpr.argument;
+      while (
+        argument.type === AST_NODE_TYPES.TSNonNullExpression ||
+        argument.type === AST_NODE_TYPES.TSAsExpression
+      ) {
+        argument = argument.expression;
+      }
+      if (argument.type !== AST_NODE_TYPES.Identifier) {
+        return false;
+      }
+
+      const variable = ASTHelpers.findVariableInScope(
+        ASTHelpers.getScope(context, argument),
+        argument.name,
+      );
+      if (!variable) {
+        return false;
+      }
+
+      return variable.defs.some(
+        (definition) =>
+          definition.type === TSESLint.Scope.DefinitionType.Parameter &&
+          isAccumulatorParameter(definition.node, definition.name) &&
+          isFoldCallback(definition.node),
+      );
+    }
+
+    /**
      * Follows an identifier back to the array literal a `const` binds to it.
      *
      * Only `const` qualifies. A `let`/`var` array can be reassigned between the
@@ -989,6 +1112,28 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
               return true;
             }
           }
+        }
+      }
+
+      // 11. Fold-accumulator serialization barrier. `items.reduce(async
+      // (promise, item) => { await promise; await store(item); },
+      // Promise.resolve())` is the canonical idiom for FORCING sequential
+      // execution over a collection: the callback's first parameter IS the
+      // previous iteration's completion, so `await promise` is a serialization
+      // point rather than an operation of its own. The dependency it expresses
+      // is a sequencing one -- the accumulator and `store(item)` share no value
+      // at all -- so the identifier comparison above classifies the pair
+      // independent and the rewrite hoists the awaits into a Promise.all,
+      // starting every iteration's work at once and discarding the exact
+      // guarantee the idiom was written to provide. The run is deliberate, not
+      // a latency mistake, so the rule declines to report it rather than merely
+      // declining the fix. Only an accumulator await with something AFTER it
+      // qualifies, mirroring the guard barrier above: it is what follows the
+      // barrier that the rewrite would illegally start early. (#1851)
+      for (let i = 0; i < awaitNodes.length - 1; i++) {
+        const awaitExpr = getAwaitExpression(awaitNodes[i]);
+        if (awaitExpr && isFoldAccumulatorAwait(awaitExpr)) {
+          return true;
         }
       }
 
