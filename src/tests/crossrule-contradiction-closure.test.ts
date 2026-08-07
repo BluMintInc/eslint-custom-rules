@@ -212,8 +212,8 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
   },
   'enforce-microdiff::enforce-dynamic-imports': {
     reason:
-      'INCIDENTAL: the fixtures import the `fast-deep-equal/es6` SUBPATH, which `DEFAULT_IGNORED_LIBRARIES` lists only at the package root; the root specifier is clean under both (measured).',
-    cases: { dynamicImportRequired: 2 },
+      "INCIDENTAL: the surviving fixture keeps an unrelated `import _ from 'lodash'` for the `_.difference` call the microdiff fixer deliberately declines; dropping it is clean under both (measured). Was 2 — the `fast-deep-equal/es6` SUBPATH half was FIXED in #1845, where an `ignoredLibraries` entry began covering the package's subpaths.",
+    cases: { dynamicImportRequired: 1 },
   },
   'enforce-mock-firestore::enforce-object-literal-as-const': {
     reason:
@@ -269,11 +269,6 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
     reason:
       'PIPELINE: the fixtures annotate an inferable return beside the name under test; `--fix` strips both.',
     cases: { noExplicitReturnTypeInferable: 2 },
-  },
-  'fast-deep-equal-over-microdiff::enforce-dynamic-imports': {
-    reason:
-      'INCIDENTAL: the same `fast-deep-equal/es6` subpath as `enforce-microdiff`; the package-root specifier is clean under both (measured).',
-    cases: { dynamicImportRequired: 5 },
   },
   'firestore-transaction-reads-before-writes::enforce-assert-safe-object-key': {
     reason:
