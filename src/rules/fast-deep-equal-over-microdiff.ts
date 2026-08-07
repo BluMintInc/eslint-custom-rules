@@ -85,6 +85,18 @@ function bindsFastDeepEqual(variable: TSESLint.Scope.Variable): boolean {
 }
 
 /**
+ * The expression an optional chain wraps. ESTree interposes a
+ * `ChainExpression` between an optional member/call and its real parent, so
+ * `changes?.length` reaches an operand test as a ChainExpression while
+ * `changes.length` reaches it as a MemberExpression. Every arm that inspects an
+ * operand has to unwrap first, or one spelling of a single idiom escapes the
+ * rule while the other is reported.
+ */
+function unwrapChain(node: TSESTree.Node): TSESTree.Node {
+  return node.type === AST_NODE_TYPES.ChainExpression ? node.expression : node;
+}
+
+/**
  * Whether two edits touch the same characters. ESLint sorts the fixes of one
  * report and asserts each starts at or after the end of the previous one, so
  * abutting ranges are fine while overlapping ranges throw and discard every
@@ -132,11 +144,6 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
      * violations still emit `isEqual(...)` calls, leaving them unbound.
      */
     const isReportSuppressed = createSuppressionChecker(context);
-
-    const isChainExpression = (
-      node: TSESTree.Node,
-    ): node is TSESTree.ChainExpression =>
-      node.type === AST_NODE_TYPES.ChainExpression;
 
     function isMicrodiffCallee(
       callee: TSESTree.LeftHandSideExpression,
@@ -335,13 +342,18 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
           '!=',
         ];
         if (operators.includes(node.operator)) {
+          // `diff(a, b)?.length`, `changes?.length` and `diff?.(a, b).length`
+          // each reach the operand as a ChainExpression, so the unwrap is what
+          // keeps the comparison spellings of one idiom from diverging.
+          const left = unwrapChain(node.left);
+          const right = unwrapChain(node.right);
           // side A: MemberExpression .length, side B: 0
           if (
-            node.right.type === AST_NODE_TYPES.Literal &&
-            node.right.value === 0 &&
-            node.left.type === AST_NODE_TYPES.MemberExpression
+            right.type === AST_NODE_TYPES.Literal &&
+            right.value === 0 &&
+            left.type === AST_NODE_TYPES.MemberExpression
           ) {
-            const { diffCall } = getMicrodiffCallFromLengthAccess(node.left);
+            const { diffCall } = getMicrodiffCallFromLengthAccess(left);
             if (diffCall) {
               return {
                 isEquality: node.operator === '===' || node.operator === '==',
@@ -351,11 +363,11 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
           }
           // side A: 0, side B: MemberExpression .length
           if (
-            node.left.type === AST_NODE_TYPES.Literal &&
-            node.left.value === 0 &&
-            node.right.type === AST_NODE_TYPES.MemberExpression
+            left.type === AST_NODE_TYPES.Literal &&
+            left.value === 0 &&
+            right.type === AST_NODE_TYPES.MemberExpression
           ) {
-            const { diffCall } = getMicrodiffCallFromLengthAccess(node.right);
+            const { diffCall } = getMicrodiffCallFromLengthAccess(right);
             if (diffCall) {
               return {
                 isEquality: node.operator === '===' || node.operator === '==',
@@ -371,10 +383,7 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
         node.type === AST_NODE_TYPES.UnaryExpression &&
         node.operator === '!'
       ) {
-        const argumentNode = node.argument as TSESTree.Node;
-        const target = isChainExpression(argumentNode)
-          ? argumentNode.expression
-          : argumentNode;
+        const target = unwrapChain(node.argument);
         if (target.type === AST_NODE_TYPES.MemberExpression) {
           const { diffCall } = getMicrodiffCallFromLengthAccess(target);
           if (diffCall) {
@@ -396,16 +405,22 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
     function getLengthIdentifierFromNode(
       node: TSESTree.Node,
     ): TSESTree.Identifier | undefined {
+      // The operands are unwrapped for the same reason the detection arm
+      // unwraps them: `changes?.length` hides the identifier behind a
+      // ChainExpression. Missing it here does not silence the report — it
+      // rewrites the comparison and leaves the now-dead
+      // `const changes = diff(a, b);` behind.
+      const isLengthMember = (
+        n: TSESTree.Node,
+      ): n is TSESTree.MemberExpression =>
+        n.type === AST_NODE_TYPES.MemberExpression &&
+        !n.computed &&
+        n.property.type === AST_NODE_TYPES.Identifier &&
+        n.property.name === 'length';
+
       if (node.type === AST_NODE_TYPES.BinaryExpression) {
-        const left = node.left;
-        const right = node.right;
-        const isLengthMember = (
-          n: TSESTree.Node,
-        ): n is TSESTree.MemberExpression =>
-          n.type === AST_NODE_TYPES.MemberExpression &&
-          !n.computed &&
-          n.property.type === AST_NODE_TYPES.Identifier &&
-          n.property.name === 'length';
+        const left = unwrapChain(node.left);
+        const right = unwrapChain(node.right);
         if (
           isLengthMember(left) &&
           left.object.type === AST_NODE_TYPES.Identifier
@@ -420,12 +435,9 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
         }
       }
       if (node.type === AST_NODE_TYPES.UnaryExpression) {
-        const arg = node.argument;
+        const arg = unwrapChain(node.argument);
         if (
-          arg.type === AST_NODE_TYPES.MemberExpression &&
-          !arg.computed &&
-          arg.property.type === AST_NODE_TYPES.Identifier &&
-          arg.property.name === 'length' &&
+          isLengthMember(arg) &&
           arg.object.type === AST_NODE_TYPES.Identifier
         ) {
           return arg.object;
