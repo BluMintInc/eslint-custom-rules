@@ -1,3 +1,10 @@
+## [1.20.129](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.128...v1.20.129) (2026-08-07)
+
+
+### Bug Fixes
+
+* **no-circular-references:** resolve an alias through an optional chain (closes [#1838](https://github.com/BluMintInc/eslint-custom-rules/issues/1838)) ([6b8c9ff](https://github.com/BluMintInc/eslint-custom-rules/commit/6b8c9ff2b898449c42ee743a2fcef23597e2eb69))
+
 ## [1.20.128](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.127...v1.20.128) (2026-08-07)
 
 

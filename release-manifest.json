@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.129",
+    "date": "2026-08-07T06:47:26.731Z",
+    "rules": [
+      {
+        "name": "no-circular-references",
+        "changeType": "fix",
+        "issues": [
+          1838
+        ],
+        "summary": "resolve an alias through an optional chain (closes #1838)"
+      }
+    ]
+  },
+  {
     "version": "1.20.128",
     "date": "2026-08-07T05:47:06.312Z",
     "rules": [
