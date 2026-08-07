@@ -23,6 +23,14 @@
  *
  * Corpus: each rule's own harvested fixtures, which are the one input set
  * guaranteed to trigger it — `agora` cannot reach a rule it never fires on.
+ *
+ * WHICH RULES WERE PROBED IS ITSELF ASSERTED (#1863). `rulesProbed` used to rest
+ * on a floor of 170 against an actual 194, so 24 rules could leave the probe
+ * entirely — taking every messageId they declare out of both arms — without
+ * moving a number anyone reads. A floor answers "did the probe do some work";
+ * the question is "did it do work for THIS rule", and the two differ exactly
+ * when a subset regresses. The probed set is now closed against `plugin.rules`
+ * in both directions, with any absence named and its cause measured.
  */
 import { Linter } from 'eslint';
 import {
@@ -68,7 +76,7 @@ const leftovers: Leftover[] = [];
 const renderedIds = new Set<string>();
 
 const stats = {
-  rulesProbed: 0,
+  rulesProbed: new Set<string>(),
   rulesSilent: [] as string[],
   casesProbed: 0,
   reportsRendered: 0,
@@ -114,7 +122,7 @@ for (const [ruleName, cases] of corpus.byRule) {
    * of them placeholder-bearing — from both arms below (#1859).
    */
   if (silentWithoutProgramRuleNames.has(ruleName)) continue;
-  stats.rulesProbed++;
+  stats.rulesProbed.add(ruleName);
   const ruleId = PREFIX + ruleName;
   let reportsForRule = 0;
 
@@ -187,10 +195,56 @@ const PROGRAM_ONLY_MESSAGE_IDS: Record<string, string> = {
     'needs a real program to classify the return type',
 };
 
+/**
+ * Why a registered rule could be absent from the probe, read off the corpus and
+ * the drivability measurement rather than asserted by hand.
+ *
+ * Both causes are DERIVED — one from the corpus, one from the measured
+ * `silentWithoutProgramRuleNames` set — so a rule that falls into either enters
+ * the accounting on its own. Naming them is what turns "170 of them ran" into
+ * "these ran and these did not, for this reason".
+ */
+const UNPROBED_CAUSES = {
+  noCorpus:
+    'the harvest holds no fixture for it, so there is no input on which it could render anything',
+  undrivableWithoutProgram:
+    'measurably reports nothing under a bare Linter, so probing it would manufacture a dead-message finding about the harness',
+} as const;
+type UnprobedCause = keyof typeof UNPROBED_CAUSES;
+
+const unprobedCauseOf = (rule: string): UnprobedCause | null => {
+  if (stats.rulesProbed.has(rule)) return null;
+  if (silentWithoutProgramRuleNames.has(rule)) {
+    return 'undrivableWithoutProgram';
+  }
+  return 'noCorpus';
+};
+
+const registeredRules = Object.keys(plugin.rules).sort();
+const measuredUnprobed: Record<string, UnprobedCause> = Object.fromEntries(
+  registeredRules
+    .map((rule) => [rule, unprobedCauseOf(rule)] as const)
+    .filter((entry): entry is readonly [string, UnprobedCause] => !!entry[1]),
+);
+
+/**
+ * Registered rules this probe never drove, each with the measured cause.
+ *
+ * SHIPS EMPTY: every registered rule has a corpus (#1860) and every type-aware
+ * rule is drivable without a program (#1859), so all 194 are probed. It is the
+ * place an absence must be written down, because a rule that quietly leaves the
+ * probe takes every messageId it declares out of BOTH arms below — the
+ * unsubstituted-placeholder sweep and the dead-messageId closure — while each
+ * still renders green (#1863).
+ */
+const UNPROBED_RULES: Record<string, UnprobedCause> = {};
+
 const declaredIds: string[] = [];
 const deadIds: string[] = [];
 /** Asserted below, so a stale artifact entry fails instead of holding open. */
 const unusedProgramOnly: string[] = [];
+/** Which rules reached the dead-message closure, asserted against the probe. */
+const rulesWithDeclaredIds = new Set<string>();
 for (const [ruleName, rule] of Object.entries(plugin.rules)) {
   if (silentWithoutProgramRuleNames.has(ruleName)) continue;
   /**
@@ -199,6 +253,7 @@ for (const [ruleName, rule] of Object.entries(plugin.rules)) {
    * this skip is a guard against a future hole rather than a live exclusion.
    */
   if (!corpus.byRule.has(ruleName)) continue;
+  rulesWithDeclaredIds.add(ruleName);
   for (const messageId of Object.keys(rule.meta?.messages ?? {})) {
     const key = `${ruleName}::${messageId}`;
     declaredIds.push(key);
@@ -317,7 +372,33 @@ describe('message render integrity', () => {
      */
     it('makes every probed rule report', () => {
       expect(stats.rulesSilent).toEqual([]);
-      expect(stats.rulesProbed).toBeGreaterThanOrEqual(170);
+      expect(stats.rulesProbed.size).toBeGreaterThanOrEqual(170);
+    });
+
+    /**
+     * The other half of that row, and the one a floor cannot state: WHICH rules
+     * ran. `rulesSilent` only speaks about rules the loop reached, so a rule
+     * that left the corpus is silent about its own silence — it is absent from
+     * `rulesProbed` and from `rulesSilent` alike, and both assertions above
+     * stay green. Closed against `plugin.rules`, which is not derived from the
+     * corpus, so a corpus that collapsed cannot satisfy it by shrinking both
+     * sides at once.
+     */
+    it('accounts for every registered rule: it was probed, or its absence is named', () => {
+      expect(measuredUnprobed).toEqual(UNPROBED_RULES);
+      expect(
+        Object.values(UNPROBED_RULES).filter(
+          (cause) => !UNPROBED_CAUSES[cause],
+        ),
+      ).toEqual([]);
+      // An entry naming a rule that is not registered is an exemption nothing
+      // can retire, so it would absorb the next absence forever.
+      expect(
+        Object.keys(UNPROBED_RULES).filter(
+          (rule) => !registeredRules.includes(rule),
+        ),
+      ).toEqual([]);
+      expect(registeredRules.length).toBeGreaterThan(150);
     });
 
     /**
@@ -362,6 +443,13 @@ describe('message render integrity', () => {
   it('emits every message it declares', () => {
     expect(declaredIds.length).toBeGreaterThanOrEqual(200);
     expect(deadIds).toEqual([]);
+    // The dead-message closure runs its own skip list, so it can go dark for a
+    // rule the render sweep still probes. Pinned equal, since a rule missing
+    // here contributes no declared id and the `deadIds` assertion above then
+    // says nothing about it.
+    expect([...rulesWithDeclaredIds].sort()).toEqual(
+      [...stats.rulesProbed].sort(),
+    );
   });
 
   /**

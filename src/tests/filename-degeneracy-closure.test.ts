@@ -25,6 +25,12 @@
  *   into "derived nothing" — the #1820 failure, where a counter placed past the
  *   skip it measured read 0 while 42% of a sweep went unscored.
  *
+ * NON-VACUITY IS PER-RULE (#1863). `rewritten > 5000` against 11,312 and
+ * `rulesDeriving.size >= 40` against 53 are global sums, so a rule's whole
+ * contribution can vanish inside either. Both dimensions are closed per rule
+ * below: every fixable rule must have rewritten under a degenerate stem, and
+ * must either derive a name or be named with the measured cause it does not.
+ *
  * Two things about the perturbation are load-bearing:
  *
  * - Only the LEADING dot-segment of the basename is replaced, so
@@ -277,6 +283,39 @@ let unreadableComparison = 0;
 const rulesRewritten = new Set<string>();
 const rulesDeriving = new Set<string>();
 
+/**
+ * The same counters, per rule. The aggregates above answer "did the sweep do
+ * some work"; only these answer "did it do work for THIS rule", and the two
+ * differ exactly when a subset regresses (#1863).
+ */
+type Drive = {
+  /** TypeScript `invalid` fixtures reaching the probe. */
+  tsCases: number;
+  /** Those the harness could not parse under their own baseline filename. */
+  unparsable: number;
+  /** Fixtures the fixer rewrote under the benign CONTROL stem. */
+  controlFixes: number;
+  /** Control rewrites that INVENTED an identifier or a string literal. */
+  derivations: number;
+  /** Rewrites observed under a degenerate stem — the actual comparison. */
+  degenerateRewrites: number;
+};
+
+const driveByRule = new Map<string, Drive>();
+const driveOf = (rule: string): Drive => {
+  const existing = driveByRule.get(rule);
+  if (existing) return existing;
+  const fresh: Drive = {
+    tsCases: 0,
+    unparsable: 0,
+    controlFixes: 0,
+    derivations: 0,
+    degenerateRewrites: 0,
+  };
+  driveByRule.set(rule, fresh);
+  return fresh;
+};
+
 for (const rule of fixableRuleNames) {
   const cases = (corpus.byRule.get(rule) || []).filter(
     (testCase: FixtureCase) => {
@@ -288,12 +327,15 @@ for (const rule of fixableRuleNames) {
       return testCase.bucket === 'invalid';
     },
   );
+  const drive = driveOf(rule);
   for (const testCase of cases) {
     const baseline = testCase.filename ?? defaultFilenameFor(testCase);
     const jsx = baseline.endsWith('x');
+    drive.tsCases++;
 
     if (parseErrorCount(testCase.code, baseline) > 0) {
       discardedUnparsable++;
+      drive.unparsable++;
       continue;
     }
 
@@ -335,8 +377,10 @@ for (const rule of fixableRuleNames) {
       unreadableControl++;
       continue;
     }
+    if (controlOutput) drive.controlFixes++;
     if (controlNames.size || controlStrings.size) {
       derivationsObserved++;
+      drive.derivations++;
       rulesDeriving.add(rule);
     }
 
@@ -347,6 +391,7 @@ for (const rule of fixableRuleNames) {
       const output = runFix(filename);
       if (!output) continue;
       rewritten++;
+      drive.degenerateRewrites++;
       rulesRewritten.add(rule);
 
       if (parseErrorCount(output, filename) > 0) {
@@ -406,6 +451,125 @@ for (const rule of fixableRuleNames) {
   }
 }
 
+/**
+ * Why a fixable rule could never have been driven with a degenerate stem, read
+ * off the counters above rather than asserted by hand.
+ *
+ * Ordered outermost precondition first, so the cause named is the FIRST that
+ * failed: a rule with no TypeScript fixture is not also "invents no name", it
+ * was never linted here at all.
+ */
+const UNDRIVEN_CAUSES = {
+  noCorpus:
+    'the harvest holds no fixture for it, so nothing was ever handed to its fixer',
+  noTsFixture:
+    'declares no TypeScript `invalid` fixture, and a file stem is a TypeScript question',
+  everyFixtureUnparsable:
+    'every fixture fails to parse under its own baseline filename, so no comparison has a control',
+  neverRewritesItsOwnFixtures:
+    'declares meta.fixable yet rewrites none of its own fixtures under any stem, so there is no output to inspect',
+  inventsNoName:
+    'rewrites its fixtures without introducing any identifier or string literal absent from the input, so no derived name exists for a stem to collapse',
+} as const;
+type UndrivenCause = keyof typeof UNDRIVEN_CAUSES;
+
+const rewriteCauseOf = (rule: string): UndrivenCause | null => {
+  const drive = driveByRule.get(rule);
+  if (!corpus.byRule.has(rule)) return 'noCorpus';
+  if (!drive || drive.tsCases === 0) return 'noTsFixture';
+  if (drive.unparsable === drive.tsCases) return 'everyFixtureUnparsable';
+  if (drive.degenerateRewrites === 0) return 'neverRewritesItsOwnFixtures';
+  return null;
+};
+
+/**
+ * The DERIVATION arm asks a strictly narrower question than the rewrite arm —
+ * whether the fixer invents a name at all — so it gets its own accounting. A
+ * rule that only deletes, moves or reorders text answers "no" permanently, and
+ * that is a fact worth naming rather than a number worth flooring.
+ */
+const derivationCauseOf = (rule: string): UndrivenCause | null => {
+  const drive = driveByRule.get(rule);
+  const earlier = rewriteCauseOf(rule);
+  if (earlier) return earlier;
+  return drive && drive.derivations === 0 ? 'inventsNoName' : null;
+};
+
+const measuredUndriven = (
+  causeOf: (rule: string) => UndrivenCause | null,
+): Record<string, UndrivenCause> =>
+  Object.fromEntries(
+    [...fixableRuleNames]
+      .sort()
+      .map((rule) => [rule, causeOf(rule)] as const)
+      .filter((entry): entry is readonly [string, UndrivenCause] => !!entry[1]),
+  );
+
+const measuredRewriteUndriven = measuredUndriven(rewriteCauseOf);
+const measuredDerivationUndriven = measuredUndriven(derivationCauseOf);
+
+/**
+ * Fixable rules no degenerate stem ever made rewrite anything, each with the
+ * measured cause.
+ *
+ * The `rewritten > 5000` floor below cannot say that any PARTICULAR rule
+ * contributed one of those rewrites, and 81 rules sharing an 11,312 total means
+ * a rule can drop to zero without moving it (#1863). Asserted as an exact map,
+ * so an unrecorded skip, a stale entry and a changed cause all fail.
+ */
+const REWRITE_UNDRIVEN: Record<string, UndrivenCause> = {
+  'enforce-typescript-markdown-code-blocks': 'noTsFixture',
+  'no-unpinned-dependencies': 'noTsFixture',
+  // Declares `fixable: 'code'` and emits no fix over any of its 105 fixtures
+  // (#1871), so there is no output to read a derived name out of. Fixing that
+  // rule retires this entry.
+  'no-usememo-for-pass-by-value': 'neverRewritesItsOwnFixtures',
+};
+
+/**
+ * Fixable rules whose fixes invent nothing, each with the measured cause.
+ *
+ * `inventsNoName` is not a defect and not a decision: it is what a fixer that
+ * only DELETES (`no-unused-usestate`), MOVES (`jsdoc-above-field`,
+ * `class-methods-read-top-to-bottom`) or REPLACES with a keyword
+ * (`prefer-type-over-interface`) does, and the collapse this file hunts needs an
+ * invented name to collapse. Recorded rather than counted, because `rulesDeriving
+ * .size >= 40` against an actual 53 lets thirteen of them go dark unheard, and
+ * because a rule LEAVING this list has started deriving a name from something —
+ * which is precisely the population this guard exists to watch.
+ */
+const DERIVATION_UNDRIVEN: Record<string, UndrivenCause> = {
+  ...REWRITE_UNDRIVEN,
+  'class-methods-read-top-to-bottom': 'inventsNoName',
+  'enforce-early-destructuring': 'inventsNoName',
+  'enforce-exported-function-types': 'inventsNoName',
+  'enforce-unique-cursor-headers': 'inventsNoName',
+  'flatten-push-calls': 'inventsNoName',
+  'jsdoc-above-field': 'inventsNoName',
+  'key-only-outermost-element': 'inventsNoName',
+  'logical-top-to-bottom-grouping': 'inventsNoName',
+  'no-curly-brackets-around-commented-properties': 'inventsNoName',
+  'no-direct-function-state': 'inventsNoName',
+  'no-empty-dependency-use-callbacks': 'inventsNoName',
+  'no-entire-object-hook-deps': 'inventsNoName',
+  'no-explicit-return-type': 'inventsNoName',
+  'no-redundant-annotation-assertion': 'inventsNoName',
+  'no-redundant-param-types': 'inventsNoName',
+  'no-redundant-usecallback-wrapper': 'inventsNoName',
+  'no-unnecessary-destructuring': 'inventsNoName',
+  'no-unnecessary-destructuring-rename': 'inventsNoName',
+  'no-unused-usestate': 'inventsNoName',
+  'no-useless-fragment': 'inventsNoName',
+  'no-useless-usememo-primitives': 'inventsNoName',
+  'prefer-block-comments-for-declarations': 'inventsNoName',
+  'prefer-destructuring-no-class': 'inventsNoName',
+  'prefer-fragment-shorthand': 'inventsNoName',
+  'prefer-nullish-coalescing-boolean-props': 'inventsNoName',
+  'prefer-type-over-interface': 'inventsNoName',
+  'require-hooks-default-params': 'inventsNoName',
+  'vertically-group-related-functions': 'inventsNoName',
+};
+
 describe('filename-degeneracy fix closure', () => {
   /**
    * The non-TypeScript skip, both ways. An unlisted rule whose fixtures get
@@ -451,6 +615,48 @@ describe('filename-degeneracy fix closure', () => {
     expect(rewritten).toBeGreaterThan(5000);
     expect(derivationsObserved).toBeGreaterThan(1200);
     expect(rulesDeriving.size).toBeGreaterThanOrEqual(40);
+  });
+
+  /**
+   * Both arms, both directions. An unlisted rule that stops rewriting (or stops
+   * deriving) fails as an unrecorded skip; a listed rule that starts fails as a
+   * stale entry, which is what keeps an exemption from outliving its reason
+   * (#1839).
+   */
+  it('accounts for every fixable rule no degenerate stem could drive', () => {
+    expect(measuredRewriteUndriven).toEqual(REWRITE_UNDRIVEN);
+    expect(fixableRuleNames.length).toBeGreaterThanOrEqual(70);
+  });
+
+  it('accounts for every fixable rule that derives no name at all', () => {
+    expect(measuredDerivationUndriven).toEqual(DERIVATION_UNDRIVEN);
+  });
+
+  it('explains every cause it records, on a rule it actually probes', () => {
+    const causes = [
+      ...Object.values(REWRITE_UNDRIVEN),
+      ...Object.values(DERIVATION_UNDRIVEN),
+    ];
+    expect(causes.filter((cause) => !UNDRIVEN_CAUSES[cause])).toEqual([]);
+    // An entry naming a rule outside the probed population is an exemption
+    // nothing can retire, so it would absorb the next absence forever.
+    expect(
+      [
+        ...Object.keys(REWRITE_UNDRIVEN),
+        ...Object.keys(DERIVATION_UNDRIVEN),
+      ].filter((rule) => !fixableRuleNames.includes(rule)),
+    ).toEqual([]);
+  });
+
+  /**
+   * Per rule, stated as its own row rather than left implicit in the map
+   * equality: a green row over a rule the sweep never rewrote is worse than a
+   * missing one, because it names the rule in the jest output (#1861).
+   */
+  it.each(
+    [...fixableRuleNames].sort().filter((rule) => !(rule in REWRITE_UNDRIVEN)),
+  )('rewrote %s under a degenerate stem', (rule) => {
+    expect(driveByRule.get(rule)?.degenerateRewrites || 0).toBeGreaterThan(0);
   });
 
   it('no fixer derives a broken or collapsed name from the file stem', () => {

@@ -74,6 +74,13 @@
  *     floors and on the standoff set. A pass that examines nothing cannot go
  *     green.
  *
+ * NON-VACUITY IS PER-MEMBER (#1863). Only 43 of the 72 scanned owners appear in
+ * `KNOWN_DIVERGENT`; for the other 29 the whole claim rested on three global
+ * floors, so each could stop contributing evidence and nothing would say so.
+ * Every documented PAIR is now either examined or named with a measured cause,
+ * every scanned owner must have contributed a fixture, and `casesConsidered` is
+ * pinned to the corpus rather than floored.
+ *
  * SECOND HALF — CONVERGENCE. Everything above is static, and static accounting
  * is what let #1846 through: `enforce-react-type-naming` and `global-const-style`
  * were exempted here with a reason that was FALSE ("SCREAMING_SNAKE satisfies
@@ -607,6 +614,8 @@ type Divergence = {
 const stats = {
   casesConsidered: 0,
   ownersWithCases: new Set<string>(),
+  /** Per owner, so one chatty owner cannot cover for another going dark. */
+  casesByOwner: new Map<string, number>(),
   pairsChecked: 0,
   fatals: 0,
   selfReports: 0,
@@ -645,6 +654,7 @@ function scanOwner(
     if (count) {
       stats.casesConsidered++;
       stats.ownersWithCases.add(owner);
+      stats.casesByOwner.set(owner, (stats.casesByOwner.get(owner) || 0) + 1);
     }
 
     const filename = defaultFilenameFor(testCase);
@@ -727,12 +737,15 @@ const divergences: Divergence[] = [];
 const divergentPairs = new Set<string>();
 /** Every pair this run actually examined, so a stale entry is provable. */
 const pairsExamined = new Set<string>();
+/** Every owner the scan actually entered, whatever it then found. */
+const ownersScanned = new Set<string>();
 
 for (const owner of [...documentedPartners.keys()].sort()) {
   const reporterNames = reportersFor(owner);
   if (!reporterNames.length) continue;
   const cases = corpus.byRule.get(owner) || [];
   if (!cases.length) continue;
+  ownersScanned.add(owner);
 
   for (const reporter of reporterNames) {
     pairsExamined.add(`${owner}::${reporter}`);
@@ -750,6 +763,116 @@ for (const owner of [...documentedPartners.keys()].sort()) {
 
 const exampleFor = (pair: string) =>
   divergences.find((found) => `${found.owner}::${found.reporter}` === pair);
+
+/* ------------------------- TWO-WAY DRIVE ACCOUNTING ----------------------- */
+
+/**
+ * Every directed pair the mention graph documents, examined or not.
+ *
+ * `pairsChecked >= 120` says the scan examined SOME pairs; it cannot say it
+ * examined a particular one, and 139 pairs against a floor of 120 leaves
+ * nineteen free to leave the scan silently — a rule dropping out of the
+ * recommended config takes every pair it reports on with it (#1863). Every
+ * member is therefore either examined or named below with a measured cause.
+ */
+const documentedPairs: string[] = [];
+for (const [owner, partners] of documentedPartners) {
+  for (const partner of partners) documentedPairs.push(`${owner}::${partner}`);
+}
+documentedPairs.sort();
+
+const UNEXAMINED_CAUSES = {
+  reporterIsFilenameArtifact:
+    'the sibling answers from the FILE PATH alone, which is synthetic here, so it is excluded as a reporter by design',
+  reporterNotEnabled:
+    'the sibling is not enabled in the recommended config, so no consumer ever runs the two together',
+  ownerHasNoCorpus:
+    'the owner declares no fixture, so it blesses no text a sibling could report on',
+  unaccounted:
+    'no measured explanation — the pair left the scan for a reason this file cannot name, which is the state this accounting exists to surface',
+} as const;
+type UnexaminedCause = keyof typeof UNEXAMINED_CAUSES;
+
+const unexaminedCauseOf = (pair: string): UnexaminedCause | null => {
+  if (pairsExamined.has(pair)) return null;
+  const [owner, reporter] = pair.split('::');
+  if (FILENAME_ARTIFACT_REPORTERS.has(reporter)) {
+    return 'reporterIsFilenameArtifact';
+  }
+  if (!ENABLED.has(reporter)) return 'reporterNotEnabled';
+  if (!(corpus.byRule.get(owner) || []).length) return 'ownerHasNoCorpus';
+  return 'unaccounted';
+};
+
+const measuredUnexamined: Record<string, UnexaminedCause> = Object.fromEntries(
+  documentedPairs
+    .map((pair) => [pair, unexaminedCauseOf(pair)] as const)
+    .filter((entry): entry is readonly [string, UnexaminedCause] => !!entry[1]),
+);
+
+/**
+ * Documented pairs this run never examined, each with the measured cause.
+ *
+ * Asserted as an exact map, so a pair that quietly leaves the scan fails as an
+ * unrecorded skip, a pair that re-enters it fails as a stale entry, and a pair
+ * that leaves for a DIFFERENT reason fails too — the recorded cause is the claim
+ * being made about it.
+ */
+const UNEXAMINED_PAIRS: Record<string, UnexaminedCause> = {
+  'enforce-assert-safe-object-key::test-file-location-enforcement':
+    'reporterIsFilenameArtifact',
+  // `enforce-dynamic-file-naming` is registered and declares
+  // `meta.docs.recommended: 'error'`, yet ships ABSENT from
+  // `configs.recommended.rules` — deliberately, since it is the fallback for a
+  // consumer who has disabled the two dynamic-import rules it names. It is
+  // therefore never a reporter here. Both directions of each pair are
+  // documented, and the mirrors (this rule as OWNER) are examined normally, so
+  // the contract it shares with these two is still checked one way round.
+  'enforce-dynamic-imports::enforce-dynamic-file-naming': 'reporterNotEnabled',
+  'require-dynamic-firebase-imports::enforce-dynamic-file-naming':
+    'reporterNotEnabled',
+};
+
+/**
+ * Owners whose fixtures the scan never linted, each with the measured cause.
+ *
+ * An owner can be counted as examined — its pairs are added before a single
+ * lint runs — and still contribute no evidence, because only `valid` and
+ * `output` text is evidence and a corpus of nothing but `invalid` fixtures is
+ * skipped case by case. SHIPS EMPTY: all 72 scanned owners contribute.
+ */
+const UNSCANNED_OWNER_CAUSES = {
+  ownerHasOnlyInvalidFixtures:
+    'every fixture it declares is an `invalid` one, which is EXPECTED to report and so is never evidence about a sibling',
+} as const;
+type UnscannedOwnerCause = keyof typeof UNSCANNED_OWNER_CAUSES;
+
+const measuredOwnersWithoutCases: Record<string, UnscannedOwnerCause> =
+  Object.fromEntries(
+    [...ownersScanned]
+      .sort()
+      .filter((owner) => !stats.ownersWithCases.has(owner))
+      .map((owner) => [owner, 'ownerHasOnlyInvalidFixtures' as const]),
+  );
+
+const OWNERS_WITHOUT_CASES: Record<string, UnscannedOwnerCause> = {};
+
+/**
+ * What `casesConsidered` must be, derived from the corpus rather than floored.
+ *
+ * A floor of 4,500 against 5,589 lets a fifth of the evidence disappear; this
+ * equality lets none of it, since every non-`invalid` fixture of every scanned
+ * owner has to arrive. A case lost to a fatal parse would show up here as well
+ * as in `stats.fatals`.
+ */
+const expectedCasesConsidered = [...ownersScanned].reduce(
+  (total, owner) =>
+    total +
+    (corpus.byRule.get(owner) || []).filter(
+      (testCase) => testCase.bucket !== 'invalid',
+    ).length,
+  0,
+);
 
 /**
  * `pair -> messageId -> number of diverging FIXTURES`, counted per case rather
@@ -1441,6 +1564,48 @@ describe('the cross-rule contradiction guard is load-bearing', () => {
     // corpus that reaches every owner but trips two chatty reporters would
     // clear every floor above while saying nothing about the other 23.
     expect(stats.reportersHeardFrom.size).toBeGreaterThanOrEqual(20);
+  });
+
+  /**
+   * The drive dimension, per member. Only 43 of the 72 scanned owners appear in
+   * `KNOWN_DIVERGENT`, so for the other 29 the three floors above were the
+   * whole of the non-vacuity claim: each could stop contributing evidence
+   * entirely and nothing would say so (#1863).
+   */
+  it('accounts for every documented pair: examined, or named with its cause', () => {
+    expect(measuredUnexamined).toEqual(UNEXAMINED_PAIRS);
+    expect(documentedPairs.length).toBeGreaterThanOrEqual(120);
+    expect(
+      Object.values(UNEXAMINED_PAIRS).filter(
+        (cause) => !UNEXAMINED_CAUSES[cause],
+      ),
+    ).toEqual([]);
+    // An entry for a pair the mention graph no longer documents is an exemption
+    // nothing can retire.
+    expect(
+      Object.keys(UNEXAMINED_PAIRS).filter(
+        (pair) => !documentedPairs.includes(pair),
+      ),
+    ).toEqual([]);
+  });
+
+  it('lints a fixture for every owner it examined a pair for', () => {
+    expect(measuredOwnersWithoutCases).toEqual(OWNERS_WITHOUT_CASES);
+    expect([...stats.ownersWithCases].sort()).toEqual(
+      [...ownersScanned]
+        .sort()
+        .filter((owner) => !(owner in OWNERS_WITHOUT_CASES)),
+    );
+  });
+
+  /**
+   * And how MUCH each owner contributed, pinned to the corpus rather than
+   * floored: a rule that kept one `valid` fixture out of forty still clears any
+   * global count.
+   */
+  it('considers every blessed fixture of every scanned owner', () => {
+    expect(stats.casesConsidered).toBe(expectedCasesConsidered);
+    expect(expectedCasesConsidered).toBeGreaterThanOrEqual(4500);
   });
 
   it('keeps every valid fixture silent under its own rule', () => {

@@ -76,6 +76,13 @@
  * is also what a consumer's source actually holds when they reach for `--fix`,
  * which makes this bucket the closer model of that source, not the further one.
  *
+ * NON-VACUITY IS PER-OWNER (#1863). `owners > 150` against 194 and `rewritten >
+ * 6000` against 8,211 are global sums, so 44 rules and 2,200 rewrites can
+ * disappear into them — and because they are sums, the loss concentrates in
+ * whatever regressed. Both are closed per rule below: the swept set must EQUAL
+ * the corpus's rule set, and every rule whose fixtures `--fix` never touched is
+ * named with a measured cause that fails when it goes stale.
+ *
  * RUNTIME, the deliberate call: ~190s (17,297 fixtures x 188 rules x the
  * multi-pass fix loop), kept PER-PR rather than on a schedule. The class it
  * catches is the plugin's own autofix corrupting a consumer's source, and a
@@ -289,6 +296,20 @@ const stats = {
 const oscillating: Finding[] = [];
 const fatals: Finding[] = [];
 
+/**
+ * The sweep's counters, per owner.
+ *
+ * The aggregates below answer "did the sweep do some work"; only these answer
+ * "did it do work for THIS rule". A floor of 150 owners against 194, and of
+ * 6,000 rewrites against 8,211, is exactly how much coverage can vanish before
+ * anyone hears — and because both are global sums, the loss concentrates in
+ * whatever regressed (#1863).
+ */
+const perOwner = new Map<
+  string,
+  { probed: number; rewritten: number; relinted: number }
+>();
+
 for (const [owner, cases] of corpus.byRule) {
   for (const testCase of cases) {
     if (!BUCKETS.has(testCase.bucket)) continue;
@@ -325,6 +346,15 @@ for (const [owner, cases] of corpus.byRule) {
 
     stats.probed++;
     stats.owners.add(owner);
+    const row = perOwner.get(owner) || {
+      probed: 0,
+      rewritten: 0,
+      relinted: 0,
+    };
+    row.probed++;
+    if (outcome.rewritten) row.rewritten++;
+    if (outcome.relinted) row.relinted++;
+    perOwner.set(owner, row);
     if (outcome.rewritten) stats.rewritten++;
     if (outcome.relinted) stats.relinted++;
     if (outcome.residual.length) stats.residualReported++;
@@ -383,6 +413,77 @@ type KnownFatal = {
  * measurement fails.
  */
 const KNOWN_FATAL_OUTPUTS: Record<string, KnownFatal> = {};
+
+/**
+ * Why an owner's fixtures could never have exercised the fix loop, read off the
+ * counters rather than asserted by hand.
+ */
+const UNREWRITTEN_CAUSES = {
+  noCorpus:
+    'the harvest holds no fixture for it, so nothing of its was ever fixed',
+  everyProbeThrew:
+    'every probe of its fixtures threw instead of producing a verdict, so no fix pass completed',
+  noEnabledRuleFixesIt:
+    'no rule in the recommended config emits a fix on any of its fixtures, so `--fix` leaves every one byte-identical and convergence is trivially true',
+} as const;
+type UnrewrittenCause = keyof typeof UNREWRITTEN_CAUSES;
+
+const unrewrittenCauseOf = (owner: string): UnrewrittenCause | null => {
+  const row = perOwner.get(owner);
+  if (!corpus.byRule.has(owner)) return 'noCorpus';
+  if (!row || row.probed === 0) return 'everyProbeThrew';
+  return row.rewritten === 0 ? 'noEnabledRuleFixesIt' : null;
+};
+
+const measuredUnrewritten: Record<string, UnrewrittenCause> =
+  Object.fromEntries(
+    [...corpus.byRule.keys()]
+      .sort()
+      .map((owner) => [owner, unrewrittenCauseOf(owner)] as const)
+      .filter(
+        (entry): entry is readonly [string, UnrewrittenCause] => !!entry[1],
+      ),
+  );
+
+/**
+ * Owners whose fixtures the composed `--fix` never rewrote, each with the
+ * measured cause.
+ *
+ * A fixture `--fix` never touches converges trivially, so an owner appearing
+ * here contributes nothing to the question this file asks — its 45 fixtures are
+ * swept and answer "converged" without a fixer ever having run. That is
+ * legitimate for a rule that declares no fixer and whose fixtures happen to trip
+ * no other enabled rule's, and it is a defect for anything else, which is why
+ * the row below additionally asserts that every entry names a rule with neither
+ * `meta.fixable` nor `meta.hasSuggestions`. A fixable rule landing here would be
+ * #1871's shape — a declared fix channel that its own corpus never exercises —
+ * and must not be absorbed by an exemption written for inert rules.
+ */
+const UNREWRITTEN_OWNERS: Record<string, UnrewrittenCause> = {
+  'array-methods-this-context': 'noEnabledRuleFixesIt',
+  'enforce-f-extension-for-entry-points': 'noEnabledRuleFixesIt',
+  'enforce-firestore-path-utils': 'noEnabledRuleFixesIt',
+  'enforce-realtimedb-path-utils': 'noEnabledRuleFixesIt',
+  'no-async-array-filter': 'noEnabledRuleFixesIt',
+  'no-async-foreach': 'noEnabledRuleFixesIt',
+  'no-filter-without-return': 'noEnabledRuleFixesIt',
+  'no-jsx-whitespace-literal': 'noEnabledRuleFixesIt',
+  'no-memoize-on-static': 'noEnabledRuleFixesIt',
+  'no-misused-switch-case': 'noEnabledRuleFixesIt',
+  'no-separate-loading-state': 'noEnabledRuleFixesIt',
+  'no-try-catch-already-exists-in-transaction': 'noEnabledRuleFixesIt',
+  'prefer-use-theme': 'noEnabledRuleFixesIt',
+  'require-https-error': 'noEnabledRuleFixesIt',
+};
+
+const rewritingMeta = (owner: string) => {
+  const meta = (
+    plugin.rules[owner] as {
+      meta?: { fixable?: unknown; hasSuggestions?: unknown };
+    }
+  )?.meta;
+  return Boolean(meta?.fixable || meta?.hasSuggestions);
+};
 
 describe("the recommended config's --fix reaches a fixpoint", () => {
   it('leaves no fixture with a fix still pending when --fix stops', () => {
@@ -462,6 +563,47 @@ describe("the recommended config's --fix reaches a fixpoint", () => {
 
   it('never let a probe throw instead of producing a verdict', () => {
     expect(stats.threw).toEqual([]);
+  });
+
+  /**
+   * The rule dimension, closed rather than floored. Every rule with a corpus
+   * must have been swept, and every rule whose fixtures the fix pass never
+   * touched must be named with its cause — otherwise a rule going dark is
+   * indistinguishable from a rule whose fixtures all converge.
+   */
+  it('sweeps every rule that has a corpus', () => {
+    expect([...stats.owners].sort()).toEqual([...corpus.byRule.keys()].sort());
+  });
+
+  it('accounts for every owner the fix pass never rewrote', () => {
+    expect(measuredUnrewritten).toEqual(UNREWRITTEN_OWNERS);
+    expect(
+      Object.values(UNREWRITTEN_OWNERS).filter(
+        (cause) => !UNREWRITTEN_CAUSES[cause],
+      ),
+    ).toEqual([]);
+    // A rule that CAN rewrite and never did is #1871's shape, not an inert
+    // rule, and must not retire into a list written for inert ones.
+    expect(Object.keys(UNREWRITTEN_OWNERS).filter(rewritingMeta)).toEqual([]);
+    // An entry naming a rule with no corpus is an exemption nothing can retire.
+    expect(
+      Object.keys(UNREWRITTEN_OWNERS).filter(
+        (owner) => !corpus.byRule.has(owner),
+      ),
+    ).toEqual([]);
+  });
+
+  /**
+   * Per rule, as its own row: a green row over a rule whose fixtures `--fix`
+   * never touched names the rule in the jest output and reads as evidence it
+   * was checked (#1861).
+   */
+  it.each(
+    [...corpus.byRule.keys()]
+      .sort()
+      .filter((owner) => !(owner in UNREWRITTEN_OWNERS)),
+  )('drove the fix loop over %s', (owner) => {
+    expect(perOwner.get(owner)?.rewritten || 0).toBeGreaterThan(0);
   });
 
   it('actually fixed the corpus it swept (non-vacuity)', () => {
