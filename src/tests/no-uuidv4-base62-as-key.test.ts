@@ -290,6 +290,59 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
       <div key={formatKey(item)}>{item.name}</div>
     ))}
     `,
+
+    // Reading a key through an optional chain is not by itself a violation:
+    // the producer mints its keys from the data, so the chained read stays
+    // silent. Reading through \`?.\` must not become a blanket report.
+    `
+    import React from 'react';
+
+    const List = ({ data }) => {
+      const rows = data?.map((row) => ({ ...row, key: row.id }));
+      return <>{rows?.map((row) => (<div key={row?.key}>{row.name}</div>))}</>;
+    };
+    `,
+
+    // A chained producer that mints a UUID into a property other than \`key\`,
+    // consumed through a stable chained key read.
+    `
+    import React from 'react';
+    import { uuidv4Base62 } from '@blumint/utils/uuidv4Base62';
+
+    const List = ({ data }) => {
+      const rows = data?.map((row) => ({ ...row, traceId: uuidv4Base62() }));
+      return <>{rows?.map((row) => (<div key={row?.id}>{row.name}</div>))}</>;
+    };
+    `,
+
+    // A chained map over the raw data with a stable key.
+    `
+    import React from 'react';
+
+    {items?.map((item) => (
+      <div key={item?.id}>{item.name}</div>
+    ))}
+    `,
+
+    // An optional-called formatter is only a violation when what it formats
+    // comes from uuidv4Base62().
+    `
+    import React from 'react';
+
+    const List = ({ items, formatKey }) => (
+      <>{items.map((item) => (<div key={formatKey?.(item.id)}>{item.name}</div>))}</>
+    );
+    `,
+
+    // A different helper stays a different helper when it is optional-called.
+    `
+    import React from 'react';
+    import { uuidv4Base62Stable } from '../../util/uuidv4Base62Stable';
+
+    const List = ({ items }) => (
+      <>{items.map((item) => (<div key={uuidv4Base62Stable?.(item)}>{item.name}</div>))}</>
+    );
+    `,
   ],
   invalid: [
     // Basic case using uuidv4Base62 as key
@@ -786,6 +839,100 @@ const List = ({ items }) => (
       ))}
       `,
       errors: [error('makeKey(item)')],
+    },
+
+    // An optional chain on the PRODUCER hides nothing about the key: when the
+    // data is present the map still mints a fresh UUID per render, and when it
+    // is absent no row renders at all.
+    {
+      code: `
+      import React from 'react';
+      import { uuidv4Base62 } from '@blumint/utils/uuidv4Base62';
+
+      const List = ({ data }) => {
+        const rows = data?.map((row) => ({ ...row, key: uuidv4Base62() }));
+        return <>{rows.map((row) => (<div key={row.key}>{row.name}</div>))}</>;
+      };
+      `,
+      errors: [error('row.key')],
+    },
+
+    // An optional chain on the KEY READ resolves either to the pre-generated
+    // UUID or to undefined, and undefined is a worse React key than the UUID.
+    {
+      code: `
+      import React from 'react';
+      import { uuidv4Base62 } from '@blumint/utils/uuidv4Base62';
+
+      const List = ({ data }) => {
+        const rows = data.map((row) => ({ ...row, key: uuidv4Base62() }));
+        return <>{rows.map((row) => (<div key={row?.key}>{row.name}</div>))}</>;
+      };
+      `,
+      errors: [error('row?.key')],
+    },
+
+    // Producer, consumer and key read all chained: the spelling a defensive
+    // component actually carries.
+    {
+      code: `
+      import React from 'react';
+      import { uuidv4Base62 } from '@blumint/utils/uuidv4Base62';
+
+      const List = ({ data }) => {
+        const rows = data?.map((row) => ({ ...row, key: uuidv4Base62() }));
+        return <>{rows?.map((row) => (<div key={row?.key}>{row.name}</div>))}</>;
+      };
+      `,
+      errors: [error('row?.key')],
+    },
+
+    // Chaining only the CONSUMER already reported: pinned so the fix for the
+    // other two positions cannot regress it.
+    {
+      code: `
+      import React from 'react';
+      import { uuidv4Base62 } from '@blumint/utils/uuidv4Base62';
+
+      const List = ({ data }) => {
+        const rows = data.map((row) => ({ ...row, key: uuidv4Base62() }));
+        return <>{rows?.map((row) => (<div key={row.key}>{row.name}</div>))}</>;
+      };
+      `,
+      errors: [error('row.key')],
+    },
+
+    // An optional-called formatter still evaluates its argument on the branch
+    // that runs, so the UUID is minted per render exactly as before.
+    {
+      code: `
+      import React from 'react';
+      import { uuidv4Base62 } from '@blumint/utils/uuidv4Base62';
+
+      const List = ({ items, formatKey }) => (
+        <>{items.map((item) => (<div key={formatKey?.(uuidv4Base62())}>{item.name}</div>))}</>
+      );
+      `,
+      errors: [error('formatKey?.(uuidv4Base62())')],
+    },
+
+    // The key value reaches the object through a local binding, so only the
+    // name-keyed path recognizes the producer — it must read through the chain
+    // too, or the chained spelling is judged differently from the plain one.
+    {
+      code: `
+      import React from 'react';
+      import { uuidv4Base62 } from '@blumint/utils/uuidv4Base62';
+
+      const List = ({ items }) => {
+        const itemKeys = items?.map((item) => {
+          const key = uuidv4Base62();
+          return { ...item, key };
+        });
+        return <>{itemKeys.map((item) => (<div key={item.key}>{item.name}</div>))}</>;
+      };
+      `,
+      errors: [error('item.key')],
     },
   ],
 });

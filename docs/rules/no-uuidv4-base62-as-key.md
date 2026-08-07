@@ -12,6 +12,8 @@ React reconciliation depends on stable keys to preserve component identity. Keys
 
 The helper is recognized through any import whose final path segment names its module — a relative path, a project alias, and a package subpath all reach the same function — as well as through the shared utils barrel that re-exports it. The segment must match in full, so a neighbouring helper such as `uuidv4Base62Stable` is left alone, and the imported binding still decides: a module that exports something else contributes nothing, while a local alias (`import { uuidv4Base62 as makeKey }`) is tracked under its alias.
 
+An optional chain does not exempt the pattern. `data?.map((row) => ({ ...row, key: uuidv4Base62() }))` and `key={row?.key}` are read through to the call or member access they hold, because the optional link only decides whether the list renders at all: on the branch that renders, the keys are the same per-render UUIDs, and on the branch that does not, the key is `undefined` — a worse React key, never an acceptable one.
+
 ### How to fix
 
 - Use a stable identifier from the data: database id, slug, or another persistent field.
@@ -32,6 +34,11 @@ import { uuidv4Base62 } from '@blumint/utils/uuidv4Base62';
 const itemKeys = items.map((item) => ({ ...item, key: uuidv4Base62() }));
 {itemKeys.map((item) => (
   <div key={item.key}>{item.name}</div>
+))}
+
+const rows = data?.map((row) => ({ ...row, key: uuidv4Base62() }));
+{rows?.map((row) => (
+  <div key={row?.key}>{row.name}</div>
 ))}
 ```
 
