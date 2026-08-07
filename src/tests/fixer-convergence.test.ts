@@ -1,9 +1,11 @@
 import { Linter } from 'eslint';
 import {
-  FALLBACK_FILENAMES,
   FixtureCase,
   defaultFilenameFor,
+  defineCorpusParsers,
+  fallbackFilenamesFor,
   harvestFixtureCorpus,
+  parserKeyFor,
   parserOptionsFor,
   severityWithOptions,
   silentWithoutProgramRuleNames,
@@ -15,9 +17,6 @@ import {
 const plugin = require('..') as {
   rules: Record<string, { meta?: Record<string, unknown> }>;
 };
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const tsParser = require('@typescript-eslint/parser');
-
 const PREFIX = '@blumintinc/blumint/';
 
 /**
@@ -62,11 +61,15 @@ const linter = new Linter();
 for (const [name, rule] of Object.entries(plugin.rules)) {
   linter.defineRule(PREFIX + name, rule as never);
 }
-linter.defineParser('ts', tsParser);
+defineCorpusParsers(linter);
 
 const configFor = (rule: string, testCase: FixtureCase): Linter.Config =>
   ({
-    parser: 'ts',
+    // The fixture's OWN parser. Convergence is a property of the fix loop, not
+    // of TypeScript, and the two rules whose only fixtures are JSON and
+    // Markdown ship `fixable: 'code'` — under the TypeScript parser their input
+    // is a fatal, no fix is ever offered, and the loop goes unexercised (#1860).
+    parser: parserKeyFor(testCase),
     parserOptions: parserOptionsFor(testCase),
     rules: { [PREFIX + rule]: severityWithOptions(testCase) },
   } as Linter.Config);
@@ -322,7 +325,9 @@ for (const rule of fixableRules) {
   if (result.checked === 0) {
     for (const testCase of cases) {
       if (testCase.filename) continue;
-      for (const filename of FALLBACK_FILENAMES) probe(testCase, filename);
+      for (const filename of fallbackFilenamesFor(testCase)) {
+        probe(testCase, filename);
+      }
     }
   }
 
@@ -372,10 +377,6 @@ const reasonFor = (rule: string): Reason => {
  * .toBe('')`.
  */
 const UNREACHED_FIXERS: Record<string, Reason> = {
-  // Its fixtures are markdown, declared under `ruleTesterMarkdown`.
-  'enforce-typescript-markdown-code-blocks': REASONS.noFixtures,
-  // Its fixtures are `package.json` bodies, declared under `ruleTesterJson`.
-  'no-unpinned-dependencies': REASONS.noFixtures,
   // Reports 4 times here and offers no fix. Its 105 fixtures declare
   // `parserOptions.project` against the repo tsconfig, which the corpus strips;
   // the isolated program that remains resolves the returned expression to `any`,
@@ -414,7 +415,9 @@ for (const rule of suggestionRules) {
   if (applied === 0) {
     for (const testCase of cases) {
       if (testCase.filename) continue;
-      for (const filename of FALLBACK_FILENAMES) probe(testCase, filename);
+      for (const filename of fallbackFilenamesFor(testCase)) {
+        probe(testCase, filename);
+      }
     }
   }
   suggestionResults.set(rule, { applied, findings });

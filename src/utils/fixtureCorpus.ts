@@ -59,6 +59,17 @@ export function harvestOnce(): HarvestResult {
  */
 export type FixtureBucket = 'valid' | 'invalid' | 'output';
 
+/**
+ * The language a fixture is written in, which is what picks its parser and the
+ * extension of the filename it is probed under.
+ *
+ * A fixture's language is a property of the TESTER that declared it, not of the
+ * rule: `ruleTesterJson` fixes `jsonc-eslint-parser` and `ruleTesterMarkdown`
+ * fixes `markdown-eslint-parser`, and a rule may declare suites under more than
+ * one (`prefer-nullish-coalescing-boolean-props` declares both TS and JSON).
+ */
+export type FixtureLanguage = 'ts' | 'json' | 'markdown';
+
 export type FixtureCase = {
   code: string;
   /** Only when the case declares one; a guard supplies its own default. */
@@ -67,6 +78,8 @@ export type FixtureCase = {
   parserOptions?: Record<string, unknown>;
   /** Which shared tester declared it, which fixes the parser. */
   tester: string;
+  /** The tester's language, so a guard can select the matching parser. */
+  language: FixtureLanguage;
   /** Declaring suite file, so a finding is reproducible by hand. */
   origin: string;
   bucket: FixtureBucket;
@@ -76,7 +89,7 @@ export type FixtureCorpus = {
   byRule: Map<string, FixtureCase[]>;
   /** Suites whose rule object is not in the plugin's map, `file::name`. */
   suitesDropped: string[];
-  /** Suites skipped for declaring under a non-TypeScript tester. */
+  /** Suites harvested under a non-TypeScript parser, `file::name`. */
   suitesNonTs: string[];
   suitesUsed: number;
   totalCases: number;
@@ -85,11 +98,69 @@ export type FixtureCorpus = {
   failures: string[];
 };
 
-/**
- * `ruleTesterJson` and `ruleTesterMarkdown` parse a different language, so their
- * fixtures cannot be linted by the TypeScript parser these guards configure.
- */
+/** The testers whose parser is `@typescript-eslint/parser`. */
 export const TS_TESTERS = new Set(['ruleTesterTs', 'ruleTesterJsx']);
+
+/**
+ * Every shared tester, mapped to the language its parser reads.
+ *
+ * The non-TS testers used to be DISCARDED here, which cost two registered rules
+ * their entire corpus: `no-unpinned-dependencies` declares only under
+ * `ruleTesterJson` and `enforce-typescript-markdown-code-blocks` only under
+ * `ruleTesterMarkdown`, so both had zero fixtures while every harvest-based
+ * guard iterated over them, found nothing to drive, and passed. Both ship
+ * `recommended: 'error'` with `fixable: 'code'` — they autofix consumer code and
+ * no repo-wide guard had ever exercised them (#1860).
+ *
+ * Carrying the language rather than dropping the case is what makes them
+ * probeable without manufacturing noise: a JSON fixture handed to
+ * `@typescript-eslint/parser` under a `.tsx` filename is a FATAL parse, and
+ * since every consumer filters messages by `ruleId`, that fatal is
+ * indistinguishable from the rule staying silent. A guard reads the language,
+ * picks the parser with `parserKeyFor` and the extension with
+ * `defaultFilenameFor`, and the fixture is linted as its author wrote it.
+ *
+ * `src/tests/fixture-corpus-accounting.test.ts` asserts this map covers every
+ * tester `ruleTester.ts` exports, so adding a tester without a language here
+ * fails the build instead of silently reinstating the drop.
+ */
+export const LANGUAGE_BY_TESTER: Record<string, FixtureLanguage> = {
+  ruleTesterTs: 'ts',
+  ruleTesterJsx: 'ts',
+  ruleTesterJson: 'json',
+  ruleTesterMarkdown: 'markdown',
+};
+
+/** The parser module each language is parsed with. */
+export const PARSER_MODULE_BY_LANGUAGE: Record<FixtureLanguage, string> = {
+  ts: '@typescript-eslint/parser',
+  json: 'jsonc-eslint-parser',
+  markdown: 'markdown-eslint-parser',
+};
+
+/**
+ * The `Linter` parser key a case must be linted under. Guards register the
+ * parsers with `defineCorpusParsers` and then pass this as `parser`, so a case
+ * is never parsed by a parser for another language.
+ */
+export const parserKeyFor = (testCase: FixtureCase): FixtureLanguage =>
+  testCase.language;
+
+/**
+ * Registers every corpus parser on a `Linter` under its language key.
+ *
+ * Required lazily so the published `lib/` does not pull the JSON and Markdown
+ * parsers into a consumer's process: only guards call this.
+ */
+export function defineCorpusParsers(linter: Linter): void {
+  for (const [language, moduleId] of Object.entries(
+    PARSER_MODULE_BY_LANGUAGE,
+  )) {
+    /* eslint-disable @typescript-eslint/no-var-requires */
+    linter.defineParser(language, require(moduleId));
+    /* eslint-enable @typescript-eslint/no-var-requires */
+  }
+}
 
 /**
  * Parser options that build a TypeScript PROGRAM. A guard driving a bare
@@ -192,6 +263,62 @@ export const typeAwareRuleNames = new Set(
 export const silentWithoutProgramRuleNames = new Set<string>([]);
 
 /**
+ * Registered rules allowed to have NO fixture in the corpus, each with the
+ * reason.
+ *
+ * A rule with no corpus is the worst possible state for a harvest-based guard:
+ * seventeen of them iterate `byRule`, find nothing to drive, and pass. The rule
+ * is counted as covered while asserting nothing, and nothing in the build says
+ * so. That is exactly how `no-unpinned-dependencies` and
+ * `enforce-typescript-markdown-code-blocks` — both `recommended: 'error'`, both
+ * `fixable: 'code'` — went unexercised (#1860).
+ *
+ * EMPTY BY DESIGN. Every registered rule has fixtures. This is kept as the place
+ * an exemption must be written so that a rule dropping out of the corpus is a
+ * named, reviewable act rather than a silent absence.
+ * `src/tests/fixture-corpus-accounting.test.ts` closes both directions: an
+ * unlisted rule with no corpus fails, and a listed rule that HAS a corpus fails
+ * as a stale entry.
+ */
+export const rulesWithoutCorpus = new Map<string, string>([]);
+
+/**
+ * Harvested suites whose `rule` object is not a registered plugin rule, each
+ * with the reason it is not one.
+ *
+ * `suitesDropped` is otherwise a silent hole in the corpus: a suite whose rule
+ * fails identity lookup contributes nothing, and a real rule that stopped being
+ * exported from `src/index.ts` would land here and take its whole fixture set
+ * out of every guard without failing anything. Every entry is an inline
+ * throwaway rule object declared in the suite itself, which is legitimate — and
+ * asserted, so a registered rule can never join them unnoticed.
+ *
+ * Keyed `<suite file>::<display name passed to run>`.
+ */
+export const suitesWithoutRegisteredRule = new Map<string, string>([
+  [
+    'no-restricted-properties-object-keys-values.test.ts::no-restricted-properties-object-keys-values',
+    "declares an inline no-op rule to demonstrate a CORE rule's behaviour on Object.keys()/values(); nothing in this plugin is under test",
+  ],
+  [
+    'rule-tester-parse-mode.test.ts::shared-tester-ts-parses-as-module',
+    'declares an inline probe rule that asserts the shared tester parses as an ES module; it pins parser configuration, not a plugin rule',
+  ],
+  [
+    'rule-tester-parse-mode.test.ts::shared-tester-ts-has-no-global-top-level-bindings',
+    'declares an inline probe rule that asserts top-level bindings land in a module scope, not the global one',
+  ],
+  [
+    'rule-tester-parse-mode.test.ts::shared-tester-jsx-parses-as-module',
+    'the JSX tester arm of the same parse-mode probe',
+  ],
+  [
+    'rule-tester-parse-mode.test.ts::shared-tester-jsx-has-no-global-top-level-bindings',
+    'the JSX tester arm of the same scope-shape probe',
+  ],
+]);
+
+/**
  * Rule name resolved by OBJECT IDENTITY, never by the display name `run`
  * received: ~100 of the ~310 suites pass a name that is not a rule name
  * (`requireMemo`, `prefer-next-dynamic (JSX scenarios)`), and name-keyed
@@ -258,6 +385,15 @@ const extensionFor = (code: string, preferred: string): string => {
  */
 export const defaultFilenameFor = (testCase: FixtureCase) => {
   if (testCase.filename) return testCase.filename;
+  /**
+   * A non-TS fixture gets the name its language is actually gated on rather
+   * than an extension-corrected `.ts`: `no-unpinned-dependencies` reads a
+   * dependency map, and `enforce-typescript-markdown-code-blocks` returns an
+   * empty visitor for any path not ending `.md`, so a wrong extension makes the
+   * rule silent on its own fixtures.
+   */
+  if (testCase.language === 'json') return 'package.json';
+  if (testCase.language === 'markdown') return 'docs/example.md';
   const jsxTester = testCase.tester === 'ruleTesterJsx';
   const basename = jsxTester ? 'react' : 'file';
   return `${basename}${extensionFor(
@@ -289,13 +425,33 @@ export const FALLBACK_FILENAMES = [
 ];
 
 /**
+ * The fan-out above is a list of TypeScript paths, so a JSON or Markdown case
+ * re-probed under it would be parsed as TypeScript and read as a rule that fell
+ * silent. Each non-TS language gets the paths its own rules are gated on.
+ */
+const FALLBACK_FILENAMES_BY_LANGUAGE: Record<FixtureLanguage, string[]> = {
+  ts: FALLBACK_FILENAMES,
+  json: ['/repo/package.json', '/repo/functions/package.json'],
+  markdown: ['/repo/README.md', '/repo/docs/rules/example.md'],
+};
+
+export const fallbackFilenamesFor = (testCase: FixtureCase) =>
+  FALLBACK_FILENAMES_BY_LANGUAGE[testCase.language];
+
+/**
  * The parser options a case is probed under: the harness's own, overridden by
  * whatever the fixture declared, with `jsx` merged rather than replaced so a
  * case that declares an unrelated `ecmaFeatures` does not silently turn JSX
  * parsing off for itself.
+ *
+ * A non-TS case gets only what its own tester declares. `sourceType: 'module'`
+ * and a JSX `ecmaFeatures` mean nothing to the JSON and Markdown parsers, and
+ * the baseline `ecmaVersion` is the one `ruleTesterJson` itself sets.
  */
 export const parserOptionsFor = (testCase: FixtureCase) => {
   const declared = testCase.parserOptions || {};
+  if (testCase.language === 'json') return { ecmaVersion: 2020, ...declared };
+  if (testCase.language === 'markdown') return { ...declared };
   const features = (declared.ecmaFeatures || {}) as Record<string, unknown>;
   return {
     ecmaVersion: 2022,
@@ -425,9 +581,14 @@ export function harvestFixtureCorpus(): FixtureCorpus {
       suitesDropped.push(`${suite.file}::${suite.name}`);
       continue;
     }
+    /**
+     * Recorded, not skipped. A non-TS suite carries its language on every case
+     * so a guard can lint it with the parser its author declared; discarding it
+     * is what left two registered rules with no corpus at all (#1860).
+     */
+    const language = LANGUAGE_BY_TESTER[suite.tester] ?? 'ts';
     if (!TS_TESTERS.has(suite.tester)) {
       suitesNonTs.push(`${suite.file}::${suite.name}`);
-      continue;
     }
     suitesUsed++;
 
@@ -435,7 +596,9 @@ export function harvestFixtureCorpus(): FixtureCorpus {
     /**
      * Deduped on the whole configuration, not on the code: the same snippet
      * probed under different options is a different probe, and several suites
-     * declare exactly that pair to pin an option's effect.
+     * declare exactly that pair to pin an option's effect. The language is part
+     * of the configuration — the same text is a different probe under a
+     * different parser.
      */
     const keyOf = (testCase: FixtureCase) =>
       JSON.stringify([
@@ -443,6 +606,7 @@ export function harvestFixtureCorpus(): FixtureCorpus {
         testCase.options,
         testCase.filename,
         testCase.parserOptions,
+        testCase.language,
       ]);
     const seen = new Set(cases.map(keyOf));
 
@@ -460,6 +624,7 @@ export function harvestFixtureCorpus(): FixtureCorpus {
           : undefined,
         parserOptions,
         tester: suite.tester,
+        language,
         origin: suite.file,
         bucket,
       };

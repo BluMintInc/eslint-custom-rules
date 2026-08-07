@@ -505,6 +505,31 @@ const guardedRuleNames = [...ruleByName.keys()]
   .filter((name) => !silentWithoutProgramRuleNames.has(name))
   .sort();
 
+/**
+ * Fixtures this perturbation cannot be applied to, named per (guard, rule) with
+ * the reason.
+ *
+ * The probe inserts `?.` into a TypeScript member expression and asks whether
+ * the rule's verdict survives. A `package.json` body and a Markdown document
+ * have no member expressions and no TypeScript AST, so a case in either
+ * language cannot pose that question. Skipping them by LANGUAGE rather than by
+ * parse failure is what keeps the skip honest: a Markdown fence is an empty
+ * template literal, so several of those fixtures do parse as TypeScript and
+ * would otherwise answer a syntax question by accident (#1860).
+ *
+ * A rule-global exclusion would be the wrong instrument — it would un-gate
+ * every other arm these rules participate in (#1839) — so the entry lives here,
+ * scoped to this guard, and is asserted in both directions below.
+ */
+const NON_TYPESCRIPT_FIXTURES: Record<string, string> = {
+  'enforce-typescript-markdown-code-blocks':
+    'declares only Markdown documents, under ruleTesterMarkdown',
+  'no-unpinned-dependencies':
+    'declares only package.json bodies, under ruleTesterJson',
+  'prefer-nullish-coalescing-boolean-props':
+    'declares one package.json body under ruleTesterJson alongside its TypeScript fixtures',
+};
+
 describe('optional-chaining closure', () => {
   const corpus = harvestFixtureCorpus();
 
@@ -519,10 +544,17 @@ describe('optional-chaining closure', () => {
   let skippedBaselineFatal = 0;
   let skippedVariantFatal = 0;
   let skippedNoAst = 0;
+  let skippedNonTypeScript = 0;
+  const rulesWithNonTypeScriptFixtures = new Set<string>();
 
   beforeAll(() => {
     for (const rule of guardedRuleNames) {
       for (const testCase of corpus.byRule.get(rule) || []) {
+        if (testCase.language !== 'ts') {
+          skippedNonTypeScript++;
+          rulesWithNonTypeScriptFixtures.add(rule);
+          continue;
+        }
         const filename = testCase.filename ?? defaultFilenameFor(testCase);
         const jsx = filename.endsWith('x');
         const baselineErrors = parseErrorCount(testCase.code, filename);
@@ -633,6 +665,20 @@ describe('optional-chaining closure', () => {
       skippedVariantFatal: 0,
     });
     expect(skippedBaselineUnparsable).toBeLessThan(5);
+  });
+
+  /**
+   * The non-TypeScript skip, asserted both ways. An unlisted rule whose
+   * fixtures get skipped would be a silent loss of coverage; a listed rule
+   * whose fixtures stop being skipped is a dead entry that would absorb the
+   * next one. The count floor makes the whole check non-vacuous — a skip that
+   * stopped firing would satisfy the set equality trivially.
+   */
+  it('skips only the named non-TypeScript fixtures', () => {
+    expect([...rulesWithNonTypeScriptFixtures].sort()).toEqual(
+      Object.keys(NON_TYPESCRIPT_FIXTURES).sort(),
+    );
+    expect(skippedNonTypeScript).toBeGreaterThan(0);
   });
 
   it('no rule changes its verdict under optional chaining', () => {

@@ -447,6 +447,8 @@ const transformingRules = Object.keys(plugin.rules)
 
 type RuleResult = {
   cases: number;
+  /** Fixtures excluded for not being TypeScript, so the reason can say so. */
+  nonTypeScript: number;
   reach: Reach;
   probed: number;
   captures: Capture[];
@@ -455,7 +457,17 @@ type RuleResult = {
 const results = new Map<string, RuleResult>();
 
 for (const rule of transformingRules) {
-  const cases = corpus.byRule.get(rule) || [];
+  const declared = corpus.byRule.get(rule) || [];
+  /**
+   * TypeScript fixtures only. A shadow is a lexical binding injected into a
+   * function block, and neither JSON nor Markdown has either, so a case in
+   * those languages cannot pose this guard's question. Excluding them by
+   * language rather than by parse failure is what keeps the answer honest:
+   * several Markdown fixtures happen to be legal TypeScript (a fence is an
+   * empty template literal), so leaving them in let them answer a scope
+   * question by accident (#1860).
+   */
+  const cases = declared.filter((testCase) => testCase.language === 'ts');
   let reach = triggersFor(
     rule,
     cases.map((testCase) => ({
@@ -482,7 +494,13 @@ for (const rule of transformingRules) {
     );
   }
   const { captures, probed } = capturesFor(rule, reach.triggers);
-  results.set(rule, { cases: cases.length, reach, probed, captures });
+  results.set(rule, {
+    cases: cases.length,
+    nonTypeScript: declared.length - cases.length,
+    reach,
+    probed,
+    captures,
+  });
 }
 
 const totalProbed = [...results.values()].reduce((a, r) => a + r.probed, 0);
@@ -502,6 +520,8 @@ const rulesProbed = [...results.values()].filter((r) => r.probed > 0).length;
  */
 const REASONS = {
   noFixtures: 'declares no fixture this TypeScript harness can lint',
+  nonTypeScript:
+    'declares only JSON or Markdown fixtures, which have no lexical scope for a shadow to stand in',
   // Held for a rule that measurably produces nothing here. The old wording
   // ("is type-aware, and a bare Linter has no program") was a premise, not a
   // measurement, and a false one: the parser builds an isolated program and all
@@ -522,8 +542,10 @@ type Reason = typeof REASONS[keyof typeof REASONS];
 
 /** Only meaningful for a rule with no probe; the branches narrow toward one. */
 const unprobedReasonFor = (rule: string): Reason => {
-  const { cases, reach } = results.get(rule)!;
-  if (cases === 0) return REASONS.noFixtures;
+  const { cases, nonTypeScript, reach } = results.get(rule)!;
+  if (cases === 0) {
+    return nonTypeScript > 0 ? REASONS.nonTypeScript : REASONS.noFixtures;
+  }
   // Undrivability outranks the report counts: a rule that produces nothing at
   // all here says nothing about itself, so its counts are not evidence.
   if (reach.actionable === 0) {
@@ -555,9 +577,15 @@ const observedUnprobed = Object.fromEntries(
  * are indistinguishable from that one until each rule is named with its reason.
  */
 const UNPROBED_RULES: Record<string, Reason> = {
-  // Fixtures no TypeScript parser can lint: markdown and JSON testers.
-  'enforce-typescript-markdown-code-blocks': REASONS.noFixtures,
-  'no-unpinned-dependencies': REASONS.noFixtures,
+  /**
+   * Their fixtures are Markdown documents and `package.json` bodies. Both rules
+   * are probed here for what this guard can ask of them — nothing: a shadow is
+   * an inner binding that re-resolves an emitted reference, and neither
+   * language has a binding or a function block. Their fixers are exercised by
+   * `fixer-convergence` and their messages by `message-render-integrity`.
+   */
+  'enforce-typescript-markdown-code-blocks': REASONS.nonTypeScript,
+  'no-unpinned-dependencies': REASONS.nonTypeScript,
 
   // Reports here but offers no transform. Its 105 fixtures declare
   // `parserOptions.project` against the repo tsconfig, which the corpus strips;

@@ -88,10 +88,11 @@
  * since a partial sweep that reads as complete is worse than no sweep.
  */
 import { Linter, Rule } from 'eslint';
-import * as tsParser from '@typescript-eslint/parser';
 import {
   harvestFixtureCorpus,
   defaultFilenameFor,
+  defineCorpusParsers,
+  parserKeyFor,
   parserOptionsFor,
   severityWithOptions,
   ruleNameByIdentity,
@@ -108,7 +109,7 @@ const plugin = require('../index') as {
 const PREFIX = '@blumintinc/blumint/';
 
 const linter = new Linter();
-linter.defineParser('ts', tsParser as never);
+defineCorpusParsers(linter);
 for (const [rule, name] of ruleNameByIdentity) {
   linter.defineRule(`${PREFIX}${name}`, rule as never);
 }
@@ -297,7 +298,10 @@ for (const [owner, cases] of corpus.byRule) {
     // The owner's own entry carries the OPTIONS its author wrote; without them
     // the fixture is probed under a configuration nobody declared (#1732).
     const config = {
-      parser: 'ts',
+      // The fixture's own parser. A JSON or Markdown fixture read as TypeScript
+      // is a fatal that this sweep would record as `--fix` corrupting a file,
+      // when nothing had been fixed at all (#1860).
+      parser: parserKeyFor(testCase),
       parserOptions: parserOptionsFor(testCase),
       rules: {
         ...RECOMMENDED,

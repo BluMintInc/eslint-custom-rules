@@ -33,10 +33,11 @@
  * silent.
  */
 import { Linter } from 'eslint';
-import * as tsParser from '@typescript-eslint/parser';
 import {
   harvestFixtureCorpus,
   defaultFilenameFor,
+  defineCorpusParsers,
+  parserKeyFor,
   parserOptionsFor,
   severityWithOptions,
   typeAwareRuleNames,
@@ -50,7 +51,7 @@ const ruleByName = new Map<string, unknown>(
 );
 
 const linter = new Linter();
-linter.defineParser('ts', tsParser as never);
+defineCorpusParsers(linter);
 for (const [name, rule] of ruleByName) {
   linter.defineRule(`b/${name}`, rule as never);
 }
@@ -69,7 +70,10 @@ const lintOne = (id: string, testCase: FixtureCase) =>
   linter.verify(
     testCase.code,
     {
-      parser: 'ts',
+      // The fixture's own parser. Drivability is asked of every language the
+      // corpus carries, and a JSON fixture read as TypeScript is a fatal that
+      // this measurement would count as the rule staying silent (#1860).
+      parser: parserKeyFor(testCase),
       parserOptions: parserOptionsFor(testCase),
       rules: { [id]: severityWithOptions(testCase) },
     },
@@ -210,6 +214,7 @@ describe('controls: this harness can both report and stay silent', () => {
   const asCase = (code: string): FixtureCase => ({
     code,
     tester: 'ruleTesterJsx',
+    language: 'ts',
     origin: 'type-aware-drivability.test.ts',
     bucket: 'invalid',
   });
