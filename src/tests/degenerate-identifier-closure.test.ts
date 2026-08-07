@@ -16,8 +16,8 @@
  * ingredient is PERTURBATION: make the input degenerate first, then ask whether
  * the fixer still emits code.
  *
- * It takes TWO arms to cover the three defects, because they degenerate in
- * different places and fail in different ways (#1818):
+ * It takes TWO perturbations to cover the three defects, because they degenerate
+ * in different places and fail in different ways (#1818):
  *
  * - **Rename a declared binding** to `_`, `_1`, `_2fa`, `$` and require the
  *   output to PARSE. This reaches #1816, whose derived text is not a legal
@@ -36,32 +36,97 @@
  * acceptance test for this file; a planted control alone would not have shown
  * it, since a plant passes even when the corpus reaches no real rule.
  *
- * Three accounting rules make the result mean something:
+ * Each perturbation is applied to BOTH channels a rule can rewrite code
+ * through, because `verifyAndFix` never applies a suggestion: a rule with
+ * `meta.hasSuggestions` offers edits that `--fix` will not take and that a
+ * fix-only sweep therefore never inspects, while a user accepting one in an
+ * editor gets exactly the same file on disk. Seven rules offer them, and under
+ * degenerate input they emit thousands of name-inventing edits (#1862, #1419).
+ *
+ * ## What counts as a binding
+ *
+ * The collector walks the SCOPE MANAGER's variables rather than enumerating
+ * declaration node types by hand. The hand-written list is what made the gap
+ * possible: it recognized `VariableDeclarator`, `FunctionDeclaration` and
+ * `ClassDeclaration`, because #1816's defect sat on a `const`, and so it never
+ * degenerated a parameter, a destructured name, an import specifier, a type
+ * alias, an interface, an enum, a type parameter or a catch clause — 2,565 of
+ * 3,358 invalid fixtures carried a binding it could not see (#1862). A rule that
+ * derives a name from a PARAMETER or an IMPORT is exactly as capable of emitting
+ * a leading-digit identifier as one deriving from a `const`, and the corpus is
+ * full of both. Asking the scope analyzer means a binding form the plugin has
+ * never met is covered on the day it appears.
+ *
+ * Class and interface MEMBERS are collected separately and deliberately: they
+ * are not lexical bindings, so no scope holds them, yet several fixers derive a
+ * name from a method or property key (`prefer-getter-over-parameterless-method`
+ * turns `getFoo` into `foo`). Their rename rewrites every property-position
+ * occurrence of the name in the file, which is what keeps declaration and use
+ * sites in agreement.
+ *
+ * ## Renaming must produce a program
+ *
+ * A perturbation that breaks the input is a bug in the harness, not a finding
+ * about the fixer, so the rename is precise rather than textual:
+ *
+ * - Every definition AND every reference the scope manager resolved is
+ *   rewritten together. A binding renamed at its declaration alone is a
+ *   stranded reference, which is a different program than the one the fixture
+ *   author wrote.
+ * - Only the identifier's own token is replaced. A TSESTree `Identifier` range
+ *   spans its type annotation (`z: T1`), so replacing the whole range deletes
+ *   the annotation and quietly changes what the rule is looking at (#1351).
+ * - Shorthand is EXPANDED, not overwritten: `{ a }` becomes `{ a: _ }`,
+ *   `import { Foo }` becomes `import { Foo as _ }` and `export { a }` becomes
+ *   `export { _ as a }`. Overwriting instead renames the property being read or
+ *   the module contract being imported, which is a different fixture rather
+ *   than a degenerate one.
+ * - A JSX closing tag is rewritten only when it PAIRS with an opening tag that
+ *   is itself a reference to the binding. Rewriting every closing tag with a
+ *   matching name renames `</button>` when a variable happens to be called
+ *   `button`, and the mismatched pair no longer parses — 8 perturbations
+ *   discarded themselves that way before the pairing was added.
+ * - Every rewrite site is verified to actually hold the name before use, and a
+ *   binding that fails is COUNTED (`discardedUnrenamable`) rather than skipped
+ *   silently, so a scope-manager shape this harness cannot express shows up as a
+ *   number instead of as absence.
+ *
+ * The perturbation is still allowed to change MEANING — it may collide with an
+ * existing binding of the same degenerate name. That is sound here because the
+ * assertion is not "the fix is correct" but "the fix is *syntax*" and "the fix
+ * carries the author's content", neither of which any input licenses a fixer to
+ * violate.
+ *
+ * Four accounting rules make the result mean something:
  *
  * - The floor is on inputs actually REWRITTEN, not inputs considered. A
  *   perturbation pass that triggers no fixer proves nothing, and a
  *   considered-count hides that ([[floor-the-asserted-not-examined-count]]).
  *   For the literal arm the load-bearing floor is stricter still: a control run
  *   that actually INVENTED a name, which is the only evidence the sweep reached
- *   a derive-from-text fixer rather than merely rewriting near one.
+ *   a derive-from-text fixer rather than merely rewriting near one. For the
+ *   widened collector it is stricter again: every binding KIND must be shown to
+ *   have driven a fixer, since a count of 34,000 rewrites says nothing about
+ *   whether any of them came from a parameter.
  * - Validity is `ts.createSourceFile(...).parseDiagnostics`, never a reparse:
  *   `typescript-estree` recovers from syntax errors and hands back a tree, so a
  *   corrupt rewrite would read as clean.
  * - A pair that fails to parse is SKIPPED, never scored. Treating an unreadable
  *   baseline as "no identifiers" reports the whole output as newly derived and
  *   manufactures findings out of harness artifacts.
- * - An unreadable baseline is COUNTED and asserted at zero. Skipping it quietly
- *   is the mirror failure: `tsParser.parse` needs `range: true` or it throws on
- *   all JSX, and folding that null into "derived nothing" withheld 42% of the
- *   literal arm's derivations and 11 rules while every counter read clean
- *   (#1820). A counter placed past the skip it is meant to measure can only
- *   ever report zero.
+ * - Every skip is COUNTED and asserted at zero — an unreadable baseline, a
+ *   discarded perturbation, a rule that threw, a fatal parse from the linter.
+ *   Skipping quietly is the mirror failure: `tsParser.parse` needs `range: true`
+ *   or it throws on all JSX, and folding that null into "derived nothing"
+ *   withheld 42% of the literal arm's derivations and 11 rules while every
+ *   counter read clean (#1820). A counter placed past the skip it is meant to
+ *   measure can only ever report zero.
  *
- * The perturbation is deliberately allowed to change meaning — it may collide
- * with an existing binding or rename a property. That is sound here because the
- * assertion is not "the fix is correct" but "the fix is *syntax*" and "the fix
- * carries the author's content", neither of which any input licenses a fixer to
- * violate.
+ * SCOPE, as a to-do rather than as coverage: the rename channel asks only
+ * whether the output parses, so a suggestion that emits a legal-but-empty name
+ * is caught by the literal channel or not at all; and the literal channel
+ * compares the UNION of names invented across a report's suggestions, which
+ * cannot attribute a collapse to one slot when a report offers several.
  */
 import { Linter } from 'eslint';
 import * as tsParser from '@typescript-eslint/parser';
@@ -72,6 +137,8 @@ import {
   parserOptionsFor,
   silentWithoutProgramRuleNames,
   ruleNameByIdentity,
+  suggestionEditsOf,
+  suggestionRuleNames,
   FixtureCase,
 } from '../utils/fixtureCorpus';
 
@@ -116,52 +183,256 @@ const parseErrorCount = (code: string, filename: string) => {
 };
 
 /**
- * Declared bindings only. Renaming a *reference* would strand it, which breaks
- * the input rather than the fixer and manufactures findings the rule does not
- * own.
+ * How a rewrite site must be spelled. A shorthand site cannot simply take the
+ * new text: the one token is playing two roles, and replacing it renames both.
  */
-const declaredNamesOf = (code: string, jsx: boolean): string[] => {
-  let ast: { body?: unknown };
-  try {
-    ast = tsParser.parse(code, {
-      range: true,
-      loc: false,
-      ecmaFeatures: { jsx },
-    }) as never;
-  } catch {
-    return [];
-  }
-  const names = new Set<string>();
-  const visit = (node: unknown): void => {
-    if (!node || typeof node !== 'object') return;
-    const candidate = node as Record<string, never>;
-    const type = candidate.type as unknown as string | undefined;
-    if (
-      type === 'VariableDeclarator' ||
-      type === 'FunctionDeclaration' ||
-      type === 'ClassDeclaration'
-    ) {
-      const id = candidate.id as unknown as
-        | { type?: string; name?: string }
-        | undefined;
-      if (id && id.type === 'Identifier' && id.name) names.add(id.name);
-    }
-    for (const key of Object.keys(candidate)) {
-      if (key === 'parent') continue;
-      const value = candidate[key] as unknown;
-      if (Array.isArray(value)) value.forEach(visit);
-      else if (value && typeof value === 'object') visit(value);
-    }
-  };
-  visit(ast);
-  return [...names];
+type SiteShape = 'plain' | 'property' | 'import' | 'export';
+
+type RenameSite = { start: number; shape: SiteShape };
+
+/**
+ * One thing that can be renamed, with every site that must move with it.
+ * `kind` is the scope manager's definition type (`Parameter`, `ImportBinding`,
+ * `Type`, …) or `Member`, and is carried so the floors below can assert that
+ * each SHAPE drove a fixer rather than that some large number of them did.
+ */
+type Binding = { name: string; kind: string; sites: RenameSite[] };
+
+type Bindings = {
+  bindings: Binding[];
+  /** Bindings whose sites could not be verified against the source. */
+  unrenamable: number;
 };
 
-const renameWholeWord = (code: string, from: string, to: string) =>
-  code.replace(
-    new RegExp(`(?<![$\\w])${from.replace(/\$/g, '\\$')}(?![$\\w])`, 'g'),
-    to,
-  );
+type AnyNode = Record<string, unknown> & {
+  type?: string;
+  name?: string;
+  range?: [number, number];
+};
+
+const walk = (node: unknown, visit: (node: AnyNode) => void): void => {
+  if (!node || typeof node !== 'object') return;
+  const candidate = node as AnyNode;
+  if (typeof candidate.type === 'string') visit(candidate);
+  for (const key of Object.keys(candidate)) {
+    if (key === 'parent') continue;
+    const value = candidate[key];
+    if (Array.isArray(value)) value.forEach((child) => walk(child, visit));
+    else if (value && typeof value === 'object') walk(value, visit);
+  }
+};
+
+const startOf = (node: unknown): number | null => {
+  const candidate = node as AnyNode | null;
+  return candidate && Array.isArray(candidate.range)
+    ? candidate.range[0]
+    : null;
+};
+
+/** The identifier a JSX element name is spelled with, through `A.B.C`. */
+const jsxNameIdentifier = (name: unknown): AnyNode | null => {
+  let current = name as AnyNode | null;
+  while (current && current.type === 'JSXMemberExpression') {
+    current = (current as { object?: AnyNode }).object ?? null;
+  }
+  return current && current.type === 'JSXIdentifier' ? current : null;
+};
+
+const MEMBER_OWNERS = new Set([
+  'MethodDefinition',
+  'PropertyDefinition',
+  'TSAbstractMethodDefinition',
+  'TSAbstractPropertyDefinition',
+  'AccessorProperty',
+  'TSPropertySignature',
+  'TSMethodSignature',
+]);
+
+/**
+ * Everything in `code` that can be renamed, with the sites each rename owns.
+ *
+ * Null when the source does not parse, which the callers count rather than fold
+ * into "nothing to rename".
+ */
+const declaredBindingsOf = (code: string, jsx: boolean): Bindings | null => {
+  let parsed;
+  try {
+    parsed = tsParser.parseForESLint(code, {
+      range: true,
+      loc: true,
+      sourceType: 'module',
+      ecmaFeatures: { jsx },
+    });
+  } catch {
+    return null;
+  }
+  const scopeManager = parsed.scopeManager;
+  if (!scopeManager) return null;
+
+  const shapeByStart = new Map<number, SiteShape>();
+  const closingByOpening = new Map<number, number>();
+  const memberSitesByName = new Map<string, Set<number>>();
+  const memberDeclaredNames = new Set<string>();
+
+  const addMemberSite = (name: string, start: number) => {
+    const sites = memberSitesByName.get(name) ?? new Set<number>();
+    sites.add(start);
+    memberSitesByName.set(name, sites);
+  };
+
+  walk(parsed.ast, (node) => {
+    const key = node.key as AnyNode | undefined;
+    const local = node.local as AnyNode | undefined;
+    if (node.type === 'Property' && node.shorthand === true) {
+      const start = startOf(key);
+      if (start !== null) shapeByStart.set(start, 'property');
+    }
+    if (
+      (node.type === 'ImportSpecifier' || node.type === 'ExportSpecifier') &&
+      startOf(local) !== null
+    ) {
+      const other = (node.imported ?? node.exported) as AnyNode | undefined;
+      if (startOf(other) === startOf(local)) {
+        shapeByStart.set(
+          startOf(local) as number,
+          node.type === 'ImportSpecifier' ? 'import' : 'export',
+        );
+      }
+    }
+    if (node.type === 'JSXElement') {
+      const opening = jsxNameIdentifier(
+        (node.openingElement as { name?: unknown } | undefined)?.name,
+      );
+      const closing = jsxNameIdentifier(
+        (node.closingElement as { name?: unknown } | undefined)?.name,
+      );
+      const openingStart = startOf(opening);
+      const closingStart = startOf(closing);
+      if (openingStart !== null && closingStart !== null) {
+        closingByOpening.set(openingStart, closingStart);
+      }
+    }
+    // `constructor` is excluded: renaming it turns the constructor into an
+    // ordinary method, and a `super()` call in its body then sits outside any
+    // constructor — a different program, not a degenerate one.
+    if (
+      MEMBER_OWNERS.has(node.type as string) &&
+      node.computed === false &&
+      key?.type === 'Identifier' &&
+      typeof key.name === 'string' &&
+      key.name !== 'constructor'
+    ) {
+      memberDeclaredNames.add(key.name);
+      addMemberSite(key.name, startOf(key) as number);
+    }
+    const property = node.property as AnyNode | undefined;
+    if (
+      node.type === 'MemberExpression' &&
+      node.computed === false &&
+      property?.type === 'Identifier' &&
+      typeof property.name === 'string'
+    ) {
+      addMemberSite(property.name, startOf(property) as number);
+    }
+  });
+
+  const bindings: Binding[] = [];
+  let unrenamable = 0;
+
+  const siteFor = (name: string, start: number): RenameSite | null =>
+    code.slice(start, start + name.length) === name
+      ? { start, shape: shapeByStart.get(start) ?? 'plain' }
+      : null;
+
+  for (const scope of scopeManager.scopes) {
+    // The global scope holds the TypeScript lib declarations, which have no
+    // definition in this file and no site to rewrite.
+    if (scope.type === 'global') continue;
+    for (const variable of scope.variables) {
+      if (!variable.defs.length) continue;
+      const { name } = variable;
+      const starts = new Map<number, RenameSite>();
+      let usable = true;
+      const add = (node: unknown) => {
+        const candidate = node as AnyNode | null;
+        if (
+          !candidate ||
+          (candidate.type !== 'Identifier' &&
+            candidate.type !== 'JSXIdentifier')
+        ) {
+          usable = false;
+          return;
+        }
+        const start = startOf(candidate);
+        if (candidate.name !== name || start === null) {
+          usable = false;
+          return;
+        }
+        const site = siteFor(name, start);
+        if (!site) {
+          usable = false;
+          return;
+        }
+        starts.set(start, site);
+        const closing = closingByOpening.get(start);
+        if (closing === undefined) return;
+        const closingSite = siteFor(name, closing);
+        if (closingSite) starts.set(closing, closingSite);
+      };
+      for (const def of variable.defs) add(def.name);
+      for (const reference of variable.references) add(reference.identifier);
+      if (!usable || !starts.size) {
+        unrenamable++;
+        continue;
+      }
+      bindings.push({
+        name,
+        kind: String(variable.defs[0].type),
+        sites: [...starts.values()],
+      });
+    }
+  }
+
+  /**
+   * A member is renamed at every property-position occurrence of its name.
+   * Scope analysis cannot resolve `this.foo` to a declaration, so the name
+   * itself is the only available identity — over-inclusive by design, since a
+   * declaration renamed without its uses is the broken input this harness must
+   * never hand a fixer.
+   */
+  for (const name of memberDeclaredNames) {
+    const sites = [...(memberSitesByName.get(name) ?? [])]
+      .map((start) => siteFor(name, start))
+      .filter((site): site is RenameSite => site !== null);
+    if (!sites.length) {
+      unrenamable++;
+      continue;
+    }
+    bindings.push({ name, kind: 'Member', sites });
+  }
+
+  return { bindings, unrenamable };
+};
+
+const renameBinding = (code: string, binding: Binding, to: string): string => {
+  const textFor = (shape: SiteShape) => {
+    if (shape === 'property') return `${binding.name}: ${to}`;
+    if (shape === 'import') return `${binding.name} as ${to}`;
+    if (shape === 'export') return `${to} as ${binding.name}`;
+    return to;
+  };
+  // Applied right to left so an earlier site's replacement cannot shift the
+  // offsets of a later one.
+  const ordered = [...binding.sites].sort((a, b) => b.start - a.start);
+  let output = code;
+  for (const site of ordered) {
+    output =
+      output.slice(0, site.start) +
+      textFor(site.shape) +
+      output.slice(site.start + binding.name.length);
+  }
+  return output;
+};
 
 /**
  * The second perturbation surface: the CONTENT of a string literal.
@@ -187,24 +458,15 @@ const stringLiteralRangesOf = (
     return [];
   }
   const ranges: [number, number][] = [];
-  const visit = (node: unknown): void => {
-    if (!node || typeof node !== 'object') return;
-    const candidate = node as Record<string, unknown>;
+  walk(ast, (node) => {
     if (
-      candidate.type === 'Literal' &&
-      typeof candidate.value === 'string' &&
-      Array.isArray(candidate.range)
+      node.type === 'Literal' &&
+      typeof node.value === 'string' &&
+      Array.isArray(node.range)
     ) {
-      ranges.push([...(candidate.range as number[])] as [number, number]);
+      ranges.push([node.range[0], node.range[1]]);
     }
-    for (const key of Object.keys(candidate)) {
-      if (key === 'parent') continue;
-      const value = candidate[key];
-      if (Array.isArray(value)) value.forEach(visit);
-      else if (value && typeof value === 'object') visit(value);
-    }
-  };
-  visit(ast);
+  });
   return ranges;
 };
 
@@ -236,20 +498,11 @@ const identifierNamesOf = (code: string, jsx: boolean): Set<string> | null => {
   } catch {
     return null;
   }
-  const visit = (node: unknown): void => {
-    if (!node || typeof node !== 'object') return;
-    const candidate = node as Record<string, unknown>;
-    if (candidate.type === 'Identifier' && typeof candidate.name === 'string') {
-      names.add(candidate.name);
+  walk(ast, (node) => {
+    if (node.type === 'Identifier' && typeof node.name === 'string') {
+      names.add(node.name);
     }
-    for (const key of Object.keys(candidate)) {
-      if (key === 'parent') continue;
-      const value = candidate[key];
-      if (Array.isArray(value)) value.forEach(visit);
-      else if (value && typeof value === 'object') visit(value);
-    }
-  };
-  visit(ast);
+  });
   return names;
 };
 
@@ -292,20 +545,60 @@ const DEGENERATE_LITERALS = ['', '   ', '---'] as const;
 type Finding = {
   rule: string;
   origin: string;
+  kind: string;
   from: string;
   to: string;
   input: string;
   output: string;
   errors: number;
+  /** Which channel emitted the output: `--fix`, or an accepted suggestion. */
+  channel: 'fix' | 'suggestion';
+  desc?: string;
 };
 
 type Totals = {
   findings: Finding[];
   considered: number;
   rewritten: number;
+  bindings: number;
+  fixtures: number;
+  /** Suggestion edits offered on degenerate input, across all reports. */
+  suggestionEdits: number;
   discardedUnparsable: number;
+  discardDetails: string[];
+  discardedUnrenamable: number;
+  /** Perturbations another binding already produced byte-for-byte. */
+  discardedDuplicate: number;
+  unparsableFixture: number;
+  /** Rules that threw on degenerate input — a defect, never a skip. */
+  crashes: number;
+  crashDetails: string[];
+  /** Perturbations the ESLint parser rejected though TypeScript accepted them. */
+  fatals: number;
+  fatalDetails: string[];
   rulesRewritten: Set<string>;
+  kindsRewritten: Map<string, number>;
 };
+
+const emptyTotals = (): Totals => ({
+  findings: [],
+  considered: 0,
+  rewritten: 0,
+  bindings: 0,
+  fixtures: 0,
+  suggestionEdits: 0,
+  discardedUnparsable: 0,
+  discardDetails: [],
+  discardedUnrenamable: 0,
+  discardedDuplicate: 0,
+  unparsableFixture: 0,
+  crashes: 0,
+  crashDetails: [],
+  fatals: 0,
+  fatalDetails: [],
+  rulesRewritten: new Set(),
+  kindsRewritten: new Map(),
+});
 
 /**
  * Only rules that measurably report NOTHING under this harness are excluded —
@@ -318,6 +611,11 @@ const fixableRuleNames = [...ruleByName]
   .filter(([, rule]) => rule.meta?.fixable)
   .map(([name]) => name)
   .filter((name) => !silentWithoutProgramRuleNames.has(name));
+
+/** The suggestion channel's population: `--fix` never applies these edits. */
+const suggestingRuleNames = suggestionRuleNames.filter(
+  (name) => !silentWithoutProgramRuleNames.has(name),
+);
 
 const corpus = harvestFixtureCorpus();
 
@@ -350,86 +648,198 @@ const NON_TYPESCRIPT_FIXTURES: Record<string, string> = {
 let nonTypeScriptSkipped = 0;
 const rulesWithNonTypeScriptFixtures = new Set<string>();
 
-const sweep = (ruleNames: string[]): Totals => {
-  const totals: Totals = {
-    findings: [],
-    considered: 0,
-    rewritten: 0,
-    discardedUnparsable: 0,
-    rulesRewritten: new Set(),
-  };
+const invalidTypeScriptCases = (rule: string) =>
+  (corpus.byRule.get(rule) || []).filter((testCase: FixtureCase) => {
+    if (testCase.language !== 'ts') {
+      nonTypeScriptSkipped++;
+      rulesWithNonTypeScriptFixtures.add(rule);
+      return false;
+    }
+    return testCase.bucket === 'invalid';
+  });
 
-  for (const rule of ruleNames) {
-    const cases = (corpus.byRule.get(rule) || []).filter(
-      (testCase: FixtureCase) => {
-        if (testCase.language !== 'ts') {
-          nonTypeScriptSkipped++;
-          rulesWithNonTypeScriptFixtures.add(rule);
-          return false;
-        }
-        return testCase.bucket === 'invalid';
-      },
-    );
-    for (const testCase of cases) {
-      const filename = testCase.filename ?? defaultFilenameFor(testCase);
-      const jsx = filename.endsWith('x');
-      const declared = declaredNamesOf(testCase.code, jsx);
-      if (!declared.length) continue;
+const configFor = (rule: string, testCase: FixtureCase) =>
+  ({
+    parser: 'ts',
+    parserOptions: parserOptionsFor(testCase),
+    rules: {
+      [`b/${rule}`]: testCase.options?.length
+        ? ['error', ...testCase.options]
+        : 'error',
+    },
+  } as never);
 
-      const config = {
-        parser: 'ts',
-        parserOptions: parserOptionsFor(testCase),
-        rules: {
-          [`b/${rule}`]: testCase.options?.length
-            ? ['error', ...testCase.options]
-            : 'error',
-        },
-      } as never;
+/**
+ * One fixture, every binding, every degenerate name — through whichever channel
+ * the rule can rewrite code with.
+ *
+ * Written as a function over an explicit `totals` so the planted controls below
+ * drive the SAME code path the sweep does. A control that reimplements the walk
+ * proves only that the control works.
+ */
+const probeCase = (
+  rule: string,
+  /** The id the rule is registered under, which a suggestion message carries. */
+  ruleId: string,
+  origin: string,
+  code: string,
+  filename: string,
+  config: unknown,
+  channel: 'fix' | 'suggestion',
+  totals: Totals,
+): void => {
+  const jsx = filename.endsWith('x');
+  totals.fixtures++;
+  const collected = declaredBindingsOf(code, jsx);
+  if (!collected) {
+    totals.unparsableFixture++;
+    return;
+  }
+  totals.discardedUnrenamable += collected.unrenamable;
+  totals.bindings += collected.bindings.length;
+  const seen = new Set<string>();
 
-      for (const from of declared) {
-        for (const to of DEGENERATE_NAMES) {
-          if (from === to) continue;
-          const input = renameWholeWord(testCase.code, from, to);
-          if (input === testCase.code) continue;
-          // A perturbation that does not parse is a harness artifact and must
-          // never be counted as either a pass or a finding.
-          if (parseErrorCount(input, filename) > 0) {
-            totals.discardedUnparsable++;
-            continue;
-          }
-          totals.considered++;
-          let result;
-          try {
-            result = linter.verifyAndFix(input, config, filename);
-          } catch {
-            continue;
-          }
-          if (!result.fixed || result.output === input) continue;
-          totals.rewritten++;
-          totals.rulesRewritten.add(rule);
-          const errors = parseErrorCount(result.output, filename);
-          if (errors > 0) {
-            totals.findings.push({
-              rule,
-              origin: testCase.origin,
-              from,
-              to,
-              input,
-              output: result.output,
-              errors,
-            });
-          }
-        }
+  for (const binding of collected.bindings) {
+    for (const to of DEGENERATE_NAMES) {
+      if (binding.name === to) continue;
+      const input = renameBinding(code, binding, to);
+      if (input === code) continue;
+      if (seen.has(input)) {
+        totals.discardedDuplicate++;
+        continue;
       }
+      seen.add(input);
+      // A perturbation that does not parse is a harness artifact and must
+      // never be counted as either a pass or a finding.
+      if (parseErrorCount(input, filename) > 0) {
+        totals.discardedUnparsable++;
+        totals.discardDetails.push(
+          `${rule} (${origin}) [${binding.kind}] ${binding.name} -> ${to}\n  ${input}`,
+        );
+        continue;
+      }
+      totals.considered++;
+
+      if (channel === 'fix') {
+        let result;
+        try {
+          result = linter.verifyAndFix(input, config as never, filename);
+        } catch (error) {
+          totals.crashes++;
+          totals.crashDetails.push(
+            `${rule} threw on ${binding.name} -> ${to}: ${
+              (error as Error).message
+            }`,
+          );
+          continue;
+        }
+        if (result.messages.some((message) => message.fatal)) {
+          totals.fatals++;
+          totals.fatalDetails.push(
+            `${rule} (${origin}) ${binding.name} -> ${to}: ${
+              result.messages.find((message) => message.fatal)?.message
+            }`,
+          );
+        }
+        if (!result.fixed || result.output === input) continue;
+        totals.rewritten++;
+        totals.rulesRewritten.add(rule);
+        totals.kindsRewritten.set(
+          binding.kind,
+          (totals.kindsRewritten.get(binding.kind) ?? 0) + 1,
+        );
+        const errors = parseErrorCount(result.output, filename);
+        if (errors > 0) {
+          totals.findings.push({
+            rule,
+            origin,
+            kind: binding.kind,
+            from: binding.name,
+            to,
+            input,
+            output: result.output,
+            errors,
+            channel,
+          });
+        }
+        continue;
+      }
+
+      let messages;
+      try {
+        messages = linter.verify(input, config as never, filename);
+      } catch (error) {
+        totals.crashes++;
+        totals.crashDetails.push(
+          `${rule} threw on ${binding.name} -> ${to}: ${
+            (error as Error).message
+          }`,
+        );
+        continue;
+      }
+      if (messages.some((message) => message.fatal)) {
+        totals.fatals++;
+        totals.fatalDetails.push(
+          `${rule} (${origin}) ${binding.name} -> ${to}: ${
+            messages.find((message) => message.fatal)?.message
+          }`,
+        );
+      }
+      const edits = suggestionEditsOf(input, messages, ruleId);
+      if (!edits.length) continue;
+      totals.suggestionEdits += edits.length;
+      totals.rewritten++;
+      totals.rulesRewritten.add(rule);
+      totals.kindsRewritten.set(
+        binding.kind,
+        (totals.kindsRewritten.get(binding.kind) ?? 0) + 1,
+      );
+      for (const edit of edits) {
+        const errors = parseErrorCount(edit.output, filename);
+        if (errors === 0) continue;
+        totals.findings.push({
+          rule,
+          origin,
+          kind: binding.kind,
+          from: binding.name,
+          to,
+          input,
+          output: edit.output,
+          errors,
+          channel,
+          desc: edit.desc,
+        });
+      }
+    }
+  }
+};
+
+const sweep = (ruleNames: string[], channel: 'fix' | 'suggestion'): Totals => {
+  const totals = emptyTotals();
+  for (const rule of ruleNames) {
+    for (const testCase of invalidTypeScriptCases(rule)) {
+      const filename = testCase.filename ?? defaultFilenameFor(testCase);
+      probeCase(
+        rule,
+        `b/${rule}`,
+        testCase.origin,
+        testCase.code,
+        filename,
+        configFor(rule, testCase),
+        channel,
+        totals,
+      );
     }
   }
   return totals;
 };
 
-const totals = sweep(fixableRuleNames);
+const totals = sweep(fixableRuleNames, 'fix');
+const suggestionTotals = sweep(suggestingRuleNames, 'suggestion');
 
 type LiteralFinding = {
   kind: 'parse' | 'collapsed';
+  channel: 'fix' | 'suggestion';
   rule: string;
   origin: string;
   literal: string;
@@ -458,8 +868,23 @@ type LiteralTotals = {
    * corpus an unreadable baseline withholds.
    */
   unreadableControl: number;
+  crashes: number;
+  crashDetails: string[];
   rulesDeriving: Set<string>;
 };
+
+const emptyLiteralTotals = (): LiteralTotals => ({
+  findings: [],
+  considered: 0,
+  rewritten: 0,
+  derivationsObserved: 0,
+  discardedUnparsable: 0,
+  skippedUnparsableComparison: 0,
+  unreadableControl: 0,
+  crashes: 0,
+  crashDetails: [],
+  rulesDeriving: new Set(),
+});
 
 /**
  * Does `degenerate` carry nothing of the literal that `control` carried?
@@ -518,52 +943,97 @@ const collapsedAgainst = (control: Set<string>, degenerate: Set<string>) => {
   return null;
 };
 
-const sweepLiterals = (ruleNames: string[]): LiteralTotals => {
-  const literalTotals: LiteralTotals = {
-    findings: [],
-    considered: 0,
-    rewritten: 0,
-    derivationsObserved: 0,
-    discardedUnparsable: 0,
-    skippedUnparsableComparison: 0,
-    unreadableControl: 0,
-    rulesDeriving: new Set(),
-  };
+/**
+ * The literal perturbation, over one channel.
+ *
+ * On the suggestion channel a run's derivation is the UNION of the names every
+ * offered edit invents. Pairing edit-by-edit would need the two runs to offer
+ * the same slots in the same order, which a rule that reports a different number
+ * of times under a different literal does not do — and a mispaired slot invents
+ * a collapse out of nothing.
+ */
+const sweepLiterals = (
+  ruleNames: string[],
+  channel: 'fix' | 'suggestion',
+): LiteralTotals => {
+  const literalTotals = emptyLiteralTotals();
 
   for (const rule of ruleNames) {
-    const cases = (corpus.byRule.get(rule) || []).filter(
-      (testCase: FixtureCase) => {
-        if (testCase.language !== 'ts') {
-          nonTypeScriptSkipped++;
-          rulesWithNonTypeScriptFixtures.add(rule);
-          return false;
-        }
-        return testCase.bucket === 'invalid';
-      },
-    );
-    for (const testCase of cases) {
+    for (const testCase of invalidTypeScriptCases(rule)) {
       const filename = testCase.filename ?? defaultFilenameFor(testCase);
       const jsx = filename.endsWith('x');
       const ranges = stringLiteralRangesOf(testCase.code, jsx);
       if (!ranges.length) continue;
 
-      const config = {
-        parser: 'ts',
-        parserOptions: parserOptionsFor(testCase),
-        rules: {
-          [`b/${rule}`]: testCase.options?.length
-            ? ['error', ...testCase.options]
-            : 'error',
-        },
-      } as never;
+      const config = configFor(rule, testCase);
 
       const runFix = (input: string) => {
         try {
           const result = linter.verifyAndFix(input, config, filename);
           return result.fixed && result.output !== input ? result.output : null;
-        } catch {
+        } catch (error) {
+          literalTotals.crashes++;
+          literalTotals.crashDetails.push(
+            `${rule} threw on ${JSON.stringify(input)}: ${
+              (error as Error).message
+            }`,
+          );
           return null;
         }
+      };
+
+      type ChannelRun = { invented: Set<string>; outputs: string[] } | null;
+
+      /** Every name any suggestion invents, plus each edit's own output. */
+      const runSuggestions = (
+        input: string,
+        withNames: boolean,
+      ): ChannelRun => {
+        let messages;
+        try {
+          messages = linter.verify(input, config, filename);
+        } catch (error) {
+          literalTotals.crashes++;
+          literalTotals.crashDetails.push(
+            `${rule} threw on ${JSON.stringify(input)}: ${
+              (error as Error).message
+            }`,
+          );
+          return null;
+        }
+        const before = withNames ? identifierNamesOf(input, jsx) : null;
+        if (withNames && !before) return null;
+        const invented = new Set<string>();
+        const outputs: string[] = [];
+        for (const edit of suggestionEditsOf(input, messages, `b/${rule}`)) {
+          outputs.push(edit.output);
+          if (!before) continue;
+          const after = identifierNamesOf(edit.output, jsx);
+          if (!after) return null;
+          for (const name of after) {
+            if (!before.has(name)) invented.add(name);
+          }
+        }
+        return { invented, outputs };
+      };
+
+      /**
+       * The names a run invents, and the outputs to check for parseability.
+       *
+       * `withNames` is not an optimization detail: reading identifiers costs two
+       * parses per run, and the comparison is only defined when the CONTROL run
+       * invented something, so a degenerate run past a silent control is asked
+       * for outputs alone.
+       */
+      const runChannel = (input: string, withNames: boolean): ChannelRun => {
+        if (channel === 'suggestion') return runSuggestions(input, withNames);
+        const output = runFix(input);
+        if (!withNames) {
+          return { invented: new Set(), outputs: output ? [output] : [] };
+        }
+        const invented = derivedNames(input, output, jsx);
+        if (!invented) return null;
+        return { invented, outputs: output ? [output] : [] };
       };
 
       for (const range of ranges) {
@@ -576,19 +1046,18 @@ const sweepLiterals = (ruleNames: string[]): LiteralTotals => {
           literalTotals.discardedUnparsable++;
           continue;
         }
-        const controlOutput = runFix(controlInput);
-        const controlDerived = derivedNames(controlInput, controlOutput, jsx);
+        const control = runChannel(controlInput, true);
         // An unreadable baseline is not a non-deriving one. Folding null to an
         // empty set routes it into the `!controlDerived.size` skip below, where
         // it becomes indistinguishable from a fixer that invented nothing —
         // and `skippedUnparsableComparison` never sees it, because that branch
         // sits past the skip. Counting it separately is what makes the arm's
         // reach measurable rather than merely assumed.
-        if (!controlDerived) {
+        if (!control) {
           literalTotals.unreadableControl++;
           continue;
         }
-        if (controlDerived.size) {
+        if (control.invented.size) {
           literalTotals.derivationsObserved++;
           literalTotals.rulesDeriving.add(rule);
         }
@@ -601,40 +1070,47 @@ const sweepLiterals = (ruleNames: string[]): LiteralTotals => {
             continue;
           }
           literalTotals.considered++;
-          const output = runFix(input);
-          if (!output) continue;
+          const degenerate = runChannel(input, control.invented.size > 0);
+          if (!degenerate) {
+            literalTotals.skippedUnparsableComparison++;
+            continue;
+          }
+          if (!degenerate.outputs.length) continue;
           literalTotals.rewritten++;
 
-          if (parseErrorCount(output, filename) > 0) {
+          const broken = degenerate.outputs.find(
+            (output) => parseErrorCount(output, filename) > 0,
+          );
+          if (broken) {
             literalTotals.findings.push({
               kind: 'parse',
+              channel,
               rule,
               origin: testCase.origin,
               literal: value,
               derivedControl: '',
               derivedDegenerate: '',
               input,
-              output,
+              output: broken,
             });
             continue;
           }
-          if (!controlDerived.size) continue;
+          if (!control.invented.size) continue;
 
-          const derived = derivedNames(input, output, jsx);
-          if (!derived) {
-            literalTotals.skippedUnparsableComparison++;
-            continue;
-          }
-          const collapse = collapsedAgainst(controlDerived, derived);
+          const collapse = collapsedAgainst(
+            control.invented,
+            degenerate.invented,
+          );
           if (collapse) {
             literalTotals.findings.push({
               kind: 'collapsed',
+              channel,
               rule,
               origin: testCase.origin,
               literal: value,
               ...collapse,
               input,
-              output,
+              output: degenerate.outputs[0],
             });
           }
         }
@@ -644,7 +1120,85 @@ const sweepLiterals = (ruleNames: string[]): LiteralTotals => {
   return literalTotals;
 };
 
-const literalTotals = sweepLiterals(fixableRuleNames);
+const literalTotals = sweepLiterals(fixableRuleNames, 'fix');
+const literalSuggestionTotals = sweepLiterals(
+  suggestingRuleNames,
+  'suggestion',
+);
+
+/** Binding shapes the widened collector must be shown to have DRIVEN a fixer with. */
+const REQUIRED_KINDS = [
+  'Variable',
+  'Parameter',
+  'ImportBinding',
+  'FunctionName',
+  'ClassName',
+  'Type',
+  'Member',
+] as const;
+
+const describeFindings = (findings: Finding[]) => {
+  const byRule = [...new Set(findings.map((finding) => finding.rule))];
+  const header = byRule.length
+    ? `${findings.length} finding(s) across ${
+        byRule.length
+      } rule(s): ${byRule.join(', ')}\n`
+    : '';
+  return (
+    header +
+    findings
+      .slice(0, 20)
+      .map(
+        (finding) =>
+          `${finding.channel} ${finding.rule} (${finding.origin}) renaming ${finding.kind} ` +
+          `${finding.from} -> ${finding.to}, ${finding.errors} parse error(s)` +
+          `${
+            finding.desc ? ` via suggestion "${finding.desc}"` : ''
+          }\n  IN : ${JSON.stringify(finding.input)}\n  OUT: ${JSON.stringify(
+            finding.output,
+          )}`,
+      )
+      .join('\n')
+  );
+};
+
+const describeLiteralFindings = (findings: LiteralFinding[]) => {
+  // Every affected rule is named before the truncated examples: slicing to the
+  // first 20 findings otherwise hides whole rules behind whichever one the
+  // sweep reached first, which is the difference between a report that says
+  // what to fix and one that says only where to start looking.
+  const byRule = [...new Set(findings.map((finding) => finding.rule))];
+  const header = byRule.length
+    ? `${findings.length} finding(s) across ${
+        byRule.length
+      } rule(s): ${byRule.join(', ')}\n`
+    : '';
+  return (
+    header +
+    findings
+      .slice(0, 20)
+      .map((finding) =>
+        finding.kind === 'parse'
+          ? `${finding.channel} ${finding.rule} (${
+              finding.origin
+            }) literal ${JSON.stringify(
+              finding.literal,
+            )} -> output does not parse\n  OUT: ${JSON.stringify(
+              finding.output,
+            )}`
+          : `${finding.channel} ${finding.rule} (${
+              finding.origin
+            }) literal ${JSON.stringify(finding.literal)} derived ${
+              finding.derivedDegenerate
+            } where a real value derives ${
+              finding.derivedControl
+            }\n  IN : ${JSON.stringify(finding.input)}\n  OUT: ${JSON.stringify(
+              finding.output,
+            )}`,
+      )
+      .join('\n')
+  );
+};
 
 describe('degenerate-identifier fix closure', () => {
   /**
@@ -664,6 +1218,7 @@ describe('degenerate-identifier fix closure', () => {
     expect(corpus.failures).toEqual([]);
     expect(corpus.filesLoaded).toBeGreaterThan(250);
     expect(fixableRuleNames.length).toBeGreaterThanOrEqual(70);
+    expect(suggestingRuleNames.length).toBeGreaterThanOrEqual(7);
   });
 
   /**
@@ -681,30 +1236,105 @@ describe('degenerate-identifier fix closure', () => {
     );
     // eslint-disable-next-line no-console
     console.log(
-      `[degenerate-identifier] considered ${totals.considered}, rewritten ${totals.rewritten} ` +
-        `across ${totals.rulesRewritten.size} rule(s); discarded unparsable ${totals.discardedUnparsable}\n` +
+      `[degenerate-identifier] ${totals.bindings} binding(s) over ${totals.fixtures} fixture(s); ` +
+        `considered ${totals.considered}, rewritten ${totals.rewritten} ` +
+        `across ${totals.rulesRewritten.size} rule(s)\n` +
+        `  by binding kind: ${[...totals.kindsRewritten]
+          .sort((a, b) => b[1] - a[1])
+          .map(([kind, count]) => `${kind}=${count}`)
+          .join(', ')}\n` +
+        `  discarded unparsable ${totals.discardedUnparsable}, unrenamable ${totals.discardedUnrenamable}, ` +
+        `duplicate ${totals.discardedDuplicate}, unparsable fixtures ${totals.unparsableFixture}\n` +
         `  no fixer ever ran on degenerate input for ${
           untouched.length
         } rule(s): ${untouched.join(', ') || '(none)'}`,
     );
-    expect(totals.considered).toBeGreaterThan(2000);
-    expect(totals.rewritten).toBeGreaterThan(300);
-    expect(totals.rulesRewritten.size).toBeGreaterThanOrEqual(20);
+    expect(totals.bindings).toBeGreaterThan(10000);
+    expect(totals.considered).toBeGreaterThan(40000);
+    expect(totals.rewritten).toBeGreaterThan(25000);
+    expect(totals.rulesRewritten.size).toBeGreaterThanOrEqual(70);
+  });
+
+  /**
+   * The widening's own floor. A rewrite count says nothing about WHICH binding
+   * shape produced it: the collector that shipped saw three declaration types
+   * and drove 14,552 rewrites while never degenerating a parameter, an import
+   * or a class member (#1862). Asserting per-kind is what makes a future
+   * narrowing of the scope walk fail instead of merely shrinking a number.
+   */
+  it('drove fixers from every binding shape, not just declarators', () => {
+    const missing = REQUIRED_KINDS.filter(
+      (kind) => !totals.kindsRewritten.get(kind),
+    );
+    expect(missing).toEqual([]);
+    for (const kind of REQUIRED_KINDS) {
+      expect(totals.kindsRewritten.get(kind)).toBeGreaterThan(50);
+    }
+  });
+
+  /**
+   * Every way a perturbation can fail to be scored, asserted at zero.
+   *
+   * A discarded rename is a bug in this harness, not a finding about a fixer,
+   * and a rule that THROWS is a defect worse than the one under test — both
+   * were silently swallowed by a bare `catch { continue }` before. The details
+   * ride along in the failure message so triage does not start from a number.
+   */
+  it('discards nothing silently', () => {
+    expect(totals.crashDetails.slice(0, 5).join('\n')).toBe('');
+    expect(totals.crashes).toBe(0);
+    expect(totals.discardDetails.slice(0, 5).join('\n')).toBe('');
+    expect(totals.discardedUnparsable).toBe(0);
+    expect(totals.discardedUnrenamable).toBe(0);
+    expect(totals.unparsableFixture).toBe(0);
+    expect(totals.fatalDetails.slice(0, 5).join('\n')).toBe('');
+    expect(totals.fatals).toBe(0);
+    expect(literalTotals.crashDetails.slice(0, 5).join('\n')).toBe('');
+    expect(literalTotals.crashes).toBe(0);
+    expect(suggestionTotals.crashDetails.slice(0, 5).join('\n')).toBe('');
+    expect(suggestionTotals.crashes).toBe(0);
+    expect(suggestionTotals.discardDetails.slice(0, 5).join('\n')).toBe('');
+    expect(suggestionTotals.discardedUnparsable).toBe(0);
+    expect(suggestionTotals.discardedUnrenamable).toBe(0);
+    expect(suggestionTotals.fatalDetails.slice(0, 5).join('\n')).toBe('');
+    expect(suggestionTotals.fatals).toBe(0);
+    expect(literalSuggestionTotals.crashDetails.slice(0, 5).join('\n')).toBe(
+      '',
+    );
+    expect(literalSuggestionTotals.crashes).toBe(0);
   });
 
   it('no fixer emits source that fails to parse', () => {
-    const report = totals.findings
-      .slice(0, 20)
-      .map(
-        (finding) =>
-          `${finding.rule} (${finding.origin}) renaming ${finding.from} -> ${finding.to}, ` +
-          `${finding.errors} parse error(s)\n  IN : ${JSON.stringify(
-            finding.input,
-          )}\n  OUT: ${JSON.stringify(finding.output)}`,
-      )
-      .join('\n');
-    expect(report).toBe('');
+    expect(describeFindings(totals.findings)).toBe('');
     expect(totals.findings).toEqual([]);
+  });
+
+  /**
+   * The suggestion channel's floor. `--fix` never applies a suggestion, so a
+   * sweep that drives `verifyAndFix` alone leaves every edit these rules offer
+   * unexamined even though accepting one writes the same file to disk (#1862).
+   */
+  it('actually drove suggestions with degenerate input', () => {
+    const untouched = suggestingRuleNames.filter(
+      (name) => !suggestionTotals.rulesRewritten.has(name),
+    );
+    // eslint-disable-next-line no-console
+    console.log(
+      `[degenerate-suggestion] considered ${suggestionTotals.considered}, ` +
+        `offering runs ${suggestionTotals.rewritten}, edits ${suggestionTotals.suggestionEdits} ` +
+        `across ${suggestionTotals.rulesRewritten.size} rule(s)\n` +
+        `  never offered a suggestion on degenerate input (${
+          untouched.length
+        }): ${untouched.join(', ') || '(none)'}`,
+    );
+    expect(suggestionTotals.considered).toBeGreaterThan(2000);
+    expect(suggestionTotals.suggestionEdits).toBeGreaterThan(1500);
+    expect(suggestionTotals.rulesRewritten.size).toBeGreaterThanOrEqual(5);
+  });
+
+  it('no accepted suggestion emits source that fails to parse', () => {
+    expect(describeFindings(suggestionTotals.findings)).toBe('');
+    expect(suggestionTotals.findings).toEqual([]);
   });
 
   /**
@@ -762,6 +1392,139 @@ describe('degenerate-identifier fix closure', () => {
   });
 
   /**
+   * The widening, end to end, through the sweep's own machinery.
+   *
+   * The planted rule derives its replacement from a PARAMETER — a shape the
+   * shipped collector could not see — so this fails on the collector #1862
+   * describes no matter how many rewrites the rest of the corpus drives. Driving
+   * `probeCase` rather than a hand-rolled rename is the point: it proves the
+   * path from "collect a binding" to "record a finding" is connected.
+   */
+  it('catches a planted fixer that derives a broken name from a parameter', () => {
+    const planted = {
+      meta: {
+        type: 'suggestion',
+        fixable: 'code',
+        schema: [],
+        messages: { rename: 'rename' },
+      },
+      create(context: { report: (descriptor: unknown) => void }) {
+        return {
+          'FunctionDeclaration > Identifier.params'(node: {
+            name: string;
+            range: [number, number];
+          }) {
+            const derived = node.name.replace(/^_/, '');
+            if (derived === node.name) return;
+            context.report({
+              node,
+              messageId: 'rename',
+              fix: (fixer: {
+                replaceTextRange: (
+                  range: [number, number],
+                  text: string,
+                ) => unknown;
+              }) => fixer.replaceTextRange(node.range, derived),
+            });
+          },
+        };
+      },
+    };
+    linter.defineRule('planted/parameter', planted as never);
+    const config = {
+      parser: 'ts',
+      parserOptions: { ecmaVersion: 2022, sourceType: 'module' },
+      rules: { 'planted/parameter': 'error' },
+    } as never;
+    const plantedTotals = emptyTotals();
+    probeCase(
+      'planted/parameter',
+      'planted/parameter',
+      'planted',
+      'function render(value) {\n  return value;\n}\n',
+      't.ts',
+      config,
+      'fix',
+      plantedTotals,
+    );
+    expect(plantedTotals.discardedUnparsable).toBe(0);
+    expect(plantedTotals.findings.map((finding) => finding.kind)).toContain(
+      'Parameter',
+    );
+    // `_1` strips to `1`, which is not an identifier; `$` survives untouched
+    // and must NOT be reported, or the control would pass by flagging every
+    // rewrite.
+    const reported = plantedTotals.findings.map((finding) => finding.to);
+    expect(reported).toEqual(expect.arrayContaining(['_1', '_2fa']));
+    expect(reported).not.toContain('$');
+  });
+
+  /**
+   * The same end-to-end control for the suggestion channel, where the edit is
+   * never applied by `--fix` and so is invisible to every other sweep.
+   */
+  it('catches a planted suggestion that renames to a non-identifier', () => {
+    const planted = {
+      meta: {
+        type: 'suggestion',
+        hasSuggestions: true,
+        schema: [],
+        messages: { rename: 'rename', fixIt: 'fixIt' },
+      },
+      create(context: { report: (descriptor: unknown) => void }) {
+        return {
+          'FunctionDeclaration > Identifier.params'(node: {
+            name: string;
+            range: [number, number];
+          }) {
+            const derived = node.name.replace(/^_/, '');
+            if (derived === node.name) return;
+            context.report({
+              node,
+              messageId: 'rename',
+              suggest: [
+                {
+                  messageId: 'fixIt',
+                  fix: (fixer: {
+                    replaceTextRange: (
+                      range: [number, number],
+                      text: string,
+                    ) => unknown;
+                  }) => fixer.replaceTextRange(node.range, derived),
+                },
+              ],
+            });
+          },
+        };
+      },
+    };
+    linter.defineRule('planted/parameter-suggestion', planted as never);
+    const config = {
+      parser: 'ts',
+      parserOptions: { ecmaVersion: 2022, sourceType: 'module' },
+      rules: { 'planted/parameter-suggestion': 'error' },
+    } as never;
+    const plantedTotals = emptyTotals();
+    probeCase(
+      'planted/parameter-suggestion',
+      'planted/parameter-suggestion',
+      'planted',
+      'function render(value) {\n  return value;\n}\n',
+      't.ts',
+      config,
+      'suggestion',
+      plantedTotals,
+    );
+    expect(plantedTotals.suggestionEdits).toBeGreaterThan(0);
+    expect(plantedTotals.findings.map((finding) => finding.to)).toEqual(
+      expect.arrayContaining(['_1', '_2fa']),
+    );
+    expect(plantedTotals.findings.map((finding) => finding.to)).not.toContain(
+      '$',
+    );
+  });
+
+  /**
    * Negative control: a well-formed rename must NOT be reported, or the guard
    * would pass by calling everything broken.
    */
@@ -770,6 +1533,148 @@ describe('degenerate-identifier fix closure', () => {
       0,
     );
     expect(parseErrorCount('const _1 = { a: 1 };\n', 't.ts')).toBe(0);
+  });
+
+  /**
+   * The collector, shape by shape. This is the assertion #1862 fails: the
+   * shipped collector answered with `{value, Widget, Klass}` and nothing else,
+   * so a parameter, a destructured name, an import, a type, an enum member and
+   * a catch clause were never degenerated in any fixture.
+   */
+  it('collects every binding shape, not just three declaration types', () => {
+    const source = [
+      "import Default, { named as aliased, plain } from 'mod';",
+      "import * as namespace from 'other';",
+      'type Alias<TParam> = TParam;',
+      'interface Shape { member: string }',
+      'enum Level { Low }',
+      'const value = 1;',
+      'const { destructured, defaulted = 2, ...rest } = value;',
+      'const [first, ...tail] = [1, 2];',
+      'function Widget(param, { deep }) { return param + deep; }',
+      'class Klass { field = 1; method(inner) { return inner; } }',
+      'try { value; } catch (caught) { caught; }',
+      'namespace Space { export const inside = 1; }',
+    ].join('\n');
+    const collected = declaredBindingsOf(source, false);
+    expect(collected).not.toBeNull();
+    expect(collected?.unrenamable).toBe(0);
+    const names = (collected as Bindings).bindings.map(
+      (binding) => binding.name,
+    );
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'Default',
+        'aliased',
+        'plain',
+        'namespace',
+        'Alias',
+        'TParam',
+        'Shape',
+        'member',
+        'Level',
+        'value',
+        'destructured',
+        'defaulted',
+        'rest',
+        'first',
+        'tail',
+        'Widget',
+        'param',
+        'deep',
+        'Klass',
+        'field',
+        'method',
+        'inner',
+        'caught',
+        'Space',
+        'inside',
+      ]),
+    );
+    const kinds = new Set(
+      (collected as Bindings).bindings.map((binding) => binding.kind),
+    );
+    expect([...kinds].sort()).toEqual(
+      expect.arrayContaining([
+        'CatchClause',
+        'ClassName',
+        'FunctionName',
+        'ImportBinding',
+        'Member',
+        'Parameter',
+        'TSEnumName',
+        'TSModuleName',
+        'Type',
+        'Variable',
+      ]),
+    );
+  });
+
+  /**
+   * The rename must produce a program, not merely a string. Each case here is a
+   * spelling where overwriting the identifier's own token silently writes a
+   * DIFFERENT fixture: a renamed property read, a renamed module contract, a
+   * deleted type annotation, an unmatched JSX tag.
+   */
+  it('renames every binding site and expands shorthand', () => {
+    const renameOf = (code: string, name: string, jsx = false) => {
+      const collected = declaredBindingsOf(code, jsx) as Bindings;
+      const binding = collected.bindings.find((entry) => entry.name === name);
+      expect(binding).toBeDefined();
+      return renameBinding(code, binding as Binding, '_1');
+    };
+
+    // A reference moves with its declaration, or the input is broken rather
+    // than degenerate.
+    expect(renameOf('const value = 1;\nuse(value);\n', 'value')).toBe(
+      'const _1 = 1;\nuse(_1);\n',
+    );
+    // Shorthand destructuring keeps reading the same property.
+    expect(renameOf('const { key } = source;\nuse(key);\n', 'key')).toBe(
+      'const { key: _1 } = source;\nuse(_1);\n',
+    );
+    expect(renameOf('const { key = 2 } = source;\n', 'key')).toBe(
+      'const { key: _1 = 2 } = source;\n',
+    );
+    // An import keeps importing the same symbol.
+    expect(renameOf("import { Icon } from 'mui';\nuse(Icon);\n", 'Icon')).toBe(
+      "import { Icon as _1 } from 'mui';\nuse(_1);\n",
+    );
+    // An export keeps exporting the same name.
+    expect(renameOf('const out = 1;\nexport { out };\n', 'out')).toBe(
+      'const _1 = 1;\nexport { _1 as out };\n',
+    );
+    // A type annotation survives: an `Identifier` range spans it (#1351).
+    expect(renameOf('let annotated: SomeType;\n', 'annotated')).toBe(
+      'let _1: SomeType;\n',
+    );
+    // A JSX closing tag pairs with its opening tag.
+    expect(
+      renameOf(
+        'const Card = () => <div />;\nconst App = () => <Card></Card>;\n',
+        'Card',
+        true,
+      ),
+    ).toBe('const _1 = () => <div />;\nconst App = () => <_1></_1>;\n');
+    // ...and an intrinsic element with the same name as a variable does NOT.
+    // Renaming `</button>` alone leaves a mismatched pair that cannot parse,
+    // which discards the perturbation instead of probing the fixer.
+    const intrinsic = renameOf(
+      'const button = 1;\nconst App = () => <button>{button}</button>;\n',
+      'button',
+      true,
+    );
+    expect(intrinsic).toBe(
+      'const _1 = 1;\nconst App = () => <button>{_1}</button>;\n',
+    );
+    expect(parseErrorCount(intrinsic, 'file.tsx')).toBe(0);
+    // A class member moves with every property-position use of its name.
+    expect(
+      renameOf(
+        'class Klass { field = 1; read() { return this.field; } }\n',
+        'field',
+      ),
+    ).toBe('class Klass { _1 = 1; read() { return this._1; } }\n');
   });
 
   /**
@@ -812,6 +1717,31 @@ describe('degenerate-identifier fix closure', () => {
   });
 
   /**
+   * The same floor for the suggestion channel. A run that invents no name at
+   * all cannot show a collapse, so the deriving count is the only evidence the
+   * comparison had anything to compare.
+   */
+  it('actually drove name-from-literal derivations through suggestions', () => {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[degenerate-literal-suggestion] considered ${literalSuggestionTotals.considered}, ` +
+        `rewritten ${literalSuggestionTotals.rewritten}, ` +
+        `derivations ${literalSuggestionTotals.derivationsObserved} across ` +
+        `${literalSuggestionTotals.rulesDeriving.size} rule(s); ` +
+        `unreadable controls ${literalSuggestionTotals.unreadableControl}\n` +
+        `  deriving rules: ${
+          [...literalSuggestionTotals.rulesDeriving].join(', ') || '(none)'
+        }`,
+    );
+    expect(literalSuggestionTotals.unreadableControl).toBe(0);
+    expect(literalSuggestionTotals.considered).toBeGreaterThan(500);
+    expect(literalSuggestionTotals.derivationsObserved).toBeGreaterThan(100);
+    expect(literalSuggestionTotals.rulesDeriving.size).toBeGreaterThanOrEqual(
+      4,
+    );
+  });
+
+  /**
    * Pins the parser option the reach depends on. The floors above would also
    * drop if `range` regressed, but they would read as "the corpus shrank"; this
    * names the cause, so the next reader is not left bisecting counters.
@@ -829,39 +1759,13 @@ describe('degenerate-identifier fix closure', () => {
   });
 
   it('no fixer derives a name that collapses to its bare affix', () => {
-    // Every affected rule is named before the truncated examples: slicing to the
-    // first 20 findings otherwise hides whole rules behind whichever one the
-    // sweep reached first, which is the difference between a report that says
-    // what to fix and one that says only where to start looking.
-    const byRule = [...new Set(literalTotals.findings.map((f) => f.rule))];
-    const header = byRule.length
-      ? `${literalTotals.findings.length} finding(s) across ${
-          byRule.length
-        } rule(s): ${byRule.join(', ')}\n`
-      : '';
-    const report =
-      header +
-      literalTotals.findings
-        .slice(0, 20)
-        .map((finding) =>
-          finding.kind === 'parse'
-            ? `${finding.rule} (${finding.origin}) literal ${JSON.stringify(
-                finding.literal,
-              )} -> output does not parse\n  OUT: ${JSON.stringify(
-                finding.output,
-              )}`
-            : `${finding.rule} (${finding.origin}) literal ${JSON.stringify(
-                finding.literal,
-              )} derived ${finding.derivedDegenerate} ` +
-              `where a real value derives ${
-                finding.derivedControl
-              }\n  IN : ${JSON.stringify(
-                finding.input,
-              )}\n  OUT: ${JSON.stringify(finding.output)}`,
-        )
-        .join('\n');
-    expect(report).toBe('');
+    expect(describeLiteralFindings(literalTotals.findings)).toBe('');
     expect(literalTotals.findings).toEqual([]);
+  });
+
+  it('no suggestion derives a name that collapses to its bare affix', () => {
+    expect(describeLiteralFindings(literalSuggestionTotals.findings)).toBe('');
+    expect(literalSuggestionTotals.findings).toEqual([]);
   });
 
   /**
@@ -925,9 +1829,15 @@ describe('degenerate-identifier fix closure', () => {
 
     const newNames = (before: string, after: string) => {
       const baseline = identifierNamesOf(before, false);
+      const derived = identifierNamesOf(after, false);
+      // Both sides are hand-written and must parse. Folding a null into an
+      // empty set instead would let the control pass on a pair it could not
+      // read, which is the failure this arm exists to prevent (#1820).
+      expect(baseline).not.toBeNull();
+      expect(derived).not.toBeNull();
       return new Set(
-        [...identifierNamesOf(after, false)].filter(
-          (name) => !baseline.has(name),
+        [...(derived as Set<string>)].filter(
+          (name) => !(baseline as Set<string>).has(name),
         ),
       );
     };
