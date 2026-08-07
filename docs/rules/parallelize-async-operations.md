@@ -164,6 +164,47 @@ async function readBoth(url1: string, url2: string) {
 
 The scan stops at every function boundary, because an `await` inside a callback belongs to that callback and runs only when it is invoked. `await Promise.all(items.map(async (item) => await store(item)))` evaluates straight through to a promise without suspending anything, so it remains parallelizable.
 
+### ✅ Correct (sequential `reduce` accumulator)
+
+`arr.reduce(async (promise, item) => { await promise; ... }, Promise.resolve())` is the canonical idiom for **forcing** sequential execution over a collection. The callback's first parameter *is* the previous iteration's completion, so `await promise` is a serialization barrier rather than an operation of its own — the whole point of writing the fold instead of `Promise.all(arr.map(...))`.
+
+```typescript
+async function persistAll(documents: Doc[], collectionRef: CollectionReference) {
+  const setter = new DocSetter(collectionRef);
+  // Each `setter.set` waits for the previous document to finish.
+  await documents.reduce(async (promise, doc) => {
+    await promise;
+    await setter.set(doc);
+  }, Promise.resolve());
+}
+```
+
+The dependency here is a **sequencing** one: the accumulator and `setter.set(doc)` share no value at all, so the identifier comparison the rule uses would classify them independent and hoist both into a `Promise.all([...])` — starting every iteration's work at once and discarding exactly the guarantee the idiom exists to provide. The run is deliberate rather than a latency mistake, so the rule declines to **report** it, not merely to fix it.
+
+The accumulator is resolved through the **scope chain**, never matched against a name list: it is spelled `promise`, `acc`, `previous`, `prev`, `chain` or anything else the author preferred, and a local that merely borrows one of those spellings (`const promise = load(doc); await promise;`) is correctly *not* the accumulator. The barrier requires all of:
+
+- the awaited expression is a bare identifier (TS-only `!` and `as T` wrappers are looked through);
+- it resolves to the **first** parameter of its declaring function, so awaiting the element parameter stays reportable;
+- that function is passed **directly** as the first argument of a `.reduce(...)` or `.reduceRight(...)` call — a callback bound to a name first is not chased;
+- something in the run **follows** the accumulator await, since it is what follows the barrier that the rewrite would illegally start early.
+
+A `for...of` loop expresses the same sequential intent and is exempt through the loop barrier instead.
+
+#### ❌ Incorrect (an independent run later in the same fold callback)
+
+Only the statement run containing the accumulator await is exempted. A later, separate run of genuinely independent awaits in the same callback is still reported and still fixed, so the exemption cannot switch the rule off for a whole callback:
+
+```typescript
+await documents.reduce(async (promise, doc) => {
+  await promise;
+  await setter.set(doc);
+  const derived = compute(doc);
+  // Nothing serializes this pair: it is reported and merged as usual.
+  await logStart(derived);
+  await logFinish(derived);
+}, Promise.resolve());
+```
+
 ### ✅ Correct (test files are exempt)
 
 Test files are skipped entirely. A test suite serves no requests and is not latency-critical, so the rule's rationale — that sequential awaits make network and I/O latency add up — does not apply to it. Its awaits instead encode **ordering**: an awaited assertion observes the DOM or server state produced by a preceding awaited interaction. That dependency is a side effect rather than a value, so it is invisible to every barrier above, and `Promise.all([...])` would race the assertion against the interaction.
@@ -269,6 +310,7 @@ Skip or disable the rule if any of the following apply:
 1. Later operations truly depend on values produced by earlier awaits.
 1. Each await needs its own try/catch or error boundary.
 1. The operations rely on ordered side effects that must not overlap.
+1. The awaits sit inside a fold that exists to serialize them — write it as `arr.reduce(async (promise, item) => { await promise; ... }, Promise.resolve())` and the rule leaves the run alone.
 1. The awaits sit inside a loop where batching or chunked parallelism would be safer.
 
    ### ✅ Recommended in loops
