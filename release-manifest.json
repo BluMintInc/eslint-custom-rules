@@ -1,5 +1,28 @@
 [
   {
+    "version": "1.20.131",
+    "date": "2026-08-07T10:28:22.079Z",
+    "rules": [
+      {
+        "name": "enforce-dynamic-imports",
+        "changeType": "fix",
+        "issues": [
+          1845
+        ],
+        "summary": "cover a package's subpaths from one ignoredLibraries entry (closes #1845)"
+      },
+      {
+        "name": "enforce-react-type-naming",
+        "changeType": "fix",
+        "issues": [
+          1846,
+          1847
+        ],
+        "summary": "yield exported module-scope constants to global-const-style (closes #1847); yield module-scope constants to global-const-style (closes #1846)"
+      }
+    ]
+  },
+  {
     "version": "1.20.130",
     "date": "2026-08-07T08:38:15.008Z",
     "rules": [

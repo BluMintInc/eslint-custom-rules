@@ -1,3 +1,12 @@
+## [1.20.131](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.130...v1.20.131) (2026-08-07)
+
+
+### Bug Fixes
+
+* **enforce-dynamic-imports:** cover a package's subpaths from one ignoredLibraries entry (closes [#1845](https://github.com/BluMintInc/eslint-custom-rules/issues/1845)) ([b91138a](https://github.com/BluMintInc/eslint-custom-rules/commit/b91138a1962510ec7ccbe707fff593bbc9470ff6))
+* **enforce-react-type-naming:** yield exported module-scope constants to global-const-style (closes [#1847](https://github.com/BluMintInc/eslint-custom-rules/issues/1847)) ([d5d0f98](https://github.com/BluMintInc/eslint-custom-rules/commit/d5d0f9853f998a6e2eec7bcb0e434ee35c13a91a))
+* **enforce-react-type-naming:** yield module-scope constants to global-const-style (closes [#1846](https://github.com/BluMintInc/eslint-custom-rules/issues/1846)) ([235d9ba](https://github.com/BluMintInc/eslint-custom-rules/commit/235d9bae5e07d4cdd06c729efadd1f663eb230c3))
+
 ## [1.20.130](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.129...v1.20.130) (2026-08-07)
 
 
