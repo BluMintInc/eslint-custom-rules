@@ -270,11 +270,40 @@ function isPrimitiveLiteral(node: TSESTree.Node | undefined): boolean {
   );
 }
 
-/** Whether a declarator is initialized from a `<x>.firestore()` call. */
+/**
+ * Strips the wrappers that leave an expression's shape intact, assertions plus
+ * the `ChainExpression` an optional link parks on the outermost node of a chain.
+ *
+ * The two are kept apart rather than merged into `unwrapAssertions` because a
+ * chain is not erased at runtime: `admin?.firestore()` evaluates to the handle
+ * or to `undefined`, so a caller reasoning about the *value* an expression
+ * produces — `isPrimitiveLiteral` — must keep seeing the chain. A caller
+ * reasoning about the *shape* it is written in, which is what the evidence scan
+ * asks, must look through it: the optional link decides whether the handle is
+ * produced, never which instance it is.
+ */
+function unwrapTransparent(node: TSESTree.Node): TSESTree.Node {
+  const stripped = unwrapAssertions(node);
+  return stripped.type === AST_NODE_TYPES.ChainExpression
+    ? unwrapTransparent(stripped.expression)
+    : stripped;
+}
+
+/**
+ * Whether a declarator is initialized from a `<x>.firestore()` call.
+ *
+ * Both optional spellings — `admin?.firestore()` and `admin.firestore?.()` —
+ * parse as `ChainExpression > CallExpression`, so testing the initializer's own
+ * type read `ChainExpression` and answered no. Since this scan is the last
+ * detector left for a bare-identifier receiver, that miss dropped the report
+ * silently, and it hit the more careful spellings hardest: `admin.apps[0]?.
+ * firestore()` and `admin.app()?.firestore()` are the idiomatic admin-SDK
+ * singleton bootstrap, not exotic code.
+ */
 function initializesFirestore(
   declarator: TSESTree.VariableDeclarator,
 ): boolean {
-  const { init } = declarator;
+  const init = declarator.init ? unwrapTransparent(declarator.init) : null;
   return (
     init?.type === AST_NODE_TYPES.CallExpression &&
     init.callee.type === AST_NODE_TYPES.MemberExpression &&
