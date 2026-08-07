@@ -42,11 +42,22 @@ The rule uses purely syntactic detection (no type-checker required):
 >
 > Because the innermost declaration wins, an inner alias shadows a same-named outer one, and an alias declared in a sibling scope is not in scope and does not resolve. TypeScript hoists type declarations, so an alias written *after* the `useState` call that references it still resolves.
 
+> **Optional chaining and type assertions are transparent.** All three signals read through `?.`, `as T`, `<T>x`, `x satisfies T`, `x!` and `fn<T>`, because none of them changes the value that reaches the setter. `setX(props?.onClose)` is flagged exactly like `setX(props.onClose)` — when `props` is present and `onClose` is a function, React still invokes it as an updater — and the fix keeps the original expression verbatim inside the thunk (`setX(() => props?.onClose)`), so it cannot throw where the original did not. The same transparency preserves the carve-outs in the other direction: `setState(getHandler?.())` is a call, so it stays exempt just like `setState(getHandler())`.
+
+> **A top-level type assertion is reported but not auto-fixed.** A thunk around `props.onClose as any` would be an arrow returning a cast, which [`no-type-assertion-returns`](./no-type-assertion-returns.md) — also `error` in the recommended config — reports, so `eslint --fix` would trade one error for another. Hoisting the cast is the remedy that converges under both rules:
+>
+> ```ts
+> const onClose = props.onClose as any;
+> setX(() => onClose);
+> ```
+>
+> Moving the assertion outside the thunk (`setX((() => props.onClose) as any)`) is deliberately not emitted: it asserts a different value, and for an asserted type that is neither assignable to nor from `() => T` it does not compile.
+
 ### Safe forms (never flagged)
 
 - Inline arrow / function expressions: `setState(() => fn)` or `setState((prev) => prev + 1)`
 - Literals: `setState(null)`, `setState(undefined)`, `setState(42)`, `setState('hello')`
-- Call expressions (return type unknown without type checker): `setState(getHandler())`
+- Call expressions (return type unknown without type checker): `setState(getHandler())`, including the optional spellings `setState(getHandler?.())` and `setState(factory?.build())`
 - Object and array literals: `setState({})`, `setState([])`
 - Non-function-typed state with non-matching names: `setCount(n)` where `n` is just a number
 
@@ -68,6 +79,16 @@ setPageForward(showMore);
 // Heuristic match: 'onClose' matches on[A-Z].* pattern
 const [x, setX] = useState(null);
 setX(props.onClose);
+
+// Optional chaining does not retire the hazard — when props is present,
+// React still invokes onClose as a functional updater
+const [y, setY] = useState(null);
+setY(props?.onClose);
+
+// Type assertions are erased at runtime, so this is the same call
+// (reported without an auto-fix — hoist the cast, see above)
+const [z, setZ] = useState(null);
+setZ(props.onClose as any);
 ```
 
 ### Correct
@@ -90,6 +111,15 @@ setCount((prev) => prev + 1);
 // Non-function state — fine to pass identifiers
 const [count, setCount] = useState<number>(0);
 setCount(n);
+
+// The thunk carries the optional chain verbatim, so it short-circuits
+// exactly where the original did
+const [y, setY] = useState(null);
+setY(() => props?.onClose);
+
+// A call's return type is unknown without a checker, optional or not
+const [cb, setCb] = useState<(() => void) | null>(null);
+setCb(factory?.build());
 ```
 
 ## Options

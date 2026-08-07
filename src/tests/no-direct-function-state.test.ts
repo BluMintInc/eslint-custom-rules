@@ -234,6 +234,76 @@ setValue(actions.refresh);
       return { apply };
     }
     `,
+
+    // `?.` does not retire the CallExpression carve-out. `factory?.build()` is
+    // still a call whose return type is unknown without a checker, so the same
+    // "skip, no FP" verdict applies as for `factory.build()`. Reporting it would
+    // emit `() => factory?.build()`, deferring the call into a React updater
+    // that must stay pure — a semantics change on working code.
+    {
+      code: `
+const [cb, setCb] = useState<(() => void) | null>(null);
+setCb(factory?.build());
+      `,
+      output: null,
+    },
+
+    // Optional-call spelling of the same carve-out.
+    {
+      code: `
+const [cb, setCb] = useState<(() => void) | null>(null);
+setCb(makeFn?.());
+      `,
+      output: null,
+    },
+
+    // Optional member read followed by a plain call.
+    {
+      code: `
+const [cb, setCb] = useState<(() => void) | null>(null);
+setCb(factory.build?.());
+      `,
+      output: null,
+    },
+
+    // The real-world shape from the report: a ref read inside the call.
+    {
+      code: `
+const [cb, setCb] = useState<(() => void) | null>(null);
+setCb(ref.current?.getHandler());
+      `,
+      output: null,
+    },
+
+    // A call carve-out reached through both wrapper kinds at once.
+    {
+      code: `
+const [cb, setCb] = useState<(() => void) | null>(null);
+setCb(factory?.build() as (() => void) | null);
+      `,
+      output: null,
+    },
+
+    // Seeing through the wrappers must not manufacture a name match: `value` is
+    // outside every default pattern, so the optional read stays silent under an
+    // untyped useState.
+    {
+      code: `
+const [x, setX] = useState(null);
+setX(props?.value);
+      `,
+      output: null,
+    },
+
+    // Unwrapping the declarator's initializer must not widen which calls count
+    // as `useState`: an optional call to something else registers no setter.
+    {
+      code: `
+const [x, setX] = hooks?.useToggle(null);
+setX(props.onClose);
+      `,
+      output: null,
+    },
   ],
 
   invalid: [
@@ -862,6 +932,230 @@ function usePortal() {
   }
   return inner;
 }
+      `,
+    },
+
+    // Optional chaining: `props?.onClose` is a ChainExpression wrapping the
+    // MemberExpression, and the hazard is unchanged by the nullish branch —
+    // when `props` is present and `onClose` is a function, React still invokes
+    // it as an updater. The thunk remedy is total: the `?.` is preserved
+    // verbatim inside it, so it cannot throw where the original did not.
+    {
+      code: `
+const [x, setX] = useState(null);
+setX(props?.onClose);
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+const [x, setX] = useState(null);
+setX(() => props?.onClose);
+      `,
+    },
+
+    // Deeper chain, optional link before the flagged property.
+    {
+      code: `
+const [x, setX] = useState(null);
+setX(a.b?.onClose);
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+const [x, setX] = useState(null);
+setX(() => a.b?.onClose);
+      `,
+    },
+
+    // Deeper chain, optional link earlier than the last member read — the
+    // ChainExpression still wraps the outermost MemberExpression.
+    {
+      code: `
+const [x, setX] = useState(null);
+setX(a?.b.onClose);
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+const [x, setX] = useState(null);
+setX(() => a?.b.onClose);
+      `,
+    },
+
+    // Optional chaining under a custom pattern list — the name signal reads the
+    // same property whether or not the access is optional.
+    {
+      code: `
+const [value, setValue] = useState(null);
+setValue(actions?.refresh);
+      `,
+      options: [{ functionPatterns: ['refresh'] }],
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+const [value, setValue] = useState(null);
+setValue(() => actions?.refresh);
+      `,
+    },
+
+    // `as` is erased at runtime, so the argument is still the function the
+    // pattern names. The fix is declined and the message names the hoist
+    // instead: a thunk returning the cast would be an arrow returning a type
+    // assertion, which no-type-assertion-returns (also `error` in recommended)
+    // reports — trading one error for another under `--fix`.
+    {
+      code: `
+const [x, setX] = useState(null);
+setX(props.onClose as any);
+      `,
+      errors: [{ messageId: 'noDirectFunctionStateAssertion' }],
+      output: null,
+    },
+
+    // Both wrapper kinds stacked: TSAsExpression over ChainExpression.
+    {
+      code: `
+const [x, setX] = useState(null);
+setX(props?.onClose as any);
+      `,
+      errors: [{ messageId: 'noDirectFunctionStateAssertion' }],
+      output: null,
+    },
+
+    // Only a TOP-LEVEL assertion costs the fix. Nested inside the argument, the
+    // thunk ends up returning a member read, which no-type-assertion-returns
+    // exempts — so this one keeps its autofix.
+    {
+      code: `
+const [x, setX] = useState(null);
+setX((props as any).onClose);
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+const [x, setX] = useState(null);
+setX(() => (props as any).onClose);
+      `,
+    },
+
+    // Angle-bracket type assertion — same decline.
+    {
+      code: `
+const [x, setX] = useState(null);
+setX(<any>props.onClose);
+      `,
+      errors: [{ messageId: 'noDirectFunctionStateAssertion' }],
+      output: null,
+    },
+
+    // A function-typed state reaches the same argument through the primary
+    // signal rather than the name pattern, and must decline identically. This
+    // path predates the optional-chaining fix: `isDefinitelySafeArg` already
+    // unwrapped `as`, so this snippet was already being rewritten into a
+    // no-type-assertion-returns violation.
+    {
+      code: `
+const [cb, setCb] = useState<(() => void) | null>(null);
+setCb(obj.handler as any);
+      `,
+      errors: [{ messageId: 'noDirectFunctionStateAssertion' }],
+      output: null,
+    },
+
+    // `satisfies` — same erased wrapper.
+    {
+      code: `
+const [x, setX] = useState(null);
+setX(props.onClose satisfies unknown);
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+const [x, setX] = useState(null);
+setX(() => props.onClose satisfies unknown);
+      `,
+    },
+
+    // Non-null assertion over a member read.
+    {
+      code: `
+const [x, setX] = useState(null);
+setX(props.onClose!);
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+const [x, setX] = useState(null);
+setX(() => props.onClose!);
+      `,
+    },
+
+    // The scope-binding signal reads the same argument, so it has to see
+    // through the wrappers too: `myCallback` is bound to an arrow function and
+    // its name matches no pattern, making the binding the only live signal.
+    {
+      code: `
+const [x, setX] = useState(null);
+const myCallback = () => {};
+setX(myCallback!);
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+const [x, setX] = useState(null);
+const myCallback = () => {};
+setX(() => myCallback!);
+      `,
+    },
+
+    // Instantiation expression (`fn<T>`) is erased too, so the reference it
+    // wraps is still a bare function reference.
+    {
+      code: `
+const [x, setX] = useState(null);
+declare function onSelect<T>(value: T): void;
+setX(onSelect<string>);
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+const [x, setX] = useState(null);
+declare function onSelect<T>(value: T): void;
+setX(() => onSelect<string>);
+      `,
+    },
+
+    // An optionally-accessed hook still declares a setter. Missing it does not
+    // merely lose this declaration — it untracks `setX` for the whole file, so
+    // every later setter call goes unchecked too.
+    {
+      code: `
+const [x, setX] = React?.useState(null);
+setX(props.onClose);
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+const [x, setX] = React?.useState(null);
+setX(() => props.onClose);
+      `,
+    },
+
+    // Optional-call spelling of the hook itself.
+    {
+      code: `
+const [x, setX] = useState?.(null);
+setX(props.onClose);
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+const [x, setX] = useState?.(null);
+setX(() => props.onClose);
+      `,
+    },
+
+    // Unwrapping a ChainExpression must not exempt the member read it contains:
+    // under a function-typed state, `obj?.handler` is as suspect as
+    // `obj.handler`.
+    {
+      code: `
+const [cb, setCb] = useState<(() => void) | null>(null);
+setCb(obj?.handler);
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+const [cb, setCb] = useState<(() => void) | null>(null);
+setCb(() => obj?.handler);
       `,
     },
   ],
