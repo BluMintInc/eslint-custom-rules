@@ -301,6 +301,38 @@ ruleTesterTs.run(
         code: 'class Feature { constructor(private hasAccess: boolean) {} }',
         options: [{ prefixes: ['has'] }],
       },
+
+      // An optional link does not weaken the prefix requirement, so a name that
+      // already carries one satisfies the rule under a chain exactly as it does
+      // without one.
+      `declare const user: { isLoggedIn: boolean } | undefined;
+const isLoggedIn = user?.isLoggedIn;`,
+      `type Props = { canDelete?: (id: string) => boolean };
+const isDeletable = (props: Props) => props.canDelete?.('x');`,
+
+      // Unwrapping the chain must not widen the heuristics themselves: a
+      // property or callee that suggests nothing about booleans stays silent,
+      // matching the un-chained spelling.
+      `declare const user: { name: string } | undefined;
+const name = user?.name;`,
+      `declare const api: { fetchUser?: (id: string) => string };
+const account = api.fetchUser?.('x');`,
+
+      // A resolvable declaration still overrules the callee's name under a chain.
+      `function canDelete(id: string): string {
+  return id;
+}
+const deletable = canDelete?.('a');`,
+
+      // A computed access carries no property name to read, chained or not.
+      `declare const flags: Record<string, boolean>;
+const enabled = flags?.['isEnabled'];`,
+
+      // A binding shadowing the global `Boolean` is not the coercion, so the
+      // chained call stays as silent as the plain one.
+      `const Boolean = (value: unknown) => value;
+declare const state: unknown;
+const flag = Boolean?.(state);`,
     ],
     invalid: [
       // Variables without proper boolean prefixes
@@ -951,6 +983,76 @@ ruleTesterTs.run(
             type: 'property',
             name: 'enabled',
             capitalizedName: 'Enabled',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+
+      // An optional link wraps the member or call in a ChainExpression, which
+      // must not hide the boolean value from the initializer heuristics. The
+      // resulting `boolean | undefined` still needs the prefix — the rule
+      // already demands it of `enabled?: boolean` above — and the remedy is a
+      // rename of the binding, which leaves the short-circuit untouched.
+      {
+        code: `declare const user: { isLoggedIn: boolean } | undefined;
+const loggedIn = user?.isLoggedIn;`,
+        errors: [
+          buildError({
+            type: 'variable',
+            name: 'loggedIn',
+            capitalizedName: 'LoggedIn',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+      {
+        code: `declare const user: { profile?: { isLoggedIn: boolean } } | undefined;
+const loggedIn = user?.profile?.isLoggedIn;`,
+        errors: [
+          buildError({
+            type: 'variable',
+            name: 'loggedIn',
+            capitalizedName: 'LoggedIn',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+      {
+        code: `type Props = { canDelete?: (id: string) => boolean };
+function Row({ canDelete }: Props) {
+  const deletable = canDelete?.('x');
+  return deletable;
+}`,
+        errors: [
+          buildError({
+            type: 'variable',
+            name: 'deletable',
+            capitalizedName: 'Deletable',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+      {
+        code: `declare const isFallback: boolean;
+declare const canDelete: ((id: string) => boolean) | undefined;
+const deletable = canDelete?.('a') || isFallback;`,
+        errors: [
+          buildError({
+            type: 'variable',
+            name: 'deletable',
+            capitalizedName: 'Deletable',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+      {
+        code: `declare const state: unknown;
+const flag = Boolean?.(state);`,
+        errors: [
+          buildError({
+            type: 'variable',
+            name: 'flag',
+            capitalizedName: 'Flag',
             prefixes: defaultPrefixes,
           }),
         ],
