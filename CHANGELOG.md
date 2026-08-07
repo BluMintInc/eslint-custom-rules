@@ -1,3 +1,14 @@
+## [1.20.127](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.126...v1.20.127) (2026-08-07)
+
+
+### Bug Fixes
+
+* **enforce-boolean-naming-prefixes:** read an optional-chained initializer as boolean (closes [#1828](https://github.com/BluMintInc/eslint-custom-rules/issues/1828)) ([00126bb](https://github.com/BluMintInc/eslint-custom-rules/commit/00126bba7f2c3ed976afc223ee9b0bdb6851d6e6))
+* **enforce-firestore-doc-ref-generic:** resolve a typed collection through an optional link (closes [#1826](https://github.com/BluMintInc/eslint-custom-rules/issues/1826)) ([301cf37](https://github.com/BluMintInc/eslint-custom-rules/commit/301cf37e58b16686879dc5d769c571dd5dcaf6b3))
+* **enforce-firestore-set-merge:** see a Firestore handle through an optional link (closes [#1827](https://github.com/BluMintInc/eslint-custom-rules/issues/1827)) ([0acc389](https://github.com/BluMintInc/eslint-custom-rules/commit/0acc389290692eb907998caba30939efacba4aa6))
+* **fast-deep-equal-over-microdiff:** unwrap ChainExpression in the binary comparison arm (closes [#1825](https://github.com/BluMintInc/eslint-custom-rules/issues/1825)) ([b5eb171](https://github.com/BluMintInc/eslint-custom-rules/commit/b5eb1713ec1cd3bba1e00ec0b69d3080c68293ac))
+* **no-direct-function-state:** read the setter argument through transparent wrappers (closes [#1824](https://github.com/BluMintInc/eslint-custom-rules/issues/1824)) ([db44d3d](https://github.com/BluMintInc/eslint-custom-rules/commit/db44d3d6c1d1b3ee9c5a673255ddcf92a667867d))
+
 ## [1.20.126](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.125...v1.20.126) (2026-08-06)
 
 

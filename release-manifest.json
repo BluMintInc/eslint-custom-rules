@@ -1,5 +1,51 @@
 [
   {
+    "version": "1.20.127",
+    "date": "2026-08-07T02:31:31.437Z",
+    "rules": [
+      {
+        "name": "enforce-boolean-naming-prefixes",
+        "changeType": "fix",
+        "issues": [
+          1828
+        ],
+        "summary": "read an optional-chained initializer as boolean (closes #1828)"
+      },
+      {
+        "name": "enforce-firestore-doc-ref-generic",
+        "changeType": "fix",
+        "issues": [
+          1826
+        ],
+        "summary": "resolve a typed collection through an optional link (closes #1826)"
+      },
+      {
+        "name": "enforce-firestore-set-merge",
+        "changeType": "fix",
+        "issues": [
+          1827
+        ],
+        "summary": "see a Firestore handle through an optional link (closes #1827)"
+      },
+      {
+        "name": "fast-deep-equal-over-microdiff",
+        "changeType": "fix",
+        "issues": [
+          1825
+        ],
+        "summary": "unwrap ChainExpression in the binary comparison arm (closes #1825)"
+      },
+      {
+        "name": "no-direct-function-state",
+        "changeType": "fix",
+        "issues": [
+          1824
+        ],
+        "summary": "read the setter argument through transparent wrappers (closes #1824)"
+      }
+    ]
+  },
+  {
     "version": "1.20.126",
     "date": "2026-08-06T22:42:22.372Z",
     "rules": [
