@@ -1,3 +1,10 @@
+## [1.20.134](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.133...v1.20.134) (2026-08-07)
+
+
+### Bug Fixes
+
+* **enforce-unique-cursor-headers:** keep null defaults out of the options deep-merge (closes [#1853](https://github.com/BluMintInc/eslint-custom-rules/issues/1853)) ([6f3c309](https://github.com/BluMintInc/eslint-custom-rules/commit/6f3c30982612dbd70b3877c7b3638c2fa731c0fb))
+
 ## [1.20.133](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.132...v1.20.133) (2026-08-07)
 
 
