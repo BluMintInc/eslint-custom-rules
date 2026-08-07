@@ -138,7 +138,6 @@ import {
   parserOptionsFor,
   severityWithOptions,
   ruleNameByIdentity,
-  typeAwareRuleNames,
   FixtureCase,
 } from '../utils/fixtureCorpus';
 
@@ -495,6 +494,36 @@ for (const [id, severity] of Object.entries(plugin.configs.recommended.rules)) {
 const FILENAME_ARTIFACT_REPORTERS = new Set(['test-file-location-enforcement']);
 
 /**
+ * Owners whose self-reports on their own `valid` fixtures are an artifact of the
+ * TYPE information this harness withholds, keyed by rule with the measurement
+ * behind each.
+ *
+ * This replaces a blanket discount of every rule whose source mentions the
+ * checker. That set has 16 members and only one of them self-reports, so the
+ * blanket form was silently blessing 15 rules' future false positives while
+ * claiming to explain one rule's (#1859). It is also not "these rules report
+ * nothing here": all 16 report, which is why they are probed at all.
+ *
+ * Both directions are asserted below: an entry that stops reproducing must be
+ * deleted, since a stale one absorbs the next real self-report.
+ */
+const TYPE_ARTIFACT_SELF_REPORTERS: Record<string, string> = {
+  /**
+   * Its built-in carve-out is type-driven: `arrivalIds.has(id)`,
+   * `teamIndexMap.get(id)` and `onLoad.call/bind/apply` are reads of a METHOD on
+   * a `Set`/`Map`/function dependency, and the rule recognises them by asking
+   * the checker for the dependency's type. `harvestFixtureCorpus` strips
+   * `parserOptions.project`, and the isolated single-file program that remains
+   * has no lib types, so `Set<string>` resolves to an error type, the carve-out
+   * never fires, and all six of these `valid` fixtures report
+   * `avoidEntireObject`. Under the configuration its own suite declares, they
+   * are silent.
+   */
+  'no-entire-object-hook-deps':
+    'built-in method carve-out needs lib types the isolated program lacks',
+};
+
+/**
  * The documented pair graph: rule A's source naming rule B, both directions.
  *
  * A plain substring test, so a rule name that is a PREFIX of another also links
@@ -577,7 +606,9 @@ const stats = {
   fatals: 0,
   selfReports: 0,
   selfReportExamples: [] as string[],
-  typeAwareSelfReports: 0,
+  typeArtifactSelfReports: 0,
+  /** Which owners actually produced one, so a stale discount can be found. */
+  typeArtifactSelfReporters: new Set<string>(),
   filenameArtifactSelfReports: 0,
   reportersHeardFrom: new Set<string>(),
 };
@@ -648,8 +679,9 @@ function scanOwner(
         (message) => message.ruleId === ownerId,
       );
       if (selfReported) {
-        if (typeAwareRuleNames.has(owner)) {
-          stats.typeAwareSelfReports++;
+        if (owner in TYPE_ARTIFACT_SELF_REPORTERS) {
+          stats.typeArtifactSelfReports++;
+          stats.typeArtifactSelfReporters.add(owner);
         } else if (FILENAME_ARTIFACT_REPORTERS.has(owner)) {
           stats.filenameArtifactSelfReports++;
         } else {
@@ -1418,24 +1450,40 @@ describe('the cross-rule contradiction guard is load-bearing', () => {
   });
 
   it('accounts for the legitimate self-control residue', () => {
-    // Counted, never folded into the control above: a type-aware rule has no
-    // program here and `test-file-location-enforcement` answers from the path.
+    // Counted, never folded into the control above: `no-entire-object-hook-deps`
+    // resolves its carve-out through the checker and `test-file-location-
+    // enforcement` answers from the path, so neither one's self-report is
+    // evidence about the rule.
     //
-    // Both are asserted non-zero: a zero would mean the exclusion has stopped
-    // being needed and is now free to hide a real self-report instead. The
-    // type-aware residue (6) comes from the two type-aware rules that own a
-    // documented pair here, `prefer-use-deep-compare-memo` and
-    // `no-entire-object-hook-deps`, whose fixtures are written for a checker
-    // this bare `Linter` does not give them.
-    expect(typeAwareRuleNames.size).toBeGreaterThanOrEqual(5);
+    // Both are asserted non-zero: a zero would mean the discount has stopped
+    // being needed and is now free to hide a real self-report instead — which
+    // is why the type residue is keyed by RULE NAME rather than by "the rule
+    // mentions the checker". That wider form covered 16 rules to explain one,
+    // and each of the other 15 would have had its next false positive absorbed
+    // silently (#1859).
+    expect(Object.keys(TYPE_ARTIFACT_SELF_REPORTERS).length).toBeGreaterThan(0);
     expect(stats.filenameArtifactSelfReports).toBeGreaterThan(0);
-    expect(stats.typeAwareSelfReports).toBeGreaterThan(0);
+    expect(stats.typeArtifactSelfReports).toBeGreaterThan(0);
     // eslint-disable-next-line no-console
     console.log(
       `[crossrule-contradiction] self-control residue: ` +
         `${stats.filenameArtifactSelfReports} path-keyed, ` +
-        `${stats.typeAwareSelfReports} type-aware`,
+        `${stats.typeArtifactSelfReports} type-artifact ` +
+        `(${Object.keys(TYPE_ARTIFACT_SELF_REPORTERS).join(', ')})`,
     );
+  });
+
+  /**
+   * The other direction. An owner listed as a type artifact that no longer
+   * self-reports has had its discount outlive its reason, and would absorb the
+   * next real one — the #1839 failure in miniature.
+   */
+  it('holds no stale type-artifact discount', () => {
+    expect(
+      Object.keys(TYPE_ARTIFACT_SELF_REPORTERS).filter(
+        (rule) => !stats.typeArtifactSelfReporters.has(rule),
+      ),
+    ).toEqual([]);
   });
 
   it('detects a sibling reporting on a blessed fixture (positive control)', () => {

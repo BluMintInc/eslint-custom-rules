@@ -70,7 +70,7 @@ import {
   harvestFixtureCorpus,
   defaultFilenameFor,
   parserOptionsFor,
-  typeAwareRuleNames,
+  silentWithoutProgramRuleNames,
   ruleNameByIdentity,
   FixtureCase,
 } from '../utils/fixtureCorpus';
@@ -307,10 +307,17 @@ type Totals = {
   rulesRewritten: Set<string>;
 };
 
+/**
+ * Only rules that measurably report NOTHING under this harness are excluded —
+ * currently none. The wider "mentions the type checker" set was excluded before
+ * on the theory that a bare `Linter` has no program; it has one (isolated,
+ * single-file), and all 16 of those rules report over their own fixtures, so the
+ * exclusion was suppressing live coverage rather than a false clean (#1859).
+ */
 const fixableRuleNames = [...ruleByName]
   .filter(([, rule]) => rule.meta?.fixable)
   .map(([name]) => name)
-  .filter((name) => !typeAwareRuleNames.has(name));
+  .filter((name) => !silentWithoutProgramRuleNames.has(name));
 
 const corpus = harvestFixtureCorpus();
 
@@ -438,10 +445,26 @@ type LiteralTotals = {
  *
  * A derivation that merely differs (`QUERY_KEY_FALLBACK`) admits no such split
  * and stays silent.
+ *
+ * Names the two runs SHARE are dropped before pairing, and that is load-bearing
+ * rather than an optimization. A name identical under both literals did not come
+ * from the literal — it is invented from something else in the source, so it
+ * belongs to neither side of the comparison. Left in, every short shared name
+ * pairs with every longer shared one: `prefer-map-over-conditional-dispatch`
+ * names its lookup table after the DISCRIMINANT and its keys after the case
+ * tests, so both runs invent `{Record, RESULT_BY_RAW, a, b, c, d}` and `d`
+ * still "collapses" against `Record` — `d` splits as `'' + 'd'`, and `Record`
+ * both starts with `''` and ends with `d`. The existing "identical derivation"
+ * control catches only the exact pair; this is that rule applied to the whole
+ * set.
  */
 const collapsedAgainst = (control: Set<string>, degenerate: Set<string>) => {
-  for (const derived of degenerate) {
-    for (const reference of control) {
+  const literalDerived = [...degenerate].filter((name) => !control.has(name));
+  const literalDerivedControl = [...control].filter(
+    (name) => !degenerate.has(name),
+  );
+  for (const derived of literalDerived) {
+    for (const reference of literalDerivedControl) {
       if (reference.length <= derived.length) continue;
       for (let split = 0; split <= derived.length; split++) {
         const head = derived.slice(0, split);
@@ -885,6 +908,23 @@ describe('degenerate-identifier fix closure', () => {
         new Set(['QUERY_KEY_ORDINARYKEY']),
       ),
     ).toBeNull();
+    // Nor a fixer whose invented names are the SAME set under both literals,
+    // which means none of them was derived from the literal. Pairing across the
+    // shared set flagged `prefer-map-over-conditional-dispatch` on output that
+    // is byte-identical under the control and the degenerate value (#1859).
+    const shared = () => new Set(['Record', 'RESULT_BY_RAW', 'a', 'd']);
+    expect(collapsedAgainst(shared(), shared())).toBeNull();
+    // A genuine collapse alongside shared names is still caught, so the filter
+    // suppresses the pairing artifact and not the defect.
+    expect(
+      collapsedAgainst(
+        new Set(['Record', 'd', 'QUERY_KEY_ORDINARYKEY']),
+        new Set(['Record', 'd', 'QUERY_KEY_']),
+      ),
+    ).toEqual({
+      derivedDegenerate: 'QUERY_KEY_',
+      derivedControl: 'QUERY_KEY_ORDINARYKEY',
+    });
   });
 
   /**

@@ -120,10 +120,31 @@ const withoutProgramOptions = (
 };
 
 /**
- * Rules that ask the checker a question. Under a bare `Linter` they have no
- * program, so they report nothing and would manufacture a false clean rather
- * than a finding — a guard therefore has to be able to say so out loud when one
- * of them contributes no probe, instead of filing it under "no trigger".
+ * Rules whose SOURCE mentions the checker API.
+ *
+ * This is a text fact about the implementation, and nothing more. It says a rule
+ * asks the checker a question somewhere — possibly in a comment, a guarded
+ * fallback, or a branch that only runs when a program exists. It does NOT say
+ * the rule is undrivable without one: measured over their own fixtures under a
+ * bare `Linter`, every one of these 16 reports (500+ reports, 0 crashes)
+ * (#1859). Two reasons, and the second is the surprising one:
+ *
+ *   - the type query is usually one predicate inside a rule whose remaining
+ *     paths are purely syntactic, so stripping it removes a filter, not the
+ *     rule; and
+ *   - `@typescript-eslint/parser` hands back parser services with a program even
+ *     when no `project` is configured — it builds an ISOLATED single-file one.
+ *     `services.program` is therefore never absent here, so the guard `if
+ *     (!services?.program) return;` that rules use never fires. What is missing
+ *     is cross-FILE resolution: an imported symbol's type comes back as `any`
+ *     or an error type, which changes an answer rather than withholding it.
+ *
+ * Guards therefore must not exclude this set to avoid a "false clean" — use
+ * `silentWithoutProgramRuleNames`, which is measured. This set survives because
+ * it is still the right answer to a different question: which rules have a
+ * behaviour a bare `Linter` cannot reproduce, and so may report DIFFERENTLY here
+ * than in production. A guard that needs to discount such a divergence names the
+ * rule explicitly rather than dropping all 16.
  *
  * Read from the rule sources rather than `String(rule.create)`, since
  * `createRule` wraps `create` and stringifying it matches nothing.
@@ -139,6 +160,36 @@ export const typeAwareRuleNames = new Set(
     )
     .map((file) => path.basename(file, '.ts')),
 );
+
+/**
+ * Rules a bare `Linter` genuinely cannot drive: over their own harvested
+ * fixtures they produce ZERO reports, so a guard that counted them as "probed
+ * and clean" would be manufacturing a false clean rather than a finding.
+ *
+ * MEASURED, not inferred. Each entry is a rule for which the corpus below yields
+ * no report at all under this harness's own parser options, filenames and
+ * options. `src/tests/type-aware-drivability.test.ts` accounts for the whole of
+ * `typeAwareRuleNames` two ways — every member either reports measurably or is
+ * listed here — so an entry that starts reporting FAILS that suite instead of
+ * quietly holding an exemption open.
+ *
+ * Hard-coded rather than recomputed: measuring it costs a full lint of every
+ * candidate rule's corpus, and a set derived at import time would pay that on
+ * each of the twelve guards that consume it.
+ *
+ * EMPTY BY DESIGN. No such rule currently exists — all 16 members of
+ * `typeAwareRuleNames` report. It is kept as the place an exemption must be
+ * written, so that skipping a rule is a named, reviewable act with a measurement
+ * behind it instead of a set membership nobody can see.
+ *
+ * An entry is a rule NAME plus the reason it produces nothing, e.g. a rule whose
+ * every report site sits behind a cross-file symbol resolution the isolated
+ * program cannot perform. Excluding a rule from ONE guard because its findings
+ * there are artifacts is a different thing and does not belong here: keep those
+ * at the (guard, rule) level in that guard's own baseline, since a rule-global
+ * entry un-gates every other arm the rule participates in (#1839).
+ */
+export const silentWithoutProgramRuleNames = new Set<string>([]);
 
 /**
  * Rule name resolved by OBJECT IDENTITY, never by the display name `run`
