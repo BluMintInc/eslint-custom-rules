@@ -12,6 +12,18 @@ const COMPLEX_EXPRESSION_TYPES = new Set<TSESTree.Expression['type']>([
   AST_NODE_TYPES.ObjectExpression,
 ]);
 
+type Accessibility = 'private' | 'protected' | 'public';
+
+/**
+ * How far a member reaches. An unannotated member is `public`, which is why the
+ * ranks are compared rather than the raw modifiers.
+ */
+const VISIBILITY_RANK: Record<Accessibility, number> = {
+  private: 0,
+  protected: 1,
+  public: 2,
+};
+
 export const noPassthroughGetters = createRule({
   create(context) {
     const sourceCode = context.sourceCode;
@@ -73,6 +85,14 @@ export const noPassthroughGetters = createRule({
 
           // Check if the return statement is accessing a property from a constructor parameter
           if (isConstructorParameterPropertyAccess(returnStatement.argument)) {
+            // A getter that reaches further than the member it forwards is the
+            // only read path its audience has
+            if (
+              widensVisibilityOfForwardedRoot(node, returnStatement.argument)
+            ) {
+              return;
+            }
+
             const getterName =
               getMethodName(node, sourceCode, {
                 computedFallbackToText: false,
@@ -93,6 +113,240 @@ export const noPassthroughGetters = createRule({
         }
       },
     };
+
+    /**
+     * Whether the getter is more visible than the member it forwards.
+     *
+     * The rule's remedy — read the constructor-injected object directly — is
+     * only expressible by callers that can see that object. When the getter
+     * reaches further than its root (`public get` over `private readonly
+     * props`, `protected get` over a base class's `private` field), the getter
+     * IS the encapsulation boundary rather than indirection over an accessible
+     * field, and no caller outside the root's audience has another read path.
+     * TypeScript flatly rejects `this.props.x` in a subclass of a class that
+     * declares `props` private, so for that audience the remedy does not exist.
+     *
+     * Equal visibility keeps reporting: a `private get` over a `private` field
+     * aliases state its only callers already reach, which is the indirection
+     * the rule targets.
+     */
+    function widensVisibilityOfForwardedRoot(
+      node: TSESTree.MethodDefinition,
+      argument: TSESTree.Expression,
+    ): boolean {
+      const root = forwardedRootOf(argument);
+      if (!root) {
+        return false;
+      }
+
+      const rootAccessibility = accessibilityOfRoot(node, root);
+      if (!rootAccessibility) {
+        return false;
+      }
+
+      const getterAccessibility = node.accessibility ?? 'public';
+      return (
+        VISIBILITY_RANK[getterAccessibility] >
+        VISIBILITY_RANK[rootAccessibility]
+      );
+    }
+
+    /**
+     * The member the getter ultimately reads off `this`, e.g. `props` for
+     * `this.props.metadata.ticker`. `#`-prefixed roots are reported separately
+     * because they carry no `accessibility` modifier while being maximally
+     * private.
+     */
+    function forwardedRootOf(
+      argument: TSESTree.Expression,
+    ): { name: string; isEcmaPrivate: boolean } | null {
+      let current: TSESTree.Expression = argument;
+
+      while (current.type === AST_NODE_TYPES.MemberExpression) {
+        if (current.object.type === AST_NODE_TYPES.ThisExpression) {
+          if (current.property.type === AST_NODE_TYPES.PrivateIdentifier) {
+            return { name: current.property.name, isEcmaPrivate: true };
+          }
+          if (!current.computed && current.property.type === 'Identifier') {
+            return { name: current.property.name, isEcmaPrivate: false };
+          }
+          if (
+            current.computed &&
+            current.property.type === 'Literal' &&
+            typeof current.property.value === 'string'
+          ) {
+            return { name: current.property.value, isEcmaPrivate: false };
+          }
+          return null;
+        }
+        current = current.object as TSESTree.Expression;
+      }
+
+      return null;
+    }
+
+    function accessibilityOfRoot(
+      node: TSESTree.MethodDefinition,
+      root: { name: string; isEcmaPrivate: boolean },
+    ): Accessibility | null {
+      if (root.isEcmaPrivate) {
+        return 'private';
+      }
+
+      const declared = declaredAccessibilityIn(
+        node.parent as TSESTree.Node | undefined,
+        root.name,
+      );
+      if (declared) {
+        return declared;
+      }
+
+      // A root declared by a base class is invisible to a syntactic lookup, and
+      // that is exactly where the widest gaps sit (a `public get` forwarding a
+      // base class's `protected` field).
+      return inheritedAccessibilityOf(node, root.name);
+    }
+
+    /**
+     * Accessibility of `name` as declared in the class body that owns `node`,
+     * covering constructor parameter properties, fields and accessors alike —
+     * a forwarded root is spelled any of the three in practice.
+     */
+    function declaredAccessibilityIn(
+      classBody: TSESTree.Node | undefined,
+      name: string,
+    ): Accessibility | null {
+      if (!classBody || classBody.type !== AST_NODE_TYPES.ClassBody) {
+        return null;
+      }
+
+      for (const member of classBody.body) {
+        if (
+          member.type === AST_NODE_TYPES.PropertyDefinition ||
+          member.type === AST_NODE_TYPES.TSAbstractPropertyDefinition
+        ) {
+          if (
+            member.key.type === AST_NODE_TYPES.PrivateIdentifier &&
+            member.key.name === name
+          ) {
+            return 'private';
+          }
+          if (
+            !member.computed &&
+            member.key.type === AST_NODE_TYPES.Identifier &&
+            member.key.name === name
+          ) {
+            return member.accessibility ?? 'public';
+          }
+          continue;
+        }
+
+        if (
+          member.type !== AST_NODE_TYPES.MethodDefinition &&
+          member.type !== AST_NODE_TYPES.TSAbstractMethodDefinition
+        ) {
+          continue;
+        }
+
+        if (member.kind === 'constructor') {
+          const parameterAccessibility = parameterPropertyAccessibility(
+            member,
+            name,
+          );
+          if (parameterAccessibility) {
+            return parameterAccessibility;
+          }
+          continue;
+        }
+
+        if (
+          member.kind === 'get' &&
+          !member.computed &&
+          member.key.type === AST_NODE_TYPES.Identifier &&
+          member.key.name === name
+        ) {
+          return member.accessibility ?? 'public';
+        }
+      }
+
+      return null;
+    }
+
+    function parameterPropertyAccessibility(
+      constructorNode:
+        | TSESTree.MethodDefinition
+        | TSESTree.TSAbstractMethodDefinition,
+      name: string,
+    ): Accessibility | null {
+      for (const parameter of constructorNode.value.params) {
+        if (parameter.type !== AST_NODE_TYPES.TSParameterProperty) {
+          continue;
+        }
+        const { parameter: inner } = parameter;
+        const identifier =
+          inner.type === AST_NODE_TYPES.AssignmentPattern ? inner.left : inner;
+        if (
+          identifier.type === AST_NODE_TYPES.Identifier &&
+          identifier.name === name
+        ) {
+          // `constructor(readonly props: P)` declares a public member.
+          return parameter.accessibility ?? 'public';
+        }
+      }
+      return null;
+    }
+
+    function inheritedAccessibilityOf(
+      node: TSESTree.MethodDefinition,
+      name: string,
+    ): Accessibility | null {
+      const parserServices = sourceCode.parserServices;
+      if (
+        !parserServices ||
+        !parserServices.program ||
+        !parserServices.esTreeNodeToTSNodeMap
+      ) {
+        return null;
+      }
+
+      const tsNode = parserServices.esTreeNodeToTSNodeMap.get(node) as
+        | ts.GetAccessorDeclaration
+        | undefined;
+      if (
+        !tsNode ||
+        !tsNode.parent ||
+        !(
+          ts.isClassDeclaration(tsNode.parent) ||
+          ts.isClassExpression(tsNode.parent)
+        )
+      ) {
+        return null;
+      }
+
+      const checker = parserServices.program.getTypeChecker();
+      const classSymbol = checker.getTypeAtLocation(tsNode.parent).getSymbol();
+      if (!classSymbol) {
+        return null;
+      }
+
+      const property = checker
+        .getDeclaredTypeOfSymbol(classSymbol)
+        .getProperty(name);
+      const declaration =
+        property?.valueDeclaration ?? property?.declarations?.[0];
+      if (!declaration) {
+        return null;
+      }
+
+      const flags = ts.getCombinedModifierFlags(declaration as ts.Declaration);
+      if (flags & ts.ModifierFlags.Private) {
+        return 'private';
+      }
+      if (flags & ts.ModifierFlags.Protected) {
+        return 'protected';
+      }
+      return 'public';
+    }
 
     /**
      * Check if the getter is required by an implemented interface or overrides a base class member

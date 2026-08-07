@@ -521,6 +521,157 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
       }
     })({ value: 42 });
     `,
+
+    // A public getter over a PRIVATE constructor parameter property is the only
+    // read path an external caller has (Issue #1834)
+    `
+    class TokenFormatter {
+      constructor(private readonly props: { metadata: { ticker: string } }) {}
+
+      public get ticker() {
+        return this.props.metadata.ticker;
+      }
+    }
+    `,
+
+    // Same widening spelled with an unannotated (public by default) getter
+    `
+    class TokenFormatter {
+      constructor(private readonly props: { metadata: { ticker: string } }) {}
+
+      get ticker() {
+        return this.props.metadata.ticker;
+      }
+    }
+    `,
+
+    // A protected getter over a private root: TypeScript rejects
+    // `this.props.data` in any subclass, so the getter is the only read path
+    `
+    export abstract class UserStatusProcessor {
+      constructor(private readonly props: UserStatusProcessorProps) {}
+
+      protected get data() {
+        return this.props.data;
+      }
+    }
+    `,
+
+    // A public getter over a protected root widens past the subclass audience
+    `
+    export class MatchAdmin {
+      constructor(protected readonly settings: MatchAdminProps) {}
+
+      public get uid() {
+        return this.settings.uid;
+      }
+    }
+    `,
+
+    // The root is a separately declared field rather than a parameter property
+    `
+    export class MatchAdmin {
+      private readonly settings: MatchAdminProps;
+
+      constructor(settings: MatchAdminProps) {
+        this.settings = settings;
+      }
+
+      public get uid() {
+        return this.settings.uid;
+      }
+    }
+    `,
+
+    // The root is an ECMAScript private field, which carries no accessibility
+    // modifier while being strictly more private than any getter
+    `
+    export class MatchAdmin {
+      readonly #settings: MatchAdminProps;
+
+      constructor(settings: MatchAdminProps) {
+        this.#settings = settings;
+      }
+
+      public get uid() {
+        return this.#settings.uid;
+      }
+    }
+    `,
+
+    // Bracket notation must reach the same root as dot notation
+    `
+    export class MatchAdmin {
+      constructor(private readonly settings: MatchAdminProps) {}
+
+      public get uid() {
+        return this['settings'].uid;
+      }
+    }
+    `,
+
+    // The root is a private accessor rather than a field
+    `
+    export class MatchAdmin {
+      constructor(private readonly props: MatchAdminProps) {}
+
+      private get settings() {
+        return this.props.settings ?? DEFAULT_SETTINGS;
+      }
+
+      public get uid() {
+        return this.settings.uid;
+      }
+    }
+    `,
+
+    // The root is inherited: a subclass cannot read a base class's protected
+    // field from outside, so a public getter over it is the boundary
+    `
+    abstract class BracketCreator {
+      constructor(protected readonly props: BracketCreatorProps) {}
+    }
+
+    export class HeatsCreator extends BracketCreator {
+      public get roundsCount() {
+        return this.props.numberOfRounds;
+      }
+    }
+    `,
+
+    // A widening getter that also adds logic stays valid for the pre-existing
+    // reason (the body is not a bare passthrough), independent of the carve-out
+    `
+    class TokenFormatter {
+      constructor(private readonly props: { metadata: { ticker?: string } }) {}
+
+      public get ticker() {
+        return this.props.metadata.ticker ?? 'UNKNOWN';
+      }
+    }
+    `,
+
+    // Widening inside an anonymous class expression
+    `
+    const formatter = new class {
+      constructor(private readonly props: { ticker: string }) {}
+
+      public get ticker() {
+        return this.props.ticker;
+      }
+    }({ ticker: 'GEMS' });
+    `,
+
+    // A parameter property carrying a default value still resolves its root
+    `
+    export class MatchAdmin {
+      constructor(private readonly settings: MatchAdminProps = DEFAULTS) {}
+
+      public get uid() {
+        return this.settings.uid;
+      }
+    }
+    `,
   ],
   invalid: [
     // Simple passthrough getter
@@ -558,11 +709,12 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
       ],
     },
 
-    // Public passthrough getter
+    // Public passthrough getter over an equally public injected object: every
+    // caller that can reach the getter can reach `settings` itself
     {
       code: `
       export class MatchAdmin {
-        constructor(private readonly settings: MatchAdminProps) {}
+        constructor(public readonly settings: MatchAdminProps) {}
 
         public get userId() {
           return this.settings.uid;
@@ -572,11 +724,11 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
       errors: [error('userId', 'this.settings.uid')],
     },
 
-    // Protected passthrough getter
+    // Protected passthrough getter over an equally protected injected object
     {
       code: `
       export class MatchAdmin {
-        constructor(private readonly settings: MatchAdminProps) {}
+        constructor(protected readonly settings: MatchAdminProps) {}
 
         protected get protectedValue() {
           return this.settings.value;
@@ -674,7 +826,7 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
     {
       code: `
       export class MatchAdmin {
-        constructor(private readonly settings: MatchAdminProps) {}
+        constructor(public readonly settings: MatchAdminProps) {}
 
         readonly get readonlyGetter() {
           return this.settings.value;
@@ -688,7 +840,7 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
     {
       code: `
       class SimpleClass {
-        constructor(private settings: Props) {}
+        constructor(public settings: Props) {}
 
         get simpleGetter() {
           return this.settings.prop;
@@ -702,7 +854,7 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
     {
       code: `
       export class MatchAdmin {
-        constructor(private readonly settings: MatchAdminProps) {}
+        constructor(public readonly settings: MatchAdminProps) {}
 
         get defaultGetter() {
           return this.settings.defaultValue;
@@ -751,7 +903,8 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
       export class MatchAdmin {
         constructor(
           private readonly settings: MatchAdminProps,
-          private readonly config: ConfigProps
+          public readonly config: ConfigProps,
+          protected readonly shared: SharedProps
         ) {}
 
         private get settingsValue() {
@@ -763,7 +916,7 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
         }
 
         protected get protectedSetting() {
-          return this.settings.protectedProp;
+          return this.shared.protectedProp;
         }
 
         public get publicConfig() {
@@ -774,7 +927,7 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
       errors: [
         error('settingsValue', 'this.settings.value'),
         error('configValue', 'this.config.value'),
-        error('protectedSetting', 'this.settings.protectedProp'),
+        error('protectedSetting', 'this.shared.protectedProp'),
         error('publicConfig', 'this.config.publicProp'),
       ],
     },
@@ -852,6 +1005,113 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
       }
       `,
       errors: [error('configValue', 'this.config.value')],
+    },
+
+    // Control for Issue #1834: a PUBLIC injected object is readable directly by
+    // every caller of the getter, so the getter is genuine indirection
+    {
+      code: `
+      class TokenFormatter {
+        constructor(public readonly props: { metadata: { ticker: string } }) {}
+
+        public get ticker() {
+          return this.props.metadata.ticker;
+        }
+      }
+      `,
+      errors: [error('ticker', 'this.props.metadata.ticker')],
+    },
+
+    // `readonly` alone declares a PUBLIC member, so this is the same control
+    // spelled without an explicit accessibility modifier
+    {
+      code: `
+      class TokenFormatter {
+        constructor(readonly props: { metadata: { ticker: string } }) {}
+
+        public get ticker() {
+          return this.props.metadata.ticker;
+        }
+      }
+      `,
+      errors: [error('ticker', 'this.props.metadata.ticker')],
+    },
+
+    // A separately declared PUBLIC field is equally readable
+    {
+      code: `
+      export class MatchAdmin {
+        public readonly settings: MatchAdminProps;
+
+        constructor(settings: MatchAdminProps) {
+          this.settings = settings;
+        }
+
+        public get uid() {
+          return this.settings.uid;
+        }
+      }
+      `,
+      errors: [error('uid', 'this.settings.uid')],
+    },
+
+    // A private getter NARROWS a public root, which is not an encapsulation
+    // boundary: the getter's only callers already reach `settings` directly
+    {
+      code: `
+      export class MatchAdmin {
+        constructor(public readonly settings: MatchAdminProps) {}
+
+        private get uid() {
+          return this.settings.uid;
+        }
+      }
+      `,
+      errors: [error('uid', 'this.settings.uid')],
+    },
+
+    // A protected getter over a protected root reaches no further than the root
+    {
+      code: `
+      export abstract class AbstractAdmin {
+        constructor(protected readonly settings: MatchAdminProps) {}
+
+        protected get uid() {
+          return this.settings.uid;
+        }
+      }
+      `,
+      errors: [error('uid', 'this.settings.uid')],
+    },
+
+    // An inherited root at the SAME visibility as the getter still reports
+    {
+      code: `
+      abstract class WebhookEventProcessor {
+        constructor(protected readonly event: WebhookEvent) {}
+      }
+
+      export abstract class BaseEventProcessor extends WebhookEventProcessor {
+        protected get channelType() {
+          return this.event.channel_type;
+        }
+      }
+      `,
+      errors: [error('channelType', 'this.event.channel_type')],
+    },
+
+    // Bracket notation onto a public root is still indirection
+    {
+      code: `
+      export class MatchAdmin {
+        constructor(public readonly settings: MatchAdminProps) {}
+
+        public get uid() {
+          return this['settings'].uid;
+        }
+      }
+      `,
+      errors: [error('uid', 'this["settings"].uid')],
     },
   ],
 });
