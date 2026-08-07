@@ -217,11 +217,21 @@ const derivedKey = buildQueryKey('match-session');
 const [session] = useRouterState({ key: derivedKey });
 
 const [inline] = useRouterState({ key: queryKeyUtils.buildQueryKey('match') });
+
+const optionalKey = config?.getQueryKey();
+const [optional] = useRouterState({ key: optionalKey });
 ```
+
+An optional link anywhere in that call is read through: `config?.getQueryKey()`
+takes its key from the same place `config.getQueryKey()` does, and a
+short-circuit changes only whether that source is evaluated, never which source
+it is.
 
 The allowance covers the call, not the text wrapped around it: a template
 literal that carries static content of its own names a key of its own and is
-still reported.
+still reported — including when the call inside it is optional. A key read from
+a source the rule does not approve is likewise still reported through the chain:
+`config?.queryKey` reports exactly as `config.queryKey` does.
 
 ## Valid Import Sources
 
