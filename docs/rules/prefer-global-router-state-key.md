@@ -62,6 +62,19 @@ namespace alias of `queryKeys.ts` still has to name a `QUERY_KEY_*` export
 the same spellings the same way, so no key source is one rule's allowance and
 the other's violation.
 
+An assertion is read through for the same reason, whether the key reaches
+`useRouterState` through a variable or is written straight into the call:
+`key as string`, `key satisfies string`, `key!` and `<string>key` restate a type
+and relocate nothing. A key and that key wrapped in any of these therefore
+always agree — an approved source stays approved through them, and an unapproved
+one reports through them.
+
+A ternary is not such a wrapper and is outside this rule: its branches name two
+sources and no single one, so there is nothing for a source-naming report to
+name, and reporting the whole expression would bypass the parameter exemption
+above. A ternary carrying a string literal in either branch still reports
+through the literal path.
+
 ### Examples
 
 #### ❌ Incorrect
@@ -76,6 +89,12 @@ const [value2] = useRouterState({ key: USER_PROFILE_KEY });
 
 // Inline concatenation hides the intended key
 const [value3] = useRouterState({ key: 'match-' + id });
+
+// An optional link does not hide the source it reads from
+const [value4] = useRouterState({ key: config?.queryKey });
+
+// Neither does an assertion, which restates a type and relocates nothing
+const [value5] = useRouterState({ key: config.queryKey as string });
 ```
 
 #### ✅ Correct (centralized constants)
@@ -99,7 +118,11 @@ the same key written two ways, so both are rewritten to the same constant, with
 the template read through its cooked value so `` `user-profile` `` and
 `'user-profile'` derive one name. A key whose value the rule cannot evaluate —
 concatenation, a ternary, or a template that interpolates an expression — is
-still reported, and requires manual refactoring. So is a key that names no
+still reported, and requires manual refactoring. So is a literal restated by an
+assertion: `'user-profile' as const` carries no value the rule can read through
+the wrapper, and substituting the constant underneath one would leave
+`QUERY_KEY_USER_PROFILE as const`, which TypeScript rejects because `as const`
+applies to literals alone. So is a key that names no
 constant: `''`, `` `` ``, `'-'` and `'_-:/.'` all normalize to nothing, and the
 bare `QUERY_KEY_` they would produce is not a name `queryKeys.ts` exports, so
 those report without a fix in every spelling. An existing import of `queryKeys.ts` is

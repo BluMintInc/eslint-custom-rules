@@ -1,4 +1,4 @@
-import { ruleTesterJsx } from '../utils/ruleTester';
+import { ruleTesterJsx, ruleTesterTs } from '../utils/ruleTester';
 import { preferGlobalRouterStateKey } from '../rules/prefer-global-router-state-key';
 
 const stringLiteralError = (keyValue: string) => ({
@@ -618,6 +618,114 @@ export const useGroupIdMap = () => {
         function Component() {
           const matchKey = QueryKeys?.QUERY_KEY_MATCH;
           const [value] = useRouterState({ key: matchKey });
+          return <div>{value}</div>;
+        }
+        `,
+      },
+
+      // ------------------------------------------------------------------
+      // Issue #1836: a key passed DIRECTLY reaches a dispatch that enumerates
+      // node types, so every wrapper restating the key — an optional chain, an
+      // assertion — used to match no arm and report nothing. Reading through
+      // those wrappers is what closes that, and these cases are the control on
+      // the other side of it: an approved source stays approved in every
+      // spelling. A dispatch that reported whatever it could not classify
+      // would satisfy invalid cases 84-92 while flagging the code this rule
+      // exists to bless.
+      // ------------------------------------------------------------------
+
+      // 41. The constant itself, widened by an assertion.
+      {
+        name: 'an asserted queryKeys constant passed directly is allowed',
+        code: `
+        import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
+        function Component() {
+          const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE as string });
+          return <div>{value}</div>;
+        }
+        `,
+      },
+
+      // 42. The same constant under `satisfies`, which checks the type without
+      // changing the value at all.
+      {
+        name: 'a queryKeys constant under satisfies is allowed',
+        code: `
+        import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
+        function Component() {
+          const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE satisfies string });
+          return <div>{value}</div>;
+        }
+        `,
+      },
+
+      // 43. A non-null assertion, which is what a human writes when the
+      // constant arrives through an optional type.
+      {
+        name: 'a non-null asserted queryKeys constant is allowed',
+        code: `
+        import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
+        function Component() {
+          const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE! });
+          return <div>{value}</div>;
+        }
+        `,
+      },
+
+      // 44. The namespace member of valid case 40 passed straight into the
+      // call, where no variable stands between the chain and the dispatch.
+      {
+        name: 'an optional namespace member passed directly is allowed',
+        code: `
+        import * as QueryKeys from '@/util/routing/queryKeys';
+
+        function Component() {
+          const [value] = useRouterState({ key: QueryKeys?.QUERY_KEY_MATCH });
+          return <div>{value}</div>;
+        }
+        `,
+      },
+
+      // 45. Two wrappers over the call carve-out: unwrapping has to reach the
+      // call through both, not stop at the outer one.
+      {
+        name: 'an asserted optional call is allowed',
+        code: `
+        function Component() {
+          const [value] = useRouterState({ key: buildQueryKey?.('match') as string });
+          return <div>{value}</div>;
+        }
+        `,
+      },
+
+      // 46. The parameter carve-out survives the unwrap. A parameter holds a
+      // different value on every call, so no constant can stand in for it
+      // (#1394) — and that verdict is reached by resolving to the identifier,
+      // never by failing to classify the wrapper.
+      {
+        name: 'an asserted parameter binding is allowed',
+        code: `
+        export const useKeys = (paramKey) => {
+          return useRouterState({ key: paramKey as string });
+        };
+        `,
+      },
+
+      // 47. The scope boundary, recorded rather than endorsed: a ternary is
+      // not a wrapper. Its two branches name two sources and no single one, so
+      // the source-naming report has nothing to name, and reporting the whole
+      // expression would bypass the per-source parameter carve-out above. A
+      // ternary carrying a string literal still reports through the literal
+      // path — invalid cases 8 and 17 pin that — so what stays silent here is
+      // only the branch-by-branch source verdict.
+      {
+        name: 'a ternary of unapproved sources is outside this rule, not approved',
+        code: `
+        function Component({ config, other }) {
+          const [value] = useRouterState({ key: flag ? config.queryKey : other.k });
           return <div>{value}</div>;
         }
         `,
@@ -1952,9 +2060,207 @@ function Component() {
         }
         `,
       },
+
+      // ------------------------------------------------------------------
+      // Issue #1836: the mirror of #1833 at the report site, and the silent
+      // direction — a key passed DIRECTLY through a wrapper matched no arm of
+      // a node-type dispatch, so an unapproved source went unreported wherever
+      // it was written optionally or asserted. Each case below is the wrapped
+      // twin of a report the plain spelling already produces, which is the
+      // whole invariant: `key: X` and `key: <wrapper around X>` agree. Valid
+      // cases 41-47 are the other side — the approved sources that must not
+      // start reporting because the dispatch grew a reach.
+      //
+      // Every one of these declines its fix, and `output: null` says so. The
+      // key's value is not statically known through a wrapper (#1803, #1811),
+      // and substituting the constant underneath one would write
+      // `QUERY_KEY_X as const`, which TypeScript rejects (TS1355) — a report
+      // with no fix is the honest outcome.
+      // ------------------------------------------------------------------
+
+      // 84. The reported case: the optional twin of invalid case 6's member
+      // access, passed directly rather than through a variable.
+      {
+        name: 'an optional member passed directly reports',
+        code: `
+        function Component({ config }) {
+          const [value] = useRouterState({ key: config?.queryKey });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [invalidSourceError('config?.queryKey')],
+        output: null,
+      },
+
+      // 85. An assertion restates the type and relocates nothing, so the same
+      // member draws the same report through one.
+      {
+        name: 'an asserted member passed directly reports',
+        code: `
+        function Component({ config }) {
+          const [value] = useRouterState({ key: config.queryKey as string });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [invalidSourceError('config.queryKey as string')],
+        output: null,
+      },
+
+      // 86. `satisfies` checks a type and yields the same value, over an
+      // identifier rather than a member.
+      {
+        name: 'an identifier under satisfies reports',
+        code: `
+        function Component({ config }) {
+          const derivedKey = config.queryKey;
+          const [value] = useRouterState({ key: derivedKey satisfies string });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [invalidSourceError('derivedKey satisfies string')],
+        output: null,
+      },
+
+      // 87. A non-null assertion is the spelling a human reaches for when the
+      // source is optionally typed, and it hides the source no better.
+      {
+        name: 'a non-null asserted identifier reports',
+        code: `
+        function Component({ config }) {
+          const derivedKey = config.queryKey;
+          const [value] = useRouterState({ key: derivedKey! });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [invalidSourceError('derivedKey!')],
+        output: null,
+      },
+
+      // 88. Wrappers nest, so resolving through one is not enough: the chain
+      // sits under the assertion here.
+      {
+        name: 'an asserted optional member reports through both wrappers',
+        code: `
+        function Component({ config }) {
+          const [value] = useRouterState({ key: (config?.queryKey) as string });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [invalidSourceError('(config?.queryKey) as string')],
+        output: null,
+      },
+
+      // 89. The chain resolves INTO the namespace branch, not past it, when
+      // the member is passed directly: an alias of queryKeys.ts licenses its
+      // `QUERY_KEY_*` exports, not every property of it. This is invalid case
+      // 82 with the variable removed.
+      {
+        name: 'an optional namespace member that is no constant reports directly',
+        code: `
+        import * as QueryKeys from '@/util/routing/queryKeys';
+
+        function Component() {
+          const [value] = useRouterState({ key: QueryKeys?.matchKey });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [invalidSourceError('QueryKeys?.matchKey')],
+        output: null,
+      },
+
+      // 90. A literal is a literal through an assertion, so it draws the
+      // literal report — and the fix stops, because `as const` applies to
+      // literals alone and `QUERY_KEY_USER_PROFILE as const` would not
+      // compile.
+      {
+        name: 'an asserted string literal reports without a fix',
+        code: `
+        function Component() {
+          const [value] = useRouterState({ key: 'user-profile' as const });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [stringLiteralError("'user-profile' as const")],
+        output: null,
+      },
+
+      // 91. The template spelling of the same key reaches the same verdict,
+      // which keeps the two notations of one value from diverging (#1804).
+      {
+        name: 'an asserted static template reports without a fix',
+        code: `
+        function Component() {
+          const [value] = useRouterState({ key: \`user-profile\` as const });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [stringLiteralError('`user-profile` as const')],
+        output: null,
+      },
+
+      // 92. Both directions in one file. The wrapped literal reports and is
+      // left untouched, while the plain literal beside it still fixes and
+      // still carries the import — so the withheld fix is withheld from the
+      // wrapper alone, not from the file.
+      {
+        name: 'a wrapped literal reports while the plain literal beside it fixes',
+        code: `
+        function Component() {
+          const [asserted] = useRouterState({ key: 'stream-view' as const });
+          const [stream] = useRouterState({ key: 'stream-view' });
+          return <div>{asserted}{stream}</div>;
+        }
+        `,
+        errors: [
+          stringLiteralError("'stream-view' as const"),
+          stringLiteralError("'stream-view'"),
+        ],
+        output: `import { QUERY_KEY_STREAM_VIEW } from 'src/util/routing/queryKeys';
+
+        function Component() {
+          const [asserted] = useRouterState({ key: 'stream-view' as const });
+          const [stream] = useRouterState({ key: QUERY_KEY_STREAM_VIEW });
+          return <div>{asserted}{stream}</div>;
+        }
+        `,
+      },
     ],
   },
 );
+
+// ------------------------------------------------------------------
+// Issue #1836, the one wrapper JSX cannot spell: `<string>key` parses as an
+// element wherever JSX is enabled, so the angle-bracket type assertion is
+// reachable only from a non-JSX `.ts` file — which is where a hook's key
+// plumbing often lives. Both cases below are the twins of ones above, so the
+// spelling is their only difference.
+// ------------------------------------------------------------------
+ruleTesterTs.run('prefer-global-router-state-key', preferGlobalRouterStateKey, {
+  valid: [
+    {
+      name: 'an angle-bracket asserted queryKeys constant is allowed',
+      code: `
+        import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
+        export function useProfileKey() {
+          return useRouterState({ key: <string>QUERY_KEY_USER_PROFILE });
+        }
+        `,
+    },
+  ],
+  invalid: [
+    {
+      name: 'an angle-bracket asserted member reports',
+      code: `
+        export function useProfileKey(config) {
+          return useRouterState({ key: <string>config.queryKey });
+        }
+        `,
+      errors: [invalidSourceError('<string>config.queryKey')],
+      output: null,
+    },
+  ],
+});
 
 // ------------------------------------------------------------------
 // Issue #1648: a fix that writes a brand-new import must not displace the

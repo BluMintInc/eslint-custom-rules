@@ -82,6 +82,40 @@ function buildQueryKeysSpecifier(
 }
 
 /**
+ * The expression a key ultimately comes from, read through the wrappers that
+ * restate it without relocating it.
+ *
+ * A chain records that the access short-circuits and an assertion restates a
+ * type; neither changes WHERE the key comes from, which is the only question
+ * the report-site dispatch asks. That dispatch enumerates the node types it
+ * knows and stays silent on everything else, so a key passed directly as
+ * `config?.queryKey` or `config.queryKey as string` matched no arm and the
+ * unapproved source went unreported (#1836) — the silent mirror of the
+ * over-reporting #1833 removed from the key-source classifier.
+ *
+ * A `ConditionalExpression` is deliberately NOT resolved here: it holds two
+ * branches and therefore no single source, so there is nothing for this to
+ * return. Its literal-bearing shapes already report through
+ * `containsInvalidStringLiteral`, which judges the whole expression; the
+ * branch-by-branch verdict a ternary of unapproved sources would need is a
+ * separate policy, and one that would have to answer for the per-source
+ * parameter carve-out (#1394) that only the identifier arm applies. The same
+ * holds for a logical expression's operands.
+ */
+function unwrapTransparentKeySource(node: TSESTree.Node): TSESTree.Node {
+  switch (node.type) {
+    case AST_NODE_TYPES.ChainExpression:
+    case AST_NODE_TYPES.TSAsExpression:
+    case AST_NODE_TYPES.TSSatisfiesExpression:
+    case AST_NODE_TYPES.TSTypeAssertion:
+    case AST_NODE_TYPES.TSNonNullExpression:
+      return unwrapTransparentKeySource(node.expression);
+    default:
+      return node;
+  }
+}
+
+/**
  * Rule to enforce the use of centralized router state key constants imported from
  * `src/util/routing/queryKeys.ts` instead of arbitrary string literals when calling
  * router methods that accept key parameters.
@@ -575,9 +609,16 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
 
               if (keyProperty && keyProperty.value) {
                 const keyValue = keyProperty.value;
+                // Every question below is about the source, so each is asked of
+                // the source rather than of the notation wrapping it. The
+                // report still names `keyValue`: the whole key expression is
+                // what an author replaces with the constant, and naming only
+                // the part underneath an `as const` would prescribe an edit
+                // that does not compile (TS1355).
+                const keySource = unwrapTransparentKeySource(keyValue);
 
-                if (!isValidQueryKeyUsage(keyValue)) {
-                  if (containsInvalidStringLiteral(keyValue)) {
+                if (!isValidQueryKeyUsage(keySource)) {
+                  if (containsInvalidStringLiteral(keySource)) {
                     context.report({
                       node: keyValue,
                       messageId: 'preferGlobalRouterStateKey',
@@ -585,7 +626,14 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                         keyValue: sourceCode.getText(keyValue),
                       },
                       fix(fixer) {
-                        // Only a statically known key value can be auto-fixed.
+                        // Only a statically known key value can be auto-fixed,
+                        // and the value read is the one the key is WRITTEN as,
+                        // wrapper included. A wrapper carries no static value,
+                        // so a wrapped literal reports with no fix behind it:
+                        // substituting the constant underneath the wrapper
+                        // would leave `QUERY_KEY_X as const`, which TypeScript
+                        // rejects outright (TS1355), and there is no rewrite
+                        // that both keeps the assertion and names a constant.
                         const staticKey = staticKeyOf(keyValue);
                         if (staticKey) {
                           const suggestedConstant = generateAutoFix(
@@ -833,18 +881,13 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                       },
                     });
                   } else if (
-                    keyValue.type === AST_NODE_TYPES.Identifier &&
-                    !isParameterBinding(keyValue)
-                  ) {
-                    context.report({
-                      node: keyValue,
-                      messageId: 'invalidQueryKeySource',
-                      data: {
-                        variableName: keyValue.name,
-                      },
-                    });
-                  } else if (
-                    keyValue.type === AST_NODE_TYPES.MemberExpression
+                    // A key with no literal in it reports only where it names
+                    // one source the author can swap out. A parameter is not
+                    // one: it holds a different value on every call, and the
+                    // caller — not this file — chooses it (#1394).
+                    (keySource.type === AST_NODE_TYPES.Identifier &&
+                      !isParameterBinding(keySource)) ||
+                    keySource.type === AST_NODE_TYPES.MemberExpression
                   ) {
                     context.report({
                       node: keyValue,
