@@ -186,10 +186,6 @@ const KNOWN_DIVERGENT: Record<string, string> = {
   'no-margin-properties::call':
     'ARTIFACT: only reached via `Object.assign?.()`',
   'no-margin-properties::member': 'ARTIFACT: only reached via `Object?.assign`',
-  'no-object-values-on-strings::call':
-    'DEFECT TODO(#1865): the blindness is on the ARGUMENT, not the callee. `Object.values("x".toUpperCase?.())` and the writable `Object.values(s?.toUpperCase())` both go silent, while `Object.values?.(...)` and `Object?.values(...)` still report — so the argument reader misses a ChainExpression',
-  'no-object-values-on-strings::member':
-    'DEFECT TODO(#1865): same argument reader as the call arm; `Object.values("x"?.toUpperCase())` goes silent',
   'no-passthrough-getters::member':
     'DEFECT TODO(#1866): `private get x() { return this.settings?.x; }` — the idiomatic spelling for an optional field — is not seen as a passthrough, while `this.settings.x` is',
   'no-redundant-this-params::member':
