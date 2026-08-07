@@ -16,6 +16,16 @@ The rule applies to any `.ts` or `.tsx` file, including multi-dot names such as 
 - If you disable `@blumintinc/blumint/enforce-dynamic-imports` or `@blumintinc/blumint/require-dynamic-firebase-imports`, name the file `*.dynamic.ts` or `*.dynamic.tsx`.
 - If you name a file `*.dynamic.ts` or `*.dynamic.tsx`, include a disable directive for one of the two rules above.
 
+### Which comments count as a disable directive
+
+Only the spellings ESLint itself honors. A comment ESLint ignores suppresses nothing, so accepting one would let a `.dynamic` filename advertise an exception that was never actually taken — the reviewer reads a blessed bypass while the disabled rule keeps reporting.
+
+- `// eslint-disable-next-line <rule>` or `/* eslint-disable-next-line <rule> */`
+- `// eslint-disable-line <rule>` or `/* eslint-disable-line <rule> */`, trailing the code it covers and confined to one line
+- `/* eslint-disable <rule> */` — this directive is honored only in a **block** comment; ESLint ignores the same text in a `//` comment
+
+The directive must open the comment, so `// see eslint-disable-next-line <rule>` is prose. The rule has to be named in the directive itself rather than in a ` -- justification` tail, and the match is case sensitive.
+
 ### Examples of **incorrect** code for this rule:
 
 ```tsx
