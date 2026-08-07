@@ -531,6 +531,97 @@ export const useGroupIdMap = () => {
         };
         `,
       },
+
+      // ------------------------------------------------------------------
+      // Issue #1833: `a?.b()` parses as a ChainExpression wrapping the call, a
+      // type the key-source classifier does not name, so the optional spelling
+      // of a source the rule accepts fell through to the unrecognised-source
+      // arm. Each case below is the optional twin of a spelling already
+      // accepted, so a report here is one the plain spelling is allowed. The
+      // sibling `enforce-querykey-ts` accepts all of these (#1832, #1714), and
+      // both rules ship as `error`, so a divergence leaves a consumer with no
+      // spelling that satisfies both. The invalid mirrors that keep this from
+      // becoming a blanket escape hatch are cases 80-83.
+      // ------------------------------------------------------------------
+
+      // 35. A method called through an optional receiver, which is what a
+      // human writes when the object may be absent.
+      {
+        name: 'an optional receiver on a key-building method is allowed',
+        code: `
+        function Component({ config }) {
+          const derivedKey = config?.getQueryKey();
+          const [value] = useRouterState({ key: derivedKey });
+          return <div>{value}</div>;
+        }
+        `,
+      },
+
+      // 36. The optionally called factory the sibling rule documents.
+      {
+        name: 'an optional call to a key factory is allowed',
+        code: `
+        function Component() {
+          const derivedKey = buildQueryKey?.('match-session');
+          const [value] = useRouterState({ key: derivedKey });
+          return <div>{value}</div>;
+        }
+        `,
+      },
+
+      // 37. Each link of an assignment chain resolves to the optional call at
+      // its end.
+      {
+        name: 'an optional call reached through an assignment chain is allowed',
+        code: `
+        function Component() {
+          const baseKey = fetchKey?.();
+          const derivedKey = baseKey;
+          const [value] = useRouterState({ key: derivedKey });
+          return <div>{value}</div>;
+        }
+        `,
+      },
+
+      // 38. A concatenation is judged by its operands, and an optional call is
+      // still the operand carrying the key.
+      {
+        name: 'a concatenation around an optional call is allowed',
+        code: `
+        function Component({ config, id }) {
+          const [value] = useRouterState({ key: config?.getKey() + '-' + id });
+          return <div>{value}</div>;
+        }
+        `,
+      },
+
+      // 39. A template's static text is judged the same way through the chain
+      // as without it: the call carve-out covers the interpolation either way.
+      {
+        name: 'an optional call inside a template is allowed',
+        code: `
+        function Component() {
+          const [value] = useRouterState({ key: \`user-profile-\${buildQueryKey?.('match')}\` });
+          return <div>{value}</div>;
+        }
+        `,
+      },
+
+      // 40. Not the call carve-out but the member one: the chain resolves to
+      // the node underneath rather than being waved through, so a namespace
+      // member of queryKeys stays allowed for the reason it always was.
+      {
+        name: 'an optional member of a queryKeys namespace import is allowed',
+        code: `
+        import * as QueryKeys from '@/util/routing/queryKeys';
+
+        function Component() {
+          const matchKey = QueryKeys?.QUERY_KEY_MATCH;
+          const [value] = useRouterState({ key: matchKey });
+          return <div>{value}</div>;
+        }
+        `,
+      },
     ],
     invalid: [
       // 1. Basic string literals
@@ -1776,6 +1867,90 @@ function Component() {
         code: keyCode("'-a-'"),
         errors: [stringLiteralError("'-a-'")],
         output: SINGLE_CHARACTER_KEY_FIXED,
+      },
+
+      // ------------------------------------------------------------------
+      // Issue #1833: reading through the optional chain must resolve to the
+      // node underneath, not wave the chain through. These are the mirrors of
+      // valid cases 35-40 — a source the plain spelling reports still reports
+      // when written optionally. Without them, a rule that simply fell silent
+      // on anything chained would satisfy every one of those valid cases while
+      // being disabled for the inputs it exists to catch.
+      // ------------------------------------------------------------------
+
+      // 80. An unapproved member is unapproved through the chain too: the same
+      // report `config.queryKey` draws, with the same absent fix — a chain
+      // carries no statically known value, so no constant name is derivable
+      // from one (#1803, #1811).
+      {
+        name: 'an optional member from an unapproved source still reports',
+        code: `
+        function Component({ config }) {
+          const derivedKey = config?.queryKey;
+          const [value] = useRouterState({ key: derivedKey });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [invalidSourceError('derivedKey')],
+        output: null,
+      },
+
+      // 81. The template feeder reaches the same verdict on the same source,
+      // and the interpolation still leaves the key valueless, so the report
+      // stands with no fix behind it.
+      {
+        name: 'an optional member from an unapproved source in a template reports',
+        code: `
+        function Component({ config }) {
+          const [value] = useRouterState({ key: \`user-profile-\${config?.queryKey}\` });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [stringLiteralError('`user-profile-${config?.queryKey}`')],
+        output: null,
+      },
+
+      // 82. The chain resolves INTO the namespace branch rather than past it:
+      // an alias of queryKeys.ts is not a licence for any member of it, so a
+      // property that is no `QUERY_KEY_*` export still reports.
+      {
+        name: 'an optional member of a queryKeys namespace that is no constant reports',
+        code: `
+        import * as QueryKeys from '@/util/routing/queryKeys';
+
+        function Component() {
+          const matchKey = QueryKeys?.matchKey;
+          const [value] = useRouterState({ key: matchKey });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [invalidSourceError('matchKey')],
+        output: null,
+      },
+
+      // 83. Both directions in one file: the chained derivation stops
+      // reporting while the literal beside it keeps its report and carries the
+      // import, so the widening cannot be silencing the file wholesale.
+      {
+        name: 'a literal key beside an optional-chained derivation still fixes',
+        code: `
+        function Component({ config }) {
+          const derivedKey = config?.getQueryKey();
+          const [derived] = useRouterState({ key: derivedKey });
+          const [stream] = useRouterState({ key: 'stream-view' });
+          return <div>{derived}{stream}</div>;
+        }
+        `,
+        errors: [stringLiteralError("'stream-view'")],
+        output: `import { QUERY_KEY_STREAM_VIEW } from 'src/util/routing/queryKeys';
+
+        function Component({ config }) {
+          const derivedKey = config?.getQueryKey();
+          const [derived] = useRouterState({ key: derivedKey });
+          const [stream] = useRouterState({ key: QUERY_KEY_STREAM_VIEW });
+          return <div>{derived}{stream}</div>;
+        }
+        `,
       },
     ],
   },

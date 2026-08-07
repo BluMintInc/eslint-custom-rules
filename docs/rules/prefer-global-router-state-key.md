@@ -45,7 +45,22 @@ function useSessionState(key: string) {
 // Allowed: a call's return value is opaque to a syntactic check
 const derivedKey = buildQueryKey('match-session');
 const [value] = useRouterState({ key: derivedKey });
+
+// Allowed: an optional link is read through to the source underneath
+const optionalKey = config?.getQueryKey();
+const [optionalValue] = useRouterState({ key: optionalKey });
 ```
+
+An optional link anywhere in that call is read through: `config?.getQueryKey()`
+takes its key from the same place `config.getQueryKey()` does, and a
+short-circuit changes only whether that source is evaluated, never which source
+it is. The chain is resolved rather than waved through, so a key variable read
+from a source the rule does not approve still reports: `const key =
+config?.queryKey` reports exactly as `const key = config.queryKey` does, and a
+namespace alias of `queryKeys.ts` still has to name a `QUERY_KEY_*` export
+(`QueryKeys?.matchKey` reports). The sibling rule `enforce-querykey-ts` reads
+the same spellings the same way, so no key source is one rule's allowance and
+the other's violation.
 
 ### Examples
 
