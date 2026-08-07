@@ -1,3 +1,17 @@
+## [1.20.128](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.127...v1.20.128) (2026-08-07)
+
+
+### Bug Fixes
+
+* **enforce-assert-safe-object-key:** read a written key through an optional chain (closes [#1830](https://github.com/BluMintInc/eslint-custom-rules/issues/1830)) ([3253ad0](https://github.com/BluMintInc/eslint-custom-rules/commit/3253ad010ac96a1bd838756f349fa35cce1b27ae))
+* **enforce-querykey-ts:** resolve a key source through an optional chain (closes [#1832](https://github.com/BluMintInc/eslint-custom-rules/issues/1832)) ([4189582](https://github.com/BluMintInc/eslint-custom-rules/commit/4189582c41313e67a2e6f215ff1aae187d411c8d)), closes [#1714](https://github.com/BluMintInc/eslint-custom-rules/issues/1714) [#1803](https://github.com/BluMintInc/eslint-custom-rules/issues/1803)
+* **no-hungarian:** treat Symbol as a domain glyph noun in suffix position (closes [#1835](https://github.com/BluMintInc/eslint-custom-rules/issues/1835)) ([37ad021](https://github.com/BluMintInc/eslint-custom-rules/commit/37ad021e06dc7206b469ed2dbf3618341b7c3e0b)), closes [#1277](https://github.com/BluMintInc/eslint-custom-rules/issues/1277)
+* **no-misleading-boolean-prefixes:** classify a boolean-like expression through an optional chain (closes [#1829](https://github.com/BluMintInc/eslint-custom-rules/issues/1829)) ([5924d4f](https://github.com/BluMintInc/eslint-custom-rules/commit/5924d4f03d9b555ecc5c2334601036511d5af5fb))
+* **no-passthrough-getters:** exempt a getter that widens visibility over its root (closes [#1834](https://github.com/BluMintInc/eslint-custom-rules/issues/1834)) ([eab8222](https://github.com/BluMintInc/eslint-custom-rules/commit/eab822211154f563322a69921a95b3bbd739e7dd)), closes [#private](https://github.com/BluMintInc/eslint-custom-rules/issues/private)
+* **no-uuidv4-base62-as-key:** see the key expression through an optional-chained receiver (closes [#1831](https://github.com/BluMintInc/eslint-custom-rules/issues/1831)) ([3bdd566](https://github.com/BluMintInc/eslint-custom-rules/commit/3bdd566f4616ff32979bf3785be97be8729e8bb8))
+* **prefer-global-router-state-key:** resolve a directly-passed key through transparent wrappers (closes [#1836](https://github.com/BluMintInc/eslint-custom-rules/issues/1836)) ([9ed4aba](https://github.com/BluMintInc/eslint-custom-rules/commit/9ed4abad93b066fe5e6e8e0771bdeb0ad9aaee6d)), closes [#1833](https://github.com/BluMintInc/eslint-custom-rules/issues/1833)
+* **prefer-global-router-state-key:** resolve a key source through an optional chain (closes [#1833](https://github.com/BluMintInc/eslint-custom-rules/issues/1833)) ([80000bf](https://github.com/BluMintInc/eslint-custom-rules/commit/80000bf31aaf622c99dd377b8a0eed97c29888fd)), closes [#1832](https://github.com/BluMintInc/eslint-custom-rules/issues/1832) [#1714](https://github.com/BluMintInc/eslint-custom-rules/issues/1714)
+
 ## [1.20.127](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.126...v1.20.127) (2026-08-07)
 
 

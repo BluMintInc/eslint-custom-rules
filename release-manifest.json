@@ -1,5 +1,68 @@
 [
   {
+    "version": "1.20.128",
+    "date": "2026-08-07T05:47:06.312Z",
+    "rules": [
+      {
+        "name": "enforce-assert-safe-object-key",
+        "changeType": "fix",
+        "issues": [
+          1830
+        ],
+        "summary": "read a written key through an optional chain (closes #1830)"
+      },
+      {
+        "name": "enforce-querykey-ts",
+        "changeType": "fix",
+        "issues": [
+          1832
+        ],
+        "summary": "resolve a key source through an optional chain (closes #1832)"
+      },
+      {
+        "name": "no-hungarian",
+        "changeType": "fix",
+        "issues": [
+          1835
+        ],
+        "summary": "treat Symbol as a domain glyph noun in suffix position (closes #1835)"
+      },
+      {
+        "name": "no-misleading-boolean-prefixes",
+        "changeType": "fix",
+        "issues": [
+          1829
+        ],
+        "summary": "classify a boolean-like expression through an optional chain (closes #1829)"
+      },
+      {
+        "name": "no-passthrough-getters",
+        "changeType": "fix",
+        "issues": [
+          1834
+        ],
+        "summary": "exempt a getter that widens visibility over its root (closes #1834)"
+      },
+      {
+        "name": "no-uuidv4-base62-as-key",
+        "changeType": "fix",
+        "issues": [
+          1831
+        ],
+        "summary": "see the key expression through an optional-chained receiver (closes #1831)"
+      },
+      {
+        "name": "prefer-global-router-state-key",
+        "changeType": "fix",
+        "issues": [
+          1833,
+          1836
+        ],
+        "summary": "resolve a directly-passed key through transparent wrappers (closes #1836); resolve a key source through an optional chain (closes #1833)"
+      }
+    ]
+  },
+  {
     "version": "1.20.127",
     "date": "2026-08-07T02:31:31.437Z",
     "rules": [
