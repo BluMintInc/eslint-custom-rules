@@ -281,6 +281,21 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
      * Check if a node represents a valid query key usage
      */
     function isValidQueryKeyUsage(node: TSESTree.Node): boolean {
+      // `config?.getQueryKey()` parses as a `ChainExpression` wrapping the call,
+      // a type this dispatch does not name — so the optional spelling alone fell
+      // past every arm below and reported a key source the plain spelling is
+      // allowed to build (#1833). Optionality is orthogonal to the question
+      // asked here: a short-circuit changes only whether the same source is
+      // evaluated, never which source it is. Resolving to the node underneath
+      // rather than accepting the wrapper keeps an unapproved source reported
+      // through the chain, which is what stops this from becoming a blanket
+      // escape hatch. The sibling `enforce-querykey-ts` carries the same arm
+      // (#1832), and both rules ship as `error`, so a source one blesses must
+      // not be the other's violation (#1714).
+      if (node.type === AST_NODE_TYPES.ChainExpression) {
+        return isValidQueryKeyUsage(node.expression);
+      }
+
       if (node.type === AST_NODE_TYPES.Identifier) {
         // Check direct imports
         const importInfo = queryKeyImports.get(node.name);
