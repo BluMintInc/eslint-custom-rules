@@ -13,13 +13,18 @@ const LOWERCASE_TYPES = ['ReactNode', 'JSX.Element'];
 const UPPERCASE_TYPES = ['ComponentType', 'FC', 'FunctionComponent'];
 
 /**
- * `global-const-style` owns the NAME of a non-exported module-scope `const`, and
- * the two rules cannot both be satisfied there: it demands UPPER_SNAKE_CASE,
- * this rule demands a lowercase initial for `ReactNode`/`JSX.Element`. Every
- * spelling reports under one or the other, and because BOTH renamers autofix,
- * `--fix` oscillates (`element` -> `ELEMENT` -> `eLEMENT` -> `E_LEMENT` ->
- * `e_LEMENT` -> …) until ESLint's ten-pass cap and writes the mangled
- * identifier to disk (Issue #1846).
+ * `global-const-style` owns the NAME of a module-scope `const`, and the two
+ * rules cannot both be satisfied there: it demands UPPER_SNAKE_CASE, this rule
+ * demands a lowercase initial for `ReactNode`/`JSX.Element`. Every spelling
+ * reports under one or the other, so a consumer running both — they are both
+ * `'error'` in `recommended` — cannot write the line at all.
+ *
+ * Unexported, both renamers also autofix, so `--fix` oscillates (`element` ->
+ * `ELEMENT` -> `eLEMENT` -> `E_LEMENT` -> `e_LEMENT` -> …) until ESLint's
+ * ten-pass cap and writes the mangled identifier to disk (Issue #1846).
+ * EXPORTED, both withhold the rename — an exported name is a cross-file
+ * contract a single-file fixer cannot complete — so `--fix` is a no-op and the
+ * damage is only the unsatisfiable report pair (Issue #1847).
  *
  * The pair is resolved by this rule yielding: module-scope constant naming is
  * `global-const-style`'s universal contract, while this rule's purpose —
@@ -27,13 +32,21 @@ const UPPERCASE_TYPES = ['ComponentType', 'FC', 'FunctionComponent'];
  * parameter naming, where nothing competes with it. Do not re-open the
  * carve-out without changing `global-const-style` in the same breath.
  *
- * The predicate below mirrors `global-const-style`'s ACTUAL governance rather
- * than "module-scope const", because that rule declines on several shapes and
- * yielding on one of those would leave the declaration governed by nothing:
+ * GOVERNANCE FOLLOWS WHICH RULE REPORTS ON THE NAME, NOT WHICH ONE FIXES IT.
+ * #1846 drew the boundary at the fixer war and so excluded exports; that left
+ * the exported form unsatisfiable, because `global-const-style` withholds only
+ * its FIX there (#1700) and still emits `upperSnakeCase`. The predicate below
+ * therefore mirrors that rule's ACTUAL reporting gates, which is also why it
+ * cannot be simplified to "module-scope const" — it declines on several shapes,
+ * and yielding on one of those would leave the declaration governed by nothing:
  *
  *   - `let`/`var`, and any non-module scope, are outside it entirely;
- *   - an EXPORTED declaration keeps its report there, so this rule keeps its
- *     own (neither renames it, so nothing oscillates);
+ *   - a declaration whose parent is neither `Program` nor an
+ *     `ExportNamedDeclaration` (a block, a `for` head, a namespace body) never
+ *     reaches its check;
+ *   - an exported Next.js reserved name (`config`, `getStaticProps`, …) has its
+ *     rename declined outright (#1257), so this rule keeps its report there —
+ *     report-only, since its own fixer stands down for exports too;
  *   - a function value or a `memo`/`forwardRef` call makes it skip the whole
  *     declaration list — `const button: FC = () => …` is this rule's alone;
  *   - an absent initializer, a dynamic value, a binding alias and a
@@ -167,6 +180,20 @@ const isJestMockCast = (node: TSESTree.Node): boolean => {
   return false;
 };
 
+// Mirrors `global-const-style`'s own list. Next.js recognizes these export
+// names by their literal identifier, so that rule declines the rename outright
+// rather than breaking the framework contract (#1257) — nothing there governs
+// the name, so this rule keeps its report. Only the EXPORT name matters to
+// Next.js, exactly as the sibling gates it.
+const NEXTJS_RESERVED_EXPORTS = new Set([
+  'config',
+  'getServerSideProps',
+  'getStaticProps',
+  'getStaticPaths',
+  'getInitialProps',
+  'middleware',
+]);
+
 const isGlobalConstStyleGoverned = (
   declarator: TSESTree.VariableDeclarator,
 ): boolean => {
@@ -179,10 +206,21 @@ const isGlobalConstStyleGoverned = (
     return false;
   }
 
-  // Module scope only, and not exported: `global-const-style` withholds the
-  // rename FIX for an exported binding (#1700) but keeps reporting it, so both
-  // rules stay report-only there and no `--fix` loop can form.
-  if (declaration.parent?.type !== AST_NODE_TYPES.Program) {
+  // The sibling's own scope gate: module scope, whether written bare or behind
+  // an inline `export`. Exports are INCLUDED because it reports `upperSnakeCase`
+  // on them — it withholds only the FIX (#1700) — so leaving them out kept the
+  // pair unsatisfiable for `export const element: JSX.Element = …` (#1847).
+  const isExported =
+    declaration.parent?.type === AST_NODE_TYPES.ExportNamedDeclaration;
+  if (declaration.parent?.type !== AST_NODE_TYPES.Program && !isExported) {
+    return false;
+  }
+
+  if (
+    isExported &&
+    declarator.id.type === AST_NODE_TYPES.Identifier &&
+    NEXTJS_RESERVED_EXPORTS.has(declarator.id.name)
+  ) {
     return false;
   }
 

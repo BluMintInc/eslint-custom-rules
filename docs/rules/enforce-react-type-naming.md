@@ -48,8 +48,8 @@ The element examples are written inside a component on purpose: at module scope 
 
 ## Module-scope constants belong to `global-const-style`
 
-The rule does **not** name a non-exported module-scope `const`. That identifier is
-[`global-const-style`](./global-const-style.md)'s, and it demands
+The rule does **not** name a module-scope `const`, exported or not. That
+identifier is [`global-const-style`](./global-const-style.md)'s, and it demands
 `UPPER_SNAKE_CASE`:
 
 ```tsx
@@ -69,16 +69,42 @@ module-scope constant naming is the sibling's universal contract, while telling
 an element *value* apart from a *component* is a local- and parameter-naming
 question.
 
+**Exported constants are included.** `global-const-style` withholds only its
+*rename* for an exported binding — the name is a cross-file contract — but it
+still reports `upperSnakeCase` on it. Governance follows which rule reports on
+the name, not which one fixes it, so this rule yields there too:
+
+```tsx
+// clean under both rules
+export const ELEMENT: JSX.Element = <div>Hello</div>;
+```
+
+Nothing oscillates on an export, because neither rule renames one; before the
+carve-out reached exports the damage was simply that no spelling was acceptable
+to both (`element` → `upperSnakeCase`, `ELEMENT` → `reactNodeShouldBeLowercase`,
+`Element` → both).
+
 The carve-out tracks what `global-const-style` actually governs, so a
 declaration it declines is still this rule's:
 
 | shape | named by |
 | --- | --- |
-| `const element: JSX.Element = …` | `global-const-style` |
+| `const element: JSX.Element = …`, exported or not | `global-const-style` |
 | `let` / `var`, or any non-module scope | this rule |
-| `export const Element: JSX.Element = …` | both report; neither renames |
 | `const button: FC = () => …` (function value) | this rule |
 | dynamic initializer, binding alias, no initializer, `jest.Mock*` cast | this rule |
+| `export const config: FC = …` (Next.js reserved export name) | this rule |
+
+Rows two through four hold whether or not the declaration is exported. The last
+row is the only one the export itself creates: `global-const-style`
+declines to rename `config`, `getServerSideProps`, `getStaticProps`,
+`getStaticPaths`, `getInitialProps` and `middleware` when they are exported,
+because Next.js matches those identifiers literally. Nothing over there governs
+the name, so this rule keeps its report rather than leaving the declaration
+governed by nothing — report-only, so `--fix` never touches the framework
+contract. The exemption is keyed on the export, exactly as the sibling keys it:
+a module-scope `const config` that is *not* exported is still renamed to
+`CONFIG` by `global-const-style`.
 
 ## Autofix
 
@@ -116,10 +142,12 @@ semantics-preserving rename is impossible:
 - **Collision** — the target name is already bound in the declaration scope, or a
   binding of that name sits between a reference and the declaration, or the
   declaration's scope subtree already uses the target name for something else.
-- **Exported declaration** — `export const Content: ReactNode = …`. The name is a
+- **Exported declaration** — `export let Content: ReactNode = …`. The name is a
   cross-file contract whose importers a single-file fixer cannot reach. The
-  hazard lives in those other files, so it applies to a bare `export const` with
-  no in-file use site just as much as to one referenced locally.
+  hazard lives in those other files, so it applies to a bare exported binding
+  with no in-file use site just as much as to one referenced locally. (An
+  exported `const` never reaches this guard: `global-const-style` names it, per
+  the section above.)
 - **Re-export specifier** — `export { Content }` binds the public export name to
   that identifier, so rewriting it would rename the export itself.
 
