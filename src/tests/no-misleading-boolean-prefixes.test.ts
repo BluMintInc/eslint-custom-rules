@@ -103,6 +103,27 @@ ruleTesterTs.run(
 
       // An explicit boolean return annotation still short-circuits the check.
       'function isReady(): boolean { return {} as unknown as boolean; }',
+
+      // Seeing through a ChainExpression must not report anything the same
+      // expression without the `?.` keeps silent (#1829). Under a chain the
+      // inner node is only ever a call, a member access or a non-null
+      // assertion, so these cover every shape the new arm can reach.
+      'const isChecked = (o: any) => o?.check();',
+      'const isTruthy = (o: any) => Boolean(o?.x);',
+      'const isFlagged = (o: any): boolean => o?.flag;',
+      'const isNamed = (o: any) => o?.name === "x";',
+      'const isMissing = (o: any) => !o?.x;',
+      'const isReady = (o: any) => o?.ready;',
+      'const isDone = (o: any) => o?.state.done;',
+      'function isOpen(o: any) { return o?.open; }',
+      'class C { isOpen(o: any) { return o?.open; } }',
+      'const o = { isOpen: (x: any) => x?.open };',
+      // A chained `.length` still answers to the checks that run before the
+      // expression is classified at all.
+      'function isEmpty(arr?: any[]): boolean { return !arr?.length; }',
+      'const hasItems = (arr?: any[]) => (arr?.length ?? 0) > 0;',
+      'const hasItems = (arr?: any[]) => Boolean(arr?.length);',
+      'function getItems(arr?: any[]) { return arr?.length; }',
     ],
     invalid: [
       // Examples from spec
@@ -303,6 +324,68 @@ ruleTesterTs.run(
       {
         code: 'const obj2 = { hasUser: () => ({ id: 1 } as const) }',
         errors: [error('hasUser')],
+      },
+
+      // `a?.b` parses as a ChainExpression wrapping the member access, so the
+      // wrapper — not any policy about nullish receivers — is what used to hide
+      // the `.length` return (#1829). `arr?.length` is `number | undefined`, so
+      // a `hasItems` that returns it is a worse misleading prefix than the
+      // `arr.length` case above, not an exempt one. The loss reached every
+      // visitor arm, so each is pinned here.
+      {
+        code: 'function hasItems(arr) { return arr?.length; }',
+        errors: [error('hasItems')],
+      },
+      {
+        code: 'const hasItems = (arr) => arr?.length;',
+        errors: [error('hasItems')],
+      },
+      {
+        code: 'const isEmpty = (arr) => arr?.length;',
+        errors: [error('isEmpty')],
+      },
+      {
+        code: 'const hasItems = function (arr) { return arr?.length; };',
+        errors: [error('hasItems')],
+      },
+      {
+        code: 'class C { hasItems(arr) { return arr?.length; } }',
+        errors: [error('hasItems')],
+      },
+      {
+        code: 'const o = { hasItems: (arr) => arr?.length };',
+        errors: [error('hasItems')],
+      },
+      {
+        code: 'const o = { hasItems(arr) { return arr?.length; } };',
+        errors: [error('hasItems')],
+      },
+
+      // The chain wrapper sits at the outermost access, so an inner plain dot
+      // is still reached by one unwrap.
+      {
+        code: 'const hasItems = (o) => o?.arr.length;',
+        errors: [error('hasItems')],
+      },
+
+      // Recursion into the branches of a conditional was blinded too.
+      {
+        code: 'const hasItems = (a, b) => a ? b?.length : true;',
+        errors: [error('hasItems')],
+      },
+
+      // Chain and assertion wrappers nest in either order.
+      {
+        code: 'const hasItems = (arr) => arr?.length!;',
+        errors: [error('hasItems')],
+      },
+      {
+        code: 'const hasItems = (arr) => (arr?.length) as number;',
+        errors: [error('hasItems')],
+      },
+      {
+        code: 'const hasItems = (o) => (o?.a)?.length;',
+        errors: [error('hasItems')],
       },
     ],
   },

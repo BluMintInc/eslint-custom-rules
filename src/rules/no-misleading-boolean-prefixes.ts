@@ -131,6 +131,13 @@ function isExpressionBooleanLike(
       return isExpressionBooleanLike(expr.expression);
     case AST_NODE_TYPES.TSNonNullExpression:
       return isExpressionBooleanLike(expr.expression);
+    // `a?.b` wraps the access in a ChainExpression, which only records that the
+    // access short-circuits — the value still comes from the node beneath, as
+    // with the assertion wrappers above (#1829). Nothing here is a carve-out for
+    // optional chains: `arr?.length` is `number | undefined`, a worse instance
+    // of the misleading prefix than the `number` that `arr.length` reports.
+    case AST_NODE_TYPES.ChainExpression:
+      return isExpressionBooleanLike(expr.expression);
     case AST_NODE_TYPES.Literal:
       return typeof expr.value === 'boolean' ? true : 'non';
     case AST_NODE_TYPES.TemplateLiteral:
