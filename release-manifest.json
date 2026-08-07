@@ -1,5 +1,36 @@
 [
   {
+    "version": "1.20.130",
+    "date": "2026-08-07T08:38:15.008Z",
+    "rules": [
+      {
+        "name": "enforce-dynamic-file-naming",
+        "changeType": "fix",
+        "issues": [
+          1843
+        ],
+        "summary": "honor only the disable directives ESLint itself honors (closes #1843)"
+      },
+      {
+        "name": "enforce-global-constants",
+        "changeType": "fix",
+        "issues": [
+          1841
+        ],
+        "summary": "name the reachable remedy when a memo literal closes over render scope (closes #1841)"
+      },
+      {
+        "name": "enforce-querykey-ts",
+        "changeType": "fix",
+        "issues": [
+          1840,
+          1842
+        ],
+        "summary": "see through a type assertion at the report site (closes #1842); resolve an aliased key through a type assertion (closes #1840)"
+      }
+    ]
+  },
+  {
     "version": "1.20.129",
     "date": "2026-08-07T06:47:26.731Z",
     "rules": [

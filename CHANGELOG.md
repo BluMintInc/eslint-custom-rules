@@ -1,3 +1,13 @@
+## [1.20.130](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.129...v1.20.130) (2026-08-07)
+
+
+### Bug Fixes
+
+* **enforce-dynamic-file-naming:** honor only the disable directives ESLint itself honors (closes [#1843](https://github.com/BluMintInc/eslint-custom-rules/issues/1843)) ([d6f06c8](https://github.com/BluMintInc/eslint-custom-rules/commit/d6f06c822be840449d6ae42b1f4031319f7a0dad))
+* **enforce-global-constants:** name the reachable remedy when a memo literal closes over render scope (closes [#1841](https://github.com/BluMintInc/eslint-custom-rules/issues/1841)) ([244b6db](https://github.com/BluMintInc/eslint-custom-rules/commit/244b6db9165ce5c0688fd757d7a5dd5586480f2d))
+* **enforce-querykey-ts:** resolve an aliased key through a type assertion (closes [#1840](https://github.com/BluMintInc/eslint-custom-rules/issues/1840)) ([7cdbfc3](https://github.com/BluMintInc/eslint-custom-rules/commit/7cdbfc3c27c59d727ac6aef7ee344e273243b457))
+* **enforce-querykey-ts:** see through a type assertion at the report site (closes [#1842](https://github.com/BluMintInc/eslint-custom-rules/issues/1842)) ([3431506](https://github.com/BluMintInc/eslint-custom-rules/commit/3431506c119ca4e0c82a10d48440d4aa3b2e7015))
+
 ## [1.20.129](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.128...v1.20.129) (2026-08-07)
 
 
