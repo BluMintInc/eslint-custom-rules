@@ -210,6 +210,17 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
     const arr = [item];
     const wrapper = { first: arr[0] };
     `,
+    // An optional read that aliases without closing a cycle stays silent: the
+    // unwrap must not make every chained alias look circular.
+    `
+    const a = { b: {} };
+    const c = { d: a?.b };
+    `,
+    `
+    const item = {};
+    const arr = [item];
+    const wrapper = { first: arr?.[0] };
+    `,
   ],
   invalid: [
     // === DIRECT CIRCULAR REFERENCE ===
@@ -288,6 +299,55 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
       const arr = [inner];
       const outer = { elem: arr[0] };
       inner.outer = outer;
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // === OPTIONAL-CHAINED ALIASES (#1838) ===
+    // `?.` records that the access short-circuits, not that it names something
+    // else, so the cycle it closes is the same one the plain read closes.
+    {
+      code: `
+      const cfg = { node: {} };
+      const wrap = { ref: cfg?.node };
+      cfg.node.parent = wrap;
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Either link alone is enough — each is resolved independently.
+    {
+      code: `
+      const level1 = { a: {} };
+      const level2 = { b: level1?.a };
+      const obj = { c: level2.b };
+      level1.a.ref = obj;
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    {
+      code: `
+      const level1 = { a: {} };
+      const level2 = { b: level1.a };
+      const obj = { c: level2?.b };
+      level1.a.ref = obj;
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Optional computed access closes a cycle through an array element.
+    {
+      code: `
+      const inner = {};
+      const arr = [inner];
+      const outer = { elem: arr?.[0] };
+      inner.outer = outer;
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // The chain stacks with an assertion, which the same unwrap sees through.
+    {
+      code: `
+      const cfg = { node: {} };
+      const wrap = { ref: cfg?.node as object };
+      cfg.node.parent = wrap;
       `,
       errors: [{ messageId: 'circularReference' }],
     },

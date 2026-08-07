@@ -36,6 +36,12 @@ obj.self = obj;
 const obj1 = {};
 const obj2 = { ref: obj1 };
 obj1.ref = obj2;
+
+// Optional chaining does not change the verdict: `?.` records that the read
+// short-circuits, not that the alias points somewhere else
+const cfg = { node: {} };
+const wrap = { ref: cfg?.node };
+cfg.node.parent = wrap;
 ```
 
 ### Examples of **correct** code for this rule:
