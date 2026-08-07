@@ -10,6 +10,7 @@ This rule requires every Firestore `DocumentReference`, `CollectionReference`, a
 
 - Provide a concrete document interface or type whenever you create a Firestore reference or call `doc`, `collection`, or `collectionGroup`.
 - Calls on an already typed `CollectionReference<T>` may omit the generic on `collectionRef.doc(...)` because the collection supplies the document shape. This holds whether the collection is chained (`db.collection<T>('x').doc('y')`) or first stored in a `const`.
+- An optional link anywhere in the receiver (`db?.collection<T>('x')`) is looked through. It changes the reference's nullability, not its schema: the type is `CollectionReference<T> | undefined`, still carrying `T`, so the derived `doc(...)` inherits a shape and needs no generic. The inverse holds too — `db?.collection('x')` supplies nothing and is reported exactly as `db.collection('x')` is.
 - Resolving a stored collection is deliberately shallow: only a `const` whose initializer is a `collection<T>(...)` call, whose annotation is `CollectionReference<T>`, or which asserts that type is followed, and only one hop. An alias of an alias, a `let`, a parameter, or an import cannot be proven typed, so `doc(...)` on those still requires its own generic.
 - A class member reached as `this.member` or `this.member()` is resolved through its return type annotation when it has one, and otherwise through the expression it returns. See [Where the schema evidence must live](#where-the-schema-evidence-must-live).
 - Generics that use `any` or `{}` erase the schema and disable compile-time checks; nested `any`/`{}` are flagged when the rule can see them inline or via same-file types. See [How a named generic is resolved](#how-a-named-generic-is-resolved).
@@ -205,6 +206,10 @@ const productDocRef: DocumentReference<ProductData> = db.doc('products/456');
 // Typed collection supplies the generic to collectionRef.doc()
 const typedUsersCollection = db.collection<UserData>('users');
 const typedUserDoc = typedUsersCollection.doc('123');
+
+// An optional link changes nullability, not the schema
+const guardedUsersCollection = db?.collection<UserData>('users');
+const guardedUserDoc = guardedUsersCollection.doc('123');
 
 // Using intersection types keeps the schema intact
 type BaseData = { id: string; createdAt: Date };
