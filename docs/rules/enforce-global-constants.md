@@ -45,6 +45,24 @@ const MyComponent = () => {
 };
 ```
 
+#### `useMemo` with empty dependency array that closes over a render value
+
+An empty dependency array means the author *declared* no dependencies, not that
+there are none. When the callback reads a prop, a state value, another hook's
+result or any other value that exists only during a render, the literal cannot
+be hoisted — the name it reads does not exist at module scope — and the memo
+keeps whatever was captured on the first render forever.
+
+```tsx
+const Component = ({ delay }) => {
+  // The dependency array is empty, but the callback reads `delay`, so this
+  // object keeps the very first `delay` the component ever received
+  const options = useMemo(() => ({ debounce: delay }), []);
+
+  return <div>{options.debounce}</div>;
+};
+```
+
 #### Inline destructuring defaults
 
 ```tsx
@@ -81,6 +99,18 @@ const MyComponent = () => {
 };
 ```
 
+#### Declared dependencies for a literal that closes over a render value
+
+```tsx
+const Component = ({ delay }) => {
+  // `delay` varies per render, so it belongs in the dependency array; hoisting
+  // is not an option here and the rule does not ask for it
+  const options = useMemo(() => ({ debounce: delay }), [delay]);
+
+  return <div>{options.debounce}</div>;
+};
+```
+
 #### Global constants for destructuring defaults
 
 ```tsx
@@ -97,6 +127,30 @@ const useMyHook = (options = DEFAULT_OPTIONS) => {
   return options;
 };
 ```
+
+## Which remedy the rule names
+
+A `useMemo` over an object literal with an empty dependency array gets one of two
+reports, decided by what the callback reads. The distinction matters because the
+two remedies are opposites: one freezes the value at module scope, the other
+admits that the value varies per render.
+
+| The callback reads | Report | Remedy |
+|---|---|---|
+| Nothing outside itself, or only module-scope/global names (an import, a module `const`, `Math`) | `useGlobalConstant` | Hoist the literal to a module-level constant. |
+| A value bound between the module and the callback — a prop, a `useState` value, another hook's result, a variable in the component body | `declareMemoDependency` | Declare that value in the dependency array, or drop the `useMemo`. |
+
+The question is answered from resolved scope references, so shadowing,
+destructuring and imports are read exactly as the scope analyzer sees them:
+
+- A binding the callback creates itself — its parameters, its locals, a nested
+  function's locals — travels with the literal, so hoisting stays available.
+- A name referenced only in type position (an annotation, an `as` target) erases
+  at compile time; it neither blocks hoisting nor belongs in a dependency array.
+- The whole callback is examined, not just the returned literal. `const debounce
+  = delay * 2; return { debounce };` closes over `delay` exactly as
+  `return { debounce: delay }` does, and `delay` is the name a dependency array
+  can actually hold.
 
 ## Autofix safety
 

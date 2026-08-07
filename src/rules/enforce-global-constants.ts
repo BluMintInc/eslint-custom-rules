@@ -3,7 +3,110 @@ import { createRule } from '../utils/createRule';
 import { afterShebang } from '../utils/shebang';
 import { ASTHelpers } from '../utils/ASTHelpers';
 
-type MessageIds = 'useGlobalConstant' | 'extractDefaultToGlobalConstant';
+type MessageIds =
+  | 'useGlobalConstant'
+  | 'extractDefaultToGlobalConstant'
+  | 'declareMemoDependency';
+
+/**
+ * Scope kinds whose bindings are established once per module evaluation:
+ * globals, imports and module-level declarations. A literal reading one of those
+ * can still be hoisted verbatim, because the name it reads is in scope at module
+ * level too.
+ */
+const MODULE_LEVEL_SCOPE_TYPES = new Set<string>(['global', 'module']);
+
+/**
+ * True when `inner` lies entirely inside `outer`'s source range.
+ */
+function isRangeWithin(inner: TSESTree.Range, outer: TSESTree.Range): boolean {
+  return inner[0] >= outer[0] && inner[1] <= outer[1];
+}
+
+/**
+ * True when a reference appears purely in type position (an annotation, or the
+ * target of an `as`/`satisfies`). Types erase at compile time, so such a name
+ * neither blocks hoisting nor belongs in a dependency array. The flags are read
+ * defensively: an analyzer that omits them leaves the reference classified as a
+ * value, which keeps the conservative answer.
+ */
+function isTypeOnlyReference(reference: TSESLint.Scope.Reference): boolean {
+  const flags = reference as unknown as {
+    isValueReference?: boolean;
+    isTypeReference?: boolean;
+  };
+  return flags.isTypeReference === true && flags.isValueReference === false;
+}
+
+/**
+ * True when a reference names a value that can differ between renders, i.e. one
+ * bound INSIDE the module and OUTSIDE the memo callback: a prop, a local, a
+ * destructured value, another hook's result.
+ *
+ * Everything else leaves hoisting available. An unresolved name is an ambient
+ * global. A module- or global-scoped binding is fixed for the module's lifetime
+ * and is equally visible from module scope. A binding whose own scope sits
+ * inside the callback — the callback's parameters, its locals, a nested
+ * function's locals — is created by the callback rather than closed over.
+ */
+function isRenderScopeReference(
+  reference: TSESLint.Scope.Reference,
+  callbackRange: TSESTree.Range,
+): boolean {
+  const variable = reference.resolved;
+  if (!variable) {
+    return false;
+  }
+  if (MODULE_LEVEL_SCOPE_TYPES.has(variable.scope.type)) {
+    return false;
+  }
+  return !isRangeWithin(variable.scope.block.range, callbackRange);
+}
+
+/**
+ * The first render-scope value a memo callback reads, in source order, or null
+ * when it reads none.
+ *
+ * Answered from RESOLVED scope references rather than identifier names, so
+ * shadowing, destructuring and imports are accounted for exactly as the scope
+ * analyzer sees them. The whole callback is the unit of analysis, not just the
+ * returned literal: `const debounce = delay * 2; return { debounce };` closes
+ * over `delay` just as `return { debounce: delay }` does, and naming the
+ * callback-local `debounce` would prescribe a dependency that does not exist
+ * outside the callback.
+ */
+function findRenderScopeDependency(
+  callbackScope: TSESLint.Scope.Scope,
+  callbackRange: TSESTree.Range,
+): string | null {
+  let earliest: TSESLint.Scope.Reference | null = null;
+  const pending: TSESLint.Scope.Scope[] = [callbackScope];
+
+  while (pending.length > 0) {
+    const current = pending.pop() as TSESLint.Scope.Scope;
+
+    for (const reference of current.references) {
+      if (isTypeOnlyReference(reference)) {
+        continue;
+      }
+      if (!isRenderScopeReference(reference, callbackRange)) {
+        continue;
+      }
+      // Source order rather than traversal order, so the reported name does not
+      // depend on how the scope tree happens to be walked.
+      if (
+        !earliest ||
+        reference.identifier.range[0] < earliest.identifier.range[0]
+      ) {
+        earliest = reference;
+      }
+    }
+
+    pending.push(...current.childScopes);
+  }
+
+  return earliest ? earliest.identifier.name : null;
+}
 
 export const enforceGlobalConstants = createRule<[], MessageIds>({
   name: 'enforce-global-constants',
@@ -20,6 +123,8 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
         'Object literal returned from useMemo with empty dependencies creates a new reference every render without providing memoization benefits → this wastes memory and misleads readers into thinking the value is computed → move the object to a module-level constant (e.g., const OPTIONS = { ... } as const;).',
       extractDefaultToGlobalConstant:
         'Inline default value in destructuring creates a new reference on every render → this causes unnecessary re-renders in child components due to unstable identity → extract the default to a module-level constant (e.g., const DEFAULT_OPTIONS = { ... } as const;).',
+      declareMemoDependency:
+        'Object literal returned from useMemo reads "{{name}}" from the surrounding render scope while declaring an empty dependency array → the memo keeps the "{{name}}" captured on the first render and never recomputes, so the object silently goes stale, and it cannot be hoisted to a module-level constant because "{{name}}" exists only during a render → declare "{{name}}" (and every other render-scope value the callback reads) in the dependency array, or drop the useMemo if the object is meant to be constant.',
     },
   },
   defaultOptions: [],
@@ -241,6 +346,22 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
         return { kind: 'blocked' };
       }
       return { kind: 'free' };
+    }
+
+    /**
+     * The first render-scope value the memo callback reads, or null when it
+     * reads none and the literal is therefore hoistable as written.
+     */
+    function getRenderScopeDependency(
+      callback: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
+    ): string | null {
+      const callbackScope = sourceCode.scopeManager?.acquire(callback);
+      if (!callbackScope) {
+        // Without scope analysis nothing can be shown to be closed over, so the
+        // literal keeps the hoisting report the rule has always emitted.
+        return null;
+      }
+      return findRenderScopeDependency(callbackScope, callback.range);
     }
 
     function buildInitializerText(initText: string): string {
@@ -467,19 +588,40 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
         }
 
         if (
-          actualReturnValue.type === AST_NODE_TYPES.ObjectExpression ||
-          (actualReturnValue.type === AST_NODE_TYPES.ArrayExpression &&
+          actualReturnValue.type !== AST_NODE_TYPES.ObjectExpression &&
+          !(
+            actualReturnValue.type === AST_NODE_TYPES.ArrayExpression &&
             actualReturnValue.elements.some(
               (element) =>
                 element !== null &&
                 element.type === AST_NODE_TYPES.ObjectExpression,
-            ))
+            )
+          )
         ) {
+          return;
+        }
+
+        // An empty dependency array means the author DECLARED no dependencies,
+        // not that there are none. When the callback closes over a render-scope
+        // value, hoisting the literal to module scope does not compile — the
+        // name it reads exists only during a render — so prescribing a global
+        // constant is advice that cannot be followed. The reachable remedy is
+        // the omitted dependency, which is what the split below names.
+        const renderScopeDependency = getRenderScopeDependency(callback);
+
+        if (renderScopeDependency !== null) {
           context.report({
             node,
-            messageId: 'useGlobalConstant',
+            messageId: 'declareMemoDependency',
+            data: { name: renderScopeDependency },
           });
+          return;
         }
+
+        context.report({
+          node,
+          messageId: 'useGlobalConstant',
+        });
       },
 
       VariableDeclaration(node) {

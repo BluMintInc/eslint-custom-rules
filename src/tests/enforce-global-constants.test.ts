@@ -71,6 +71,27 @@ ruleTesterJsx.run('enforce-global-constants', enforceGlobalConstants, {
       return { a1, b1 };
     };
     `,
+    // A literal closing over a prop with that prop declared stays clean
+    `
+    function Component({ delay }) {
+      const options = useMemo(() => ({ debounce: delay }), [delay]);
+      return <div>{options.debounce}</div>;
+    }
+    `,
+    // Declared dependencies stay clean for an array of object literals too
+    `
+    function Component({ id }) {
+      const rows = useMemo(() => [{ id }, { id: id + 1 }], [id]);
+      return <div>{rows.length}</div>;
+    }
+    `,
+    // A dependency array holding a member expression is still a declaration
+    `
+    function Component(props) {
+      const options = useMemo(() => ({ debounce: props.delay }), [props.delay]);
+      return <div>{options.debounce}</div>;
+    }
+    `,
   ],
   invalid: [
     // A shebang has to stay at character 0 or the file stops parsing
@@ -167,6 +188,312 @@ const Comp = () => {
       errors: [
         {
           messageId: 'useGlobalConstant',
+        },
+      ],
+    },
+    // --- Negative controls: a literal closing over NOTHING is hoistable, so the
+    // hoisting advice must survive the narrowing. ---
+    // Nested object literal reading only inline values
+    {
+      code: `
+      const MyComponent = () => {
+        const theme = useMemo(() => ({
+          palette: { primary: '#fff', secondary: '#000' },
+          spacing: [4, 8, 16],
+        }), []);
+
+        return <div>{theme.spacing.length}</div>;
+      };
+      `,
+      errors: [{ messageId: 'useGlobalConstant' }],
+    },
+    // Array literal of object literals reading only inline values
+    {
+      code: `
+      const MyComponent = () => {
+        const rows = useMemo(() => [{ id: 1 }, { id: 2 }], []);
+        return <div>{rows.length}</div>;
+      };
+      `,
+      errors: [{ messageId: 'useGlobalConstant' }],
+    },
+    // as const assertion over a fully static literal
+    {
+      code: `
+      const MyComponent = () => {
+        const options = useMemo(() => ({ debounce: 500 }) as const, []);
+        return <div>{options.debounce}</div>;
+      };
+      `,
+      errors: [{ messageId: 'useGlobalConstant' }],
+    },
+    // A literal reading only bindings CREATED BY the callback is hoistable:
+    // those names travel with the literal.
+    {
+      code: `
+      const MyComponent = () => {
+        const options = useMemo(() => {
+          const inner = { a: 1 };
+          return { inner };
+        }, []);
+        return <div>{options.inner.a}</div>;
+      };
+      `,
+      errors: [{ messageId: 'useGlobalConstant' }],
+    },
+    // The subtle boundary: an IMPORTED constant is module scope, not render
+    // scope, so the literal still hoists verbatim beside it.
+    {
+      code: `
+      import { DEBOUNCE_MS } from './constants';
+
+      const MyComponent = () => {
+        const options = useMemo(() => ({ debounce: DEBOUNCE_MS }), []);
+        return <div>{options.debounce}</div>;
+      };
+      `,
+      errors: [{ messageId: 'useGlobalConstant' }],
+    },
+    // A module-level const declared in the same file is equally visible from
+    // module scope
+    {
+      code: `
+      const DEBOUNCE_MS = 500;
+
+      const MyComponent = () => {
+        const options = useMemo(() => ({ debounce: DEBOUNCE_MS }), []);
+        return <div>{options.debounce}</div>;
+      };
+      `,
+      errors: [{ messageId: 'useGlobalConstant' }],
+    },
+    // An ambient global resolves to nothing in the file and exists at module
+    // scope too
+    {
+      code: `
+      const MyComponent = () => {
+        const options = useMemo(() => ({ ratio: Math.PI }), []);
+        return <div>{options.ratio}</div>;
+      };
+      `,
+      errors: [{ messageId: 'useGlobalConstant' }],
+    },
+    // A local TYPE referenced by an assertion erases at compile time, so it
+    // neither blocks hoisting nor belongs in a dependency array
+    {
+      code: `
+      const MyComponent = () => {
+        type Options = { debounce: number };
+        const options = useMemo(() => ({ debounce: 500 } as Options), []);
+        return <div>{options.debounce}</div>;
+      };
+      `,
+      errors: [{ messageId: 'useGlobalConstant' }],
+    },
+    // A name shadowed inside the callback resolves to the callback's own
+    // binding, not the same-named prop
+    {
+      code: `
+      function Component({ delay }) {
+        const options = useMemo(() => {
+          const delay = 500;
+          return { debounce: delay };
+        }, []);
+        return <div>{options.debounce}</div>;
+      }
+      `,
+      errors: [{ messageId: 'useGlobalConstant' }],
+    },
+    // The callback's own parameter is created per call, not closed over
+    {
+      code: `
+      const MyComponent = () => {
+        const options = useMemo(function (arg) {
+          return { arg };
+        }, []);
+        return <div>{options.arg}</div>;
+      };
+      `,
+      errors: [{ messageId: 'useGlobalConstant' }],
+    },
+    // --- The narrowed branch: a literal closing over a render-scope value
+    // cannot be hoisted, so the remedy named is the omitted dependency. ---
+    // Destructured prop
+    {
+      code: `
+      function Component({ delay }) {
+        const options = useMemo(() => ({ debounce: delay }), []);
+        return <div>{options.debounce}</div>;
+      }
+      `,
+      errors: [
+        {
+          messageId: 'declareMemoDependency',
+          data: { name: 'delay' },
+        },
+      ],
+    },
+    // A member read off the whole props object
+    {
+      code: `
+      function Component(props) {
+        const options = useMemo(() => ({ debounce: props.delay }), []);
+        return <div>{options.debounce}</div>;
+      }
+      `,
+      errors: [
+        {
+          messageId: 'declareMemoDependency',
+          data: { name: 'props' },
+        },
+      ],
+    },
+    // A useState value
+    {
+      code: `
+      const MyComponent = () => {
+        const [count, setCount] = useState(0);
+        const options = useMemo(() => ({ count }), []);
+        return <div onClick={() => setCount(count + 1)}>{options.count}</div>;
+      };
+      `,
+      errors: [
+        {
+          messageId: 'declareMemoDependency',
+          data: { name: 'count' },
+        },
+      ],
+    },
+    // Another hook's result
+    {
+      code: `
+      const MyComponent = () => {
+        const theme = useTheme();
+        const options = useMemo(() => ({ theme }), []);
+        return <div>{options.theme}</div>;
+      };
+      `,
+      errors: [
+        {
+          messageId: 'declareMemoDependency',
+          data: { name: 'theme' },
+        },
+      ],
+    },
+    // A variable declared in the component body
+    {
+      code: `
+      const MyComponent = ({ items }) => {
+        const total = items.length;
+        const options = useMemo(() => ({ total }), []);
+        return <div>{options.total}</div>;
+      };
+      `,
+      errors: [
+        {
+          messageId: 'declareMemoDependency',
+          data: { name: 'total' },
+        },
+      ],
+    },
+    // The callback, not the literal, is the unit of analysis: a callback-local
+    // computed from a prop must name the PROP, which is the only name a
+    // dependency array can hold.
+    {
+      code: `
+      function Component({ delay }) {
+        const options = useMemo(() => {
+          const debounce = delay * 2;
+          return { debounce };
+        }, []);
+        return <div>{options.debounce}</div>;
+      }
+      `,
+      errors: [
+        {
+          messageId: 'declareMemoDependency',
+          data: { name: 'delay' },
+        },
+      ],
+    },
+    // A closure buried in a property value closes over render scope just as a
+    // property value does
+    {
+      code: `
+      function Component({ id }) {
+        const handle = useHandler();
+        const options = useMemo(() => ({ onClick: () => handle(id) }), []);
+        return <div {...options} />;
+      }
+      `,
+      errors: [
+        {
+          messageId: 'declareMemoDependency',
+          data: { name: 'handle' },
+        },
+      ],
+    },
+    // An array of object literals closing over a prop
+    {
+      code: `
+      function Component({ id }) {
+        const rows = useMemo(() => [{ id }, { id: 2 }], []);
+        return <div>{rows.length}</div>;
+      }
+      `,
+      errors: [
+        {
+          messageId: 'declareMemoDependency',
+          data: { name: 'id' },
+        },
+      ],
+    },
+    // as const does not change which branch applies
+    {
+      code: `
+      function Component({ delay }) {
+        const options = useMemo(() => ({ debounce: delay }) as const, []);
+        return <div>{options.debounce}</div>;
+      }
+      `,
+      errors: [
+        {
+          messageId: 'declareMemoDependency',
+          data: { name: 'delay' },
+        },
+      ],
+    },
+    // The name reported is the first in SOURCE order, not in scope-walk order
+    {
+      code: `
+      function Component({ alpha, beta }) {
+        const options = useMemo(() => ({ a: alpha, b: beta }), []);
+        return <div>{options.a}</div>;
+      }
+      `,
+      errors: [
+        {
+          messageId: 'declareMemoDependency',
+          data: { name: 'alpha' },
+        },
+      ],
+    },
+    // A block-bodied callback returning a literal that closes over render scope
+    {
+      code: `
+      const MyComponent = ({ disconnectOnPageLeave }) => {
+        const roomOptions = useMemo(() => {
+          return {
+            disconnectOnPageLeave,
+          } as const;
+        }, []);
+        return <div>{roomOptions.disconnectOnPageLeave}</div>;
+      };
+      `,
+      errors: [
+        {
+          messageId: 'declareMemoDependency',
+          data: { name: 'disconnectOnPageLeave' },
         },
       ],
     },
