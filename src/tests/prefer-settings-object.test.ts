@@ -43,6 +43,19 @@ ruleTesterTs.run('prefer-settings-object', preferSettingsObject, {
       code: `function sum(...numbers: number[]) { return numbers.reduce((a, b) => a + b, 0); }`,
       options: [{ ignoreVariadicFunctions: true }],
     },
+    /**
+     * The exemption isolated from every other one, paired with the identical
+     * `invalid` case below. `sum` above cannot demonstrate it: its rest
+     * parameter is its only parameter, so it never reaches `minimumParameters`
+     * and is valid whatever the option says. The other rest-parameter fixture
+     * (`restParam`) is absorbed by the untyped-parameter exemption before this
+     * one is consulted. Between them the option could be flipped either way
+     * without moving a single report.
+     */
+    {
+      code: `function createUser(name: string, age: number, ...rest: boolean[]) {}`,
+      options: [{ ignoreVariadicFunctions: true }],
+    },
     // Ignored bound methods
     {
       code: `app.get('/user', (req: Request, res: Response, next: NextFunction) => {});`,
@@ -295,6 +308,16 @@ ruleTesterTs.run('prefer-settings-object', preferSettingsObject, {
     },
   ],
   invalid: [
+    /**
+     * Byte-identical to the `valid` variadic case above, differing only in the
+     * option — which is what makes the pair a proof that `ignoreVariadicFunctions`
+     * is wired to something rather than merely accepted by the schema.
+     */
+    {
+      code: `function createUser(name: string, age: number, ...rest: boolean[]) {}`,
+      options: [{ ignoreVariadicFunctions: false }],
+      errors: [{ messageId: 'tooManyParams', data: { count: 3, minimum: 3 } }],
+    },
     // Too many parameters
     {
       code: `function createUser(name: string, age: number, isAdmin: boolean) { return { name, age, isAdmin }; }`,
