@@ -1,3 +1,10 @@
+## [1.20.132](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.131...v1.20.132) (2026-08-07)
+
+
+### Bug Fixes
+
+* **prefer-type-over-interface:** decline the fix for a default-exported interface (closes [#1850](https://github.com/BluMintInc/eslint-custom-rules/issues/1850)) ([6666df1](https://github.com/BluMintInc/eslint-custom-rules/commit/6666df1a3c5ad462bc19d38a825d1a092226bb92))
+
 ## [1.20.131](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.130...v1.20.131) (2026-08-07)
 
 

@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.132",
+    "date": "2026-08-07T12:26:09.881Z",
+    "rules": [
+      {
+        "name": "prefer-type-over-interface",
+        "changeType": "fix",
+        "issues": [
+          1850
+        ],
+        "summary": "decline the fix for a default-exported interface (closes #1850)"
+      }
+    ]
+  },
+  {
     "version": "1.20.131",
     "date": "2026-08-07T10:28:22.079Z",
     "rules": [
