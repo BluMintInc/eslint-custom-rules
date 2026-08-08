@@ -144,6 +144,42 @@ ruleTesterTs.run(
       });
       `,
       {
+        // A sibling declarator widens what the rule can SEE, not what it
+        // complains about: a helper already sitting below its caller is
+        // correctly ordered whether or not it shares a statement.
+        name: 'correctly ordered helper sharing a statement with a sibling binding',
+        code: `
+        const handleClick = () => helper() + offset;
+        const helper = () => 1, offset = 2;
+        `,
+      },
+      {
+        name: 'correctly ordered helper declared after its sibling binding',
+        code: `
+        const handleClick = () => helper() + offset;
+        const offset = 2, helper = () => 1;
+        `,
+      },
+      {
+        // A multi-declarator statement holding no function-like initializer is
+        // an interleaved value declaration, not a function.
+        name: 'multi-declarator statement with no function initializer',
+        code: `
+        const handleClick = () => helper() + offset;
+        const offset = 2, scale = 3;
+        const helper = () => scale;
+        `,
+      },
+      {
+        // A destructuring sibling is skipped while the function-like declarator
+        // beside it is still found.
+        name: 'correctly ordered helper sharing a statement with a destructuring sibling',
+        code: `
+        export const handleClick = () => helper();
+        const { base } = config, helper = () => base;
+        `,
+      },
+      {
         // Transitive chain whose leaf helper (runCommand) is shared by a second
         // caller chain. Every caller already sits above every helper it invokes
         // and the shared primitive sits last, below all its callers — a layout
@@ -295,6 +331,68 @@ function helper() {
 
 const helper = () => 1;
         `,
+      },
+      {
+        // A sibling declarator must not hide the misorder. Relocating `helper`
+        // means splitting the declaration and dragging `offset` along, so the
+        // autofix is declined — but the violation is still reported.
+        name: 'function declared alongside a sibling binding, subject first',
+        code: `
+        const helper = () => 1, offset = 2;
+        const handleClick = () => helper() + offset;
+        `,
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: null,
+      },
+      {
+        // Mirror of the case above with the sibling declared FIRST: the
+        // function-holding declarator is not `declarations[0]`.
+        name: 'function declared alongside a sibling binding, subject second',
+        code: `
+        const offset = 2, helper = () => 1;
+        const handleClick = () => helper() + offset;
+        `,
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: null,
+      },
+      {
+        // Only the FIRST function-like declarator of a statement enters the
+        // inventory, so `format` stays invisible while `compute` is ordered
+        // against the handler by group order. The fix is still declined.
+        name: 'statement declaring two function-like bindings',
+        code: `
+        const compute = () => 1, format = () => 2;
+        const handleClick = () => format();
+        `,
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: null,
+      },
+      {
+        // An exported declaration reaches the same extractor, so a sibling
+        // binding hides the misorder there too.
+        name: 'exported function declared after a sibling binding',
+        code: `
+        export const offset = 2, helper = () => 1;
+        export const handleClick = () => helper() + offset;
+        `,
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: null,
+      },
+      {
+        // A multi-declarator function anywhere in the block withholds the fix
+        // for every function, since the reorder rewrites the whole region.
+        name: 'multi-declarator function suppresses the fix for its neighbours',
+        code: `
+        function helper() {
+          return 1;
+        }
+        const onReady = () => helper(), ready = true;
+        function main() {
+          return helper() && ready;
+        }
+        `,
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: null,
       },
       {
         code: `

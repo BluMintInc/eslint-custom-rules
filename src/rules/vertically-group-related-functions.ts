@@ -41,6 +41,11 @@ type FunctionInfo = {
   isUtility: boolean;
   dependencies: string[];
   originalIndex: number;
+  // Whether the function shares its declaration with other bindings. Such a
+  // function is still ordered and reported on; only the reorder fix is
+  // withheld, because relocating it means splitting the declaration and the
+  // sibling's initializer may not be safe to move along with it.
+  hasSiblingDeclarators: boolean;
 };
 
 const DEFAULT_OPTIONS: NormalizedOptions = {
@@ -169,20 +174,40 @@ function isFunctionExpressionLike(
   );
 }
 
+// Find the function a declaration contributes to the ordering inventory.
+//
+// A sibling declarator is a FIX-safety question, not a detection one: bailing
+// out of the extractor drops the statement from the inventory entirely, so the
+// ordering violation goes unreported instead of merely unfixed (#1891).
+//
+// At most ONE binding per statement is surfaced — the first function-like
+// declarator — because every downstream structure is keyed on statement
+// identity: the expected-order slots, the comment-inclusive statement ranges,
+// and the fixer's per-statement edits. A second entry sharing a statement would
+// emit two edits over one range and duplicate that statement's text. A later
+// function-like sibling therefore stays invisible, which under-constrains the
+// order rather than misstating it, and no ordering instruction is ever emitted
+// for two functions that cannot move independently of each other.
 function extractFunctionFromVariableDeclaration(
   statement: TSESTree.VariableDeclaration,
-): { name: string; fnNode: FunctionLikeNode } | null {
-  if (statement.declarations.length !== 1) {
-    return null;
+): {
+  name: string;
+  fnNode: FunctionLikeNode;
+  hasSiblingDeclarators: boolean;
+} | null {
+  for (const declarator of statement.declarations) {
+    if (
+      declarator.id.type === 'Identifier' &&
+      isFunctionExpressionLike(declarator.init)
+    ) {
+      return {
+        name: declarator.id.name,
+        fnNode: declarator.init,
+        hasSiblingDeclarators: statement.declarations.length > 1,
+      };
+    }
   }
-  const declarator = statement.declarations[0];
-  if (
-    declarator.id.type !== 'Identifier' ||
-    !isFunctionExpressionLike(declarator.init)
-  ) {
-    return null;
-  }
-  return { name: declarator.id.name, fnNode: declarator.init };
+  return null;
 }
 
 function collectFunctions(
@@ -208,6 +233,7 @@ function collectFunctions(
         isUtility: utilityRegex.test(name),
         dependencies: [],
         originalIndex: index,
+        hasSiblingDeclarators: false,
       });
       return;
     }
@@ -227,6 +253,7 @@ function collectFunctions(
           isUtility: utilityRegex.test(name),
           dependencies: [],
           originalIndex: index,
+          hasSiblingDeclarators: false,
         });
         return;
       }
@@ -235,7 +262,7 @@ function collectFunctions(
           statement.declaration,
         );
         if (extracted) {
-          const { name, fnNode } = extracted;
+          const { name, fnNode, hasSiblingDeclarators } = extracted;
           functions.push({
             name,
             fnNode,
@@ -245,6 +272,7 @@ function collectFunctions(
             isUtility: utilityRegex.test(name),
             dependencies: [],
             originalIndex: index,
+            hasSiblingDeclarators,
           });
         }
       }
@@ -267,6 +295,7 @@ function collectFunctions(
         isUtility: utilityRegex.test(name),
         dependencies: [],
         originalIndex: index,
+        hasSiblingDeclarators: false,
       });
       return;
     }
@@ -274,7 +303,7 @@ function collectFunctions(
     if (statement.type === 'VariableDeclaration') {
       const extracted = extractFunctionFromVariableDeclaration(statement);
       if (extracted) {
-        const { name, fnNode } = extracted;
+        const { name, fnNode, hasSiblingDeclarators } = extracted;
         const isExported = ASTHelpers.isNodeExported(statement);
         functions.push({
           name,
@@ -285,6 +314,7 @@ function collectFunctions(
           isUtility: utilityRegex.test(name),
           dependencies: [],
           originalIndex: index,
+          hasSiblingDeclarators,
         });
       }
     }
@@ -967,6 +997,17 @@ export const verticallyGroupRelatedFunctions: TSESLint.RuleModule<
               lastFunctionIndex === -1 ||
               firstFunctionIndex > lastFunctionIndex
             ) {
+              return null;
+            }
+
+            // Both reorder paths rewrite whole statements, so moving a function
+            // that shares its declaration with other bindings would carry those
+            // siblings with it — or, split apart, would leave the sibling's
+            // initializer evaluating somewhere it was never written to. Neither
+            // is a rewrite this rule is entitled to make on the reader's behalf.
+            // The misorderedFunction report still fires; only the rewrite of the
+            // region containing such a declaration is withheld.
+            if (functions.some((fn) => fn.hasSiblingDeclarators)) {
               return null;
             }
 
