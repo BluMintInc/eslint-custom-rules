@@ -885,31 +885,20 @@ const DETECTION_EXEMPT: Record<string, string> = {
  * `DETECTION_EXEMPT`, which records design decisions: merging the two would let
  * a bug retire under a "filed decision" label.
  *
- * Surfaced by the #1859 widening — these rules were never probed, because the
- * type-aware exclusion dropped them wholesale.
+ * Empty: no rule's fix availability turns on a function spelling. The map stays
+ * declared because the assertion below reads it in BOTH directions — an empty
+ * map is what makes the next finding fail loudly instead of landing in a slot
+ * written for something else.
+ *
+ * The one entry it held was `prefer-use-deep-compare-memo`, which rewrote a call
+ * to a `const`-spelled local hook while withholding the same rewrite from the
+ * `function` spelling. Its cause was in the shared planner rather than the rule:
+ * `planOrphanedImportRemoval` (`src/utils/importRemoval.ts`) counted a
+ * declarator's own initializer write as a surviving reference, so a `const`
+ * binding could never look orphaned. The planner discounts that self-write, and
+ * both spellings decline (#1868).
  */
-const FIX_KNOWN_DEFECTS: Record<string, string> = {
-  /**
-   * TODO(#1868): the fix is withheld when the
-   * local hook it would orphan is a `function` declaration and applied when the
-   * same hook is a `const` arrow, because `planOrphanedImportRemoval`
-   * (`src/utils/importRemoval.ts`) treats a declarator's own initializer WRITE
-   * as a surviving reference. The `const` spelling therefore never looks
-   * orphaned, and the rewrite strands the local binding:
-   *
-   *   const useMemo = (factory: () => number, deps: unknown[]) => {
-   *     return factory();
-   *   };
-   *   const v = useMemo(() => 1, [{ a: 1 }, 2]);
-   *
-   * fixes to `useDeepCompareMemo(...)` plus a new import, leaving `useMemo`
-   * unused — exactly what the suite's `function useMemo` twin exists to
-   * prevent. Shared helper, so `enforce-date-ttime` and
-   * `no-redundant-annotation-assertion` sit on the same edge.
-   */
-  'prefer-use-deep-compare-memo':
-    'declarator write hides an orphan; TODO(#1868)',
-};
+const FIX_KNOWN_DEFECTS: Record<string, string> = {};
 
 const reportOf = (findings: Finding[]) =>
   findings

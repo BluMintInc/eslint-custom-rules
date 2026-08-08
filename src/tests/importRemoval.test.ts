@@ -493,6 +493,58 @@ describe('planOrphanedImportRemoval', () => {
     expect(stripAndUnbind(code, ': T[]')).toBeNull();
   });
 
+  // A binding's own initializer write is not a use of it. Counted as one, a
+  // `const` could never be judged orphaned while the identical `function` — which
+  // records no self-reference at all — always could, so whether a rule offered a
+  // fix came down to how the helper it would strand had been SPELLED (#1868).
+  // The two spellings are pinned as a pair so neither can drift alone.
+  it('declines when a const-declared local would be orphaned', () => {
+    const code = "const SHAPE = { id: '' };\nconst v: typeof SHAPE = x;\n";
+    expect(stripAndUnbind(code, ': typeof SHAPE')).toBeNull();
+  });
+
+  it('declines alike when the same local is a function declaration', () => {
+    const code =
+      'function shape() {\n  return 1;\n}\nconst v: typeof shape = x;\n';
+    expect(stripAndUnbind(code, ': typeof shape')).toBeNull();
+  });
+
+  // The other half of the pin: discounting the self-write must not turn every
+  // `const` into an orphan. A second reader outside the edit keeps the binding
+  // alive exactly as it always did.
+  it('keeps a const-declared local a surviving reference still reads', () => {
+    const code = "const SHAPE = { id: '' };\nconst v: typeof SHAPE = SHAPE;\n";
+    expect(stripAndUnbind(code, ': typeof SHAPE')).toBe(
+      "const SHAPE = { id: '' };\nconst v = SHAPE;\n",
+    );
+  });
+
+  // An import records reads only — never an initializer write — so discounting
+  // self-writes cannot cost an import a reference. Were it to, the import would
+  // be unbound while still read, which is the failure this whole helper exists to
+  // avoid; this asserts the filter leaves the import channel untouched.
+  it('still counts every reference an import binding has', () => {
+    const code =
+      "import type { A } from './a';\nconst v: A = 1;\nconst w: A = 2;\n";
+    const source = sourceOf(code);
+    const start = code.indexOf(': A');
+    expect(
+      planOrphanedImportRemoval(source, [[start, start + ': A'.length]]),
+    ).toEqual([]);
+  });
+
+  // Only the DECLARATION's write is discounted. A later assignment is a separate
+  // statement this edit does not delete, so it still counts and the binding is
+  // not orphaned — the narrowest reading of "a binding whose only use is its own
+  // initialization", deliberately not widened to every write.
+  it('counts a later assignment to a local as a surviving reference', () => {
+    const code =
+      'let handler = () => 1;\nhandler = other;\nconst v: typeof handler = x;\n';
+    expect(stripAndUnbind(code, ': typeof handler')).toBe(
+      'let handler = () => 1;\nhandler = other;\nconst v = x;\n',
+    );
+  });
+
   it('keeps an exported declaration out of the orphan set', () => {
     expect(
       stripAndUnbind('export type B = number;\nconst v: B = 1;\n', ': B'),

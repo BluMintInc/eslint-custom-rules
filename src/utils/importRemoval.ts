@@ -487,6 +487,35 @@ function exportedBindingKeys(ast: TSESTree.Program): Set<string> {
 }
 
 /**
+ * Whether a reference is the declaration writing to its own binding: a
+ * declarator's initializer, a parameter's default, a `for…of` binding.
+ *
+ * Such a write is not a use, and counting it as one keeps a binding alive on the
+ * strength of its own declaration. That made orphanhood depend on how a helper
+ * was SPELLED — `const f = () => {}` records an initializer write and so could
+ * never look orphaned, while the identical `function f() {}` records no
+ * reference at all and could (#1868). `no-unused-vars` answers the same question
+ * the same way.
+ *
+ * Both halves of the test carry weight. `init` alone rests on one escope flag;
+ * pairing it with the binding's own declaration identifiers pins the reference
+ * to the declaration site, which is what makes the filter provably inert for
+ * import bindings — an import records reads only, never an initializer write, so
+ * no import can lose a reference here and be unbound while still read.
+ */
+function isOwnInitializerWrite(
+  variable: TSESLint.Scope.Variable,
+  reference: TSESLint.Scope.Reference,
+): boolean {
+  return (
+    reference.init === true &&
+    variable.identifiers.some(
+      (identifier) => identifier === reference.identifier,
+    )
+  );
+}
+
+/**
  * The extra ranges a fix must delete so that removing `removed` leaves nothing
  * bound to nothing, or `null` when some binding would be orphaned yet cannot be
  * unbound safely — an import behind a directive comment, a type alias or a type
@@ -525,14 +554,26 @@ export function planOrphanedImportRemoval(
     // A global has no declaration in this file, so nothing here can orphan it.
     if (variable.defs.length === 0) continue;
 
-    const references = variable.references.map(
-      (reference) => reference.identifier.range,
-    );
-    // Only bindings this deletion touches are its business, and only those it
-    // leaves with nothing at all are unbound: a reference that survives this
-    // edit keeps the binding alive, whatever another edit might later do to it.
-    if (!references.some((range) => isWithinAny(range, removed))) continue;
-    if (!references.every((range) => isWithinAny(range, removed))) continue;
+    // Only bindings this deletion touches are its business. Touching counts the
+    // declaration site itself, so this test reads every reference: an edit that
+    // covers a binding's own declarator has reached that binding whether or not
+    // anything reads it.
+    if (
+      !variable.references.some((reference) =>
+        isWithinAny(reference.identifier.range, removed),
+      )
+    ) {
+      continue;
+    }
+
+    // Only bindings the edit leaves with nothing at all are unbound: a USE that
+    // survives this edit keeps the binding alive, whatever another edit might
+    // later do to it. A declarator's own initializer write is not such a use —
+    // see {@link isOwnInitializerWrite}.
+    const uses = variable.references
+      .filter((reference) => !isOwnInitializerWrite(variable, reference))
+      .map((reference) => reference.identifier.range);
+    if (!uses.every((range) => isWithinAny(range, removed))) continue;
     if (
       variable.identifiers.some((identifier) =>
         exported.has(`${identifier.range[0]},${identifier.range[1]}`),
