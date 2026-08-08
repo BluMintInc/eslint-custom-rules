@@ -63,6 +63,40 @@ const getEnclosingClass = (
  * cannot be resolved through scope analysis, the fix is withheld whenever the
  * name occurs anywhere in the class other than at its declaration.
  */
+/**
+ * The member name a `this.<x>` access reads, whatever its spelling.
+ *
+ * Keying the check on the dot spelling alone left `this['settings']` invisible,
+ * so the rename shipped and stranded it — the class no longer had the member the
+ * getter reads (#1882, the sibling of #1881). A computed access with a static
+ * string is the SAME member as the dot form, and the fixer cannot rewrite it
+ * either, so it has to count. `null` marks a genuinely dynamic key, which names
+ * no member statically and therefore strands nothing.
+ */
+const staticMemberName = (
+  node: TSESTree.MemberExpression,
+): string | null | undefined => {
+  if (!node.computed) {
+    return node.property.type === AST_NODE_TYPES.Identifier
+      ? node.property.name
+      : null;
+  }
+  if (
+    node.property.type === AST_NODE_TYPES.Literal &&
+    typeof node.property.value === 'string'
+  ) {
+    return node.property.value;
+  }
+  if (
+    node.property.type === AST_NODE_TYPES.TemplateLiteral &&
+    node.property.expressions.length === 0 &&
+    node.property.quasis.length === 1
+  ) {
+    return node.property.quasis[0].value.cooked;
+  }
+  return null;
+};
+
 const parameterPropertyRenameIsUnsafe = (
   classNode: TSESTree.ClassDeclaration | TSESTree.ClassExpression,
   name: string,
@@ -78,8 +112,7 @@ const parameterPropertyRenameIsUnsafe = (
     if (
       node.type === AST_NODE_TYPES.MemberExpression &&
       node.object.type === AST_NODE_TYPES.ThisExpression &&
-      node.property.type === AST_NODE_TYPES.Identifier &&
-      node.property.name === name
+      staticMemberName(node) === name
     ) {
       unsafe = true;
       return;
