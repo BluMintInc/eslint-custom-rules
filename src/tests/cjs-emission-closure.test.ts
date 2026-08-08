@@ -36,8 +36,6 @@
  * throws. The check is therefore syntactic, over the closed set of constructs
  * that require an ES module.
  */
-import fs from 'fs';
-import path from 'path';
 import { Linter, Rule } from 'eslint';
 import * as tsParser from '@typescript-eslint/parser';
 import {
@@ -46,8 +44,10 @@ import {
   harvestFixtureCorpus,
   harvestOnce,
   severityWithOptions,
+  silentWithoutProgramRuleNames,
   suggestionEditsOf,
   suggestionRuleNames,
+  typeAwareRuleNames,
 } from '../utils/fixtureCorpus';
 
 /* eslint-disable @typescript-eslint/no-var-requires */
@@ -58,7 +58,6 @@ const plugin = require('../index') as {
 /* eslint-enable @typescript-eslint/no-var-requires */
 
 const PREFIX = '@blumintinc/blumint/';
-const RULES_DIR = path.join(__dirname, '..', 'rules');
 
 const PARSE_OPTIONS = {
   ecmaVersion: 2022,
@@ -129,18 +128,6 @@ function analyze(source: string): string[] | null {
     return null;
   }
 }
-
-const typeAwareNames = new Set(
-  fs
-    .readdirSync(RULES_DIR)
-    .filter((file) => file.endsWith('.ts'))
-    .filter((file) =>
-      /getParserServices|getTypeChecker/.test(
-        fs.readFileSync(path.join(RULES_DIR, file), 'utf8'),
-      ),
-    )
-    .map((file) => path.basename(file, '.ts')),
-);
 
 /** Rule name by OBJECT IDENTITY: ~100 suites pass a display name that is not a
  * rule name, and name-keyed matching silently drops every one of them. */
@@ -264,11 +251,18 @@ for (const suite of harvested.suites) {
 // ---------------------------------------------------------------------------
 // Corpus B — the recommended config's composed `--fix`
 // ---------------------------------------------------------------------------
+/**
+ * The only exclusion is `silentWithoutProgramRuleNames` — rules MEASURED to
+ * report nothing here, and so able to contribute only a false clean. This guard
+ * previously dropped all 16 rules mentioning `getParserServices` with no stated
+ * reason at all (#1879); measured, none of them emits CJS, so the set bought
+ * nothing and cost fifteen rules' worth of coverage.
+ */
 const FIX_CONFIG: Record<string, unknown> = {};
 for (const [id, severity] of Object.entries(plugin.configs.recommended.rules)) {
   if (!id.startsWith(PREFIX)) continue;
   const name = id.slice(PREFIX.length);
-  if (!plugin.rules[name] || typeAwareNames.has(name)) continue;
+  if (!plugin.rules[name] || silentWithoutProgramRuleNames.has(name)) continue;
   FIX_CONFIG[id] = severity;
 }
 
@@ -708,7 +702,16 @@ describe('the CJS emission guard is load-bearing', () => {
   it('harvests the suite without losing it', () => {
     expect(harvested.filesLoaded).toBeGreaterThanOrEqual(250);
     expect(Object.keys(FIX_CONFIG).length).toBeGreaterThan(100);
-    expect(typeAwareNames.size).toBeGreaterThan(5);
+    // The type-aware rules this guard once dropped for no stated reason must
+    // now compose like any other, or the coverage the lift bought is silently
+    // handed back.
+    const typeAwareInConfig = [...typeAwareRuleNames].filter(
+      (name) => PREFIX + name in plugin.configs.recommended.rules,
+    );
+    expect(typeAwareInConfig.length).toBeGreaterThan(5);
+    expect(
+      typeAwareInConfig.filter((name) => !(PREFIX + name in FIX_CONFIG)),
+    ).toEqual([]);
   });
 
   it('analyses enough declared outputs across enough rules', () => {
