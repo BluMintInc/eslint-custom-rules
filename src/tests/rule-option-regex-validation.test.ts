@@ -33,6 +33,7 @@ type JsonSchema = {
   type?: string | string[];
   properties?: Record<string, JsonSchema>;
   items?: JsonSchema;
+  anyOf?: JsonSchema[];
 };
 
 type RuleShape = {
@@ -83,13 +84,24 @@ export function clickHandler() { return 1; }
   },
 ];
 
+function admitsStringItem(items: JsonSchema | undefined): boolean {
+  if (!items) return false;
+  if (items.type === 'string') return true;
+  return (items.anyOf ?? []).some((alternative) => alternative.type === 'string');
+}
+
 function stringOptionKeys(entry: JsonSchema | undefined) {
   const keys: { key: string; isArray: boolean }[] = [];
   if (!entry || entry.type !== 'object' || !entry.properties) return keys;
   for (const [key, def] of Object.entries(entry.properties)) {
     if (!def || typeof def !== 'object') continue;
     if (def.type === 'string') keys.push({ key, isArray: false });
-    else if (def.type === 'array' && def.items?.type === 'string') {
+    // `items.type === 'string'` alone misses an option whose items are declared
+    // `anyOf: [{type:'string'}, …]` to admit a pre-compiled RegExp beside a
+    // source string. A consumer still writes a string there, so it compiles and
+    // can still throw — `parallelize-async-operations:sideEffectPatterns` was
+    // invisible to this guard for exactly that reason (#1873).
+    else if (def.type === 'array' && admitsStringItem(def.items)) {
       keys.push({ key, isArray: true });
     }
   }

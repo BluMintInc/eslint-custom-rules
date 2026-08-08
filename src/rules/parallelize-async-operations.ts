@@ -1,6 +1,7 @@
 import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
+import { compilePatternOption } from '../utils/compilePatternOption';
 
 type MessageIds = 'parallelizeAsyncOperations';
 type Options = [
@@ -105,10 +106,24 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     }
 
     const sourceCode = context.sourceCode;
-    const sideEffectMatchers = (options?.sideEffectPatterns ?? []).map(
-      (pattern) =>
-        typeof pattern === 'string' ? new RegExp(pattern, 'i') : pattern,
-    );
+    // Compiling with a bare `new RegExp` throws while the rule is being built,
+    // which aborts the whole lint run — every file, every other rule — with a
+    // message naming neither this option nor the offending pattern. The schema
+    // admits any string, so `'**'` reaches here from a valid config.
+    const declaredPatterns = options?.sideEffectPatterns ?? [];
+    const sideEffectMatchers = [
+      ...compilePatternOption(
+        'parallelize-async-operations',
+        'sideEffectPatterns',
+        declaredPatterns.filter(
+          (pattern): pattern is string => typeof pattern === 'string',
+        ),
+        'i',
+      ),
+      ...declaredPatterns.filter(
+        (pattern): pattern is RegExp => typeof pattern !== 'string',
+      ),
+    ];
     const reportedRanges = new Set<string>();
     /**
      * Checks if a node is an await expression
