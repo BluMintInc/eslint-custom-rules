@@ -64,6 +64,13 @@ type Violation = {
   data: Record<string, string>;
   fromIndex: number;
   toIndex: number;
+  /**
+   * Whether the reordering search may act on this violation by relocating its
+   * statement. A violation the search must leave alone is still reported: what a
+   * statement's shape forbids is the *fix*, and withholding the diagnosis as well
+   * ships the violation unseen (#1889).
+   */
+  relocatable: boolean;
 };
 
 /**
@@ -1217,12 +1224,33 @@ function record(
   data: Record<string, string>,
   fromIndex: number,
   toIndex: number,
+  relocatable = true,
 ): void {
   if (sink.flagged.has(statement)) {
     return;
   }
   sink.flagged.add(statement);
-  sink.violations.push({ statement, messageId, data, fromIndex, toIndex });
+  sink.violations.push({
+    statement,
+    messageId,
+    data,
+    fromIndex,
+    toIndex,
+    relocatable,
+  });
+}
+
+/**
+ * The violations the reordering search is allowed to expand into moves, and the
+ * only ones its zero-violation goal test answers about.
+ *
+ * Screening here rather than at detection is what keeps the fix path identical to
+ * one that never saw an unrelocatable violation: the search's candidate moves, its
+ * budget and the order it certifies clean are all computed as if the report were
+ * absent, so adding a report can never redirect, weaken or block a fix.
+ */
+function relocatableViolations(violations: Violation[]): Violation[] {
+  return violations.filter((violation) => violation.relocatable);
 }
 
 function isGuardIfStatement(
@@ -1606,6 +1634,10 @@ function unwrappedInitOf(
   return declarator.init ? unwrapAssertions(declarator.init) : null;
 }
 
+type SimpleDeclarator = TSESTree.VariableDeclarator & {
+  id: TSESTree.Identifier;
+};
+
 /**
  * Restrict late-declaration candidates to simple variables with at most an Identifier or
  * Literal initializer. This ensures they are pure values that do not have side effects or
@@ -1614,29 +1646,72 @@ function unwrappedInitOf(
  *
  * The classification runs on the unwrapped initializer: an assertion is erased
  * before the code runs, so `1 as const` is exactly the movable literal `1` is.
+ *
+ * Every declarator must qualify, because the statement is diagnosed — and moved —
+ * as a whole. A sibling binding does not disqualify the statement: how many
+ * bindings a declaration introduces decides whether the fix may relocate it, not
+ * whether the declaration is far from the first use of what it declares (#1889).
  */
-function lateDeclarationCandidateOf(
+function lateDeclarationDeclaratorsOf(
   statement: TSESTree.Statement,
-): (TSESTree.VariableDeclarator & { id: TSESTree.Identifier }) | null {
+): SimpleDeclarator[] | null {
   const declaration = variableDeclarationOf(statement);
-  if (!declaration || declaration.declarations.length !== 1) {
+  if (!declaration || declaration.declarations.length === 0) {
     return null;
   }
-  const [declarator] = declaration.declarations;
-  if (declarator.id.type !== AST_NODE_TYPES.Identifier) {
-    return null;
+  const declarators: SimpleDeclarator[] = [];
+  for (const declarator of declaration.declarations) {
+    if (declarator.id.type !== AST_NODE_TYPES.Identifier) {
+      return null;
+    }
+    const init = unwrappedInitOf(declarator);
+    if (
+      init &&
+      init.type !== AST_NODE_TYPES.Identifier &&
+      init.type !== AST_NODE_TYPES.Literal
+    ) {
+      return null;
+    }
+    declarators.push(declarator as SimpleDeclarator);
   }
-  const init = unwrappedInitOf(declarator);
-  if (
-    init &&
-    init.type !== AST_NODE_TYPES.Identifier &&
-    init.type !== AST_NODE_TYPES.Literal
-  ) {
-    return null;
+  return declarators;
+}
+
+/**
+ * Whether the reordering fix may relocate this statement to satisfy a
+ * late-declaration report.
+ *
+ * The fix moves whole statements, so relocating `const x = 1, y = 2;` carries `y`
+ * along — past its own first use in the general case, and always further than the
+ * report asked for. Splitting the declaration is the developer's call, so a
+ * declaration with sibling bindings is reported and left where it stands.
+ */
+function isRelocatableLateDeclaration(statement: TSESTree.Statement): boolean {
+  return lateDeclarationDeclaratorsOf(statement)?.length === 1;
+}
+
+/**
+ * The binding the report names: the one whose own first use is the group's.
+ *
+ * A statement's bindings share its position, so the declaration is late relative to
+ * whichever of them is read first; naming a sibling read later would point the
+ * reader at the wrong line.
+ */
+function earliestUsedDeclarator(
+  declarators: SimpleDeclarator[],
+  body: TSESTree.Statement[],
+  afterIndex: number,
+  usageIndex: number,
+): SimpleDeclarator {
+  if (declarators.length === 1) {
+    return declarators[0];
   }
-  return declarator as TSESTree.VariableDeclarator & {
-    id: TSESTree.Identifier;
-  };
+  const earliest = declarators.find(
+    (declarator) =>
+      findFirstUsageIndex(body, new Set([declarator.id.name]), afterIndex) ===
+      usageIndex,
+  );
+  return earliest ?? declarators[0];
 }
 
 const LOOP_TYPES = new Set<TSESTree.Node['type']>([
@@ -1682,18 +1757,21 @@ function handleLateDeclarations(
   body: TSESTree.Statement[],
 ): void {
   body.forEach((statement, index) => {
-    const declarator = lateDeclarationCandidateOf(statement);
-    if (!declarator) {
+    const declarators = lateDeclarationDeclaratorsOf(statement);
+    if (!declarators) {
       return;
     }
-    const name = declarator.id.name;
     const dependencies = new Set<string>();
-    const init = unwrappedInitOf(declarator);
-    if (init && init.type === AST_NODE_TYPES.Identifier) {
-      dependencies.add(init.name);
-    }
+    declarators.forEach((declarator) => {
+      const init = unwrappedInitOf(declarator);
+      if (init && init.type === AST_NODE_TYPES.Identifier) {
+        dependencies.add(init.name);
+      }
+    });
 
-    const nameSet = new Set([name]);
+    const nameSet = new Set(
+      declarators.map((declarator) => declarator.id.name),
+    );
     const usageIndex = findFirstUsageIndex(body, nameSet, index + 1);
 
     if (usageIndex === -1 || usageIndex <= index + 1) {
@@ -1717,7 +1795,9 @@ function handleLateDeclarations(
       // Do not hop over another declaration that is used at the same index or earlier
       // if it is also a candidate for being moved.
       // This prevents circular swapping of related declarations (like resolve/reject pairs).
-      if (lateDeclarationCandidateOf(stmt)) {
+      // The test asks about *relocation*, so a declaration the fix will never move
+      // is not one of the two ends of such a swap and does not block the hop.
+      if (isRelocatableLateDeclaration(stmt)) {
         const declaredNames = getDeclaredNames(stmt);
         const firstUsageOfIntervening = findFirstUsageIndex(
           body,
@@ -1752,13 +1832,23 @@ function handleLateDeclarations(
       return;
     }
 
+    const subject = earliestUsedDeclarator(
+      declarators,
+      body,
+      index + 1,
+      usageIndex,
+    );
+    // The same test `isRelocatableLateDeclaration` applies to an intervening
+    // statement, read off the declarators already in hand.
+    const relocatable = declarators.length === 1;
     record(
       sink,
       statement,
       'moveDeclarationCloser',
-      { name },
+      { name: subject.id.name },
       index,
       usageIndex,
+      relocatable,
     );
   });
 }
@@ -2518,8 +2608,12 @@ function orderKey(
 }
 
 /**
- * Shortest sequence of moves reaching an order with **zero** violations, or null when
- * the search bounds contain no such order.
+ * Shortest sequence of moves reaching an order with **zero** relocatable violations,
+ * or null when the search bounds contain no such order.
+ *
+ * `violations` is pre-screened by `relocatableViolations`, and so is every detection
+ * the search performs: a violation whose statement the fix may not move is neither a
+ * candidate move nor a reason to reject an order, since no reordering can answer it.
  *
  * Breadth-first for two reasons: the emitted fix is then the smallest reordering that
  * satisfies every constraint, and a block whose single named move already suffices
@@ -2581,7 +2675,7 @@ function findResolvingMoves(
       seen.add(key);
       budget -= 1;
 
-      const next = detectViolations(sourceCode, order);
+      const next = relocatableViolations(detectViolations(sourceCode, order));
       const moves = [...node.moves, { fromIndex, toIndex }];
       if (next.length === 0) {
         return moves;
@@ -2676,10 +2770,15 @@ function buildReorderFix(
 }
 
 /**
- * A fix is emitted only for a reordering the detector scores at zero violations, and
- * the whole reordering ships as a single fix. Relocating one statement per report
- * satisfies its own adjacency constraint while breaking another's, which under
- * `--fix` oscillates or exhausts the pass budget (#1405).
+ * A fix is emitted only for a reordering the detector scores at zero relocatable
+ * violations, and the whole reordering ships as a single fix. Relocating one
+ * statement per report satisfies its own adjacency constraint while breaking
+ * another's, which under `--fix` oscillates or exhausts the pass budget (#1405).
+ *
+ * A violation no reordering may answer — a declaration whose sibling bindings the
+ * fix would drag along — is reported and otherwise invisible here: it does not
+ * carry the fix, does not veto one, and cannot keep the block from settling, since
+ * the fixed text scores it exactly as the input did.
  *
  * Convergence is structural rather than argued: the emitted order is verified clean
  * by the same detector that produced the reports, and detection depends only on
@@ -2698,20 +2797,21 @@ function handleBlock(ruleContext: RuleExecutionContext, node: BlockLike): void {
     return;
   }
 
+  const relocatable = relocatableViolations(violations);
   const moves = findResolvingMoves(
     sourceCode,
     body,
-    violations,
-    searchDepthFor(violations.length, body.length),
+    relocatable,
+    searchDepthFor(relocatable.length, body.length),
   );
 
-  violations.forEach((violation, index) => {
+  violations.forEach((violation) => {
     context.report({
       node: violation.statement,
       messageId: violation.messageId,
       data: violation.data,
       fix:
-        moves && index === 0
+        moves && violation === relocatable[0]
           ? (fixer) => buildReorderFix(body, moves, node, sourceCode, fixer)
           : null,
     });

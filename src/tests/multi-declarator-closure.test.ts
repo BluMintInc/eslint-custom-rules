@@ -1071,10 +1071,6 @@ describe('the multi-declarator probe is load-bearing', () => {
  * the violation then ships unseen.
  */
 export const DETECTION_LOSS_BASELINE: Record<string, string> = {
-  'logical-top-to-bottom-grouping | ARM A | DETECTION_LOST | SUBJECT_FIRST | clean':
-    'src/rules/logical-top-to-bottom-grouping.ts returns early unless the declaration has exactly one declarator, so `moveDeclarationCloser` is lost the moment the subject gains a sibling (#1889)',
-  'logical-top-to-bottom-grouping | ARM A | DETECTION_LOST | SUBJECT_SECOND | clean':
-    'same early return as the SUBJECT_FIRST entry, reached with the sibling declared first (#1889)',
   'no-unused-props | ARM A | DETECTION_LOST | SUBJECT_FIRST | clean':
     'src/rules/no-unused-props.ts returns early unless the declaration has exactly one declarator, so `unusedProp` is lost on a component declared alongside any sibling binding (#1890)',
   'no-unused-props | ARM A | DETECTION_LOST | SUBJECT_SECOND | clean':

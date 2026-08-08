@@ -563,6 +563,52 @@ const derived = src + 1;
 const spacer = 2;
 use(alias, derived, spacer);
 `,
+    // A declaration's bindings share its position, so the statement is late only
+    // when the first of them is read late. `y` is read on the very next line, so
+    // the declaration already sits where the reader needs it (#1889).
+    `function f(a: number, b: number) {
+  const x = 1, y = 2;
+  const doubled = y;
+  return x + doubled + a + b;
+}`,
+    `function f(a: number, b: number) {
+  const y = 2, x = 1;
+  const doubled = y;
+  return x + doubled + a + b;
+}`,
+    // Adjacent to its first use in either declarator order.
+    `function f() {
+  const x = 1, y = 2;
+  return x + y;
+}`,
+    `function f() {
+  const y = 2, x = 1;
+  return x + y;
+}`,
+    // An impure statement between the declaration and its use blocks the move for
+    // a multi-declarator statement exactly as it does for a single one.
+    `function f(flag: boolean) {
+  const x = 1, y = 2;
+  if (flag) {
+    log();
+  }
+  return x + y;
+}`,
+    // One complex initializer disqualifies the whole statement: the sibling's call
+    // may observe or change state, which is the same reason the single-declarator
+    // spelling of it is no candidate either.
+    `function f(a: number) {
+  const x = 1, y = compute(a);
+  const unrelated = a * 2;
+  return x + y + unrelated;
+}`,
+    // A destructuring sibling binds through a pattern whose source is read at the
+    // declaration, so the statement stays out of the late-declaration analysis.
+    `function f(source: { a: number }) {
+  const x = 1, { a } = source;
+  const unrelated = 2;
+  return x + a + unrelated;
+}`,
   ],
   invalid: [
     // A shebang is only a shebang at character 0. ESLint presents it as a
@@ -745,6 +791,13 @@ const unrelated = 1;
 `,
       errors: [{ messageId: 'groupDerived' }],
     },
+    /**
+     * The hoist is the subject here, and `shadow` earns its own report: the block
+     * reads that name two statements down, so the declaration is late by exactly
+     * the measure the single-declarator spelling of it is judged by. The sibling
+     * `unused` withholds the fix for that second report, not the report itself
+     * (#1889) — the hoist still carries the block's one fix.
+     */
     {
       code: `
 const shadow = 1, unused = 0;
@@ -768,7 +821,10 @@ const other = 2;
 
 use(other);
       `,
-      errors: [{ messageId: 'moveSideEffect' }],
+      errors: [
+        { messageId: 'moveDeclarationCloser', data: { name: 'shadow' } },
+        { messageId: 'moveSideEffect' },
+      ],
     },
     {
       code: `
@@ -1615,6 +1671,65 @@ use(threshold);
 `,
       errors: [{ messageId: 'moveSideEffect' }],
     },
+    /**
+     * A sibling binding withholds the FIX, never the report: the fixer relocates
+     * whole statements, so moving this one would carry `y` along. `output: null`
+     * is the assertion — an omitted `output` asserts nothing (#1889).
+     */
+    {
+      code: `function f(a: number, b: number) {
+  const x = 1, y = 2;
+  const unrelated = a * b;
+  return x + unrelated + y;
+}`,
+      output: null,
+      errors: [{ messageId: 'moveDeclarationCloser', data: { name: 'x' } }],
+    },
+    // The same block with the declarators swapped: position within the statement
+    // decides nothing, and the report names the binding read first.
+    {
+      code: `function f(a: number, b: number) {
+  const y = 2, x = 1;
+  const unrelated = a * b;
+  return x + unrelated + y;
+}`,
+      output: null,
+      errors: [{ messageId: 'moveDeclarationCloser', data: { name: 'y' } }],
+    },
+    // An unread sibling is the shape a multi-declarator statement most often
+    // takes in real code, and it must not read as "the declaration is used here".
+    {
+      code: `function f(a: number, b: number) {
+  const x = 1, y = 2;
+  const unrelated = a * b;
+  return x + unrelated;
+}`,
+      output: null,
+      errors: [{ messageId: 'moveDeclarationCloser', data: { name: 'x' } }],
+    },
+    /**
+     * A report the fix may not act on neither carries the fix nor vetoes it: the
+     * side effect still moves, and the declaration stays exactly where it was
+     * with both of its bindings intact.
+     */
+    {
+      code: `function f() {
+  const x = 1, y = 2;
+  const unrelated = 1;
+  const other = 2;
+  use(x, y);
+}`,
+      output: `function f() {
+  const x = 1, y = 2;
+  use(x, y);
+  const unrelated = 1;
+  const other = 2;
+}`,
+      errors: [
+        { messageId: 'moveDeclarationCloser', data: { name: 'x' } },
+        { messageId: 'moveSideEffect' },
+      ],
+    },
   ],
 });
 
@@ -2265,5 +2380,144 @@ describe('logical-top-to-bottom-grouping composed with the `as const` fixers', (
     expect(output).toContain(' as const');
     expect(messageIdsFor(linter, GROUPED_CONTROL)).toEqual([]);
     expect(messageIdsFor(linter, output)).toEqual([]);
+  });
+});
+
+/**
+ * A sibling declarator withholds the FIX and nothing else (#1889).
+ *
+ * The rule relocates whole statements, so `const x = 1, y = 2;` cannot be moved
+ * without carrying `y` past its own first use. Declining the move is right;
+ * declining the diagnosis with it shipped the violation unseen, which is what the
+ * differential below pins: the same block, with and without a binding the rule was
+ * never asked about, reports the same thing.
+ */
+const SINGLE_DECLARATOR = `function f(a: number, b: number) {
+  const x = 1;
+  const unrelated = a * b;
+  return x + unrelated;
+}
+`;
+
+const MULTI_DECLARATOR = `function f(a: number, b: number) {
+  const x = 1, y = 2;
+  const unrelated = a * b;
+  return x + unrelated + y;
+}
+`;
+
+const MULTI_DECLARATOR_MIRROR = `function f(a: number, b: number) {
+  const y = 2, x = 1;
+  const unrelated = a * b;
+  return x + unrelated + y;
+}
+`;
+
+/** A block whose OTHER violation is fixable, so the veto question is live. */
+const MIXED_BLOCK = `function f() {
+  const x = 1, y = 2;
+  const unrelated = 1;
+  const other = 2;
+  use(x, y);
+}
+`;
+
+/**
+ * The pair behind the invalid fixture whose subject is the hoist: `shadow` is read
+ * two statements down, so the declaration is late whichever way it is spelled. The
+ * sibling `unused` used to be the only thing keeping that second report quiet.
+ */
+const SHADOW_SOLE = `const shadow = 1;
+const other = 2;
+
+(() => {
+  const shadow = 3;
+  console.log(shadow);
+})();
+
+use(other);
+`;
+
+const SHADOW_SIBLING = `const shadow = 1, unused = 0;
+const other = 2;
+
+(() => {
+  const shadow = 3;
+  console.log(shadow);
+})();
+
+use(other);
+`;
+
+const groupingMessages = (code: string) =>
+  composedLinter().verify(
+    code,
+    configFor({ [GROUPING_ID]: 'error' }),
+    'file.ts',
+  );
+
+const groupingIds = (code: string) =>
+  groupingMessages(code).map((message) => message.messageId);
+
+describe('logical-top-to-bottom-grouping with a sibling declarator', () => {
+  it('reports the late declaration in either declarator order', () => {
+    // Control: the sole-declarator spelling is the shape the report is known for,
+    // and equality with it is the whole claim.
+    expect(groupingIds(SINGLE_DECLARATOR)).toEqual(['moveDeclarationCloser']);
+    expect(groupingIds(MULTI_DECLARATOR)).toEqual(['moveDeclarationCloser']);
+    expect(groupingIds(MULTI_DECLARATOR_MIRROR)).toEqual([
+      'moveDeclarationCloser',
+    ]);
+  });
+
+  it('offers no fix for it, where the sole-declarator spelling is fixed', () => {
+    // Non-vacuity: the control must actually ship a fix, or "no fix" is free.
+    expect(groupingMessages(SINGLE_DECLARATOR).every((m) => !!m.fix)).toBe(
+      true,
+    );
+    expect(groupingMessages(MULTI_DECLARATOR).some((m) => !!m.fix)).toBe(false);
+    expect(groupingMessages(MULTI_DECLARATOR_MIRROR).some((m) => !!m.fix)).toBe(
+      false,
+    );
+  });
+
+  it('changes no verdict when the block already earns another report', () => {
+    // Two spellings of one block, differing only in a binding no rule was asked
+    // about: the verdict has to be identical, and non-empty on both sides.
+    expect(groupingIds(SHADOW_SOLE)).toEqual([
+      'moveDeclarationCloser',
+      'moveSideEffect',
+    ]);
+    expect(groupingIds(SHADOW_SIBLING)).toEqual(groupingIds(SHADOW_SOLE));
+  });
+
+  it('leaves the block byte-identical at a --fix fixpoint', () => {
+    // A report the fixer keeps offering and refusing is an oscillation, and
+    // `verifyAndFix` loops internally, so the pending-fix count is the detector.
+    const result = fixToFixpoint(MULTI_DECLARATOR);
+    expect(result.text).toBe(MULTI_DECLARATOR);
+    expect(result.cycled).toBe(false);
+    expect(result.pendingFixes).toBe(0);
+  });
+
+  it('neither carries nor vetoes the fix the rest of the block earns', () => {
+    const messages = groupingMessages(MIXED_BLOCK);
+    expect(messages.map((message) => message.messageId)).toEqual([
+      'moveDeclarationCloser',
+      'moveSideEffect',
+    ]);
+    expect(messages[0].fix).toBeUndefined();
+    expect(messages[1].fix).toBeDefined();
+
+    const { output } = composedLinter().verifyAndFix(
+      MIXED_BLOCK,
+      configFor({ [GROUPING_ID]: 'error' }),
+      'file.ts',
+    );
+
+    // Both bindings survive, on one line, in their original order: the fix moved
+    // the side effect and never touched the declaration it cannot move.
+    expect(output).toContain('  const x = 1, y = 2;\n  use(x, y);');
+    expect(fixToFixpoint(MIXED_BLOCK).cycled).toBe(false);
   });
 });

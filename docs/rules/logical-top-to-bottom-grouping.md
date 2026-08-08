@@ -93,12 +93,44 @@ Two consequences worth knowing:
 * **Some reports are not fixable.** Some blocks have constraints that no ordering
   satisfies at once: two derivation chains rooted in separate destructures cannot both
   stay adjacent to their sources, and a declaration can be pulled toward its first use
-  by one constraint while another pulls it back toward its dependency. Those blocks are
-  reported with no fix — a report you resolve by hand beats a fix that leaves a
-  different violation behind. Restructure the block, or disable the rule for it.
+  by one constraint while another pulls it back toward its dependency. Others name a
+  statement the reordering may not touch, such as a declaration with more than one
+  binding. Those reports come with no fix — a report you resolve by hand beats a fix
+  that leaves a different violation behind. Restructure the block, or disable the rule
+  for it.
 * **Comments travel with the statement they annotate.** A comment sharing a line with a
   statement moves with it; a comment on its own line above a statement is treated as
   that statement's preamble and moves with it too.
+
+### Declarations with more than one binding are reported, never moved
+
+The reordering moves whole statements, so relocating `const x = 1, y = 2;` would carry
+`y` along — possibly past its own first use, and always further than the report asked
+for. Splitting a declaration is your call, not the fixer's, so such a statement is
+reported and left exactly where it stands.
+
+How many bindings a declaration introduces decides whether the **fix** is offered, not
+whether the declaration is far from what it declares: the report is the same one the
+sole-binding spelling earns.
+
+```typescript
+// Reported, but NOT autofixed: `x` is read three lines down, and the move that
+// would group it there takes `y` with it. Split the declaration, or move it by hand.
+function summarize(a: number, b: number) {
+  const x = 1, y = 2;
+  const unrelated = a * b;
+  return x + unrelated + y;
+}
+```
+
+A declaration is only a candidate at all when *every* one of its bindings is a plain
+name bound to a literal, another name, or nothing. One initializer that could observe
+or change state — a call, a member read, an `await` — keeps the whole statement out of
+the analysis, exactly as it does when it stands alone.
+
+The statement is late only when the first of its bindings to be read is read late.
+`const x = 1, y = 2;` followed by a line reading `y` is already where the reader needs
+it, whichever binding is written first.
 
 ### Exported declarations are ordinary declarations
 
