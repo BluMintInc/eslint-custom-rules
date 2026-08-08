@@ -618,9 +618,77 @@ function getReturnAssertionSite(
  * expression's name, the variable or property an anonymous function is assigned
  * to, or a method's key.
  */
+/**
+ * The key a member is declared under, whatever its spelling.
+ *
+ * A computed key whose key expression is a literal names exactly the member a
+ * dotted or bracketed read resolves to — `{ ['build']() {} }` declares `build`
+ * — and the reader side already resolves both spellings. Refusing the computed
+ * form left such a candidate with NO owner at all, so it could not be found
+ * circular even by a direct self-reference (#1888). A genuinely dynamic key
+ * names no member statically and still yields nothing.
+ */
+function memberKeyNameNode(node: {
+  computed: boolean;
+  key: TSESTree.Node;
+}): TSESTree.Node | null {
+  if (!node.computed) return node.key;
+
+  return node.key.type === AST_NODE_TYPES.Literal &&
+    (typeof node.key.value === 'string' || typeof node.key.value === 'number')
+    ? node.key
+    : null;
+}
+
+/** Every binding a destructuring pattern introduces. */
+function patternBindingNames(pattern: TSESTree.Node): TSESTree.Identifier[] {
+  const names: TSESTree.Identifier[] = [];
+
+  const visit = (node: TSESTree.Node | null | undefined): void => {
+    if (!node) return;
+    switch (node.type) {
+      case AST_NODE_TYPES.Identifier:
+        names.push(node);
+        return;
+      case AST_NODE_TYPES.ObjectPattern:
+        for (const property of node.properties) {
+          visit(
+            property.type === AST_NODE_TYPES.Property
+              ? property.value
+              : property.argument,
+          );
+        }
+        return;
+      case AST_NODE_TYPES.ArrayPattern:
+        for (const element of node.elements) visit(element);
+        return;
+      case AST_NODE_TYPES.AssignmentPattern:
+        visit(node.left);
+        return;
+      case AST_NODE_TYPES.RestElement:
+        visit(node.argument);
+        return;
+      default:
+        return;
+    }
+  };
+
+  visit(pattern);
+  return names;
+}
+
+/** A pattern carries its annotation on the pattern node itself. */
+function patternTypeAnnotation(
+  pattern: TSESTree.Node,
+): TSESTree.TSTypeAnnotation | undefined {
+  return (pattern as { typeAnnotation?: TSESTree.TSTypeAnnotation })
+    .typeAnnotation;
+}
+
 function ownerNameNodes(node: AnnotatedFunction): TSESTree.Node[] {
   if (node.type === AST_NODE_TYPES.MethodDefinition) {
-    return node.computed ? [] : [node.key];
+    const key = memberKeyNameNode(node);
+    return key ? [key] : [];
   }
 
   const names: TSESTree.Node[] = [];
@@ -639,11 +707,11 @@ function ownerNameNodes(node: AnnotatedFunction): TSESTree.Node[] {
   }
 
   if (
-    (parent?.type === AST_NODE_TYPES.PropertyDefinition ||
-      parent?.type === AST_NODE_TYPES.Property) &&
-    !parent.computed
+    parent?.type === AST_NODE_TYPES.PropertyDefinition ||
+    parent?.type === AST_NODE_TYPES.Property
   ) {
-    names.push(parent.key);
+    const key = memberKeyNameNode(parent);
+    if (key) names.push(key);
   }
 
   return names;
@@ -962,13 +1030,68 @@ function addFunctionNodes(
     const owners = declaredAt(ownerNameNodes(node), checker, services);
     if (owners.size === 0) continue;
 
+    // A written-down type normally answers without consulting anything, which
+    // is what lets the walk stop at it — unless the annotation itself reads a
+    // value through `typeof`, which is a dependency like any other and can
+    // close the cycle it was supposed to break (#1888). Such a node keeps
+    // needing inference, and contributes what its annotation reads.
+    const annotationReads = annotationValueReads(node, checker, services);
+    const writtenDown =
+      Boolean(returnTypeAnnotationOf(node)) || ownerCarriesTypeAnnotation(node);
+
+    const dependencies = unionReferences(
+      returnExpressionsOf(node),
+      checker,
+      services,
+    );
+    for (const declaration of annotationReads) dependencies.add(declaration);
+
     addInferenceEdges(
       graph,
       owners,
-      unionReferences(returnExpressionsOf(node), checker, services),
-      !returnTypeAnnotationOf(node) && !ownerCarriesTypeAnnotation(node),
+      dependencies,
+      !writtenDown || annotationReads.size > 0,
     );
   }
+}
+
+/**
+ * The values this function's declared type reads through `typeof`.
+ *
+ * `referencedDeclarationsOf` already treats a type query as a value read and
+ * every other type position as not one, so handing it the annotation yields
+ * exactly the `typeof` operands and nothing else.
+ */
+function annotationValueReads(
+  node: AnnotatedFunction,
+  checker: ts.TypeChecker,
+  services: ParserServices,
+): Set<ts.Declaration> {
+  const reads = new Set<ts.Declaration>();
+  const parent = node.parent;
+  const annotations = [
+    returnTypeAnnotationOf(node),
+    parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+    parent.id.type === AST_NODE_TYPES.Identifier
+      ? parent.id.typeAnnotation
+      : undefined,
+    parent?.type === AST_NODE_TYPES.PropertyDefinition
+      ? parent.typeAnnotation
+      : undefined,
+  ];
+
+  for (const annotation of annotations) {
+    if (!annotation) continue;
+    for (const declaration of referencedDeclarationsOf(
+      annotation.typeAnnotation as unknown as TSESTree.Expression,
+      checker,
+      services,
+    )) {
+      reads.add(declaration);
+    }
+  }
+
+  return reads;
 }
 
 /**
@@ -1306,7 +1429,20 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
         }
       },
       VariableDeclarator(node) {
-        if (node.id.type !== AST_NODE_TYPES.Identifier) return;
+        // A pattern introduces bindings that relay a dependency exactly as a
+        // plain one does — `const { run } = { run: () => build() }` is the
+        // destructured spelling of a shape already covered — but the early
+        // return below skipped registering them at all (#1888). Each name gets
+        // the whole initializer, which is the same over-approximation a plain
+        // binding carries.
+        if (node.id.type !== AST_NODE_TYPES.Identifier) {
+          if (node.init && !patternTypeAnnotation(node.id)) {
+            for (const name of patternBindingNames(node.id)) {
+              inferredValueDeclarations.push({ name, init: node.init });
+            }
+          }
+          return;
+        }
 
         // A binding whose initializer is a function is already related to what
         // it reads by that function's own graph node, and by its return
@@ -1332,6 +1468,21 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
           node.id,
           node.id.typeAnnotation,
         );
+      },
+      // A parameter default relays a dependency the same way a body `const`
+      // does — `function helper(seed = build())` is the parameter spelling of
+      // `const seed = build()` — and nothing visited parameters, so the link was
+      // invisible (#1888). An annotated parameter is typed without consulting
+      // its default, so it breaks the chain like any written-down type.
+      AssignmentPattern(node) {
+        if (
+          node.parent?.type === AST_NODE_TYPES.Property ||
+          node.left.type !== AST_NODE_TYPES.Identifier ||
+          node.left.typeAnnotation
+        ) {
+          return;
+        }
+        inferredValueDeclarations.push({ name: node.left, init: node.right });
       },
       PropertyDefinition(node) {
         if (
