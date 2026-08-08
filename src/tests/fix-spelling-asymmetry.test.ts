@@ -1025,7 +1025,6 @@ const DETECTION_UNDRIVEN: Record<string, UndrivenCause> = {
   'enforce-dynamic-imports': 'silentOnBodyPairs',
   'enforce-early-destructuring': 'silentOnBodyPairs',
   'enforce-empty-object-check': 'noBodyRespelling',
-  'enforce-fieldpath-syntax-in-docsetter': 'noBodyRespelling',
   'enforce-firestore-path-utils': 'noBodyRespelling',
   'enforce-firestore-rules-get-access': 'noBodyRespelling',
   'enforce-id-capitalization': 'silentOnBodyPairs',
@@ -1147,34 +1146,26 @@ const FIX_EXEMPT: Record<string, string> = {
  * `DETECTION_EXEMPT` and `FIX_EXEMPT`, which record design decisions: merging
  * them would let a bug retire under a "filed decision" label.
  *
- * The entry it held before was `prefer-use-deep-compare-memo`, which rewrote a
- * call to a `const`-spelled local hook while withholding the same rewrite from
- * the `function` spelling. Its cause was in the shared planner rather than the
- * rule: `planOrphanedImportRemoval` (`src/utils/importRemoval.ts`) counted a
- * declarator's own initializer write as a surviving reference, so a `const`
- * binding could never look orphaned. The planner discounts that self-write, and
- * both spellings decline (#1868).
+ * The entry it held before that was `prefer-use-deep-compare-memo`, which
+ * rewrote a call to a `const`-spelled local hook while withholding the same
+ * rewrite from the `function` spelling. Its cause was in the shared planner
+ * rather than the rule: `planOrphanedImportRemoval`
+ * (`src/utils/importRemoval.ts`) counted a declarator's own initializer write as
+ * a surviving reference, so a `const` binding could never look orphaned. The
+ * planner discounts that self-write, and both spellings decline (#1868).
+ *
+ * The entry it held most recently was `enforce-fieldpath-syntax-in-docsetter`,
+ * which flattened `{ handlers: { onDone: () => {} } }` to `'handlers.onDone'`
+ * while declining the identical field spelled as a method. The bail on
+ * `property.method` was load-bearing as written, because a method shorthand's
+ * `FunctionExpression` range starts at its parameter list — the same range trap
+ * this guard's own `funcExpression->arrow` transform had — so copying that text
+ * emitted `() { return 1; }`. The member is re-emitted as
+ * `[async ]function[*] <sig> <body>`, which is what the rule already produces
+ * for the `function`-valued spelling; `super`, the one binding the two spellings
+ * do not share, is declined (#1876).
  */
-const FIX_KNOWN_DEFECTS: Record<string, string> = {
-  /**
-   * Flattens `{ handlers: { onDone: () => {} } }` to `'handlers.onDone'` but
-   * declines the identical field spelled as a method:
-   *
-   *   ds.set({ handlers: { onDone() { return 1; } } });        // no fix
-   *   ds.set({ handlers: { onDone: () => { return 1; } } });   // fixed
-   *   ds.set({ handlers: { onDone: function () { return 1; } } }); // fixed
-   *
-   * `collectFieldPathEntries` bails on `property.method`, and the bail is
-   * load-bearing as written: the flattened value is emitted with
-   * `sourceCode.getText(property.value)`, which for a method shorthand is
-   * `() { return 1; }` — the same range trap this guard's own transform had.
-   * The cure is to re-emit the member as `function <sig> <body>`, which is what
-   * the rule already produces for the `function`-valued spelling and differs
-   * from a method shorthand only in `super`. Surfaced by #1870.
-   */
-  'enforce-fieldpath-syntax-in-docsetter':
-    'flattens a function-valued field spelled `key: fn` and declines the same field spelled as a method',
-};
+const FIX_KNOWN_DEFECTS: Record<string, string> = {};
 
 /** Every rule whose fix finding is accounted for, however it is accounted. */
 const FIX_RECORDED = [

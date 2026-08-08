@@ -1,3 +1,5 @@
+import { Linter, Rule } from 'eslint';
+import { parse } from '@typescript-eslint/typescript-estree';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceFieldPathSyntaxInDocSetter } from '../rules/enforce-fieldpath-syntax-in-docsetter';
 
@@ -387,6 +389,9 @@ ds.set({
 `,
         errors: [{ messageId: 'enforceFieldPathSyntax' }],
       },
+      // A method shorthand holds the same leaf value as `key: function () {}`,
+      // so it flattens too. Its FunctionExpression text starts at the parameter
+      // list, hence the re-emitted `function` keyword
       {
         code: `
 const ds = new DocSetter();
@@ -399,9 +404,236 @@ ds.set({
 const ds = new DocSetter();
 ds.set({
   'metadata.version': '1.0',
-  handlers: { onDone() { return 1; } },
+  'handlers.onDone': function () { return 1; },
 });
 `,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // `async` sits ahead of the key, outside the value's range, so it has to
+      // be re-emitted rather than copied
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  handlers: { async onDone() { await go(); } },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+  'handlers.onDone': async function () { await go(); },
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // The generator star likewise precedes the key
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  handlers: { *onDone() { yield 1; } },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+  'handlers.onDone': function* () { yield 1; },
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  handlers: { async *onDone() { yield 1; } },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+  'handlers.onDone': async function* () { yield 1; },
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // Parameters, defaults and rest elements live inside the value's range
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  handlers: { onDone(a, b = 2, ...rest) { return a + b + rest.length; } },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+  'handlers.onDone': function (a, b = 2, ...rest) { return a + b + rest.length; },
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // Type parameters open the value's range ahead of the parameter list
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  handlers: { onDone<T>(x: T): T { return x; } },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+  'handlers.onDone': function <T>(x: T): T { return x; },
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // `this` is dynamically bound in both spellings, so the rewrite preserves it
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  handlers: { onDone() { return this.value; } },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+  'handlers.onDone': function () { return this.value; },
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // A method beyond the second level flattens like any other leaf
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  settings: { display: { render() { return 'dark'; } } },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+  'settings.display.render': function () { return 'dark'; },
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // A method alongside plain leaves in the same nested object
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  handlers: { name: 'done', onDone() { return 1; } },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+  'handlers.name': 'done',
+  'handlers.onDone': function () { return 1; },
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // A method key that is not an IdentifierName still quotes cleanly
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  handlers: { 'on-done'() { return 1; } },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+  'handlers.on-done': function () { return 1; },
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // A method sharing its line with other code stays inline
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({ handlers: { onDone() { return 1; } } });
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({ 'handlers.onDone': function () { return 1; } });
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // A computed method key has no FieldPath spelling, so the property survives
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  metadata: { version: '1.0' },
+  handlers: { [dynamic]() { return 1; } },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+  'metadata.version': '1.0',
+  handlers: { [dynamic]() { return 1; } },
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // A setter runs on write rather than holding a value, so it is declined
+      // exactly as a getter is
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  metadata: { version: '1.0' },
+  accessors: { set theme(value) { store(value); } },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+  'metadata.version': '1.0',
+  accessors: { set theme(value) { store(value); } },
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  accessors: { get theme() { return 'dark'; } },
+});
+`,
+        output: null,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // `super` resolves through the object literal's home object, which the
+      // re-emitted function expression does not have, so the fix is withheld
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  handlers: { onDone() { return super.toString(); } },
+});
+`,
+        output: null,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // An arrow inside the method inherits the same `super`
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  handlers: { onDone() { return () => super.toString(); } },
+});
+`,
+        output: null,
         errors: [{ messageId: 'enforceFieldPathSyntax' }],
       },
       // An empty nested object flattens to nothing, so the payload is reported
@@ -513,3 +745,139 @@ ds.set({
     ],
   },
 );
+
+// Issue #1876: RuleTester compares the fixed text as a string and never parses
+// it, so the defect it is blind to is precisely the one this rule had — a method
+// shorthand's FunctionExpression range starts at its parameter list, and copying
+// that text emitted `() { return 1; }` in value position. These cases run the
+// real fixer and parse what it wrote.
+describe('enforce-fieldpath-syntax-in-docsetter: the fixed payload parses (issue #1876)', () => {
+  const RULE_ID = '@blumintinc/blumint/enforce-fieldpath-syntax-in-docsetter';
+
+  const config = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2020 as const,
+      sourceType: 'module' as const,
+    },
+    rules: { [RULE_ID]: 'error' as const },
+  };
+
+  const lint = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      enforceFieldPathSyntaxInDocSetter as unknown as Rule.RuleModule,
+    );
+    return linter.verifyAndFix(code, config, 'save.ts').output;
+  };
+
+  const parses = (code: string) => {
+    // `range` is required or the parser throws on any comment the source carries
+    parse(code, { range: true, loc: true, jsx: false });
+  };
+
+  const payload = (body: string) =>
+    `const ds = new DocSetter();\nds.set({\n  ${body},\n});\n`;
+
+  /**
+   * `[name, payload body, the entry the fix must emit]`.
+   *
+   * The emitted text is asserted alongside parseability because the parser is
+   * blind to the halves of the spelling that are grammar rather than syntax: a
+   * dropped `async` or `*` leaves `function () { await go(); }`, which parses
+   * and means something else.
+   */
+  const REWRITTEN = [
+    [
+      'plain method',
+      'handlers: { onDone() { return 1; } }',
+      "'handlers.onDone': function () { return 1; }",
+    ],
+    [
+      'async method',
+      'handlers: { async onDone() { await go(); } }',
+      "'handlers.onDone': async function () { await go(); }",
+    ],
+    [
+      'generator method',
+      'handlers: { *onDone() { yield 1; } }',
+      "'handlers.onDone': function* () { yield 1; }",
+    ],
+    [
+      'async generator method',
+      'handlers: { async *onDone() { yield 1; } }',
+      "'handlers.onDone': async function* () { yield 1; }",
+    ],
+    [
+      'parameters with defaults',
+      'handlers: { onDone(a, b = 2, ...rest) { return a + b + rest.length; } }',
+      "'handlers.onDone': function (a, b = 2, ...rest) { return a + b + rest.length; }",
+    ],
+    [
+      'type parameters',
+      'handlers: { onDone<T>(x: T): T { return x; } }',
+      "'handlers.onDone': function <T>(x: T): T { return x; }",
+    ],
+    [
+      'destructured parameter',
+      'handlers: { onDone({ a, b: c = 1 }) { return a + c; } }',
+      "'handlers.onDone': function ({ a, b: c = 1 }) { return a + c; }",
+    ],
+    [
+      'nested beyond two levels',
+      'settings: { display: { render() { return 1; } } }',
+      "'settings.display.render': function () { return 1; }",
+    ],
+    [
+      'method beside plain leaves',
+      "handlers: { name: 'done', onDone() { return 1; } }",
+      "'handlers.onDone': function () { return 1; }",
+    ],
+    [
+      'non-identifier key',
+      "handlers: { 'on-done'() { return 1; } }",
+      "'handlers.on-done': function () { return 1; }",
+    ],
+  ] as const;
+
+  const DECLINED = [
+    ['getter', "accessors: { get theme() { return 'dark'; } }"],
+    ['setter', 'accessors: { set theme(value) { store(value); } }'],
+    ['computed method key', 'handlers: { [dynamic]() { return 1; } }'],
+    ['super reference', 'handlers: { onDone() { return super.toString(); } }'],
+  ] as const;
+
+  it.each(REWRITTEN)('rewrites and parses: %s', (_name, body, emitted) => {
+    const source = payload(body);
+    const output = lint(source);
+
+    expect(output).not.toBe(source);
+    expect(output).toContain(emitted);
+    expect(() => parses(output)).not.toThrow();
+    // Reaching a fixpoint: nothing nested survives for a second pass to flag
+    expect(lint(output)).toBe(output);
+  });
+
+  it.each(DECLINED)('declines and leaves intact: %s', (_name, body) => {
+    const source = payload(body);
+
+    expect(lint(source)).toBe(source);
+  });
+
+  // Without this the parse assertion above would pass on any string the fixer
+  // could possibly emit: it proves the emission the bug produced is caught.
+  it('rejects the value text a verbatim method copy would emit', () => {
+    expect(() =>
+      parses(payload("'handlers.onDone': () { return 1; }")),
+    ).toThrow();
+    expect(() =>
+      parses(payload("'handlers.onDone': function () { return 1; }")),
+    ).not.toThrow();
+  });
+});

@@ -163,6 +163,20 @@ await docSetter.set({
 });
 ```
 
+### Method Shorthand
+
+A function-valued field is flattened the same way whichever spelling it uses. A method shorthand carries no `function` keyword and its parameter list is where the value's own text begins, so the fix writes the keyword back — including `async` and the generator `*`, which sit ahead of the key:
+
+```javascript
+const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
+await docSetter.set({
+  handlers: { async onDone() { await notify(); } },
+  // Becomes 'handlers.onDone': async function () { await notify(); }
+});
+```
+
+A getter or setter is left alone instead: its body runs on access rather than holding a value, so no FieldPath entry can carry it. A method referencing `super` is left alone too, because `super` resolves through the enclosing object literal and a function expression has nothing for it to resolve through.
+
 ### Mixed Nesting
 
 You can mix already-flattened paths with nested objects:
@@ -183,7 +197,8 @@ This rule provides automatic fixes that convert nested object syntax into FieldP
 1. Quote keys that contain dots
 1. Rewrite only the properties that need flattening, so every other property keeps its position, its comments, and its indentation byte-for-byte
 1. Carry comments found inside a flattened property onto the rewritten property, which keeps `eslint-disable-next-line` directives covering the code they were written for
-1. Decline to rewrite a nested property that cannot be flattened losslessly — one containing a spread, a computed key, an accessor or method, or nothing at all. The violation is still reported so you can flatten it by hand instead of receiving a fix that drops payload fields.
+1. Re-emit a method shorthand as a function expression, since a FieldPath key needs a value in expression position
+1. Decline to rewrite a nested property that cannot be flattened losslessly — one containing a spread, a computed key, an accessor, a method referencing `super`, or nothing at all. The violation is still reported so you can flatten it by hand instead of receiving a fix that drops payload fields.
 
 ## When Not to Use
 
