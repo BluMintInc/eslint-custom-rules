@@ -24,6 +24,7 @@ const prompt = <div>Please enter your id</div>;
 const submit = <Button>Submit id</Button>;
 const interpolated = `Your id is ${userId}`;
 t("user.profile.id");
+const prompts = ["Enter your id", "Name"]; // Array elements that read as prose
 ```
 
 ### Examples of **correct** code for this rule:
@@ -46,7 +47,27 @@ export type CallerRequestButtonsProps = Pick<CallerCardBaseProps, 'status' | 'id
 type UserSummary = Pick<User, 'id' | 'name'>; // Type utility with property names
 const flexible = "This grid system is flexible."; // "id" as part of another word
 const rapid = "Rapid development"; // "id" as part of another word
+element.getAttribute("id"); // DOM attribute names are code, not text
+const fields = ["id", "broadcastTest"] as const; // Key/field-name lists
 ```
+
+### Key names versus prose
+
+A string literal is left alone when it names something rather than being shown
+to a user. Alongside variable names, property names and type positions, that
+covers:
+
+- the attribute-name argument of a DOM or jest-dom attribute API
+  (`getAttribute`, `setAttribute`, `toHaveAttribute`, the `*NS` variants, …);
+- an **array element that is a single identifier token**, such as
+  `["id", "broadcastTest"]`. An array of bare identifiers is a key/field-name
+  list — the array spelling of the object keys the rule already skips — so
+  rewriting `"id"` to `"ID"` would name a key that does not exist.
+
+The array carve-out is decided per element and requires the whole element to be
+one identifier: prose carries whitespace or punctuation, a key name does not. So
+`["id", "Enter your id"]` still reports its second element, and a lone `"id"`
+outside an array position (`t("id")`) is still treated as user-facing.
 
 ## When Not To Use It
 
