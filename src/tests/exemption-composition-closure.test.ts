@@ -660,18 +660,21 @@ export const EXEMPTION_DESTROYED_BASELINE: Record<string, string> = {
     'the culprit deletes an unread `useMemo` dependency (its documented behaviour), emptying the array, which is precisely the shape the victim exists to report; neither rule is outside its remit, so the composition needs a product decision (#1884)',
 
   /**
-   * Culprit-side defect, two rules carrying a duplicated guard. Their
-   * withhold-the-fix test for a parameter-property rename recognises only the
-   * DOT spelling of the member reads it would strand, so `this['settings']` — a
-   * computed member whose property is a `Literal` — slips through and the rename
-   * ships dangling. The dot spelling is correctly left alone, which is what
-   * makes this a partial branch rather than a missing one.
+   * Culprit-side defect in a duplicated guard. The withhold-the-fix test for a
+   * parameter-property rename recognises only the DOT spelling of the member
+   * reads it would strand, so `this['settings']` — a computed member whose
+   * property is a `Literal` — slips through and the rename ships dangling. The
+   * dot spelling is correctly left alone, which is what makes this a partial
+   * branch rather than a missing one.
    *
-   * Keyed `(unattributed)` because BOTH rules produce the identical rewrite, so
-   * the guard cannot attribute it to one; the two fixes are tracked separately.
+   * `enforce-props-argument-name` carried the same defect and was fixed first
+   * (#1881), which is why this entry names one rule rather than the
+   * `(unattributed)` it started as: while both produced the identical rewrite
+   * the guard could not attribute it to either. That re-keying is the reason a
+   * shared guard should be shared code — tracked with the fix (#1882).
    */
-  '(unattributed) -> no-passthrough-getters':
-    "`enforce-props-argument-name` and `enforce-props-naming-consistency` both rename the parameter property and leave `this['settings']` dangling — their withhold guard is keyed on the dot spelling only. The victim's visibility carve-out then cannot resolve the root, and it reports correctly on broken code (#1881, #1882)",
+  'enforce-props-naming-consistency -> no-passthrough-getters':
+    "the rename leaves `this['settings']` dangling — the withhold guard is keyed on the dot spelling only, so a computed access to the same member is invisible to it. The victim's visibility carve-out then cannot resolve the root, and it reports correctly on broken code (#1882)",
 
   /**
    * Culprit-side defect: `no-redundant-annotation-assertion`'s structural key
