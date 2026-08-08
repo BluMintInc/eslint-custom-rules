@@ -1,5 +1,35 @@
 [
   {
+    "version": "1.20.137",
+    "date": "2026-08-08T22:49:24.968Z",
+    "rules": [
+      {
+        "name": "logical-top-to-bottom-grouping",
+        "changeType": "fix",
+        "issues": [
+          1889
+        ],
+        "summary": "report a late declaration that carries a sibling binding (closes #1889)"
+      },
+      {
+        "name": "no-unused-props",
+        "changeType": "fix",
+        "issues": [
+          1890
+        ],
+        "summary": "analyse every declarator, not just the first (closes #1890)"
+      },
+      {
+        "name": "vertically-group-related-functions",
+        "changeType": "fix",
+        "issues": [
+          1891
+        ],
+        "summary": "report a misordered function that carries a sibling binding (closes #1891)"
+      }
+    ]
+  },
+  {
     "version": "1.20.136",
     "date": "2026-08-08T14:34:06.547Z",
     "rules": [

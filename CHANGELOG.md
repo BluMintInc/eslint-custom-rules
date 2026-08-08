@@ -1,3 +1,12 @@
+## [1.20.137](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.136...v1.20.137) (2026-08-08)
+
+
+### Bug Fixes
+
+* **logical-top-to-bottom-grouping:** report a late declaration that carries a sibling binding (closes [#1889](https://github.com/BluMintInc/eslint-custom-rules/issues/1889)) ([17e16c2](https://github.com/BluMintInc/eslint-custom-rules/commit/17e16c2eb85a9c8d0f2888f1251a88f58b2cfa87))
+* **no-unused-props:** analyse every declarator, not just the first (closes [#1890](https://github.com/BluMintInc/eslint-custom-rules/issues/1890)) ([11e897b](https://github.com/BluMintInc/eslint-custom-rules/commit/11e897b33f9f47796c151bfc4f135cd7e5b99c24))
+* **vertically-group-related-functions:** report a misordered function that carries a sibling binding (closes [#1891](https://github.com/BluMintInc/eslint-custom-rules/issues/1891)) ([d0facce](https://github.com/BluMintInc/eslint-custom-rules/commit/d0facceae42dbcb5794c0a851ada067e0bafb28e))
+
 ## [1.20.136](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.135...v1.20.136) (2026-08-08)
 
 
