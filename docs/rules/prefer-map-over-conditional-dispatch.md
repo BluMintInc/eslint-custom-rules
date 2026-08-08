@@ -109,6 +109,30 @@ does not count as reading the narrowed object; an arrow function's `this` is the
 lexical one and does count, matching how a closure over an identifier-rooted base
 object counts.
 
+An optional-chained discriminant is read the same way. TypeScript discriminates
+a union through `?.`, so `switch (result?.kind)` narrows exactly as
+`switch (result.kind)` does, and the exemption applies to both — a nullable
+discriminant is precisely where `?.` gets written, and a `Record` hoisted out of
+one destroys the same narrowing (`result.data` then fails with TS2339).
+
+```ts
+// Never fires — `?.` narrows the union just as the plain access does
+switch (result?.kind) {
+  case 'success':
+    return result.data.length;
+  case 'failure':
+    return 0;
+}
+```
+
+Where the construct is **not** narrowing, an optional-chained discriminant keeps
+the ordinary autofix: the generated lookup copies the discriminant's source text
+verbatim (`RESULT_BY_KIND[o?.kind]`), so the optional link survives intact.
+Whether the chain can yield `undefined` is answered by the discriminant's *type*
+— under `strictNullChecks` a nullish receiver makes `o?.kind` include
+`undefined`, which routes to the report-only `Partial<Record<D, V>>` advice
+below.
+
 A branch that returns a tag-independent constant (`case 'failure': return 0;`)
 does not by itself disqualify the construct — it is the *sibling* branch's
 `result.data` access that exempts the whole thing. A dropped `default` (see
@@ -129,9 +153,10 @@ a hidden lookup table.
   them into repeated `Record` entries.
 - For the **ternary** and **if/else-if** forms, "same discriminant" means
   token-identical AND restricted to an identifier or a non-optional, call-free
-  member expression rooted at an identifier (a `this`-rooted chain such as
-  `this.slot.role === 'title' ? ... : ...` is out of scope for those two forms;
-  the `switch` form accepts it). A call-bearing discriminant
+  member expression rooted at an identifier (a `this`-rooted or optional-chained
+  discriminant such as `this.slot.role === 'title' ? ... : ...` or
+  `slot?.role === 'title' ? ... : ...` is out of scope for those two forms; the
+  `switch` form accepts both). A call-bearing discriminant
   (`getKind() === 'a' ? ... : getKind() === 'b' ? ...`) does not fire —
   collapsing repeated evaluations into one lookup changes the evaluation count.
 - A lone `x === 'lit' ? a : b` on a 2-member union is a fully-covered chain of

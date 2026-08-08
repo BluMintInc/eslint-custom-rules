@@ -22,6 +22,39 @@ function f() {
   }
 }
 `,
+    // Edge 1 (#1867): the same narrowing switch written with an optional-chained
+    // discriminant. ESTree wraps `result?.kind` in a ChainExpression, and reading
+    // that node's type as "not a member access" skipped the exemption above and
+    // reported `preferMapManual`. TypeScript discriminates the union through the
+    // optional chain (this snippet compiles), so the Record the message urges
+    // hoists `result.data` out of the narrowing and does NOT compile (TS2339) —
+    // a nullable discriminant is exactly where `?.` gets written.
+    `
+type Result = { kind: 'success'; data: string } | { kind: 'failure' };
+declare const result: Result;
+function f() {
+  switch (result?.kind) {
+    case 'success':
+      return result.data.length;
+    case 'failure':
+      return 0;
+  }
+}
+`,
+    // Edge 1 (#1867): every link of the chain optional, and the branch values
+    // optional-chained too — the shape a `?.`-heavy codebase actually produces.
+    `
+type Result = { kind: 'success'; data: string } | { kind: 'failure' };
+declare const result: Result;
+function f() {
+  switch (result?.kind) {
+    case 'success':
+      return result?.data?.length;
+    case 'failure':
+      return 0;
+  }
+}
+`,
     // Edge 1: multiple variants, each reading its own field.
     `
 type ReportTarget =
@@ -62,6 +95,23 @@ class Holder {
     switch (this.result.kind) {
       case 'success':
         return this.result.data.length;
+      case 'failure':
+        return 0;
+    }
+  }
+}
+`,
+    // Edge 1 (#1626 + #1867): the this-rooted chain written optional. The
+    // ChainExpression sits above the OUTERMOST link only, so the walk to the
+    // `this` root still has to run after one unwrap.
+    `
+type Result = { kind: 'success'; data: string } | { kind: 'failure' };
+class Holder {
+  public result!: Result;
+  public describe() {
+    switch (this?.result?.kind) {
+      case 'success':
+        return this?.result?.data?.length;
       case 'failure':
         return 0;
     }
@@ -476,6 +526,77 @@ function f() {
 `,
   ],
   invalid: [
+    // #1867: an optional-chained discriminant that does NOT narrow is the same
+    // lookup table as its plain spelling, so it keeps the autofix rather than
+    // degrading to `preferMapManual` claiming no lookup name could be derived —
+    // `?.` never blocked the derivation, it was simply not looked through. The
+    // generated lookup copies the discriminant verbatim, so the optional link
+    // survives the fix.
+    {
+      code: `
+type Mode = 'light' | 'dark';
+declare const PALETTE: { light: string; dark: string };
+class Theme {
+  private readonly config!: { mode: Mode };
+  public color() {
+    switch (this?.config?.mode) {
+      case 'light':
+        return PALETTE?.light;
+      case 'dark':
+        return PALETTE?.dark;
+    }
+  }
+}
+`,
+      output: `
+type Mode = 'light' | 'dark';
+declare const PALETTE: { light: string; dark: string };
+class Theme {
+  private readonly config!: { mode: Mode };
+  public color() {
+    const RESULT_BY_MODE: Record<Mode, string> = {
+      light: PALETTE?.light,
+      dark: PALETTE?.dark,
+    };
+    return RESULT_BY_MODE[this?.config?.mode];
+  }
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1867: identifier-rooted optional chain, with a fail-loud default the fix
+    // drops as unreachable — the coverage math is unchanged by the `?.`.
+    {
+      code: `
+type TokenStandard = 'native' | 'ERC20' | 'offchain';
+declare const token: { standard: TokenStandard };
+function rank() {
+  switch (token?.standard) {
+    case 'native':
+      return 0;
+    case 'ERC20':
+      return 1;
+    case 'offchain':
+      return 2;
+    default:
+      throw new Error('nope');
+  }
+}
+`,
+      output: `
+type TokenStandard = 'native' | 'ERC20' | 'offchain';
+declare const token: { standard: TokenStandard };
+function rank() {
+  const RESULT_BY_STANDARD: Record<TokenStandard, number> = {
+    native: 0,
+    ERC20: 1,
+    offchain: 2,
+  };
+  return RESULT_BY_STANDARD[token?.standard];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
     // Edge 3/6: full-coverage class-reference switch with a fail-loud default
     // (deduceConstructor) — autofix drops the unreachable default.
     {
