@@ -18,7 +18,20 @@
   - Respects async callbacks—they return Promises, so inlining a primitive from an async function would change the value type.
   - Respects generator callbacks—they always return iterators, so inlining yielded primitives would change the return type and behavior.
   - Does not apply when the callback includes function calls if `ignoreCallExpressions` is enabled (default) to avoid flagging intentionally expensive computations.
-- **Auto-fix**: Replaces `useMemo(() => EXPR, [deps])` with `EXPR` and removes the dependency array. The fix is declined (the rule still reports) when the `useMemo` call contains a comment outside the returned expression — such as an `eslint-disable-next-line` directive on the return statement — because inlining would destroy the comment and could silently re-enable a suppressed rule. Resolve those cases manually so the comment lands where it still applies.
+- **Auto-fix**: Replaces `useMemo(() => EXPR, [deps])` with `EXPR` and removes the dependency array. A comment inside the `useMemo` call but outside the returned expression — such as an `eslint-disable-next-line` directive on the return statement — is carried into the replacement rather than destroyed, so a suppressed rule is never silently re-enabled. Each comment keeps the side of the expression it was written on, and one whose meaning depends on the line it occupies (a line comment, or a block-comment `eslint-disable-next-line`) keeps a line of its own so it still covers the inlined expression. The presence of a comment therefore never changes whether the fix applies.
+
+```tsx
+// Before
+const label = useMemo(() => {
+  // eslint-disable-next-line no-restricted-syntax
+  return isPending ? 'Pending Response' : 'Request to Join';
+}, [isPending]);
+
+// After — the directive still covers the ternary it was written for
+const label = (
+  // eslint-disable-next-line no-restricted-syntax
+  isPending ? 'Pending Response' : 'Request to Join');
+```
 
 ### Examples
 
