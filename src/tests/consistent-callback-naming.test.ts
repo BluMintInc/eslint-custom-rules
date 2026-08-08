@@ -822,6 +822,67 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         const update = (): void => {};
       `,
     },
+    // An exported binding is a cross-file contract: the violation still reports,
+    // but the rename is withheld because a single-file fixer cannot rewrite the
+    // importers, and `export const click` strands every `import { handleClick }`
+    // with TS2724.
+    {
+      code: `export const handleClick = () => {};`,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    {
+      code: `export function handleUpdate(): void {}`,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    {
+      code: `export default function handleSubmit(): void {}`,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Exported through a separate specifier rather than an inline modifier —
+    // the binding still leaves the module, so the rename is still withheld.
+    {
+      code: `
+        const handleClick = () => {};
+        export { handleClick };
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Renamed on the way out: the local name is still the one importers bind to
+    // via the specifier, so rewriting it breaks `export { click as onClick }`.
+    {
+      code: `
+        const handleClick = () => {};
+        export { handleClick as onClick };
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // A module-local binding that merely SHARES a name with an exported one is
+    // still fixable — the carve-out keys off the binding, not the spelling.
+    {
+      code: `
+        export const handleClick = () => {};
+        function inner() {
+          const handleUpdate = () => {};
+          return handleUpdate;
+        }
+      `,
+      errors: [
+        { messageId: 'callbackFunctionPrefix' },
+        { messageId: 'callbackFunctionPrefix' },
+      ],
+      output: `
+        export const handleClick = () => {};
+        function inner() {
+          const update = () => {};
+          return update;
+        }
+      `,
+    },
     // Class with parameters and references
     {
       code: `
