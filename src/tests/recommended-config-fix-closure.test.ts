@@ -701,11 +701,11 @@ export const FIX_INDUCED_BASELINE: Record<string, string> = {
 
   // --- The fix introduces a construct that a second rule then demands MORE of,
   // and the demand is a rename or an extra argument no fixer can supply. Same
-  // shape as root cause 3 in #1477 (enforce-assert-safe-object-key ->
-  // enforce-assert-throws, 122 consumer hits); that exact pair is not reachable
-  // from this corpus, so it is not listed. Open question: should the fix decline
+  // shape as root cause 3 in #1477. Open question: should the fix decline
   // when it would trigger the second rule, or should the second rule ignore
   // fixer-introduced code?
+  'enforce-assert-safe-object-key -> enforce-assert-throws':
+    'the wrap makes the enclosing function a caller of an assert-prefixed helper, and enforce-assert-throws demands the function itself carry the assert prefix — a rename no fixer can supply. This is root cause 3 in #1477 (122 consumer hits), reachable from this corpus since the #1875 docs examples put bounded and unbounded lookups inside named functions',
   'prefer-map-over-conditional-dispatch -> enforce-assert-safe-object-key':
     'the emitted RECORD[key] lookup is exactly the dynamic key enforce-assert-safe-object-key requires be wrapped in assertSafe()',
   'require-memo -> memo-compare-deeply-complex-props':

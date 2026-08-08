@@ -2866,6 +2866,466 @@ const read = (m, rawKey, sanitize) => {
   ],
 });
 
+// Issue #1875: a typed discriminant indexing a Record whose declared keys cover
+// its type is compile-time bounded — TypeScript rejects any key value outside
+// the record's declared keys — so wrapping it in assertSafe validates nothing
+// the compiler has not already checked. Worse, the wrap is not semantics
+// preserving for the values that DO slip past a declared type at runtime (data
+// crossing a persistence or version boundary): the plain lookup degrades to
+// `undefined` where assertSafe throws, which is how the composed autofix of
+// prefer-map-over-conditional-dispatch and this rule turned a graceful render
+// fallback into a render-time crash. These cases pin the carve-out and, just as
+// deliberately, its edges: both sides must be annotated, the coverage must be
+// syntactically provable, and every conversion spelling keeps reporting.
+ruleTesterTs.run(
+  'enforce-assert-safe-object-key: compiler-bounded Record lookups (issue #1875)',
+  enforceAssertSafeObjectKey,
+  {
+    valid: [
+      {
+        name: 'a key sharing the record key alias is exempt (the #1875 post-fix shape)',
+        code: `
+type Kind = 'live' | 'simulated';
+export const layer = (kind: Kind) => {
+  const RESULT_BY_KIND: Record<Kind, string | undefined> = {
+    simulated: 'watermark',
+    live: undefined,
+  };
+  return RESULT_BY_KIND[kind];
+};
+      `,
+      },
+      {
+        name: 'inline literal unions matching on both sides are exempt',
+        code: `
+const read = (m: Record<'live' | 'simulated', string>, kind: 'live' | 'simulated') => m[kind];
+      `,
+      },
+      {
+        name: 'a key narrowed to a single literal of the record union is exempt',
+        code: `
+const read = (m: Record<'live' | 'simulated', string>, kind: 'simulated') => m[kind];
+      `,
+      },
+      {
+        name: 'an in-file alias key into its spelled-out union record is exempt',
+        code: `
+type Kind = 'live' | 'simulated';
+const R: Record<'live' | 'simulated', number> = { live: 1, simulated: 2 };
+export const read = (kind: Kind) => R[kind];
+      `,
+      },
+      {
+        name: 'an inline union key into an aliased record key type is exempt',
+        code: `
+type Kind = 'live' | 'simulated';
+const R: Record<Kind, number> = { live: 1, simulated: 2 };
+export const read = (kind: 'live' | 'simulated') => R[kind];
+      `,
+      },
+      {
+        name: 'an imported alias shared by key and record is exempt on name identity',
+        code: `
+import { Kind } from './kinds';
+export const read = (m: Record<Kind, string>, kind: Kind) => m[kind];
+      `,
+      },
+      {
+        name: 'a type-only imported alias shared by key and record is exempt',
+        code: `
+import type { Kind } from './kinds';
+export const read = (m: Record<Kind, string>, kind: Kind) => m[kind];
+      `,
+      },
+      {
+        name: 'an alias derived from an as-const values array is exempt (closed domain)',
+        code: `
+const KINDS = ['live', 'simulated'] as const;
+type Kind = (typeof KINDS)[number];
+export const read = (m: Record<Kind, string>, kind: Kind) => m[kind];
+      `,
+      },
+      {
+        name: 'a string enum shared by key and record is exempt',
+        code: `
+enum Status {
+  Active = 'active',
+  Closed = 'closed',
+}
+const LABELS: Record<Status, string> = { [Status.Active]: 'a', [Status.Closed]: 'c' };
+export const labelOf = (status: Status) => LABELS[status];
+      `,
+      },
+      {
+        name: 'Readonly<Record<...>> keeps the key domain and the exemption',
+        code: `
+type Kind = 'live' | 'simulated';
+const read = (m: Readonly<Record<Kind, string>>, kind: Kind) => m[kind];
+      `,
+      },
+      {
+        name: 'Partial<Record<...>> keeps the key domain and the exemption',
+        code: `
+type Kind = 'live' | 'simulated';
+const read = (m: Partial<Record<Kind, string>>, kind: Kind) => m[kind];
+      `,
+      },
+      {
+        name: 'an in-file alias of the whole Record annotation is read through',
+        code: `
+type Kind = 'live' | 'simulated';
+type Lookup = Record<Kind, number>;
+const R: Lookup = { live: 1, simulated: 2 };
+export const read = (kind: Kind) => R[kind];
+      `,
+      },
+      {
+        name: 'an optionally chained bounded lookup is exempt',
+        code: `
+type Kind = 'live' | 'simulated';
+const read = (m: Record<Kind, string> | undefined, kind: Kind) => m?.[kind];
+      `,
+      },
+      {
+        name: 'a bounded key on the write side of an assignment is exempt',
+        code: `
+type Kind = 'live' | 'simulated';
+const write = (m: Record<Kind, number>, kind: Kind) => {
+  m[kind] = 1;
+};
+      `,
+      },
+      {
+        name: 'an annotated let stays bounded across reassignment',
+        code: `
+type Kind = 'live' | 'simulated';
+const R: Record<Kind, number> = { live: 1, simulated: 2 };
+export const read = (flag: boolean) => {
+  let kind: Kind = 'live';
+  if (flag) {
+    kind = 'simulated';
+  }
+  return R[kind];
+};
+      `,
+      },
+      {
+        name: 'a parameter default does not disturb the annotation proof',
+        code: `
+type Kind = 'live' | 'simulated';
+const R: Record<Kind, number> = { live: 1, simulated: 2 };
+export const read = (kind: Kind = 'live') => R[kind];
+      `,
+      },
+      {
+        name: 'a member read off the bounded lookup result is exempt',
+        code: `
+type Kind = 'live' | 'simulated';
+const read = (m: Record<Kind, { label: string }>, kind: Kind) => m[kind].label;
+      `,
+      },
+      {
+        name: 'an erasing wrapper on a bounded key is read through to the binding',
+        code: `
+type Kind = 'live' | 'simulated';
+const read = (m: Record<Kind, string>, kind: Kind) => m[kind!];
+      `,
+      },
+      {
+        name: 'a numeric literal union key into its own record is exempt',
+        code: `
+const read = (m: Record<1 | 2, string>, slot: 1 | 2) => m[slot];
+      `,
+      },
+      {
+        // The mixed spelling prefer-union-from-const-array's rewrite leaves
+        // behind: the key's alias is array-derived while the record still
+        // spells the union out. The array's `as const` elements are the
+        // literal set the subset comparison reads.
+        name: 'an as-const array-derived key into a spelled-out union record is exempt',
+        code: `
+const KINDS = ['live', 'simulated'] as const;
+type Kind = (typeof KINDS)[number];
+const R: Record<'live' | 'simulated', number> = { live: 1, simulated: 2 };
+export const read = (kind: Kind) => R[kind];
+      `,
+      },
+      {
+        // Name identity carries the exemption even where the array's
+        // as-const-ness cannot settle the domain: both sides are the same
+        // alias, so the compiler holds the key inside the record's declared
+        // keys whatever that alias resolves to.
+        name: 'a shared alias over a non-as-const array is exempt on name identity',
+        code: `
+const KINDS = ['live', 'simulated'];
+type Kind = (typeof KINDS)[number];
+export const read = (m: Record<Kind, string>, kind: Kind) => m[kind];
+      `,
+      },
+    ],
+    invalid: [
+      {
+        // The documented core trigger: an explicit string conversion keeps
+        // reporting even when both bindings are bounded — the conversion is
+        // what the rule exists to flag, and assertSafe subsumes it.
+        name: 'String() conversion of a bounded key still reports',
+        code: `
+type Kind = 'live' | 'simulated';
+const read = (m: Record<Kind, string>, kind: Kind) => m[String(kind)];
+      `,
+        errors: [lintError('kind')],
+        output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+type Kind = 'live' | 'simulated';
+const read = (m: Record<Kind, string>, kind: Kind) => m[assertSafe(kind)];
+      `,
+      },
+      {
+        // The other documented trigger: simple interpolation is an explicit
+        // conversion by another spelling.
+        name: 'template interpolation of a bounded key still reports',
+        code: `
+type Kind = 'live' | 'simulated';
+const read = (m: Record<Kind, string>, kind: Kind) => m[\`\${kind}\`];
+      `,
+        errors: [lintError('kind')],
+        output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+type Kind = 'live' | 'simulated';
+const read = (m: Record<Kind, string>, kind: Kind) => m[assertSafe(kind)];
+      `,
+      },
+      {
+        name: 'an unannotated key into a bounded record still reports',
+        code: `
+const R: Record<'live' | 'simulated', number> = { live: 1, simulated: 2 };
+export const read = (kind) => R[kind];
+      `,
+        errors: [lintError('kind')],
+        output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const R: Record<'live' | 'simulated', number> = { live: 1, simulated: 2 };
+export const read = (kind) => R[assertSafe(kind)];
+      `,
+      },
+      {
+        // An `: string` key admits '__proto__'; the record's closed key set
+        // cannot vouch for a key the compiler lets range over every string.
+        name: 'a string-typed key into a bounded record still reports',
+        code: `
+const R: Record<'live' | 'simulated', number> = { live: 1, simulated: 2 };
+export const read = (kind: string) => R[kind];
+      `,
+        errors: [lintError('kind')],
+        output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const R: Record<'live' | 'simulated', number> = { live: 1, simulated: 2 };
+export const read = (kind: string) => R[assertSafe(kind)];
+      `,
+      },
+      {
+        // A laundering assertion on the key is peeled; the BINDING's open type
+        // is what gets judged, so the assertion is no way into the carve-out.
+        name: 'an assertion cannot launder an open key into the exemption',
+        code: `
+type Kind = 'live' | 'simulated';
+const R: Record<Kind, number> = { live: 1, simulated: 2 };
+export const read = (kind: string) => R[kind as Kind];
+      `,
+        errors: [lintError('kind as Kind')],
+        output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+type Kind = 'live' | 'simulated';
+const R: Record<Kind, number> = { live: 1, simulated: 2 };
+export const read = (kind: string) => R[assertSafe(kind as Kind)];
+      `,
+      },
+      {
+        name: 'a key union wider than the record union still reports',
+        code: `
+const R: Record<'live' | 'simulated', number> = { live: 1, simulated: 2 };
+export const read = (kind: 'live' | 'simulated' | 'replay') => R[kind];
+      `,
+        errors: [lintError('kind')],
+        output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const R: Record<'live' | 'simulated', number> = { live: 1, simulated: 2 };
+export const read = (kind: 'live' | 'simulated' | 'replay') => R[assertSafe(kind)];
+      `,
+      },
+      {
+        // Record<string, V> declares no closed key set, so a literal-union key
+        // has nothing syntactic to be covered BY — the pairing stays reported.
+        name: 'a union key into Record<string, ...> still reports',
+        code: `
+const read = (m: Record<string, number>, kind: 'live' | 'simulated') => m[kind];
+      `,
+        errors: [lintError('kind')],
+        output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (m: Record<string, number>, kind: 'live' | 'simulated') => m[assertSafe(kind)];
+      `,
+      },
+      {
+        // Name identity is trusted only until the alias resolves to an open
+        // domain: `type K = string` re-opens the surface the rule guards.
+        name: 'a shared alias that resolves to string still reports',
+        code: `
+type K = string;
+const R: Record<K, number> = {};
+export const read = (k: K) => R[k];
+      `,
+        errors: [lintError('k')],
+        output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+type K = string;
+const R: Record<K, number> = {};
+export const read = (k: K) => R[assertSafe(k)];
+      `,
+      },
+      {
+        // A literal union that itself names a prototype field is a declared
+        // route to the surface assertSafe guards, not a proof of safety.
+        name: 'a shared alias whose union names __proto__ still reports',
+        code: `
+type K = '__proto__' | 'safe';
+const R: Record<K, number> = { __proto__: 1, safe: 2 };
+export const read = (k: K) => R[k];
+      `,
+        errors: [lintError('k')],
+        output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+type K = '__proto__' | 'safe';
+const R: Record<K, number> = { __proto__: 1, safe: 2 };
+export const read = (k: K) => R[assertSafe(k)];
+      `,
+      },
+      {
+        // `K extends string` admits an instantiation at `string` itself, so a
+        // generic lookup helper keeps being reported.
+        name: 'a generic key constrained to string still reports',
+        code: `
+export const get = <K extends string>(m: Record<K, number>, k: K) => m[k];
+      `,
+        errors: [lintError('k')],
+        output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+export const get = <K extends string>(m: Record<K, number>, k: K) => m[assertSafe(k)];
+      `,
+      },
+      {
+        // The nearest binding is what gets judged: an inner open-typed shadow
+        // must not inherit the outer bounded parameter's proof.
+        name: 'a shadowing open-typed binding still reports',
+        code: `
+type Kind = 'live' | 'simulated';
+const R: Record<Kind, number> = { live: 1, simulated: 2 };
+export const outer = (kind: Kind) => {
+  const inner = (kind: string) => R[kind];
+  return inner(kind);
+};
+      `,
+        errors: [lintError('kind')],
+        output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+type Kind = 'live' | 'simulated';
+const R: Record<Kind, number> = { live: 1, simulated: 2 };
+export const outer = (kind: Kind) => {
+  const inner = (kind: string) => R[assertSafe(kind)];
+  return inner(kind);
+};
+      `,
+      },
+      {
+        // The record proof rides on a binding's own annotation; a record
+        // reached as a field makes no resolvable claim here, so the
+        // conservative answer stands. Deliberately a false positive the
+        // carve-out does not chase.
+        name: 'a bounded record reached as a field still reports',
+        code: `
+type Kind = 'live' | 'simulated';
+const read = (wrap: { map: Record<Kind, number> }, kind: Kind) => wrap.map[kind];
+      `,
+        errors: [lintError('kind')],
+        output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+type Kind = 'live' | 'simulated';
+const read = (wrap: { map: Record<Kind, number> }, kind: Kind) => wrap.map[assertSafe(kind)];
+      `,
+      },
+      {
+        // An index signature admits every string key, so it is not the closed
+        // claim `Record<K, V>` makes.
+        name: 'an index-signature annotation is not a bounded record',
+        code: `
+type Kind = 'live' | 'simulated';
+const R: { [k: string]: number } = {};
+export const read = (kind: Kind) => R[kind];
+      `,
+        errors: [lintError('kind')],
+        output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+type Kind = 'live' | 'simulated';
+const R: { [k: string]: number } = {};
+export const read = (kind: Kind) => R[assertSafe(kind)];
+      `,
+      },
+      {
+        // Without an annotation the record's key set lives in the value, which
+        // this syntactic proof does not read. Deliberately conservative.
+        name: 'an unannotated record initializer still reports',
+        code: `
+type Kind = 'live' | 'simulated';
+const R = { live: 1, simulated: 2 };
+export const read = (kind: Kind) => R[kind];
+      `,
+        errors: [lintError('kind')],
+        output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+type Kind = 'live' | 'simulated';
+const R = { live: 1, simulated: 2 };
+export const read = (kind: Kind) => R[assertSafe(kind)];
+      `,
+      },
+      {
+        // Without `as const` the array's type widens to `string[]`, so the
+        // derived alias IS `string` — an open domain no spelled-out record
+        // union can vouch for.
+        name: 'a non-as-const array-derived key into a spelled-out record still reports',
+        code: `
+const KINDS = ['live', 'simulated'];
+type Kind = (typeof KINDS)[number];
+const R: Record<'live' | 'simulated', number> = { live: 1, simulated: 2 };
+export const read = (kind: Kind) => R[kind];
+      `,
+        errors: [lintError('kind')],
+        output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const KINDS = ['live', 'simulated'];
+type Kind = (typeof KINDS)[number];
+const R: Record<'live' | 'simulated', number> = { live: 1, simulated: 2 };
+export const read = (kind: Kind) => R[assertSafe(kind)];
+      `,
+      },
+      {
+        // The exemption covers the bounded inner lookup only; the open key on
+        // the chained outer lookup keeps its report.
+        name: 'only the bounded half of a chained double lookup is exempt',
+        code: `
+type Kind = 'live' | 'simulated';
+const read = (m: Record<Kind, Record<string, number>>, kind: Kind, other: string) => m[kind][other];
+      `,
+        errors: [lintError('other')],
+        output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+type Kind = 'live' | 'simulated';
+const read = (m: Record<Kind, Record<string, number>>, kind: Kind, other: string) => m[kind][assertSafe(other)];
+      `,
+      },
+    ],
+  },
+);
+
 // Issue #1408: RuleTester applies a single fix pass and never shows the file
 // that `eslint --fix` actually writes. These cases run the real multi-pass
 // fixer and assert the invariant the bug violated: an emitted assertSafe(...)
