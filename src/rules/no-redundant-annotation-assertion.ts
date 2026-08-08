@@ -118,6 +118,28 @@ function addChildNodesToStack(
   }
 }
 
+function collectReturnArguments(
+  body: TSESTree.BlockStatement,
+): TSESTree.Expression[] {
+  const args: TSESTree.Expression[] = [];
+  const stack: TSESTree.Node[] = [...body.body];
+
+  while (stack.length) {
+    const current = stack.pop() as TSESTree.Node;
+
+    if (current.type === AST_NODE_TYPES.ReturnStatement) {
+      if (current.argument) args.push(current.argument);
+      continue;
+    }
+
+    if (isTraversalBoundary(current)) continue;
+
+    addChildNodesToStack(current, stack);
+  }
+
+  return args;
+}
+
 function collectReturnInfo(body: TSESTree.BlockStatement): {
   assertionSites: ReturnAssertionSite[];
   returnCount: number;
@@ -617,6 +639,7 @@ function referencedDeclarationsOf(
   expression: TSESTree.Expression,
   checker: ts.TypeChecker,
   services: ParserServices,
+  pruneTypedFunctions = false,
 ): Set<ts.Declaration> {
   const declarations = new Set<ts.Declaration>();
   const root = services.esTreeNodeToTSNodeMap.get(expression);
@@ -648,15 +671,87 @@ function referencedDeclarationsOf(
     return true;
   };
 
+  /**
+   * A property read spells its name as an identifier in `obj.build` and as a
+   * string in `obj['build']`, and both resolve to the same property symbol —
+   * so testing for an identifier alone recognises only one of two spellings of
+   * one reference. The literal is only a name where it indexes something;
+   * elsewhere a string is data and resolves to nothing worth following.
+   */
+  const isNameNode = (tsNode: ts.Node): boolean => {
+    if (ts.isIdentifier(tsNode)) return true;
+
+    const parent = tsNode.parent;
+
+    return (
+      ts.isStringLiteralLike(tsNode) &&
+      Boolean(parent) &&
+      ts.isElementAccessExpression(parent) &&
+      parent.argumentExpression === tsNode
+    );
+  };
+
+  /**
+   * The name a declaration gives itself is not a read of it. Walking an object
+   * literal or a class body reaches the names of its own members, and counting
+   * those makes the literal look like it reads every function it contains —
+   * enough to close a cycle that TypeScript does not have, since it resolves an
+   * object literal's properties one at a time rather than as a whole.
+   *
+   * A shorthand property is the exception in both directions: `{ build }`
+   * declares a property and reads a binding, and it is the read that matters.
+   */
+  const isDeclarationName = (tsNode: ts.Node): boolean => {
+    const parent = tsNode.parent;
+    if (!parent) return false;
+
+    if (
+      ts.isShorthandPropertyAssignment(parent) ||
+      ts.isPropertyAccessExpression(parent) ||
+      ts.isElementAccessExpression(parent) ||
+      ts.isQualifiedName(parent)
+    ) {
+      return false;
+    }
+
+    return (parent as ts.Node & { name?: ts.Node }).name === tsNode;
+  };
+
+  const symbolAt = (tsNode: ts.Node): ts.Symbol | undefined => {
+    const parent = tsNode.parent;
+
+    // A shorthand property's own identifier resolves to the property, so the
+    // binding it abbreviates has to be asked for by name.
+    if (parent && ts.isShorthandPropertyAssignment(parent)) {
+      return checker.getShorthandAssignmentValueSymbol(parent);
+    }
+
+    return checker.getSymbolAtLocation(tsNode);
+  };
+
+  /**
+   * A nested function that writes its own return type down answers without
+   * consulting anything, so nothing beneath it can be a link in a cycle. It is
+   * already its own graph node, related to its own dependencies, and reaching
+   * through it would attribute its body to the binding that merely contains it
+   * — `const cache = { get: (): Q => build() }` does not make `cache` depend on
+   * `build`, because `get` is typed by its annotation.
+   */
+  const answersWithoutInference = (tsNode: ts.Node): boolean =>
+    pruneTypedFunctions &&
+    (ts.isArrowFunction(tsNode) ||
+      ts.isFunctionExpression(tsNode) ||
+      ts.isFunctionDeclaration(tsNode) ||
+      ts.isMethodDeclaration(tsNode)) &&
+    tsNode.type !== undefined;
+
   const visit = (tsNode: ts.Node): void => {
-    if (ts.isIdentifier(tsNode) && readsAValue(tsNode)) {
-      const parent = tsNode.parent;
-      // A shorthand property's own identifier resolves to the property, so the
-      // binding it abbreviates has to be asked for by name.
-      const symbol =
-        parent && ts.isShorthandPropertyAssignment(parent)
-          ? checker.getShorthandAssignmentValueSymbol(parent)
-          : checker.getSymbolAtLocation(tsNode);
+    if (
+      isNameNode(tsNode) &&
+      !isDeclarationName(tsNode) &&
+      readsAValue(tsNode)
+    ) {
+      const symbol = symbolAt(tsNode);
 
       if (symbol) {
         for (const declaration of declarationsOfSymbol(symbol)) {
@@ -665,20 +760,16 @@ function referencedDeclarationsOf(
       }
     }
 
+    if (tsNode !== root && answersWithoutInference(tsNode)) {
+      return;
+    }
+
     ts.forEachChild(tsNode, visit);
   };
 
   visit(root);
 
   return declarations;
-}
-
-function intersects<T>(a: Set<T>, b: Set<T>): boolean {
-  for (const entry of a) {
-    if (b.has(entry)) return true;
-  }
-
-  return false;
 }
 
 /**
@@ -692,54 +783,250 @@ type ReturnCandidate = {
 };
 
 /**
+ * One declaration in the file's inference graph: whether TypeScript has to work
+ * its type out from its own body/initializer, and the declarations that working
+ * it out reads.
+ */
+type InferenceNode = {
+  needsInference: boolean;
+  dependencies: Set<ts.Declaration>;
+};
+
+type InferenceGraph = Map<ts.Declaration, InferenceNode>;
+
+function isFunctionLike(node: TSESTree.Node): boolean {
+  return (
+    node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+    node.type === AST_NODE_TYPES.FunctionExpression
+  );
+}
+
+/** The expressions a function's own return type is inferred from. */
+function returnExpressionsOf(node: AnnotatedFunction): TSESTree.Expression[] {
+  const value =
+    node.type === AST_NODE_TYPES.MethodDefinition ? node.value : node;
+
+  const body = (
+    value as {
+      body: TSESTree.BlockStatement | TSESTree.Expression | null | undefined;
+    }
+  ).body;
+
+  if (!body) return [];
+
+  return body.type === AST_NODE_TYPES.BlockStatement
+    ? collectReturnArguments(body)
+    : [body];
+}
+
+function returnTypeAnnotationOf(
+  node: AnnotatedFunction,
+): TSESTree.TSTypeAnnotation | undefined {
+  return node.type === AST_NODE_TYPES.MethodDefinition
+    ? node.value.returnType
+    : node.returnType;
+}
+
+/**
+ * Whether the binding this function is assigned to declares its own type. A
+ * contextually typed function is not inferred from its body — `const f: () => Q
+ * = () => g()` types `f` from the annotation regardless of what `g` returns —
+ * so it cannot carry a cycle even without a return annotation of its own.
+ */
+function ownerCarriesTypeAnnotation(node: AnnotatedFunction): boolean {
+  const parent = node.parent;
+
+  if (parent?.type === AST_NODE_TYPES.VariableDeclarator) {
+    return (
+      parent.id.type === AST_NODE_TYPES.Identifier &&
+      Boolean(parent.id.typeAnnotation)
+    );
+  }
+
+  if (parent?.type === AST_NODE_TYPES.PropertyDefinition) {
+    return Boolean(parent.typeAnnotation);
+  }
+
+  return false;
+}
+
+function addInferenceEdges(
+  graph: InferenceGraph,
+  owners: Iterable<ts.Declaration>,
+  dependencies: Set<ts.Declaration>,
+  needsInference: boolean,
+): void {
+  for (const owner of owners) {
+    const existing = graph.get(owner);
+
+    if (!existing) {
+      graph.set(owner, {
+        needsInference,
+        dependencies: new Set(dependencies),
+      });
+      continue;
+    }
+
+    existing.needsInference ||= needsInference;
+    for (const dependency of dependencies) {
+      existing.dependencies.add(dependency);
+    }
+  }
+}
+
+function unionReferences(
+  expressions: TSESTree.Expression[],
+  checker: ts.TypeChecker,
+  services: ParserServices,
+  pruneTypedFunctions = false,
+): Set<ts.Declaration> {
+  const references = new Set<ts.Declaration>();
+
+  for (const expression of expressions) {
+    for (const declaration of referencedDeclarationsOf(
+      expression,
+      checker,
+      services,
+      pruneTypedFunctions,
+    )) {
+      references.add(declaration);
+    }
+  }
+
+  return references;
+}
+
+/**
+ * Every function-like node in the file, related to the declarations its return
+ * type is inferred from. Functions the rule is not reporting on belong in the
+ * graph too: an unannotated helper is precisely the kind of node a cycle runs
+ * through, and it is invisible to a relation drawn between candidates only.
+ */
+function addFunctionNodes(
+  graph: InferenceGraph,
+  functions: AnnotatedFunction[],
+  checker: ts.TypeChecker,
+  services: ParserServices,
+): void {
+  for (const node of functions) {
+    const owners = declaredAt(ownerNameNodes(node), checker, services);
+    if (owners.size === 0) continue;
+
+    addInferenceEdges(
+      graph,
+      owners,
+      unionReferences(returnExpressionsOf(node), checker, services),
+      !returnTypeAnnotationOf(node) && !ownerCarriesTypeAnnotation(node),
+    );
+  }
+}
+
+/**
+ * A value binding whose type comes from its initializer. These carry a cycle
+ * just as a function does — `const alias = build;` or `const cache = { get: ()
+ * => build() };` sits between two functions and relays the dependency — and
+ * TypeScript reports reaching one from its own initializer as TS7022.
+ */
+type InferredValueDeclaration = {
+  name: TSESTree.Node;
+  init: TSESTree.Expression;
+};
+
+function addValueNodes(
+  graph: InferenceGraph,
+  values: InferredValueDeclaration[],
+  checker: ts.TypeChecker,
+  services: ParserServices,
+): void {
+  for (const { name, init } of values) {
+    const owners = declaredAt([name], checker, services);
+    if (owners.size === 0) continue;
+
+    addInferenceEdges(
+      graph,
+      owners,
+      unionReferences([init], checker, services, true),
+      true,
+    );
+  }
+}
+
+/**
+ * Whether following what this declaration's type is inferred from leads back to
+ * the declaration itself.
+ *
+ * The walk stops at any declaration whose type is written down: an annotated
+ * function, an annotated binding, an ambient declaration. Such a node answers
+ * the question it is asked without consulting anything further, which is
+ * exactly what breaks a cycle — TypeScript's own error says a type is inferred
+ * "directly or indirectly" from itself, and every link in that indirection has
+ * to be a type it must infer.
+ */
+function reachesOwnDeclaration(
+  owners: Set<ts.Declaration>,
+  dependencies: Set<ts.Declaration>,
+  graph: InferenceGraph,
+): boolean {
+  const frontier = [...dependencies];
+  const seen = new Set<ts.Declaration>();
+
+  while (frontier.length) {
+    const current = frontier.pop() as ts.Declaration;
+
+    if (owners.has(current)) return true;
+    if (seen.has(current)) continue;
+    seen.add(current);
+
+    const node = graph.get(current);
+    if (!node?.needsInference) continue;
+
+    for (const dependency of node.dependencies) frontier.push(dependency);
+  }
+
+  return false;
+}
+
+/**
  * The candidates whose annotation must survive because removing it would make
  * the function's return type circular.
  *
- * A function that reaches itself through its own return expression can only be
- * typed from its annotation: dropping it leaves TypeScript inferring the return
- * type from an expression whose type depends on that same return type (TS7023),
- * or — where the assertion pins enough of the shape to break the cycle —
- * silently widening a member to `any`. That circularity is invisible to the
- * equality test that proves redundancy, because the equality only holds *while*
- * the annotation is there.
+ * A function that reaches itself through what its return type is inferred from
+ * can only be typed by its annotation: dropping it leaves TypeScript inferring
+ * the return type from an expression whose type depends on that same return
+ * type (TS7023/TS7022), or — where the assertion pins enough of the shape to
+ * break the cycle — silently widening a member to `any`. That circularity is
+ * invisible to the equality test that proves redundancy, because the equality
+ * only holds *while* the annotation is there.
  *
- * The relation is between candidates rather than within one, because this
- * rule's fixes ship as a single batch: two mutually recursive functions each
- * type fine while the other keeps its annotation, and become circular only when
- * both annotations go in the same pass.
+ * The reach is transitive rather than a hop between candidates, because a cycle
+ * closes through whatever happens to lie on it: an unannotated helper, an
+ * object holding a callback, a plain alias. Those are not candidates — they
+ * have no annotation to remove — yet they relay a dependency, and a relation
+ * drawn candidate-to-candidate cannot see them.
  *
- * Peeling candidates that cannot participate in a cycle — nothing in the batch
- * references them, or they reference nothing in the batch — leaves the ones
- * that do. The remainder is an over-approximation (a chain running between two
- * cycles survives the peel), which costs a missed report rather than a broken
- * fix.
+ * Every candidate is treated as needing inference, since this rule's fixes ship
+ * as one batch and every annotation in it goes together. That over-approximates
+ * — declining one member of a cycle would free the rest — and the surplus costs
+ * a missed report rather than a broken fix. It also subsumes the direct
+ * self-reference case, which is a cycle of length one.
  */
 function findCircularReturnCandidates(
   candidates: ReturnCandidate[],
+  graph: InferenceGraph,
 ): Set<CandidateSite> {
-  let pool = candidates;
-
-  for (;;) {
-    const owners = new Set<ts.Declaration>();
-    const references = new Set<ts.Declaration>();
-
-    for (const candidate of pool) {
-      for (const owner of candidate.owners) owners.add(owner);
-      for (const reference of candidate.references) references.add(reference);
-    }
-
-    const next = pool.filter(
-      (candidate) =>
-        intersects(candidate.references, owners) &&
-        intersects(candidate.owners, references),
-    );
-
-    if (next.length === pool.length) {
-      return new Set(next.map((candidate) => candidate.site));
-    }
-
-    pool = next;
+  for (const candidate of candidates) {
+    addInferenceEdges(graph, candidate.owners, candidate.references, true);
   }
+
+  const circular = new Set<CandidateSite>();
+
+  for (const candidate of candidates) {
+    if (reachesOwnDeclaration(candidate.owners, candidate.references, graph)) {
+      circular.add(candidate.site);
+    }
+  }
+
+  return circular;
 }
 
 export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
@@ -791,6 +1078,16 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
 
     /** Return-position sites, kept with the symbols that decide circularity. */
     const returnCandidates: ReturnCandidate[] = [];
+
+    /**
+     * The nodes the inference graph is built from, gathered as AST during the
+     * traversal and resolved to symbols only if a return-position candidate
+     * turns up. Resolving every binding in the file up front would charge a
+     * type-checker query per declaration to answer a question no file without a
+     * return annotation ever asks.
+     */
+    const functionLikeNodes: AnnotatedFunction[] = [];
+    const inferredValueDeclarations: InferredValueDeclaration[] = [];
 
     /**
      * Suppression is applied to reports after a rule emits them, so a suppressed
@@ -849,11 +1146,9 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
         parserServices as ParserServices,
       );
 
-      // A function reached from its own return expression is typed by its
-      // annotation and nothing else; removing it does not simplify the code, it
-      // changes the inferred type, so the site is not a finding at all.
-      if (intersects(owners, references)) return;
-
+      // Whether the annotation is load-bearing is decided at `Program:exit`:
+      // the cycle can run through a function elsewhere in the file, and every
+      // annotation in it goes in the same batched fix.
       const site = collectIfRedundant(
         annotation,
         assertionSite.assertion,
@@ -884,14 +1179,45 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
       );
     }
 
+    /**
+     * The file's inference graph, built only where a return annotation is at
+     * stake. Both the functions and the value bindings go in: a cycle runs
+     * through whichever of them happens to lie on it.
+     */
+    function buildInferenceGraph(): InferenceGraph {
+      const graph: InferenceGraph = new Map();
+
+      addFunctionNodes(
+        graph,
+        functionLikeNodes,
+        checker,
+        parserServices as ParserServices,
+      );
+      addValueNodes(
+        graph,
+        inferredValueDeclarations,
+        checker,
+        parserServices as ParserServices,
+      );
+
+      return graph;
+    }
+
     return {
       'Program:exit'() {
         if (sites.length === 0) return;
 
-        // Mutual recursion only becomes circular once every annotation in the
-        // cycle is gone, which is exactly what this rule's single batched fix
-        // does, so the check has to see the whole batch.
-        const circular = findCircularReturnCandidates(returnCandidates);
+        // Recursion only becomes circular once every annotation on the cycle is
+        // gone, which is exactly what this rule's single batched fix does, so
+        // the check has to see the whole batch — and the whole file, because
+        // what closes the cycle need not be a candidate at all.
+        const circular =
+          returnCandidates.length > 0
+            ? findCircularReturnCandidates(
+                returnCandidates,
+                buildInferenceGraph(),
+              )
+            : new Set<CandidateSite>();
         const reportable = sites.filter((site) => !circular.has(site));
         if (reportable.length === 0) return;
 
@@ -930,12 +1256,20 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
         }
       },
       VariableDeclarator(node) {
+        if (node.id.type !== AST_NODE_TYPES.Identifier) return;
+
+        // A binding whose initializer is a function is already related to what
+        // it reads by that function's own graph node, and by its return
+        // expressions rather than its whole body.
         if (
-          node.id.type !== AST_NODE_TYPES.Identifier ||
-          !node.id.typeAnnotation ||
-          node.id.optional ||
-          node.definite
+          node.init &&
+          !node.id.typeAnnotation &&
+          !isFunctionLike(node.init)
         ) {
+          inferredValueDeclarations.push({ name: node.id, init: node.init });
+        }
+
+        if (!node.id.typeAnnotation || node.id.optional || node.definite) {
           return;
         }
 
@@ -950,6 +1284,15 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
         );
       },
       PropertyDefinition(node) {
+        if (
+          node.value &&
+          !node.typeAnnotation &&
+          !node.computed &&
+          !isFunctionLike(node.value)
+        ) {
+          inferredValueDeclarations.push({ name: node.key, init: node.value });
+        }
+
         if (
           !node.typeAnnotation ||
           !node.value ||
@@ -969,6 +1312,8 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
         );
       },
       FunctionDeclaration(node) {
+        functionLikeNodes.push(node);
+
         if (!node.returnType) return;
 
         collectReturnSite(node, node.returnType, node.id ?? node);
@@ -978,16 +1323,22 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
           return;
         }
 
+        functionLikeNodes.push(node);
+
         if (!node.returnType) return;
 
         collectReturnSite(node, node.returnType, node);
       },
       ArrowFunctionExpression(node) {
+        functionLikeNodes.push(node);
+
         if (!node.returnType) return;
 
         collectReturnSite(node, node.returnType, node);
       },
       MethodDefinition(node) {
+        functionLikeNodes.push(node);
+
         if (!node.value.returnType) return;
 
         collectReturnSite(node, node.value.returnType, node.key);
