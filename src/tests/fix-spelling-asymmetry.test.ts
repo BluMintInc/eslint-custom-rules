@@ -989,9 +989,6 @@ const FIX_UNDRIVEN: Record<string, UndrivenCause> = {
   'jsdoc-above-field': 'noRespelling',
   'no-unnecessary-destructuring': 'noSharedMessageId',
   'no-unpinned-dependencies': 'noTsFixture',
-  // Reports 4 times over 105 fixtures and fixes none of them, so nothing in its
-  // corpus exercises the fixer this census diffs.
-  'no-usememo-for-pass-by-value': 'noFixEverOffered',
   'omit-index-html': 'noRespelling',
   'prefer-clone-deep': 'noFixInComparedPair',
   'prefer-fragment-shorthand': 'noRespelling',

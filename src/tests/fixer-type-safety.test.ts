@@ -1369,9 +1369,6 @@ const UNCOVERED_FIXERS: Record<string, Reason> = {
   'enforce-typescript-markdown-code-blocks': REASONS.nonTypeScript,
   /** Its only fixtures are `package.json` bodies (`ruleTesterJson`); same. */
   'no-unpinned-dependencies': REASONS.nonTypeScript,
-  // All 105 of its cases embed a `typedPrelude` that declares `module 'react'`,
-  // which would retype every other file in the shared program.
-  'no-usememo-for-pass-by-value': REASONS.sharedScope,
 };
 
 /**

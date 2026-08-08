@@ -520,10 +520,6 @@ const measuredDerivationUndriven = measuredUndriven(derivationCauseOf);
 const REWRITE_UNDRIVEN: Record<string, UndrivenCause> = {
   'enforce-typescript-markdown-code-blocks': 'noTsFixture',
   'no-unpinned-dependencies': 'noTsFixture',
-  // Declares `fixable: 'code'` and emits no fix over any of its 105 fixtures
-  // (#1871), so there is no output to read a derived name out of. Fixing that
-  // rule retires this entry.
-  'no-usememo-for-pass-by-value': 'neverRewritesItsOwnFixtures',
 };
 
 /**
@@ -561,6 +557,9 @@ const DERIVATION_UNDRIVEN: Record<string, UndrivenCause> = {
   'no-unused-usestate': 'inventsNoName',
   'no-useless-fragment': 'inventsNoName',
   'no-useless-usememo-primitives': 'inventsNoName',
+  // Inlines the memoized expression verbatim, so every identifier it writes was
+  // already in the source and none can be derived from the file stem (#1871).
+  'no-usememo-for-pass-by-value': 'inventsNoName',
   'prefer-block-comments-for-declarations': 'inventsNoName',
   'prefer-destructuring-no-class': 'inventsNoName',
   'prefer-fragment-shorthand': 'inventsNoName',

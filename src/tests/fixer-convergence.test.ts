@@ -375,15 +375,15 @@ const reasonFor = (rule: string): Reason => {
  * "70 of 84 probed" tolerated twelve more rules falling silent, and for a
  * zero-probed rule the per-rule assertion below reduces to `expect('')
  * .toBe('')`.
+ *
+ * EMPTY BY DESIGN: every fixable rule's fixer is reachable from its own
+ * fixtures. The last entry — `no-usememo-for-pass-by-value`, whose type-aware
+ * classification is `indeterminate` under the lib-less isolated program this
+ * harness leaves behind when it strips `parserOptions.project` — was retired by
+ * fixtures whose memoized value is `undefined`/`null`, the classification that
+ * survives that degradation (#1871).
  */
-const UNREACHED_FIXERS: Record<string, Reason> = {
-  // Reports 4 times here and offers no fix. Its 105 fixtures declare
-  // `parserOptions.project` against the repo tsconfig, which the corpus strips;
-  // the isolated program that remains resolves the returned expression to `any`,
-  // so `classifyUseMemoReturnType` is indeterminate and the fixer never runs
-  // (#1859). The report count is real, the fix silence is the harness.
-  'no-usememo-for-pass-by-value': REASONS.reportsWithoutFix,
-};
+const UNREACHED_FIXERS: Record<string, Reason> = {};
 
 const observedUnreached = Object.fromEntries(
   fixableRules

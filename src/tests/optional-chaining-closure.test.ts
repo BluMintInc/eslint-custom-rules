@@ -207,6 +207,8 @@ const KNOWN_DIVERGENT: Record<string, string> = {
   'no-unsafe-firestore-spread::member':
     'ARTIFACT: only reached via `[...arr]?.filter()`, an optional link on an array literal, which is never nullish',
   'no-unused-usestate::call': 'ARTIFACT: only reached via `useState?.()`',
+  'no-usememo-for-pass-by-value::call':
+    'ARTIFACT: only reached via `const m = useMemo?.(...)` / `m = useMemo?.(...)`, an optional call on the imported hook. Measured per arm: `return useMemo?.(...)`, `React?.useMemo(...)` and `React.useMemo?.(...)` all still report — `analyzeReturnedValue` unwraps the ChainExpression — while the two variable-TRACKING visitors test `init.type`/`right.type` for CallExpression and see the wrapper instead. An imported binding is never nullish, and were it, inlining the memoized expression would not be equivalent to a call that short-circuits to undefined, so the remedy would be wrong to offer here anyway',
   'optimize-object-boolean-conditions::call':
     'ARTIFACT: only reached via `useState?.()` / `useMemo?.()`',
   'optimize-object-boolean-conditions::member':
@@ -335,7 +337,6 @@ const UNDRIVEN: Record<string, UndrivenCause> = {
   'no-useless-fragment::call': 'silentBothSides',
   'no-useless-fragment::member': 'silentBothSides',
   'no-useless-usememo-primitives::member': 'silentBothSides',
-  'no-usememo-for-pass-by-value::member': 'silentBothSides',
   'omit-index-html::call': 'noSite',
   'omit-index-html::member': 'noSite',
   'prefer-destructuring-no-class::call': 'silentBothSides',

@@ -1100,5 +1100,173 @@ ${typedPrelude}
       }
       `,
     },
+    /**
+     * Nullish-valued memos, and the reason they are spelled that way.
+     *
+     * Every fixture above resolves its memoized value through a type the checker
+     * can only describe with a lib: `string`, `number`, a tuple. The repo-wide
+     * fix guards lint this corpus under a bare `Linter`, which strips the
+     * `project` these cases declare, and the isolated single-file program that
+     * remains carries NO lib files. `checker.isArrayLikeType` then answers true
+     * for every non-nullable type, because the global readonly-array type it
+     * compares against has degraded to the error type — so `isPassByValueType`
+     * takes its array branch, finds no type arguments, and returns
+     * `indeterminate`, which `checkUseMemoForPassByValue` declines. The result
+     * was a rule shipping `fixable: 'code'` at `'error'` whose fixer no
+     * convergence, shadow-capture, type-safety, comment-fidelity or fixpoint
+     * sweep had ever run (#1871).
+     *
+     * `undefined` and `null` are the shapes that survive that degradation:
+     * `isArrayLikeType` short-circuits on `TypeFlags.Nullable`, so the primitive
+     * flag test is reached and the classification is identical with and without
+     * a program. Respelling any of these with a `string` or `number` value
+     * therefore re-darkens the fix channel without failing anything here, since
+     * `RuleTester` runs them against the real project.
+     *
+     * The first two also omit `typedPrelude`, which is not an oversight:
+     * `fixer-type-safety` compiles the whole corpus as ONE program and drops
+     * every snippet carrying a `declare module 'x'`, since an ambient module
+     * declaration retypes every other rule's fixtures. With the prelude on all
+     * of them, that guard had no pair to type-check for this rule at all. They
+     * report through the same path — the unresolvable `react` import types the
+     * call `any`, and `classifyUseMemoReturnType` falls back to the returned
+     * expression.
+     */
+    {
+      ...baseOptions,
+      code: `
+      import { useMemo } from 'react';
+
+      export function useUndefinedValue() {
+        return useMemo(() => undefined, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `      export function useUndefinedValue() {
+        return undefined;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useNullValue() {
+        return useMemo(() => {
+          return null;
+        }, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useNullValue() {
+        return null;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+      import { useMemo } from 'react';
+
+      export function useNullishBranches(flag: boolean, fallback: string) {
+        return useMemo(() => (flag ? undefined : null), [flag]) ?? fallback;
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `      export function useNullishBranches(flag: boolean, fallback: string) {
+        return (flag ? undefined : null) ?? fallback;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useFunctionCallback() {
+        return useMemo(function () {
+          return undefined;
+        }, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useFunctionCallback() {
+        return undefined;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useVoidZero() {
+        return useMemo(() => void 0, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useVoidZero() {
+        return void 0;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import React from 'react';
+
+      export function useNamespaceMissing() {
+        return React.useMemo(() => undefined, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      import React from 'react';
+
+      export function useNamespaceMissing() {
+        return undefined;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo, useState } from 'react';
+      declare function useState<T>(initial: T): [T, (val: T) => void];
+
+      export function useStoredNothing(slug: string) {
+        const [state] = useState(slug);
+        void state;
+        const memoized = useMemo(() => undefined, []);
+        return memoized;
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      import { useState } from 'react';
+      declare function useState<T>(initial: T): [T, (val: T) => void];
+
+      export function useStoredNothing(slug: string) {
+        const [state] = useState(slug);
+        void state;
+        const memoized = undefined;
+        return memoized;
+      }
+      `,
+    },
   ],
 });
