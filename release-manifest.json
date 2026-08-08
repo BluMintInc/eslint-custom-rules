@@ -1,5 +1,62 @@
 [
   {
+    "version": "1.20.136",
+    "date": "2026-08-08T14:34:06.547Z",
+    "rules": [
+      {
+        "name": "consistent-callback-naming",
+        "changeType": "fix",
+        "issues": [
+          1878
+        ],
+        "summary": "withhold the rename on exported bindings"
+      },
+      {
+        "name": "enforce-assert-safe-object-key",
+        "changeType": "fix",
+        "issues": [
+          1880
+        ],
+        "summary": "check that a template's fixed text rules out a dangerous key (closes #1880)"
+      },
+      {
+        "name": "enforce-props-argument-name",
+        "changeType": "fix",
+        "issues": [
+          1881
+        ],
+        "summary": "withhold the parameter-property rename on every static spelling of the member (closes #1881)"
+      },
+      {
+        "name": "enforce-props-naming-consistency",
+        "changeType": "fix",
+        "issues": [
+          1882
+        ],
+        "summary": "withhold the parameter-property rename on every static spelling of the member (closes #1882)"
+      },
+      {
+        "name": "no-redundant-annotation-assertion",
+        "changeType": "fix",
+        "issues": [
+          1883,
+          1886,
+          1887,
+          1888
+        ],
+        "summary": "make every spelling of a relay a node in the inference graph (closes #1888); compare index signatures, and read readonly through the accessor route (closes #1887); follow the circular-return check transitively (closes #1886); keep annotations that are load-bearing (closes #1883)"
+      },
+      {
+        "name": "no-unnecessary-verb-suffix",
+        "changeType": "fix",
+        "issues": [
+          1885
+        ],
+        "summary": "treat an `as T` as the conformance signal it is (closes #1885)"
+      }
+    ]
+  },
+  {
     "version": "1.20.135",
     "date": "2026-08-08T08:06:35.865Z",
     "rules": [
