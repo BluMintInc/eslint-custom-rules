@@ -73,9 +73,48 @@ const result: FormattedPart = { year: parseYear() } as const;
 
 A type that is exported, or still named elsewhere in the file, keeps its declaration and its autofix — nothing is orphaned by the removal.
 
+### Annotations that carry type information
+
+Redundancy is only redundancy if the annotation can be deleted without changing what the file means. Two shapes look identical to a type-equality test yet are load-bearing, and both are left alone.
+
+**A return type its own return expression depends on.** The equality that proves the annotation redundant holds only *while* the annotation is there: remove it and TypeScript has to infer the return type from an expression whose type is that same return type.
+
+```ts
+interface FakeQuery {
+  orderBy: () => FakeQuery;
+}
+
+// The annotation is the only thing typing this function. Stripping it yields
+// TS7023 ("implicitly has return type 'any' because it ... is referenced
+// directly or indirectly in one of its return expressions"), or — where the
+// assertion pins enough of the shape to break the cycle — silently widens
+// `orderBy` to `() => any`.
+function buildQuery(): FakeQuery {
+  return <FakeQuery>{ orderBy: () => buildQuery() };
+}
+```
+
+The self-reference is resolved through the type checker, so a shadowing local of the same name does not count, and a reference reached through `this.method()`, `obj.method()`, or a function expression's own name does. Only **value** reads count: the returned expression contains the assertion's own type node, so a binding and a type that share a name (`type Status = …; const Status = (): Status => <Status>{…}`) would otherwise look self-referential. `typeof f` is the exception — it is a type position that reads a value, and it does resolve through the return type.
+
+Two mutually recursive functions are covered as one case: each types fine while the other keeps its annotation, and they only go circular because every removal in a file ships as a single fix.
+
+The reach is **one hop**. A cycle closed through an intermediary the rule is not itself removing an annotation from — an unannotated helper, an object holding a callback, a plain alias — is not recognised, so such a function is still reported and its return type still widens to `any`. TypeScript's own diagnostic says "referenced directly **or indirectly**"; matching that is tracked in [#1886](https://github.com/BluMintInc/eslint-custom-rules/issues/1886), which carries the reproductions.
+
+**An `as const` assertion against a mutable annotation.** `as const` makes every member `readonly`, so it does not restate a mutable annotation — it narrows it. Deleting the annotation changes the value's type rather than deduplicating it.
+
+```ts
+// `conf` is `{ run: () => void }` here and `{ readonly run: () => void }`
+// without the annotation, which turns the assignment below into TS2540.
+const conf: { run: () => void } = { run: () => {} } as const;
+conf.run = () => {};
+```
+
+An annotation that spells `readonly` itself still matches an `as const` assertion and is still reported: readonly-ness discriminates the two shapes, it does not exempt `as const`.
+
 ### Not covered
 
 - Destructuring patterns are intentionally ignored to avoid surprising edits.
 - Optional properties (`?`) and definite assignment assertions (`!`) on class properties or variables are skipped to prevent syntax errors or unintended behavior changes.
 - The rule only triggers when the annotation and assertion resolve to the **same** type; widening/narrowing pairs (e.g., `any` to `string`) are left untouched.
 - Functions with multiple `return` statements are skipped because different branches can assert different types.
+- A return type reachable from its own return expression, and an `as const` assertion under a mutable annotation, are left alone — see above.
