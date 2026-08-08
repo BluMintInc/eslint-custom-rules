@@ -872,6 +872,112 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
       output: null,
     },
 
+    // #1881: `this['settings']` names the SAME member as `this.settings`, and
+    // the fixer can rewrite neither. Keying the guard on the dot spelling alone
+    // shipped the rename and left this access pointing at a member the class no
+    // longer has.
+    {
+      name: 'a bracket-spelled this access withholds the rename',
+      code: `
+        type ManagerProps = { config: string };
+        class Manager {
+          constructor(private readonly settings: ManagerProps) {}
+          get config() { return this['settings'].config; }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'ManagerProps' },
+        },
+      ],
+      output: null,
+    },
+    {
+      name: 'a template-spelled this access withholds the rename',
+      code: `
+        type ManagerProps = { config: string };
+        class Manager {
+          constructor(private readonly settings: ManagerProps) {}
+          get config() { return this[\`settings\`].config; }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'ManagerProps' },
+        },
+      ],
+      output: null,
+    },
+    {
+      name: 'an optional bracket-spelled this access withholds the rename',
+      code: `
+        type ManagerProps = { config: string };
+        class Manager {
+          constructor(private readonly settings: ManagerProps) {}
+          get config() { return this?.['settings'].config; }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'ManagerProps' },
+        },
+      ],
+      output: null,
+    },
+    // The guard must stay keyed on the NAME, not on bracket syntax: a computed
+    // access to a different member strands nothing, so the rename still applies.
+    {
+      name: 'a bracket access to an unrelated member still autofixes',
+      code: `
+        type ManagerProps = { config: string };
+        class Manager {
+          constructor(private readonly settings: ManagerProps) {}
+          get other() { return this['unrelated']; }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'ManagerProps' },
+        },
+      ],
+      output: `
+        type ManagerProps = { config: string };
+        class Manager {
+          constructor(private readonly props: ManagerProps) {}
+          get other() { return this['unrelated']; }
+        }
+      `,
+    },
+    // A dynamic key names no member statically, so it cannot be the reference
+    // the rename would strand — treating it as one would withhold every fix.
+    {
+      name: 'a dynamic computed this access still autofixes',
+      code: `
+        type ManagerProps = { config: string };
+        class Manager {
+          constructor(private readonly settings: ManagerProps) {}
+          read(key: string) { return this[key]; }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'ManagerProps' },
+        },
+      ],
+      output: `
+        type ManagerProps = { config: string };
+        class Manager {
+          constructor(private readonly props: ManagerProps) {}
+          read(key: string) { return this[key]; }
+        }
+      `,
+    },
+
     // A REGULAR (non-parameter-property) constructor param in a subclass is not
     // covered by the parameter-property guard, so it is still reported and
     // autofixed (a plain local rename cannot collide with an inherited field).
