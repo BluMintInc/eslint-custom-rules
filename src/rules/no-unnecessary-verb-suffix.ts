@@ -282,6 +282,35 @@ function checksExcessProperties(typeNode: TSESTree.Node | null): boolean {
   return typeNode !== null && !UNCHECKED_ANNOTATION_TYPES.has(typeNode.type);
 }
 
+/** `as const` declares no members of its own, so it pins no name. */
+function isConstAssertionType(typeNode: TSESTree.Node): boolean {
+  return (
+    typeNode.type === AST_NODE_TYPES.TSTypeReference &&
+    typeNode.typeName.type === AST_NODE_TYPES.Identifier &&
+    typeNode.typeName.name === 'const'
+  );
+}
+
+/**
+ * An `as T` / `<T>` whose target type declares members the value must still
+ * have. Renaming one of them makes the assertion uncomparable (TS2352), so the
+ * name is dictated by `T` rather than chosen by the author — the same reasoning
+ * the annotation arms use, applied to the check an assertion actually performs.
+ */
+function isCheckedTypeAssertion(node: TSESTree.Node): boolean {
+  if (
+    node.type !== AST_NODE_TYPES.TSAsExpression &&
+    node.type !== AST_NODE_TYPES.TSTypeAssertion
+  ) {
+    return false;
+  }
+  const { typeAnnotation } = node;
+  return (
+    checksExcessProperties(typeAnnotation) &&
+    !isConstAssertionType(typeAnnotation)
+  );
+}
+
 type FunctionNode =
   | TSESTree.FunctionDeclaration
   | TSESTree.FunctionExpression
@@ -357,10 +386,18 @@ const EXPRESSION_ASSERTION_TYPES = new Set<string>([
  * members, and climbs THROUGH assertion wrappers, which change no runtime value
  * and so cannot detach a literal from the declared type it is assigned to
  * (#1597) — `enforce-object-literal-as-const` ships in the same recommended
- * config and appends `as const` to exactly these literals by `--fix`. An
- * assertion is transparent, never itself a signal: `{...} as T` still reports,
- * because an `as` clause does not reject undeclared members the way an
- * annotation does. The walk stops at anything else.
+ * config and appends `as const` to exactly these literals by `--fix`.
+ *
+ * An `as T` is itself a signal when `T` declares members. It is true that an
+ * `as` clause does not reject EXCESS members the way an annotation does
+ * (`{ orderBy, extra } as Q` compiles; `const c: Q = { orderBy, extra }` is
+ * TS2322) — but the operation being gated is a RENAME, which removes a REQUIRED
+ * member, and that an assertion does reject: `{ order } as Q` is TS2352 when `Q`
+ * requires `orderBy`. Reasoning from excess properties alone made the rule
+ * demand a rename that does not compile (#1885). `as const` is the exception
+ * and stays transparent, declaring no members of its own.
+ *
+ * The walk stops at anything else.
  */
 function hasConformanceSignal(node: TSESTree.Node): boolean {
   let current: TSESTree.Node = node;
@@ -376,6 +413,21 @@ function hasConformanceSignal(node: TSESTree.Node): boolean {
       parent.type === AST_NODE_TYPES.TSSatisfiesExpression &&
       parent.expression === current &&
       checksExcessProperties(parent.typeAnnotation)
+    ) {
+      return true;
+    }
+    // An `as T` DOES pin the member names it requires, even though it does not
+    // reject excess ones. The two are different checks: excess-property
+    // checking is what an annotation adds, but a RENAME removes a REQUIRED
+    // member, and that breaks comparability — `{ beta: 1 } as T` is TS2352 when
+    // `T` requires `alpha`. Reasoning from excess properties alone made the rule
+    // demand a rename that does not compile (#1885). `as const` stays
+    // transparent: it declares no members of its own, and
+    // `enforce-object-literal-as-const` appends one to exactly these literals.
+    if (
+      isCheckedTypeAssertion(parent) &&
+      (parent as TSESTree.TSAsExpression | TSESTree.TSTypeAssertion)
+        .expression === current
     ) {
       return true;
     }

@@ -197,10 +197,28 @@ the unwrap, one `eslint --fix` pass would turn a silent fluent builder into a
 violation whose only remedies are deleting an `as const` the next `--fix`
 restores, or renaming a method the declared type pins.
 
-An assertion is *transparent*, never a signal of its own: it hides no violation.
-`{ orderBy: … } as QueryLike` with no annotation around it still fires, because
-an `as` clause — unlike an annotation or `satisfies` — does not reject members
-the target type never declares.
+An `as T` **is** a signal of its own when `T` declares members. It is true that an
+`as` clause — unlike an annotation or `satisfies` — does not reject members the
+target type never declares, but that is the wrong check to reason from. The
+operation being gated is a **rename**, which removes a member the target type
+**requires**, and an assertion does reject that:
+
+```ts
+interface QueryLike { orderBy: (field: string) => void; }
+
+const ok = { orderBy: (f: string) => {}, extra: 1 } as QueryLike; // ✅ excess member passes
+const bad = { order: (f: string) => {} } as QueryLike;
+// ❌ TS2352: Property 'orderBy' is missing in type '{ order: … }'
+//    but required in type 'QueryLike'.
+```
+
+So `{ orderBy: … } as QueryLike` is exempt: the name is dictated by `QueryLike`,
+and the rename the rule would otherwise demand does not compile.
+
+`as const` is the exception and stays transparent — it declares no members of its
+own, and `enforce-object-literal-as-const` appends one to exactly these literals
+by `--fix`, so treating it as a signal would silence the rule wherever that fixer
+had run.
 
 #### Why the return type is its own signal
 
@@ -302,9 +320,6 @@ const buildChain = () => {
 
 // `any`/`unknown` disable excess-property checking, so they prove nothing
 const helpers: any = { fetchTournamentsBy: (key: string) => key };
-
-// `as` assertions permit members the target type never declares
-const asserted = { orderBy: (field: string) => {} } as QueryLike;
 
 // A variable's own name is never dictated by its annotation
 const validateBy: Validator = (rules) => {};
