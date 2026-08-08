@@ -115,6 +115,8 @@ conf.run = () => {};
 
 An annotation that spells `readonly` itself still matches an `as const` assertion and is still reported: readonly-ness discriminates the two shapes, it does not exempt `as const`.
 
+Readonly-ness is read wherever it lives, because it reaches a member three different ways and each one alone would look like a mutable member: a written `readonly` modifier, a *synthesized* one (`as const`, `Readonly<T>`), and a **getter with no setter**, which carries neither. **Index signatures** are compared too — readonly-ness does not affect their assignability in either direction, so a readonly index signature would otherwise match a mutable annotation and removing it would ship `TS2542: Index signature … only permits reading`. Matching shapes on any of these still report; the discriminator only separates ones that genuinely differ.
+
 ### Not covered
 
 - Destructuring patterns are intentionally ignored to avoid surprising edits.

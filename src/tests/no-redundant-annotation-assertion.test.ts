@@ -389,6 +389,29 @@ type Frozen = { readonly x: number };
 declare const frozen: Frozen;
 export const value: Mutable = frozen as Frozen;
       `,
+      // #1887: an index signature carries readonly-ness too, and readonly-ness
+      // does not affect an index signature's bidirectional assignability — so
+      // without it in the key these match and removing the annotation ships
+      // TS2542, "only permits reading".
+      `
+export const m: { [k: string]: number } = { a: 1 } as { readonly [k: string]: number };
+      `,
+      `
+export const nums: { [i: number]: string } = { 0: 'a' } as { readonly [i: number]: string };
+      `,
+      `
+type Dict = { [k: string]: number };
+export const d: { [k: string]: number } = { a: 1 } as Readonly<Dict>;
+      `,
+      // A getter with no setter is readonly by SHAPE — it carries neither the
+      // readonly modifier nor the readonly check flag — so it would otherwise
+      // format identically to a mutable property and removing the annotation
+      // ships TS2540.
+      `
+type Getter = { get x(): number };
+declare const g: Getter;
+export const v: { x: number } = g as Getter;
+      `,
     ],
     invalid: [
       {
@@ -1024,6 +1047,43 @@ export interface Frozen { readonly x: number }
 export type AlsoFrozen = { readonly x: number };
 declare const value: AlsoFrozen;
 export const frozen = value as AlsoFrozen;
+        `,
+      },
+      {
+        // The same discriminator applied to index signatures: matching ones
+        // still restate each other, or folding them into the key would make it
+        // over-specific and silence the rule on every indexed type.
+        name: 'matching mutable index signatures still report',
+        code: `
+export const m: { [k: string]: number } = { a: 1 } as { [k: string]: number };
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+export const m = { a: 1 } as { [k: string]: number };
+        `,
+      },
+      {
+        name: 'matching readonly index signatures still report',
+        code: `
+export const m: { readonly [k: string]: number } = { a: 1 } as { readonly [k: string]: number };
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+export const m = { a: 1 } as { readonly [k: string]: number };
+        `,
+      },
+      {
+        name: 'matching getter-only accessors still report',
+        code: `
+export type Getter = { get x(): number };
+declare const g: Getter;
+export const v: Getter = g as Getter;
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+export type Getter = { get x(): number };
+declare const g: Getter;
+export const v = g as Getter;
         `,
       },
       {

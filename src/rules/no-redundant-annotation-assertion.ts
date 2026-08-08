@@ -271,11 +271,58 @@ function isReadonlyProperty(prop: ts.Symbol): boolean {
     if ((compiler.getCheckFlags(prop) & readonlyCheckFlag) !== 0) return true;
   }
 
+  // A getter with no setter is readonly by shape rather than by modifier or
+  // check flag, so neither route above sees it — `{ get x(): number }` carries
+  // `getCheckFlags` 0 and `getCombinedModifierFlags` 0, and would otherwise
+  // format identically to a mutable `{ x: number }` (#1887).
+  const flags = prop.getFlags();
+  if (
+    (flags & ts.SymbolFlags.Accessor) !== 0 &&
+    (flags & ts.SymbolFlags.SetAccessor) === 0
+  ) {
+    return true;
+  }
+
   return (prop.declarations ?? []).some(
     (declaration) =>
       (ts.getCombinedModifierFlags(declaration) & ts.ModifierFlags.Readonly) !==
       0,
   );
+}
+
+/**
+ * The index signatures a type declares, with their readonly-ness.
+ *
+ * They belong in the structural key for the same reason the properties do: an
+ * index-signature-only type otherwise keys to the empty string, so every such
+ * type compares equal to every other. Readonly-ness in particular does not
+ * affect bidirectional assignability of an index signature, so a readonly one
+ * would match a mutable annotation and removing that annotation ships TS2542
+ * (#1887).
+ */
+function getFormattedIndexSignatures(
+  type: ts.Type,
+  checker: ts.TypeChecker,
+): string[] {
+  const compiler = checker as unknown as {
+    getIndexInfosOfType?: (t: ts.Type) => readonly {
+      keyType: ts.Type;
+      type: ts.Type;
+      isReadonly: boolean;
+    }[];
+  };
+  if (typeof compiler.getIndexInfosOfType !== 'function') return [];
+
+  return compiler
+    .getIndexInfosOfType(type)
+    .map(
+      (info) =>
+        `${info.isReadonly ? 'readonly ' : ''}[${typeText(
+          info.keyType,
+          checker,
+        )}]:${typeText(unwrapAlias(info.type, checker), checker)}`,
+    )
+    .sort();
 }
 
 function formatPropertySignature(
@@ -323,8 +370,11 @@ function structuralKey(type: ts.Type, checker: ts.TypeChecker): string {
   const apparent = checker.getApparentType(type);
   const properties = getFormattedTypeProperties(apparent, checker);
   const signatures = getFormattedCallSignatures(apparent, checker);
+  const indexes = getFormattedIndexSignatures(apparent, checker);
 
-  return `${properties.join('|')}::${signatures.join('|')}`;
+  return `${properties.join('|')}::${signatures.join('|')}::${indexes.join(
+    '|',
+  )}`;
 }
 
 type ParserServices = NonNullable<
