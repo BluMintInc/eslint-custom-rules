@@ -30,14 +30,13 @@
  * this happen here"; injecting into the fixtures answers "can this rule do it
  * at all", which is the question a regression gate needs.
  */
-import fs from 'fs';
-import path from 'path';
 import { Linter, Rule } from 'eslint';
 import * as tsParser from '@typescript-eslint/parser';
 import {
   defaultFilenameFor,
   harvestFixtureCorpus,
   harvestOnce,
+  silentWithoutProgramRuleNames,
   suggestionEditsOf,
   suggestionRuleNames,
 } from '../utils/fixtureCorpus';
@@ -47,24 +46,6 @@ const plugin = require('../index') as { rules: Record<string, unknown> };
 /* eslint-enable @typescript-eslint/no-var-requires */
 
 const PREFIX = '@blumintinc/blumint/';
-const RULES_DIR = path.join(__dirname, '..', 'rules');
-
-/**
- * Type-aware rules are excluded: this harness has no `parserOptions.project`,
- * so without a program they report nothing and would manufacture a false clean
- * rather than a finding.
- */
-const typeAwareNames = new Set(
-  fs
-    .readdirSync(RULES_DIR)
-    .filter((file) => file.endsWith('.ts'))
-    .filter((file) =>
-      /getParserServices|getTypeChecker/.test(
-        fs.readFileSync(path.join(RULES_DIR, file), 'utf8'),
-      ),
-    )
-    .map((file) => path.basename(file, '.ts')),
-);
 
 /**
  * Rules are resolved from the harvested suite by OBJECT IDENTITY, never from
@@ -415,9 +396,19 @@ let injected = 0;
 let rewritten = 0;
 const rulesExercised = new Set<string>();
 
+/**
+ * The only exclusion is `silentWithoutProgramRuleNames` — rules MEASURED to
+ * report nothing under this harness, and so able to contribute only a false
+ * clean. It is deliberately not "every rule that mentions `getParserServices`":
+ * that premise was measured false (all 16 report — #1859), because
+ * `@typescript-eslint/parser` returns an isolated single-file program even with
+ * no `project`, so the `if (!services?.program) return;` guard rules use never
+ * fires. Dropping all 16 leaves their fixers unprobed along this axis, which is
+ * how #1877 hid two shipping fixers that destroyed comments.
+ */
 for (const suite of harvested.suites) {
   const ruleName = nameByRule.get(suite.rule);
-  if (!ruleName || typeAwareNames.has(ruleName)) {
+  if (!ruleName || silentWithoutProgramRuleNames.has(ruleName)) {
     continue;
   }
   const rule = plugin.rules[ruleName] as { meta?: { fixable?: unknown } };

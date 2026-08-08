@@ -139,10 +139,10 @@ const nameByRule = new Map(
 );
 ```
 
-`src/tests/exemption-composition-closure.test.ts` is the reference consumer for
-structure. Copy its shape, not its exclusion: it still builds a local
-`typeAwareNames` set, which is the defect described in the second bullet below.
-`src/tests/comment-fix-fidelity.test.ts` shows the corrected form.
+`src/tests/exemption-composition-closure.test.ts` is the reference consumer —
+copy its shape and its exclusion, both of which are now correct.
+`src/tests/comment-fix-fidelity.test.ts` and
+`src/tests/export-surface-integrity.test.ts` are the other two worked examples.
 
 Three constraints are load-bearing — read those files before writing another:
 
@@ -156,7 +156,9 @@ Three constraints are load-bearing — read those files before writing another:
   program even with no `project`, so the `if (!services?.program) return;` guard
   rules use never fires. What is actually missing is cross-FILE resolution,
   which changes an answer rather than withholding it. Dropping all 16 hid a
-  fixer deleting comments under `--fix` at `'error'` (#1859, #1877). To discount
+  fixer deleting comments under `--fix` at `'error'` (#1859, #1877), a renamer
+  breaking every importer of an exported binding, and four more shipping fixers
+  (#1878 → #1881-#1885). To discount
   one rule whose behaviour here genuinely diverges from production, name that
   rule in the guard's own baseline — a rule-global entry un-gates every other
   arm it participates in (#1839).
