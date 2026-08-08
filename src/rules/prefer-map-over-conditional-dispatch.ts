@@ -444,6 +444,27 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
 
     // ---- AST helpers --------------------------------------------------------
 
+    /**
+     * The expression an optional chain wraps: ESTree hangs a `ChainExpression`
+     * above the OUTERMOST link of `a?.b`, so a shape test written against
+     * `MemberExpression` sees a different node for a spelling that asks the same
+     * question here. `?.` changes nothing this rule decides on shape — the
+     * generated lookup copies the discriminant's source text verbatim
+     * (`RESULT_BY_KIND[a?.b]`), so the optional link survives the fix intact, and
+     * whether the chain can produce `undefined` is answered by the discriminant's
+     * TYPE (`hasNullish`), never by its shape. Reading the raw node instead made
+     * the narrowing carve-out unreachable and turned a `?.` on a discriminated
+     * union into a false positive whose remedy does not compile (#1867).
+     *
+     * Only one unwrap is needed: inner links of the same chain are plain
+     * `MemberExpression`s carrying `optional`, not nested `ChainExpression`s.
+     */
+    function unwrapChain(node: TSESTree.Node): TSESTree.Node {
+      return node.type === AST_NODE_TYPES.ChainExpression
+        ? node.expression
+        : node;
+    }
+
     /** Whether a discriminant expression is an identifier or a call-free,
      * non-optional member chain (safe to collapse repeated evaluations). */
     function isValidDiscriminant(node: TSESTree.Node): boolean {
@@ -663,15 +684,16 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
     }
 
     function deriveLookupName(discriminant: TSESTree.Node): string | null {
+      const target = unwrapChain(discriminant);
       let key: string | null = null;
-      if (discriminant.type === AST_NODE_TYPES.Identifier) {
-        key = discriminant.name;
+      if (target.type === AST_NODE_TYPES.Identifier) {
+        key = target.name;
       } else if (
-        discriminant.type === AST_NODE_TYPES.MemberExpression &&
-        !discriminant.computed &&
-        discriminant.property.type === AST_NODE_TYPES.Identifier
+        target.type === AST_NODE_TYPES.MemberExpression &&
+        !target.computed &&
+        target.property.type === AST_NODE_TYPES.Identifier
       ) {
-        key = discriminant.property.name;
+        key = target.property.name;
       }
       if (!key) {
         return null;
@@ -1135,15 +1157,22 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
      * would lose (hoisting `this.obj.data` out of the switch drops the narrowing
      * and the emitted code no longer typechecks), so a `this`-rooted chain is
      * matched against `this` reads in the kept branches.
+     *
+     * `obj?.tag` narrows identically too — TypeScript discriminates a union
+     * through an optional chain — so the discriminant is unwrapped before its
+     * shape is read. A nullable discriminant is exactly where `?.` gets written,
+     * and reading the `ChainExpression` as "not a member access" skipped this
+     * carve-out entirely (#1867).
      */
     function isNarrowingExempt(
       discriminant: TSESTree.Node,
       keptValues: TSESTree.Expression[],
     ): boolean {
-      if (discriminant.type !== AST_NODE_TYPES.MemberExpression) {
+      const chain = unwrapChain(discriminant);
+      if (chain.type !== AST_NODE_TYPES.MemberExpression) {
         return false;
       }
-      const root = chainRootName(discriminant);
+      const root = chainRootName(chain);
       if (!root) {
         return false;
       }

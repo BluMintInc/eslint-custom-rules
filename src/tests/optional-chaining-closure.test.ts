@@ -213,8 +213,6 @@ const KNOWN_DIVERGENT: Record<string, string> = {
     'ARTIFACT: only reached via `React?.useState`',
   'prefer-destructuring-no-class::member':
     'CORRECT: `const { name } = user` throws when `user` is nullish, so the remedy is not equivalent to `user?.name`',
-  'prefer-map-over-conditional-dispatch::member':
-    'DEFECT TODO(#1867): a switch that NARROWS its union is correctly silent on `switch (result.kind)` and reports `preferMapManual` ("a collision-free lookup name could not be derived") on `switch (result?.kind)`. The remedy it then urges breaks the narrowing that `result.data` depends on, and the nullable discriminant is the case where `?.` is written',
   'prefer-next-dynamic::call': 'ARTIFACT: only reached via `useDynamic?.()`',
   'prefer-nullish-coalescing-boolean-props::call':
     'ARTIFACT: only reached via `useState?.(a || b)`, an optional call on the hook that carries the exemption',
