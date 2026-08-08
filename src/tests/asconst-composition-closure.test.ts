@@ -434,6 +434,15 @@ const EXEMPT: Record<string, string> = {
   // `as T` cast, which is what it exists to catch. Whether `useExplicitVariable`
   // should fire anyway is the human-labelled design call #1615; see #1808.
   'no-type-assertion-returns': 'checked assertion, tracked as #1615/#1808',
+  // `as const` on a values array is a checked NARROWING, not a laundering: it
+  // turns `(typeof KINDS)[number]` from `string` into the literal union, which
+  // makes an indexed lookup keyed by that alias compiler-bounded — the #1875
+  // carve-out then correctly stops demanding assertSafe. The silence is the
+  // carve-out working on a genuinely changed type, not a hazard hidden behind
+  // an assertion; the un-narrowed spelling keeps its report, which is the
+  // fixture that drives this row.
+  'enforce-assert-safe-object-key':
+    'as const genuinely closes the key domain the #1875 carve-out reads',
 };
 
 /**

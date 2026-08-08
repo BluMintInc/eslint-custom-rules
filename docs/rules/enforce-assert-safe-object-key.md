@@ -174,6 +174,85 @@ const { offset }: { offset: number } = source; // the pattern carries the type
 obj[offset];
 ```
 
+### Compiler-bounded Record lookups are exempt
+
+A lookup whose key the compiler already bounds needs no runtime validation: when
+the object is a binding annotated `Record<K, V>` and the key is a binding whose
+declared type `K` covers, TypeScript rejects any key value outside the record's
+declared keys, so the prototype surface is unreachable without the code failing
+to compile. Wrapping such a key in `assertSafe()` validates nothing the compiler
+has not already checked — and it is **not** semantics-preserving for the values
+that DO slip past a declared type at runtime (data crossing a persistence or
+version boundary, where a record minted before a field existed reaches a bundle
+that requires it). The plain lookup degrades to `undefined` on such a value;
+the wrapped one **throws**. That difference is how the composed autofix of
+`prefer-map-over-conditional-dispatch` and this rule once converted a total
+render fallback into a render-time crash, which is exactly the rewrite this
+carve-out declines to demand.
+
+```ts
+// ✅ Exempt: the key's declared type is the record's declared key set.
+type Kind = 'live' | 'simulated';
+const RESULT_BY_KIND: Record<Kind, string | undefined> = {
+  simulated: 'watermark',
+  live: undefined,
+};
+const layer = (kind: Kind) => RESULT_BY_KIND[kind];
+```
+
+The proof is syntactic, read from the two bindings' annotations, and two
+spellings carry it:
+
+- **The same type reference on both sides** — `kind: Kind` indexing
+  `Record<Kind, V>`. Name identity makes the two domains equal whatever the
+  alias holds, an imported alias included, so resolution is consulted only to
+  refuse an alias that resolves to an open domain (`type K = string` re-opens
+  the surface this rule guards) or to a literal union that itself names
+  `__proto__`, `constructor` or `prototype`.
+- **Literal unions the syntax can compare** — `kind: 'live' | 'simulated'`
+  indexing `Record<'live' | 'simulated', V>`, a narrowing of it
+  (`kind: 'simulated'`), or a numeric union (`slot: 1 | 2`). Every literal the
+  key admits must be a declared record key.
+
+Either side may spell its type through an in-file alias, a string `enum`, or a
+`(typeof KINDS)[number]` union derived from an **`as const`** values array —
+the derived spelling `prefer-union-from-const-array` rewrites literal-union
+aliases into, whose members are read off the array's own literal elements. The
+record annotation is read through `Readonly<...>`, `Partial<...>`, a bare
+in-file alias (`type Lookup = Record<K, V>`), and a `| undefined` union member
+(the natural annotation for a receiver reached via `?.` — a nullish receiver
+short-circuits, it never indexes anything else).
+
+The carve-out is deliberately conservative — **both** bindings must be
+annotated, and the coverage must be provable from syntax:
+
+```ts
+// ❌ Still reported: nothing bounds the key, or nothing closed covers it.
+const R: Record<'live' | 'simulated', number> = { live: 1, simulated: 2 };
+const a = (kind) => R[kind]; // unannotated key — an `any` key indexes anything
+const b = (kind: string) => R[kind]; // open key type admits '__proto__'
+const c = (kind: 'live' | 'replay') => R[kind]; // 'replay' is not a declared key
+
+const m: Record<string, number> = {};
+const d = (kind: 'live' | 'simulated') => m[kind]; // record declares no closed key set
+
+type Open = string;
+const e = (k: Open, r: Record<Open, number>) => r[k]; // shared alias, but open
+
+const f = <K extends string>(r: Record<K, number>, k: K) => r[k]; // K may instantiate at string
+
+const KINDS = ['live', 'simulated']; // no `as const`: (typeof KINDS)[number] IS string
+type Kind = (typeof KINDS)[number];
+const g = (kind: Kind) => R[kind];
+```
+
+An assertion cannot launder a key into the exemption: `R[kind as Kind]` is
+judged by the **binding's** annotation, exactly as the wrappers section below
+describes, so an open-typed `kind` keeps its report. The documented conversion
+triggers also keep reporting regardless of the bindings — `R[String(kind)]` and
+``R[`${kind}`]`` are explicit conversions, which are what this rule exists to
+flag.
+
 ### Assertion and await wrappers are read through
 
 A type assertion erases at compile time and an `await` resolves to the value it

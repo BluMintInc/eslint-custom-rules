@@ -197,6 +197,11 @@ type Exemption = {
  * then update the entry and say what changed.
  */
 const KNOWN_DIVERGENT: Record<string, Exemption> = {
+  'enforce-assert-safe-object-key::prefer-union-from-const-array': {
+    reason:
+      "PIPELINE: the #1875 fixtures declare in-file `type Kind = 'live' | 'simulated'` aliases to pin the compiler-bounded Record carve-out — 12 valid fixtures plus the fixed outputs of 8 invalid ones — and the sibling wants every such alias derived from an `as const` values array. The composed `--fix` rewrites the alias on all 20 and the carve-out reads the derived `(typeof KINDS)[number]` spelling — via name identity or the array's own literal elements — so the valid fixtures end silent under BOTH rules with zero `assertSafe` wraps, and the outputs keep their already-wrapped keys exempt (measured, every one).",
+    cases: { preferDerivedUnion: 20 },
+  },
   'enforce-boolean-naming-prefixes::no-explicit-return-type': {
     reason:
       'PIPELINE: the fixtures annotate an inferable return only to display the boolean under test; `--fix` strips it on 44 of 49 and the prefix check reads the name either way.',

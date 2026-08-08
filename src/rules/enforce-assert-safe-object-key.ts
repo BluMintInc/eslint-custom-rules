@@ -397,6 +397,95 @@ function definesNumericBinding(def: TSESLint.Scope.Definition): boolean {
   );
 }
 
+/**
+ * Utility wrappers whose single type argument keeps a Record annotation's key
+ * domain intact: `Readonly<Record<K, V>>` and `Partial<Record<K, V>>` admit
+ * exactly the keys `Record<K, V>` admits.
+ */
+const RECORD_KEY_PRESERVING_WRAPPERS = new Set(['Readonly', 'Partial']);
+
+/**
+ * The property names assertSafe exists to keep out of a lookup. A literal key
+ * union that names one of them proves nothing about safety, so the
+ * compiler-bounded carve-out refuses it and the key keeps being reported.
+ */
+const PROTOTYPE_SURFACE_NAMES = new Set([
+  '__proto__',
+  'constructor',
+  'prototype',
+]);
+
+/**
+ * The key domain a type annotation declares, judged from syntax alone:
+ *
+ * - a `Set` of literal values for a union the syntax spells out
+ *   (`'live' | 'simulated'`, a string enum with literal initializers);
+ * - `'closed'` for a finite domain whose members the syntax derives from a
+ *   value rather than listing (`(typeof KINDS)[number]`, an enum with computed
+ *   members);
+ * - `'open'` for a domain that admits arbitrary keys (`string`, `number`,
+ *   `any`, a template literal type);
+ * - `'unknown'` for anything the syntax cannot classify, an imported alias
+ *   included.
+ */
+type KeyDomain = 'open' | 'closed' | 'unknown' | Set<string>;
+
+/**
+ * Union semantics over domains: one open member opens the whole domain, an
+ * unclassifiable member leaves it unclassifiable (it could be hiding an open
+ * one), and a closed-but-unenumerable member keeps the union closed without a
+ * literal listing.
+ */
+function foldKeyDomains(domains: readonly KeyDomain[]): KeyDomain {
+  const values = new Set<string>();
+  let closed = false;
+  let unknown = false;
+  for (const domain of domains) {
+    if (domain === 'open') {
+      return 'open';
+    }
+    if (domain === 'unknown') {
+      unknown = true;
+    } else if (domain === 'closed') {
+      closed = true;
+    } else {
+      for (const value of domain) {
+        values.add(value);
+      }
+    }
+  }
+  if (unknown) {
+    return 'unknown';
+  }
+  if (closed) {
+    return 'closed';
+  }
+  return values;
+}
+
+/**
+ * An enum is a compiler-checked finite set. Members with literal initializers
+ * enumerate their runtime key strings (which is what lets the forbidden-name
+ * screen and subset comparison see them); a computed or auto-numbered member
+ * leaves the set finite but unenumerable.
+ */
+function enumKeyDomain(node: TSESTree.TSEnumDeclaration): KeyDomain {
+  const values = new Set<string>();
+  for (const member of node.members) {
+    const { initializer } = member;
+    if (
+      initializer?.type === AST_NODE_TYPES.Literal &&
+      (typeof initializer.value === 'string' ||
+        typeof initializer.value === 'number')
+    ) {
+      values.add(String(initializer.value));
+    } else {
+      return 'closed';
+    }
+  }
+  return values;
+}
+
 export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
   name: 'enforce-assert-safe-object-key',
   meta: {
@@ -733,6 +822,324 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
     };
 
     /**
+     * The declared key domain of a type annotation. Alias references resolve
+     * through the scope chain to the declaration in this file — a type alias
+     * recurses into what it aliases, an enum enumerates its members, a generic
+     * type parameter is judged by its constraint (an unconstrained one could be
+     * instantiated with anything, so it reads as open). `seen` terminates a
+     * recursive alias without conflating it with a sibling reference to the
+     * same name.
+     */
+    const keyDomainOf = (
+      typeNode: TSESTree.TypeNode,
+      anchor: TSESTree.Node,
+      seen: Set<TSESLint.Scope.Variable>,
+    ): KeyDomain => {
+      switch (typeNode.type) {
+        case AST_NODE_TYPES.TSLiteralType: {
+          const { literal } = typeNode;
+          if (
+            literal.type === AST_NODE_TYPES.Literal &&
+            (typeof literal.value === 'string' ||
+              typeof literal.value === 'number')
+          ) {
+            return new Set([String(literal.value)]);
+          }
+          return 'unknown';
+        }
+        case AST_NODE_TYPES.TSUnionType:
+          return foldKeyDomains(
+            typeNode.types.map((member) => keyDomainOf(member, anchor, seen)),
+          );
+        case AST_NODE_TYPES.TSTypeReference: {
+          if (
+            typeNode.typeParameters ||
+            typeNode.typeName.type !== AST_NODE_TYPES.Identifier
+          ) {
+            return 'unknown';
+          }
+          const variable = ASTHelpers.findVariableInScope(
+            ASTHelpers.getScope(context, anchor),
+            typeNode.typeName.name,
+          );
+          if (!variable || variable.defs.length === 0 || seen.has(variable)) {
+            return 'unknown';
+          }
+          const nextSeen = new Set(seen).add(variable);
+          return foldKeyDomains(
+            variable.defs.map((def) => {
+              switch (def.node.type) {
+                case AST_NODE_TYPES.TSTypeAliasDeclaration:
+                  return keyDomainOf(def.node.typeAnnotation, anchor, nextSeen);
+                case AST_NODE_TYPES.TSEnumDeclaration:
+                  return enumKeyDomain(def.node);
+                case AST_NODE_TYPES.TSTypeParameter:
+                  return def.node.constraint
+                    ? keyDomainOf(def.node.constraint, anchor, nextSeen)
+                    : 'open';
+                default:
+                  return 'unknown';
+              }
+            }),
+          );
+        }
+        // `(typeof KINDS)[number]` — the union derived from a values array,
+        // which prefer-union-from-const-array rewrites literal-union aliases
+        // into. The members live in a value rather than the type syntax, so
+        // they are read off the array's own literal elements — but only under
+        // `as const`: without it the array's type widens to `string[]` and the
+        // indexed access IS `string`, the open domain this rule exists to keep
+        // reported.
+        case AST_NODE_TYPES.TSIndexedAccessType: {
+          if (typeNode.objectType.type !== AST_NODE_TYPES.TSTypeQuery) {
+            return 'unknown';
+          }
+          const { exprName } = typeNode.objectType;
+          if (exprName.type !== AST_NODE_TYPES.Identifier) {
+            return 'unknown';
+          }
+          const variable = ASTHelpers.findVariableInScope(
+            ASTHelpers.getScope(context, anchor),
+            exprName.name,
+          );
+          if (!variable || variable.defs.length !== 1) {
+            return 'unknown';
+          }
+          const def = variable.defs[0];
+          if (def.node.type !== AST_NODE_TYPES.VariableDeclarator) {
+            return 'unknown';
+          }
+          const init = def.node.init;
+          const isAsConstArray =
+            init?.type === AST_NODE_TYPES.TSAsExpression &&
+            init.typeAnnotation.type === AST_NODE_TYPES.TSTypeReference &&
+            init.typeAnnotation.typeName.type === AST_NODE_TYPES.Identifier &&
+            init.typeAnnotation.typeName.name === 'const' &&
+            init.expression.type === AST_NODE_TYPES.ArrayExpression;
+          if (!isAsConstArray) {
+            return 'unknown';
+          }
+          if (typeNode.indexType.type !== AST_NODE_TYPES.TSNumberKeyword) {
+            return 'closed';
+          }
+          const values = new Set<string>();
+          for (const element of (init.expression as TSESTree.ArrayExpression)
+            .elements) {
+            if (
+              element?.type === AST_NODE_TYPES.Literal &&
+              (typeof element.value === 'string' ||
+                typeof element.value === 'number')
+            ) {
+              values.add(String(element.value));
+            } else {
+              return 'closed';
+            }
+          }
+          return values;
+        }
+        case AST_NODE_TYPES.TSStringKeyword:
+        case AST_NODE_TYPES.TSNumberKeyword:
+        case AST_NODE_TYPES.TSSymbolKeyword:
+        case AST_NODE_TYPES.TSAnyKeyword:
+        case AST_NODE_TYPES.TSUnknownKeyword:
+        case AST_NODE_TYPES.TSTemplateLiteralType:
+          return 'open';
+        default:
+          return 'unknown';
+      }
+    };
+
+    /**
+     * The key type parameter of a Record-shaped annotation, read through the
+     * wrappers that keep its key domain (`Readonly`, `Partial`) and through a
+     * bare in-file alias (`type Lookup = Record<K, V>`). Anything else — a type
+     * literal with an index signature, a Map, an imported alias — yields null:
+     * the annotation then makes no syntactically checkable claim about which
+     * keys exist.
+     */
+    const recordKeyTypeOf = (
+      typeNode: TSESTree.TypeNode,
+      anchor: TSESTree.Node,
+      seen: Set<TSESLint.Scope.Variable> = new Set(),
+    ): TSESTree.TypeNode | null => {
+      // `Record<K, V> | undefined` — the natural annotation for a receiver
+      // reached through `?.` — keys exactly what `Record<K, V>` keys: a nullish
+      // receiver short-circuits (or throws), it never indexes anything else.
+      if (typeNode.type === AST_NODE_TYPES.TSUnionType) {
+        const substantive = typeNode.types.filter(
+          (member) =>
+            member.type !== AST_NODE_TYPES.TSUndefinedKeyword &&
+            member.type !== AST_NODE_TYPES.TSNullKeyword,
+        );
+        return substantive.length === 1
+          ? recordKeyTypeOf(substantive[0], anchor, seen)
+          : null;
+      }
+      if (
+        typeNode.type !== AST_NODE_TYPES.TSTypeReference ||
+        typeNode.typeName.type !== AST_NODE_TYPES.Identifier
+      ) {
+        return null;
+      }
+      const { name } = typeNode.typeName;
+      const args = typeNode.typeParameters?.params;
+      if (name === 'Record') {
+        return args?.length === 2 ? args[0] : null;
+      }
+      if (RECORD_KEY_PRESERVING_WRAPPERS.has(name) && args?.length === 1) {
+        return recordKeyTypeOf(args[0], anchor, seen);
+      }
+      if (args) {
+        return null;
+      }
+      const variable = ASTHelpers.findVariableInScope(
+        ASTHelpers.getScope(context, anchor),
+        name,
+      );
+      if (!variable || seen.has(variable) || variable.defs.length !== 1) {
+        return null;
+      }
+      const def = variable.defs[0];
+      if (def.node.type !== AST_NODE_TYPES.TSTypeAliasDeclaration) {
+        return null;
+      }
+      return recordKeyTypeOf(
+        def.node.typeAnnotation,
+        anchor,
+        new Set(seen).add(variable),
+      );
+    };
+
+    /**
+     * Whether the Record's declared key domain covers the key's declared type,
+     * so that TypeScript itself rejects any key value outside the record's
+     * declared keys.
+     *
+     * Two spellings prove it:
+     *
+     * - **The same type reference on both sides** (`kind: Kind` into
+     *   `Record<Kind, V>`). Name identity makes the domains equal whatever the
+     *   alias holds — an imported alias included — so resolution is consulted
+     *   only to refuse a domain that resolves to something open (`type K =
+     *   string` re-opens the very surface this rule guards) or to a literal
+     *   union naming a prototype field.
+     * - **Literal unions the syntax can compare** (`kind: 'live' | 'simulated'`
+     *   into `Record<'live' | 'simulated', V>`, or a narrowing of it): every
+     *   literal the key admits must be a declared record key, and none of them
+     *   may name the prototype surface.
+     */
+    const recordKeyCovers = (
+      keyAnnotation: TSESTree.TypeNode,
+      recordKeyType: TSESTree.TypeNode,
+      anchor: TSESTree.Node,
+    ): boolean => {
+      const namesNoPrototypeField = (domain: Set<string>): boolean =>
+        ![...domain].some((value) => PROTOTYPE_SURFACE_NAMES.has(value));
+      if (
+        keyAnnotation.type === AST_NODE_TYPES.TSTypeReference &&
+        recordKeyType.type === AST_NODE_TYPES.TSTypeReference &&
+        !keyAnnotation.typeParameters &&
+        !recordKeyType.typeParameters &&
+        context.sourceCode.getText(keyAnnotation.typeName) ===
+          context.sourceCode.getText(recordKeyType.typeName)
+      ) {
+        const domain = keyDomainOf(keyAnnotation, anchor, new Set());
+        if (domain === 'open') {
+          return false;
+        }
+        return typeof domain === 'string' || namesNoPrototypeField(domain);
+      }
+      const keyDomain = keyDomainOf(keyAnnotation, anchor, new Set());
+      if (
+        typeof keyDomain === 'string' ||
+        keyDomain.size === 0 ||
+        !namesNoPrototypeField(keyDomain)
+      ) {
+        return false;
+      }
+      const recordDomain = keyDomainOf(recordKeyType, anchor, new Set());
+      if (typeof recordDomain === 'string') {
+        return false;
+      }
+      return [...keyDomain].every((value) => recordDomain.has(value));
+    };
+
+    /**
+     * The type annotations declared on the binding an identifier resolves to.
+     * Every definition must carry one on the binding name itself — an
+     * annotation on a binding is what TypeScript checks every write against, so
+     * it holds for the lookup no matter which statement assigned last. A
+     * destructured binding, an unannotated declarator, an import: null, because
+     * nothing constrains what the identifier holds.
+     */
+    const declaredAnnotationsOf = (
+      identifier: TSESTree.Identifier,
+    ): TSESTree.TypeNode[] | null => {
+      const variable = ASTHelpers.findVariableInScope(
+        ASTHelpers.getScope(context, identifier),
+        identifier.name,
+      );
+      if (!variable || variable.defs.length === 0) {
+        return null;
+      }
+      const annotations: TSESTree.TypeNode[] = [];
+      for (const def of variable.defs) {
+        const bindingName = def.name as TSESTree.Node;
+        if (
+          bindingName.type !== AST_NODE_TYPES.Identifier ||
+          !bindingName.typeAnnotation
+        ) {
+          return null;
+        }
+        annotations.push(bindingName.typeAnnotation.typeAnnotation);
+      }
+      return annotations;
+    };
+
+    /**
+     * Whether `object[key]` is a lookup the compiler already bounds: the object
+     * is a binding annotated `Record<K, V>` and the key a binding whose
+     * declared type `K` covers (#1875). Such a lookup cannot reach the
+     * prototype surface without the code failing to compile, so `assertSafe`
+     * would validate nothing — and it is not identity on the values that DO
+     * slip past a declared type at runtime (data crossing a persistence or
+     * version boundary): the plain lookup degrades to `undefined` where the
+     * wrapped one throws, which is precisely the semantic change that turned a
+     * graceful render fallback into a render-time crash. Both sides must be
+     * annotated: an `any`-typed or unannotated key indexes into any Record
+     * without a compile error, so the record annotation alone proves nothing.
+     */
+    const isCompilerBoundedLookup = (
+      node: TSESTree.MemberExpression,
+      key: TSESTree.Identifier,
+    ): boolean => {
+      if (node.object.type !== AST_NODE_TYPES.Identifier) {
+        return false;
+      }
+      const objectAnnotations = declaredAnnotationsOf(node.object);
+      if (!objectAnnotations) {
+        return false;
+      }
+      const recordKeyTypes: TSESTree.TypeNode[] = [];
+      for (const annotation of objectAnnotations) {
+        const recordKeyType = recordKeyTypeOf(annotation, node);
+        if (!recordKeyType) {
+          return false;
+        }
+        recordKeyTypes.push(recordKeyType);
+      }
+      const keyAnnotations = declaredAnnotationsOf(key);
+      if (!keyAnnotations) {
+        return false;
+      }
+      return keyAnnotations.every((keyAnnotation) =>
+        recordKeyTypes.every((recordKeyType) =>
+          recordKeyCovers(keyAnnotation, recordKeyType, node),
+        ),
+      );
+    };
+
+    /**
      * Whether the syntax alone proves the key is a number. `__proto__`,
      * `constructor` and `prototype` are never the string form of a number, so a
      * numeric key cannot reach the prototype surface assertSafe exists to
@@ -1012,6 +1419,13 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             // Variables initialized directly from assertSafe(...) are already
             // validated — no need to double-wrap them.
             if (isAssertSafeValidatedIdentifier(property)) {
+              return;
+            }
+
+            // A typed discriminant indexing a Record whose declared keys cover
+            // its type is compile-time bounded; wrapping it would turn a total
+            // lookup into a throwing one (#1875).
+            if (isCompilerBoundedLookup(node, property)) {
               return;
             }
 
