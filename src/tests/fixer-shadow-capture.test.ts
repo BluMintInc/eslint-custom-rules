@@ -607,7 +607,6 @@ const UNPROBED_RULES: Record<string, Reason> = {
   'global-const-style': REASONS.noEnclosingBlock,
   'jsdoc-above-field': REASONS.noEnclosingBlock,
   'no-unnecessary-destructuring': REASONS.noEnclosingBlock,
-  'no-useless-usememo-primitives': REASONS.noEnclosingBlock,
   'omit-index-html': REASONS.noEnclosingBlock,
   'prefer-block-comments-for-declarations': REASONS.noEnclosingBlock,
   'prefer-clone-deep': REASONS.noEnclosingBlock,
@@ -656,6 +655,12 @@ const UNPROBED_RULES: Record<string, Reason> = {
   'no-unnecessary-destructuring-rename': REASONS.noModuleBoundReference,
   'no-unused-usestate': REASONS.noModuleBoundReference,
   'no-useless-fragment': REASONS.noModuleBoundReference,
+  // Like no-usememo-for-pass-by-value above: the fixer relocates the memoized
+  // expression out of the `useMemo` callback, one scope outward, emitting no
+  // reference of its own. Its fixtures include reports inside function blocks
+  // (the #1591/#1877 comment-carriage cases live in hook bodies), so the
+  // enclosing-block reason does not describe it.
+  'no-useless-usememo-primitives': REASONS.noModuleBoundReference,
   'parallelize-async-operations': REASONS.noModuleBoundReference,
   'prefer-destructuring-no-class': REASONS.noModuleBoundReference,
   'prefer-document-flattening': REASONS.noModuleBoundReference,

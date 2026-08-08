@@ -1268,5 +1268,553 @@ ${typedPrelude}
       }
       `,
     },
+    /**
+     * Comment fidelity (#1877).
+     *
+     * The fix rewrites the whole `useMemo(...)` span from the returned
+     * expression, so anything written elsewhere in that span — in the callback
+     * body, around the arguments, in the dependency array — has no anchor in
+     * the replacement. Deleting such a comment silently under `--fix` and
+     * declining the fix whenever one is present are BOTH fidelity bugs: the
+     * second makes the mere presence of a comment decide whether the rule
+     * rewrites at all. The fixer instead carries every stranded comment into
+     * the replacement, on the side of the expression it was written on, and
+     * without changing the non-comment token stream: parenthesization stays
+     * exactly what the comment-free fix would emit. A comment that demands a
+     * line of its own (a `//` comment, or a block-comment
+     * `eslint-disable-next-line`, which targets the line after the comment
+     * ENDS) is hoisted onto a full line above the line the call starts on when
+     * the replacement is unparenthesized — a line break between `return` and
+     * its argument would change the program through ASI — and rides inside the
+     * parentheses, where no newline can trigger ASI, when the context
+     * parenthesizes.
+     *
+     * The pair at the end pins the boundary from the other side: a comment
+     * INSIDE the returned expression travels with its text, and a comment
+     * outside the call is never in the rewritten span.
+     */
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useBlockCommentBeforeReturn() {
+        return useMemo(() => {
+          /* keep me */
+          return undefined;
+        }, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useBlockCommentBeforeReturn() {
+        return /* keep me */ undefined;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useLineCommentBeforeReturn() {
+        return useMemo(() => {
+          // keep me
+          return undefined;
+        }, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useLineCommentBeforeReturn() {
+        // keep me
+        return undefined;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useTrailingCommentAfterExpression() {
+        return useMemo(() => {
+          return undefined; // keep me
+        }, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useTrailingCommentAfterExpression() {
+        return undefined // keep me
+        ;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useCommentBeforeCloseBrace() {
+        return useMemo(() => {
+          return undefined;
+          /* keep me */
+        }, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useCommentBeforeCloseBrace() {
+        return undefined /* keep me */;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useCommentInDependencyArray(flag: boolean) {
+        return useMemo(() => undefined, [
+          // keep me
+          flag,
+        ]);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useCommentInDependencyArray(flag: boolean) {
+        return undefined // keep me
+        ;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useCommentBeforeArrow() {
+        return useMemo(/* keep me */ () => undefined, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useCommentBeforeArrow() {
+        return /* keep me */ undefined;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useCommentBetweenArguments() {
+        return useMemo(() => undefined /* keep me */, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useCommentBetweenArguments() {
+        return undefined /* keep me */;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useJsDocInCallback() {
+        return useMemo(() => {
+          /**
+           * Why this value is nothing.
+           */
+          return undefined;
+        }, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useJsDocInCallback() {
+        return /**
+           * Why this value is nothing.
+           */ undefined;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useManyComments(flag: boolean) {
+        return useMemo(() => {
+          // first
+          /* second */
+          return undefined; // third
+        }, [/* fourth */ flag]);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useManyComments(flag: boolean) {
+        // first
+        return /* second */ undefined // third
+        /* fourth */;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useConciseBodyLeadingComment() {
+        return useMemo(() => /* keep me */ undefined, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useConciseBodyLeadingComment() {
+        return /* keep me */ undefined;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useCommentInParameterList() {
+        return useMemo((/* keep me */) => undefined, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useCommentInParameterList() {
+        return /* keep me */ undefined;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useFunctionCallbackComment() {
+        return useMemo(function () {
+          // keep me
+          return null;
+        }, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useFunctionCallbackComment() {
+        // keep me
+        return null;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import React from 'react';
+
+      export function useNamespaceCallbackComment() {
+        return React.useMemo(() => {
+          // keep me
+          return undefined;
+        }, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      import React from 'react';
+
+      export function useNamespaceCallbackComment() {
+        // keep me
+        return undefined;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export const useAliasedCommentedMemo = () => {
+        const value = useMemo(() => {
+          /* keep me */
+          return undefined;
+        }, []);
+        return value;
+      };
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export const useAliasedCommentedMemo = () => {
+        const value = /* keep me */ undefined;
+        return value;
+      };
+      `,
+    },
+    {
+      // A hoisted line comment in assignment position: no ASI hazard exists
+      // after `=`, but the hoist keeps one shape for every unparenthesized
+      // context, and the comment still annotates the line that now hosts the
+      // expression.
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useStoredLineComment() {
+        const memoized = useMemo(() => {
+          // keep me
+          return undefined;
+        }, []);
+        return memoized;
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useStoredLineComment() {
+        // keep me
+        const memoized = undefined;
+        return memoized;
+      }
+      `,
+    },
+    {
+      // A parenthesizing context carries the comment INSIDE the parentheses,
+      // where a line break can never trigger ASI, so the line comment keeps a
+      // line of its own without leaving the replacement.
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useNegatedCommented(flag: boolean) {
+        void flag;
+        return !useMemo(() => {
+          // keep me
+          return null;
+        }, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useNegatedCommented(flag: boolean) {
+        void flag;
+        return !(
+        // keep me
+        null);
+      }
+      `,
+    },
+    {
+      // An eslint-disable-next-line directive targets the line after it, so it
+      // is hoisted onto its own line directly above the statement that now
+      // hosts the expression it guards.
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useDirectiveLineComment() {
+        return useMemo(() => {
+          // eslint-disable-next-line no-restricted-syntax
+          return undefined;
+        }, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useDirectiveLineComment() {
+        // eslint-disable-next-line no-restricted-syntax
+        return undefined;
+      }
+      `,
+    },
+    {
+      // The block spelling of the same directive targets the line after the
+      // comment ENDS, so it may not share a line with the expression either.
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useDirectiveBlockComment() {
+        return useMemo(() => {
+          /* eslint-disable-next-line no-restricted-syntax */
+          return undefined;
+        }, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useDirectiveBlockComment() {
+        /* eslint-disable-next-line no-restricted-syntax */
+        return undefined;
+      }
+      `,
+    },
+    {
+      // Retiring the sole specifier removes the declaration, but a comment
+      // between the braces survives in the declaration's place.
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { /* keep me */ useMemo } from 'react';
+
+      export function useCommentedImport() {
+        return useMemo(() => undefined, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      /* keep me */
+
+      export function useCommentedImport() {
+        return undefined;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo, useState } from 'react';
+      declare function useState<T>(initial: T): [T, (val: T) => void];
+
+      export function useCommentedPartialImport(slug: string) {
+        const [state] = useState(slug);
+        void state;
+        return useMemo(() => undefined, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      import { useState } from 'react';
+      declare function useState<T>(initial: T): [T, (val: T) => void];
+
+      export function useCommentedPartialImport(slug: string) {
+        const [state] = useState(slug);
+        void state;
+        return undefined;
+      }
+      `,
+    },
+    {
+      // A comment between the specifiers survives because the removal edits
+      // only the retired specifier and its comma, never re-emitting the
+      // declaration from its parts.
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo, /* keep me */ useState } from 'react';
+      declare function useState<T>(initial: T): [T, (val: T) => void];
+
+      export function useCommentedSpecifierList(slug: string) {
+        const [state] = useState(slug);
+        void state;
+        return useMemo(() => undefined, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      import {  /* keep me */ useState } from 'react';
+      declare function useState<T>(initial: T): [T, (val: T) => void];
+
+      export function useCommentedSpecifierList(slug: string) {
+        const [state] = useState(slug);
+        void state;
+        return undefined;
+      }
+      `,
+    },
+    {
+      // A comment INSIDE the returned expression rides along with its text, so
+      // the fix stands. This is the negative half of the decline: without it a
+      // rule that declined on every comment anywhere would pass just as well.
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useCommentInsideExpression(flag: boolean) {
+        return useMemo(() => (flag ? undefined : /* inner */ null), [flag]);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useCommentInsideExpression(flag: boolean) {
+        return flag ? undefined : /* inner */ null;
+      }
+      `,
+    },
+    {
+      // Comments outside the call are never in the rewritten span.
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      /** Documented hook. */
+      export function useCommentsAroundCall() {
+        // above the call
+        return useMemo(() => undefined, []); // beside the call
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      /** Documented hook. */
+      export function useCommentsAroundCall() {
+        // above the call
+        return undefined; // beside the call
+      }
+      `,
+    },
   ],
 });

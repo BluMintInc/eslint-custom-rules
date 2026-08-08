@@ -1,5 +1,10 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import {
+  ReplacementSegment,
+  joinSegments,
+  requiresLineBreakAfter,
+} from '../utils/replacementSegments';
 import { classifyExpressionType } from '../utils/tsTypeClassifier';
 
 type Options = [
@@ -462,15 +467,17 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
             valueKind,
           },
           fix(fixer) {
+            const expressionText = sourceCode.getText(returnedExpression);
             // Inlining replaces the entire useMemo(...) call with the returned
             // expression's text, so any comment inside the call but outside
             // that expression — an eslint-disable-next-line directive on the
             // return statement among them — has no representation in the
-            // replacement and would be silently destroyed, changing which
-            // rules report on the file (#1591). The inlined expression lands
-            // mid-line (e.g. `const label = <expr>;`), where a -next-line
-            // directive cannot be hosted, so the autofix declines and leaves
-            // the report for a manual fix.
+            // replacement. Dropping one changes which rules report on the file
+            // (#1591), and declining the fix whenever one is present makes a
+            // comment decide whether the rule rewrites at all (#1877). Both are
+            // avoided by carrying every such comment into the replacement,
+            // where the directives among them keep the line relationship they
+            // were written with.
             const strandedComments = sourceCode
               .getCommentsInside(node)
               .filter(
@@ -478,11 +485,32 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
                   comment.range[0] < returnedExpression.range[0] ||
                   comment.range[1] > returnedExpression.range[1],
               );
-            if (strandedComments.length > 0) {
-              return null;
+            if (strandedComments.length === 0) {
+              return fixer.replaceText(node, `(${expressionText})`);
             }
-            const replacement = `(${sourceCode.getText(returnedExpression)})`;
-            return fixer.replaceText(node, replacement);
+
+            // A comment inside the call lies wholly on one side of the
+            // expression, since a comment is a token and cannot straddle a
+            // node; keeping each on its own side preserves what it annotates.
+            const toSegment = (comment: TSESTree.Comment) => ({
+              text: sourceCode.text.slice(comment.range[0], comment.range[1]),
+              breakAfter: requiresLineBreakAfter(comment),
+            });
+            const isBefore = (comment: TSESTree.Comment) =>
+              comment.range[0] < returnedExpression.range[0];
+            const segments: ReplacementSegment[] = [
+              ...strandedComments.filter(isBefore).map(toSegment),
+              { text: expressionText, breakAfter: false },
+              ...strandedComments
+                .filter((comment) => !isBefore(comment))
+                .map(toSegment),
+            ];
+
+            // The call can start mid-line, so the indentation of the line it
+            // opens on is the only anchor the carried comments have.
+            const startLine = sourceCode.lines[node.loc.start.line - 1] ?? '';
+            const indent = /^[\t ]*/.exec(startLine)?.[0] ?? '';
+            return fixer.replaceText(node, joinSegments(segments, indent));
           },
         });
       },

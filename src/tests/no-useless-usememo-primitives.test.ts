@@ -228,6 +228,22 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
       parserOptions: typedParserOptions,
       filename: 'src/symbol-ignored.ts',
     },
+    // A line comment between `return` and its argument triggers automatic
+    // semicolon insertion: the callback returns undefined and the primitive
+    // below is an unreachable expression statement, so the block holds two
+    // statements. The memoized value is not that primitive, and inlining it
+    // would change what the hook produces, so the rule stays silent. The
+    // block-comment spelling of the same position (the `spaced` fixture below)
+    // suffers no interruption and is reported.
+    {
+      code: `
+        const interrupted = useMemo(() => {
+          return // keep this rationale
+          42;
+        }, []);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+    },
   ],
   invalid: [
     {
@@ -619,11 +635,11 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
         const choose = (flag ? 'yes' : 1);
       `,
     },
-    // Issue #1591: inlining would destroy the eslint-disable-next-line
-    // directive inside the callback, silently re-enabling the suppressed rule
-    // on the surviving ternary. The report still fires but the autofix must
-    // decline because the inlined expression lands mid-line, where a
-    // -next-line directive cannot be hosted.
+    // Issue #1591: inlining must not destroy the eslint-disable-next-line
+    // directive inside the callback, which would silently re-enable the
+    // suppressed rule on the surviving ternary. The directive is carried onto
+    // the line above the inlined expression, so it still covers the ternary it
+    // was written for.
     {
       code: `
 function useJoinLabel(isPendingToJoinTeam: boolean) {
@@ -636,10 +652,34 @@ function useJoinLabel(isPendingToJoinTeam: boolean) {
 `,
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
       errors: [{ messageId: 'uselessUseMemoPrimitive' }],
-      output: null,
+      output: `
+function useJoinLabel(isPendingToJoinTeam: boolean) {
+  const label = (
+  // eslint-disable-next-line no-restricted-syntax
+  isPendingToJoinTeam ? 'Pending Response' : 'Request to Join');
+  return label;
+}
+`,
     },
-    // A non-directive block comment before the return would also be
-    // destroyed by inlining, so the autofix declines.
+    // A block-comment eslint-disable-next-line targets the line after the one
+    // it ends on, so it may not share a line with the expression it guards.
+    {
+      code: `
+        const guarded = useMemo(() => {
+          /* eslint-disable-next-line no-restricted-syntax */
+          return flag ? 'yes' : 'no';
+        }, [flag]);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+        const guarded = (
+        /* eslint-disable-next-line no-restricted-syntax */
+        flag ? 'yes' : 'no');
+      `,
+    },
+    // A non-directive block comment before the return carries onto the same
+    // line, since nothing about it is bound to the line it occupied.
     {
       code: `
         const total = useMemo(() => {
@@ -649,28 +689,111 @@ function useJoinLabel(isPendingToJoinTeam: boolean) {
       `,
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
       errors: [{ messageId: 'uselessUseMemoPrimitive' }],
-      output: null,
+      output: `
+        const total = (/* documents why the offset applies */ 2 + 1);
+      `,
+    },
+    // A line comment before the return keeps a line of its own, because
+    // folding it onto the expression would comment the expression out.
+    {
+      code: `
+        const offset = useMemo(() => {
+          // explains the offset
+          return 2 + 1;
+        }, []);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+        const offset = (
+        // explains the offset
+        2 + 1);
+      `,
     },
     // A comment between the arrow and an expression body sits outside the
-    // returned expression's range, so inlining would drop it.
+    // returned expression's range, so it is carried rather than dropped.
     {
       code: `
         const answer = useMemo(() => /* keep this rationale */ 42, []);
       `,
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
       errors: [{ messageId: 'uselessUseMemoPrimitive' }],
-      output: null,
+      output: `
+        const answer = (/* keep this rationale */ 42);
+      `,
     },
-    // A comment inside the dependency array would be destroyed alongside it.
+    // The same position in line-comment form, which forces the expression onto
+    // the following line.
+    //
+    // The body is parenthesized on purpose. Without the parentheses this
+    // fixture is a landmine for any corpus sweep that respells a concise arrow
+    // as `{ return <body>; }`: ASI ends the `return` at the line comment, so
+    // the respelling returns undefined and evaluates the primitive as dead
+    // code. The parentheses keep `return (` on one line, which makes the
+    // respelling mean what the original means.
+    {
+      code: `
+        const rationale = useMemo(() => ( // keep this rationale
+          42), []);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+        const rationale = (
+        // keep this rationale
+        42);
+      `,
+    },
+    // A comment between `return` and its argument sits inside the return
+    // statement but still outside the expression, so it is carried too.
+    {
+      code: `
+        const spaced = useMemo(() => {
+          return /* inline rationale */ 3 + 4;
+        }, []);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+        const spaced = (/* inline rationale */ 3 + 4);
+      `,
+    },
+    // A comment inside the dependency array outlives the array it annotated.
     {
       code: `
         const doubled = useMemo(() => 2 * 2, [/* deliberately empty */]);
       `,
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
       errors: [{ messageId: 'uselessUseMemoPrimitive' }],
-      output: null,
+      output: `
+        const doubled = (2 * 2 /* deliberately empty */);
+      `,
     },
-    // A comment after the return statement would be destroyed by inlining.
+    // A comment sitting immediately before the dependency array.
+    {
+      code: `
+        const tripled = useMemo(() => 3 * 3, /* no dependencies */ []);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+        const tripled = (3 * 3 /* no dependencies */);
+      `,
+    },
+    // A comment ahead of the callback, before any of the machinery it
+    // documents.
+    {
+      code: `
+        const quoted = useMemo(/* why memoized */ () => 'value', []);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+        const quoted = (/* why memoized */ 'value');
+      `,
+    },
+    // A comment after the return statement stays on the expression's side of
+    // it, which pushes the closing parenthesis onto the next line.
     {
       code: `
         const flagged = useMemo(() => {
@@ -679,7 +802,99 @@ function useJoinLabel(isPendingToJoinTeam: boolean) {
       `,
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
       errors: [{ messageId: 'uselessUseMemoPrimitive' }],
-      output: null,
+      output: `
+        const flagged = (!value // trailing note
+        );
+      `,
+    },
+    // #1877: a comment appended to the line the report lands on sits inside
+    // the call, and the fix must still fire and produce the transform it
+    // produces without the comment.
+    {
+      code: `
+        const label = useMemo(() => { // fidelity
+          return isPendingToJoinTeam ? 'Pending Response' : 'Request to Join';
+        }, [isPendingToJoinTeam]);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+        const label = (
+        // fidelity
+        isPendingToJoinTeam ? 'Pending Response' : 'Request to Join');
+      `,
+    },
+    // A trailing line comment after the whole statement is outside the call,
+    // so the transform is the one the uncommented source gets.
+    {
+      code: `
+        const zero = useMemo(() => 0, []); // trailing note
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+        const zero = (0); // trailing note
+      `,
+    },
+    // The same, in block-comment form.
+    {
+      code: `
+        const one = useMemo(() => 1, []); /* trailing note */
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+        const one = (1); /* trailing note */
+      `,
+    },
+    // A leading comment on the statement is likewise untouched.
+    {
+      code: `
+        // why this value matters
+        const two = useMemo(() => 2, []);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+        // why this value matters
+        const two = (2);
+      `,
+    },
+    // Every stranded position at once: each comment keeps the side of the
+    // expression it was written on, and the line breaks fall only where a
+    // comment demands one.
+    {
+      code: `
+        const label = useMemo(() => { // opening note
+          /* second */
+          return flag ? 'yes' : 'no'; // trailing note
+        }, [flag] /* deps note */);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+        const label = (
+        // opening note
+        /* second */ flag ? 'yes' : 'no' // trailing note
+        /* deps note */);
+      `,
+    },
+    // The carried comments are indented from the line the call opens on, which
+    // is the only anchor available when the call starts mid-line.
+    {
+      code: `
+        render(useMemo(() => {
+          // nested note
+          return count > 0;
+        }, [count]));
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+        render((
+        // nested note
+        count > 0));
+      `,
     },
     // Comments inside the returned expression itself survive verbatim in the
     // replacement text, so the autofix still applies.
@@ -691,6 +906,22 @@ function useJoinLabel(isPendingToJoinTeam: boolean) {
       errors: [{ messageId: 'uselessUseMemoPrimitive' }],
       output: `
         const label = (flag ? /* fallback */ 'yes' : 'no');
+      `,
+    },
+    // A comment inside the expression and one outside it in the same call:
+    // the first rides along in the expression's own text, the second is
+    // carried.
+    {
+      code: `
+        const mixed = useMemo(() => {
+          /* outside */
+          return flag ? /* inside */ 'yes' : 'no';
+        }, [flag]);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+        const mixed = (/* outside */ flag ? /* inside */ 'yes' : 'no');
       `,
     },
   ],

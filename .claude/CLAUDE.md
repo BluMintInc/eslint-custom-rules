@@ -139,13 +139,27 @@ const nameByRule = new Map(
 );
 ```
 
-`src/tests/exemption-composition-closure.test.ts` is the reference consumer.
-Three constraints are load-bearing — read that file before writing another:
+`src/tests/exemption-composition-closure.test.ts` is the reference consumer for
+structure. Copy its shape, not its exclusion: it still builds a local
+`typeAwareNames` set, which is the defect described in the second bullet below.
+`src/tests/comment-fix-fidelity.test.ts` shows the corrected form.
+
+Three constraints are load-bearing — read those files before writing another:
 
 * **Match rules by object identity**, not by the name passed to `run`. Name-keyed
   matching silently drops every suite with a display name.
-* **Type-aware rules must be excluded.** A bare `Linter` has no program, so they
-  report nothing and manufacture a false clean rather than a finding.
+* **Exclude only `silentWithoutProgramRuleNames`** — rules MEASURED to report
+  nothing under a bare `Linter`, and so able to contribute only a false clean.
+  Do **not** exclude `typeAwareRuleNames` (every rule mentioning
+  `getParserServices`) to get there. That premise is measured false: all 16
+  report, because `@typescript-eslint/parser` returns an ISOLATED single-file
+  program even with no `project`, so the `if (!services?.program) return;` guard
+  rules use never fires. What is actually missing is cross-FILE resolution,
+  which changes an answer rather than withholding it. Dropping all 16 hid a
+  fixer deleting comments under `--fix` at `'error'` (#1859, #1877). To discount
+  one rule whose behaviour here genuinely diverges from production, name that
+  rule in the guard's own baseline — a rule-global entry un-gates every other
+  arm it participates in (#1839).
 * **Assert non-vacuity.** Floors on cases considered, controls that stayed
   silent, and inputs actually rewritten — plus a planted positive *and* negative
   control. A composition guard whose corpus trips nothing passes forever while
