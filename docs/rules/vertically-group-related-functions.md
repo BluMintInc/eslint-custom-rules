@@ -100,6 +100,18 @@ export function makeRequest() {
 }
 ```
 
+## Declarations with sibling bindings
+
+A function declared alongside other bindings — `const helper = () => 1, offset = 2;` —
+is ordered and reported on like any other function: a sibling declarator changes
+what the statement holds, not whether the file reads top-down.
+
+The autofix is withheld for such a file. Relocating `helper` means splitting the
+declaration, and the sibling's initializer cannot be moved along with it or left
+behind without changing when it runs, so the reorder is left to the author.
+Where one statement declares several function-like bindings, only the first is
+ordered, since the rest cannot move independently of it.
+
 ## Shebang files
 
 A `#!` shebang belongs to the file rather than to the statement beneath it, so

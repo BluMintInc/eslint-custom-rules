@@ -1064,18 +1064,13 @@ describe('the multi-declarator probe is load-bearing', () => {
  * participates in, which is how #1839 shipped; here it would also let a fix to
  * `SUBJECT_FIRST` silently shield a still-broken `SUBJECT_SECOND`.
  *
- * Every entry below is one shape: an early return on
+ * An entry here records one shape: an early return on
  * `declarations.length !== 1` that drops the REPORT, not merely the fix. A rule
  * that cannot safely rewrite a multi-declarator statement should still say what
  * is wrong with it — declining the fix is correct, going silent is not, because
  * the violation then ships unseen.
  */
-export const DETECTION_LOSS_BASELINE: Record<string, string> = {
-  'vertically-group-related-functions | ARM A | DETECTION_LOST | SUBJECT_FIRST | clean':
-    'src/rules/vertically-group-related-functions.ts returns early unless the declaration has exactly one declarator, so `misorderedFunction` is lost on a helper declared alongside any sibling binding (#1891)',
-  'vertically-group-related-functions | ARM A | DETECTION_LOST | SUBJECT_SECOND | clean':
-    'same early return as the SUBJECT_FIRST entry, reached with the sibling declared first (#1891)',
-};
+export const DETECTION_LOSS_BASELINE: Record<string, string> = {};
 
 describe('a sibling declarator changes no verdict and loses no binding', () => {
   it('reports every finding outside the documented baseline', () => {
