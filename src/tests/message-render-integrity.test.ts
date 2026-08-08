@@ -178,22 +178,14 @@ for (const [ruleName, cases] of corpus.byRule) {
  * Not a decision and not a defect: an ARTIFACT of the harness. Both the reason
  * and the evidence must be recorded, so an entry can be retired the moment its
  * premise stops holding.
+ *
+ * EMPTY BY DESIGN. Its one entry — `no-usememo-for-pass-by-value::primitiveMemo`,
+ * which no fixture could render because the lib-less isolated program this
+ * harness leaves behind classifies every memoized type as indeterminate — was
+ * retired by fixtures whose memoized value is `undefined`/`null`, the one
+ * classification that survives that degradation (#1871).
  */
-const PROGRAM_ONLY_MESSAGE_IDS: Record<string, string> = {
-  /**
-   * Emitted only when `classifyUseMemoReturnType` gets a DETERMINATE type for
-   * the `useMemo(...)` call, via `checker.getTypeAtLocation`. Its 40-odd
-   * fixtures declare `parserOptions.project` against the repo tsconfig, which
-   * `harvestFixtureCorpus` strips; the isolated single-file program that
-   * remains resolves `slug.toUpperCase()` and the ambient `react` shim to
-   * `any`, so every case classifies as indeterminate and returns before the
-   * report. The message is live under the configuration its suite declares —
-   * `no-usememo-for-pass-by-value.test.ts` asserts it 40 times — so a dead-code
-   * finding here would be about the probe, not the rule.
-   */
-  'no-usememo-for-pass-by-value::primitiveMemo':
-    'needs a real program to classify the return type',
-};
+const PROGRAM_ONLY_MESSAGE_IDS: Record<string, string> = {};
 
 /**
  * Why a registered rule could be absent from the probe, read off the corpus and

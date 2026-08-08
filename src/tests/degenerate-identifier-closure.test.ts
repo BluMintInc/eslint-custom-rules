@@ -1259,9 +1259,6 @@ const measuredLiteralSuggestionUndriven = measuredUndriven(
 const BINDING_UNDRIVEN: Record<string, UndrivenCause> = {
   'enforce-typescript-markdown-code-blocks': 'noTsFixture',
   'no-unpinned-dependencies': 'noTsFixture',
-  // Declares `fixable: 'code'` and emits no fix over any of its 105 fixtures
-  // (#1871), so nothing it does can be inspected here.
-  'no-usememo-for-pass-by-value': 'declinesOnDegenerateInput',
   // Its fixtures are bare JSX fragments; none of them declares a binding this
   // probe can rename, so no degenerate input was ever built for it.
   'prefer-fragment-shorthand': 'noPerturbableSite',
@@ -1316,7 +1313,9 @@ const LITERAL_UNDRIVEN: Record<string, UndrivenCause> = {
   'no-unused-usestate': 'inventsNoName',
   'no-useless-fragment': 'noPerturbableSite',
   'no-useless-usememo-primitives': 'inventsNoName',
-  'no-usememo-for-pass-by-value': 'declinesOnDegenerateInput',
+  // Inlines the memoized expression verbatim: every identifier it writes is
+  // copied from the source, so no literal can be degenerate into a name (#1871).
+  'no-usememo-for-pass-by-value': 'inventsNoName',
   'omit-index-html': 'declinesOnDegenerateInput',
   'prefer-block-comments-for-declarations': 'inventsNoName',
   'prefer-destructuring-no-class': 'inventsNoName',

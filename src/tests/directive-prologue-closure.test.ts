@@ -449,10 +449,6 @@ const measuredUndriven: Record<string, UndrivenCause> = Object.fromEntries(
 const UNDRIVEN_RULES: Record<string, UndrivenCause> = {
   'enforce-typescript-markdown-code-blocks': 'noTsFixture',
   'no-unpinned-dependencies': 'noTsFixture',
-  // Declares `fixable: 'code'` and emits no fix over any of its 105 fixtures
-  // (#1871), so there is no rewrite whose placement could be judged. Fixing that
-  // rule retires this entry.
-  'no-usememo-for-pass-by-value': 'neverRewritesItsOwnFixtures',
 };
 
 /**

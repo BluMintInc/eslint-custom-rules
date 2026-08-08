@@ -587,11 +587,12 @@ const UNPROBED_RULES: Record<string, Reason> = {
   'enforce-typescript-markdown-code-blocks': REASONS.nonTypeScript,
   'no-unpinned-dependencies': REASONS.nonTypeScript,
 
-  // Reports here but offers no transform. Its 105 fixtures declare
-  // `parserOptions.project` against the repo tsconfig, which the corpus strips;
-  // the isolated program that remains types the returned expression as `any`,
-  // so the classification is indeterminate and the fixer never runs (#1859).
-  'no-usememo-for-pass-by-value': REASONS.noTransform,
+  // Its fixer RELOCATES text rather than emitting any: the memoized expression
+  // moves out of the `useMemo` callback to the call's own position, one scope
+  // outward. Moving a reference outward can only lose shadows, never acquire
+  // one, and the callback declares nothing of its own in the shapes the fixer
+  // accepts, so resolution is identical before and after (#1871).
+  'no-usememo-for-pass-by-value': REASONS.noModuleBoundReference,
 
   // Every report sits outside a function block — at module or class level,
   // or in a concise arrow body — so there is nowhere to declare a shadow.
