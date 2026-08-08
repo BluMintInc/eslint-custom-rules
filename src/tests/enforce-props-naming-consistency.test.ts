@@ -295,6 +295,103 @@ ruleTesterTs.run(
         ],
         output: null,
       },
+      // #1882: `this['settings']` names the SAME member as `this.settings`, and
+      // the fixer can rewrite neither. Keying the guard on the dot spelling
+      // alone shipped the rename and left this read pointing at a member the
+      // class no longer has.
+      {
+        name: 'a bracket-spelled this access withholds the rename',
+        code: `
+        class Widget {
+          constructor(private readonly settings: WidgetProps) {}
+          render() {
+            return this['settings'].label;
+          }
+        }
+      `,
+        errors: [
+          { messageId: 'usePropsName', data: { paramName: 'settings' } },
+        ],
+        output: null,
+      },
+      {
+        name: 'a template-spelled this access withholds the rename',
+        code: `
+        class Widget {
+          constructor(private readonly settings: WidgetProps) {}
+          render() {
+            return this[\`settings\`].label;
+          }
+        }
+      `,
+        errors: [
+          { messageId: 'usePropsName', data: { paramName: 'settings' } },
+        ],
+        output: null,
+      },
+      {
+        name: 'an optional bracket-spelled this access withholds the rename',
+        code: `
+        class Widget {
+          constructor(private readonly settings: WidgetProps) {}
+          render() {
+            return this?.['settings'].label;
+          }
+        }
+      `,
+        errors: [
+          { messageId: 'usePropsName', data: { paramName: 'settings' } },
+        ],
+        output: null,
+      },
+      // The guard stays keyed on the NAME, not on bracket syntax: a computed
+      // access to a different member strands nothing, so the rename applies.
+      {
+        name: 'a bracket access to an unrelated member still autofixes',
+        code: `
+        class Widget {
+          constructor(private readonly settings: WidgetProps) {}
+          render() {
+            return this['unrelated'];
+          }
+        }
+      `,
+        errors: [
+          { messageId: 'usePropsName', data: { paramName: 'settings' } },
+        ],
+        output: `
+        class Widget {
+          constructor(private readonly props: WidgetProps) {}
+          render() {
+            return this['unrelated'];
+          }
+        }
+      `,
+      },
+      // A dynamic key names no member statically, so it cannot be the reference
+      // the rename would strand — treating it as one would withhold every fix.
+      {
+        name: 'a dynamic computed this access still autofixes',
+        code: `
+        class Widget {
+          constructor(private readonly settings: WidgetProps) {}
+          read(key: string) {
+            return this[key];
+          }
+        }
+      `,
+        errors: [
+          { messageId: 'usePropsName', data: { paramName: 'settings' } },
+        ],
+        output: `
+        class Widget {
+          constructor(private readonly props: WidgetProps) {}
+          read(key: string) {
+            return this[key];
+          }
+        }
+      `,
+      },
       // Parameter property with no other occurrence in the class: the rename is
       // complete, and the annotation survives.
       {
