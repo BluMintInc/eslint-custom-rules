@@ -714,11 +714,30 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
             }
           }
 
+          // A binding that leaves the module is one end of a cross-file
+          // contract. Renaming `export const handleClick` to `click` strands
+          // every `import { handleClick }` with TS2724, and a single-file fixer
+          // cannot reach those importers — the same reasoning that already
+          // withholds the JSX prop rename and the destructured one, which is
+          // where `isExportedBinding` was first needed. The violation still
+          // reports; only the rename is withheld.
+          const declaredVariable = context
+            .getDeclaredVariables(node)
+            .find((v) =>
+              v.identifiers.includes(node.id as TSESTree.Identifier),
+            );
+          const leavesModule = declaredVariable
+            ? isExportedBinding(declaredVariable)
+            : isExportedDeclaration(node);
+
           context.report({
             node,
             messageId: 'callbackFunctionPrefix',
             data: { functionName },
             fix(fixer) {
+              if (leavesModule) {
+                return null;
+              }
               // Remove 'handle' prefix and convert first character to lowercase
               const newName = stripHandlePrefix(functionName);
               // `const handleDelete = fn` would become `const delete = fn`,

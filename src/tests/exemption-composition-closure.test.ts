@@ -34,14 +34,14 @@
  * `valid` list is written to sit on the rule's carve-out boundaries — which is
  * where a sibling fixer strips a carrier. The docs blocks do not go there.
  */
-import fs from 'fs';
-import path from 'path';
 import { Linter, Rule } from 'eslint';
 import * as tsParser from '@typescript-eslint/parser';
 import {
   harvestOnce,
+  silentWithoutProgramRuleNames,
   suggestionEditsOf,
   suggestionRuleNames,
+  typeAwareRuleNames,
 } from '../utils/fixtureCorpus';
 
 /* eslint-disable @typescript-eslint/no-var-requires */
@@ -52,34 +52,26 @@ const plugin = require('../index') as {
 /* eslint-enable @typescript-eslint/no-var-requires */
 
 const PREFIX = '@blumintinc/blumint/';
-const RULES_DIR = path.join(__dirname, '..', 'rules');
 
 /**
- * Type-aware rules are excluded, matching `fix-closure-core-rules.test.ts`:
- * this harness has no `parserOptions.project`, so without a program they report
- * nothing and would manufacture a false clean rather than a finding.
- *
- * Detected by reading the rule sources rather than `String(rule.create)`, since
- * `createRule` wraps `create` and stringifying it matches nothing.
+ * The only exclusion is `silentWithoutProgramRuleNames` — rules MEASURED to
+ * report nothing under this harness, and so able to contribute only a false
+ * clean. It is deliberately not "every rule that mentions `getParserServices`":
+ * that premise was measured false (all 16 report — #1859), because
+ * `@typescript-eslint/parser` returns an isolated single-file program even with
+ * no `project`, so the `if (!services?.program) return;` guard rules use never
+ * fires. What is missing is cross-FILE resolution, which changes an answer
+ * rather than withholding it. Dropping all 16 left their carve-outs unprobed
+ * against the composed `--fix`, the same blind spot that hid two comment-
+ * destroying fixers in #1877.
  */
-const typeAwareNames = new Set(
-  fs
-    .readdirSync(RULES_DIR)
-    .filter((file) => file.endsWith('.ts'))
-    .filter((file) =>
-      /getParserServices|getTypeChecker/.test(
-        fs.readFileSync(path.join(RULES_DIR, file), 'utf8'),
-      ),
-    )
-    .map((file) => path.basename(file, '.ts')),
-);
 
 /** The rule set whose composed `--fix` is under test. */
 const FIX_CONFIG: Record<string, unknown> = {};
 for (const [id, severity] of Object.entries(plugin.configs.recommended.rules)) {
   if (!id.startsWith(PREFIX)) continue;
   const name = id.slice(PREFIX.length);
-  if (!plugin.rules[name] || typeAwareNames.has(name)) continue;
+  if (!plugin.rules[name] || silentWithoutProgramRuleNames.has(name)) continue;
   FIX_CONFIG[id] = severity;
 }
 
@@ -261,7 +253,7 @@ for (const suite of harvested.suites) {
     continue;
   }
   if (!TS_TESTERS.has(suite.tester)) continue;
-  if (typeAwareNames.has(name)) continue;
+  if (silentWithoutProgramRuleNames.has(name)) continue;
   // A rule absent from the recommended config is never composed with the others.
   if (!(PREFIX + name in FIX_CONFIG)) continue;
 
@@ -593,13 +585,19 @@ const pairKey = (finding: Finding) => {
  * reproducing also fails, so an exemption cannot rot into a shield for the next
  * regression.
  *
- * Prefer fixing over listing. Every destruction this gate has found was fixed
+ * Prefer fixing over listing. Most destructions this gate has found were fixed
  * rather than baselined (#1690, #1691, #1692), and the lone entry it once
  * carried — `global-const-style -> no-static-constants-in-dynamic-files`, the
  * #1599 pair — stopped reproducing when the renamer began withholding the
- * rename for every exported declaration (#1700), so the config destroys no
- * exemption at all. The baseline is empty by achievement, not by omission:
- * anything that appears here fails until it is fixed or justified in writing.
+ * rename for every exported declaration (#1700).
+ *
+ * The entries below arrived together when #1878 lifted this guard's blanket
+ * exclusion of the 16 type-aware rules, so their fixers compose here for the
+ * first time. Each is a defect in the CULPRIT, tracked by its own issue and
+ * scoped to one rule so it lands as one commit; listing them is what lets the
+ * lift — the forcing function that found them — land without the guard going
+ * red. Anything unlisted fails, and a listed pair that stops reproducing also
+ * fails, so none of these can rot into a shield for the next regression.
  *
  * The dominant shape on this axis — `no-explicit-return-type` deleting the
  * return annotation another rule reads as its exemption carrier (6 of the 12
@@ -626,6 +624,81 @@ export const EXEMPTION_DESTROYED_BASELINE: Record<string, string> = {
    */
   'react-memoize-literals (suggestion) -> enforce-global-constants':
     "the emitted `[/* __TODO_MEMOIZATION_DEPENDENCIES__ */]` is a syntactically empty dependency array until the developer fills it in, which is the suggestion's stated contract; with real dependencies the report disappears (#1601)",
+
+  /**
+   * The ONLY entry here that is a harness artifact rather than a defect, and it
+   * is named at the (guard, rule) level for exactly the reason
+   * `silentWithoutProgramRuleNames` refuses to hold it: a rule-global exemption
+   * would un-gate every other arm these two participate in (#1839).
+   *
+   * `require-memo` emits `import { memo } from 'src/util/memo'`. This harness has
+   * no `parserOptions.project`, so that specifier does not resolve, `memo` is
+   * `any`, and therefore `Child` is `any` — measured: the binding goes from
+   * `(props: ChildProps) => any` to `any`. Every type-driven carve-out in the
+   * victim collapses at once because `checker.getContextualType` returns
+   * undefined, while the positive test still passes because it reads the VALUE.
+   *
+   * Re-measured under a real program (`parserOptions.project`, with
+   * `src/util/memo` typed as React's `memo`, which is what agora ships): the
+   * memo wrap PRESERVES the contextual type (`NamedExoticComponent<ChildProps>`)
+   * and the victim stays silent. So the destruction does not exist in
+   * production, and there is nothing on either side to fix — the culprit is
+   * inside its documented remit and the victim already handles the rewritten
+   * shape the moment the module resolves.
+   */
+  'require-memo -> consistent-callback-naming':
+    'an artifact of this harness having no `parserOptions.project`: the emitted `src/util/memo` specifier does not resolve, so `memo` is `any` and the victim loses the contextual type it reads. Re-measured under a real program with a props-preserving memo, the victim is silent (#1878)',
+
+  /**
+   * Both rules are inside their documented remit — the culprit's own docs carry
+   * this removal as an example, and the victim's post-fix report is true of the
+   * code as rewritten — so this is a product call, not a bug. Production-
+   * reachable: agora sets `parserOptions.project`, so the culprit is fully live
+   * there.
+   */
+  'no-entire-object-hook-deps -> enforce-global-constants':
+    'the culprit deletes an unread `useMemo` dependency (its documented behaviour), emptying the array, which is precisely the shape the victim exists to report; neither rule is outside its remit, so the composition needs a product decision (#1884)',
+
+  /**
+   * Culprit-side defect, two rules carrying a duplicated guard. Their
+   * withhold-the-fix test for a parameter-property rename recognises only the
+   * DOT spelling of the member reads it would strand, so `this['settings']` — a
+   * computed member whose property is a `Literal` — slips through and the rename
+   * ships dangling. The dot spelling is correctly left alone, which is what
+   * makes this a partial branch rather than a missing one.
+   *
+   * Keyed `(unattributed)` because BOTH rules produce the identical rewrite, so
+   * the guard cannot attribute it to one; the two fixes are tracked separately.
+   */
+  '(unattributed) -> no-passthrough-getters':
+    "`enforce-props-argument-name` and `enforce-props-naming-consistency` both rename the parameter property and leave `this['settings']` dangling — their withhold guard is keyed on the dot spelling only. The victim's visibility carve-out then cannot resolve the root, and it reports correctly on broken code (#1881, #1882)",
+
+  /**
+   * Culprit-side defect: `no-redundant-annotation-assertion`'s structural key
+   * omits `readonly`, so an `as const` type compares equal to a mutable
+   * annotation it does not actually match, and deleting that annotation orphans
+   * the type — the output emits TS6196 under this repo's own `noUnusedLocals`.
+   * Keyed `(unattributed)` because a second, inert transform
+   * (`prefer-type-over-interface`) rewrites the same region, so the guard sees
+   * more than one culprit; run alone, only this rule reproduces the harm.
+   */
+  '(unattributed) -> no-unnecessary-verb-suffix':
+    "`no-redundant-annotation-assertion`'s readonly-blind structural key deletes an annotation that is not in fact redundant, orphaning the type; the victim's signal-D carve-out reads that annotation and reports once it is gone (#1883)",
+
+  /**
+   * Same culprit, second arm: for a self-referential type the redundancy is
+   * circular — the equality that proves it holds only while the annotation
+   * exists. Measured: deleting it yields TS7023 for the angle-bracket spelling,
+   * and a silent `FakeQuery` -> `{ readonly orderBy: () => any }` leak for the
+   * `as const` ones.
+   *
+   * One of the six fixtures (`const chain: QueryLike = {...} as const as
+   * QueryLike`) is NOT the culprit's fault and will keep this pair reproducing
+   * after #1883 lands: there the removal is type-preserving and the victim's
+   * report is wrong on its own terms, tracked as #1885.
+   */
+  'no-redundant-annotation-assertion -> no-unnecessary-verb-suffix':
+    'the culprit strips a return annotation that is load-bearing for a self-referential type, emitting code that fails TS7023 or silently leaks `any`; the victim reads that annotation as its exemption carrier. One fixture is a separate victim-side gap (#1883, #1885)',
 };
 
 const observedPairs = new Set(findings.map(pairKey));
@@ -712,7 +785,17 @@ describe('the exemption closure guard is load-bearing', () => {
     // Guards the denominator: a high ratio over a collapsed rule set would
     // still look healthy.
     expect(Object.keys(FIX_CONFIG).length).toBeGreaterThan(100);
-    expect(typeAwareNames.size).toBeGreaterThan(5);
+    // The type-aware rules this guard once dropped wholesale must now COMPOSE
+    // like any other. Asserting their presence — rather than that some
+    // exclusion set is populated — is what keeps the #1877 blind spot from
+    // being reintroduced silently.
+    const typeAwareInConfig = [...typeAwareRuleNames].filter(
+      (name) => PREFIX + name in plugin.configs.recommended.rules,
+    );
+    expect(typeAwareInConfig.length).toBeGreaterThan(5);
+    expect(
+      typeAwareInConfig.filter((name) => !(PREFIX + name in FIX_CONFIG)),
+    ).toEqual([]);
     // 172 of the composable rules contribute at least one fixture.
     expect(casesByRule.size).toBeGreaterThanOrEqual(165);
   });
