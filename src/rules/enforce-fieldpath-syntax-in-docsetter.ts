@@ -163,10 +163,57 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       return key.includes('.') || !/^(?:[$_A-Za-z][$\w]*)$/u.test(key);
     }
 
+    // A method shorthand elides the `function` keyword, and its
+    // FunctionExpression range starts at the parameter list, so copying the
+    // value's text verbatim emits `() { … }`, which is not an expression. The
+    // member is re-emitted with the keyword the shorthand leaves out, matching
+    // what the `key: function () {}` spelling already produces.
+    //
+    // `super` is the one binding the two spellings do not share: it resolves
+    // through the enclosing object literal's home object, which a function
+    // expression has none of, so such a method is declined rather than
+    // rewritten into code that cannot resolve it. Any nested `super` counts,
+    // because narrowing the scan to the method's own body would have to model
+    // which inner forms rebind it.
+    function getMethodValueText(
+      value: TSESTree.FunctionExpression,
+      sourceCode: TSESLint.SourceCode,
+    ): string | undefined {
+      const referencesSuper = sourceCode
+        .getTokens(value)
+        .some(
+          (token) =>
+            token.type === AST_TOKEN_TYPES.Keyword && token.value === 'super',
+        );
+      if (referencesSuper) {
+        return undefined;
+      }
+
+      return `${value.async ? 'async ' : ''}function${
+        value.generator ? '*' : ''
+      } ${sourceCode.getText(value)}`;
+    }
+
+    // Text a nested leaf contributes to its FieldPath entry, or undefined when
+    // the value has no expression-position equivalent.
+    function getFlattenedValueText(
+      property: TSESTree.Property,
+      sourceCode: TSESLint.SourceCode,
+    ): string | undefined {
+      if (
+        property.method &&
+        property.value.type === AST_NODE_TYPES.FunctionExpression
+      ) {
+        return getMethodValueText(property.value, sourceCode);
+      }
+
+      return sourceCode.getText(property.value);
+    }
+
     // Collect the FieldPath entries a nested property flattens into, or bail out
     // when flattening would silently drop payload data (spreads, computed keys,
-    // accessors/methods, unsupported key literals) or would produce nothing at
-    // all. Bailing leaves the report in place so the developer flattens by hand
+    // accessors, unsupported key literals) or would produce nothing at all.
+    // Bailing leaves the report in place so the developer flattens by hand
     // instead of receiving a fix that deletes fields or emits invalid syntax.
     function collectFieldPathEntries(
       obj: TSESTree.ObjectExpression,
@@ -176,10 +223,12 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       const entries: [string, string][] = [];
 
       for (const property of obj.properties) {
+        // A getter or setter is declined even though it is spelled like a
+        // method: its body runs on access rather than holding a value, so no
+        // FieldPath entry can carry it
         if (
           property.type !== AST_NODE_TYPES.Property ||
           property.computed ||
-          property.method ||
           property.kind !== 'init'
         ) {
           return null;
@@ -205,7 +254,12 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
           continue;
         }
 
-        entries.push([fullKey, sourceCode.getText(property.value)]);
+        const valueText = getFlattenedValueText(property, sourceCode);
+        if (valueText === undefined) {
+          return null;
+        }
+
+        entries.push([fullKey, valueText]);
       }
 
       return entries.length > 0 ? entries : null;
