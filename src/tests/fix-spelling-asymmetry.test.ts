@@ -211,32 +211,113 @@ const arrowToDeclaration = (source: string, ast: any): Edit[] => {
   return edits;
 };
 
-/** `function (p) { ... }` to `(p) => { ... }`. */
-const functionExpressionToArrow = (source: string, ast: any): Edit[] => {
-  const edits: Edit[] = [];
-  walk(ast, (node) => {
-    if (node.type !== 'FunctionExpression') return;
-    if (node.generator || !node.body) return;
-    // A named function expression binds its own name inside the body.
-    if (node.id) return;
-    if (!isNeutral(source.slice(node.range[0], node.range[1]))) return;
+/**
+ * Why a function expression is left alone, so that a site this transform passes
+ * over is a NAMED refusal rather than a rewrite that quietly failed to parse.
+ *
+ * The distinction is the whole point of the map: 1,202 of the 1,455 sites this
+ * transform used to rewrite were class method shorthand, whose emitted text
+ * (`foo() => {}`) is not a program, so the entire fixture was dropped at the
+ * reparse — 89% of all attempts, invisibly (#1870).
+ */
+const FUNCTION_EXPRESSION_DECLINES = {
+  generator: 'an arrow has no generator form',
+  namedFunctionExpression:
+    'the name is in scope inside the body, which an arrow cannot express',
+  classMemberShorthand:
+    'a class method has no arrow-valued shorthand; `foo = () => {}` is a class PROPERTY, a different declaration with different initialization order',
+  accessorShorthand: 'a getter or setter cannot hold an arrow',
+  bindsThisOrSuper: 'the body binds `this`, `arguments`, `super` or yields',
+  noParameterList:
+    'no parameter list was found where the signature must begin, so the emitted arrow would be a guess',
+  unrecognizedSpelling:
+    'the node does not begin with the `function` keyword and is not a shorthand this transform knows, so its extent is unknown',
+} as const;
+type FunctionExpressionDecline = keyof typeof FUNCTION_EXPRESSION_DECLINES;
+
+/** A `function` expression's own text always opens with the keyword. */
+const FUNCTION_KEYWORD = /^(?:async\s+)?function\b/;
+
+/**
+ * `function (p) { ... }` to `(p) => { ... }`, and `k(p) { ... }` to
+ * `k: (p) => { ... }` for an object method.
+ *
+ * A method shorthand's `FunctionExpression` node starts at the PARAMETER LIST,
+ * not at a `function` keyword, so replacing the node's own range emits
+ * `foo() => {}`. The member is therefore what gets rewritten, and only for an
+ * object property: a class method's arrow-valued spelling is a class property,
+ * which is a different declaration, so it is declined by name instead.
+ *
+ * Every site not rewritten is counted under `FUNCTION_EXPRESSION_DECLINES`,
+ * because the failure this replaces was silent by construction — a broken
+ * rewrite is indistinguishable from a fixture with nothing to rewrite once the
+ * reparse has thrown it away.
+ */
+const functionExpressionToArrow = (
+  source: string,
+  ast: any,
+  decline: (reason: FunctionExpressionDecline) => void,
+): Edit[] => {
+  const candidates: Edit[] = [];
+  walk(ast, (node, parent) => {
+    if (node.type !== 'FunctionExpression' || !node.body) return;
+    if (node.generator) return decline('generator');
+    if (node.id) return decline('namedFunctionExpression');
+
+    const member = parent && parent.value === node ? parent : null;
+    if (
+      member &&
+      (member.type === 'MethodDefinition' ||
+        member.type === 'TSAbstractMethodDefinition')
+    ) {
+      return decline('classMemberShorthand');
+    }
+    if (member && member.type === 'Property' && member.kind !== 'init') {
+      return decline('accessorShorthand');
+    }
+    // `{ k: function () {} }` is a plain value, not shorthand, and its node
+    // does carry the keyword — only `method: true` starts at the parameters.
+    const objectMethod =
+      !!member && member.type === 'Property' && member.method === true;
+
+    const start = objectMethod ? member.range[0] : node.range[0];
+    const end = objectMethod ? member.range[1] : node.range[1];
+    // Over the MEMBER, so a computed key touching `this` is caught too.
+    if (!isNeutral(source.slice(start, end))) {
+      return decline('bindsThisOrSuper');
+    }
+    // Any other shorthand-like parent would hand back a range whose extent
+    // this transform has not been taught, which is how the defect above went
+    // unseen. Naming it keeps a new one loud instead of unparsable.
+    if (!objectMethod && !FUNCTION_KEYWORD.test(source.slice(start, end))) {
+      return decline('unrecognizedSpelling');
+    }
+
     const typeParams = node.typeParameters
       ? source.slice(node.typeParameters.range[0], node.typeParameters.range[1])
       : '';
     const afterKeyword = node.typeParameters
       ? node.typeParameters.range[1]
       : source.indexOf('(', node.range[0]);
-    if (afterKeyword < 0) return;
+    if (afterKeyword < 0) return decline('noParameterList');
     const signature = source.slice(afterKeyword, node.body.range[0]).trim();
-    if (!signature.startsWith('(')) return;
+    if (!signature.startsWith('(')) return decline('noParameterList');
     const body = source.slice(node.body.range[0], node.body.range[1]);
-    edits.push({
-      start: node.range[0],
-      end: node.range[1],
-      text: `${node.async ? 'async ' : ''}${typeParams}${signature} => ${body}`,
+    const arrow = `${
+      node.async ? 'async ' : ''
+    }${typeParams}${signature} => ${body}`;
+    const key = objectMethod
+      ? source.slice(member.key.range[0], member.key.range[1])
+      : '';
+    candidates.push({
+      start,
+      end,
+      text: objectMethod
+        ? `${member.computed ? `[${key}]` : key}: ${arrow}`
+        : arrow,
     });
   });
-  return edits;
+  return candidates;
 };
 
 /** `(p) => expr` to `(p) => { return expr; }`. */
@@ -299,21 +380,43 @@ const blockArrowToConcise = (source: string, ast: any): Edit[] => {
     edits.push({
       start: node.body.range[0],
       end: node.body.range[1],
-      // A bare object literal would re-parse as a block without these.
+      /**
+       * A concise body whose text OPENS with `{` re-parses as a block rather
+       * than a value, so it is parenthesized. Keyed on the text rather than on
+       * `ObjectExpression`, which is the node type of `{ a: 1 }` but not of
+       * `{ a: 1 } as const` — that is a `TSAsExpression`, and it slipped
+       * through unparenthesized as `() => { a: 1 } as const` (#1870).
+       *
+       * A sequence needs the same treatment for the opposite reason: its own
+       * range stops INSIDE the parentheses it requires, so `=> a, b` binds the
+       * comma outside the arrow.
+       */
       text:
-        only.argument.type === 'ObjectExpression' ? `(${argument})` : argument,
+        argument.startsWith('{') || only.argument.type === 'SequenceExpression'
+          ? `(${argument})`
+          : argument,
     });
   });
   return edits;
 };
 
-const TRANSFORMS = [
+/**
+ * Every transform takes the decline sink, so a new one that refuses a site is
+ * counted the same way rather than reinstating the silent drop this replaced.
+ */
+type Build = (
+  source: string,
+  ast: any,
+  decline: (reason: FunctionExpressionDecline) => void,
+) => Edit[];
+
+const TRANSFORMS: readonly { name: string; build: Build }[] = [
   { name: 'declaration->arrow', build: declarationToArrow },
   { name: 'arrow->declaration', build: arrowToDeclaration },
   { name: 'funcExpression->arrow', build: functionExpressionToArrow },
   { name: 'conciseArrow->block', build: conciseArrowToBlock },
   { name: 'blockArrow->concise', build: blockArrowToConcise },
-] as const;
+];
 
 /**
  * The pair that isolates body FORM. Only these two feed the detection census,
@@ -326,30 +429,158 @@ const BODY_TRANSFORMS = new Set<string>([
 
 type Variant = { transform: string; code: string };
 
-const variantsOf = (code: string, jsx: boolean): Variant[] => {
+/**
+ * What became of one transform's attempt on one fixture.
+ *
+ * `unparsable` and `recovered` are HARNESS defects, not properties of the
+ * corpus: they mean this file emitted text no developer could have written. A
+ * transform is only driving the spelling it declares to the extent it yields.
+ */
+type Outcome = 'yielded' | 'unchanged' | 'unparsable' | 'recovered';
+
+type TransformStats = {
+  /** Fixtures where the transform produced at least one edit. */
+  attempted: number;
+  /** Individual sites rewritten across those fixtures. */
+  sites: number;
+  /** Sites dropped as nested inside another, which is not a discard. */
+  nested: number;
+  outcomes: Record<Outcome, number>;
+  /** Rules the transform produced a usable variant for. */
+  rules: Set<string>;
+};
+
+type Observer = {
+  attempt: (
+    transform: string,
+    outcome: Outcome,
+    sites: number,
+    nested: number,
+  ) => void;
+  decline: (reason: FunctionExpressionDecline) => void;
+  /** The text a discarded attempt emitted, so the residue can be READ. */
+  discarded: (transform: string, original: string, rewritten: string) => void;
+};
+
+/**
+ * The outermost edits only, one per nest, in source order.
+ *
+ * Every transform derives its ranges from AST nodes, so two of its edits are
+ * either disjoint or one CONTAINS the other — and `applyEdits` splices by
+ * range, which means a contained edit does not conflict with its container, it
+ * corrupts it: the inner rewrite lands inside text the outer one has already
+ * replaced, and the result is neither spelling. The corruption is silent,
+ * because the mangled output simply fails to reparse and the whole fixture is
+ * dropped.
+ *
+ * Applied centrally rather than in one transform, since the shape is not
+ * peculiar to function expressions: the jest
+ * `describe(..., function () { it(..., function () {}) })` nest hits
+ * `funcExpression->arrow`, a JSX component whose concise body contains a
+ * concise callback hits `conciseArrow->block`, and a nested function
+ * declaration hits `declaration->arrow` (#1870). Sorting by start and then by
+ * DESCENDING end puts every container before what it contains, so the greedy
+ * sweep keeps the outermost and drops the rest.
+ */
+const outermostOnly = (edits: Edit[]): { kept: Edit[]; nested: number } => {
+  const sorted = [...edits].sort((a, b) => a.start - b.start || b.end - a.end);
+  const kept: Edit[] = [];
+  let boundary = -1;
+  for (const edit of sorted) {
+    if (edit.start < boundary) continue;
+    kept.push(edit);
+    boundary = edit.end;
+  }
+  return { kept, nested: edits.length - kept.length };
+};
+
+const variantsOf = (
+  code: string,
+  jsx: boolean,
+  observe?: Observer,
+): Variant[] => {
   const ast = parseOrNull(code, jsx);
   if (!ast) return [];
   // A fixture that is already broken cannot tell us anything about a rewrite
   // of it, and would make every one of its variants read as a finding.
   if (!isSyntacticallyValid(code, jsx)) return [];
+  const decline = observe ? observe.decline : () => undefined;
   const variants: Variant[] = [];
   for (const transform of TRANSFORMS) {
-    let edits: Edit[] = [];
+    let built: Edit[] = [];
     try {
-      edits = transform.build(code, ast);
+      built = transform.build(code, ast, decline);
     } catch {
       continue;
     }
-    if (!edits.length) continue;
+    if (!built.length) continue;
+    const { kept: edits, nested } = outermostOnly(built);
     const rewritten = applyEdits(code, edits);
-    if (rewritten === code) continue;
+    const record = (outcome: Outcome) => {
+      observe?.attempt(transform.name, outcome, edits.length, nested);
+      if (outcome === 'unparsable' || outcome === 'recovered') {
+        observe?.discarded(transform.name, code, rewritten);
+      }
+    };
+    if (rewritten === code) {
+      record('unchanged');
+      continue;
+    }
     // A rewrite that is not legal code is a harness defect, never a finding.
-    if (!parseOrNull(rewritten, jsx)) continue;
-    if (!isSyntacticallyValid(rewritten, jsx)) continue;
+    if (!parseOrNull(rewritten, jsx)) {
+      record('unparsable');
+      continue;
+    }
+    if (!isSyntacticallyValid(rewritten, jsx)) {
+      record('recovered');
+      continue;
+    }
+    record('yielded');
     variants.push({ transform: transform.name, code: rewritten });
   }
   return variants;
 };
+
+const emptyTransformStats = (): TransformStats => ({
+  attempted: 0,
+  sites: 0,
+  nested: 0,
+  outcomes: { yielded: 0, unchanged: 0, unparsable: 0, recovered: 0 },
+  rules: new Set<string>(),
+});
+
+const transformStats = new Map<string, TransformStats>(
+  TRANSFORMS.map((transform) => [transform.name, emptyTransformStats()]),
+);
+
+const declinedSites = new Map<FunctionExpressionDecline, number>();
+
+/**
+ * Every discarded attempt, printed with the census.
+ *
+ * A rate on its own cannot be acted on — the whole failure this replaces was a
+ * number nobody could see. Carrying the emitted text means the residue is
+ * READABLE the moment the rate moves, rather than requiring the reader to
+ * reinstrument the harness to find out what it dropped.
+ */
+type Discard = { transform: string; original: string; rewritten: string };
+const discards: Discard[] = [];
+
+/** Scoped to one rule, so a yield can be attributed without a second pass. */
+const observerFor = (rule: string): Observer => ({
+  attempt: (transform, outcome, sites, nested) => {
+    const stats = transformStats.get(transform)!;
+    stats.attempted++;
+    stats.sites += sites;
+    stats.nested += nested;
+    stats.outcomes[outcome]++;
+    if (outcome === 'yielded') stats.rules.add(rule);
+  },
+  decline: (reason) =>
+    declinedSites.set(reason, (declinedSites.get(reason) || 0) + 1),
+  discarded: (transform, original, rewritten) =>
+    discards.push({ transform, original: `${rule}\n${original}`, rewritten }),
+});
 
 // ---------------------------------------------------------------------------
 // Probe
@@ -439,7 +670,15 @@ const EMPTY: ProbeResult = {
  * Both censuses off one lint of each variant. Kept in one pass deliberately:
  * running them separately linted every variant twice for no extra coverage.
  */
-const probeCase = (rule: string, testCase: FixtureCase): ProbeResult => {
+const probeCase = (
+  rule: string,
+  testCase: FixtureCase,
+  /**
+   * Omitted by the planted controls, whose four snippets would otherwise land
+   * in the corpus-wide transform census and move the floors it asserts.
+   */
+  observe?: Observer,
+): ProbeResult => {
   const filename = defaultFilenameFor(testCase);
   const jsx = filename.endsWith('.tsx');
   const before = fixStatesOf(rule, testCase.code, testCase, filename);
@@ -459,7 +698,7 @@ const probeCase = (rule: string, testCase: FixtureCase): ProbeResult => {
     offeredFix: [...before.values()].some((state) => state.withFix > 0),
   };
 
-  for (const variant of variantsOf(testCase.code, jsx)) {
+  for (const variant of variantsOf(testCase.code, jsx, observe)) {
     result.variants++;
     const after = fixStatesOf(rule, variant.code, testCase, filename);
     if (!after) continue;
@@ -624,7 +863,7 @@ for (const rule of probeRules) {
       rulesWithNonTypeScriptFixtures.add(rule);
       continue;
     }
-    const result = probeCase(rule, testCase);
+    const result = probeCase(rule, testCase, observerFor(rule));
     casesConsidered++;
     drive.tsCases++;
     if (result.lintable) drive.lintableCases++;
@@ -739,9 +978,10 @@ const measuredUndriven = (
  * below, so an entry cannot outlive what it describes.
  */
 const FIX_UNDRIVEN: Record<string, UndrivenCause> = {
-  // 22 of 22 `funcExpression->arrow` rewrites of its fixtures are discarded as
-  // unparsable (#1870); the concise/block pairs that do survive report a
-  // different messageId on each side, since reordering is what it measures.
+  // All 116 function expressions in its fixtures are class method shorthand,
+  // which has no arrow-valued spelling and is declined by name (#1870); the
+  // concise/block pairs that do survive report a different messageId on each
+  // side, since reordering is what it measures.
   'class-methods-read-top-to-bottom': 'noSharedMessageId',
   'enforce-date-ttime': 'noSharedMessageId',
   'enforce-firestore-rules-get-access': 'noRespelling',
@@ -755,9 +995,11 @@ const FIX_UNDRIVEN: Record<string, UndrivenCause> = {
   'omit-index-html': 'noRespelling',
   'prefer-clone-deep': 'noFixInComparedPair',
   'prefer-fragment-shorthand': 'noRespelling',
-  // All 41 `funcExpression->arrow` attempts on its fixtures are discarded as
-  // unparsable and it has no other respellable site, so #1870 is the whole of
-  // this entry: fixing that transform should retire it.
+  // All 104 function expressions in its fixtures are class method shorthand —
+  // the shape the rule is ABOUT — and a class method has no arrow-valued
+  // spelling, so `funcExpression->arrow` declines every one of them by name
+  // rather than discarding them as unparsable (#1870). With no other
+  // respellable site, the entry rests on the corpus, not on a harness defect.
   'prefer-getter-over-parameterless-method': 'noRespelling',
   'prefer-params-over-parent-id': 'noFixInComparedPair',
   'sync-onwrite-name-func': 'noRespelling',
@@ -805,7 +1047,6 @@ const DETECTION_UNDRIVEN: Record<string, UndrivenCause> = {
   'flatten-push-calls': 'noBodyRespelling',
   'generic-starts-with-t': 'noBodyRespelling',
   'jsdoc-above-field': 'noBodyRespelling',
-  'logical-top-to-bottom-grouping': 'silentOnBodyPairs',
   'no-always-true-false-conditions': 'silentOnBodyPairs',
   'no-async-foreach': 'noBodyRespelling',
   'no-circular-references': 'noBodyRespelling',
@@ -880,25 +1121,69 @@ const DETECTION_EXEMPT: Record<string, string> = {
 };
 
 /**
+ * Rules whose FIX asymmetry is a deliberate, documented decline rather than an
+ * oversight — the fix census's counterpart to `DETECTION_EXEMPT`, and kept
+ * apart from `FIX_KNOWN_DEFECTS` for the same reason that map is kept apart
+ * from `DETECTION_EXEMPT`: merging them lets a bug retire under a label
+ * written for a decision.
+ *
+ * An entry belongs here only when the rule's SOURCE states the reason it
+ * withholds the fix from one spelling and that reason is a property of the
+ * spelling, not of the rule's reach.
+ */
+const FIX_EXEMPT: Record<string, string> = {
+  // Its remedy is a hoisted `const <hash> = useMemo(...)` declaration placed
+  // immediately above the statement holding the hook call, so an
+  // expression-bodied arrow has nowhere to put it — `findInsertionPoint`
+  // returns null on reaching the function before any block, and says so. The
+  // report stands and the developer converts the body first. Surfaced once the
+  // nested-edit corruption stopped discarding this fixture's respelling
+  // (#1870); it is the same shape `prefer-map-over-conditional-dispatch` is
+  // exempted for above.
+  'no-array-length-in-deps':
+    'the memo declaration needs a statement position an expression body does not have',
+};
+
+/**
  * Rules whose FIX asymmetry is a real defect, recorded so the census stays
  * actionable while each is filed and fixed. Deliberately separate from
- * `DETECTION_EXEMPT`, which records design decisions: merging the two would let
- * a bug retire under a "filed decision" label.
+ * `DETECTION_EXEMPT` and `FIX_EXEMPT`, which record design decisions: merging
+ * them would let a bug retire under a "filed decision" label.
  *
- * Empty: no rule's fix availability turns on a function spelling. The map stays
- * declared because the assertion below reads it in BOTH directions — an empty
- * map is what makes the next finding fail loudly instead of landing in a slot
- * written for something else.
- *
- * The one entry it held was `prefer-use-deep-compare-memo`, which rewrote a call
- * to a `const`-spelled local hook while withholding the same rewrite from the
- * `function` spelling. Its cause was in the shared planner rather than the rule:
- * `planOrphanedImportRemoval` (`src/utils/importRemoval.ts`) counted a
+ * The entry it held before was `prefer-use-deep-compare-memo`, which rewrote a
+ * call to a `const`-spelled local hook while withholding the same rewrite from
+ * the `function` spelling. Its cause was in the shared planner rather than the
+ * rule: `planOrphanedImportRemoval` (`src/utils/importRemoval.ts`) counted a
  * declarator's own initializer write as a surviving reference, so a `const`
  * binding could never look orphaned. The planner discounts that self-write, and
  * both spellings decline (#1868).
  */
-const FIX_KNOWN_DEFECTS: Record<string, string> = {};
+const FIX_KNOWN_DEFECTS: Record<string, string> = {
+  /**
+   * Flattens `{ handlers: { onDone: () => {} } }` to `'handlers.onDone'` but
+   * declines the identical field spelled as a method:
+   *
+   *   ds.set({ handlers: { onDone() { return 1; } } });        // no fix
+   *   ds.set({ handlers: { onDone: () => { return 1; } } });   // fixed
+   *   ds.set({ handlers: { onDone: function () { return 1; } } }); // fixed
+   *
+   * `collectFieldPathEntries` bails on `property.method`, and the bail is
+   * load-bearing as written: the flattened value is emitted with
+   * `sourceCode.getText(property.value)`, which for a method shorthand is
+   * `() { return 1; }` — the same range trap this guard's own transform had.
+   * The cure is to re-emit the member as `function <sig> <body>`, which is what
+   * the rule already produces for the `function`-valued spelling and differs
+   * from a method shorthand only in `super`. Surfaced by #1870.
+   */
+  'enforce-fieldpath-syntax-in-docsetter':
+    'flattens a function-valued field spelled `key: fn` and declines the same field spelled as a method',
+};
+
+/** Every rule whose fix finding is accounted for, however it is accounted. */
+const FIX_RECORDED = [
+  ...Object.keys(FIX_EXEMPT),
+  ...Object.keys(FIX_KNOWN_DEFECTS),
+];
 
 const reportOf = (findings: Finding[]) =>
   findings
@@ -1032,6 +1317,203 @@ const plantedCase = (code: string): FixtureCase => ({
   bucket: 'invalid',
 });
 
+// ---------------------------------------------------------------------------
+// Transform census. A spelling this file DECLARES it probes but never actually
+// produces is coverage nobody can see is missing, and that is not a
+// hypothetical: `funcExpression->arrow` discarded 969 of its 1,091 attempts as
+// unparsable, reaching 44 rules instead of 61, and nothing said so (#1870).
+// ---------------------------------------------------------------------------
+
+/**
+ * What each transform must still yield, per transform rather than in total: a
+ * corpus-wide count survives intact while one of five spellings stops being
+ * produced at all.
+ *
+ * The floors are the measurement with headroom, and the corpus only grows, so
+ * a fall through one is a harness regression rather than fixture churn.
+ */
+const TRANSFORM_FLOORS: Record<string, { yielded: number; rules: number }> = {
+  'declaration->arrow': { yielded: 3800, rules: 120 },
+  'arrow->declaration': { yielded: 2100, rules: 90 },
+  // Measured 229 variants over 61 rules. The floor deliberately sits ABOVE the
+  // 122 over 44 this transform produced before the method-shorthand and
+  // overlapping-edit repairs, so a regression to that state fails here instead
+  // of passing as it did for as long as it existed.
+  'funcExpression->arrow': { yielded: 200, rules: 55 },
+  'conciseArrow->block': { yielded: 3000, rules: 125 },
+  'blockArrow->concise': { yielded: 950, rules: 78 },
+};
+
+/**
+ * Attempts a transform still throws away, with the measured cause.
+ *
+ * Read in BOTH directions below: a transform with no entry must discard
+ * NOTHING, and an entry whose transform stops discarding is stale and fails.
+ * A ceiling rather than an exact count, because the corpus grows — but a low
+ * one, since the whole failure mode this records is a rate nobody was watching.
+ */
+const DISCARD_RESIDUE: Record<string, { cause: string; ceiling: number }> = {
+  'declaration->arrow': {
+    cause:
+      'a generic `function f<T>(...)` in a .tsx fixture becomes `const f = <T>(...) => ...`, where `<T>` opens a JSX element; the disambiguating `<T,>` is a second text change this transform does not make',
+    ceiling: 25,
+  },
+};
+
+/**
+ * What the `funcExpression->arrow` decline census must keep counting.
+ *
+ * `noParameterList` and `unrecognizedSpelling` are DEFENSIVE and floored at
+ * zero on purpose: they fire only when a `FunctionExpression` arrives under a
+ * parent whose range this transform has not been taught, which is precisely
+ * the condition that used to emit `foo() => {}` and vanish at the reparse.
+ * Holding them at exactly zero makes the next such shape a failure rather than
+ * a silent discard.
+ */
+const DECLINE_FLOORS: Record<FunctionExpressionDecline, number> = {
+  classMemberShorthand: 1500,
+  namedFunctionExpression: 100,
+  accessorShorthand: 10,
+  bindsThisOrSuper: 8,
+  generator: 5,
+  noParameterList: 0,
+  unrecognizedSpelling: 0,
+};
+
+const DEFENSIVE_DECLINES = new Set<FunctionExpressionDecline>([
+  'noParameterList',
+  'unrecognizedSpelling',
+]);
+
+const declineReasons = Object.keys(
+  FUNCTION_EXPRESSION_DECLINES,
+) as FunctionExpressionDecline[];
+
+/** What a transform threw away, so a breached ceiling names its own residue. */
+const discardReport = (transform: string) =>
+  discards
+    .filter((discard) => discard.transform === transform)
+    .slice(0, 6)
+    .map(
+      (discard) =>
+        `[${discard.transform}] ${discard.original}\n===>\n${discard.rewritten}`,
+    )
+    .join('\n\n');
+
+/**
+ * One transform applied to one planted snippet, run outside the corpus census
+ * so a control cannot move the floors it asserts.
+ */
+const respell = (code: string) => {
+  const ast = parseOrNull(code, false);
+  const declined: FunctionExpressionDecline[] = [];
+  const built = ast
+    ? functionExpressionToArrow(code, ast, (reason) => declined.push(reason))
+    : [];
+  const { kept, nested } = outermostOnly(built);
+  return { code: applyEdits(code, kept), declined, nested };
+};
+
+/**
+ * The shapes the corpus does not settle, planted.
+ *
+ * Every decline reason the corpus never reaches, and the nested-edit case it
+ * reaches zero times, are exercised here — a filter no input trips is a filter
+ * whose next regression is invisible. Each control also asserts the emitted
+ * text is a legal program, which is the property the transform actually lost:
+ * `foo() => {}` parses under TypeScript's error recovery and dies at the
+ * diagnostics check, so "it produced something" was never the question.
+ */
+const RESPELLING_CONTROLS: readonly {
+  name: string;
+  code: string;
+  output: string;
+  declined: FunctionExpressionDecline[];
+  nested?: number;
+}[] = [
+  {
+    name: 'a plain function expression',
+    code: 'const f = function (a) { return a; };',
+    output: 'const f = (a) => { return a; };',
+    declined: [],
+  },
+  {
+    name: 'an async function expression',
+    code: 'const f = async function (a) { return a; };',
+    output: 'const f = async (a) => { return a; };',
+    declined: [],
+  },
+  {
+    name: 'a function-valued property, which is not shorthand',
+    code: 'const o = { k: function () { return 1; } };',
+    output: 'const o = { k: () => { return 1; } };',
+    declined: [],
+  },
+  {
+    name: 'an object method, by rewriting the MEMBER',
+    code: 'const o = { bar() { return 2; } };',
+    output: 'const o = { bar: () => { return 2; } };',
+    declined: [],
+  },
+  {
+    name: 'an async generic object method',
+    code: 'const o = { async bar<T>(a: T) { return a; } };',
+    output: 'const o = { bar: async <T>(a: T) => { return a; } };',
+    declined: [],
+  },
+  {
+    name: 'a computed object method, keeping the brackets',
+    code: 'const o = { [k]() { return 2; } };',
+    output: 'const o = { [k]: () => { return 2; } };',
+    declined: [],
+  },
+  {
+    name: 'a string-keyed object method',
+    code: "const o = { 'a-b'() { return 2; } };",
+    output: "const o = { 'a-b': () => { return 2; } };",
+    declined: [],
+  },
+  {
+    name: 'nothing of a class method',
+    code: 'class A { foo() { return 1; } }',
+    output: 'class A { foo() { return 1; } }',
+    declined: ['classMemberShorthand'],
+  },
+  {
+    name: 'nothing of an object getter',
+    code: 'const o = { get a() { return 1; } };',
+    output: 'const o = { get a() { return 1; } };',
+    declined: ['accessorShorthand'],
+  },
+  {
+    name: 'nothing of a named function expression',
+    code: 'const f = function named() { return named; };',
+    output: 'const f = function named() { return named; };',
+    declined: ['namedFunctionExpression'],
+  },
+  {
+    name: 'nothing of a generator',
+    code: 'const g = function* () { yield 1; };',
+    output: 'const g = function* () { yield 1; };',
+    declined: ['generator'],
+  },
+  {
+    name: 'nothing of a body that binds this',
+    code: 'const f = function () { return this.x; };',
+    output: 'const f = function () { return this.x; };',
+    declined: ['bindsThisOrSuper'],
+  },
+  {
+    // The jest shape. Both are candidates; the contained one is dropped, so
+    // the two edits can never be spliced into each other.
+    name: 'only the outer of two nested function expressions',
+    code: 'describe("x", function () { it("y", function () { return 1; }); });',
+    output: 'describe("x", () => { it("y", function () { return 1; }); });',
+    declined: [],
+    nested: 1,
+  },
+];
+
 const measuredFixUndriven = measuredUndriven(fixCauseOf, 'noFixer');
 const measuredDetectionUndriven = measuredUndriven(detectionCauseOf);
 
@@ -1068,6 +1550,24 @@ console.log(
       `driven, ${
         probeRules.length - detectionDrivenRules.length
       } named skip(s)`,
+    ...[...transformStats].map(
+      ([name, stats]) =>
+        `  ${name}: attempted=${stats.attempted} sites=${stats.sites} ` +
+        `nested=${stats.nested} yielded=${stats.outcomes.yielded} ` +
+        `unchanged=${stats.outcomes.unchanged} ` +
+        `unparsable=${stats.outcomes.unparsable} ` +
+        `recovered=${stats.outcomes.recovered} rules=${stats.rules.size}`,
+    ),
+    `  funcExpression->arrow declined: ${JSON.stringify(
+      Object.fromEntries([...declinedSites].sort()),
+    )}`,
+    `  discarded: ${discards.length}`,
+    ...discards
+      .slice(0, 8)
+      .map(
+        (discard) =>
+          `  DISCARDED [${discard.transform}] ${discard.original}\n  ===>\n${discard.rewritten}`,
+      ),
   ].join('\n'),
 );
 
@@ -1106,8 +1606,11 @@ describe('fix availability must not depend on how a function is spelled', () => 
   /** Both directions, so a fixed rule must be removed rather than lingering. */
   it('flags exactly the rules whose fix asymmetry is recorded', () => {
     expect([...new Set(fixFindings.map((f) => f.rule))].sort()).toEqual(
-      Object.keys(FIX_KNOWN_DEFECTS).sort(),
+      [...FIX_RECORDED].sort(),
     );
+    // A rule cannot be both a decision and a defect, or the two maps would
+    // cover for each other and neither could retire.
+    expect(FIX_RECORDED.length).toBe(new Set(FIX_RECORDED).size);
   });
 
   /**
@@ -1154,7 +1657,7 @@ describe('fix availability must not depend on how a function is spelled', () => 
     ).toEqual([]);
   });
 
-  it.each(fixDrivenRules.filter((rule) => !(rule in FIX_KNOWN_DEFECTS)))(
+  it.each(fixDrivenRules.filter((rule) => !FIX_RECORDED.includes(rule)))(
     '%s',
     (rule) => {
       // The row asserts it did work before it asserts a zero: an `expect('')
@@ -1217,4 +1720,137 @@ describe('both detectors are load-bearing', () => {
       }).toEqual(expected);
     },
   );
+});
+
+/**
+ * The transforms themselves, which the two censuses above cannot speak for.
+ *
+ * Both of them read a rule's behaviour across a pair of spellings, so a
+ * transform that stops producing its spelling makes them quieter, never redder
+ * — every finding it would have surfaced simply never arrives. That is how
+ * `funcExpression->arrow` spent its whole life emitting `foo() => {}` for 83%
+ * of its sites while both censuses reported clean (#1870). The discard rate is
+ * the number that had to be asserted, so it is.
+ */
+describe('every declared respelling must actually be produced', () => {
+  it('declares a floor for each transform and for no other', () => {
+    const names = TRANSFORMS.map((transform) => transform.name).sort();
+    expect(Object.keys(TRANSFORM_FLOORS).sort()).toEqual(names);
+    // An entry naming a transform that does not exist is an allowance nothing
+    // can retire, so it would silently cover the next one added.
+    expect(
+      Object.keys(DISCARD_RESIDUE).filter((name) => !names.includes(name)),
+    ).toEqual([]);
+    // The overlap filter is load-bearing over the CORPUS and not only over the
+    // planted nest below: without this, every discard assertion could pass on
+    // a corpus that never nests, and the filter would be untested where it
+    // matters. Measured 532 contained sites dropped.
+    expect(
+      [...transformStats.values()].reduce(
+        (total, stats) => total + stats.nested,
+        0,
+      ),
+    ).toBeGreaterThan(300);
+  });
+
+  it.each(TRANSFORMS.map((transform) => transform.name))(
+    '%s reaches the corpus',
+    (name) => {
+      const stats = transformStats.get(name)!;
+      const floor = TRANSFORM_FLOORS[name];
+      expect({
+        yielded: stats.outcomes.yielded,
+        rules: stats.rules.size,
+        clearsYieldFloor: stats.outcomes.yielded >= floor.yielded,
+        clearsRuleFloor: stats.rules.size >= floor.rules,
+      }).toEqual({
+        yielded: stats.outcomes.yielded,
+        rules: stats.rules.size,
+        clearsYieldFloor: true,
+        clearsRuleFloor: true,
+      });
+    },
+  );
+
+  it.each(TRANSFORMS.map((transform) => transform.name))(
+    '%s discards only what it declares it discards',
+    (name) => {
+      const stats = transformStats.get(name)!;
+      const discarded =
+        stats.outcomes.unparsable +
+        stats.outcomes.recovered +
+        stats.outcomes.unchanged;
+      const residue = DISCARD_RESIDUE[name];
+      if (!residue) {
+        // The report, not the count: a transform that starts throwing rewrites
+        // away must show the reader the text it emitted.
+        expect(discardReport(name)).toBe('');
+        return;
+      }
+      // Stale-entry direction. An allowance for something that no longer
+      // happens is a slot the next regression lands in unnoticed.
+      expect(discarded).toBeGreaterThan(0);
+      expect({ name, within: discarded <= residue.ceiling }).toEqual({
+        name,
+        within: true,
+      });
+    },
+  );
+
+  it('counts every function expression it passes over', () => {
+    const measured = Object.fromEntries(
+      declineReasons.map((reason) => [reason, declinedSites.get(reason) || 0]),
+    ) as Record<FunctionExpressionDecline, number>;
+    // A defensive reason is held at exactly zero, so a shape whose range this
+    // transform does not understand becomes a failure rather than a discard;
+    // every other reason must keep being exercised or its branch is dead.
+    const holds = Object.fromEntries(
+      declineReasons.map((reason) => [
+        reason,
+        DEFENSIVE_DECLINES.has(reason)
+          ? measured[reason] === 0
+          : measured[reason] >= DECLINE_FLOORS[reason],
+      ]),
+    );
+    expect({ measured, holds }).toEqual({
+      measured,
+      holds: Object.fromEntries(declineReasons.map((r) => [r, true])),
+    });
+  });
+
+  it('plants a control for every decline the corpus cannot reach', () => {
+    const covered = new Set(
+      RESPELLING_CONTROLS.flatMap((control) => control.declined),
+    );
+    expect(
+      declineReasons.filter(
+        (reason) => !covered.has(reason) && !DEFENSIVE_DECLINES.has(reason),
+      ),
+    ).toEqual([]);
+    // Half the controls must actually REWRITE, or the table could pass by
+    // declining everything.
+    expect(
+      RESPELLING_CONTROLS.filter((control) => control.output !== control.code)
+        .length,
+    ).toBeGreaterThan(5);
+  });
+
+  it.each(
+    RESPELLING_CONTROLS.map((control) => [control.name, control] as const),
+  )('respells %s', (_name, control) => {
+    const result = respell(control.code);
+    expect({
+      code: result.code,
+      declined: result.declined,
+      nested: result.nested,
+      // TypeScript's parser RECOVERS from a syntax error rather than
+      // throwing, so producing a tree proves nothing; the diagnostics do.
+      legal: isSyntacticallyValid(result.code, false),
+    }).toEqual({
+      code: control.output,
+      declined: control.declined,
+      nested: control.nested ?? 0,
+      legal: true,
+    });
+  });
 });
