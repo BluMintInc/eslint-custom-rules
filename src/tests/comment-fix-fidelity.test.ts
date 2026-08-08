@@ -27,14 +27,13 @@
  * token stream is byte-identical to the original's. Without that guard a marker
  * landing inside a template literal or JSX text manufactures findings.
  */
-import fs from 'fs';
-import path from 'path';
 import { Linter } from 'eslint';
 import * as tsParser from '@typescript-eslint/parser';
 import {
   defaultFilenameFor,
   harvestFixtureCorpus,
   harvestOnce,
+  silentWithoutProgramRuleNames,
   suggestionEditsOf,
   suggestionRuleNames,
 } from '../utils/fixtureCorpus';
@@ -46,29 +45,26 @@ const plugin = require('../index') as {
 /* eslint-enable @typescript-eslint/no-var-requires */
 
 const PREFIX = '@blumintinc/blumint/';
-const RULES_DIR = path.join(__dirname, '..', 'rules');
 
 /**
- * Type-aware rules are excluded for the same reason as
- * `exemption-composition-closure`: with no `parserOptions.project` they report
- * nothing, so they would contribute a false clean rather than a finding.
+ * Only a rule that rewrites text can destroy a comment.
+ *
+ * The exclusion is `silentWithoutProgramRuleNames` — rules MEASURED to report
+ * nothing here, and so unable to contribute anything but a false clean. It is
+ * deliberately not "every rule that mentions `getParserServices`": that premise
+ * was measured false (all 16 report — #1859), and it is doubly wrong for this
+ * guard, which threads each case's own `parserOptions` — `project` included —
+ * through to the linter, so the rules it dropped would have run fully
+ * type-aware. Excluding them hid a fixer deleting comments under `--fix` at
+ * `'error'` (#1877). Naming the shared set rather than rebuilding one locally is
+ * what keeps this population from drifting out from under the guard again.
  */
-const typeAwareNames = new Set(
-  fs
-    .readdirSync(RULES_DIR)
-    .filter((file) => file.endsWith('.ts'))
-    .filter((file) =>
-      /getParserServices|getTypeChecker/.test(
-        fs.readFileSync(path.join(RULES_DIR, file), 'utf8'),
-      ),
-    )
-    .map((file) => path.basename(file, '.ts')),
-);
-
-/** Only a rule that rewrites text can destroy a comment. */
 const FIXABLE_RULES = new Set(
   Object.entries(plugin.rules)
-    .filter(([name, rule]) => rule.meta?.fixable && !typeAwareNames.has(name))
+    .filter(
+      ([name, rule]) =>
+        rule.meta?.fixable && !silentWithoutProgramRuleNames.has(name),
+    )
     .map(([name]) => name),
 );
 
