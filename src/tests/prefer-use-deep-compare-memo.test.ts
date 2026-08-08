@@ -652,6 +652,27 @@ const v = useMemo(() => 1, [{ a: 1 }, 2]);
 `,
         errors: [error],
       },
+      // The same local hook spelled as a const arrow, withheld for the same
+      // reason. The pair is what pins the symmetry: a `const` binding's own
+      // initializer write is not a use of it, and counting it as one once made
+      // this spelling alone fixable — rewriting the call and importing the deep
+      // compare hook while leaving the local `useMemo` declared and unread
+      // (#1868).
+      {
+        code: `
+const useMemo = (factory: () => number, deps: unknown[]) => {
+  return factory();
+};
+const v = useMemo(() => 1, [{ a: 1 }, 2]);
+`,
+        output: `
+const useMemo = (factory: () => number, deps: unknown[]) => {
+  return factory();
+};
+const v = useMemo(() => 1, [{ a: 1 }, 2]);
+`,
+        errors: [error],
+      },
       // Two convertible calls in a file that already imports the hook are
       // rewritten in the same pass, so neither is the specifier's sole reader
       // when its own fix is planned, and afterwards the rule no longer reports —

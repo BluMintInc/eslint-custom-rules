@@ -1285,12 +1285,14 @@ export const run: Handler = (payload) => ({ ...payload, ...SEED });
 `,
     },
 
-    // A \`typeof\` query against a local const is the one orphan shape that slips
-    // through: the declaration's own initializer counts as a reference, so the
-    // binding never looks unreferenced and the strip goes ahead, leaving
-    // \`SHAPE\` unused. The boundary is pinned here rather than left to be
-    // rediscovered — closing it means teaching the shared helper to discount a
-    // declaration's self-write, which is a change to every rule that unbinds.
+    // A \`typeof\` query is the local const's only reader, so stripping the
+    // annotation orphans \`SHAPE\` — and a \`const\` is not something this fix may
+    // delete, so the whole strip is withheld rather than traded for an unused
+    // variable. The shared helper discounts a declaration's own initializer
+    // write, which is what lets the orphan be seen at all: counted as a
+    // reference it made the binding look alive on the strength of its own
+    // declaration, so this same shape spelled \`function\` declined while the
+    // \`const\` spelling stripped (#1868).
     {
       code: `import { Handler } from './handler';
 
@@ -1304,12 +1306,7 @@ export const run: Handler = (payload: typeof SHAPE) => payload;
           data: redundantParamData('payload: typeof SHAPE'),
         },
       ],
-      output: `import { Handler } from './handler';
-
-const SHAPE = { id: '' };
-
-export const run: Handler = (payload) => payload;
-`,
+      output: null,
     },
 
     // The same query against a const with other consumers strips cleanly

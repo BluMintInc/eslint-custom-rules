@@ -88,7 +88,7 @@ it is reported in turn. Depend on the object's primitive fields, or reach for
 - Performance hotspots: prefer memoizing dependencies instead of deep comparison when deep equality cost is a concern.
 - Every reported `useMemo` call the fix can rewrite is rewritten by one edit, so the import they all stop reading is unbound in that same edit. Splitting the rewrites would strand it: with two call sites neither is the specifier's last reader on its own, and once both are converted the rule no longer reports, so nothing revisits the file.
 - A call that edit does *not* rewrite keeps the import bound — one the rule never reports, one behind a disable directive (suppression is applied after a rule emits its reports, so that fix never runs), or one whose scope binds `useDeepCompareMemo` to something else. Unbinding on such a call's behalf would leave it spelling a name nothing binds.
-- The report stands without a fix whenever the rewrite would strand something the fix cannot safely unbind — a locally declared `useMemo`, an import behind a directive comment, or a name that also occurs outside the rewritten call. Rewrite those by hand.
+- The report stands without a fix whenever the rewrite would strand something the fix cannot safely unbind — a locally declared `useMemo` however it is spelled (`function useMemo` and `const useMemo = ...` alike, since a declaration's own initializer does not count as a use of it), an import behind a directive comment, or a name that also occurs outside the rewritten call. Rewrite those by hand.
 
 ### When Not To Use It
 
