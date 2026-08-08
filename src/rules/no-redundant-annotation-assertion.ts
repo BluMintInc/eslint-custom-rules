@@ -72,14 +72,25 @@ function isTraversalBoundary(node: TSESTree.Node): boolean {
   );
 }
 
+/**
+ * A returned expression that carries a type assertion, paired with the
+ * assertion's type node. The expression is kept alongside the type because
+ * deciding whether the annotation is redundant needs to know what the function
+ * returns, not merely what it asserts.
+ */
+type ReturnAssertionSite = {
+  assertion: TSESTree.TypeNode;
+  expression: TSESTree.Expression;
+};
+
 function recordReturnStatement(
   node: TSESTree.ReturnStatement,
-  assertions: TSESTree.TypeNode[],
+  assertionSites: ReturnAssertionSite[],
 ): void {
   if (!node.argument) return;
 
   const assertion = extractAssertionTypeNode(node.argument);
-  if (assertion) assertions.push(assertion);
+  if (assertion) assertionSites.push({ assertion, expression: node.argument });
 }
 
 function addChildNodesToStack(
@@ -108,10 +119,10 @@ function addChildNodesToStack(
 }
 
 function collectReturnInfo(body: TSESTree.BlockStatement): {
-  assertions: TSESTree.TypeNode[];
+  assertionSites: ReturnAssertionSite[];
   returnCount: number;
 } {
-  const assertions: TSESTree.TypeNode[] = [];
+  const assertionSites: ReturnAssertionSite[] = [];
   let returnCount = 0;
   const stack: TSESTree.Node[] = [...body.body];
 
@@ -120,7 +131,7 @@ function collectReturnInfo(body: TSESTree.BlockStatement): {
 
     if (current.type === AST_NODE_TYPES.ReturnStatement) {
       returnCount += 1;
-      recordReturnStatement(current, assertions);
+      recordReturnStatement(current, assertionSites);
       continue;
     }
 
@@ -129,7 +140,7 @@ function collectReturnInfo(body: TSESTree.BlockStatement): {
     addChildNodesToStack(current, stack);
   }
 
-  return { assertions, returnCount };
+  return { assertionSites, returnCount };
 }
 
 function findTypeAnnotationStart(
@@ -207,6 +218,44 @@ function unwrapAlias(type: ts.Type, checker: ts.TypeChecker): ts.Type {
   return type;
 }
 
+/**
+ * Readonly-ness reaches a property symbol by two disjoint routes, and a key
+ * built from only one of them equates shapes that differ:
+ *
+ * - A property *written* `readonly` (interface member, type-alias member, class
+ *   field) carries the modifier on its declaration and no check flag.
+ * - A property *synthesized* as readonly — an `as const` object literal, a
+ *   `Readonly<T>` mapped type — has no declaration modifier and carries
+ *   `CheckFlags.Readonly` instead.
+ *
+ * Reading only declarations makes `as const` compare equal to a mutable
+ * annotation, and deleting that annotation changes the value's type (see #1883).
+ *
+ * `getCheckFlags` is not published in every TypeScript release's type
+ * definitions, so it is reached through a guarded lookup: where it is absent the
+ * key falls back to declaration modifiers alone, which is exactly the
+ * information available without it. The enum is dereferenced here rather than at
+ * module scope because the plugin barrel loads every rule eagerly and a missing
+ * compiler export at module scope fails the whole plugin, not just this rule.
+ */
+function isReadonlyProperty(prop: ts.Symbol): boolean {
+  const compiler = ts as unknown as {
+    getCheckFlags?: (symbol: ts.Symbol) => number;
+    CheckFlags?: { Readonly?: number };
+  };
+  const readonlyCheckFlag = compiler.CheckFlags?.Readonly;
+
+  if (typeof compiler.getCheckFlags === 'function' && readonlyCheckFlag) {
+    if ((compiler.getCheckFlags(prop) & readonlyCheckFlag) !== 0) return true;
+  }
+
+  return (prop.declarations ?? []).some(
+    (declaration) =>
+      (ts.getCombinedModifierFlags(declaration) & ts.ModifierFlags.Readonly) !==
+      0,
+  );
+}
+
 function formatPropertySignature(
   prop: ts.Symbol,
   parentType: ts.Type,
@@ -222,8 +271,9 @@ function formatPropertySignature(
   const propType = checker.getTypeOfSymbolAtLocation(prop, declaration);
   const text = typeText(unwrapAlias(propType, checker), checker);
   const isOptional = (prop.getFlags() & ts.SymbolFlags.Optional) !== 0;
+  const readonlyPrefix = isReadonlyProperty(prop) ? 'readonly ' : '';
 
-  return `${prop.getName()}${isOptional ? '?' : ''}:${text}`;
+  return `${readonlyPrefix}${prop.getName()}${isOptional ? '?' : ''}:${text}`;
 }
 
 function getFormattedTypeProperties(
@@ -448,13 +498,15 @@ function haveMatchingTypes(
   return selectMatchingTypeRepresentation(representations);
 }
 
-function getReturnAssertion(
-  node:
-    | TSESTree.FunctionDeclaration
-    | TSESTree.FunctionExpression
-    | TSESTree.ArrowFunctionExpression
-    | TSESTree.MethodDefinition,
-): TSESTree.TypeNode | null {
+type AnnotatedFunction =
+  | TSESTree.FunctionDeclaration
+  | TSESTree.FunctionExpression
+  | TSESTree.ArrowFunctionExpression
+  | TSESTree.MethodDefinition;
+
+function getReturnAssertionSite(
+  node: AnnotatedFunction,
+): ReturnAssertionSite | null {
   const value =
     node.type === AST_NODE_TYPES.MethodDefinition ? node.value : node;
 
@@ -465,7 +517,7 @@ function getReturnAssertion(
   ).body;
 
   if (body?.type === AST_NODE_TYPES.BlockStatement) {
-    const { assertions, returnCount } = collectReturnInfo(body);
+    const { assertionSites, returnCount } = collectReturnInfo(body);
 
     // Skip functions with multiple returns because different branches can assert different types.
     if (returnCount !== 1) return null;
@@ -477,12 +529,217 @@ function getReturnAssertion(
       return null;
     }
 
-    return assertions[0] ?? null;
+    return assertionSites[0] ?? null;
   }
 
   if (!body) return null;
 
-  return extractAssertionTypeNode(body);
+  const assertion = extractAssertionTypeNode(body);
+
+  return assertion ? { assertion, expression: body } : null;
+}
+
+/**
+ * The identifiers that name `node`, in the AST. A self-reference inside the
+ * function's own return expression resolves to one of these, whichever shape
+ * the function is written in: a declaration's own name, a named function
+ * expression's name, the variable or property an anonymous function is assigned
+ * to, or a method's key.
+ */
+function ownerNameNodes(node: AnnotatedFunction): TSESTree.Node[] {
+  if (node.type === AST_NODE_TYPES.MethodDefinition) {
+    return node.computed ? [] : [node.key];
+  }
+
+  const names: TSESTree.Node[] = [];
+
+  if (node.type !== AST_NODE_TYPES.ArrowFunctionExpression && node.id) {
+    names.push(node.id);
+  }
+
+  const parent = node.parent;
+
+  if (
+    parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+    parent.id.type === AST_NODE_TYPES.Identifier
+  ) {
+    names.push(parent.id);
+  }
+
+  if (
+    (parent?.type === AST_NODE_TYPES.PropertyDefinition ||
+      parent?.type === AST_NODE_TYPES.Property) &&
+    !parent.computed
+  ) {
+    names.push(parent.key);
+  }
+
+  return names;
+}
+
+/**
+ * A binding is identified by the declarations behind its symbol rather than by
+ * the symbol object. Reading `obj.build` yields a *clone* of the symbol declared
+ * by `build: () => {}` — widening an object literal's type rebuilds its property
+ * symbols — so symbol identity reports a self-reference as unrelated. The clone
+ * keeps the original declaration, which therefore is the stable key.
+ */
+function declarationsOfSymbol(symbol: ts.Symbol): ts.Declaration[] {
+  return symbol.declarations ?? [];
+}
+
+function declaredAt(
+  nodes: TSESTree.Node[],
+  checker: ts.TypeChecker,
+  services: ParserServices,
+): Set<ts.Declaration> {
+  const declarations = new Set<ts.Declaration>();
+
+  for (const node of nodes) {
+    const tsNode = services.esTreeNodeToTSNodeMap.get(node);
+    const symbol = tsNode ? checker.getSymbolAtLocation(tsNode) : undefined;
+    if (!symbol) continue;
+
+    for (const declaration of declarationsOfSymbol(symbol)) {
+      declarations.add(declaration);
+    }
+  }
+
+  return declarations;
+}
+
+/**
+ * Every binding the returned expression reads. Resolving through the checker
+ * rather than matching identifier text keeps a shadowing inner declaration of
+ * the same name from reading as a self-reference.
+ */
+function referencedDeclarationsOf(
+  expression: TSESTree.Expression,
+  checker: ts.TypeChecker,
+  services: ParserServices,
+): Set<ts.Declaration> {
+  const declarations = new Set<ts.Declaration>();
+  const root = services.esTreeNodeToTSNodeMap.get(expression);
+  if (!root) return declarations;
+
+  /**
+   * Only a VALUE read can make return-type inference circular.
+   *
+   * The returned expression subtree contains the assertion's own type node —
+   * `<Status>{…}` and `expr as Status` both carry `Status` inside it — so
+   * resolving every identifier would count that type reference as a
+   * self-reference whenever a binding and a type share a name
+   * (`type Status = …; const Status = (): Status => <Status>{…}`). TypeScript
+   * resolves a type annotation without needing any function's return type, so
+   * such a reference can never close the cycle.
+   *
+   * `typeof f` is the one type-position spelling that reads a VALUE, and it does
+   * depend on `f`'s return type, so it counts. Checking it before the general
+   * type-node test is what lets it through — a type query is itself a type node.
+   */
+  const readsAValue = (identifier: ts.Node): boolean => {
+    let current: ts.Node | undefined = identifier.parent;
+    while (current) {
+      if (ts.isTypeQueryNode(current)) return true;
+      if (ts.isTypeNode(current)) return false;
+      if (current === root) return true;
+      current = current.parent;
+    }
+    return true;
+  };
+
+  const visit = (tsNode: ts.Node): void => {
+    if (ts.isIdentifier(tsNode) && readsAValue(tsNode)) {
+      const parent = tsNode.parent;
+      // A shorthand property's own identifier resolves to the property, so the
+      // binding it abbreviates has to be asked for by name.
+      const symbol =
+        parent && ts.isShorthandPropertyAssignment(parent)
+          ? checker.getShorthandAssignmentValueSymbol(parent)
+          : checker.getSymbolAtLocation(tsNode);
+
+      if (symbol) {
+        for (const declaration of declarationsOfSymbol(symbol)) {
+          declarations.add(declaration);
+        }
+      }
+    }
+
+    ts.forEachChild(tsNode, visit);
+  };
+
+  visit(root);
+
+  return declarations;
+}
+
+function intersects<T>(a: Set<T>, b: Set<T>): boolean {
+  for (const entry of a) {
+    if (b.has(entry)) return true;
+  }
+
+  return false;
+}
+
+/**
+ * A return-position candidate, retained so the batch can tell which annotations
+ * are load-bearing for one another's inference.
+ */
+type ReturnCandidate = {
+  site: CandidateSite;
+  owners: Set<ts.Declaration>;
+  references: Set<ts.Declaration>;
+};
+
+/**
+ * The candidates whose annotation must survive because removing it would make
+ * the function's return type circular.
+ *
+ * A function that reaches itself through its own return expression can only be
+ * typed from its annotation: dropping it leaves TypeScript inferring the return
+ * type from an expression whose type depends on that same return type (TS7023),
+ * or — where the assertion pins enough of the shape to break the cycle —
+ * silently widening a member to `any`. That circularity is invisible to the
+ * equality test that proves redundancy, because the equality only holds *while*
+ * the annotation is there.
+ *
+ * The relation is between candidates rather than within one, because this
+ * rule's fixes ship as a single batch: two mutually recursive functions each
+ * type fine while the other keeps its annotation, and become circular only when
+ * both annotations go in the same pass.
+ *
+ * Peeling candidates that cannot participate in a cycle — nothing in the batch
+ * references them, or they reference nothing in the batch — leaves the ones
+ * that do. The remainder is an over-approximation (a chain running between two
+ * cycles survives the peel), which costs a missed report rather than a broken
+ * fix.
+ */
+function findCircularReturnCandidates(
+  candidates: ReturnCandidate[],
+): Set<CandidateSite> {
+  let pool = candidates;
+
+  for (;;) {
+    const owners = new Set<ts.Declaration>();
+    const references = new Set<ts.Declaration>();
+
+    for (const candidate of pool) {
+      for (const owner of candidate.owners) owners.add(owner);
+      for (const reference of candidate.references) references.add(reference);
+    }
+
+    const next = pool.filter(
+      (candidate) =>
+        intersects(candidate.references, owners) &&
+        intersects(candidate.owners, references),
+    );
+
+    if (next.length === pool.length) {
+      return new Set(next.map((candidate) => candidate.site));
+    }
+
+    pool = next;
+  }
 }
 
 export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
@@ -532,6 +789,9 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
      */
     const sites: CandidateSite[] = [];
 
+    /** Return-position sites, kept with the symbols that decide circularity. */
+    const returnCandidates: ReturnCandidate[] = [];
+
     /**
      * Suppression is applied to reports after a rule emits them, so a suppressed
      * site keeps its annotation while losing its fix. Counting its removal
@@ -545,7 +805,7 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
       assertion: TSESTree.TypeNode,
       reportNode: TSESTree.Node,
       fixerTarget: TSESTree.TSTypeAnnotation,
-    ) {
+    ): CandidateSite | null {
       const matchingType = haveMatchingTypes(
         annotation.typeAnnotation,
         assertion,
@@ -553,13 +813,55 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
         parserServices as ParserServices,
       );
 
-      if (!matchingType) return;
+      if (!matchingType) return null;
 
-      sites.push({
+      const site: CandidateSite = {
         reportNode,
         removal: annotationRemovalRange(fixerTarget, sourceCode),
         matchingType,
-      });
+      };
+      sites.push(site);
+
+      return site;
+    }
+
+    /**
+     * The one gate every return-position visitor passes through, so a declined
+     * return annotation loses both its report and its fix whichever of the four
+     * function shapes carries it.
+     */
+    function collectReturnSite(
+      node: AnnotatedFunction,
+      annotation: TSESTree.TSTypeAnnotation,
+      reportNode: TSESTree.Node,
+    ): void {
+      const assertionSite = getReturnAssertionSite(node);
+      if (!assertionSite) return;
+
+      const owners = declaredAt(
+        ownerNameNodes(node),
+        checker,
+        parserServices as ParserServices,
+      );
+      const references = referencedDeclarationsOf(
+        assertionSite.expression,
+        checker,
+        parserServices as ParserServices,
+      );
+
+      // A function reached from its own return expression is typed by its
+      // annotation and nothing else; removing it does not simplify the code, it
+      // changes the inferred type, so the site is not a finding at all.
+      if (intersects(owners, references)) return;
+
+      const site = collectIfRedundant(
+        annotation,
+        assertionSite.assertion,
+        reportNode,
+        annotation,
+      );
+
+      if (site) returnCandidates.push({ site, owners, references });
     }
 
     /**
@@ -574,8 +876,8 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
      * vetoing the rest: orphanhood grows monotonically with the removed set, so
      * a site that cannot be planned alone can only ever poison the batch.
      */
-    function selectFixableSites(): CandidateSite[] {
-      return sites.filter(
+    function selectFixableSites(candidates: CandidateSite[]): CandidateSite[] {
+      return candidates.filter(
         (site) =>
           !isReportSuppressed(site.reportNode) &&
           planOrphanedImportRemoval(sourceCode, [site.removal]) !== null,
@@ -586,7 +888,14 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
       'Program:exit'() {
         if (sites.length === 0) return;
 
-        const fixable = selectFixableSites();
+        // Mutual recursion only becomes circular once every annotation in the
+        // cycle is gone, which is exactly what this rule's single batched fix
+        // does, so the check has to see the whole batch.
+        const circular = findCircularReturnCandidates(returnCandidates);
+        const reportable = sites.filter((site) => !circular.has(site));
+        if (reportable.length === 0) return;
+
+        const fixable = selectFixableSites(reportable);
         const removals = fixable.map((site) => site.removal);
         // One plan over every surviving removal: an import referenced solely by
         // annotations that all go in this pass is orphaned by their union, even
@@ -601,7 +910,7 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
         // report without a fixer; the carrier's pass already resolves them.
         const carrier = importRanges ? fixable[0] : undefined;
 
-        for (const site of sites) {
+        for (const site of reportable) {
           context.report({
             node: site.reportNode,
             messageId: 'redundantAnnotationAndAssertion',
@@ -661,15 +970,8 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
       },
       FunctionDeclaration(node) {
         if (!node.returnType) return;
-        const assertionType = getReturnAssertion(node);
-        if (!assertionType) return;
 
-        collectIfRedundant(
-          node.returnType,
-          assertionType,
-          node.id ?? node,
-          node.returnType,
-        );
+        collectReturnSite(node, node.returnType, node.id ?? node);
       },
       FunctionExpression(node) {
         if (node.parent?.type === AST_NODE_TYPES.MethodDefinition) {
@@ -677,39 +979,18 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
         }
 
         if (!node.returnType) return;
-        const assertionType = getReturnAssertion(node);
-        if (!assertionType) return;
 
-        collectIfRedundant(
-          node.returnType,
-          assertionType,
-          node,
-          node.returnType,
-        );
+        collectReturnSite(node, node.returnType, node);
       },
       ArrowFunctionExpression(node) {
         if (!node.returnType) return;
-        const assertionType = getReturnAssertion(node);
-        if (!assertionType) return;
 
-        collectIfRedundant(
-          node.returnType,
-          assertionType,
-          node,
-          node.returnType,
-        );
+        collectReturnSite(node, node.returnType, node);
       },
       MethodDefinition(node) {
         if (!node.value.returnType) return;
-        const assertionType = getReturnAssertion(node);
-        if (!assertionType) return;
 
-        collectIfRedundant(
-          node.value.returnType,
-          assertionType,
-          node.key,
-          node.value.returnType,
-        );
+        collectReturnSite(node, node.value.returnType, node.key);
       },
     };
   },

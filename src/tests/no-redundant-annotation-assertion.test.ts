@@ -145,6 +145,143 @@ class Foo {
 }
       `,
       `let x!: string = "hello" as string;`,
+      // A function reached from its own return expression is typed by its
+      // annotation and nothing else. The equality that proves the annotation
+      // redundant only holds while the annotation is there, so removing it does
+      // not simplify the code — it makes the return type circular. Measured on
+      // the output of each of the following: TS7023/TS7024, or a silent widening
+      // of a member to `any` where the assertion breaks the cycle.
+      `
+interface FakeQuery { orderBy: () => FakeQuery; }
+export function buildQuery(): FakeQuery {
+  return <FakeQuery>{ orderBy: () => { return buildQuery(); } };
+}
+      `,
+      `
+interface FakeQuery { readonly orderBy: () => FakeQuery; }
+export function buildQuery(): FakeQuery {
+  return { orderBy: () => { return buildQuery(); } } as const;
+}
+      `,
+      `
+export function loop(): number {
+  return <number>loop();
+}
+      `,
+      `
+interface FakeQuery { orderBy: () => FakeQuery; }
+export const buildQuery = (): FakeQuery => {
+  return <FakeQuery>{ orderBy: () => buildQuery() };
+};
+      `,
+      `
+interface FakeQuery { orderBy: () => FakeQuery; }
+export const buildQuery = (): FakeQuery => <FakeQuery>{ orderBy: () => buildQuery() };
+      `,
+      `
+interface FakeQuery { orderBy: () => FakeQuery; }
+export const buildQuery = function (): FakeQuery {
+  return <FakeQuery>{ orderBy: () => buildQuery() };
+};
+      `,
+      // A function expression reached through its own name rather than the
+      // variable it is assigned to.
+      `
+interface FakeQuery { orderBy: () => FakeQuery; }
+export const query = function build(): FakeQuery {
+  return <FakeQuery>{ orderBy: () => build() };
+};
+      `,
+      `
+interface FakeQuery { orderBy: () => FakeQuery; }
+export class Repo {
+  build(): FakeQuery {
+    return <FakeQuery>{ orderBy: () => this.build() };
+  }
+}
+      `,
+      `
+interface FakeQuery { orderBy: () => FakeQuery; }
+export class Repo {
+  build = (): FakeQuery => {
+    return <FakeQuery>{ orderBy: () => this.build() };
+  };
+}
+      `,
+      // Reading `obj.build` yields a clone of the symbol the property declares,
+      // so the self-reference is recognised by declaration rather than by symbol
+      // identity.
+      `
+interface FakeQuery { orderBy: () => FakeQuery; }
+export const obj = {
+  build: function (): FakeQuery {
+    return <FakeQuery>{ orderBy: () => obj.build() };
+  },
+};
+      `,
+      `
+interface FakeQuery { buildQuery: () => FakeQuery; }
+export function buildQuery(): FakeQuery {
+  return <FakeQuery>{ buildQuery };
+}
+      `,
+      // `typeof f` is the one type-position spelling that reads a VALUE, and it
+      // resolves through the function's own return type — so unlike a plain type
+      // reference it does close the cycle, and the annotation stays.
+      `
+export function f(): typeof f {
+  return <typeof f>f;
+}
+      `,
+      // Mutually recursive functions each type fine while the other keeps its
+      // annotation, and go circular only because this rule ships every removal
+      // in one batch.
+      `
+interface FakeQuery { orderBy: () => FakeQuery; }
+export function first(): FakeQuery {
+  return <FakeQuery>{ orderBy: () => second() };
+}
+export function second(): FakeQuery {
+  return <FakeQuery>{ orderBy: () => first() };
+}
+      `,
+      // An `as const` assertion produces readonly members, so it never restates
+      // a mutable annotation. Dropping the annotation here changes the value's
+      // type rather than deduplicating it.
+      `
+export type FakeQuery = { orderBy: () => void };
+export function build(): FakeQuery {
+  return { orderBy: () => {} } as const;
+}
+      `,
+      `
+export const conf: { run: () => void } = { run: () => {} } as const;
+export function mutate() { conf.run = () => {}; }
+      `,
+      `
+export class Holder {
+  cfg: { run: () => void } = { run: () => {} } as const;
+}
+      `,
+      `
+export const build = (): { orderBy: () => void } => {
+  return { orderBy: () => {} } as const;
+};
+      `,
+      `
+export class Query {
+  build(): { orderBy: () => void } {
+    return { orderBy: () => {} } as const;
+  }
+}
+      `,
+      // Readonly-ness written out rather than synthesized, on the assertion side.
+      `
+type Mutable = { x: number };
+type Frozen = { readonly x: number };
+declare const frozen: Frozen;
+export const value: Mutable = frozen as Frozen;
+      `,
     ],
     invalid: [
       {
@@ -642,6 +779,167 @@ const second: Wrapper = load() as Payload;
         // declaration is not this rule's to delete. Judging the union declines
         // the whole batch rather than stranding the interface.
         output: null,
+      },
+      {
+        // The circularity carve-out costs nothing on a plain return annotation:
+        // the function reaches nothing from its own return expression.
+        code: `
+export type User = { id: string };
+declare function fetchUser(): User;
+export function getUser(): User {
+  return fetchUser() as User;
+}
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+export type User = { id: string };
+declare function fetchUser(): User;
+export function getUser() {
+  return fetchUser() as User;
+}
+        `,
+      },
+      {
+        // Recursion confined to a nested function says nothing about the
+        // enclosing function's return type.
+        code: `
+export type User = { id: string };
+declare function fetchUser(): User;
+export function getUser(): User {
+  function inner(): User { return inner(); }
+  return fetchUser() as User;
+}
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+export type User = { id: string };
+declare function fetchUser(): User;
+export function getUser() {
+  function inner(): User { return inner(); }
+  return fetchUser() as User;
+}
+        `,
+      },
+      {
+        // The returned expression subtree CONTAINS the assertion's own type
+        // node, so a binding and a type sharing one name would make the
+        // assertion look like a self-reference. A type annotation resolves
+        // without any function's return type, so it can never close the cycle:
+        // only VALUE reads count.
+        name: 'a type reference sharing the function name is not a self-reference',
+        code: `
+export type Status = { a: number };
+export const Status = (): Status => <Status>{ a: 1 };
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+export type Status = { a: number };
+export const Status = () => <Status>{ a: 1 };
+        `,
+      },
+      {
+        name: 'a merged interface name on a function declaration is not a self-reference',
+        code: `
+export interface Shape { a: number }
+export function Shape(): Shape {
+  return <Shape>{ a: 1 };
+}
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+export interface Shape { a: number }
+export function Shape() {
+  return <Shape>{ a: 1 };
+}
+        `,
+      },
+      {
+        // A binding that merely shares the function's name is resolved through
+        // the checker, so shadowing does not read as a self-reference.
+        code: `
+export type Query = { orderBy: () => void };
+declare function raw(): Query;
+export function buildQuery(): Query {
+  return (() => { const buildQuery = raw; return buildQuery(); })() as Query;
+}
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+export type Query = { orderBy: () => void };
+declare function raw(): Query;
+export function buildQuery() {
+  return (() => { const buildQuery = raw; return buildQuery(); })() as Query;
+}
+        `,
+      },
+      {
+        // One candidate referencing another is only circular when the reference
+        // comes back. This chain does not, so both annotations still go.
+        code: `
+export type Q = { id: string };
+export type P = { id: string };
+declare function raw(): P;
+export function first(): Q {
+  return raw() as P;
+}
+export function second(): Q {
+  return first() as P;
+}
+        `,
+        errors: [
+          { messageId: 'redundantAnnotationAndAssertion' },
+          { messageId: 'redundantAnnotationAndAssertion' },
+        ],
+        output: `
+export type Q = { id: string };
+export type P = { id: string };
+declare function raw(): P;
+export function first() {
+  return raw() as P;
+}
+export function second() {
+  return first() as P;
+}
+        `,
+      },
+      {
+        // Readonly-awareness is a discriminator, not a blanket exclusion: two
+        // shapes that are both readonly still restate one another.
+        code: `
+export interface Frozen { readonly x: number }
+export type AlsoFrozen = { readonly x: number };
+declare const value: AlsoFrozen;
+export const frozen: Frozen = value as AlsoFrozen;
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+export interface Frozen { readonly x: number }
+export type AlsoFrozen = { readonly x: number };
+declare const value: AlsoFrozen;
+export const frozen = value as AlsoFrozen;
+        `,
+      },
+      {
+        // A method whose return expression calls something else keeps reporting.
+        code: `
+export type Q = { id: string };
+declare function raw(): Q;
+export class Repo {
+  build(): Q {
+    return raw() as Q;
+  }
+}
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+export type Q = { id: string };
+declare function raw(): Q;
+export class Repo {
+  build() {
+    return raw() as Q;
+  }
+}
+        `,
       },
     ],
   },

@@ -660,31 +660,22 @@ export const EXEMPTION_DESTROYED_BASELINE: Record<string, string> = {
     'the culprit deletes an unread `useMemo` dependency (its documented behaviour), emptying the array, which is precisely the shape the victim exists to report; neither rule is outside its remit, so the composition needs a product decision (#1884)',
 
   /**
-   * Culprit-side defect: `no-redundant-annotation-assertion`'s structural key
-   * omits `readonly`, so an `as const` type compares equal to a mutable
-   * annotation it does not actually match, and deleting that annotation orphans
-   * the type — the output emits TS6196 under this repo's own `noUnusedLocals`.
-   * Keyed `(unattributed)` because a second, inert transform
-   * (`prefer-type-over-interface`) rewrites the same region, so the guard sees
-   * more than one culprit; run alone, only this rule reproduces the harm.
-   */
-  '(unattributed) -> no-unnecessary-verb-suffix':
-    "`no-redundant-annotation-assertion`'s readonly-blind structural key deletes an annotation that is not in fact redundant, orphaning the type; the victim's signal-D carve-out reads that annotation and reports once it is gone (#1883)",
-
-  /**
-   * Same culprit, second arm: for a self-referential type the redundancy is
-   * circular — the equality that proves it holds only while the annotation
-   * exists. Measured: deleting it yields TS7023 for the angle-bracket spelling,
-   * and a silent `FakeQuery` -> `{ readonly orderBy: () => any }` leak for the
-   * `as const` ones.
+   * Victim-side gap, and all that survives of #1883. Both culprit-side arms of
+   * that issue are fixed: the structural key carries `readonly`, so an `as
+   * const` type no longer compares equal to a mutable annotation, and a return
+   * annotation reachable from its own return expression is no longer reported
+   * at all. The `(unattributed) -> no-unnecessary-verb-suffix` pair that the
+   * readonly blindness produced is gone with it.
    *
-   * One of the six fixtures (`const chain: QueryLike = {...} as const as
-   * QueryLike`) is NOT the culprit's fault and will keep this pair reproducing
-   * after #1883 lands: there the removal is type-preserving and the victim's
-   * report is wrong on its own terms, tracked as #1885.
+   * What remains is one fixture — `const chain: QueryLike = {...} as const as
+   * QueryLike` — where the culprit is right: the outer assertion restates the
+   * annotation, so removing it is type-preserving (`chain` is `QueryLike`
+   * either way). The victim's signal-D carve-out nevertheless keys on the
+   * annotation rather than the terminal assertion, so it reports a member name
+   * that is still pinned. Tracked as #1885.
    */
   'no-redundant-annotation-assertion -> no-unnecessary-verb-suffix':
-    'the culprit strips a return annotation that is load-bearing for a self-referential type, emitting code that fails TS7023 or silently leaks `any`; the victim reads that annotation as its exemption carrier. One fixture is a separate victim-side gap (#1883, #1885)',
+    "the culprit's removal here is type-preserving — a terminal `as QueryLike` still pins the member names — but the victim's carve-out reads only the annotation, so it reports a name the code still requires (#1885)",
 };
 
 const observedPairs = new Set(findings.map(pairKey));
