@@ -1,5 +1,91 @@
 [
   {
+    "version": "1.20.135",
+    "date": "2026-08-08T08:06:35.865Z",
+    "rules": [
+      {
+        "name": "enforce-assert-safe-object-key",
+        "changeType": "fix",
+        "issues": [
+          1875
+        ],
+        "summary": "exempt compiler-bounded Record lookups (closes #1875)"
+      },
+      {
+        "name": "enforce-fieldpath-syntax-in-docsetter",
+        "changeType": "fix",
+        "issues": [
+          1876
+        ],
+        "summary": "fix method-shorthand fields instead of declining them (closes #1876)"
+      },
+      {
+        "name": "enforce-id-capitalization",
+        "changeType": "fix",
+        "issues": [
+          1874
+        ],
+        "summary": "exempt lone identifier tokens in array literals (closes #1874)"
+      },
+      {
+        "name": "no-inline-component-prop",
+        "changeType": "fix",
+        "issues": [
+          1864
+        ],
+        "summary": "see the holding object through an as-const (closes #1864)"
+      },
+      {
+        "name": "no-object-values-on-strings",
+        "changeType": "fix",
+        "issues": [
+          1865
+        ],
+        "summary": "read the argument through an optional chain (closes #1865)"
+      },
+      {
+        "name": "no-passthrough-getters",
+        "changeType": "fix",
+        "issues": [
+          1872
+        ],
+        "summary": "make the optional-chaining exemption reachable (closes #1872)"
+      },
+      {
+        "name": "no-useless-usememo-primitives",
+        "changeType": "fix",
+        "issues": [
+          1877
+        ],
+        "summary": "carry comments stranded by inlining (closes #1877)"
+      },
+      {
+        "name": "no-usememo-for-pass-by-value",
+        "changeType": "fix",
+        "issues": [
+          1877
+        ],
+        "summary": "carry comments stranded by inlining (closes #1877)"
+      },
+      {
+        "name": "parallelize-async-operations",
+        "changeType": "fix",
+        "issues": [
+          1873
+        ],
+        "summary": "compile sideEffectPatterns through the shared helper (closes #1873)"
+      },
+      {
+        "name": "prefer-map-over-conditional-dispatch",
+        "changeType": "fix",
+        "issues": [
+          1867
+        ],
+        "summary": "judge a chained discriminant by the narrowing check (closes #1867)"
+      }
+    ]
+  },
+  {
     "version": "1.20.134",
     "date": "2026-08-07T15:09:56.261Z",
     "rules": [
