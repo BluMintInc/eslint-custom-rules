@@ -412,6 +412,61 @@ type Getter = { get x(): number };
 declare const g: Getter;
 export const v: { x: number } = g as Getter;
       `,
+      // #1888: a computed key whose key is a literal names exactly the member a
+      // bracketed read resolves to. Refusing it left the candidate with NO
+      // owner, so not even a DIRECT self-reference could be found.
+      `
+interface Q { orderBy: () => Q; }
+export const obj = {
+  ['build'](): Q { return <Q>{ orderBy: () => obj['build']() }; },
+};
+      `,
+      `
+interface Q { orderBy: () => Q; }
+export class Builder {
+  helper() { return this['build'](); }
+  ['build'](): Q { return <Q>{ orderBy: () => this.helper() }; }
+}
+      `,
+      // A binding introduced by a pattern relays a dependency exactly as a plain
+      // one does; it was not a graph node at all.
+      `
+interface Q { orderBy: () => Q; }
+const { run } = { run: () => build() };
+export function build(): Q { return <Q>{ orderBy: () => run() }; }
+      `,
+      `
+interface Q { orderBy: () => Q; }
+const [run] = [() => build()];
+export function build(): Q { return <Q>{ orderBy: () => run() }; }
+      `,
+      `
+interface Q { orderBy: () => Q; }
+const { run: go } = { run: () => build() };
+export function build(): Q { return <Q>{ orderBy: () => go() }; }
+      `,
+      // A parameter default is the parameter spelling of a body \`const\`, and
+      // nothing visited parameters.
+      `
+interface Q { orderBy: () => Q; }
+function helper(seed = build()) { return seed; }
+export function build(): Q { return <Q>{ orderBy: () => helper() }; }
+      `,
+      // A written-down type normally breaks the cycle — unless the annotation
+      // itself reads the candidate through \`typeof\`, which is the one spelling
+      // that makes an annotated node keep needing inference.
+      `
+interface Q { orderBy: () => Q; }
+type RT<T> = T extends (...a: any[]) => infer R ? R : never;
+function helper(): RT<typeof build> { return build(); }
+export function build(): Q { return <Q>{ orderBy: () => helper() }; }
+      `,
+      `
+interface Q { orderBy: () => Q; }
+type RT<T> = T extends (...a: any[]) => infer R ? R : never;
+const helper: () => RT<typeof build> = () => build();
+export function build(): Q { return <Q>{ orderBy: () => helper() }; }
+      `,
     ],
     invalid: [
       {
@@ -1070,6 +1125,60 @@ export const m: { readonly [k: string]: number } = { a: 1 } as { readonly [k: st
         errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
         output: `
 export const m = { a: 1 } as { readonly [k: string]: number };
+        `,
+      },
+      {
+        // The widened graph must stay keyed on WHICH declaration is reached:
+        // a computed key naming a different member strands nothing.
+        name: 'a computed-key candidate reading a different member still reports',
+        code: `
+export interface Q { orderBy: () => Q; }
+declare function raw(): Q;
+export const obj = {
+  other: raw,
+  ['build'](): Q { return <Q>{ orderBy: () => obj['other']() }; },
+};
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+export interface Q { orderBy: () => Q; }
+declare function raw(): Q;
+export const obj = {
+  other: raw,
+  ['build']() { return <Q>{ orderBy: () => obj['other']() }; },
+};
+        `,
+      },
+      {
+        name: 'a destructured binding that does not come back still reports',
+        code: `
+export interface Q { orderBy: () => Q; }
+declare function raw(): Q;
+const { run } = { run: () => raw() };
+export function build(): Q { return <Q>{ orderBy: () => run() }; }
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+export interface Q { orderBy: () => Q; }
+declare function raw(): Q;
+const { run } = { run: () => raw() };
+export function build() { return <Q>{ orderBy: () => run() }; }
+        `,
+      },
+      {
+        // An annotated parameter is typed without consulting its default, so it
+        // breaks the chain like any other written-down type.
+        name: 'an annotated parameter default still breaks the chain',
+        code: `
+export interface Q { orderBy: () => Q; }
+function helper(seed: Q = build()) { return seed; }
+export function build(): Q { return <Q>{ orderBy: () => helper() }; }
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+export interface Q { orderBy: () => Q; }
+function helper(seed: Q = build()) { return seed; }
+export function build() { return <Q>{ orderBy: () => helper() }; }
         `,
       },
       {
