@@ -1,11 +1,18 @@
 import {
   AST_NODE_TYPES,
+  AST_TOKEN_TYPES,
   TSESTree,
   TSESLint,
   ASTUtils,
 } from '@typescript-eslint/utils';
 import ts from 'typescript';
 import { createRule } from '../utils/createRule';
+import {
+  ReplacementSegment,
+  joinSegmentBody,
+  joinSegments,
+  requiresLineBreakAfter,
+} from '../utils/replacementSegments';
 
 type Options = [
   {
@@ -416,57 +423,126 @@ function removeCompleteImport(
   return fixer.removeRange([start, removalEnd]);
 }
 
-function removePartialImport(
+/**
+ * Removing the last binding removes the whole declaration, but a comment
+ * written inside it (between the braces, around the source) must not go with
+ * it: the declaration's span is re-emitted as just those comments, each kept in
+ * order, with a line break appended when the last one would otherwise swallow
+ * whatever follows the declaration on its line.
+ */
+function removeCompleteImportPreservingComments(
   importDeclaration: TSESTree.ImportDeclaration,
-  remainingSpecifiers: TSESTree.ImportClause[],
   sourceCode: Readonly<TSESLint.SourceCode>,
   fixer: TSESLint.RuleFixer,
 ): TSESLint.RuleFix {
-  const defaultSpecifier = remainingSpecifiers.find(
-    (candidate) => candidate.type === AST_NODE_TYPES.ImportDefaultSpecifier,
-  );
-  const namespaceSpecifier = remainingSpecifiers.find(
-    (candidate) => candidate.type === AST_NODE_TYPES.ImportNamespaceSpecifier,
-  );
-  const namedSpecifiers = remainingSpecifiers.filter(
-    (candidate) => candidate.type === AST_NODE_TYPES.ImportSpecifier,
-  ) as TSESTree.ImportSpecifier[];
-
-  const pieces: string[] = [];
-  if (defaultSpecifier) {
-    pieces.push(sourceCode.getText(defaultSpecifier));
-  }
-  if (namespaceSpecifier) {
-    pieces.push(sourceCode.getText(namespaceSpecifier));
-  }
-  if (namedSpecifiers.length > 0) {
-    pieces.push(
-      `{ ${namedSpecifiers
-        .map((candidate) => sourceCode.getText(candidate))
-        .join(', ')} }`,
-    );
+  const comments = sourceCode.getCommentsInside(importDeclaration);
+  if (comments.length === 0) {
+    return removeCompleteImport(importDeclaration, sourceCode, fixer);
   }
 
-  const importPrefix =
-    importDeclaration.importKind === 'type' ? 'import type ' : 'import ';
-  const newImport = `${importPrefix}${pieces.join(
-    ', ',
-  )} from ${sourceCode.getText(importDeclaration.source)};`;
-
-  return fixer.replaceText(importDeclaration, newImport);
+  const text = sourceCode.getText();
+  const carried = comments
+    .map((comment) => text.slice(comment.range[0], comment.range[1]))
+    .join('\n');
+  const suffix = requiresLineBreakAfter(comments[comments.length - 1])
+    ? '\n'
+    : '';
+  return fixer.replaceText(importDeclaration, `${carried}${suffix}`);
 }
 
-function getImportRemovalFix(
+function isCommaToken(token: TSESTree.Token | null): token is TSESTree.Token {
+  return (
+    token !== null &&
+    token.type === AST_TOKEN_TYPES.Punctuator &&
+    token.value === ','
+  );
+}
+
+/**
+ * Deletes the `useMemo` specifier and one adjacent comma while other NAMED
+ * specifiers remain. Only the tokens being retired are edited — never the
+ * declaration re-emitted from its parts — so every comment elsewhere in the
+ * declaration survives verbatim. When nothing but whitespace separates the
+ * retired tokens from their neighbour the removal range swallows that
+ * whitespace too; when a comment sits in between, the tokens are removed
+ * individually around it.
+ */
+function removeSpecifierFixes(
   specifier: TSESTree.ImportSpecifier,
   sourceCode: Readonly<TSESLint.SourceCode>,
   fixer: TSESLint.RuleFixer,
-): TSESLint.RuleFix | null {
+): TSESLint.RuleFix[] {
+  const commaAfter = sourceCode.getTokenAfter(specifier);
+  if (isCommaToken(commaAfter)) {
+    const nextToken = sourceCode.getTokenAfter(commaAfter);
+    if (nextToken && !sourceCode.commentsExistBetween(specifier, nextToken)) {
+      return [fixer.removeRange([specifier.range[0], nextToken.range[0]])];
+    }
+    return [fixer.remove(specifier), fixer.removeRange(commaAfter.range)];
+  }
+
+  const commaBefore = sourceCode.getTokenBefore(specifier);
+  if (isCommaToken(commaBefore)) {
+    if (!sourceCode.commentsExistBetween(commaBefore, specifier)) {
+      return [fixer.removeRange([commaBefore.range[0], specifier.range[1]])];
+    }
+    return [fixer.removeRange(commaBefore.range), fixer.remove(specifier)];
+  }
+
+  return [fixer.remove(specifier)];
+}
+
+/**
+ * Deletes the whole `{ useMemo }` group — braces, specifier and the comma
+ * joining it to the default specifier — when `useMemo` is the only named
+ * binding but a default import keeps the declaration alive. As above, comments
+ * inside the group survive by shrinking the edit to the individual tokens.
+ */
+function removeNamedGroupFixes(
+  specifier: TSESTree.ImportSpecifier,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  fixer: TSESLint.RuleFixer,
+): TSESLint.RuleFix[] {
+  const openBrace = sourceCode.getTokenBefore(specifier, {
+    filter: (token) => token.value === '{',
+  });
+  const closeBrace = sourceCode.getTokenAfter(specifier, {
+    filter: (token) => token.value === '}',
+  });
+  if (!openBrace || !closeBrace) {
+    return [fixer.remove(specifier)];
+  }
+
+  const commaBefore = sourceCode.getTokenBefore(openBrace);
+  const start = isCommaToken(commaBefore) ? commaBefore : openBrace;
+  if (!sourceCode.commentsExistBetween(start, closeBrace)) {
+    return [fixer.removeRange([start.range[0], closeBrace.range[1]])];
+  }
+
+  const fixes: TSESLint.RuleFix[] = [];
+  if (start !== openBrace) {
+    fixes.push(fixer.removeRange(start.range));
+  }
+  fixes.push(fixer.removeRange(openBrace.range), fixer.remove(specifier));
+  const trailingComma = sourceCode.getTokenAfter(specifier);
+  if (isCommaToken(trailingComma)) {
+    fixes.push(fixer.removeRange(trailingComma.range));
+  }
+  fixes.push(fixer.removeRange(closeBrace.range));
+  return fixes;
+}
+
+function getImportRemovalFixes(
+  specifier: TSESTree.ImportSpecifier,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  fixer: TSESLint.RuleFixer,
+): TSESLint.RuleFix[] {
   const importDeclaration = specifier.parent;
   if (
     !importDeclaration ||
     importDeclaration.type !== AST_NODE_TYPES.ImportDeclaration
   ) {
-    return null;
+    return [];
   }
 
   const remainingSpecifiers = importDeclaration.specifiers.filter(
@@ -474,15 +550,23 @@ function getImportRemovalFix(
   );
 
   if (remainingSpecifiers.length === 0) {
-    return removeCompleteImport(importDeclaration, sourceCode, fixer);
+    return [
+      removeCompleteImportPreservingComments(
+        importDeclaration,
+        sourceCode,
+        fixer,
+      ),
+    ];
   }
 
-  return removePartialImport(
-    importDeclaration,
-    remainingSpecifiers,
-    sourceCode,
-    fixer,
+  const hasOtherNamedSpecifiers = remainingSpecifiers.some(
+    (candidate) => candidate.type === AST_NODE_TYPES.ImportSpecifier,
   );
+  if (!hasOtherNamedSpecifiers) {
+    return removeNamedGroupFixes(specifier, sourceCode, fixer);
+  }
+
+  return removeSpecifierFixes(specifier, sourceCode, fixer);
 }
 
 function getReplacementText(
@@ -502,6 +586,31 @@ function getReplacementText(
   }
 
   return sourceCode.getText(returnedExpression);
+}
+
+/**
+ * Comments inside the `useMemo(...)` span but outside the returned expression.
+ *
+ * The fix replaces the whole call with the text of the returned expression, so
+ * the callback wrapper, the `return` keyword, the dependency array and every
+ * piece of trivia between them disappear. A comment sitting in any of those
+ * places has no surviving anchor in the replacement, so the fixer carries it
+ * into the replacement instead (#1877). A comment inside the returned
+ * expression needs no carrying: its text is copied verbatim with the
+ * expression.
+ */
+function strandedCommentsOf(
+  node: TSESTree.CallExpression,
+  returnedExpression: TSESTree.Expression,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+): TSESTree.Comment[] {
+  return sourceCode
+    .getCommentsInside(node)
+    .filter(
+      (comment) =>
+        comment.range[0] < returnedExpression.range[0] ||
+        comment.range[1] > returnedExpression.range[1],
+    );
 }
 
 function isSafeAtomicExpression(expression: TSESTree.Expression): boolean {
@@ -838,18 +947,108 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
         returnedExpression,
         sourceCode,
       );
-      const replacement = needsParentheses
-        ? `(${replacementText})`
-        : replacementText;
+      const strandedComments = strandedCommentsOf(
+        node,
+        returnedExpression,
+        sourceCode,
+      );
+
+      const fixes: TSESLint.RuleFix[] = [];
+
+      if (strandedComments.length === 0) {
+        fixes.push(
+          fixer.replaceText(
+            node,
+            needsParentheses ? `(${replacementText})` : replacementText,
+          ),
+        );
+      } else {
+        // Carrying must not change the non-comment token stream: whether the
+        // replacement is parenthesized is decided by the expression's context
+        // exactly as in the comment-free fix, never by the comments themselves.
+        // The call can start mid-line, so the indentation of the line it opens
+        // on is the only anchor the carried comments have.
+        const startLine = sourceCode.lines[node.loc.start.line - 1] ?? '';
+        const indent = /^[\t ]*/.exec(startLine)?.[0] ?? '';
+        const text = sourceCode.getText();
+        const toSegment = (comment: TSESTree.Comment): ReplacementSegment => ({
+          text: text.slice(comment.range[0], comment.range[1]),
+          breakAfter: requiresLineBreakAfter(comment),
+        });
+        // A stranded comment lies wholly on one side of the expression, since
+        // a comment is a token and cannot straddle a node; keeping each on its
+        // own side preserves what it annotates.
+        const isBefore = (comment: TSESTree.Comment) =>
+          comment.range[0] < returnedExpression.range[0];
+        const leadingComments = strandedComments.filter(isBefore);
+        const trailingComments = strandedComments.filter(
+          (comment) => !isBefore(comment),
+        );
+
+        if (needsParentheses) {
+          // Inside parentheses a newline can never trigger ASI, so every
+          // comment — line comments and -next-line directives included — can
+          // ride within the replacement on a line of its own.
+          const segments: ReplacementSegment[] = [
+            ...leadingComments.map(toSegment),
+            { text: replacementText, breakAfter: false },
+            ...trailingComments.map(toSegment),
+          ];
+          fixes.push(fixer.replaceText(node, joinSegments(segments, indent)));
+        } else {
+          // Without parentheses a line break between a restricted keyword
+          // (`return`, `throw`, `yield`) and the expression would change the
+          // program through ASI, so a leading comment that demands its own
+          // line is hoisted onto a full line of its own ABOVE the line the
+          // call starts on. That insertion can never split a token pair, and
+          // it lands a `-next-line` directive exactly one line above the
+          // statement that now hosts its subject. Everything else stays
+          // inline: a block comment beside the expression, and a trailing
+          // line-bound comment followed by a line break, which is safe after
+          // the expression has begun.
+          const hoistedComments = leadingComments.filter(
+            requiresLineBreakAfter,
+          );
+          if (hoistedComments.length > 0) {
+            const lineStartIndex = sourceCode.getIndexFromLoc({
+              line: node.loc.start.line,
+              column: 0,
+            });
+            const hoisted = hoistedComments
+              .map(
+                (comment) =>
+                  `${indent}${text.slice(
+                    comment.range[0],
+                    comment.range[1],
+                  )}\n`,
+              )
+              .join('');
+            fixes.push(
+              fixer.insertTextBeforeRange(
+                [lineStartIndex, lineStartIndex],
+                hoisted,
+              ),
+            );
+          }
+
+          const segments: ReplacementSegment[] = [
+            ...leadingComments
+              .filter((comment) => !requiresLineBreakAfter(comment))
+              .map(toSegment),
+            { text: replacementText, breakAfter: false },
+            ...trailingComments.map(toSegment),
+          ];
+          const body = joinSegmentBody(segments, indent);
+          const trailing = segments[segments.length - 1].breakAfter
+            ? `\n${indent}`
+            : '';
+          fixes.push(fixer.replaceText(node, `${body}${trailing}`));
+        }
+      }
 
       const specifier = getRemovableImportSpecifier(node, imports, sourceCode);
-      const fixes: TSESLint.RuleFix[] = [fixer.replaceText(node, replacement)];
-
       if (specifier) {
-        const removal = getImportRemovalFix(specifier, sourceCode, fixer);
-        if (removal) {
-          fixes.push(removal);
-        }
+        fixes.push(...getImportRemovalFixes(specifier, sourceCode, fixer));
       }
 
       return fixes;
