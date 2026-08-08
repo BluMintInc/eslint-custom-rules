@@ -62,6 +62,51 @@ console.log(obj[\`prefix_\${id}_suffix\`]);
       `,
     },
     {
+      // #1880: fixed text earns the exemption by RULING OUT a dangerous name.
+      // No substitution can make a key starting `user-` be `__proto__`,
+      // `constructor` or `prototype`, so the lookup cannot reach the prototype.
+      name: 'a template whose prefix rules out every dangerous name stays exempt',
+      code: `
+const R: Record<string, number> = {};
+export const f = (id: string) => R[\`user-\${id}\`];
+      `,
+    },
+    {
+      name: 'a template whose suffix rules out every dangerous name stays exempt',
+      code: `
+const R: Record<string, number> = {};
+export const f = (id: string) => R[\`\${id}_suffix\`];
+      `,
+    },
+    {
+      // A dangerous name shares the prefix but is SHORTER than the fixed text,
+      // so the template still cannot spell it.
+      name: 'a template longer than the name it prefixes stays exempt',
+      code: `
+const R: Record<string, number> = {};
+export const f = (id: string) => R[\`prototype_owner_\${id}\`];
+      `,
+    },
+    {
+      // Every substitution is provably numeric, so the template can only widen
+      // into digits — and no dangerous property name is the string form of a
+      // number. Same proof the identifier path already accepts.
+      name: 'a numeric substitution cannot widen a reaching template into a name',
+      code: `
+const R: Record<string, number> = {};
+export const f = (n: number) => R[\`__pro\${n}\`];
+      `,
+    },
+    {
+      // A template with no substitution produces exactly one string; it is a
+      // static key like any other string literal.
+      name: 'a template with no substitution is a static key',
+      code: `
+const R: Record<string, number> = {};
+export const f = () => R[\`literal\`];
+      `,
+    },
+    {
       // Numeric expressions should be valid
       code: `
 const arr = ['value1', 'value2', 'value3'];
@@ -714,6 +759,93 @@ import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 console.log(obj[assertSafe(id)]);
+      `,
+    },
+    {
+      // #1880: fixed text does NOT by itself rule a dangerous name out. With
+      // `x` = 'to__' this key is `__proto__`, which resolves to
+      // Object.prototype at runtime. The whole template is the key, so the
+      // whole template is what gets wrapped.
+      name: 'a template that can still spell __proto__ is reported',
+      code: `
+const R: Record<string, number> = {};
+export const f = (x: string) => R[\`__pro\${x}\`];
+      `,
+      errors: [lintError('`__pro${x}`')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const R: Record<string, number> = {};
+export const f = (x: string) => R[assertSafe(\`__pro\${x}\`)];
+      `,
+    },
+    {
+      name: 'a template that can still spell __proto__ through its suffix is reported',
+      code: `
+const R: Record<string, number> = {};
+export const f = (x: string) => R[\`\${x}proto__\`];
+      `,
+      errors: [lintError('`${x}proto__`')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const R: Record<string, number> = {};
+export const f = (x: string) => R[assertSafe(\`\${x}proto__\`)];
+      `,
+    },
+    {
+      // The substitution sits BETWEEN two fixed halves of the dangerous name.
+      name: 'a template bracketing a dangerous name is reported',
+      code: `
+const R: Record<string, number> = {};
+export const f = (x: string) => R[\`__\${x}__\`];
+      `,
+      errors: [lintError('`__${x}__`')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const R: Record<string, number> = {};
+export const f = (x: string) => R[assertSafe(\`__\${x}__\`)];
+      `,
+    },
+    {
+      name: 'a template that can still spell constructor is reported',
+      code: `
+const R: Record<string, number> = {};
+export const f = (x: string) => R[\`cons\${x}\`];
+      `,
+      errors: [lintError('`cons${x}`')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const R: Record<string, number> = {};
+export const f = (x: string) => R[assertSafe(\`cons\${x}\`)];
+      `,
+    },
+    {
+      // Prototype POLLUTION rather than mere reach: the write is the shape that
+      // actually corrupts the prototype.
+      name: 'a reaching template on the left of an assignment is reported',
+      code: `
+const R: Record<string, number> = {};
+export const f = (x: string) => { R[\`__pro\${x}\`] = 1; };
+      `,
+      errors: [lintError('`__pro${x}`')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const R: Record<string, number> = {};
+export const f = (x: string) => { R[assertSafe(\`__pro\${x}\`)] = 1; };
+      `,
+    },
+    {
+      // Two substitutions, both unbounded: the interior quasi must still be
+      // matched in order for the name to be producible.
+      name: 'a multi-substitution template that can spell prototype is reported',
+      code: `
+const R: Record<string, number> = {};
+export const f = (a: string, b: string) => R[\`pro\${a}ty\${b}\`];
+      `,
+      errors: [lintError('`pro${a}ty${b}`')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const R: Record<string, number> = {};
+export const f = (a: string, b: string) => R[assertSafe(\`pro\${a}ty\${b}\`)];
       `,
     },
     {

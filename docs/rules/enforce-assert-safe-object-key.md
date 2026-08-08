@@ -80,6 +80,29 @@ property name:
   **both** sides are themselves numeric. An identifier qualifies when the
   binding it resolves to proves it: a `: number` parameter, a variable whose
   every write keeps it numeric, or a binding **declared** numeric (below).
+- **A template's fixed text rules the names out.** `` obj[`user-${id}`] `` is
+  exempt because no substitution can make a key beginning `user-` be
+  `__proto__`, `constructor` or `prototype`. The fixed text has to *earn* that,
+  though — it is checked, not assumed. `` obj[`__pro${x}`] `` carries fixed text
+  too and is still reported, because `x` = `"to__"` spells `__proto__` and
+  resolves to `Object.prototype`. A template is judged reaching when a dangerous
+  name starts with its first quasi, ends with its last, and contains the
+  interior quasis in order. A template whose every substitution is provably
+  numeric is exempt for the same reason a numeric key is.
+
+```js
+// ✅ Exempt: the fixed text cannot spell a dangerous name.
+obj[`user-${id}`];
+obj[`${id}_suffix`];
+obj[`prototype_owner_${id}`]; // longer than the name it starts with
+obj[`__pro${index}`]; // index is a number
+
+// ❌ Still reported: the template can still spell one.
+obj[`__pro${x}`]; // x = 'to__'
+obj[`${x}proto__`]; // x = '__'
+obj[`__${x}__`]; // x = 'proto'
+obj[`cons${x}`]; // x = 'tructor'
+```
 
 ```js
 // ✅ Exempt: the key cannot name a property.

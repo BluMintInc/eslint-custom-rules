@@ -291,6 +291,56 @@ function isNumericCall(node: TSESTree.CallExpression): boolean {
 }
 
 /**
+ * The property names `assertSafe` exists to reject. A key that provably cannot
+ * spell one of these cannot reach the prototype surface, which is the entire
+ * hazard — so proving it is what earns an exemption, the same standard the
+ * numeric analysis already meets.
+ */
+const PROTOTYPE_REACHING_KEYS = ['__proto__', 'constructor', 'prototype'];
+
+/**
+ * Whether a template's FIXED text still leaves room to spell `target`.
+ *
+ * The producible set is `q0 + * + q1 + * + … + * + qN`, each `*` an arbitrary
+ * substitution. `target` is producible iff it starts with `q0`, ends with `qN`,
+ * and the interior quasis occur in order in between without overlapping. So
+ * `` `user-${id}` `` can never be `__proto__` (no such prefix) while
+ * `` `__pro${x}` `` can — with `x` = `'to__'`, which resolves to
+ * `Object.prototype` at runtime.
+ *
+ * Interior quasis are matched greedily from the left. That is sufficient
+ * because they are fixed strings: taking the earliest occurrence never consumes
+ * a character a later quasi needed, so no backtracking can succeed where the
+ * greedy pass fails.
+ *
+ * A template with no substitutions produces exactly one string and is a static
+ * key like any other string literal, so it is never treated as reaching.
+ */
+function templateCanSpell(quasis: readonly string[], target: string): boolean {
+  if (quasis.length < 2) {
+    return false;
+  }
+  const first = quasis[0];
+  const last = quasis[quasis.length - 1];
+  if (!target.startsWith(first) || !target.endsWith(last)) {
+    return false;
+  }
+  const limit = target.length - last.length;
+  let cursor = first.length;
+  if (cursor > limit) {
+    return false;
+  }
+  for (const middle of quasis.slice(1, -1)) {
+    const at = target.indexOf(middle, cursor);
+    if (at < 0 || at + middle.length > limit) {
+      return false;
+    }
+    cursor = at + middle.length;
+  }
+  return true;
+}
+
+/**
  * A `: number` annotation on a binding name. Parameters and variable
  * declarators are the bindings that carry one, and TypeScript checks every
  * value that reaches such a binding against it.
@@ -1385,22 +1435,48 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
               return;
             }
 
-            // Only flag simple template literals that are just `${id}`
-            // Complex templates with additional text like `prefix_${id}_suffix` are allowed
+            // A template whose every substitution is provably numeric can only
+            // widen into digits, and no dangerous property name is the string
+            // form of a number — the same proof the identifier path accepts.
+            const canWidenToText = property.expressions.some(
+              (expr) => !isStaticallyNumeric(expr),
+            );
+            const quasis = property.quasis.map(
+              (quasi) => quasi.value.cooked ?? quasi.value.raw,
+            );
+            const reachesPrototype =
+              canWidenToText &&
+              PROTOTYPE_REACHING_KEYS.some((key) =>
+                templateCanSpell(quasis, key),
+              );
+
+            // Fixed text on either side of the substitution can rule a property
+            // name out — `user-${id}` is never `__proto__` — and the rule skips
+            // a key it can prove harmless. What it must NOT do is assume that:
+            // `__pro${x}` carries fixed text too and still reaches the
+            // prototype (#1880).
+            if (!reachesPrototype) {
+              return;
+            }
+
+            // `${id}` alone is the whole key, so the remedy names the inner
+            // expression and the fix wraps it directly. A template carrying
+            // fixed text has no such inner key — the string it builds is the
+            // key — so that whole template is what gets wrapped, which is the
+            // shape the docs show for `assertSafe(`${id}_suffix`)`.
             const isSimpleVarInterpolation =
               property.expressions.length === 1 &&
               property.quasis.length === 2 &&
               property.quasis[0].value.raw === '' &&
               property.quasis[1].value.raw === '';
-
-            if (!isSimpleVarInterpolation) {
-              // Complex template literals with additional text are fine
-              return;
-            }
-
-            const expr = property.expressions[0];
-            const exprText = context.sourceCode.getText(expr);
-            reportWrittenKey(written, property, exprText);
+            const unwrapped = isSimpleVarInterpolation
+              ? property.expressions[0]
+              : property;
+            reportWrittenKey(
+              written,
+              property,
+              context.sourceCode.getText(unwrapped),
+            );
             return;
           }
 
