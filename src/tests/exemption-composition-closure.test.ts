@@ -659,23 +659,6 @@ export const EXEMPTION_DESTROYED_BASELINE: Record<string, string> = {
   'no-entire-object-hook-deps -> enforce-global-constants':
     'the culprit deletes an unread `useMemo` dependency (its documented behaviour), emptying the array, which is precisely the shape the victim exists to report; neither rule is outside its remit, so the composition needs a product decision (#1884)',
 
-  /**
-   * Victim-side gap, and all that survives of #1883. Both culprit-side arms of
-   * that issue are fixed: the structural key carries `readonly`, so an `as
-   * const` type no longer compares equal to a mutable annotation, and a return
-   * annotation reachable from its own return expression is no longer reported
-   * at all. The `(unattributed) -> no-unnecessary-verb-suffix` pair that the
-   * readonly blindness produced is gone with it.
-   *
-   * What remains is one fixture — `const chain: QueryLike = {...} as const as
-   * QueryLike` — where the culprit is right: the outer assertion restates the
-   * annotation, so removing it is type-preserving (`chain` is `QueryLike`
-   * either way). The victim's signal-D carve-out nevertheless keys on the
-   * annotation rather than the terminal assertion, so it reports a member name
-   * that is still pinned. Tracked as #1885.
-   */
-  'no-redundant-annotation-assertion -> no-unnecessary-verb-suffix':
-    "the culprit's removal here is type-preserving — a terminal `as QueryLike` still pins the member names — but the victim's carve-out reads only the annotation, so it reports a name the code still requires (#1885)",
 };
 
 const observedPairs = new Set(findings.map(pairKey));

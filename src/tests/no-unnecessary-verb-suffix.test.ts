@@ -6,6 +6,43 @@ import { preferTypeOverInterface } from '../rules/prefer-type-over-interface';
 
 ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
   valid: [
+    // #1885: an `as T` pins the member names `T` REQUIRES, even though it does
+    // not reject excess ones. These two were `invalid` on the excess-property
+    // reasoning, but the rename they demanded does not compile — measured:
+    //   { orderBy } as QueryLike            -> clean
+    //   { order }   as QueryLike            -> TS2352, "Property 'orderBy' is
+    //                                          missing ... but required"
+    // The excess half of the premise does hold, and is still covered elsewhere:
+    //   { orderBy, extra } as QueryLike     -> clean
+    //   const c: QueryLike = { orderBy, extra } -> TS2322
+    // A rename removes a REQUIRED member, which is the check an assertion does
+    // perform, so the name is dictated by the target type either way.
+    // Spelled `type` rather than `interface` so the fixtures do not also join
+    // the documented no-unnecessary-verb-suffix::prefer-type-over-interface
+    // disagreement; the assertion is what this pins, and it reads identically.
+    `
+    type QueryLike = {
+      orderBy: (field: string) => void;
+    };
+    const chain = {
+      orderBy: (field: string) => {
+        return;
+      },
+    } as QueryLike;
+  `,
+    `
+    type FakeQuery = {
+      fetchTournamentsBy: (key: string) => string;
+    };
+    const query = {
+      fetchTournamentsBy: (key: string) => {
+        return key;
+      },
+    } as FakeQuery;
+  `,
+    // `as const` declares no members of its own, so it pins no name and stays
+    // transparent — `enforce-object-literal-as-const` appends one to exactly
+    // these literals by `--fix`, and that must not silence the rule.
     // Regular function declarations
     'function createMatch(player) {}',
     'function computeValue(data) {}',
@@ -1778,20 +1815,6 @@ function lineAt(lines: string[], index: number) {
   `,
       errors: [{ messageId: 'unnecessaryVerbSuffix' }],
     },
-    // An `as` assertion permits members the target type never declares.
-    {
-      code: `
-    interface QueryLike {
-      orderBy: (field: string) => void;
-    }
-    const chain = {
-      orderBy: (field: string) => {
-        return;
-      },
-    } as QueryLike;
-  `,
-      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
-    },
     // A variable's own name is never dictated by its annotation, so an
     // annotated arrow const stays reported. Exported here so the rename fix is
     // suppressed and the assertion isolates the report.
@@ -2522,21 +2545,6 @@ function computeFrom(compute: string) {
         },
       } as const;
     };
-  `,
-      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
-    },
-    // An `as` assertion does not excess-property-check what it wraps, so it is
-    // no substitute for the annotation the walk is looking for.
-    {
-      code: `
-    interface FakeQuery {
-      fetchTournamentsBy: (key: string) => string;
-    }
-    const query = {
-      fetchTournamentsBy: (key: string) => {
-        return key;
-      },
-    } as FakeQuery;
   `,
       errors: [{ messageId: 'unnecessaryVerbSuffix' }],
     },
