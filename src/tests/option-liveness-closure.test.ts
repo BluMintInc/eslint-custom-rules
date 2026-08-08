@@ -150,14 +150,7 @@ const PROGRAM_ONLY_OPTIONS: Record<string, readonly string[]> = {
  * certifying its option live off the crash, and an entry whose rule has been
  * routed through `compilePatternOption` fails as stale and must be deleted.
  */
-const CRASHES_ON_UNCOMPILABLE_PATTERN: Record<string, string> = {
-  // `sideEffectPatterns` is a regex source built with a bare
-  // `new RegExp(pattern, 'i')` in `create`, so nothing declares it one and the
-  // probe set still reaches it. Route it through `compilePatternOption` and
-  // delete this entry.
-  'parallelize-async-operations:sideEffectPatterns':
-    'compiles its patterns with a bare `new RegExp` rather than `compilePatternOption`',
-};
+const CRASHES_ON_UNCOMPILABLE_PATTERN: Record<string, string> = {};
 
 const RULES_DIR = path.join(__dirname, '..', 'rules');
 
@@ -983,6 +976,7 @@ describe('option liveness', () => {
       'no-handler-suffix:allowPatterns',
       'no-render-function-components:allowNames',
       'no-separate-loading-state:patterns',
+      'parallelize-async-operations:sideEffectPatterns',
     ]);
   });
 });
