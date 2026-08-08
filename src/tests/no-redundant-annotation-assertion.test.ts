@@ -245,6 +245,113 @@ export function second(): FakeQuery {
   return <FakeQuery>{ orderBy: () => first() };
 }
       `,
+      // A cycle closes through whatever lies on it, and what lies on it is
+      // usually not a candidate: an unannotated helper has no annotation to
+      // remove, so a relation drawn candidate-to-candidate never sees it.
+      // Measured on the output of each of the following (#1886): TS7023 on
+      // every unannotated link, or a silent widening to `any`.
+      `
+interface FakeQuery { orderBy: () => FakeQuery; }
+function helper() { return buildQuery(); }
+export function buildQuery(): FakeQuery {
+  return <FakeQuery>{ orderBy: () => helper() };
+}
+      `,
+      `
+interface FakeQuery { orderBy: () => FakeQuery; }
+const helper = () => buildQuery();
+export function buildQuery(): FakeQuery {
+  return <FakeQuery>{ orderBy: () => helper() };
+}
+      `,
+      // The `as const` spelling of the same reach. Measured: TS6196 plus a
+      // return type of `{ readonly orderBy: () => any }`.
+      `
+interface FakeQuery { readonly orderBy: () => FakeQuery; }
+function helper() { return buildQuery(); }
+export function buildQuery(): FakeQuery {
+  return { orderBy: () => helper() } as const;
+}
+      `,
+      // Three links, so a fixpoint over one-hop edges cannot reach it either.
+      `
+interface FakeQuery { orderBy: () => FakeQuery; }
+function helper() { return buildQuery(); }
+export function buildQuery(): FakeQuery {
+  return <FakeQuery>{ orderBy: () => alpha() };
+}
+export function alpha(): FakeQuery {
+  return <FakeQuery>{ orderBy: () => helper() };
+}
+      `,
+      `
+interface FakeQuery { orderBy: () => FakeQuery; }
+export class Builder {
+  helper() { return this.build(); }
+  build(): FakeQuery {
+    return <FakeQuery>{ orderBy: () => this.helper() };
+  }
+}
+      `,
+      // A value binding relays the dependency just as a function does: the
+      // object holding the callback has no return type of its own to annotate.
+      `
+interface FakeQuery { orderBy: () => FakeQuery; }
+const cache = { get: () => build() };
+export function build(): FakeQuery {
+  return <FakeQuery>{ orderBy: () => cache.get() };
+}
+      `,
+      `
+interface FakeQuery { orderBy: () => FakeQuery; }
+export class Repo {
+  cache = { get: () => this.build() };
+  build(): FakeQuery {
+    return <FakeQuery>{ orderBy: () => this.cache.get() };
+  }
+}
+      `,
+      // A local binding on the way to the return. Measured: TS7022 on `x`
+      // alongside TS7023 on both functions.
+      `
+interface FakeQuery { orderBy: () => FakeQuery; }
+function helper() { const x = buildQuery(); return x; }
+export function buildQuery(): FakeQuery {
+  return <FakeQuery>{ orderBy: () => helper() };
+}
+      `,
+      `
+interface FakeQuery { orderBy: () => FakeQuery; }
+const alias = buildQuery;
+export function buildQuery(): FakeQuery {
+  return <FakeQuery>{ orderBy: () => alias() };
+}
+      `,
+      `
+interface FakeQuery { orderBy: () => FakeQuery; }
+const defaults = { orderBy: () => build() };
+export function build(): FakeQuery {
+  return <FakeQuery>{ ...defaults };
+}
+      `,
+      // A property read spells its name as a string under bracket access, and
+      // resolves to the same symbol the dotted spelling does.
+      `
+interface FakeQuery { orderBy: () => FakeQuery; }
+export const obj = {
+  build(): FakeQuery {
+    return <FakeQuery>{ orderBy: () => obj['build']() };
+  },
+};
+      `,
+      `
+interface FakeQuery { orderBy: () => FakeQuery; }
+export const obj = {
+  build(): FakeQuery {
+    return <FakeQuery>{ orderBy: () => obj[\`build\`]() };
+  },
+};
+      `,
       // An `as const` assertion produces readonly members, so it never restates
       // a mutable annotation. Dropping the annotation here changes the value's
       // type rather than deduplicating it.
@@ -939,6 +1046,249 @@ export class Repo {
     return raw() as Q;
   }
 }
+        `,
+      },
+      {
+        // Transitive reach ends at the first type that is written down. The
+        // helper's own annotation types it without consulting `buildQuery`, so
+        // the loop is not one TypeScript has to resolve. Measured on the
+        // output: no diagnostics, `buildQuery` still returns `FakeQuery`.
+        name: 'a cycle closed through an annotated helper still reports',
+        code: `
+export interface FakeQuery { orderBy: () => FakeQuery; }
+function helper(): FakeQuery { return buildQuery(); }
+export function buildQuery(): FakeQuery {
+  return <FakeQuery>{ orderBy: () => helper() };
+}
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+export interface FakeQuery { orderBy: () => FakeQuery; }
+function helper(): FakeQuery { return buildQuery(); }
+export function buildQuery() {
+  return <FakeQuery>{ orderBy: () => helper() };
+}
+        `,
+      },
+      {
+        // The relay is a MEMBER of an object the candidate reads, and it writes
+        // its own return type down. Attributing that member's body to the
+        // binding merely containing it would close a loop TypeScript does not
+        // have — measured on the output: no diagnostics, `buildQuery` still
+        // returns `FakeQuery`. The member is already its own graph node.
+        name: 'a cycle closed through an annotated object member still reports',
+        code: `
+export interface FakeQuery { orderBy: () => FakeQuery; }
+const cache = { get: (): FakeQuery => buildQuery() };
+export function buildQuery(): FakeQuery {
+  return <FakeQuery>{ orderBy: () => cache.get() };
+}
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+export interface FakeQuery { orderBy: () => FakeQuery; }
+const cache = { get: (): FakeQuery => buildQuery() };
+export function buildQuery() {
+  return <FakeQuery>{ orderBy: () => cache.get() };
+}
+        `,
+      },
+      {
+        name: 'a cycle closed through an annotated object method still reports',
+        code: `
+export interface FakeQuery { orderBy: () => FakeQuery; }
+const api = { run(): FakeQuery { return buildQuery(); } };
+export function buildQuery(): FakeQuery {
+  return <FakeQuery>{ orderBy: () => api.run() };
+}
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+export interface FakeQuery { orderBy: () => FakeQuery; }
+const api = { run(): FakeQuery { return buildQuery(); } };
+export function buildQuery() {
+  return <FakeQuery>{ orderBy: () => api.run() };
+}
+        `,
+      },
+      {
+        name: 'a cycle closed through an annotated array element still reports',
+        code: `
+export interface FakeQuery { orderBy: () => FakeQuery; }
+const handlers = [(): FakeQuery => buildQuery()];
+export function buildQuery(): FakeQuery {
+  return <FakeQuery>{ orderBy: () => handlers[0]() };
+}
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+export interface FakeQuery { orderBy: () => FakeQuery; }
+const handlers = [(): FakeQuery => buildQuery()];
+export function buildQuery() {
+  return <FakeQuery>{ orderBy: () => handlers[0]() };
+}
+        `,
+      },
+      {
+        // A contextually typed function is not inferred from its body either,
+        // so the binding's annotation breaks the loop just as a return
+        // annotation does.
+        name: 'a cycle closed through a contextually typed binding still reports',
+        code: `
+export interface FakeQuery { orderBy: () => FakeQuery; }
+const helper: () => FakeQuery = () => buildQuery();
+export function buildQuery(): FakeQuery {
+  return <FakeQuery>{ orderBy: () => helper() };
+}
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+export interface FakeQuery { orderBy: () => FakeQuery; }
+const helper: () => FakeQuery = () => buildQuery();
+export function buildQuery() {
+  return <FakeQuery>{ orderBy: () => helper() };
+}
+        `,
+      },
+      {
+        name: 'a cycle closed through an annotated class field still reports',
+        code: `
+export interface FakeQuery { orderBy: () => FakeQuery; }
+export class Repo {
+  helper: () => FakeQuery = () => this.build();
+  build(): FakeQuery {
+    return <FakeQuery>{ orderBy: () => this.helper() };
+  }
+}
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+export interface FakeQuery { orderBy: () => FakeQuery; }
+export class Repo {
+  helper: () => FakeQuery = () => this.build();
+  build() {
+    return <FakeQuery>{ orderBy: () => this.helper() };
+  }
+}
+        `,
+      },
+      {
+        name: 'a cycle closed through an annotated relay binding still reports',
+        code: `
+export type Q = { id: string };
+declare function raw(): Q;
+const cache: { get: () => Q } = { get: () => build() };
+export function build(): Q {
+  return <Q>{ ...cache.get() };
+}
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+export type Q = { id: string };
+declare function raw(): Q;
+const cache: { get: () => Q } = { get: () => build() };
+export function build() {
+  return <Q>{ ...cache.get() };
+}
+        `,
+      },
+      {
+        // An unannotated helper on the path is not itself a reason to decline:
+        // reaching one only matters when the walk comes back.
+        name: 'an unannotated helper that does not come back still reports',
+        code: `
+export type Q = { id: string };
+declare function raw(): Q;
+function helper() { return raw(); }
+export function build(): Q {
+  return <Q>{ ...helper() };
+}
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+export type Q = { id: string };
+declare function raw(): Q;
+function helper() { return raw(); }
+export function build() {
+  return <Q>{ ...helper() };
+}
+        `,
+      },
+      {
+        // Reading one member of an object is not reading the object's every
+        // member: TypeScript resolves an object literal's properties one at a
+        // time, so `other` types without `build`. Measured on the output: no
+        // diagnostics, `build` still returns `Q`.
+        name: 'a bracket read of a different property still reports',
+        code: `
+export type Q = { id: string };
+declare function raw(): Q;
+export const obj = {
+  other: raw,
+  build(): Q {
+    return obj['other']() as Q;
+  },
+};
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+export type Q = { id: string };
+declare function raw(): Q;
+export const obj = {
+  other: raw,
+  build() {
+    return obj['other']() as Q;
+  },
+};
+        `,
+      },
+      {
+        // A string is a name only where it indexes something. Elsewhere it is
+        // data, and resolving it would make any value that happens to spell a
+        // member's name read as a reference to that member.
+        name: 'a string literal that is data is not a property read',
+        code: `
+export type Q = { build: string };
+export const obj = {
+  build(): Q {
+    return <Q>{ build: 'build' };
+  },
+};
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+export type Q = { build: string };
+export const obj = {
+  build() {
+    return <Q>{ build: 'build' };
+  },
+};
+        `,
+      },
+      {
+        // The name a member declares is not a read of it, so walking an object
+        // literal does not make the literal depend on every function inside it.
+        name: 'a member name inside the returned literal is not a reference',
+        code: `
+export type Q = { orderBy: () => void };
+declare function raw(): Q;
+export const obj = {
+  orderBy: () => {},
+  build(): Q {
+    return raw() as Q;
+  },
+};
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+export type Q = { orderBy: () => void };
+declare function raw(): Q;
+export const obj = {
+  orderBy: () => {},
+  build() {
+    return raw() as Q;
+  },
+};
         `,
       },
     ],
