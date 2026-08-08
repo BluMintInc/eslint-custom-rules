@@ -19,10 +19,12 @@
  * cannot express it. That is the dimension this file adds — the per-rule suites
  * already cover each fixer in isolation.
  */
-import fs from 'fs';
-import path from 'path';
 import { Linter } from 'eslint';
 import * as tsParser from '@typescript-eslint/parser';
+import {
+  silentWithoutProgramRuleNames,
+  typeAwareRuleNames,
+} from '../utils/fixtureCorpus';
 
 /* eslint-disable @typescript-eslint/no-var-requires */
 const plugin = require('../index') as {
@@ -32,38 +34,41 @@ const plugin = require('../index') as {
 /* eslint-enable @typescript-eslint/no-var-requires */
 
 const PREFIX = '@blumintinc/blumint/';
-const RULES_DIR = path.join(__dirname, '..', 'rules');
 
 /**
- * Type-aware rules are excluded: this harness has no `parserOptions.project`,
- * and without a program their behaviour is not the behaviour a consumer gets.
- * `no-entire-object-hook-deps` is the concrete reason — with no type info every
- * dependency reads as `unknown`-typed, so it reports and auto-deletes deps it
- * would leave alone in a real program (the verdict flip tracked by #1621).
- * Including it makes the #1652 fixture fail for a reason that cannot happen in
- * a consumer's CI.
+ * One rule is discounted BY NAME, at this guard's own level.
  *
- * Detected by reading the rule sources rather than `String(rule.create)`:
- * `createRule` wraps `create`, so stringifying it matches nothing and would
- * silently exclude no rule at all.
+ * `no-entire-object-hook-deps` is the concrete divergence: with no program every
+ * dependency reads as `unknown`-typed, so it reports and auto-deletes deps it
+ * would leave alone in a consumer's CI (the verdict flip tracked by #1621).
+ * Including it makes the #1652 fixture fail for a reason that cannot happen in
+ * production.
+ *
+ * It is named here rather than added to `silentWithoutProgramRuleNames` because
+ * that set means "reports NOTHING here" — this rule reports too MUCH — and
+ * because a rule-global entry would un-gate every other arm the rule
+ * participates in (#1839). It is a single name rather than all 16 rules
+ * mentioning `getParserServices` because discounting one divergence never
+ * justified unprobing fifteen others (#1879).
+ *
+ * The entry is MEASURED, not asserted: `still needs to discount %s` below puts
+ * the rule back and requires a fixture to go red, so if #1621 is settled this
+ * exemption fails as stale instead of quietly outliving its reason.
  */
-const typeAwareNames = new Set(
-  fs
-    .readdirSync(RULES_DIR)
-    .filter((file) => file.endsWith('.ts'))
-    .filter((file) =>
-      /getParserServices|getTypeChecker/.test(
-        fs.readFileSync(path.join(RULES_DIR, file), 'utf8'),
-      ),
-    )
-    .map((file) => path.basename(file, '.ts')),
-);
+const DIVERGENT_WITHOUT_PROGRAM = new Map<string, string>([
+  [
+    'no-entire-object-hook-deps',
+    'with no program every dependency reads as `unknown`-typed, so it deletes deps it would keep in a consumer CI (#1621)',
+  ],
+]);
 
 const RECOMMENDED: Record<string, unknown> = {};
 for (const [id, severity] of Object.entries(plugin.configs.recommended.rules)) {
   if (!id.startsWith(PREFIX)) continue;
   const name = id.slice(PREFIX.length);
-  if (!plugin.rules[name] || typeAwareNames.has(name)) continue;
+  if (!plugin.rules[name]) continue;
+  if (silentWithoutProgramRuleNames.has(name)) continue;
+  if (DIVERGENT_WITHOUT_PROGRAM.has(name)) continue;
   RECOMMENDED[id] = severity;
 }
 
@@ -227,8 +232,61 @@ describe('the recommended config is closed under its own autofixes (core rules)'
     // Guards against the config silently emptying (e.g. a rename of the plugin
     // prefix), which would make every fixture pass vacuously.
     expect(Object.keys(RECOMMENDED).length).toBeGreaterThan(100);
-    // And against the type-aware detection silently matching nothing, which is
-    // how the first draft of this file ran 16 rules with no program.
-    expect(typeAwareNames.size).toBeGreaterThan(5);
+    // The type-aware rules this guard once dropped wholesale must be COMPOSED,
+    // not skipped — only the one measured divergence is discounted. Asserting
+    // their presence is what stops the blanket exclusion returning silently.
+    const typeAwareInConfig = [...typeAwareRuleNames].filter(
+      (name) => PREFIX + name in plugin.configs.recommended.rules,
+    );
+    expect(typeAwareInConfig.length).toBeGreaterThan(5);
+    expect(
+      typeAwareInConfig.filter(
+        (name) =>
+          !(PREFIX + name in RECOMMENDED) &&
+          !DIVERGENT_WITHOUT_PROGRAM.has(name),
+      ),
+    ).toEqual([]);
   });
+
+  it('discounts only rules that still exist, each with a reason', () => {
+    // A stale name is an exemption held open for a rule that cannot claim it.
+    expect(
+      [...DIVERGENT_WITHOUT_PROGRAM.keys()].filter(
+        (name) => !(name in plugin.rules),
+      ),
+    ).toEqual([]);
+    for (const reason of DIVERGENT_WITHOUT_PROGRAM.values()) {
+      expect(reason).toMatch(/#\d+/);
+    }
+  });
+
+  /**
+   * Every discount must still be EARNED, measured here rather than asserted in
+   * prose. Putting the rule back must make some fixture red; if it does not, the
+   * divergence has been fixed (or the fixture no longer reaches it) and the
+   * entry is a hole held open for nothing.
+   *
+   * This is what a named, guard-local discount buys over a blanket set: the
+   * blanket one could never be checked, because it could not say what it was
+   * paying for.
+   */
+  it.each([...DIVERGENT_WITHOUT_PROGRAM.keys()])(
+    'still needs to discount %s (the exemption is earned, not stale)',
+    (name) => {
+      const withRule = {
+        ...RECOMMENDED,
+        [PREFIX + name]: plugin.configs.recommended.rules[PREFIX + name],
+      };
+      const stillDiverges = FIXTURES.some(({ filename, code }) => {
+        const before = coreViolations(code, filename);
+        const fixed = linter.verifyAndFix(code, config(withRule, filename), {
+          filename,
+        }).output;
+        return coreViolations(fixed, filename).some(
+          (violation) => !before.includes(violation),
+        );
+      });
+      expect(stillDiverges).toBe(true);
+    },
+  );
 });
