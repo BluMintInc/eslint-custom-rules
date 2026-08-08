@@ -49,6 +49,10 @@ export const enforceIdCapitalization = createRule<Options, MessageIds>({
       'toHaveAttribute',
     ]);
 
+    // A single identifier token — no whitespace, no punctuation. Prose is a
+    // phrase, so anything matching this is a name rather than displayed text.
+    const IDENTIFIER_TOKEN = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+
     /**
      * Check if a node is in a context that should be excluded from the rule
      * (e.g., parameter names, property names, type definitions)
@@ -140,6 +144,24 @@ export const enforceIdCapitalization = createRule<Options, MessageIds>({
         if (node.parent.arguments[nameArgIndex] === node) {
           return true;
         }
+      }
+
+      // Check if the node is a lone identifier token listed in an array
+      // literal, e.g. ['id', 'broadcastTest'] as const. An array of bare
+      // identifiers is a key/field-name list — the array spelling of the object
+      // keys this rule already leaves alone — so 'ID' would name a key that
+      // does not exist. The carve-out requires the *whole* element to be one
+      // identifier, which keeps a phrase such as ['Enter your id', 'Name']
+      // reported: prose carries whitespace or punctuation, a key name does not.
+      if (
+        node.type === AST_NODE_TYPES.Literal &&
+        typeof node.value === 'string' &&
+        node.parent &&
+        node.parent.type === AST_NODE_TYPES.ArrayExpression &&
+        node.parent.elements.includes(node) &&
+        IDENTIFIER_TOKEN.test(node.value)
+      ) {
+        return true;
       }
 
       // Check if the node is a string literal used for property access

@@ -174,6 +174,43 @@ ruleTesterTs.run('enforce-id-capitalization', enforceIdCapitalization, {
     {
       code: `expect(heading).toHaveAttribute('id', 'unlink-method-heading');`,
     },
+    // Repro from #1874: an array element that is a lone identifier is a key
+    // name, not prose. Rewriting it to 'ID' names a key that does not exist.
+    {
+      code: `export const KEYS = ['id', 'broadcastTest'] as const;`,
+    },
+    // The agora shape the repro was reduced from: a keyof-derived field tuple
+    {
+      code: `
+        export const REPLAY_IRRELEVANT_SETTINGS_FIELDS = [
+          'uploadedSounds',
+          'uploadedImages',
+          'id',
+          'broadcastTest',
+        ] as const;
+      `,
+    },
+    // \`as const\` is not what makes it a key list — a plain array of bare
+    // identifiers is one too, so the carve-out does not key on the assertion
+    {
+      code: `export const KEYS = ['id', 'broadcastTest'];`,
+    },
+    // A key list passed to a keys-ish API, with no \`as const\` and no
+    // annotation to lean on
+    {
+      code: `const projected = pick(user, ['id', 'name']);`,
+    },
+    {
+      code: `const FIELDS: string[] = ['id'];`,
+    },
+    // A spread sibling does not disturb the element-local verdict
+    {
+      code: `const FIELDS = [...BASE_FIELDS, 'id'];`,
+    },
+    // Nested array literals are key lists at every level
+    {
+      code: `const GROUPS = [['id', 'name'], ['status']];`,
+    },
   ],
   invalid: [
     // A bare 'id' translation key is still user-facing and must stay flagged —
@@ -194,6 +231,33 @@ ruleTesterTs.run('enforce-id-capitalization', enforceIdCapitalization, {
       code: 'const message: string = "Please enter your id";',
       errors: [{ messageId: 'enforceIdCapitalization' }],
       output: 'const message: string = "Please enter your ID";',
+    },
+    // The #1874 carve-out covers key names only: an array element that reads as
+    // prose (it carries whitespace or punctuation, so it is not one identifier)
+    // is still user-facing text and stays flagged.
+    {
+      code: `const PROMPTS = ['Enter your id', 'Name'];`,
+      errors: [{ messageId: 'enforceIdCapitalization' }],
+      output: `const PROMPTS = ['Enter your ID', 'Name'];`,
+    },
+    {
+      code: `const LABELS = ['id:'] as const;`,
+      errors: [{ messageId: 'enforceIdCapitalization' }],
+      output: `const LABELS = ['ID:'] as const;`,
+    },
+    // The verdict is per element, not per array: a prose sibling does not drag
+    // the key name in, and a key-name sibling does not shield the prose.
+    {
+      code: `const MIXED = ['id', 'Enter your id'] as const;`,
+      errors: [{ messageId: 'enforceIdCapitalization' }],
+      output: `const MIXED = ['id', 'Enter your ID'] as const;`,
+    },
+    // Array-element position is load-bearing — a lone 'id' elsewhere is
+    // unaffected by the carve-out
+    {
+      code: `const FALLBACK_LABEL = 'id';`,
+      errors: [{ messageId: 'enforceIdCapitalization' }],
+      output: `const FALLBACK_LABEL = 'ID';`,
     },
     // Repro from #1558: the fix must correct the capitalization without
     // rewriting the literal's quote character.
