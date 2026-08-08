@@ -505,6 +505,48 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         sourceType: 'module',
       },
     },
+    // Issue #1890: a sibling declarator must not change the verdict in EITHER
+    // direction — a fully-consumed Props type stays silent next to a sibling.
+    {
+      code: `
+        type Props = { used: string };
+        const Component = ({ used }: Props) => <div>{used}</div>, LIMIT = 2;
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type Props = { used: string; forwarded: string };
+        const LIMIT = 2,
+          Component = ({ used, ...rest }: Props) => <div {...rest}>{used}</div>;
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A sibling declarator whose init is not an arrow function is simply not a
+    // component, so it contributes nothing to check.
+    {
+      code: `
+        type Props = { used: string };
+        const Component = ({ used }: Props) => <div>{used}</div>,
+          CONFIG = { retries: 3 };
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
   ],
   invalid: [
     {
@@ -928,6 +970,124 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         },
       },
       parserOptions: {
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // Issue #1890: an unused prop stays unused when the component's declaration
+    // carries a sibling declarator, in either declarator order. The rule moves
+    // nothing, so the sibling has no bearing on the question it answers.
+    {
+      code: `
+        type Props = { used: string; unused: number };
+        const Component = ({ used }: Props) => <div>{used}</div>, LIMIT = 2;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unused' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type Props = { used: string; unused: number };
+        const LIMIT = 2,
+          Component = ({ used }: Props) => <div>{used}</div>;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unused' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // Every declarator is analysed on its own, so two components in one
+    // statement each answer for their own Props type.
+    {
+      code: `
+        type AProps = { used: string; unusedA: number };
+        type BProps = { used: string; unusedB: number };
+        const A = ({ used }: AProps) => <div>{used}</div>,
+          B = ({ used }: BProps) => <span>{used}</span>;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedA' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedB' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // The identifier-param branch (destructuring in the body) reaches the same
+    // per-declarator analysis, sibling or not.
+    {
+      code: `
+        type Props = { used: string; unused: number };
+        const LIMIT = 2,
+          Component = (props: Props) => {
+            const { used } = props;
+            return <div>{used}</div>;
+          };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unused' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // An FC-annotated declarator resolves its props type from the annotation,
+    // which the declarator-level analysis preserves alongside a sibling.
+    {
+      code: `
+        import { FC } from 'react';
+        type Props = { used: string; unused: number };
+        const LIMIT = 2,
+          Component: FC<Props> = ({ used }) => <div>{used}</div>;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unused' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
         ecmaVersion: 2018,
         sourceType: 'module',
       },

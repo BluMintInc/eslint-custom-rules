@@ -123,16 +123,15 @@ export const noUnusedProps = createRule({
     > = new Map();
     const spreadTypeToPropNames: Map<string, Set<string>> = new Map();
     const processingTypeAliases = new Set<string>();
-    const componentsToCheck: Array<{
+    type ComponentUsage = {
       typeName: string;
       used: Set<string>;
       restUsed: boolean;
-    }> = [];
-    let currentComponent: {
+    };
+    const componentsToCheck: ComponentUsage[] = [];
+    let currentComponents: {
       node: TSESTree.Node;
-      typeName: string;
-      used: Set<string>;
-      restUsed: boolean;
+      components: ComponentUsage[];
     } | null = null;
 
     const clearState = () => {
@@ -141,7 +140,7 @@ export const noUnusedProps = createRule({
       spreadTypeToPropNames.clear();
       processingTypeAliases.clear();
       componentsToCheck.length = 0;
-      currentComponent = null;
+      currentComponents = null;
     };
 
     const isGenericTypeSpread = (prop: string) =>
@@ -617,6 +616,77 @@ export const noUnusedProps = createRule({
           }
         }
       });
+    };
+
+    /**
+     * The props usage of a single declarator, or `null` when the declarator is
+     * not a props-typed arrow component. Each declarator answers on its own:
+     * this rule reports a member of a props type and rewrites nothing, so a
+     * sibling binding in the same statement has no bearing on the verdict
+     * (#1890).
+     */
+    const componentUsageOfDeclarator = (
+      declaration: TSESTree.VariableDeclarator,
+    ): ComponentUsage | null => {
+      if (declaration.init?.type !== AST_NODE_TYPES.ArrowFunctionExpression) {
+        return null;
+      }
+      const fn = declaration.init;
+      const param = fn.params[0];
+
+      if (param?.type === AST_NODE_TYPES.ObjectPattern) {
+        // Resolve through generic wrappers (e.g. `Readonly<FooProps>`) as well
+        // as the plain `FooProps` annotation; an unannotated pattern under an
+        // FC-annotated declarator resolves from the annotation's argument.
+        const typeName = resolvePropsTypeName(
+          param.typeAnnotation?.typeAnnotation ??
+            propsArgumentOfFcAnnotation(declaration.id),
+        );
+        if (!typeName) {
+          return null;
+        }
+        const used = new Set<string>();
+        const restUsed = collectUsedFromObjectPattern(param, typeName, used);
+        return { typeName, used, restUsed };
+      }
+
+      if (param?.type === AST_NODE_TYPES.Identifier) {
+        // Identifier param (`props: FooProps`): the destructuring happens in
+        // the body. Resolve the Props type (unwrapping generic wrappers) and
+        // scan the body for `const { ... } = props`.
+        const typeName = resolvePropsTypeName(
+          param.typeAnnotation?.typeAnnotation ??
+            propsArgumentOfFcAnnotation(declaration.id),
+        );
+        if (!typeName) {
+          return null;
+        }
+        const used = new Set<string>();
+        const { destructureCount, restUsed, hasOpaqueUsage } =
+          collectBodyDestructuring(fn.body, param.name, typeName, used);
+
+        // Only check when the body destructures the param at least once.
+        // Member access (`props.x`), spread (`{...props}`), passing `props`
+        // whole, or never referencing it (e.g. `_props`) is left to prior
+        // behavior (no report) — those usages can't be enumerated reliably.
+        if (destructureCount === 0) {
+          return null;
+        }
+
+        // Mixed usage (some destructure + opaque consumption) forwards the
+        // remaining props, so treat every prop as used to avoid false reports.
+        if (hasOpaqueUsage) {
+          const propsType = propsTypes.get(typeName);
+          if (propsType) {
+            Object.keys(propsType).forEach((key) => used.add(key));
+          }
+          return { typeName, used, restUsed: true };
+        }
+
+        return { typeName, used, restUsed };
+      }
+
+      return null;
     };
 
     return {
@@ -1143,79 +1213,23 @@ export const noUnusedProps = createRule({
       },
 
       VariableDeclaration(node) {
-        if (node.declarations.length !== 1) {
-          return;
-        }
-        const declaration = node.declarations[0];
-        if (declaration.init?.type !== AST_NODE_TYPES.ArrowFunctionExpression) {
-          return;
-        }
-        const fn = declaration.init;
-        const param = fn.params[0];
-
-        if (param?.type === AST_NODE_TYPES.ObjectPattern) {
-          // Resolve through generic wrappers (e.g. `Readonly<FooProps>`) as well
-          // as the plain `FooProps` annotation; an unannotated pattern under an
-          // FC-annotated declarator resolves from the annotation's argument.
-          const typeName = resolvePropsTypeName(
-            param.typeAnnotation?.typeAnnotation ??
-              propsArgumentOfFcAnnotation(declaration.id),
+        const components = node.declarations
+          .map((declaration) => componentUsageOfDeclarator(declaration))
+          .filter(
+            (component): component is ComponentUsage => component !== null,
           );
-          if (typeName) {
-            const used = new Set<string>();
-            const restUsed = collectUsedFromObjectPattern(
-              param,
-              typeName,
-              used,
-            );
-            currentComponent = { node, typeName, used, restUsed };
-          }
-          return;
-        }
 
-        if (param?.type === AST_NODE_TYPES.Identifier) {
-          // Identifier param (`props: FooProps`): the destructuring happens in
-          // the body. Resolve the Props type (unwrapping generic wrappers) and
-          // scan the body for `const { ... } = props`.
-          const typeName = resolvePropsTypeName(
-            param.typeAnnotation?.typeAnnotation ??
-              propsArgumentOfFcAnnotation(declaration.id),
-          );
-          if (!typeName) {
-            return;
-          }
-          const used = new Set<string>();
-          const { destructureCount, restUsed, hasOpaqueUsage } =
-            collectBodyDestructuring(fn.body, param.name, typeName, used);
-
-          // Only check when the body destructures the param at least once.
-          // Member access (`props.x`), spread (`{...props}`), passing `props`
-          // whole, or never referencing it (e.g. `_props`) is left to prior
-          // behavior (no report) — those usages can't be enumerated reliably.
-          if (destructureCount === 0) {
-            return;
-          }
-
-          // Mixed usage (some destructure + opaque consumption) forwards the
-          // remaining props, so treat every prop as used to avoid false reports.
-          if (hasOpaqueUsage) {
-            const propsType = propsTypes.get(typeName);
-            if (propsType) {
-              Object.keys(propsType).forEach((key) => used.add(key));
-            }
-            currentComponent = { node, typeName, used, restUsed: true };
-            return;
-          }
-
-          currentComponent = { node, typeName, used, restUsed };
+        // A declaration holding no component leaves any pending one untouched,
+        // so an inner non-component declaration cannot drop its enclosing one.
+        if (components.length > 0) {
+          currentComponents = { node, components };
         }
       },
 
       'VariableDeclaration:exit'(node) {
-        if (currentComponent?.node === node) {
-          const { typeName, used, restUsed } = currentComponent;
-          componentsToCheck.push({ typeName, used, restUsed });
-          currentComponent = null;
+        if (currentComponents?.node === node) {
+          componentsToCheck.push(...currentComponents.components);
+          currentComponents = null;
         }
       },
 
