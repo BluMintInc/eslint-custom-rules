@@ -1,3 +1,19 @@
+## [1.20.135](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.134...v1.20.135) (2026-08-08)
+
+
+### Bug Fixes
+
+* **enforce-assert-safe-object-key:** exempt compiler-bounded Record lookups (closes [#1875](https://github.com/BluMintInc/eslint-custom-rules/issues/1875)) ([4891036](https://github.com/BluMintInc/eslint-custom-rules/commit/4891036116c0224af282913a6c5badba417f6617))
+* **enforce-fieldpath-syntax-in-docsetter:** fix method-shorthand fields instead of declining them (closes [#1876](https://github.com/BluMintInc/eslint-custom-rules/issues/1876)) ([c9cef8e](https://github.com/BluMintInc/eslint-custom-rules/commit/c9cef8ef76e035f7b05a5b044271e2bd4eedfb1c)), closes [#1870](https://github.com/BluMintInc/eslint-custom-rules/issues/1870)
+* **enforce-id-capitalization:** exempt lone identifier tokens in array literals (closes [#1874](https://github.com/BluMintInc/eslint-custom-rules/issues/1874)) ([2ff4de7](https://github.com/BluMintInc/eslint-custom-rules/commit/2ff4de7a90aa5f7de00980404497f3c02f7e620e))
+* **no-inline-component-prop:** see the holding object through an as-const (closes [#1864](https://github.com/BluMintInc/eslint-custom-rules/issues/1864)) ([08198cd](https://github.com/BluMintInc/eslint-custom-rules/commit/08198cd991d0fb89f746f1608b06f28a290fac91))
+* **no-object-values-on-strings:** read the argument through an optional chain (closes [#1865](https://github.com/BluMintInc/eslint-custom-rules/issues/1865)) ([ce6b90b](https://github.com/BluMintInc/eslint-custom-rules/commit/ce6b90b200bcc8806d339d613279730e86a4889b))
+* **no-passthrough-getters:** make the optional-chaining exemption reachable (closes [#1872](https://github.com/BluMintInc/eslint-custom-rules/issues/1872)) ([ede361d](https://github.com/BluMintInc/eslint-custom-rules/commit/ede361d206071f3c8b901eb3ac2ee30fe260124d)), closes [#1865](https://github.com/BluMintInc/eslint-custom-rules/issues/1865) [#1866](https://github.com/BluMintInc/eslint-custom-rules/issues/1866)
+* **no-useless-usememo-primitives:** carry comments stranded by inlining (closes [#1877](https://github.com/BluMintInc/eslint-custom-rules/issues/1877)) ([3d48a3b](https://github.com/BluMintInc/eslint-custom-rules/commit/3d48a3bedcb161c50fc07351741d0ad23b4bb8a7))
+* **no-usememo-for-pass-by-value:** carry comments stranded by inlining (closes [#1877](https://github.com/BluMintInc/eslint-custom-rules/issues/1877)) ([3482281](https://github.com/BluMintInc/eslint-custom-rules/commit/34822819f6d9f7001b5c4d8d02d2babcb43920f1))
+* **parallelize-async-operations:** compile sideEffectPatterns through the shared helper (closes [#1873](https://github.com/BluMintInc/eslint-custom-rules/issues/1873)) ([f2affa0](https://github.com/BluMintInc/eslint-custom-rules/commit/f2affa0e21c8b1a621524fa03645497c5f1c8dc7))
+* **prefer-map-over-conditional-dispatch:** judge a chained discriminant by the narrowing check (closes [#1867](https://github.com/BluMintInc/eslint-custom-rules/issues/1867)) ([5a9f843](https://github.com/BluMintInc/eslint-custom-rules/commit/5a9f843a859b4d6524ea7bafe38b1421943fdc8c))
+
 ## [1.20.134](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.133...v1.20.134) (2026-08-07)
 
 
