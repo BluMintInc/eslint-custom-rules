@@ -67,15 +67,15 @@ function isComment(token: TSESTree.Token): boolean {
 }
 
 /**
- * The slice to delete for a declaration that loses its last binding. The whole
- * line goes when the declaration owns it, trailing same-line comments included:
- * those describe the import that is going away, and a `// eslint-disable-line`
- * among them would otherwise outlive its subject. A declaration sharing its
- * line with other code gives up only its own characters.
+ * The slice to delete for a statement that loses its last binding. The whole
+ * line goes when the statement owns it, trailing same-line comments included:
+ * those describe the declaration that is going away, and a
+ * `// eslint-disable-line` among them would otherwise outlive its subject. A
+ * statement sharing its line with other code gives up only its own characters.
  */
-function declarationRemovalRange(
+export function statementRemovalRange(
   source: ImportRemovalSource,
-  declaration: TSESTree.ImportDeclaration,
+  declaration: TSESTree.Node,
 ): TextRange | null {
   const commentsBefore = source.getCommentsBefore(declaration);
   const boundComment = commentsBefore[commentsBefore.length - 1];
@@ -113,7 +113,7 @@ function declarationRemovalRange(
   return [start, lineEnd === -1 ? source.text.length : lineEnd + 1];
 }
 
-type Removable = { range: TextRange; removed: boolean };
+export type Removable = { range: TextRange; removed: boolean };
 
 /**
  * Ranges covering every removed item together with the separators that would
@@ -123,7 +123,7 @@ type Removable = { range: TextRange; removed: boolean };
  * removed — that collapse is the caller's to make, since what encloses the
  * list (braces, the declaration itself) must go too.
  */
-function removalRuns(items: readonly Removable[]): TextRange[] | null {
+export function removalRuns(items: readonly Removable[]): TextRange[] | null {
   const ranges: TextRange[] = [];
   let index = 0;
 
@@ -214,7 +214,7 @@ export function planImportBindingRemoval(
 
   const removed = new Set<TSESTree.ImportClause>(specifiers);
   if (declaration.specifiers.every((specifier) => removed.has(specifier))) {
-    const range = declarationRemovalRange(source, declaration);
+    const range = statementRemovalRange(source, declaration);
     return range ? [range] : null;
   }
 
@@ -387,9 +387,9 @@ function forEachIdentifier(
 }
 
 /**
- * True when the name still occurs in the source outside `ranges`, ignoring the
- * positions where a name is a module's export name rather than a reference to
- * a local binding.
+ * True when the name still occurs in the source outside `ranges` and outside
+ * `binding` — the span or spans that declare it — ignoring the positions where a
+ * name is a module's export name rather than a reference to a local binding.
  *
  * Scope analysis already answers "is this binding referenced", and it is what
  * `no-unused-vars` answers with. This coarser second opinion exists to catch
@@ -398,18 +398,18 @@ function forEachIdentifier(
  * deletes working code, while a removal declined in error only leaves the
  * original report standing.
  */
-function nameOccursOutside(
+export function nameOccursOutside(
   source: ImportRemovalSource,
   name: string,
   ranges: readonly TextRange[],
-  binding: ImportBindingSpecifier,
+  binding: readonly TextRange[],
 ): boolean {
   let found = false;
 
   forEachIdentifier(source.ast, undefined, undefined, (node, parent, key) => {
     if (found || node.name !== name) return;
     if (isWithinAny(node.range, ranges)) return;
-    if (contains(binding.range, node.range)) return;
+    if (isWithinAny(node.range, binding)) return;
     if (parent?.type === AST_NODE_TYPES.ImportSpecifier && key === 'imported') {
       return;
     }
@@ -422,7 +422,8 @@ function nameOccursOutside(
   return found;
 }
 
-function patternIdentifiers(
+/** Every binding identifier a destructuring pattern introduces. */
+export function patternIdentifiers(
   pattern: TSESTree.Node | null,
 ): TSESTree.Identifier[] {
   switch (pattern?.type) {
@@ -516,38 +517,18 @@ function isOwnInitializerWrite(
 }
 
 /**
- * The extra ranges a fix must delete so that removing `removed` leaves nothing
- * bound to nothing, or `null` when some binding would be orphaned yet cannot be
- * unbound safely — an import behind a directive comment, a type alias or a type
- * parameter, all of which this helper refuses to guess at.
+ * Every binding that `removed` would leave with nothing referencing it.
  *
- * `null` is a demand, not a suggestion: the caller declines its whole fix. The
- * alternative — deleting the last use and keeping the declaration — converts a
- * file that lints clean into one that fails `no-unused-vars`, and since the
- * original report is resolved by the fix, nothing re-reports the debt.
- *
- * `removed` is **one fix's own deletion**, judged against the file as it stands.
- * Several ranges may be passed only when a single fix deletes all of them, since
- * ESLint applies a fix whole or not at all. Passing ranges that belong to other
- * reports is unsound in two ways: a sibling report may be suppressed (ESLint
- * applies `eslint-disable` after the rule emits its reports, so the sibling's fix
- * never runs), and a sibling fix that overlaps another rule's fix is dropped for
- * the pass. Either way the surviving reference outlives the import this helper
- * was told to unbind — trading an unused import for a dangling type reference, a
- * lint warning for a compile error.
- *
- * A caller batching several of its own edits therefore owes two things: the
- * edits must ship as one fix, and the reports they came from must be checked
- * with `createSuppressionChecker` so that a suppressed one is never counted on.
- * {@link importBindingReferences} exposes the reference sets such a caller needs
- * to work out which edits belong in the same batch.
+ * The scan answers only "which bindings does this deletion strand"; what to do
+ * about each is the caller's, since an import is unbound by deleting a specifier
+ * while a destructured property is unbound by deleting a property — and some
+ * bindings must not be touched at all.
  */
-export function planOrphanedImportRemoval(
+export function orphanedBindings(
   source: ImportRemovalSource,
   removed: readonly TextRange[],
-): TextRange[] | null {
-  const orphaned: ImportBindingSpecifier[] = [];
-  const names: string[] = [];
+): TSESLint.Scope.Variable[] {
+  const orphaned: TSESLint.Scope.Variable[] = [];
   const exported = exportedBindingKeys(source.ast);
 
   for (const variable of allVariables(source.scopeManager)) {
@@ -582,21 +563,103 @@ export function planOrphanedImportRemoval(
       continue;
     }
 
+    orphaned.push(variable);
+  }
+
+  return orphaned;
+}
+
+/**
+ * How a caller unbinds the orphans this module does not own — a destructured
+ * property, a local declaration, a binding it deliberately leaves alone.
+ *
+ * Every such orphan arrives in ONE call because two of them can share a list
+ * whose separators are only correct when planned together. The result is the
+ * ranges that unbind them, `[]` for orphans the caller accepts as they are, or
+ * `null` to decline — which withholds the caller's whole fix.
+ */
+export type OrphanUnbinder = (
+  variables: readonly TSESLint.Scope.Variable[],
+  removed: readonly TextRange[],
+) => TextRange[] | null;
+
+/**
+ * The extra ranges a fix must delete so that removing `removed` leaves nothing
+ * bound to nothing, or `null` when some binding would be orphaned yet cannot be
+ * unbound safely — an import behind a directive comment, a type alias or a type
+ * parameter, all of which this helper refuses to guess at.
+ *
+ * `null` is a demand, not a suggestion: the caller declines its whole fix. The
+ * alternative — deleting the last use and keeping the declaration — converts a
+ * file that lints clean into one that fails `no-unused-vars`, and since the
+ * original report is resolved by the fix, nothing re-reports the debt.
+ *
+ * `removed` is **one fix's own deletion**, judged against the file as it stands.
+ * Several ranges may be passed only when a single fix deletes all of them, since
+ * ESLint applies a fix whole or not at all. Passing ranges that belong to other
+ * reports is unsound in two ways: a sibling report may be suppressed (ESLint
+ * applies `eslint-disable` after the rule emits its reports, so the sibling's fix
+ * never runs), and a sibling fix that overlaps another rule's fix is dropped for
+ * the pass. Either way the surviving reference outlives the import this helper
+ * was told to unbind — trading an unused import for a dangling type reference, a
+ * lint warning for a compile error.
+ *
+ * A caller batching several of its own edits therefore owes two things: the
+ * edits must ship as one fix, and the reports they came from must be checked
+ * with `createSuppressionChecker` so that a suppressed one is never counted on.
+ * {@link importBindingReferences} exposes the reference sets such a caller needs
+ * to work out which edits belong in the same batch.
+ */
+export function planOrphanedImportRemoval(
+  source: ImportRemovalSource,
+  removed: readonly TextRange[],
+): TextRange[] | null {
+  return planOrphanedBindingRemoval(source, removed);
+}
+
+/**
+ * {@link planOrphanedImportRemoval} widened by an `unbind` strategy for the
+ * orphans imports do not cover. Without one, an orphan bound by anything other
+ * than an import declines the fix, which is exactly what the import-only entry
+ * point promises.
+ *
+ * Every contract of {@link planOrphanedImportRemoval} carries over unchanged —
+ * `removed` is one fix's own deletion, `null` is a demand — with one addition
+ * the import arm never needed. An import declaration binds names without reading
+ * any, so unbinding one cannot strand a second binding; a declaration `unbind`
+ * deletes usually DOES read something (`const { data } = event` reads `event`),
+ * so its plan is re-examined against the file and declined if it strands
+ * anything the first pass did not already account for.
+ */
+export function planOrphanedBindingRemoval(
+  source: ImportRemovalSource,
+  removed: readonly TextRange[],
+  unbind?: OrphanUnbinder,
+): TextRange[] | null {
+  const orphaned = orphanedBindings(source, removed);
+  if (orphaned.length === 0) return [];
+
+  const specifiers: ImportBindingSpecifier[] = [];
+  const names: string[] = [];
+  const others: TSESLint.Scope.Variable[] = [];
+
+  for (const variable of orphaned) {
     const specifier = isImportBindingVariable(variable)
       ? importBindingSpecifierOf(variable)
       : undefined;
+    if (specifier) {
+      specifiers.push(specifier);
+      names.push(variable.name);
+      continue;
+    }
     // Orphaned, yet bound by something this helper cannot rewrite.
-    if (!specifier) return null;
-
-    orphaned.push(specifier);
-    names.push(variable.name);
+    if (!unbind) return null;
+    others.push(variable);
   }
-
-  if (orphaned.length === 0) return [];
 
   if (
     names.some((name, index) =>
-      nameOccursOutside(source, name, removed, orphaned[index]),
+      nameOccursOutside(source, name, removed, [specifiers[index].range]),
     )
   ) {
     return null;
@@ -606,7 +669,7 @@ export function planOrphanedImportRemoval(
     TSESTree.ImportDeclaration,
     ImportBindingSpecifier[]
   >();
-  for (const specifier of orphaned) {
+  for (const specifier of specifiers) {
     const declaration = declarationOf(source, specifier);
     if (!declaration) return null;
     const group = byDeclaration.get(declaration);
@@ -624,5 +687,21 @@ export function planOrphanedImportRemoval(
     ranges.push(...plan);
   }
 
-  return ranges.sort((left, right) => left[0] - right[0]);
+  if (others.length > 0) {
+    const plan = (unbind as OrphanUnbinder)(others, removed);
+    if (!plan) return null;
+    ranges.push(...plan);
+  }
+
+  const sorted = ranges.sort((left, right) => left[0] - right[0]);
+
+  if (others.length > 0) {
+    const handled = new Set(orphaned);
+    const stranded = orphanedBindings(source, [...removed, ...sorted]).some(
+      (variable) => !handled.has(variable),
+    );
+    if (stranded) return null;
+  }
+
+  return sorted;
 }

@@ -798,7 +798,8 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
       errors: [userIdError()],
     },
 
-    // Auto-fix should work when params is in scope
+    // Auto-fix should work when params is in scope, retiring the destructured
+    // binding whose last reference the rewrite removes
     {
       code: `
         export const withParamsInScope: DocumentChangeHandler<
@@ -816,7 +817,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           UserData,
           UserPath
         > = async (event) => {
-          const { data: change, params } = event;
+          const { params } = event;
 
           const userId = params.userId;
         };
@@ -1812,7 +1813,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           UserData,
           UserPath
         > = async (event) => {
-          const { data: change, params } = event;
+          const { params } = event;
 
           // Even with params in scope, should error when using ref.parent.id
           const userId = params.userId;
@@ -2050,6 +2051,367 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: repeatError(3, userIdError),
+    },
+
+    // #1899: the rewrite removes the last reference to the destructured
+    // binding, so the property that bound it goes with the read.
+    {
+      code: `
+        export const orphanedBinding: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change, params } = event;
+
+          const userId = change.after.ref.parent.id;
+          return userId;
+        };
+      `,
+      errors: [userIdError()],
+      output: `
+        export const orphanedBinding: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { params } = event;
+
+          const userId = params.userId;
+          return userId;
+        };
+      `,
+    },
+
+    // A binding still read elsewhere keeps its property: over-eager removal is
+    // the worse bug.
+    {
+      code: `
+        export const bindingStillRead: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change, params } = event;
+
+          const userId = change.after.ref.parent.id;
+          return change.after.exists ? userId : '';
+        };
+      `,
+      errors: [userIdError()],
+      output: `
+        export const bindingStillRead: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change, params } = event;
+
+          const userId = params.userId;
+          return change.after.exists ? userId : '';
+        };
+      `,
+    },
+
+    // Nothing survives the pattern, so the declaration goes whole.
+    {
+      code: `
+        export const soleProperty: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { params } = event;
+          const { data: change } = event;
+
+          const userId = change.after.ref.parent.id;
+          return { userId, groupId: params.groupId };
+        };
+      `,
+      errors: [userIdError()],
+      output: `
+        export const soleProperty: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { params } = event;
+
+          const userId = params.userId;
+          return { userId, groupId: params.groupId };
+        };
+      `,
+    },
+
+    // A declarator sharing its declaration gives up only itself.
+    {
+      code: `
+        export const sharedDeclaration: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { params } = event;
+          const { data: change } = event, tag = 'log';
+
+          const userId = change.after.ref.parent.id;
+          return tag + userId;
+        };
+      `,
+      errors: [userIdError()],
+      output: `
+        export const sharedDeclaration: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { params } = event;
+          const tag = 'log';
+
+          const userId = params.userId;
+          return tag + userId;
+        };
+      `,
+    },
+
+    // A nested pattern binding nothing but the orphan goes with its property.
+    {
+      code: `
+        export const nestedPattern: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: { after }, params } = event;
+
+          const userId = after.ref.parent.id;
+          return userId;
+        };
+      `,
+      errors: [userIdError()],
+      output: `
+        export const nestedPattern: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { params } = event;
+
+          const userId = params.userId;
+          return userId;
+        };
+      `,
+    },
+
+    // Two rewrites of one binding: neither is its last use alone, so the batch
+    // is what makes the property removable.
+    {
+      code: `
+        export const batchedRewrites: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change, params } = event;
+
+          const afterId = change.after.ref.parent.id;
+          const beforeId = change.before.ref.parent.id;
+          return afterId + beforeId;
+        };
+      `,
+      errors: repeatError(2, userIdError),
+      output: `
+        export const batchedRewrites: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { params } = event;
+
+          const afterId = params.userId;
+          const beforeId = params.userId;
+          return afterId + beforeId;
+        };
+      `,
+    },
+
+    // A suppressed report keeps its read, so the binding it walks from stays.
+    {
+      code: `
+        export const suppressedNeighbour: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change, params } = event;
+
+          // eslint-disable-next-line prefer-params-over-parent-id
+          const suppressedId = change.after.ref.parent.id;
+          const userId = change.before.ref.parent.id;
+          return suppressedId + userId;
+        };
+      `,
+      errors: [userIdError()],
+      output: `
+        export const suppressedNeighbour: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change, params } = event;
+
+          // eslint-disable-next-line prefer-params-over-parent-id
+          const suppressedId = change.after.ref.parent.id;
+          const userId = params.userId;
+          return suppressedId + userId;
+        };
+      `,
+    },
+
+    // Each handler owns its own \`change\`, so a namesake next door is no reason
+    // to decline.
+    {
+      code: `
+        export const firstHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change, params } = event;
+
+          const userId = change.after.ref.parent.id;
+          return userId;
+        };
+
+        export const secondHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change } = event;
+
+          return change.after.data();
+        };
+      `,
+      errors: [userIdError()],
+      output: `
+        export const firstHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { params } = event;
+
+          const userId = params.userId;
+          return userId;
+        };
+
+        export const secondHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change } = event;
+
+          return change.after.data();
+        };
+      `,
+    },
+
+    // DECLINE: a comment among the properties would be swallowed by the span
+    // that removes one of them.
+    {
+      code: `
+        export const commentedPattern: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change, /* keep */ params } = event;
+
+          const userId = change.after.ref.parent.id;
+          return userId;
+        };
+      `,
+      errors: [userIdError()],
+      output: null,
+    },
+
+    // DECLINE: a rest binding receives whatever the pattern does not name, so
+    // dropping a property rewrites it.
+    {
+      code: `
+        export const restSibling: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change, params, ...rest } = event;
+
+          const userId = change.after.ref.parent.id;
+          return { userId, rest };
+        };
+      `,
+      errors: [userIdError()],
+      output: null,
+    },
+
+    // DECLINE: half of a nested pattern is still read, and rewriting a pattern
+    // to keep one half is not this fixer's to invent.
+    {
+      code: `
+        export const partiallyReadNesting: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: { after, before }, params } = event;
+
+          const userId = after.ref.parent.id;
+          return before.exists ? userId : '';
+        };
+      `,
+      errors: [userIdError()],
+      output: null,
+    },
+
+    // DECLINE: a \`let\` binding can be assigned from anywhere its scope reaches,
+    // and an assignment is not a read.
+    {
+      code: `
+        export const mutablePattern: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          let { data: change, params } = event;
+
+          const userId = change.after.ref.parent.id;
+          return userId;
+        };
+      `,
+      errors: [userIdError()],
+      output: null,
+    },
+
+    // DECLINE: removing the declaration would strand the binding its
+    // initializer reads.
+    {
+      code: `
+        export const strandedInitializer: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { params } = event;
+          const source = event;
+          const { data: change } = source;
+
+          const userId = change.after.ref.parent.id;
+          return userId;
+        };
+      `,
+      errors: [userIdError()],
+      output: null,
+    },
+
+    // DECLINE: a namesake inside the same handler is what the coarse name scan
+    // exists to catch.
+    {
+      code: `
+        export const shadowedName: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change, params } = event;
+
+          const userId = change.after.ref.parent.id;
+          const label = (() => {
+            const change = 'shadow';
+            return change;
+          })();
+          return label + userId;
+        };
+      `,
+      errors: [userIdError()],
+      output: null,
     },
   ],
 });
