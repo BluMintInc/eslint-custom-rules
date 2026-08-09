@@ -1110,11 +1110,10 @@ export const Button = () => {
 };
 `,
   },
-  // Two components, two independent hoists, one pass. Each fix judges
-  // orphanhood alone against the file as it stands, so neither sees itself as
-  // the last consumer and the specifier survives the pass unused. That residue
-  // is the price of suppression safety — see the eslint-disable suite below —
-  // and a later pass clears it once one call remains.
+  // Two components, two independent hoists, one fix. Neither hoist alone is the
+  // specifier's last use, so orphanhood is only visible across the batch — and
+  // the pass that applies both resolves every report, so nothing would ever
+  // revisit the residue. Shipping them together is what lets the specifier go.
   {
     code: `
 import { useCallback } from 'react';
@@ -1132,7 +1131,6 @@ export const Second = () => {
       { messageId: 'preferUtilityFunction' as const },
     ],
     output: `
-import { useCallback } from 'react';
 const first = () => console.log('first');
 export const First = () => {
   return <button onClick={first} />;
@@ -1140,6 +1138,30 @@ export const First = () => {
 const second = () => console.log('second');
 export const Second = () => {
   return <button onClick={second} />;
+};
+`,
+  },
+  // Two hoists out of ONE component share only the zero-width module-scope
+  // insertion point, so both ship in the same fix rather than one waiting for a
+  // later pass. Their union unbinds the specifier.
+  {
+    code: `
+import { useCallback } from 'react';
+export const Button = () => {
+  const onClick = useCallback(() => console.log('click'), []);
+  const onBlur = useCallback(() => console.log('blur'), []);
+  return <button onClick={onClick} onBlur={onBlur} />;
+};
+`,
+    errors: [
+      { messageId: 'preferUtilityFunction' as const },
+      { messageId: 'preferUtilityFunction' as const },
+    ],
+    output: `
+const onClick = () => console.log('click');
+const onBlur = () => console.log('blur');
+export const Button = () => {
+  return <button onClick={onClick} onBlur={onBlur} />;
 };
 `,
   },
@@ -1165,9 +1187,10 @@ export const Button = () => {
 `,
   },
   // A directive comment governs the line below it, so deleting that line would
-  // re-aim the directive at whatever moves up. The removal is declined and the
-  // hoist — the fix's whole value — still lands; an unused import is a lint
-  // report, while losing the hoist would leave the reported code as written.
+  // re-aim the directive at whatever moves up. The removal cannot be made
+  // safely, so the whole fix is declined: hoisting anyway would trade this
+  // rule's report for an unused-import one that nothing re-reports, because the
+  // hoist has already resolved the violation that would have found it.
   {
     code: `
 // @ts-expect-error untyped module
@@ -1178,18 +1201,24 @@ export const Button = () => {
 };
 `,
     errors: [{ messageId: 'preferUtilityFunction' as const }],
-    output: `
-// @ts-expect-error untyped module
-import { useCallback } from 'react';
-const onClick = () => 1;
+    output: null,
+  },
+  // A comment inside the import declaration cannot be placed by a removal that
+  // spans separators, so the planner refuses and the hoist is declined with it.
+  {
+    code: `
+import { useCallback /* the hook */ } from 'react';
 export const Button = () => {
+  const onClick = useCallback(() => 1, []);
   return <button onClick={onClick} />;
 };
 `,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: null,
   },
-  // A namespace object is left bound. Under the classic JSX runtime it is
-  // consumed by a transform no scope analysis records, so a member callee never
-  // takes its object with it.
+  // A namespace object stays bound because JSX still reads it: the scope
+  // manager records the pragma's implicit reference, which is the same oracle
+  // `no-unused-vars` consults. Nothing here inspects the file for JSX.
   {
     code: `
 import * as React from 'react';
@@ -1204,6 +1233,136 @@ import * as React from 'react';
 const onClick = () => console.log('hi');
 export const Button = () => {
   return <button onClick={onClick} />;
+};
+`,
+  },
+  // The classic-JSX pair, both sides measured in the same `.tsx` file. Nothing
+  // in the rule inspects the file for JSX or reads its extension: the scope
+  // manager records the reference the pragma creates, and that alone decides.
+  // With JSX the default import is read after the hoist, so it stays.
+  {
+    filename: 'Widget.tsx',
+    code: `
+import React from 'react';
+export const Widget = () => {
+  const inner = React.useCallback(() => doThing(), []);
+  return <button onClick={inner} />;
+};
+`,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+import React from 'react';
+const inner = () => doThing();
+export const Widget = () => {
+  return <button onClick={inner} />;
+};
+`,
+  },
+  // The other side of the pair: same file extension, same import, no JSX. No
+  // pragma reference exists, so the hoist takes the last use and the
+  // declaration goes with it.
+  {
+    filename: 'Widget.tsx',
+    code: `
+import React from 'react';
+export const Widget = () => {
+  const inner = React.useCallback(() => doThing(), []);
+  return inner;
+};
+`,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+const inner = () => doThing();
+export const Widget = () => {
+  return inner;
+};
+`,
+  },
+  // The issue's repro. A member callee reads its object, so hoisting the call
+  // out of the component strips the default import's last use. Without JSX
+  // nothing else reads it, and the declaration goes with the hoist.
+  {
+    code: `
+import React from 'react';
+export const Widget = () => {
+  const inner = React.useCallback(() => doThing(), []);
+  return inner;
+};
+`,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+const inner = () => doThing();
+export const Widget = () => {
+  return inner;
+};
+`,
+  },
+  // Its twin: the same hoist where `React` is read elsewhere. An over-eager
+  // removal here would be the worse bug — a call bound to nothing is a runtime
+  // error, an unused import only a lint report.
+  {
+    code: `
+import React from 'react';
+export const Widget = () => {
+  const inner = React.useCallback(() => doThing(), []);
+  return React.createElement('div', null, inner());
+};
+`,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+import React from 'react';
+const inner = () => doThing();
+export const Widget = () => {
+  return React.createElement('div', null, inner());
+};
+`,
+  },
+  // A default import next to the named one: the specifier the hoist orphans is
+  // removed from inside the braces and the default clause is left alone,
+  // because `React` is still read by `React.createElement`.
+  {
+    code: `
+import React, { useCallback } from 'react';
+export const Widget = () => {
+  const inner = useCallback(() => doThing(), []);
+  return React.createElement('div', null, inner());
+};
+`,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+import React from 'react';
+const inner = () => doThing();
+export const Widget = () => {
+  return React.createElement('div', null, inner());
+};
+`,
+  },
+  // Both spellings in one file. The default clause goes with the member call,
+  // but the named one stays for this pass: the planner's coarse second-opinion
+  // name scan counts the `useCallback` PROPERTY of `React.useCallback` as an
+  // occurrence of the name, and it declines rather than guess. Erring that way
+  // costs a pass, never a binding — the surviving call still reads the
+  // specifier, so nothing is stranded, the report stands, and the pass that
+  // hoists it retires the specifier (pinned under the real `Linter` below).
+  {
+    code: `
+import React, { useCallback } from 'react';
+export const Widget = () => {
+  const inner = React.useCallback(() => doThing(), []);
+  const outer = useCallback(() => doOther(), []);
+  return [inner, outer];
+};
+`,
+    errors: [
+      { messageId: 'preferUtilityFunction' as const },
+      { messageId: 'preferUtilityFunction' as const },
+    ],
+    output: `
+import { useCallback } from 'react';
+const inner = () => doThing();
+export const Widget = () => {
+  const outer = useCallback(() => doOther(), []);
+  return [inner, outer];
 };
 `,
   },
@@ -1338,6 +1497,57 @@ describe('no-empty-dependency-use-callbacks --fix under eslint-disable', () => {
     const { output } = fix(source);
 
     expect(output).toBe(source);
+    expectNothingStranded(source, output);
+  });
+
+  // The member spelling owes the same debt: a disabled `React.useCallback` goes
+  // on reading the default import forever, so the live sibling's hoist must not
+  // take it away.
+  it('keeps the default import when a member call is disabled', () => {
+    const source = [
+      "import React from 'react';",
+      '',
+      'export const First = () => {',
+      "  const onFirst = React.useCallback(() => console.log('First'), []);",
+      '  return onFirst;',
+      '};',
+      'export const Second = () => {',
+      `  // eslint-disable-next-line ${RULE_ID}`,
+      "  const onSecond = React.useCallback(() => console.log('Second'), []);",
+      '  return onSecond;',
+      '};',
+      '',
+    ].join('\n');
+    const { output } = fix(source);
+
+    expect(output).toContain("const onFirst = () => console.log('First');");
+    expect(output).toContain("import React from 'react';");
+    expect(output).toContain(
+      "const onSecond = React.useCallback(() => console.log('Second'), []);",
+    );
+    expectNothingStranded(source, output);
+  });
+
+  // Both spellings in one file need more than one pass, because the member
+  // call's `useCallback` property blocks the named specifier's removal while it
+  // is still written. Every pass leaves a file that lints and links, and the
+  // sequence converges on retiring the whole declaration.
+  it('retires a mixed import once the passes settle', () => {
+    const source = [
+      "import React, { useCallback } from 'react';",
+      'export const Widget = () => {',
+      '  const inner = React.useCallback(() => doThing(), []);',
+      '  const outer = useCallback(() => doOther(), []);',
+      '  return [inner, outer];',
+      '};',
+      '',
+    ].join('\n');
+    const { output } = fix(source);
+
+    expect(output).not.toContain("from 'react'");
+    expect(output).toContain('const inner = () => doThing();');
+    expect(output).toContain('const outer = () => doOther();');
+    expect(orphanedImportBindings(output)).toEqual([]);
     expectNothingStranded(source, output);
   });
 

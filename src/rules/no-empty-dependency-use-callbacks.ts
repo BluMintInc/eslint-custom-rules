@@ -7,6 +7,7 @@ import {
 import { minimatch } from 'minimatch';
 import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
+import { createSuppressionChecker } from '../utils/disableDirectives';
 import { planOrphanedImportRemoval, TextRange } from '../utils/importRemoval';
 
 type Options = [
@@ -632,50 +633,52 @@ function dedentedCallbackText(
     .join('\n');
 }
 
-/**
- * The imports the hoist leaves bound to nothing, or `null` when none can be
- * unbound safely.
- *
- * The hoist is not a deletion: the declared identifier and the callback text
- * are re-emitted at module scope, so every reference inside them outlives the
- * fix. Only the wrapper disappears — the `const` keyword, the ` = hook(`
- * between the identifier and the callback, and the trailing `, []);`. Orphan-
- * hood is judged against those three slices alone, which keeps a hook call
- * nested in the callback body counted as a live reference (unwrapping the
- * outer call carries the inner one along verbatim).
- *
- * A member callee (`React.useCallback`) is left alone. Its object is usually
- * the JSX pragma, and under the classic runtime JSX consumes that binding
- * through a transform no scope analysis records — a use this cannot see, so it
- * must not delete it.
- */
-function planHoistImportRemoval(
-  sourceCode: Readonly<TSESLint.SourceCode>,
-  callExpression: TSESTree.CallExpression,
-  declarator: TSESTree.VariableDeclarator,
-  callback: TSESTree.Node,
-  idRangeEnd: number,
-  removal: TextRange,
-): TextRange[] | null {
-  if (callExpression.callee.type !== AST_NODE_TYPES.Identifier) {
-    return null;
-  }
+/** One rewrite the fix performs: `range` becomes `text`. */
+type Edit = { range: TextRange; text: string };
 
-  const deleted: TextRange[] = [
-    [removal[0], declarator.id.range[0]],
-    [idRangeEnd, callback.range[0]],
-    [callback.range[1], removal[1]],
-  ];
+/** A hoistable callback the rule reports, held until `Program:exit`. */
+type Violation = {
+  node: TSESTree.CallExpression;
+  callback: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression;
+  messageId: MessageIds;
+  name: string;
+};
 
-  return planOrphanedImportRemoval(sourceCode, deleted);
+/** A hoist that is ready to ship, with the deletions it owns. */
+type HoistPlan = {
+  edits: Edit[];
+  /**
+   * The positions the hoist genuinely erases, for the orphaned-import analysis.
+   *
+   * The hoist is not a deletion: the declared identifier and the callback text
+   * are re-emitted at module scope, so every reference inside them outlives the
+   * fix. Only the wrapper disappears — the `const` keyword, the ` = hook(`
+   * between the identifier and the callback, and the trailing `, []);`.
+   * Orphanhood is judged against those three slices alone, which keeps a hook
+   * call nested in the callback body counted as a live reference (the hoist
+   * carries that inner call along verbatim).
+   */
+  removed: TextRange[];
+  /**
+   * The span the edits occupy, from the module-scope insertion point to the end
+   * of the declaration being lifted.
+   */
+  span: TextRange;
+};
+
+/** A violation whose hoist ships, paired with the plan that carries it. */
+type PlannedViolation = HoistPlan & { violation: Violation };
+
+function rangesOverlap(a: TextRange, b: TextRange): boolean {
+  return a[0] < b[1] && b[0] < a[1];
 }
 
-function buildHoistFixes(
+function buildHoistPlan(
   context: Readonly<TSESLint.RuleContext<MessageIds, Options>>,
   callExpression: TSESTree.CallExpression,
   callback: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
   hoistedIdentifierCache: WeakMap<TSESTree.Program, Set<string>>,
-): ((fixer: TSESLint.RuleFixer) => TSESLint.RuleFix[]) | null {
+): HoistPlan | null {
   if (
     !callExpression.parent ||
     callExpression.parent.type !== AST_NODE_TYPES.VariableDeclarator
@@ -766,26 +769,18 @@ function buildHoistFixes(
     removeEnd = lineEnd + 1;
   }
 
-  // The hook import the call was the last consumer of goes with the hoist, in
-  // the same fix: applying the hoist alone trades this rule's report for an
-  // unused-import one, and nothing re-reports that debt once the hoist has
-  // resolved the original violation. An unremovable binding costs only the
-  // unused import — the hoist is the fix's value and is kept regardless.
-  const importRanges =
-    planHoistImportRemoval(
-      sourceCode,
-      callExpression,
-      declarator,
-      callback,
-      idRangeEnd,
-      [removeStart, removeEnd],
-    ) ?? [];
-
-  return (fixer) => [
-    fixer.insertTextBefore(hoistTarget, hoisted),
-    fixer.removeRange([removeStart, removeEnd]),
-    ...importRanges.map((range) => fixer.removeRange([range[0], range[1]])),
-  ];
+  return {
+    edits: [
+      { range: [hoistTarget.range[0], hoistTarget.range[0]], text: hoisted },
+      { range: [removeStart, removeEnd], text: '' },
+    ],
+    removed: [
+      [removeStart, declarator.id.range[0]],
+      [idRangeEnd, callback.range[0]],
+      [callback.range[1], removeEnd],
+    ],
+    span: [hoistTarget.range[0], removeEnd],
+  };
 }
 
 export const noEmptyDependencyUseCallbacks = createRule<Options, MessageIds>({
@@ -825,10 +820,87 @@ export const noEmptyDependencyUseCallbacks = createRule<Options, MessageIds>({
     const testPatterns = options?.testFilePatterns ?? DEFAULT_TEST_PATTERNS;
     const ignoreUseLatestCallback = options?.ignoreUseLatestCallback === true;
     const hoistedIdentifierCache = new WeakMap<TSESTree.Program, Set<string>>();
+    const sourceCode = context.getSourceCode();
 
     const filename = context.getFilename();
     const isTest =
       ignoreTestFiles && filenameMatchesPatterns(filename, testPatterns);
+
+    /**
+     * Every hoistable callback the rule finds, in traversal order.
+     *
+     * Reporting is deferred to `Program:exit` because the binding the call
+     * reads — the `useCallback` specifier, or the `React` default import behind
+     * `React.useCallback` — is unbound only once no surviving call references
+     * it. Judged one call at a time, a file with two hoistable callbacks never
+     * sees either as the binding's last use, and the pass that hoists both
+     * resolves every report — so nothing ever revisits the stranded import.
+     */
+    const violations: Violation[] = [];
+
+    /**
+     * A suppressed report is dropped together with its fix, so its hoist never
+     * happens: counting it toward the batch would unbind an import the
+     * surviving call still reads.
+     */
+    const isReportSuppressed = createSuppressionChecker(context);
+
+    /**
+     * The hoists that actually ship.
+     *
+     * Each is screened alone before it joins the batch: a hoist whose own
+     * deletion orphans something that cannot be unbound safely — a local
+     * variable, an import behind a directive comment — would otherwise poison
+     * every other hoist in the file.
+     *
+     * Candidates are then ordered and screened for collisions exactly as ESLint
+     * orders and screens competing reports, so batching cannot change which of
+     * two colliding hoists lands. A nested pair collides: both insert at the
+     * same module-scope offset, but the inner declaration's span ends first, so
+     * the inner hoist wins and the outer one waits for a later pass — hoisting
+     * the outer instead would relocate the inner hook call to module scope.
+     * Sibling hoists in one component share only that zero-width insertion
+     * point, so both ship together.
+     */
+    function planViolations(): PlannedViolation[] {
+      const candidates: PlannedViolation[] = [];
+
+      for (const violation of violations) {
+        if (isReportSuppressed(violation.node)) continue;
+        const plan = buildHoistPlan(
+          context,
+          violation.node,
+          violation.callback,
+          hoistedIdentifierCache,
+        );
+        if (!plan) continue;
+        if (planOrphanedImportRemoval(sourceCode, plan.removed) === null) {
+          continue;
+        }
+        candidates.push({ violation, ...plan });
+      }
+
+      candidates.sort(
+        (left, right) =>
+          left.span[0] - right.span[0] || left.span[1] - right.span[1],
+      );
+
+      const planned: PlannedViolation[] = [];
+      const claimed: TextRange[] = [];
+      for (const candidate of candidates) {
+        if (
+          claimed.some((taken) =>
+            candidate.edits.some((edit) => rangesOverlap(edit.range, taken)),
+          )
+        ) {
+          continue;
+        }
+        claimed.push(...candidate.edits.map((edit) => edit.range));
+        planned.push(candidate);
+      }
+
+      return planned;
+    }
 
     function reportIfStaticCallback(
       callExpression: TSESTree.CallExpression,
@@ -878,18 +950,11 @@ export const noEmptyDependencyUseCallbacks = createRule<Options, MessageIds>({
           ? callExpression.parent.id.name
           : 'this callback';
 
-      const fix = buildHoistFixes(
-        context,
-        callExpression,
-        callback,
-        hoistedIdentifierCache,
-      );
-
-      context.report({
+      violations.push({
         node: callExpression,
+        callback,
         messageId,
-        data: { name: callbackName },
-        fix,
+        name: callbackName,
       });
     }
 
@@ -916,6 +981,59 @@ export const noEmptyDependencyUseCallbacks = createRule<Options, MessageIds>({
         if (ignoreUseLatestCallback) return;
         if (isUseLatestCallbackCallee(callee)) {
           reportIfStaticCallback(node, 'preferUtilityLatest');
+        }
+      },
+      'Program:exit'() {
+        if (violations.length === 0) return;
+
+        const planned = planViolations();
+        // One plan over every surviving hoist: the binding behind the callee is
+        // left unreferenced by their union even when no single hoist strips its
+        // last use, and the pass that applies them all resolves every report —
+        // so this is the only moment the stranded import is visible.
+        const importRemoval =
+          planned.length > 0
+            ? planOrphanedImportRemoval(
+                sourceCode,
+                planned.flatMap((entry) => entry.removed),
+              )
+            : null;
+
+        // The whole batch ships as one fix, so no hoist can land without the
+        // others the import's orphanhood was judged against, and no unbinding
+        // can land without the hoist it was claimed on. The other violations
+        // report without a fixer; the carrier's pass already resolves them.
+        //
+        // No plan at all means some binding would be left unreferenced yet
+        // cannot be unbound safely, so every hoist stays behind: reports
+        // without a fixer are the lesser damage. Hoisting anyway would trade
+        // this rule's report for an unused-import one, and nothing re-reports
+        // that debt once the hoist has resolved the original violation.
+        const removalRanges: readonly TextRange[] = importRemoval ?? [];
+        const carrier = importRemoval ? planned[0] : undefined;
+
+        for (const violation of violations) {
+          context.report({
+            node: violation.node,
+            messageId: violation.messageId,
+            data: { name: violation.name },
+            fix:
+              violation === carrier?.violation
+                ? (fixer: TSESLint.RuleFixer) => [
+                    ...removalRanges.map((range) =>
+                      fixer.removeRange([range[0], range[1]]),
+                    ),
+                    ...planned.flatMap((entry) =>
+                      entry.edits.map((edit) =>
+                        fixer.replaceTextRange(
+                          [edit.range[0], edit.range[1]],
+                          edit.text,
+                        ),
+                      ),
+                    ),
+                  ]
+                : undefined,
+          });
         }
       },
     };
