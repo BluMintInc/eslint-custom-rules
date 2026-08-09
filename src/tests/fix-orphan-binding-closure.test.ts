@@ -96,7 +96,6 @@ const DIVERGENT_WITHOUT_PROGRAM = new Set(['no-entire-object-hook-deps']);
  * one fails as a fix that nobody removed the baseline for.
  */
 const ORPHAN_BASELINE = new Map<string, string>([
-  ['use-latest-callback', '#1898'],
   ['prefer-params-over-parent-id', '#1899'],
   ['enforce-centralized-mock-firestore', '#1900'],
   ['enforce-firestore-set-merge', '#1901'],

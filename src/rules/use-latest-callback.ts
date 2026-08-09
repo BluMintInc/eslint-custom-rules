@@ -6,6 +6,7 @@ import {
 import type { TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
+import { planOrphanedImportRemoval, TextRange } from '../utils/importRemoval';
 
 type MessageIds = 'useLatestCallback';
 
@@ -1079,18 +1080,50 @@ export const useLatestCallback = createRule<Options, MessageIds>({
           return [fixer.removeRange([start, closeBrace.range[1]])];
         };
 
-        const importFixes = (fixer: TSESLint.RuleFixer): TSESLint.RuleFix[] => {
+        /**
+         * The hook's own import, placed at the react import it displaces.
+         *
+         * The anchor is nudged to the start of any planned deletion that
+         * encloses it, because a fix's edits must not overlap: an unbinding
+         * that swallows the react declaration's whole line starts before the
+         * declaration whenever that line is indented, and inserting inside
+         * that span is the one position ESLint rejects outright.
+         */
+        const insertImportFixes = (
+          fixer: TSESLint.RuleFixer,
+          unbindings: readonly TextRange[],
+        ): TSESLint.RuleFix[] => {
+          if (latestCallbackImport) {
+            return [];
+          }
+          let at = statement.range[0];
+          for (const [start, end] of unbindings) {
+            if (start < at && at < end) {
+              at = start;
+            }
+          }
+          return [fixer.insertTextBeforeRange([at, at], `${importText}\n`)];
+        };
+
+        const importFixes = (
+          fixer: TSESLint.RuleFixer,
+          unbindsReactSpecifiers: boolean,
+          unbindings: readonly TextRange[],
+        ): TSESLint.RuleFix[] => {
           if (!touchesImport) {
             return [];
+          }
+
+          // The orphan plan already unbinds every react specifier the rewrite
+          // strips, so the only edit left here is the hook's own import.
+          if (!unbindsReactSpecifiers) {
+            return insertImportFixes(fixer, unbindings);
           }
 
           // A surviving reference (or a member-only file) leaves the react
           // import untouched; only the new import is added when missing.
           if (hasSurvivingReference || specifiers.length === 0) {
-            if (latestCallbackImport) {
-              return [];
-            }
-            return [fixer.insertTextBefore(statement, `${importText}\n`)];
+            return insertImportFixes(fixer, unbindings);
           }
 
           const defaultOrNamespace = statement.specifiers.find(
@@ -1117,10 +1150,9 @@ export const useLatestCallback = createRule<Options, MessageIds>({
             return [fixer.remove(statement)];
           }
 
-          const fixes: TSESLint.RuleFix[] = [];
-          if (!latestCallbackImport) {
-            fixes.push(fixer.insertTextBefore(statement, `${importText}\n`));
-          }
+          const fixes: TSESLint.RuleFix[] = [
+            ...insertImportFixes(fixer, unbindings),
+          ];
           if (remainingNamed.length === 0) {
             fixes.push(...removeNamedGroup(fixer, namedSpecifiers));
           } else {
@@ -1213,6 +1245,63 @@ export const useLatestCallback = createRule<Options, MessageIds>({
         );
         const programScope = ASTHelpers.getScope(context, program);
 
+        /**
+         * The spans the batched rewrite genuinely erases.
+         *
+         * Only two parts of a converted call disappear: its callee, which the
+         * hook's name replaces, and everything past the callback argument — the
+         * dependency array and any further argument. The callback text and the
+         * call's type parameters are re-emitted verbatim, so listing them would
+         * read every binding they mention as unreferenced and unbind imports the
+         * rewritten call still uses.
+         *
+         * `includeIdentifierCallees` selects which oracle owns the react
+         * `useCallback` specifier. Excluded, the specifier's binding has no
+         * reference among these spans, so the orphan planner never considers it
+         * and {@link importFixes} keeps its comment-preserving splice.
+         */
+        const erasedSpans = (includeIdentifierCallees: boolean): TextRange[] =>
+          batchedConversions.flatMap((conversion) => {
+            const { node } = conversion;
+            const spans: TextRange[] = [
+              [node.arguments[0].range[1], node.range[1]],
+            ];
+            // A member callee's object is the only binding it reads, and the
+            // rule's own import rewrite never touches it.
+            if (includeIdentifierCallees || !conversion.callee) {
+              spans.push(node.callee.range);
+            }
+            return spans;
+          });
+
+        /**
+         * Whether the edits form the single ordered, non-overlapping sequence
+         * ESLint demands of one fix.
+         *
+         * The two import oracles below own disjoint declarations in every shape
+         * this rule is written for, but "every shape" is a claim about a file
+         * nobody has seen. A file that breaks it — a dependency array reading
+         * the same react declaration the specifier splice rewrites — would make
+         * ESLint throw out of the whole lint rather than report, so the edit set
+         * is checked and withheld instead.
+         */
+        const editsAreDisjoint = (
+          fixes: readonly TSESLint.RuleFix[],
+        ): boolean => {
+          const ordered = [...fixes].sort(
+            (left, right) =>
+              left.range[0] - right.range[0] || left.range[1] - right.range[1],
+          );
+          let previousEnd = -1;
+          for (const fix of ordered) {
+            if (fix.range[0] < previousEnd) {
+              return false;
+            }
+            previousEnd = fix.range[1];
+          }
+          return true;
+        };
+
         // Every call-site conversion and the import rewrite ride on ONE fix
         // from ONE report. ESLint discards a multi-part fix wholesale when any
         // part conflicts with another rule's fix and retries it on the next
@@ -1248,16 +1337,49 @@ export const useLatestCallback = createRule<Options, MessageIds>({
               return null;
             }
 
+            // Converting every `React.useCallback` call strips the last read of
+            // the react default import, and dropping a dependency array strips
+            // the last read of whatever was computed for it. Either leaves the
+            // file failing `no-unused-vars` and `noUnusedLocals` on a fix that
+            // resolved the only report that would have re-raised the debt
+            // (issue #1898).
+            //
+            // Two plans, because the react `useCallback` specifier has two
+            // possible owners and only one of them may edit it. The wider plan
+            // decides everything, which is what unbinds a mixed
+            // `import React, { useCallback }` as a single declaration; when it
+            // declines — a comment among the specifiers, a name the planner's
+            // second-opinion scan still finds — the narrower plan hands that
+            // specifier back to the splice above, which preserves the comments
+            // the planner refuses to guess at (issue #1446).
+            //
+            // A null from BOTH is a demand to withhold: a binding is left
+            // unreferenced that neither oracle can unbind safely.
+            const wholePlan = planOrphanedImportRemoval(
+              sourceCode,
+              erasedSpans(true),
+            );
+            const unbindings =
+              wholePlan ??
+              planOrphanedImportRemoval(sourceCode, erasedSpans(false));
+            if (!unbindings) {
+              return null;
+            }
+
             const texts = conversionTexts();
-            return [
+            const fixes = [
               ...batchedConversions.map((conversion) =>
                 fixer.replaceText(
                   conversion.node,
                   texts.get(conversion.node) as string,
                 ),
               ),
-              ...importFixes(fixer),
+              ...importFixes(fixer, wholePlan === null, unbindings),
+              ...unbindings.map((range) =>
+                fixer.removeRange([range[0], range[1]]),
+              ),
             ];
+            return editsAreDisjoint(fixes) ? fixes : null;
           },
         });
 

@@ -457,7 +457,6 @@ function MyComponent() {
 }`,
       output: `import useLatestCallback from 'use-latest-callback';
 
-
 function MyComponent() {
   const handleClick1 = useLatestCallback(() => {
     console.log('Clicked 1');
@@ -1438,8 +1437,7 @@ const A = (go) => {
   return <div onClick={o} />;
 };
 import useLatestCallback from 'use-latest-callback';`,
-      output: `
-const A = (go) => {
+      output: `const A = (go) => {
   const o = useLatestCallback(() => { go(); });
   return <div onClick={o} />;
 };
@@ -1506,7 +1504,6 @@ const A = () => {
   return <div onClick={o} />;
 };`,
       output: `import { useLatestCallback as stable } from 'use-latest-callback';
-
 const A = () => {
   const o = stable(() => { go(); });
   return <div onClick={o} />;
@@ -2592,8 +2589,12 @@ export const useThing = () => {
 };`,
       errors: errors(),
     },
-    // A module-scope binding is not this rule's to call dead — it can be
-    // exported or read from another file — so it never withholds the fix.
+    // An UNEXPORTED module-scope binding read only by the deleted array is dead
+    // once the array goes, and this rule cannot delete a `const` — so the whole
+    // fix is withheld and the author drops the declaration with the array. The
+    // fixture used to assert the conversion shipped, on the reasoning that a
+    // module-scope binding "can be exported or read from another file"; a
+    // binding that is neither exported nor re-exported cannot (issue #1898).
     {
       code: `import { useCallback } from 'react';
 
@@ -2606,9 +2607,26 @@ export const useThing = () => {
 
   return handle;
 };`,
+      output: null,
+      errors: errors(),
+    },
+    // An EXPORTED module-scope binding has a consumer no edit to this file can
+    // reach, so the array goes and the declaration stays.
+    {
+      code: `import { useCallback } from 'react';
+
+export const OPTIONS = { retries: 3 };
+
+export const useThing = () => {
+  const handle = useCallback(() => {
+    go();
+  }, [OPTIONS]);
+
+  return handle;
+};`,
       output: `import useLatestCallback from 'use-latest-callback';
 
-const OPTIONS = { retries: 3 };
+export const OPTIONS = { retries: 3 };
 
 export const useThing = () => {
   const handle = useLatestCallback(() => {
@@ -2619,7 +2637,8 @@ export const useThing = () => {
 };`,
       errors: errors(),
     },
-    // The same holds for an imported binding.
+    // An imported binding IS this rule's to retire: the import goes with the
+    // array that held its last read, in the same fix.
     {
       code: `import { useCallback } from 'react';
 import { CONFIG } from './config';
@@ -2632,7 +2651,6 @@ export const useThing = () => {
   return handle;
 };`,
       output: `import useLatestCallback from 'use-latest-callback';
-import { CONFIG } from './config';
 
 export const useThing = () => {
   const handle = useLatestCallback(() => {
@@ -2643,8 +2661,9 @@ export const useThing = () => {
 };`,
       errors: errors(),
     },
-    // A dependency resolving past a shadow to module scope converts, even though
-    // an inner binding of that name exists.
+    // A dependency resolving past a shadow reaches the module-scope binding, so
+    // the inner binding of that name does not keep it alive and the fix is
+    // withheld.
     {
       code: `import { useCallback } from 'react';
 
@@ -2662,22 +2681,7 @@ export const useThing = () => {
 
   return { handle, nested };
 };`,
-      output: `import useLatestCallback from 'use-latest-callback';
-
-const scale = 2;
-
-export const useThing = () => {
-  const handle = useLatestCallback(() => {
-    go();
-  });
-
-  const nested = () => {
-    const scale = 1;
-    return scale;
-  };
-
-  return { handle, nested };
-};`,
+      output: null,
       errors: errors(),
     },
     // An empty dependency array deletes no reference at all.
@@ -3069,6 +3073,313 @@ export const useThing = (id) => {
 
   return <button onClick={pressed}>Save</button>;
 };`,
+      errors: errors(),
+    },
+
+    // -----------------------------------------------------------------------
+    // Converting `React.useCallback` strips the last read of the react default
+    // import, so the import goes with it — in the same fix (issue #1898).
+    // Whether it goes is decided by SCOPE ANALYSIS alone, never by a JSX or
+    // `.tsx` test: the scope manager records the implicit `React` reference a
+    // JSX pragma creates, and it is the same oracle `no-unused-vars` consults.
+    // -----------------------------------------------------------------------
+    // The reported repro: the only read of `React` is the callee being replaced.
+    {
+      code: `import React from 'react';
+
+export const Widget = () => {
+  const inner = React.useCallback(() => doThing(), []);
+  return inner;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const Widget = () => {
+  const inner = useLatestCallback(() => doThing());
+  return inner;
+};`,
+      filename: 'widget.ts',
+      errors: errors(),
+    },
+    // `React` read elsewhere survives. An over-eager removal is the worse bug:
+    // it unbinds a reference and breaks the file outright.
+    {
+      code: `import React from 'react';
+
+export const Widget = () => {
+  const inner = React.useCallback(() => doThing(), []);
+  return React.createElement('div', null, inner);
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import React from 'react';
+
+export const Widget = () => {
+  const inner = useLatestCallback(() => doThing());
+  return React.createElement('div', null, inner);
+};`,
+      filename: 'widget.ts',
+      errors: errors(),
+    },
+    // A type-position read counts too.
+    {
+      code: `import React from 'react';
+
+export const Widget = (): React.ReactElement | null => {
+  const inner = React.useCallback(() => doThing(), []);
+  void inner;
+  return null;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import React from 'react';
+
+export const Widget = (): React.ReactElement | null => {
+  const inner = useLatestCallback(() => doThing());
+  void inner;
+  return null;
+};`,
+      filename: 'widget.ts',
+      errors: errors(),
+    },
+    // The JSX pragma side of the same question, in a `.tsx` file: JSX is a read
+    // of `React` under the classic runtime, and the scope manager says so, so
+    // the import stays without this rule ever inspecting the extension.
+    {
+      code: `import React from 'react';
+
+export const Widget = () => {
+  const inner = React.useCallback(() => doThing(), []);
+  return <div onClick={inner} />;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import React from 'react';
+
+export const Widget = () => {
+  const inner = useLatestCallback(() => doThing());
+  return <div onClick={inner} />;
+};`,
+      filename: 'widget.tsx',
+      errors: errors(),
+    },
+    // The other side, same file shape: told there is no pragma, the scope
+    // manager records no reference and the import goes. A hand-written "does
+    // this file contain JSX" guard would have kept it here and left a `React`
+    // binding the automatic runtime never reads.
+    {
+      code: `import React from 'react';
+
+export const Widget = () => {
+  const inner = React.useCallback(() => doThing(), []);
+  return <div onClick={inner} />;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const Widget = () => {
+  const inner = useLatestCallback(() => doThing());
+  return <div onClick={inner} />;
+};`,
+      filename: 'widget.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        jsxPragma: null,
+      },
+      errors: errors(),
+    },
+    // A namespace import binds the same way.
+    {
+      code: `import * as React from 'react';
+
+export const Widget = () => {
+  const inner = React.useCallback(() => doThing(), []);
+  return inner;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const Widget = () => {
+  const inner = useLatestCallback(() => doThing());
+  return inner;
+};`,
+      filename: 'widget.ts',
+      errors: errors(),
+    },
+    // Two member calls in one file. Judged one call at a time neither rewrite
+    // is the binding's last read, so the batch is what makes the import's
+    // orphanhood visible at all.
+    {
+      code: `import React from 'react';
+
+export const Widget = () => {
+  const a = React.useCallback(() => doThing(), []);
+  const b = React.useCallback(() => doOther(), []);
+  return [a, b];
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const Widget = () => {
+  const a = useLatestCallback(() => doThing());
+  const b = useLatestCallback(() => doOther());
+  return [a, b];
+};`,
+      filename: 'widget.ts',
+      errors: errors('useCallback', 'useLatestCallback', 3),
+    },
+    // A mixed default-and-named import loses both bindings at once, so the
+    // declaration goes as a whole rather than one clause leaving the other
+    // stranded.
+    {
+      code: `import React, { useCallback } from 'react';
+
+export const Widget = () => {
+  const a = useCallback(() => doThing(), []);
+  const b = React.useCallback(() => doOther(), []);
+  return [a, b];
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const Widget = () => {
+  const a = useLatestCallback(() => doThing());
+  const b = useLatestCallback(() => doOther());
+  return [a, b];
+};`,
+      filename: 'widget.ts',
+      errors: errors('useCallback', 'useLatestCallback', 3),
+    },
+    // Two react declarations, one per spelling: both are unbound in the one fix.
+    {
+      code: `import React from 'react';
+import { useCallback } from 'react';
+
+export const Widget = () => {
+  const a = useCallback(() => doThing(), []);
+  const b = React.useCallback(() => doOther(), []);
+  return [a, b];
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const Widget = () => {
+  const a = useLatestCallback(() => doThing());
+  const b = useLatestCallback(() => doOther());
+  return [a, b];
+};`,
+      filename: 'widget.ts',
+      errors: errors('useCallback', 'useLatestCallback', 3),
+    },
+    // A mixed import whose member call returns JSX is not converted, so `React`
+    // keeps a reader and only the named clause goes.
+    {
+      code: `import React, { useCallback } from 'react';
+
+export const Widget = () => {
+  const row = React.useCallback(() => React.createElement('div'), []);
+  const b = useCallback(() => doOther(), []);
+  return [row, b];
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import React from 'react';
+
+export const Widget = () => {
+  const row = React.useCallback(() => React.createElement('div'), []);
+  const b = useLatestCallback(() => doOther());
+  return [row, b];
+};`,
+      filename: 'widget.ts',
+      errors: errors(),
+    },
+    // Other specifiers of the react import keep their own readers.
+    {
+      code: `import React, { useState } from 'react';
+
+export const Widget = () => {
+  const [s] = useState(0);
+  const inner = React.useCallback(() => doThing(s), []);
+  return inner;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { useState } from 'react';
+
+export const Widget = () => {
+  const [s] = useState(0);
+  const inner = useLatestCallback(() => doThing(s));
+  return inner;
+};`,
+      filename: 'widget.ts',
+      errors: errors(),
+    },
+    // Type parameters ride through the rewrite that retires the import.
+    {
+      code: `import React from 'react';
+
+export const Widget = () => {
+  const inner = React.useCallback<() => void>(() => doThing(), []);
+  return inner;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const Widget = () => {
+  const inner = useLatestCallback<() => void>(() => doThing());
+  return inner;
+};`,
+      filename: 'widget.ts',
+      errors: errors(),
+    },
+    // A comment inside the declaration makes the unbinding unsafe — a comment
+    // can be a directive, and which line it governs is not this rule's to
+    // guess — so the WHOLE fix is withheld rather than shipping the orphan.
+    {
+      code: `import React /* the runtime */ from 'react';
+
+export const Widget = () => {
+  const inner = React.useCallback(() => doThing(), []);
+  return inner;
+};`,
+      output: null,
+      filename: 'widget.ts',
+      errors: errors(),
+    },
+    // The same, with the comment among a mixed import's named specifiers.
+    {
+      code: `import React, {
+  useCallback, // memoize
+} from 'react';
+
+export const Widget = () => {
+  const a = useCallback(() => doThing(), []);
+  const b = React.useCallback(() => doOther(), []);
+  return [a, b];
+};`,
+      output: null,
+      filename: 'widget.ts',
+      errors: errors('useCallback', 'useLatestCallback', 3),
+    },
+    // A dependency array holding the last read of an UNEXPORTED module-scope
+    // const withholds the member-call conversion too: no import removal can
+    // retire a `const`.
+    {
+      code: `import React from 'react';
+
+const LIMIT = 3;
+
+export const Widget = () => {
+  const a = React.useCallback(() => doThing(), [LIMIT]);
+  return a;
+};`,
+      output: null,
+      filename: 'widget.ts',
+      errors: errors(),
+    },
+    // A suppressed report beside a live one. The whole change set rides on the
+    // FIRST conversion's report, so suppressing it drops every edit — the
+    // remaining report has no fixer and nothing is rewritten, which is the only
+    // state in which the react import's surviving reference is still true.
+    {
+      code: `import React from 'react';
+
+export const Widget = () => {
+  // eslint-disable-next-line use-latest-callback
+  const a = React.useCallback(() => doThing(), []);
+  const b = React.useCallback(() => doOther(), []);
+  return [a, b];
+};`,
+      output: null,
+      filename: 'widget.ts',
       errors: errors(),
     },
   ],
