@@ -507,10 +507,12 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
     }
 
     /**
-     * Whether retiring `declaration` leaves every name it binds accounted for.
+     * How many references retiring `declaration` hands to the call fixes, or
+     * null when retiring it would strand one.
+     *
      * The fix removes the whole declaration, so each reference it serves has to
      * be one the call fixes rewrite to `diff` in the same pass — an import swap
-     * that strands a reference behind is the defect this guards.
+     * that strands a reference behind is the defect the null answer guards.
      *
      * Two things have to hold at every reference. `diff` must reach microdiff
      * there: the import rewrite lands at module scope while the references it
@@ -518,37 +520,87 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
      * would resolve to the shadow. And the reference has to sit where a rewrite
      * exists at all, which is the callee position of a convertible call.
      *
-     * A specifier nothing references is vacuously safe: retiring it removes an
-     * import no code reads.
+     * The count answers the mirror-image question. A specifier nothing
+     * references strands nothing, but it hands the import that replaces it no
+     * call either, so a declaration serving zero rewrites is exactly the case
+     * where writing `import diff from '@blumintinc/microdiff'` over it binds a
+     * name no code reads.
      */
-    function canRetireImport(declaration: TSESTree.ImportDeclaration): boolean {
+    function rewrittenReferenceCount(
+      declaration: TSESTree.ImportDeclaration,
+    ): number | null {
       const claimable = collectClaimableSpecifiers(sourceCode.ast);
       const declarationScope = ASTHelpers.getScope(context, declaration);
-      return declaration.specifiers.every((specifier) => {
+      let rewrites = 0;
+      for (const specifier of declaration.specifiers) {
         const variable = ASTHelpers.findVariableInScope(
           declarationScope,
           specifier.local.name,
         );
         if (!variable) {
-          return true;
+          continue;
         }
         const rewritten = isRewrittenSpecifier(specifier);
-        return variable.references.every(
-          (reference) =>
-            canEmitDiff(reference.from, claimable) &&
-            rewritten &&
-            isRewrittenCallee(reference.identifier),
-        );
-      });
+        for (const reference of variable.references) {
+          if (
+            !rewritten ||
+            !canEmitDiff(reference.from, claimable) ||
+            !isRewrittenCallee(reference.identifier)
+          ) {
+            return null;
+          }
+          rewrites += 1;
+        }
+      }
+      return rewrites;
     }
 
     /**
-     * Whether the import fix retires `declaration` in this same pass.
+     * Whether the import fix retires `declaration` in this same pass. The
+     * branches mirror the fix's own: a declaration serving no call rewrite is
+     * dropped when the file already imports microdiff, and left alone when
+     * dropping it would mean writing an unread `diff` in its place.
      */
     function willRetireImport(
       declaration: TSESTree.ImportDeclaration,
     ): boolean {
-      return canEmitDiffAt(declaration) && canRetireImport(declaration);
+      if (!canEmitDiffAt(declaration)) {
+        return false;
+      }
+      const rewrites = rewrittenReferenceCount(declaration);
+      if (rewrites === null) {
+        return false;
+      }
+      return rewrites > 0 || !!findMicrodiffImport(sourceCode.ast);
+    }
+
+    /**
+     * Whether a callee's binding keeps a reference this pass leaves alone.
+     *
+     * Renaming a call to `diff` stops it referencing whatever bound the callee.
+     * When the import binding it is retired in the same pass, the binding goes
+     * with the declaration and nothing is left behind. A declaration that
+     * survives — because a sibling specifier has no rewrite of its own — keeps a
+     * name that nothing reads unless some other reference outlives the pass, and
+     * an import bound to nothing is what the consumer's `no-unused-vars` and
+     * `noUnusedLocals` both fail the build on.
+     *
+     * A reference the call fixes cannot rewrite is what keeps the binding alive:
+     * one in a position that has no rewrite, or one standing where the emitted
+     * `diff` would resolve to something else.
+     */
+    function keepsUnrewrittenReference(
+      variable: TSESLint.Scope.Variable | null,
+    ): boolean {
+      if (!variable) {
+        return false;
+      }
+      const claimable = collectClaimableSpecifiers(sourceCode.ast);
+      return variable.references.some(
+        (reference) =>
+          !isRewrittenCallee(reference.identifier) ||
+          !canEmitDiff(reference.from, claimable),
+      );
     }
 
     /**
@@ -561,18 +613,26 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
      * file already has, or the one that replaces `declaration` in this same
      * pass. Renaming a callee whose import survives strands the rewritten call
      * exactly as retiring an import whose callee survives strands that one.
+     *
+     * It also needs the binding it stops referencing to be accounted for. An
+     * existing microdiff import binds the emitted `diff` whatever happens to
+     * `declaration`, which is what lets a rename land beside an import too
+     * entangled to retire — and that is precisely when the renamed call can have
+     * been the last thing reading the name the surviving import binds.
      */
     function canRewriteCall(
       node: TSESTree.CallExpression,
       declaration: TSESTree.ImportDeclaration | null,
+      calleeVariable: TSESLint.Scope.Variable | null,
     ): boolean {
       if (!canEmitDiffAt(node) || !hasRewritableArity(node)) {
         return false;
       }
-      if (findMicrodiffImport(sourceCode.ast)) {
-        return true;
+      const retires = !!declaration && willRetireImport(declaration);
+      if (!retires && !keepsUnrewrittenReference(calleeVariable)) {
+        return false;
       }
-      return !!declaration && willRetireImport(declaration);
+      return retires || !!findMicrodiffImport(sourceCode.ast);
     }
 
     /**
@@ -773,13 +833,29 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
               // already binds to something else, and rather than retire an
               // import whose references no call fix rewrites. The report stands
               // either way, so the author resolves it deliberately.
-              if (!canEmitDiffAt(node) || !canRetireImport(node)) {
+              if (!canEmitDiffAt(node)) {
+                return null;
+              }
+              const rewrites = rewrittenReferenceCount(node);
+              if (rewrites === null) {
                 return null;
               }
 
               // If we already have a microdiff import, just remove this import
               if (findMicrodiffImport(sourceCode.ast)) {
                 return fixer.remove(node);
+              }
+
+              // A declaration whose names no call fix rewrites has nothing to
+              // hand the import that would replace it, so writing microdiff's
+              // import over it trades one unread name for another: the file
+              // comes out of the fix with `diff` bound to nothing, which the
+              // consumer's `no-unused-vars` and `noUnusedLocals` both fail on.
+              // A local shadowing the import is exactly that shape — the calls
+              // belong to the shadow, so the import's own reference list is
+              // empty — and so is an import nothing uses at all.
+              if (rewrites === 0) {
+                return null;
               }
 
               // Otherwise, replace with microdiff import
@@ -860,7 +936,7 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
                 node,
                 messageId: 'enforceMicrodiff',
                 fix(fixer) {
-                  if (!canRewriteCall(node, competingImport)) {
+                  if (!canRewriteCall(node, competingImport, calleeVariable)) {
                     return null;
                   }
                   return fixer.replaceText(callee, DIFF_NAME);
@@ -890,7 +966,7 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
                 node,
                 messageId: 'enforceMicrodiff',
                 fix(fixer) {
-                  if (!canRewriteCall(node, competingImport)) {
+                  if (!canRewriteCall(node, competingImport, calleeVariable)) {
                     return null;
                   }
                   // When handling fast-diff and similar libraries, need to ensure the function name is replaced

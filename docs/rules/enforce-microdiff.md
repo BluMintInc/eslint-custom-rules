@@ -75,7 +75,7 @@ import { detailedDiff } from 'deep-object-diff';
 
 export function compare(oldState, newState) {
   // Calls the local arrow, so it is neither reported nor rewritten. The import
-  // above is still retired: it is a competing library, shadowed or not.
+  // above is reported, but left in place: nothing it binds is read.
   const detailedDiff = (a, b) => [a, b];
   return detailedDiff(oldState, newState);
 }
@@ -115,6 +115,40 @@ export const chosen = detailedDiff;
 import deepDiff from 'deep-diff';
 
 export const f = (oldConfig) => deepDiff(oldConfig);
+```
+
+### Neither half may leave a binding behind
+
+The same accounting runs in the other direction: a fix that resolves every reference can still leave a *binding* nothing reads, which the consumer's `no-unused-vars` and `noUnusedLocals` fail the build on even though the output compiles and the fix loop converges.
+
+Replacing a competing import with microdiff's is a fix only when that import feeds a call the same pass rewrites. A declaration whose names are all shadowed, or that nothing references at all, feeds none — so it is reported and left alone rather than swapped for a `diff` no code reads:
+
+```ts
+// Reported, not rewritten: the calls belong to the shadow, so replacing this
+// import would trade one unused name for another.
+import { detailedDiff } from 'deep-object-diff';
+
+export function compare(oldState, newState) {
+  const detailedDiff = (a, b) => [a, b];
+  return detailedDiff(oldState, newState);
+}
+```
+
+Once the file imports microdiff — because another comparison in it was converted, or because it already did — such an import is *removed* instead, which binds nothing new.
+
+A call rename obeys the mirror of the rule: it stops referencing whatever bound the callee, so either the import binding it is retired in the same pass, or some other reference has to keep that name read.
+
+```ts
+// Reported, not rewritten: `applyChange` keeps the declaration alive, so
+// renaming the only call of `deepDiff` would leave that specifier bound to
+// nothing.
+import diff from '@blumintinc/microdiff';
+import { diff as deepDiff, applyChange } from 'deep-diff';
+
+export function compare(oldConfig, newConfig) {
+  applyChange(oldConfig, newConfig);
+  return deepDiff(oldConfig, newConfig).length + diff(oldConfig, newConfig).length;
+}
 ```
 
 ### `JSON.stringify` comparisons are rewritten in place
