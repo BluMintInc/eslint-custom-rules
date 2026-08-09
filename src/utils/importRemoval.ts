@@ -569,6 +569,35 @@ export function orphanedBindings(
   return orphaned;
 }
 
+/** A binding together with the ranges that USE it. */
+export type BindingUse = {
+  variable: TSESLint.Scope.Variable;
+  uses: TextRange[];
+};
+
+/**
+ * Every binding the file declares, paired with the positions that USE it — the
+ * same set {@link orphanedBindings} judges orphanhood by, a declarator's own
+ * initializer write excluded.
+ *
+ * {@link importBindingReferences} answers the narrower question for import
+ * bindings alone, which suffices only for a caller whose deletions can strand
+ * nothing else. A caller that can also strand a local declaration — a `type`
+ * alias named by the annotations it deletes, a `const` read through `typeof` —
+ * has to partition its edits over every binding, because a binding it never
+ * asks about ends up owned by no fix at all and stays orphaned for good.
+ */
+export function bindingUses(source: ImportRemovalSource): BindingUse[] {
+  return allVariables(source.scopeManager)
+    .filter((variable) => variable.defs.length > 0)
+    .map((variable) => ({
+      variable,
+      uses: variable.references
+        .filter((reference) => !isOwnInitializerWrite(variable, reference))
+        .map((reference) => reference.identifier.range),
+    }));
+}
+
 /**
  * How a caller unbinds the orphans this module does not own — a destructured
  * property, a local declaration, a binding it deliberately leaves alone.
