@@ -84,7 +84,7 @@ ruleTesterTs.run(
           UserData,
           UserPath
         > = async (event) => {
-          const { data: change, params } = event;
+          const { params } = event;
 
           const userId = params.userId;
         };
@@ -130,7 +130,7 @@ ruleTesterTs.run(
           UserData,
           UserPath
         > = async (event) => {
-          const { data: change, params } = event;
+          const { params } = event;
 
           const userId = params?.userId;
         };
@@ -155,7 +155,7 @@ ruleTesterTs.run(
           UserData,
           UserPath
         > = async (event) => {
-          const { data: change, params } = event;
+          const { params } = event;
 
           const grandparentId = params.parentId;
         };
@@ -196,7 +196,7 @@ ruleTesterTs.run(
           UserData,
           UserPath
         > = async (event, transaction) => {
-          const { data: change, params } = event;
+          const { params } = event;
 
           const userId = params.userId;
           transaction.update(db.doc(\`User/\${userId}\`), { updated: true });
@@ -222,7 +222,7 @@ ruleTesterTs.run(
           GameData,
           GamePath
         > = async (event) => {
-          const { data: snapshot, params } = event;
+          const { params } = event;
 
           const gameId = params.userId;
         };

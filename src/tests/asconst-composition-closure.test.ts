@@ -378,7 +378,6 @@ const UNDRIVEN: Record<string, UndrivenCause> = {
   'parallelize-loop-awaits': 'noAssertionAdded',
   'prefer-batch-operations': 'noAssertionAdded',
   'prefer-fragment-shorthand': 'noAssertionAdded',
-  'prefer-params-over-parent-id': 'noAssertionAdded',
   'prefer-type-over-interface': 'noAssertionAdded',
   'prefer-use-theme': 'noAssertionAdded',
   'prefer-usememo-over-useeffect-usestate': 'noAssertionAdded',

@@ -1322,7 +1322,7 @@ const LITERAL_UNDRIVEN: Record<string, UndrivenCause> = {
   'prefer-fragment-shorthand': 'noPerturbableSite',
   'prefer-getter-over-parameterless-method': 'inventsNoName',
   'prefer-nullish-coalescing-boolean-props': 'inventsNoName',
-  'prefer-params-over-parent-id': 'declinesOnDegenerateInput',
+  'prefer-params-over-parent-id': 'inventsNoName',
   'prefer-type-over-interface': 'inventsNoName',
   'require-hooks-default-params': 'inventsNoName',
   'require-image-optimized': 'inventsNoName',

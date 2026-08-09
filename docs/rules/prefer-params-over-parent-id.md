@@ -191,6 +191,24 @@ const maybeParentId = change.after?.ref?.parent?.id;
 const maybeParentId = event?.params?.userId;
 ```
 
+### 5. Destructured Bindings the Rewrite Strands
+
+Rewriting the last `ref.parent...id` read of a destructured snapshot leaves the binding it walked from with nothing referencing it, which both `no-unused-vars` and `noUnusedLocals` reject. The property that bound it is retired in the same fix:
+
+```typescript
+// ❌ Incorrect
+const { data: change, params } = event;
+const userId = change.after.ref.parent.id;
+
+// ✅ Fixed to
+const { params } = event;
+const userId = params.userId;
+```
+
+Every read in a file is judged together, so a binding two rewrites share is retired only when both of them land. A binding read anywhere else keeps its property, and the declaration goes whole when no property survives it.
+
+Where the removal is not provably safe the fixer withholds the rewrite and leaves the report for a human: a comment among the properties, a rest element that would inherit the dropped key, a `let` binding that could be assigned elsewhere, a nested pattern that is still half-read, or an initializer whose own binding the removal would strand.
+
 ## Benefits
 
 - Keeps handlers aligned with the trigger path template when collections move or nesting changes
