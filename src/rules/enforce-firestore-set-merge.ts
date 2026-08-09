@@ -1,12 +1,20 @@
-import {
-  AST_NODE_TYPES,
-  AST_TOKEN_TYPES,
-  TSESLint,
-  TSESTree,
-} from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
-import { createSuppressionChecker } from '../utils/disableDirectives';
+import {
+  createSuppressionChecker,
+  parseDisableDirectives,
+} from '../utils/disableDirectives';
+import {
+  ImportRemovalSource,
+  TextRange,
+  planOrphanedBindingRemoval,
+} from '../utils/importRemoval';
+import { planPatternBindingRemoval } from '../utils/patternBindingRemoval';
+import {
+  joinSegmentBody,
+  requiresLineBreakAfter,
+} from '../utils/replacementSegments';
 import { declarationOf, resolveInEnclosingScopes } from '../utils/lexicalScope';
 
 type MessageIds = 'preferSetMerge';
@@ -34,24 +42,40 @@ const REALTIME_BATCH_MANAGER = 'RealtimeBatchManager';
 type FirestoreBinding = {
   /** The name firestore exports under this binding, e.g. `updateDoc`. */
   imported: string;
+  /**
+   * The module the binding is read from. Each firestore entry point ships its
+   * own API surface, so the exported NAME alone does not identify a binding:
+   * `firebase-admin`'s `setDoc` is not the modular SDK's, and reusing it for the
+   * emitted call rewrites `updateDoc(ref, data)` into a call on a different
+   * function (#1901).
+   */
+  module: string;
   node: TSESTree.ImportSpecifier | TSESTree.Property;
-  /** The whole list `node` belongs to, so a removal can keep it well formed. */
-  entries: readonly TSESTree.Node[];
 };
+
+/** The firestore module a dynamic `await import(…)` reads, if it is one. */
+function firestoreDynamicImportModule(
+  node: TSESTree.Node | null | undefined,
+): string | null {
+  if (node?.type !== AST_NODE_TYPES.AwaitExpression) {
+    return null;
+  }
+  const imported = node.argument;
+  if (
+    imported.type !== AST_NODE_TYPES.ImportExpression ||
+    imported.source.type !== AST_NODE_TYPES.Literal ||
+    typeof imported.source.value !== 'string' ||
+    !FIRESTORE_MODULES.has(imported.source.value)
+  ) {
+    return null;
+  }
+  return imported.source.value;
+}
 
 function isFirestoreDynamicImport(
   node: TSESTree.Node | null | undefined,
 ): boolean {
-  if (node?.type !== AST_NODE_TYPES.AwaitExpression) {
-    return false;
-  }
-  const imported = node.argument;
-  return (
-    imported.type === AST_NODE_TYPES.ImportExpression &&
-    imported.source.type === AST_NODE_TYPES.Literal &&
-    typeof imported.source.value === 'string' &&
-    FIRESTORE_MODULES.has(imported.source.value)
-  );
+  return firestoreDynamicImportModule(node) !== null;
 }
 
 /**
@@ -75,15 +99,18 @@ function firestoreBindingOf(
     }
     return {
       imported: node.imported.name,
+      module: declaration.source.value,
       node,
-      entries: declaration.specifiers,
     };
   }
   if (
     node.type === AST_NODE_TYPES.VariableDeclarator &&
-    node.id.type === AST_NODE_TYPES.ObjectPattern &&
-    isFirestoreDynamicImport(node.init)
+    node.id.type === AST_NODE_TYPES.ObjectPattern
   ) {
+    const module = firestoreDynamicImportModule(node.init);
+    if (module === null) {
+      return null;
+    }
     const property = def.name.parent;
     if (
       property?.type !== AST_NODE_TYPES.Property ||
@@ -96,28 +123,49 @@ function firestoreBindingOf(
     }
     return {
       imported: property.key.name,
+      module,
       node: property,
-      entries: node.id.properties,
     };
   }
   return null;
 }
 
-function isComma(
-  token: TSESTree.Token | TSESTree.Comment | null,
-): token is TSESTree.PunctuatorToken {
-  return token?.type === AST_TOKEN_TYPES.Punctuator && token.value === ',';
-}
-
-/** Whether every declaration of a visible binding is the given firestore export. */
+/**
+ * Whether every declaration of a visible binding is the given firestore export,
+ * read from the given module.
+ *
+ * The module half is what makes the answer usable as "this name already means
+ * what the rewrite is about to emit". Matching on the exported name alone let a
+ * `setDoc` imported from `firebase-admin` stand in for the modular SDK's, so the
+ * fix emitted a call to the wrong function and left the `firebase/firestore`
+ * `updateDoc` import bound to nothing (#1901).
+ */
 function bindsFirestoreExport(
   variable: TSESLint.Scope.Variable,
   imported: string,
+  module: string,
 ): boolean {
   return (
     variable.defs.length > 0 &&
-    variable.defs.every((def) => firestoreBindingOf(def)?.imported === imported)
+    variable.defs.every((def) => {
+      const binding = firestoreBindingOf(def);
+      return binding?.imported === imported && binding.module === module;
+    })
   );
+}
+
+/**
+ * A comment whose meaning is tied to where it sits. Re-emitting one somewhere
+ * else retargets it — a disable directive lands on an unrelated line and a
+ * `@ts-expect-error` becomes an error of its own — so a removal that would move
+ * one is withheld instead.
+ */
+function isPositionalDirective(comment: TSESTree.Comment): boolean {
+  if (parseDisableDirectives([comment]).length > 0) {
+    return true;
+  }
+  const value = comment.value.trim();
+  return value.startsWith('@ts-expect-error') || value.startsWith('@ts-ignore');
 }
 
 /** The rightmost segment of a type name, so `realtimeDb.X` reads like a bare `X`. */
@@ -384,6 +432,14 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
      */
     const isReportSuppressed = createSuppressionChecker(context);
     let plannedSetDocBinding = false;
+
+    /**
+     * Calls a previous report's fix already rewrote. A batch that retires the
+     * `updateDoc` binding has to own every call that reads it — see
+     * {@link retiringRewrites} — so the reports for those calls stand without a
+     * fix of their own rather than fighting the carrier for the same ranges.
+     */
+    const batchedCalls = new Set<TSESTree.CallExpression>();
 
     /**
      * Classes declared directly in one statement container, by name — both the
@@ -737,50 +793,239 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
     }
 
     /**
-     * Drops a binding whose last reference this fix rewrites, so `--fix` does not
-     * leave an unused import behind. Only the entry and the comma separating it
-     * from a sibling go, and only when nothing else lives in that span: a comment
-     * between the entry and its comma belongs to a neighbour as often as to the
-     * entry, and an unused specifier is inert where a deleted comment is not.
-     * A list that would end up empty is left alone too, since emptying it means
-     * rewriting the whole declaration.
+     * The source the removal planner reads, with the comments inside a
+     * declaration hidden from it.
+     *
+     * `planImportBindingRemoval` declines outright on any comment inside the
+     * declaration it is asked to edit, because the ranges it computes span
+     * separators and a comment nested among the entries would be swallowed. That
+     * decline is not available here. By the time a removal is planned the
+     * rewrite has already stripped the binding's last reference, so declining
+     * the removal alone leaves `updateDoc` bound to nothing — and declining the
+     * WHOLE fix lets a comment decide whether the rewrite fires at all, which is
+     * a comment changing the transform just the same (#1877).
+     *
+     * The planner is therefore asked for the ranges as if the declaration
+     * carried no comments, and {@link carriedText} re-emits every comment those
+     * ranges cover in place of the text they delete. Only `getCommentsInside` is
+     * blinded: `getCommentsBefore` still answers for the directive that binds a
+     * whole statement, which is the one shape no re-emission can save.
      */
-    function removeBinding(
+    const removalSource = {
+      text: sourceCode.text,
+      ast: sourceCode.ast,
+      scopeManager: sourceCode.scopeManager,
+      getTokenBefore: sourceCode.getTokenBefore.bind(sourceCode),
+      getTokenAfter: sourceCode.getTokenAfter.bind(sourceCode),
+      getCommentsBefore: sourceCode.getCommentsBefore.bind(sourceCode),
+      getCommentsInside: () => [],
+    } as unknown as ImportRemovalSource;
+
+    /** The indentation of the line `offset` sits on, for a carried line break. */
+    function indentAt(offset: number): string {
+      const lineStart = sourceCode.text.lastIndexOf('\n', offset - 1) + 1;
+      const prefix = sourceCode.text.slice(lineStart, offset);
+      const [indent] = /^[ \t]*/.exec(prefix) ?? [''];
+      return indent;
+    }
+
+    /**
+     * What a removal range is replaced with: nothing, or the comments it covers
+     * re-emitted so the deletion carries them instead of dropping them. `null`
+     * withholds the fix, for a comment whose meaning is its position.
+     *
+     * The separators around the carried run are chosen from the text on either
+     * side rather than added unconditionally, so a range that already sits
+     * between whitespace does not gain any. A trailing line break is mandatory
+     * where the last comment is a line comment or the range consumed its own
+     * newline: without one the surviving code moves onto the comment's line and
+     * is commented out.
+     */
+    function carriedText(range: TextRange): string | null {
+      const comments = sourceCode
+        .getAllComments()
+        .filter(
+          (comment) =>
+            comment.range[0] >= range[0] && comment.range[1] <= range[1],
+        );
+      if (comments.length === 0) {
+        return '';
+      }
+      if (comments.some(isPositionalDirective)) {
+        return null;
+      }
+
+      const indent = indentAt(range[0]);
+      const segments = comments.map((comment) => ({
+        text: sourceCode.text.slice(comment.range[0], comment.range[1]),
+        breakAfter: requiresLineBreakAfter(comment),
+      }));
+      const body = joinSegmentBody(segments, indent);
+
+      const before = range[0] > 0 ? sourceCode.text[range[0] - 1] : '';
+      const after = sourceCode.text[range[1]] ?? '';
+      const lead = before === '' || /\s/.test(before) ? '' : ' ';
+      const trail =
+        segments[segments.length - 1].breakAfter ||
+        sourceCode.text.slice(range[0], range[1]).endsWith('\n')
+          ? `\n${indent}`
+          : after === '' || /\s/.test(after)
+          ? ''
+          : ' ';
+      return `${lead}${body}${trail}`;
+    }
+
+    /**
+     * The edits that unbind whatever `removed` leaves referenced by nothing, or
+     * `null` when no such edit is provably safe — in which case the caller drops
+     * its whole fix, since a rewrite that strips a binding's last use while
+     * leaving the binding behind trades this report for an unused-variable one
+     * the consumer's build fails on (#1901).
+     *
+     * `removed` is the set of reference ranges ONE fix rewrites. Everything else
+     * — which bindings that strands, whether a specifier or a whole declaration
+     * has to go, whether the name still occurs where scope analysis says it
+     * should not — is the shared planner's answer, including the destructured
+     * property that binds a `await import('firebase/firestore')` entry.
+     */
+    function planRetirement(
       fixer: TSESLint.RuleFixer,
-      binding: FirestoreBinding,
+      removed: readonly TextRange[],
+    ): TSESLint.RuleFix[] | null {
+      const ranges = planOrphanedBindingRemoval(
+        removalSource,
+        removed,
+        (variables, planned) =>
+          planPatternBindingRemoval(removalSource, variables, planned),
+      );
+      if (!ranges || ranges.length === 0) {
+        return null;
+      }
+
+      const fixes: TSESLint.RuleFix[] = [];
+      for (const range of ranges) {
+        const carried = carriedText(range);
+        if (carried === null) {
+          return null;
+        }
+        fixes.push(fixer.replaceTextRange([range[0], range[1]], carried));
+      }
+      return fixes;
+    }
+
+    type UpdateRewrite = {
+      identifier: TSESTree.Identifier;
+      call: TSESTree.CallExpression;
+      lastArgument: TSESTree.Node;
+    };
+
+    /**
+     * Every call this pass would rewrite, when together they account for the
+     * WHOLE of `variable` — otherwise `null`, because the binding survives and
+     * nothing may be removed.
+     *
+     * The batch exists because retirement is not a per-report question. Two
+     * violations sharing one import each strip one reference, and only after
+     * both land is the binding unreferenced; a report that removed the specifier
+     * on its own would strand whichever sibling fix a multi-rule `--fix` drops.
+     * Collecting the calls lets ONE report own the import edit and every rewrite
+     * that justifies it, which ESLint applies whole or not at all.
+     *
+     * A reference the rule would not rewrite — read as a value, suppressed by an
+     * inline directive, spread arguments, a `setDoc` meaning something else at
+     * that site — keeps the binding alive and is answered `null` rather than
+     * quietly excluded.
+     */
+    function retiringRewrites(
+      variable: TSESLint.Scope.Variable,
+      callee: TSESTree.Identifier,
+      setDocVariable: TSESLint.Scope.Variable | null,
+    ): UpdateRewrite[] | null {
+      const rewrites: UpdateRewrite[] = [];
+
+      for (const reference of variable.references) {
+        const identifier = reference.identifier as TSESTree.Identifier;
+        // A destructured `const { updateDoc } = await import(…)` records the
+        // declaration writing to its own binding. That write is not a use, and
+        // counting it as one would make orphanhood depend on how the binding was
+        // SPELLED — `orphanedBindings` discounts it for the same reason.
+        if (
+          reference.init === true &&
+          variable.identifiers.some((declared) => declared === identifier)
+        ) {
+          continue;
+        }
+        const call = identifier.parent;
+        if (
+          !reference.isRead() ||
+          call?.type !== AST_NODE_TYPES.CallExpression ||
+          call.callee !== identifier
+        ) {
+          return null;
+        }
+        const lastArgument = call.arguments[call.arguments.length - 1];
+        if (!lastArgument || hasSpreadArgument(call)) {
+          return null;
+        }
+        if (isReportSuppressed(call)) {
+          return null;
+        }
+        // `setDoc` has to mean the same thing at every site the batch rewrites,
+        // and the batch is planned from one site's resolution.
+        if (
+          ASTHelpers.findVariableInScope(reference.from, SET_DOC) !==
+          setDocVariable
+        ) {
+          return null;
+        }
+        rewrites.push({ identifier, call, lastArgument });
+      }
+
+      // The reporting call has to be among them, or scope analysis did not link
+      // the reference this fix is about to rewrite — in which case its ranges
+      // account for nothing and the binding must be left alone.
+      if (!rewrites.some((rewrite) => rewrite.identifier === callee)) {
+        return null;
+      }
+
+      // ESLint merges one report's fixes into a single span and refuses
+      // overlapping edits within it, so a call nested inside another cannot ride
+      // in the same batch.
+      const ordered = [...rewrites].sort(
+        (left, right) => left.call.range[0] - right.call.range[0],
+      );
+      const overlaps = ordered.some(
+        (rewrite, index) =>
+          index > 0 && rewrite.call.range[0] < ordered[index - 1].call.range[1],
+      );
+      return overlaps ? null : rewrites;
+    }
+
+    /** `updateDoc(ref, data)` → `setDoc(ref, data, { merge: true })`. */
+    function rewriteCall(
+      fixer: TSESLint.RuleFixer,
+      rewrite: UpdateRewrite,
     ): TSESLint.RuleFix[] {
-      if (binding.entries.length < 2) {
-        return [];
-      }
-      const before = sourceCode.getTokenBefore(binding.node, {
-        includeComments: true,
-      });
-      if (isComma(before)) {
-        return [fixer.removeRange([before.range[0], binding.node.range[1]])];
-      }
-      const after = sourceCode.getTokenAfter(binding.node, {
-        includeComments: true,
-      });
-      if (!isComma(after)) {
-        return [];
-      }
-      // Stopping at whatever follows the comma — comment or token — keeps a
-      // directive that documents the next entry attached to it.
-      const next = sourceCode.getTokenAfter(after, { includeComments: true });
+      batchedCalls.add(rewrite.call);
       return [
-        fixer.removeRange([
-          binding.node.range[0],
-          next ? next.range[0] : after.range[1],
-        ]),
+        fixer.replaceText(rewrite.identifier, SET_DOC),
+        // `setDoc` takes the document data between the reference and the
+        // options, so a call that passed no data gets an empty object to merge.
+        fixer.insertTextAfter(
+          rewrite.lastArgument,
+          rewrite.call.arguments.length > 1
+            ? MERGE_ARGUMENT
+            : `, {}${MERGE_ARGUMENT}`,
+        ),
       ];
     }
 
     /**
      * `updateDoc(ref, data)` becomes `setDoc(ref, data, { merge: true })`, which
-     * only works if `setDoc` is bound. The import edit and the call rewrite ship
+     * only works if `setDoc` is bound. The import edit and the call rewrites ship
      * as one fix array: they sit in disjoint ranges, and a multi-rule `--fix`
      * that applied one without the other would leave the file with an unbound
-     * name.
+     * name, or with a binding nothing reads.
      */
     function fixUpdateDocCall(
       fixer: TSESLint.RuleFixer,
@@ -788,6 +1033,11 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
       callee: TSESTree.Identifier,
     ): TSESLint.RuleFix[] | null {
       if (isReportSuppressed(node)) {
+        return null;
+      }
+      // An earlier report's fix already rewrites this call, and ESLint refuses
+      // two overlapping edits.
+      if (batchedCalls.has(node)) {
         return null;
       }
 
@@ -813,45 +1063,65 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
       // catches both, and declining before the binding is scheduled leaves the
       // carrier slot to a violation whose scope is safe.
       const setDocVariable = ASTHelpers.findVariableInScope(scope, SET_DOC);
-      if (setDocVariable && !bindsFirestoreExport(setDocVariable, SET_DOC)) {
+      if (
+        setDocVariable &&
+        !bindsFirestoreExport(setDocVariable, SET_DOC, updateBinding.module)
+      ) {
         return null;
       }
 
-      // Rewriting the last reference to `updateDoc` frees its binding site, so
-      // the entry is renamed in place — and an alias disappears together with
-      // the reference that used it. Any other reference keeps the old name
-      // alive: adding `setDoc` alongside it is then the only safe edit, because
-      // a multi-rule `--fix` can drop a sibling violation's fix and strand that
-      // reference on a binding this one just removed.
-      const reads = updateVariable.references.filter((reference) =>
-        reference.isRead(),
-      );
-      const isSoleReference =
-        reads.length === 1 && reads[0].identifier === callee;
-
-      const fixes: TSESLint.RuleFix[] = [];
-      if (!setDocVariable) {
-        if (!plannedSetDocBinding) {
-          fixes.push(
-            isSoleReference
-              ? fixer.replaceText(updateBinding.node, SET_DOC)
-              : fixer.insertTextAfter(updateBinding.node, `, ${SET_DOC}`),
-          );
+      // Rewriting every reference to `updateDoc` frees its binding site, and the
+      // binding then has to go in the SAME fix: leaving it behind turns a file
+      // that lints clean into one failing `no-unused-vars` and `noUnusedLocals`,
+      // with this report resolved so nothing re-reports the debt (#1901).
+      const rewrites = retiringRewrites(updateVariable, callee, setDocVariable);
+      if (!rewrites) {
+        // A reference survives the pass, so the name stays bound and `setDoc` is
+        // added alongside it. Only the first surviving violation carries the
+        // binding; the rest emit the call against it.
+        const fixes: TSESLint.RuleFix[] = [];
+        if (!setDocVariable && !plannedSetDocBinding) {
+          fixes.push(fixer.insertTextAfter(updateBinding.node, `, ${SET_DOC}`));
           plannedSetDocBinding = true;
         }
-      } else if (isSoleReference) {
-        fixes.push(...removeBinding(fixer, updateBinding));
+        fixes.push(
+          ...rewriteCall(fixer, {
+            identifier: callee,
+            call: node,
+            lastArgument,
+          }),
+        );
+        return fixes;
       }
 
-      fixes.push(fixer.replaceText(callee, SET_DOC));
-      // `setDoc` takes the document data between the reference and the options,
-      // so a call that passed no data gets an empty object to merge.
-      fixes.push(
-        fixer.insertTextAfter(
-          lastArgument,
-          node.arguments.length > 1 ? MERGE_ARGUMENT : `, {}${MERGE_ARGUMENT}`,
-        ),
-      );
+      const fixes: TSESLint.RuleFix[] = [];
+      if (setDocVariable) {
+        // The name is already bound to firestore's own `setDoc`, so the entry
+        // that becomes redundant is removed rather than renamed.
+        const retirement = planRetirement(
+          fixer,
+          rewrites.map((rewrite) => rewrite.identifier.range),
+        );
+        if (!retirement) {
+          return null;
+        }
+        fixes.push(...retirement);
+      } else {
+        // A second `updateDoc` binding under another local name would already
+        // have claimed the `setDoc` entry; emitting a second one collides with
+        // it (TS2300).
+        if (plannedSetDocBinding) {
+          return null;
+        }
+        // The entry is renamed in place, so an alias disappears together with
+        // the references that used it.
+        fixes.push(fixer.replaceText(updateBinding.node, SET_DOC));
+        plannedSetDocBinding = true;
+      }
+
+      for (const rewrite of rewrites) {
+        fixes.push(...rewriteCall(fixer, rewrite));
+      }
       return fixes;
     }
 

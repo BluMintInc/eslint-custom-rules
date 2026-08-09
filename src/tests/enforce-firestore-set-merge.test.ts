@@ -731,8 +731,8 @@ export async function save(id) {
 }
 `,
     },
-    // With a comment on either side of the specifier there is no span to splice
-    // that does not take the comment with it, so the redundant specifier stays.
+    // A comment caught in the spliced span is carried rather than deleted, and
+    // rather than deciding whether the rewrite fires at all (#1877, #1901).
     {
       code: `
 import { doc, setDoc, /* keep */ updateDoc } from 'firebase/firestore';
@@ -742,14 +742,57 @@ export async function save(id) {
 `,
       errors: [{ messageId: 'preferSetMerge' }],
       output: `
-import { doc, setDoc, /* keep */ updateDoc } from 'firebase/firestore';
+import { doc, setDoc /* keep */ } from 'firebase/firestore';
 export async function save(id) {
   await setDoc(doc(db, 'users', id), { theme: 'dark' }, { merge: true });
 }
 `,
     },
-    // Two violations share one import: the first carries it, and `updateDoc`
-    // stays bound because a sibling fix can be dropped by a multi-rule --fix.
+    // A carried LINE comment takes a line break with it, or the entry that moves
+    // up into its place is commented out.
+    {
+      code: `
+import {
+  doc,
+  updateDoc, // legacy write path
+  setDoc,
+} from 'firebase/firestore';
+export async function save(id) {
+  await updateDoc(doc(db, 'users', id), { theme: 'dark' });
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+import {
+  doc,
+  // legacy write path
+  setDoc,
+} from 'firebase/firestore';
+export async function save(id) {
+  await setDoc(doc(db, 'users', id), { theme: 'dark' }, { merge: true });
+}
+`,
+    },
+    // A directive comment means its position, so no re-emission is safe and the
+    // whole fix is withheld — the report stands instead.
+    {
+      code: `
+import {
+  doc,
+  updateDoc,
+  // eslint-disable-next-line enforce-firestore-set-merge
+  setDoc,
+} from 'firebase/firestore';
+export async function save(id) {
+  await updateDoc(doc(db, 'users', id), { theme: 'dark' });
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: null,
+    },
+    // Two violations share one import, so ONE of them owns both rewrites and the
+    // entry they retire: a report that removed the entry on its own would strand
+    // whichever sibling fix a multi-rule --fix drops.
     {
       code: `
 import { doc, updateDoc } from 'firebase/firestore';
@@ -765,12 +808,89 @@ export async function saveSize(ref) {
         { messageId: 'preferSetMerge' },
       ],
       output: `
-import { doc, updateDoc, setDoc } from 'firebase/firestore';
+import { doc, setDoc } from 'firebase/firestore';
 export async function saveTheme(ref) {
   await setDoc(ref, { theme: 'dark' }, { merge: true });
 }
 export async function saveSize(ref) {
   await setDoc(ref, { fontSize: 14 }, { merge: true });
+}
+`,
+    },
+    // The same shape with `setDoc` already imported: the batch removes the entry
+    // instead of renaming it.
+    {
+      code: `
+import { doc, setDoc, updateDoc } from 'firebase/firestore';
+export async function saveTheme(ref) {
+  await updateDoc(ref, { theme: 'dark' });
+}
+export async function saveSize(ref) {
+  await updateDoc(ref, { fontSize: 14 });
+}
+`,
+      errors: [
+        { messageId: 'preferSetMerge' },
+        { messageId: 'preferSetMerge' },
+      ],
+      output: `
+import { doc, setDoc } from 'firebase/firestore';
+export async function saveTheme(ref) {
+  await setDoc(ref, { theme: 'dark' }, { merge: true });
+}
+export async function saveSize(ref) {
+  await setDoc(ref, { fontSize: 14 }, { merge: true });
+}
+`,
+    },
+    // A suppressed sibling keeps `updateDoc` referenced, so nothing is retired
+    // and `setDoc` is added alongside it.
+    {
+      code: `
+import { doc, updateDoc } from 'firebase/firestore';
+export async function saveTheme(ref) {
+  // eslint-disable-next-line enforce-firestore-set-merge
+  await updateDoc(ref, { theme: 'dark' });
+}
+export async function saveSize(ref) {
+  await updateDoc(ref, { fontSize: 14 });
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+import { doc, updateDoc, setDoc } from 'firebase/firestore';
+export async function saveTheme(ref) {
+  // eslint-disable-next-line enforce-firestore-set-merge
+  await updateDoc(ref, { theme: 'dark' });
+}
+export async function saveSize(ref) {
+  await setDoc(ref, { fontSize: 14 }, { merge: true });
+}
+`,
+    },
+    // A sibling the rule cannot rewrite — spread arguments hide the argument
+    // count — keeps `updateDoc` bound just as a suppressed one does.
+    {
+      code: `
+import { doc, updateDoc } from 'firebase/firestore';
+export async function saveTheme(ref) {
+  await updateDoc(ref, { theme: 'dark' });
+}
+export async function saveSize(args) {
+  await updateDoc(...args);
+}
+`,
+      errors: [
+        { messageId: 'preferSetMerge' },
+        { messageId: 'preferSetMerge' },
+      ],
+      output: `
+import { doc, updateDoc, setDoc } from 'firebase/firestore';
+export async function saveTheme(ref) {
+  await setDoc(ref, { theme: 'dark' }, { merge: true });
+}
+export async function saveSize(args) {
+  await updateDoc(...args);
 }
 `,
     },
@@ -878,8 +998,9 @@ export async function save(ref) {
       errors: [{ messageId: 'preferSetMerge' }],
       output: null,
     },
-    // Removing the only specifier would leave `import {} from …`, which means
-    // rewriting the whole declaration, so the redundant specifier stays.
+    // `setDoc` bound from ANOTHER firestore entry point is not the `setDoc` the
+    // rewrite needs: emitting the call against it would call a different
+    // function and leave the `firebase/firestore` import bound to nothing.
     {
       code: `
 import { updateDoc } from 'firebase/firestore';
@@ -889,13 +1010,75 @@ export async function save(ref) {
 }
 `,
       errors: [{ messageId: 'preferSetMerge' }],
-      output: `
+      output: null,
+    },
+    // The same module on both sides: the entry retires, and since it is the only
+    // specifier the whole declaration goes with it.
+    {
+      code: `
 import { updateDoc } from 'firebase/firestore';
-import { setDoc } from 'firebase-admin';
+import { setDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await updateDoc(ref, { theme: 'dark' });
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+import { setDoc } from 'firebase/firestore';
 export async function save(ref) {
   await setDoc(ref, { theme: 'dark' }, { merge: true });
 }
 `,
+    },
+    // `updateDoc` read as a value elsewhere is not this pass's to retire — an
+    // over-eager removal deletes working code, where a surviving specifier is
+    // inert.
+    {
+      code: `
+import { doc, setDoc, updateDoc } from 'firebase/firestore';
+export const writers = { legacy: updateDoc };
+export async function save(id) {
+  await updateDoc(doc(db, 'users', id), { theme: 'dark' });
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+import { doc, setDoc, updateDoc } from 'firebase/firestore';
+export const writers = { legacy: updateDoc };
+export async function save(id) {
+  await setDoc(doc(db, 'users', id), { theme: 'dark' }, { merge: true });
+}
+`,
+    },
+    // The dynamic-import spelling of the same retirement: the destructured entry
+    // goes, its siblings keep their separators.
+    {
+      code: `
+const { doc, setDoc, updateDoc } = await import('firebase/firestore');
+export async function save(id) {
+  await updateDoc(doc(db, 'users', id), { theme: 'dark' });
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+const { doc, setDoc } = await import('firebase/firestore');
+export async function save(id) {
+  await setDoc(doc(db, 'users', id), { theme: 'dark' }, { merge: true });
+}
+`,
+    },
+    // A dynamic import of ANOTHER firestore entry point cannot supply the
+    // `setDoc` the rewrite emits.
+    {
+      code: `
+const { updateDoc } = await import('firebase/firestore');
+const { setDoc } = await import('firebase-admin');
+export async function save(ref) {
+  await updateDoc(ref, { theme: 'dark' });
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: null,
     },
     // A method call with no arguments has no data to merge.
     {
@@ -1557,7 +1740,7 @@ export async function saveSize(ref) {
     expectNoUnboundSetDoc(output);
   });
 
-  it('rewrites both violations across passes with exactly one import', () => {
+  it('rewrites both violations with exactly one import and no stranded entry', () => {
     const output = lint(`import { doc, updateDoc } from 'firebase/firestore';
 
 export async function saveTheme(ref) {
@@ -1570,8 +1753,8 @@ export async function saveSize(ref) {
 `);
 
     expect(output.match(/setDoc/g)).toHaveLength(3);
-    expect(output)
-      .toBe(`import { doc, updateDoc, setDoc } from 'firebase/firestore';
+    expect(output).not.toMatch(/updateDoc/);
+    expect(output).toBe(`import { doc, setDoc } from 'firebase/firestore';
 
 export async function saveTheme(ref) {
   await setDoc(ref, { theme: 'dark' }, { merge: true });
@@ -1614,6 +1797,114 @@ export async function save(ref) {
 `;
 
     expect(lint(code)).toBe(code);
+  });
+
+  // Issue #1901: `--fix` must not turn a file that lints clean into one carrying
+  // an unreferenced binding. The consumer runs `no-unused-vars` as an error and
+  // builds with `noUnusedLocals`, and the report is resolved by the fix, so
+  // nothing re-reports the debt.
+  const unusedNames = (source: string) =>
+    createLinter()
+      .verify(
+        source,
+        {
+          ...config,
+          rules: { 'no-unused-vars': ['error', { args: 'none' }] as const },
+        },
+        'save.ts',
+      )
+      .filter((message) => message.ruleId === 'no-unused-vars')
+      .map((message) => /^'([^']+)'/.exec(message.message)?.[1] ?? '')
+      .sort();
+
+  /**
+   * Core `no-unused-vars` is the instrument, exactly as the corpus guard's is.
+   * A fixture may already carry an unused binding — an imported `setDoc` waiting
+   * for the rewrite that will use it — so the assertion is a MULTISET
+   * containment: nothing may be unused afterwards that was not unused before.
+   */
+  const expectNoNewOrphan = (before: string, after: string) => {
+    const pool = unusedNames(before);
+    const introduced = unusedNames(after).filter((name) => {
+      const at = pool.indexOf(name);
+      if (at === -1) return true;
+      pool.splice(at, 1);
+      return false;
+    });
+    expect(introduced).toEqual([]);
+  };
+
+  it('carries a comment out of the retired entry rather than declining', () => {
+    const code = `import { doc, setDoc, /* keep */ updateDoc } from 'firebase/firestore';
+
+export async function save(id) {
+  await updateDoc(doc(db, 'users', id), { theme: 'dark' });
+}
+`;
+    const output = lint(code);
+
+    expect(output)
+      .toBe(`import { doc, setDoc /* keep */ } from 'firebase/firestore';
+
+export async function save(id) {
+  await setDoc(doc(db, 'users', id), { theme: 'dark' }, { merge: true });
+}
+`);
+    expectNoNewOrphan(code, output);
+  });
+
+  it('retires the whole declaration when the entry was its only specifier', () => {
+    const code = `import { updateDoc } from 'firebase/firestore';
+import { setDoc } from 'firebase/firestore';
+
+export async function save(ref) {
+  await updateDoc(ref, { theme: 'dark' });
+}
+`;
+    const output = lint(code);
+
+    expect(output).toBe(`import { setDoc } from 'firebase/firestore';
+
+export async function save(ref) {
+  await setDoc(ref, { theme: 'dark' }, { merge: true });
+}
+`);
+    expectNoNewOrphan(code, output);
+  });
+
+  it('declines when setDoc comes from a different firestore entry point', () => {
+    const code = `import { updateDoc } from 'firebase/firestore';
+import { setDoc } from 'firebase-admin';
+
+export async function save(ref) {
+  await updateDoc(ref, { theme: 'dark' });
+}
+`;
+
+    expect(lint(code)).toBe(code);
+  });
+
+  it('keeps an entry that another reference still reads', () => {
+    const code = `import { doc, setDoc, updateDoc } from 'firebase/firestore';
+
+export const writers = { legacy: updateDoc };
+
+export async function save(id) {
+  await updateDoc(doc(db, 'users', id), { theme: 'dark' });
+}
+`;
+    const output = lint(code);
+
+    expect(output)
+      .toBe(`import { doc, setDoc, updateDoc } from 'firebase/firestore';
+
+export const writers = { legacy: updateDoc };
+
+export async function save(id) {
+  await setDoc(doc(db, 'users', id), { theme: 'dark' }, { merge: true });
+}
+`);
+    expectNoNewOrphan(code, output);
   });
 
   it('leaves a disable directive inside the rewritten call still suppressing', () => {
