@@ -8,6 +8,11 @@ import {
   importInsertionAnchor,
   insertAtImportAnchor,
 } from '../utils/importInsertion';
+import {
+  OrphanUnbinder,
+  TextRange,
+  planOrphanedBindingRemoval,
+} from '../utils/importRemoval';
 
 type MessageIds = 'useCentralizedMockFirestore';
 
@@ -211,6 +216,40 @@ function retiredSpan(node: TSESTree.Node): RetiredSpan | undefined {
   }
   return undefined;
 }
+
+function isWithinAny(range: TextRange, ranges: readonly TextRange[]): boolean {
+  return ranges.some(([start, end]) => range[0] >= start && range[1] <= end);
+}
+
+/**
+ * The orphans the retirement carries away with it, as opposed to the ones it
+ * strands.
+ *
+ * A binding whose own declaration sits inside a retired span disappears with
+ * that span — retiring the local mock is the whole point of the fix, so the
+ * binding losing its last reference is not a defect. Every other orphan has a
+ * declaration that SURVIVES: `const myMockFirestore = jest.fn();` under
+ * `const mockFirestore = myMockFirestore;` is left bound to nothing the moment
+ * the alias goes, turning a file that lints clean into one that fails
+ * `no-unused-vars` and `noUnusedLocals` (#1900).
+ *
+ * Deleting the survivor instead is not on offer: its initializer is an
+ * arbitrary expression — `jest.fn()`, a factory call, a `require` — whose effect
+ * this fixer cannot prove absent, and dropping it would delete working code to
+ * settle a lint warning. The fix is therefore withheld and the report stands, so
+ * the local mock is still surfaced for a human to retire. An orphaned IMPORT
+ * never reaches here; the shared planner retires it in the same fix.
+ */
+const retirementCarriesOrphan: OrphanUnbinder = (variables, removed) =>
+  variables.every(
+    (variable) =>
+      variable.identifiers.length > 0 &&
+      variable.identifiers.every((identifier) =>
+        isWithinAny(identifier.range, removed),
+      ),
+  )
+    ? []
+    : null;
 
 /**
  * Collapses edits that touch, so an overlap can never rewrite a range twice.
@@ -499,6 +538,25 @@ export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
                 );
               }
 
+              // Whatever the retired declarations were the last readers of has
+              // to go with them, or the fix trades this report for an unused
+              // binding the consumer's build fails on (#1900). Only the
+              // retirements are handed over: the reference rewrites below swap
+              // one name for another rather than deleting a declaration, and a
+              // rewritten call to a RENAMED centralized import would otherwise
+              // read as unbinding the very import the file is told to keep.
+              const orphaned = planOrphanedBindingRemoval(
+                sourceCode,
+                removals.map(({ start, end }): TextRange => [start, end]),
+                retirementCarriesOrphan,
+              );
+              if (!orphaned) {
+                return null;
+              }
+              const orphanRemovals: SourceEdit[] = orphaned.map(
+                ([start, end]) => ({ start, end, text: '' }),
+              );
+
               // Replace custom mockFirestore references with the standard one
               const replacements: SourceEdit[] = [];
 
@@ -522,18 +580,22 @@ export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
                 });
               });
 
-              // A reference inside a retired declaration goes away with it, so
+              // A reference inside a deleted range goes away with it, so
               // rewriting it would only fight the removal for the same range.
+              const deletions = [...removals, ...orphanRemovals];
               const survivingReplacements = replacements.filter(
                 (replacement) =>
-                  !removals.some(
+                  !deletions.some(
                     (removal) =>
                       replacement.start >= removal.start &&
                       replacement.end <= removal.end,
                   ),
               );
 
-              const edits = mergeEdits([...removals, ...survivingReplacements]);
+              const edits = mergeEdits([
+                ...deletions,
+                ...survivingReplacements,
+              ]);
 
               // Every edit is bounded to the characters it owns. Rebuilding
               // the file and writing it over the `Program` node instead would

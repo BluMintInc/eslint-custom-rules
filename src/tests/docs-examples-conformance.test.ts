@@ -1337,13 +1337,13 @@ type SilentStatement = { key: string; docsLine: number; head: string };
  * deleted.
  */
 export const SILENT_INCORRECT_STATEMENTS: Record<string, string> = {
-  'enforce-centralized-mock-firestore:65:3':
+  'enforce-centralized-mock-firestore:98:3':
     "usage scaffolding, byte-identical to the page's own correct fence; the one file-level report sits on `const mockFirestore = jest.fn()` at fence line 1 and its fix imports the shared mock, rebinding this call",
-  'enforce-centralized-mock-firestore:75:4':
-    'usage scaffolding for the aliased mock; the report sits on `const mockFirestore = myMockFirestore` at fence line 2, and its fix deletes that line and imports the shared mock, rebinding this call',
-  'enforce-centralized-mock-firestore:86:3':
+  'enforce-centralized-mock-firestore:108:4':
+    'usage scaffolding for the aliased mock; the report sits on `const mockFirestore = myMockFirestore` at fence line 2. That report is deliberately unfixable — retiring the alias would strand `myMockFirestore` (#1900) — so the prose under the fence sends the reader to delete both declarations by hand',
+  'enforce-centralized-mock-firestore:123:3':
     'the report on the destructured require at fence line 1 carries a fix that rewrites `customMockFirestore(` to `mockFirestore(` inside this very describe, so one report already covers and repairs it',
-  'enforce-centralized-mock-firestore:102:3':
+  'enforce-centralized-mock-firestore:139:3':
     'usage scaffolding identical to the correct fence; the report sits on the exported declaration at fence line 1 and is deliberately unfixable, since collapsing that export is what repairs this call',
   'enforce-firestore-set-merge:104:3':
     'DEBT (#1743): flagging `docRef.update(...)` requires the file to declare a namespaced `admin.firestore()` instance, which this fence has no reason to carry and the modular SDK never produces. Delete this entry when #1743 lands',
