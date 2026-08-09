@@ -96,7 +96,6 @@ const DIVERGENT_WITHOUT_PROGRAM = new Set(['no-entire-object-hook-deps']);
  * one fails as a fix that nobody removed the baseline for.
  */
 const ORPHAN_BASELINE = new Map<string, string>([
-  ['no-usememo-for-pass-by-value', '#1896'],
   ['no-empty-dependency-use-callbacks', '#1897'],
   ['use-latest-callback', '#1898'],
   ['prefer-params-over-parent-id', '#1899'],

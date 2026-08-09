@@ -1,12 +1,13 @@
 import {
   AST_NODE_TYPES,
-  AST_TOKEN_TYPES,
   TSESTree,
   TSESLint,
   ASTUtils,
 } from '@typescript-eslint/utils';
 import ts from 'typescript';
 import { createRule } from '../utils/createRule';
+import { createSuppressionChecker } from '../utils/disableDirectives';
+import { planOrphanedImportRemoval, TextRange } from '../utils/importRemoval';
 import {
   ReplacementSegment,
   joinSegmentBody,
@@ -64,9 +65,35 @@ type FunctionContext = {
 
 type UseMemoImports = {
   useMemoNames: Set<string>;
-  useMemoSpecifiers: Map<string, TSESTree.ImportSpecifier>;
   reactNamespaceNames: Set<string>;
 };
+
+/** One rewrite the fix performs: `range` becomes `text`. */
+type Edit = { range: TSESTree.Range; text: string };
+
+/** A `useMemo` call the rule reports, held until `Program:exit`. */
+type Violation = {
+  node: TSESTree.CallExpression;
+  callback: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression;
+  returnedExpression: TSESTree.Expression;
+  hookName: string;
+  valueType: string;
+};
+
+/** A violation whose rewrite ships, with the edits and deletions it owns. */
+type PlannedViolation = {
+  violation: Violation;
+  edits: Edit[];
+  /** The positions the edits erase, for the orphaned-import analysis. */
+  removed: TSESTree.Range[];
+};
+
+function rangesOverlap(
+  a: readonly [number, number],
+  b: readonly [number, number],
+): boolean {
+  return a[0] < b[1] && b[0] < a[1];
+}
 
 function isCustomHookName(name: string | undefined): boolean {
   if (!name) return false;
@@ -98,7 +125,6 @@ function getFunctionName(
 
 function collectUseMemoImports(program: TSESTree.Program): UseMemoImports {
   const useMemoNames = new Set<string>();
-  const useMemoSpecifiers = new Map<string, TSESTree.ImportSpecifier>();
   const reactNamespaceNames = new Set<string>();
 
   for (const statement of program.body) {
@@ -116,7 +142,6 @@ function collectUseMemoImports(program: TSESTree.Program): UseMemoImports {
         specifier.imported.name === 'useMemo'
       ) {
         useMemoNames.add(specifier.local.name);
-        useMemoSpecifiers.set(specifier.local.name, specifier);
       }
 
       if (
@@ -128,7 +153,7 @@ function collectUseMemoImports(program: TSESTree.Program): UseMemoImports {
     }
   }
 
-  return { useMemoNames, useMemoSpecifiers, reactNamespaceNames };
+  return { useMemoNames, reactNamespaceNames };
 }
 
 function getReturnedExpression(
@@ -318,257 +343,6 @@ function isUseMemoCall(
   return false;
 }
 
-function scanBackwardOverWhitespace(text: string, position: number): number {
-  let pos = position;
-  while (pos > 0 && (text[pos - 1] === ' ' || text[pos - 1] === '\t')) {
-    pos -= 1;
-  }
-  return pos;
-}
-
-function scanForwardOverWhitespace(text: string, position: number): number {
-  let pos = position;
-  while (pos < text.length && (text[pos] === ' ' || text[pos] === '\t')) {
-    pos += 1;
-  }
-  return pos;
-}
-
-function consumeLineBreak(
-  text: string,
-  position: number,
-): { consumed: boolean; newPosition: number } {
-  if (
-    position < text.length &&
-    text[position] === '\r' &&
-    text[position + 1] === '\n'
-  ) {
-    return { consumed: true, newPosition: position + 2 };
-  }
-  if (
-    position < text.length &&
-    (text[position] === '\n' || text[position] === '\r')
-  ) {
-    return { consumed: true, newPosition: position + 1 };
-  }
-  return { consumed: false, newPosition: position };
-}
-
-function hasDeclaredVariables(source: unknown): source is {
-  getDeclaredVariables: (node: TSESTree.Node) => TSESLint.Scope.Variable[];
-} {
-  return (
-    typeof source === 'object' &&
-    source !== null &&
-    'getDeclaredVariables' in source &&
-    typeof (source as { getDeclaredVariables?: unknown })
-      .getDeclaredVariables === 'function'
-  );
-}
-
-function removeCompleteImport(
-  importDeclaration: TSESTree.ImportDeclaration,
-  sourceCode: Readonly<TSESLint.SourceCode>,
-  fixer: TSESLint.RuleFixer,
-): TSESLint.RuleFix {
-  const text = sourceCode.getText();
-  let [start, end] = importDeclaration.range;
-
-  const beforeImport = scanBackwardOverWhitespace(text, start);
-  const lineBreakIndex = beforeImport - 1;
-  if (
-    lineBreakIndex >= 0 &&
-    (text[lineBreakIndex] === '\n' || text[lineBreakIndex] === '\r')
-  ) {
-    const lineBreakStart =
-      text[lineBreakIndex] === '\n' &&
-      lineBreakIndex > 0 &&
-      text[lineBreakIndex - 1] === '\r'
-        ? lineBreakIndex - 1
-        : lineBreakIndex;
-
-    const whitespaceBeforeLineBreak = scanBackwardOverWhitespace(
-      text,
-      lineBreakStart,
-    );
-    const precedingCharIndex = whitespaceBeforeLineBreak - 1;
-    const lineIsWhitespaceOnly =
-      whitespaceBeforeLineBreak === 0 ||
-      (precedingCharIndex >= 0 &&
-        (text[precedingCharIndex] === '\n' ||
-          text[precedingCharIndex] === '\r'));
-
-    start = lineIsWhitespaceOnly ? whitespaceBeforeLineBreak : beforeImport;
-  } else {
-    start = beforeImport;
-  }
-
-  const afterImportWhitespace = scanForwardOverWhitespace(text, end);
-  const firstLineBreak = consumeLineBreak(text, afterImportWhitespace);
-  let removalEnd = afterImportWhitespace;
-
-  if (firstLineBreak.consumed) {
-    const afterFirstBreak = firstLineBreak.newPosition;
-    const spacesAfterFirst = scanForwardOverWhitespace(text, afterFirstBreak);
-    const secondLineBreak = consumeLineBreak(text, spacesAfterFirst);
-    if (secondLineBreak.consumed) {
-      // Remove a trailing blank line but stop before consuming indentation of the next statement.
-      removalEnd = secondLineBreak.newPosition;
-    } else {
-      // Keep indentation that belongs to the following statement.
-      removalEnd = afterFirstBreak;
-    }
-  }
-
-  return fixer.removeRange([start, removalEnd]);
-}
-
-/**
- * Removing the last binding removes the whole declaration, but a comment
- * written inside it (between the braces, around the source) must not go with
- * it: the declaration's span is re-emitted as just those comments, each kept in
- * order, with a line break appended when the last one would otherwise swallow
- * whatever follows the declaration on its line.
- */
-function removeCompleteImportPreservingComments(
-  importDeclaration: TSESTree.ImportDeclaration,
-  sourceCode: Readonly<TSESLint.SourceCode>,
-  fixer: TSESLint.RuleFixer,
-): TSESLint.RuleFix {
-  const comments = sourceCode.getCommentsInside(importDeclaration);
-  if (comments.length === 0) {
-    return removeCompleteImport(importDeclaration, sourceCode, fixer);
-  }
-
-  const text = sourceCode.getText();
-  const carried = comments
-    .map((comment) => text.slice(comment.range[0], comment.range[1]))
-    .join('\n');
-  const suffix = requiresLineBreakAfter(comments[comments.length - 1])
-    ? '\n'
-    : '';
-  return fixer.replaceText(importDeclaration, `${carried}${suffix}`);
-}
-
-function isCommaToken(token: TSESTree.Token | null): token is TSESTree.Token {
-  return (
-    token !== null &&
-    token.type === AST_TOKEN_TYPES.Punctuator &&
-    token.value === ','
-  );
-}
-
-/**
- * Deletes the `useMemo` specifier and one adjacent comma while other NAMED
- * specifiers remain. Only the tokens being retired are edited — never the
- * declaration re-emitted from its parts — so every comment elsewhere in the
- * declaration survives verbatim. When nothing but whitespace separates the
- * retired tokens from their neighbour the removal range swallows that
- * whitespace too; when a comment sits in between, the tokens are removed
- * individually around it.
- */
-function removeSpecifierFixes(
-  specifier: TSESTree.ImportSpecifier,
-  sourceCode: Readonly<TSESLint.SourceCode>,
-  fixer: TSESLint.RuleFixer,
-): TSESLint.RuleFix[] {
-  const commaAfter = sourceCode.getTokenAfter(specifier);
-  if (isCommaToken(commaAfter)) {
-    const nextToken = sourceCode.getTokenAfter(commaAfter);
-    if (nextToken && !sourceCode.commentsExistBetween(specifier, nextToken)) {
-      return [fixer.removeRange([specifier.range[0], nextToken.range[0]])];
-    }
-    return [fixer.remove(specifier), fixer.removeRange(commaAfter.range)];
-  }
-
-  const commaBefore = sourceCode.getTokenBefore(specifier);
-  if (isCommaToken(commaBefore)) {
-    if (!sourceCode.commentsExistBetween(commaBefore, specifier)) {
-      return [fixer.removeRange([commaBefore.range[0], specifier.range[1]])];
-    }
-    return [fixer.removeRange(commaBefore.range), fixer.remove(specifier)];
-  }
-
-  return [fixer.remove(specifier)];
-}
-
-/**
- * Deletes the whole `{ useMemo }` group — braces, specifier and the comma
- * joining it to the default specifier — when `useMemo` is the only named
- * binding but a default import keeps the declaration alive. As above, comments
- * inside the group survive by shrinking the edit to the individual tokens.
- */
-function removeNamedGroupFixes(
-  specifier: TSESTree.ImportSpecifier,
-  sourceCode: Readonly<TSESLint.SourceCode>,
-  fixer: TSESLint.RuleFixer,
-): TSESLint.RuleFix[] {
-  const openBrace = sourceCode.getTokenBefore(specifier, {
-    filter: (token) => token.value === '{',
-  });
-  const closeBrace = sourceCode.getTokenAfter(specifier, {
-    filter: (token) => token.value === '}',
-  });
-  if (!openBrace || !closeBrace) {
-    return [fixer.remove(specifier)];
-  }
-
-  const commaBefore = sourceCode.getTokenBefore(openBrace);
-  const start = isCommaToken(commaBefore) ? commaBefore : openBrace;
-  if (!sourceCode.commentsExistBetween(start, closeBrace)) {
-    return [fixer.removeRange([start.range[0], closeBrace.range[1]])];
-  }
-
-  const fixes: TSESLint.RuleFix[] = [];
-  if (start !== openBrace) {
-    fixes.push(fixer.removeRange(start.range));
-  }
-  fixes.push(fixer.removeRange(openBrace.range), fixer.remove(specifier));
-  const trailingComma = sourceCode.getTokenAfter(specifier);
-  if (isCommaToken(trailingComma)) {
-    fixes.push(fixer.removeRange(trailingComma.range));
-  }
-  fixes.push(fixer.removeRange(closeBrace.range));
-  return fixes;
-}
-
-function getImportRemovalFixes(
-  specifier: TSESTree.ImportSpecifier,
-  sourceCode: Readonly<TSESLint.SourceCode>,
-  fixer: TSESLint.RuleFixer,
-): TSESLint.RuleFix[] {
-  const importDeclaration = specifier.parent;
-  if (
-    !importDeclaration ||
-    importDeclaration.type !== AST_NODE_TYPES.ImportDeclaration
-  ) {
-    return [];
-  }
-
-  const remainingSpecifiers = importDeclaration.specifiers.filter(
-    (candidate) => candidate !== specifier,
-  );
-
-  if (remainingSpecifiers.length === 0) {
-    return [
-      removeCompleteImportPreservingComments(
-        importDeclaration,
-        sourceCode,
-        fixer,
-      ),
-    ];
-  }
-
-  const hasOtherNamedSpecifiers = remainingSpecifiers.some(
-    (candidate) => candidate.type === AST_NODE_TYPES.ImportSpecifier,
-  );
-  if (!hasOtherNamedSpecifiers) {
-    return removeNamedGroupFixes(specifier, sourceCode, fixer);
-  }
-
-  return removeSpecifierFixes(specifier, sourceCode, fixer);
-}
-
 function getReplacementText(
   callback: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
   sourceCode: Readonly<TSESLint.SourceCode>,
@@ -702,39 +476,6 @@ function shouldParenthesizeReplacement(
   }
 }
 
-function getRemovableImportSpecifier(
-  callExpression: TSESTree.CallExpression,
-  imports: UseMemoImports,
-  sourceCode: Readonly<TSESLint.SourceCode>,
-): TSESTree.ImportSpecifier | null {
-  if (callExpression.callee.type !== AST_NODE_TYPES.Identifier) {
-    return null;
-  }
-
-  const specifier = imports.useMemoSpecifiers.get(callExpression.callee.name);
-  if (!specifier) {
-    return null;
-  }
-
-  const declaredVariables = hasDeclaredVariables(sourceCode)
-    ? sourceCode.getDeclaredVariables(specifier)
-    : (sourceCode as any).getDeclaredVariables?.(specifier) ?? [];
-  const [variable] = declaredVariables;
-  if (!variable) {
-    // Defer removal when scope analysis cannot resolve the import.
-    return null;
-  }
-
-  const otherReferences = variable.references.filter(
-    (reference) => reference.identifier !== callExpression.callee,
-  );
-  if (otherReferences.length > 0) {
-    return null;
-  }
-
-  return specifier;
-}
-
 export const noUsememoForPassByValue = createRule<Options, MessageIds>({
   name: 'no-usememo-for-pass-by-value',
   meta: {
@@ -795,6 +536,25 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
     const reported = new WeakSet<TSESTree.CallExpression>();
     const resolveVariable = (identifier: TSESTree.Identifier) =>
       ASTUtils.findVariable(context.getScope(), identifier) ?? null;
+
+    /**
+     * Every `useMemo` call the rule reports, in traversal order.
+     *
+     * Reporting is deferred to `Program:exit` because the binding the call
+     * reads — the `useMemo` specifier, or the `React` default import behind
+     * `React.useMemo` — is unbound only once no surviving call references it.
+     * Judged one call at a time, a file with two of them never sees either as
+     * the binding's last use, and the pass that unwraps both resolves every
+     * report — so nothing ever revisits the stranded import.
+     */
+    const violations: Violation[] = [];
+
+    /**
+     * A suppressed report is dropped together with its fix, so its rewrite
+     * never happens: counting it toward the batch would unbind an import the
+     * surviving text still calls.
+     */
+    const isReportSuppressed = createSuppressionChecker(context);
 
     function visitPatternNode(
       pattern: TSESTree.Node,
@@ -931,12 +691,49 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
       return classification;
     }
 
-    function getUseMemoFix(
-      node: TSESTree.CallExpression,
-      callback: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
-      returnedExpression: TSESTree.Expression,
-      fixer: TSESLint.RuleFixer,
-    ): TSESLint.RuleFix[] | null {
+    /**
+     * A retirement range shortened so it stops before any comment it would
+     * otherwise take with it, or `null` when no shortening can spare one.
+     *
+     * Retiring a declaration claims the whole line it owns, trailing same-line
+     * comments included. Such a comment sits AFTER the terminating token, so it
+     * is outside the declaration and belongs to nobody the fix is entitled to
+     * rewrite — deleting it silently is the same fidelity bug the unwrap avoids
+     * by carrying comments (#1877). Stopping short leaves the comment exactly
+     * where it was written, which cannot reorder or duplicate anything.
+     *
+     * A comment the range cannot be shortened past aborts the whole fix rather
+     * than yielding a removal that swallows it.
+     */
+    function sparingTrailingComments(range: TextRange): TextRange | null {
+      const starts = sourceCode
+        .getAllComments()
+        .filter(
+          (comment) =>
+            comment.range[0] >= range[0] && comment.range[1] <= range[1],
+        )
+        .map((comment) => comment.range[0]);
+      if (starts.length === 0) {
+        return range;
+      }
+      const first = Math.min(...starts);
+      return first > range[0] ? [range[0], first] : null;
+    }
+
+    /**
+     * The edits one violation contributes, together with the positions they
+     * genuinely erase.
+     *
+     * Only deleted text may be listed as removed, and the returned expression is
+     * never deleted: it is re-emitted verbatim at the call's position. Handing
+     * over the whole call span instead would read every binding the expression
+     * mentions as unreferenced and delete its import — an over-removal strictly
+     * worse than the stranded import this exists to prevent. What does vanish is
+     * the wrapper around it: the callee (`useMemo` or `React.useMemo`), the
+     * callback's syntax, and the dependency array.
+     */
+    function planViolation(violation: Violation): PlannedViolation | null {
+      const { node, callback, returnedExpression } = violation;
       const replacementText = getReplacementText(callback, sourceCode);
       if (!replacementText) {
         return null;
@@ -953,15 +750,13 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
         sourceCode,
       );
 
-      const fixes: TSESLint.RuleFix[] = [];
+      const edits: Edit[] = [];
 
       if (strandedComments.length === 0) {
-        fixes.push(
-          fixer.replaceText(
-            node,
-            needsParentheses ? `(${replacementText})` : replacementText,
-          ),
-        );
+        edits.push({
+          range: node.range,
+          text: needsParentheses ? `(${replacementText})` : replacementText,
+        });
       } else {
         // Carrying must not change the non-comment token stream: whether the
         // replacement is parenthesized is decided by the expression's context
@@ -994,7 +789,10 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
             { text: replacementText, breakAfter: false },
             ...trailingComments.map(toSegment),
           ];
-          fixes.push(fixer.replaceText(node, joinSegments(segments, indent)));
+          edits.push({
+            range: node.range,
+            text: joinSegments(segments, indent),
+          });
         } else {
           // Without parentheses a line break between a restricted keyword
           // (`return`, `throw`, `yield`) and the expression would change the
@@ -1023,12 +821,10 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
                   )}\n`,
               )
               .join('');
-            fixes.push(
-              fixer.insertTextBeforeRange(
-                [lineStartIndex, lineStartIndex],
-                hoisted,
-              ),
-            );
+            edits.push({
+              range: [lineStartIndex, lineStartIndex],
+              text: hoisted,
+            });
           }
 
           const segments: ReplacementSegment[] = [
@@ -1042,16 +838,55 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
           const trailing = segments[segments.length - 1].breakAfter
             ? `\n${indent}`
             : '';
-          fixes.push(fixer.replaceText(node, `${body}${trailing}`));
+          edits.push({ range: node.range, text: `${body}${trailing}` });
         }
       }
 
-      const specifier = getRemovableImportSpecifier(node, imports, sourceCode);
-      if (specifier) {
-        fixes.push(...getImportRemovalFixes(specifier, sourceCode, fixer));
+      return {
+        violation,
+        edits,
+        removed: [
+          [node.range[0], returnedExpression.range[0]],
+          [returnedExpression.range[1], node.range[1]],
+        ],
+      };
+    }
+
+    /**
+     * The rewrites that actually ship, in traversal order.
+     *
+     * Each is screened alone before it joins the batch: a rewrite whose own
+     * deletion orphans something that cannot be unbound safely — a local
+     * variable, an import behind a directive comment — would otherwise poison
+     * every other rewrite in the file. Edits colliding with an already accepted
+     * one are dropped for the same reason a single report's overlapping fixes
+     * are: ESLint asserts on the overlap and discards every message for the
+     * file. A nested pair collides this way, and the outer rewrite wins because
+     * it is visited first; the inner one is reported and fixed on a later pass.
+     */
+    function planViolations(): PlannedViolation[] {
+      const planned: PlannedViolation[] = [];
+      const claimed: TSESTree.Range[] = [];
+
+      for (const violation of violations) {
+        if (isReportSuppressed(violation.node)) continue;
+        const candidate = planViolation(violation);
+        if (!candidate) continue;
+        if (planOrphanedImportRemoval(sourceCode, candidate.removed) === null) {
+          continue;
+        }
+        if (
+          claimed.some((taken) =>
+            candidate.edits.some((edit) => rangesOverlap(edit.range, taken)),
+          )
+        ) {
+          continue;
+        }
+        claimed.push(violation.node.range);
+        planned.push(candidate);
       }
 
-      return fixes;
+      return planned;
     }
 
     function checkUseMemoForPassByValue(
@@ -1086,15 +921,12 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
 
       reported.add(node);
 
-      context.report({
+      violations.push({
         node,
-        messageId: 'primitiveMemo',
-        data: {
-          hookName: currentContext.hookName ?? 'this hook',
-          valueType: classification.description,
-        },
-        fix: (fixer) =>
-          getUseMemoFix(node, callback, returnedExpression, fixer),
+        callback,
+        returnedExpression,
+        hookName: currentContext.hookName ?? 'this hook',
+        valueType: classification.description,
       });
     }
 
@@ -1299,6 +1131,64 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
         }
 
         analyzeReturnedValue(node.argument, currentContext);
+      },
+      'Program:exit'() {
+        if (violations.length === 0) {
+          return;
+        }
+
+        const planned = planViolations();
+        // One plan over every surviving rewrite: the binding behind the callee
+        // is left unreferenced by their union even when no single unwrap strips
+        // its last use, and the pass that applies them all resolves every
+        // report — so this is the only moment the stranded import is visible.
+        const importRemoval =
+          planned.length > 0
+            ? planOrphanedImportRemoval(
+                sourceCode,
+                planned.flatMap((entry) => entry.removed),
+              )
+            : null;
+
+        // The whole batch ships as one fix, so no unwrap can land without the
+        // others the import's orphanhood was judged against, and no unbinding
+        // can land without the unwrap it was claimed on. The other violations
+        // report without a fixer; the carrier's pass already resolves them.
+        //
+        // No plan at all means some binding would be left unreferenced yet
+        // cannot be unbound safely, so every unwrap stays behind: reports
+        // without a fixer are the lesser damage.
+        const removalRanges = importRemoval
+          ? importRemoval.map(sparingTrailingComments)
+          : [];
+        const carrier =
+          importRemoval && removalRanges.every((range) => range !== null)
+            ? planned[0]
+            : undefined;
+
+        for (const violation of violations) {
+          context.report({
+            node: violation.node,
+            messageId: 'primitiveMemo',
+            data: {
+              hookName: violation.hookName,
+              valueType: violation.valueType,
+            },
+            fix:
+              violation === carrier?.violation
+                ? (fixer: TSESLint.RuleFixer) => [
+                    ...removalRanges
+                      .filter((range): range is TextRange => range !== null)
+                      .map((range) => fixer.removeRange([range[0], range[1]])),
+                    ...planned.flatMap((entry) =>
+                      entry.edits.map((edit) =>
+                        fixer.replaceTextRange(edit.range, edit.text),
+                      ),
+                    ),
+                  ]
+                : undefined,
+          });
+        }
       },
     };
   },
