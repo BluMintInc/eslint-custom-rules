@@ -384,8 +384,8 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
   },
   'no-redundant-usecallback-wrapper::use-latest-callback': {
     reason:
-      'PIPELINE: sequential steps of one migration (`useMemo` -> `useCallback` -> `useLatestCallback`); multi-pass `--fix` converges on all 59 with both rules silent.',
-    cases: { useLatestCallback: 59 },
+      'PIPELINE: sequential steps of one migration (`useMemo` -> `useCallback` -> `useLatestCallback`); multi-pass `--fix` converges on all 60 with both rules silent. 59 -> 60 is a net of three moves, all from #1895 (the collapse now drops the import specifier it orphans). Two `output` fixtures JOIN: both keep a `useCallback` call the sibling still wants migrated — one is the fixture pinning that a surviving call keeps the import, the other the suppressed-sibling fixture whose disabled call is deliberately left standing. One LEAVES by deduplication, not by going silent: the output of the `useLatestCallback(inner)` fixture loses the `use-latest-callback` import the collapse orphans, which makes it byte-identical to an existing fixture output the corpus already carries.',
+    cases: { useLatestCallback: 60 },
   },
   'no-render-function-components::no-jsx-in-hooks': {
     reason:

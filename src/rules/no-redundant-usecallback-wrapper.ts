@@ -1,6 +1,8 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
+import { createSuppressionChecker } from '../utils/disableDirectives';
+import { planOrphanedImportRemoval, TextRange } from '../utils/importRemoval';
 
 type Options = [
   {
@@ -10,6 +12,34 @@ type Options = [
 ];
 
 type MessageIds = 'redundantWrapper';
+
+/** A redundant wrapper call the rule reports, held until `Program:exit`. */
+type Violation = {
+  node: TSESTree.CallExpression;
+  wrapper: string;
+  callbackName: string;
+  /**
+   * The identifier the wrapper collapses to, or `null` for a report the rule
+   * deliberately leaves unfixed. It is the only text the rewrite keeps, which
+   * also makes it the one span the orphan analysis must not treat as deleted.
+   */
+  delegate: TSESTree.Identifier | null;
+};
+
+/** A violation whose rewrite ships, with the edit and deletions it owns. */
+type PlannedViolation = {
+  violation: Violation;
+  edit: { range: TSESTree.Range; text: string };
+  /** The positions the edit erases, for the orphaned-import analysis. */
+  removed: TSESTree.Range[];
+};
+
+function rangesOverlap(
+  a: readonly [number, number],
+  b: readonly [number, number],
+): boolean {
+  return a[0] < b[1] && b[0] < a[1];
+}
 
 const LATEST_CALLBACK_MODULE = 'use-latest-callback';
 const LATEST_CALLBACK_HOOK = 'useLatestCallback';
@@ -360,6 +390,100 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
     const hookReturnObjects = new Set<string>(); // variables assigned to a hook call result (object or function)
     const hookReturnProps = new Set<string>(); // properties destructured from a hook call result
 
+    /**
+     * Every redundant wrapper the rule finds, in traversal order.
+     *
+     * Reporting is deferred to `Program:exit` because the wrapper's import is
+     * unbound only once no surviving call references it. Judged one call at a
+     * time, a file with two wrappers never sees either as the binding's last
+     * use, and the pass that collapses both resolves every report — so nothing
+     * ever revisits the stranded import.
+     */
+    const violations: Violation[] = [];
+
+    /**
+     * A suppressed report is dropped together with its fix, so its rewrite
+     * never happens: counting it toward the batch would unbind an import the
+     * surviving text still calls.
+     */
+    const isReportSuppressed = createSuppressionChecker(context);
+
+    /**
+     * A wrapper collapses to the delegate's bare name, so the delegate is the
+     * only text the rewrite keeps. Everything else inside the call — the
+     * wrapper's callee, the callback's syntax, the dependency array — is
+     * genuinely deleted, and only that may be handed to the orphan planner: a
+     * span covering the delegate would read whatever it names as unreferenced
+     * and delete that import too, an over-removal strictly worse than the
+     * stranded import this exists to prevent.
+     */
+    const planViolation = (
+      violation: Violation,
+      delegate: TSESTree.Identifier,
+    ): PlannedViolation => ({
+      violation,
+      edit: { range: violation.node.range, text: delegate.name },
+      removed: [
+        [violation.node.range[0], delegate.range[0]],
+        [delegate.range[1], violation.node.range[1]],
+      ],
+    });
+
+    /**
+     * The rewrites that actually ship, in traversal order.
+     *
+     * Each is screened alone before it joins the batch: a rewrite whose own
+     * deletion orphans something that cannot be unbound safely — a local
+     * variable, an import behind a directive comment — would otherwise poison
+     * every other rewrite in the file. Edits colliding with an already accepted
+     * one are dropped for the same reason a single report's overlapping fixes
+     * are: ESLint asserts on the overlap and discards every message for the
+     * file. A nested pair collides this way, and the enclosing rewrite wins
+     * because it is visited first; the inner one is fixed on a later pass.
+     */
+    const planViolations = (): PlannedViolation[] => {
+      const planned: PlannedViolation[] = [];
+      const claimed: TSESTree.Range[] = [];
+
+      for (const violation of violations) {
+        if (!violation.delegate) continue;
+        if (isReportSuppressed(violation.node)) continue;
+        const candidate = planViolation(violation, violation.delegate);
+        if (planOrphanedImportRemoval(sourceCode, candidate.removed) === null) {
+          continue;
+        }
+        if (
+          claimed.some((taken) => rangesOverlap(candidate.edit.range, taken))
+        ) {
+          continue;
+        }
+        claimed.push(candidate.edit.range);
+        planned.push(candidate);
+      }
+
+      return planned;
+    };
+
+    /**
+     * Records a redundant wrapper without reporting it yet.
+     *
+     * A member delegate (`ctx.submit`) is recorded unfixed: rewriting the
+     * wrapper to a bare member reference would detach the callback from its
+     * receiver and change what `this` binds to.
+     */
+    const recordViolation = (
+      node: TSESTree.CallExpression,
+      wrapper: string,
+      delegate: TSESTree.Node,
+    ) => {
+      violations.push({
+        node,
+        wrapper,
+        callbackName: sourceCode.getText(delegate),
+        delegate: delegate.type === AST_NODE_TYPES.Identifier ? delegate : null,
+      });
+    };
+
     return {
       ImportDeclaration(node) {
         // The module's sole export is the hook, so its DEFAULT specifier binds
@@ -452,28 +576,7 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
                 unwrappedArg.object.type === AST_NODE_TYPES.Identifier &&
                 hookReturnObjects.has(unwrappedArg.object.name))
             ) {
-              if (unwrappedArg.type === AST_NODE_TYPES.Identifier) {
-                const replaceText = unwrappedArg.name;
-                context.report({
-                  node,
-                  messageId: 'redundantWrapper',
-                  data: {
-                    wrapper,
-                    callbackName: sourceCode.getText(unwrappedArg),
-                  },
-                  fix: (fixer) => fixer.replaceText(node, replaceText),
-                });
-              } else {
-                // Member function — report only, no fix to avoid breaking `this`.
-                context.report({
-                  node,
-                  messageId: 'redundantWrapper',
-                  data: {
-                    wrapper,
-                    callbackName: sourceCode.getText(unwrappedArg),
-                  },
-                });
-              }
+              recordViolation(node, wrapper, unwrappedArg);
             }
             return;
           }
@@ -517,28 +620,7 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
                     // Passing any arguments: treat as non-redundant (avoid false positives)
                     return;
                   } else {
-                    if (callee.type === AST_NODE_TYPES.Identifier) {
-                      const replaceText = (callee as TSESTree.Identifier).name;
-                      context.report({
-                        node,
-                        messageId: 'redundantWrapper',
-                        data: {
-                          wrapper,
-                          callbackName: sourceCode.getText(callee),
-                        },
-                        fix: (fixer) => fixer.replaceText(node, replaceText),
-                      });
-                    } else {
-                      // Member function — report only, no fix to avoid breaking `this`.
-                      context.report({
-                        node,
-                        messageId: 'redundantWrapper',
-                        data: {
-                          wrapper,
-                          callbackName: sourceCode.getText(callee),
-                        },
-                      });
-                    }
+                    recordViolation(node, wrapper, callee);
                   }
                 }
               }
@@ -595,30 +677,7 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
                         return;
                       } else {
                         // No args and trivial wrapper
-                        if (callee.type === AST_NODE_TYPES.Identifier) {
-                          const replaceText = (callee as TSESTree.Identifier)
-                            .name;
-                          context.report({
-                            node,
-                            messageId: 'redundantWrapper',
-                            data: {
-                              wrapper,
-                              callbackName: sourceCode.getText(callee),
-                            },
-                            fix: (fixer) =>
-                              fixer.replaceText(node, replaceText),
-                          });
-                        } else {
-                          // Member function — report only, no fix to avoid breaking `this`.
-                          context.report({
-                            node,
-                            messageId: 'redundantWrapper',
-                            data: {
-                              wrapper,
-                              callbackName: sourceCode.getText(callee),
-                            },
-                          });
-                        }
+                        recordViolation(node, wrapper, callee);
                       }
                     }
                   }
@@ -626,6 +685,56 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
               }
             }
           }
+        }
+      },
+
+      'Program:exit'() {
+        if (violations.length === 0) return;
+
+        const planned = planViolations();
+        // One plan over every surviving rewrite: the wrapper's binding is left
+        // unreferenced by their union even when no single collapse strips its
+        // last use, and the pass that applies them all resolves every report —
+        // so this is the only moment the stranded import is visible.
+        const importRemoval =
+          planned.length > 0
+            ? planOrphanedImportRemoval(
+                sourceCode,
+                planned.flatMap((entry) => entry.removed),
+              )
+            : null;
+
+        // The whole batch ships as one fix, so no collapse can land without the
+        // others the import's orphanhood was judged against, and no unbinding
+        // can land without the collapse it was claimed on. The other violations
+        // report without a fixer; the carrier's pass already resolves them.
+        //
+        // No plan at all means some binding would be left unreferenced yet
+        // cannot be unbound safely, so every collapse stays behind: reports
+        // without a fixer are the lesser damage.
+        const removalRanges: readonly TextRange[] = importRemoval ?? [];
+        const carrier = importRemoval ? planned[0] : undefined;
+
+        for (const violation of violations) {
+          context.report({
+            node: violation.node,
+            messageId: 'redundantWrapper',
+            data: {
+              wrapper: violation.wrapper,
+              callbackName: violation.callbackName,
+            },
+            fix:
+              violation === carrier?.violation
+                ? (fixer: TSESLint.RuleFixer) => [
+                    ...removalRanges.map((range) =>
+                      fixer.removeRange([range[0], range[1]]),
+                    ),
+                    ...planned.map((entry) =>
+                      fixer.replaceTextRange(entry.edit.range, entry.edit.text),
+                    ),
+                  ]
+                : undefined,
+          });
         }
       },
     };
