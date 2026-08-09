@@ -336,7 +336,6 @@ const UNDRIVEN: Record<string, UndrivenCause> = {
   'no-unpinned-dependencies::member': 'noTsFixture',
   'no-useless-fragment::call': 'silentBothSides',
   'no-useless-fragment::member': 'silentBothSides',
-  'no-useless-usememo-primitives::member': 'silentBothSides',
   'omit-index-html::call': 'noSite',
   'omit-index-html::member': 'noSite',
   'prefer-destructuring-no-class::call': 'silentBothSides',

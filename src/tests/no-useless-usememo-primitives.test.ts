@@ -924,5 +924,258 @@ function useJoinLabel(isPendingToJoinTeam: boolean) {
         const mixed = (/* outside */ flag ? /* inside */ 'yes' : 'no');
       `,
     },
+    // #1894: unwrapping the file's last useMemo call strands the import that
+    // bound it, so the same fix drops the specifier it just orphaned.
+    {
+      code: `
+import { useMemo } from 'react';
+
+export const useThing = () => {
+  return useMemo(() => 1, [{ a: 1 }, 2]);
+};
+`,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+
+export const useThing = () => {
+  return (1);
+};
+`,
+    },
+    // A surviving useMemo call keeps the import: over-eager removal breaks the
+    // file outright, where a stranded import only fails a lint rule.
+    {
+      code: `
+import { useMemo } from 'react';
+
+export const useCount = () => useMemo(() => 1, []);
+export const useConfig = () => useMemo(() => ({ a: 1 }), []);
+`,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+import { useMemo } from 'react';
+
+export const useCount = () => (1);
+export const useConfig = () => useMemo(() => ({ a: 1 }), []);
+`,
+    },
+    // Two unwraps in one file: judged one at a time neither is the binding's
+    // last use, so the rewrites ship as ONE fix and the import goes with them.
+    {
+      code: `
+import { useMemo } from 'react';
+
+export const useA = () => useMemo(() => 1, []);
+export const useB = () => useMemo(() => 2, []);
+`,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [
+        { messageId: 'uselessUseMemoPrimitive' },
+        { messageId: 'uselessUseMemoPrimitive' },
+      ],
+      output: `
+
+export const useA = () => (1);
+export const useB = () => (2);
+`,
+    },
+    // A call whose useMemo binding is imported under an alias: the specifier
+    // that goes is the one the call resolves to, alias clause included.
+    {
+      code: `
+import { useMemoized as useMemo } from './hooks';
+
+export const useA = () => useMemo(() => 1, []);
+`,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+
+export const useA = () => (1);
+`,
+    },
+    // Losing the only named specifier next to a surviving default takes the
+    // braces with it rather than leaving `import React, {} from 'react'`.
+    {
+      code: `
+import React, { useMemo } from 'react';
+
+export const useA = () => useMemo(() => 1, []);
+export const Wrapper = React.Fragment;
+`,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+import React from 'react';
+
+export const useA = () => (1);
+export const Wrapper = React.Fragment;
+`,
+    },
+    // A namespace call unbinds the namespace, since the member expression is
+    // the only reference the deleted span carried.
+    {
+      code: `
+import * as React from 'react';
+
+export const useA = () => React.useMemo(() => 1, []);
+`,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+
+export const useA = () => (1);
+`,
+    },
+    // The namespace survives when anything else reads it.
+    {
+      code: `
+import * as React from 'react';
+
+export const useA = () => React.useMemo(() => 1, []);
+export const Wrapper = React.Fragment;
+`,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+import * as React from 'react';
+
+export const useA = () => (1);
+export const Wrapper = React.Fragment;
+`,
+    },
+    // The initializer is MOVED, not deleted, so an import it reads survives.
+    {
+      code: `
+import { useMemo } from 'react';
+import { LIMIT } from './constants';
+
+export const useA = () => useMemo(() => LIMIT > 0, [LIMIT]);
+`,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+import { LIMIT } from './constants';
+
+export const useA = () => (LIMIT > 0);
+`,
+    },
+    // The dependency array IS deleted, so an import read only from there is
+    // unbound by the same edit.
+    {
+      code: `
+import { useMemo } from 'react';
+import { LIMIT } from './constants';
+
+export const useA = () => useMemo(() => 1, [LIMIT]);
+`,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+
+export const useA = () => (1);
+`,
+    },
+    // A useMemo call inside a nested function keeps the import alive, even
+    // though the reported call is the outer one.
+    {
+      code: `
+import { useMemo } from 'react';
+
+export const useThing = () => {
+  const nested = () => useMemo(() => ({ a: 1 }), []);
+  return { flag: useMemo(() => true, []), nested };
+};
+`,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+import { useMemo } from 'react';
+
+export const useThing = () => {
+  const nested = () => useMemo(() => ({ a: 1 }), []);
+  return { flag: (true), nested };
+};
+`,
+    },
+    // A suppressed sibling never rewrites, so its reference still counts and
+    // the import stays: the batch may only be judged against edits that land.
+    {
+      code: `
+import { useMemo } from 'react';
+
+// eslint-disable-next-line no-useless-usememo-primitives
+export const useA = () => useMemo(() => 1, []);
+export const useB = () => useMemo(() => 2, []);
+`,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+import { useMemo } from 'react';
+
+// eslint-disable-next-line no-useless-usememo-primitives
+export const useA = () => useMemo(() => 1, []);
+export const useB = () => (2);
+`,
+    },
+    // The unwrap would leave a local const unreferenced, and a local is not
+    // something the import planner may rewrite, so the whole fix declines —
+    // a report without a fix beats a file that fails `noUnusedLocals`.
+    {
+      code: `
+import { useMemo } from 'react';
+
+const threshold = 3;
+export const useA = () => useMemo(() => 'fixed', [threshold]);
+`,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: null,
+    },
+    // A comment among the specifiers makes the removal unsafe to compute, and
+    // half a fix is worse than none.
+    {
+      code: `
+import { /* keep */ useMemo } from 'react';
+
+export const useA = () => useMemo(() => 1, []);
+`,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: null,
+    },
+    // Nested reports whose edits enclose one another cannot both ship in one
+    // fix, so the enclosing rewrite wins and the inner one is left for the
+    // next pass — the import is judged against the edits that actually land.
+    {
+      code: `
+import { useMemo } from 'react';
+
+export const useA = () => useMemo(() => 1, [useMemo(() => 2, [])]);
+`,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [
+        { messageId: 'uselessUseMemoPrimitive' },
+        { messageId: 'uselessUseMemoPrimitive' },
+      ],
+      output: `
+
+export const useA = () => (1);
+`,
+    },
+    // A require-bound useMemo is not an import specifier, so the unwrap that
+    // strands it declines rather than guessing at the declaration.
+    {
+      code: `
+const { useMemo } = require('react');
+
+export const useA = () => useMemo(() => 1, []);
+`,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: null,
+    },
   ],
 });

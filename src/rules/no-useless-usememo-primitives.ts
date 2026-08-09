@@ -1,5 +1,7 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { createSuppressionChecker } from '../utils/disableDirectives';
+import { planOrphanedImportRemoval, TextRange } from '../utils/importRemoval';
 import {
   ReplacementSegment,
   joinSegments,
@@ -16,6 +18,24 @@ type Options = [
 ];
 
 type MessageIds = 'uselessUseMemoPrimitive';
+
+/** One rewrite the fix performs: `range` becomes `text`. */
+type Edit = { range: TSESTree.Range; text: string };
+
+/** A `useMemo` call the rule reports, held until `Program:exit`. */
+type Violation = {
+  node: TSESTree.CallExpression;
+  returnedExpression: TSESTree.Expression;
+  valueKind: string;
+};
+
+/** A violation whose rewrite ships, with the edit and deletions it owns. */
+type PlannedViolation = {
+  violation: Violation;
+  edit: Edit;
+  /** The positions the edit erases, for the orphaned-import analysis. */
+  removed: TSESTree.Range[];
+};
 
 const DEFAULT_OPTIONS: Required<Options[number]> = {
   ignoreCallExpressions: true,
@@ -61,6 +81,13 @@ function isStringLikeWithoutTypes(expr: TSESTree.Expression): boolean {
     default:
       return false;
   }
+}
+
+function rangesOverlap(
+  a: readonly [number, number],
+  b: readonly [number, number],
+): boolean {
+  return a[0] < b[1] && b[0] < a[1];
 }
 
 function isUseMemoCallee(callee: TSESTree.LeftHandSideExpression): boolean {
@@ -394,6 +421,136 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
       });
     }
 
+    /**
+     * Every `useMemo` call the rule reports, in traversal order.
+     *
+     * Reporting is deferred to `Program:exit` because the `useMemo` import is
+     * unbound only once no surviving call references it. Judged one call at a
+     * time, a file with two of them never sees either as the binding's last
+     * use, and the pass that unwraps both resolves every report — so nothing
+     * ever revisits the stranded import.
+     */
+    const violations: Violation[] = [];
+
+    /**
+     * A suppressed report is dropped together with its fix, so its rewrite
+     * never happens: counting it toward the batch would unbind an import the
+     * surviving text still calls.
+     */
+    const isReportSuppressed = createSuppressionChecker(context);
+
+    /**
+     * The text the call collapses to. Inlining replaces the entire
+     * `useMemo(...)` call with the returned expression's text, so any comment
+     * inside the call but outside that expression — an eslint-disable-next-line
+     * directive on the return statement among them — has no representation in
+     * the replacement. Dropping one changes which rules report on the file
+     * (#1591), and declining the fix whenever one is present makes a comment
+     * decide whether the rule rewrites at all (#1877). Both are avoided by
+     * carrying every such comment into the replacement, where the directives
+     * among them keep the line relationship they were written with.
+     */
+    function replacementTextFor(
+      node: TSESTree.CallExpression,
+      returnedExpression: TSESTree.Expression,
+    ): string {
+      const expressionText = sourceCode.getText(returnedExpression);
+      const strandedComments = sourceCode
+        .getCommentsInside(node)
+        .filter(
+          (comment) =>
+            comment.range[0] < returnedExpression.range[0] ||
+            comment.range[1] > returnedExpression.range[1],
+        );
+      if (strandedComments.length === 0) {
+        return `(${expressionText})`;
+      }
+
+      // A comment inside the call lies wholly on one side of the expression,
+      // since a comment is a token and cannot straddle a node; keeping each on
+      // its own side preserves what it annotates.
+      const toSegment = (comment: TSESTree.Comment) => ({
+        text: sourceCode.text.slice(comment.range[0], comment.range[1]),
+        breakAfter: requiresLineBreakAfter(comment),
+      });
+      const isBefore = (comment: TSESTree.Comment) =>
+        comment.range[0] < returnedExpression.range[0];
+      const segments: ReplacementSegment[] = [
+        ...strandedComments.filter(isBefore).map(toSegment),
+        { text: expressionText, breakAfter: false },
+        ...strandedComments
+          .filter((comment) => !isBefore(comment))
+          .map(toSegment),
+      ];
+
+      // The call can start mid-line, so the indentation of the line it opens on
+      // is the only anchor the carried comments have.
+      const startLine = sourceCode.lines[node.loc.start.line - 1] ?? '';
+      const indent = /^[\t ]*/.exec(startLine)?.[0] ?? '';
+      return joinSegments(segments, indent);
+    }
+
+    /**
+     * The edit one violation contributes, together with the positions it
+     * genuinely erases.
+     *
+     * Only deleted text may be listed as removed, and the returned expression is
+     * never deleted: it is re-emitted verbatim at the call's position. Handing
+     * over the whole call span instead would read every binding the expression
+     * mentions as unreferenced and delete its import — an over-removal strictly
+     * worse than the stranded import this exists to prevent. What does vanish is
+     * the wrapper around it: the callee, the callback's syntax, and the
+     * dependency array.
+     */
+    function planViolation(violation: Violation): PlannedViolation {
+      const { node, returnedExpression } = violation;
+      return {
+        violation,
+        edit: {
+          range: node.range,
+          text: replacementTextFor(node, returnedExpression),
+        },
+        removed: [
+          [node.range[0], returnedExpression.range[0]],
+          [returnedExpression.range[1], node.range[1]],
+        ],
+      };
+    }
+
+    /**
+     * The rewrites that actually ship, in traversal order.
+     *
+     * Each is screened alone before it joins the batch: a rewrite whose own
+     * deletion orphans something that cannot be unbound safely — a local
+     * variable, an import behind a directive comment — would otherwise poison
+     * every other rewrite in the file. Edits colliding with an already accepted
+     * one are dropped for the same reason a single report's overlapping fixes
+     * are: ESLint asserts on the overlap and discards every message for the
+     * file. A nested pair collides this way, and the outer rewrite wins because
+     * it is visited first; the inner one is reported and fixed on a later pass.
+     */
+    function planViolations(): PlannedViolation[] {
+      const planned: PlannedViolation[] = [];
+      const claimed: TSESTree.Range[] = [];
+
+      for (const violation of violations) {
+        if (isReportSuppressed(violation.node)) continue;
+        const candidate = planViolation(violation);
+        if (planOrphanedImportRemoval(sourceCode, candidate.removed) === null) {
+          continue;
+        }
+        if (
+          claimed.some((taken) => rangesOverlap(candidate.edit.range, taken))
+        ) {
+          continue;
+        }
+        claimed.push(candidate.edit.range);
+        planned.push(candidate);
+      }
+
+      return planned;
+    }
+
     return {
       CallExpression(node) {
         if (!isUseMemoCallee(node.callee)) {
@@ -460,59 +617,56 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
           return;
         }
 
-        context.report({
-          node,
-          messageId: 'uselessUseMemoPrimitive',
-          data: {
-            valueKind,
-          },
-          fix(fixer) {
-            const expressionText = sourceCode.getText(returnedExpression);
-            // Inlining replaces the entire useMemo(...) call with the returned
-            // expression's text, so any comment inside the call but outside
-            // that expression — an eslint-disable-next-line directive on the
-            // return statement among them — has no representation in the
-            // replacement. Dropping one changes which rules report on the file
-            // (#1591), and declining the fix whenever one is present makes a
-            // comment decide whether the rule rewrites at all (#1877). Both are
-            // avoided by carrying every such comment into the replacement,
-            // where the directives among them keep the line relationship they
-            // were written with.
-            const strandedComments = sourceCode
-              .getCommentsInside(node)
-              .filter(
-                (comment) =>
-                  comment.range[0] < returnedExpression.range[0] ||
-                  comment.range[1] > returnedExpression.range[1],
-              );
-            if (strandedComments.length === 0) {
-              return fixer.replaceText(node, `(${expressionText})`);
-            }
+        violations.push({ node, returnedExpression, valueKind });
+      },
 
-            // A comment inside the call lies wholly on one side of the
-            // expression, since a comment is a token and cannot straddle a
-            // node; keeping each on its own side preserves what it annotates.
-            const toSegment = (comment: TSESTree.Comment) => ({
-              text: sourceCode.text.slice(comment.range[0], comment.range[1]),
-              breakAfter: requiresLineBreakAfter(comment),
-            });
-            const isBefore = (comment: TSESTree.Comment) =>
-              comment.range[0] < returnedExpression.range[0];
-            const segments: ReplacementSegment[] = [
-              ...strandedComments.filter(isBefore).map(toSegment),
-              { text: expressionText, breakAfter: false },
-              ...strandedComments
-                .filter((comment) => !isBefore(comment))
-                .map(toSegment),
-            ];
+      'Program:exit'() {
+        if (violations.length === 0) return;
 
-            // The call can start mid-line, so the indentation of the line it
-            // opens on is the only anchor the carried comments have.
-            const startLine = sourceCode.lines[node.loc.start.line - 1] ?? '';
-            const indent = /^[\t ]*/.exec(startLine)?.[0] ?? '';
-            return fixer.replaceText(node, joinSegments(segments, indent));
-          },
-        });
+        const planned = planViolations();
+        // One plan over every surviving rewrite: the `useMemo` binding is left
+        // unreferenced by their union even when no single unwrap strips its
+        // last use, and the pass that applies them all resolves every report —
+        // so this is the only moment the stranded import is visible.
+        const importRemoval =
+          planned.length > 0
+            ? planOrphanedImportRemoval(
+                sourceCode,
+                planned.flatMap((entry) => entry.removed),
+              )
+            : null;
+
+        // The whole batch ships as one fix, so no unwrap can land without the
+        // others the import's orphanhood was judged against, and no unbinding
+        // can land without the unwrap it was claimed on. The other violations
+        // report without a fixer; the carrier's pass already resolves them.
+        //
+        // No plan at all means some binding would be left unreferenced yet
+        // cannot be unbound safely, so every unwrap stays behind: reports
+        // without a fixer are the lesser damage.
+        const removalRanges: readonly TextRange[] = importRemoval ?? [];
+        const carrier = importRemoval ? planned[0] : undefined;
+
+        for (const violation of violations) {
+          context.report({
+            node: violation.node,
+            messageId: 'uselessUseMemoPrimitive',
+            data: {
+              valueKind: violation.valueKind,
+            },
+            fix:
+              violation === carrier?.violation
+                ? (fixer: TSESLint.RuleFixer) => [
+                    ...removalRanges.map((range) =>
+                      fixer.removeRange([range[0], range[1]]),
+                    ),
+                    ...planned.map((entry) =>
+                      fixer.replaceTextRange(entry.edit.range, entry.edit.text),
+                    ),
+                  ]
+                : undefined,
+          });
+        }
       },
     };
   },
