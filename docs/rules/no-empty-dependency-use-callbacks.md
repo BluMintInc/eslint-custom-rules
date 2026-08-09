@@ -211,19 +211,42 @@ whenever anything else in the file still names it — another call the rule does
 not report, a `typeof useCallback` type query, or a call nested inside the
 callback body, which the hoist reproduces verbatim rather than deleting.
 
-A member callee (`React.useCallback`) never takes its object with it. Under the
-classic JSX runtime that binding is consumed by a transform no scope analysis
-records, so removing it would break a file that lints clean.
+A member callee is handled the same way, because it reads its object:
 
-**Limitation — several reports in one file.** Each report judges orphanhood
-against its own edit and the file as it stands, never against what the rest of
-the `--fix` run might also remove. Two independent empty-dependency callbacks
-therefore both hoist in one pass while the import survives unused, cleared only
-by a later pass that leaves a single call. Judging the edits together would be
-unsound: a rule cannot see `eslint-disable` (suppression is applied to reports
-after they are emitted), so an edit that assumed a suppressed sibling also
-applied would delete an import the surviving call still needs — a runtime error
-in place of an unused-import warning.
+```tsx
+// Before
+import React from 'react';
+
+export const Widget = () => {
+  const inner = React.useCallback(() => doThing(), []);
+  return inner;
+};
+
+// After --fix
+const inner = () => doThing();
+export const Widget = () => {
+  return inner;
+};
+```
+
+Under the classic JSX runtime the same file keeps `import React from 'react';`,
+and nothing in the rule looks for JSX or reads the file's extension to decide
+that. The scope manager records the reference the JSX pragma creates, so
+`React` simply has a surviving use — the identical question, answered by the
+identical oracle `no-unused-vars` consults.
+
+Every hoist in a file is judged and applied together, as one edit. Judged one
+call at a time, a file with two hoistable callbacks never sees either as the
+import's last use, and the pass that hoists both resolves every report — so
+nothing would ever revisit the stranded import. A report suppressed by an
+`eslint-disable` comment is left out of that batch: its hoist never happens, so
+its call goes on reading the import forever.
+
+When a binding would be orphaned but cannot be unbound safely — an import
+behind an `@ts-expect-error`, a comment written inside the declaration — the
+whole fix is declined and the report stands unfixed. Hoisting anyway would
+trade this rule's report for a `no-unused-vars` one that nothing re-reports,
+because the hoist has already resolved the violation that would have found it.
 
 Callbacks that reference component scope or return JSX are not reported to avoid false positives. Callbacks declared in multi-variable statements may be reported without an auto-fix to avoid unsafe refactors. If a callback must stay for memoization or HMR reasons, add an `eslint-disable-next-line @blumintinc/blumint/no-empty-dependency-use-callbacks` comment with a short justification.
 Callbacks declared with `let`/`var` are reported without a fix to avoid mutating declaration kinds; use `const` before applying `--fix` if hoisting is safe.
