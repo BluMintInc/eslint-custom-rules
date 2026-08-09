@@ -1,5 +1,5 @@
 import path from 'path';
-import { ruleTesterTs } from '../utils/ruleTester';
+import { ruleTesterJsx, ruleTesterTs } from '../utils/ruleTester';
 import { noUsememoForPassByValue } from '../rules/no-usememo-for-pass-by-value';
 
 const parserOptions = {
@@ -12,21 +12,12 @@ const baseOptions = {
   parserOptions,
   filename: path.join(__dirname, '../../src/index.ts'),
 } as const;
-const typedPrelude = `
-declare function useMemo<T>(factory: () => T, deps: unknown[]): T;
-declare namespace React {
-  function useMemo<T>(factory: () => T, deps: unknown[]): T;
-}
-declare module 'react' {
-  export function useMemo<T>(factory: () => T, deps: unknown[]): T;
-}`;
 
 ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
   valid: [
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       // Not a custom hook
@@ -38,7 +29,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useActions(id: string) {
@@ -49,7 +39,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export const useItems = (values: Array<{ id: string }>) => {
@@ -60,7 +49,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import React from 'react';
 
       export function useWithFunctionTuple(fn: () => void) {
@@ -71,7 +59,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
       export function useDirect(value: number) {
         return value + 1;
@@ -81,7 +68,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function usePrime(n: number) {
@@ -92,7 +78,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useAny(value: unknown) {
@@ -103,7 +88,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       declare function fail(message: string): never;
 
       import { useMemo } from 'react';
@@ -116,7 +100,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useUnknown(value: unknown) {
@@ -127,7 +110,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useDate(value: string) {
@@ -138,7 +120,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useArrayWithObjects(values: Array<{ id: string }>) {
@@ -149,7 +130,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       export function useLocalMemo(flag: boolean) {
         const useMemo = <T,>(factory: () => T, deps: unknown[]) => factory();
         return useMemo(() => (flag ? 1 : 0), [flag]);
@@ -159,7 +139,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       export function useLocalReactObject(value: number) {
         const React = {
           useMemo<T>(factory: () => T, deps: unknown[]) {
@@ -175,7 +154,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
       void useMemo;
 
@@ -190,7 +168,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import React from 'react';
       void React;
 
@@ -205,7 +182,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useReassigned(flag: boolean) {
@@ -218,7 +194,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useShadowed(value: string, flag: boolean) {
@@ -234,7 +209,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useBlockWithStatements(slug: string) {
@@ -248,7 +222,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useMixedTuple(id: string) {
@@ -259,7 +232,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useObjectArray() {
@@ -270,7 +242,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useSymbolToken() {
@@ -281,7 +252,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useIndeterminateUnion(flag: boolean, value: any) {
@@ -292,7 +262,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useIndeterminateTuple(value: any) {
@@ -305,7 +274,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useTuple(slug: string) {
@@ -314,7 +282,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useTuple(slug: string) {
         return [slug, slug.toUpperCase()];
       }
@@ -323,7 +291,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useTupleLiteral() {
@@ -332,7 +299,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useTupleLiteral() {
         return [1, 2, 3] as const;
       }
@@ -341,7 +308,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function usePrimitiveArray() {
@@ -351,7 +317,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function usePrimitiveArray() {
         const values: number[] = [1, 2, 3];
         return values;
@@ -361,7 +327,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useEmptyArray() {
@@ -370,7 +335,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useEmptyArray() {
         return [];
       }
@@ -379,7 +344,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
 
       import { useMemo } from 'react';
 
@@ -389,7 +353,8 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
+
       export function useLeadingBlank(value: number) {
         return value;
       }
@@ -398,7 +363,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useNegated(flag: boolean) {
@@ -407,7 +371,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useNegated(flag: boolean) {
         return !(flag);
       }
@@ -416,7 +380,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useNegative(value: number) {
@@ -425,7 +388,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useNegative(value: number) {
         return -(value);
       }
@@ -434,7 +397,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useInvalidPattern(value: string) {
@@ -447,7 +409,7 @@ ${typedPrelude}
         { messageId: 'primitiveMemo' },
       ],
       output: `
-${typedPrelude}
+
       export function useInvalidPattern(value: string) {
         return value;
       }
@@ -456,7 +418,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo as memo } from 'react';
 
       export const useFlag = (values: string[]) =>
@@ -464,7 +425,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export const useFlag = (values: string[]) =>
         values.every(Boolean);
       `,
@@ -472,7 +433,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import React from 'react';
 
       export function useNext(count: number) {
@@ -481,8 +441,6 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
-      import React from 'react';
 
       export function useNext(count: number) {
         return count + 1;
@@ -492,7 +450,23 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function usePlainLabel() {
+        return useMemo(() => 'ready', []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+
+      export function usePlainLabel() {
+        return 'ready';
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
       import { useMemo } from 'react';
 
       export function useUnion(flag: boolean) {
@@ -501,7 +475,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useUnion(flag: boolean) {
         return flag ? 'ready' : false;
       }
@@ -510,7 +484,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useReadonly(values: ReadonlyArray<number>) {
@@ -519,7 +492,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useReadonly(values: ReadonlyArray<number>) {
         return values[0] ?? 0;
       }
@@ -528,7 +501,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useStored(slug: string) {
@@ -538,7 +510,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useStored(slug: string) {
         const memoized = slug;
         return memoized;
@@ -548,7 +520,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useAssigned(flag: boolean) {
@@ -559,7 +530,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useAssigned(flag: boolean) {
         let result: boolean;
         result = flag;
@@ -570,7 +541,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useCompoundAssigned(flag: boolean) {
@@ -581,7 +551,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useCompoundAssigned(flag: boolean) {
         let result = 1;
         result += flag ? 1 : 2;
@@ -592,7 +562,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useConditional(flag: boolean, fallback: string) {
@@ -603,7 +572,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useConditional(flag: boolean, fallback: string) {
         return flag
           ? 'on'
@@ -614,7 +583,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useTernaryTest(flag: boolean) {
@@ -623,7 +591,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useTernaryTest(flag: boolean) {
         return (flag || 0) ? 'yes' : 'no';
       }
@@ -632,7 +600,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useNestedTernary(flag: boolean) {
@@ -641,7 +608,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useNestedTernary(flag: boolean) {
         return (flag ? 1 : 2) ? 'on' : 'off';
       }
@@ -650,7 +617,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useLogicalLeft(value?: string) {
@@ -659,7 +625,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useLogicalLeft(value?: string) {
         return (value && value.toUpperCase()) || 'NONE';
       }
@@ -668,7 +634,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useLogicalAnd(flag: boolean, label: string) {
@@ -677,7 +642,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useLogicalAnd(flag: boolean, label: string) {
         return (flag || label.length > 0) && label;
       }
@@ -686,7 +651,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useBlock(slug: string) {
@@ -697,7 +661,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useBlock(slug: string) {
         return slug;
       }
@@ -706,7 +670,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useParenthesized(value: string) {
@@ -715,7 +678,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useParenthesized(value: string) {
         return value;
       }
@@ -724,7 +687,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
       declare function wrap<T>(value: T): T;
 
@@ -736,7 +698,6 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
       declare function wrap<T>(value: T): T;
 
       export function useWrapped(flag: boolean) {
@@ -747,7 +708,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useAssert(flag: boolean, fallback: boolean) {
@@ -756,7 +716,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useAssert(flag: boolean, fallback: boolean) {
         return (flag || fallback) as boolean;
       }
@@ -765,7 +725,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useSequence(first: number, second: number) {
@@ -777,7 +736,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useSequence(first: number, second: number) {
         const memoized = (first, second);
         return memoized;
@@ -787,7 +746,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export const useArrowSequence = (first: number, second: number) =>
@@ -797,7 +755,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export const useArrowSequence = (first: number, second: number) =>
         (first, second);
       `,
@@ -805,7 +763,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useValue(slug: string) {
@@ -814,7 +771,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useValue(slug: string) {
         return slug;
       }
@@ -823,7 +780,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useMath(value: number) {
@@ -832,7 +788,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useMath(value: number) {
         return (value + 1) * 2;
       }
@@ -841,7 +797,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useArrayWrapper(flag: boolean) {
@@ -850,7 +805,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useArrayWrapper(flag: boolean) {
         return [flag || !flag];
       }
@@ -859,7 +814,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useObjectWrapper(flag: boolean) {
@@ -868,7 +822,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useObjectWrapper(flag: boolean) {
         return { value: flag ? 1 : 2 };
       }
@@ -877,7 +831,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useSatisfies(value: string) {
@@ -886,7 +839,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useSatisfies(value: string) {
         return value satisfies string;
       }
@@ -895,7 +848,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useSatisfiesLogical(flag: boolean, fallback: boolean) {
@@ -904,7 +856,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useSatisfiesLogical(flag: boolean, fallback: boolean) {
         return (flag || fallback) satisfies boolean;
       }
@@ -913,7 +865,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useDestructured() {
@@ -923,7 +874,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useDestructured() {
         const [value] = [1];
         return value;
@@ -933,7 +884,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useTupleDestructured() {
@@ -943,7 +893,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useTupleDestructured() {
         const [a] = [1] as [number];
         return a;
@@ -953,7 +903,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useComplexDestructuring() {
@@ -963,7 +912,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useComplexDestructuring() {
         const [a, [b, c]] = [1, [2, 3]] as const;
         return { a, b, c };
@@ -973,7 +922,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useRestDestructuring() {
@@ -983,7 +931,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useRestDestructuring() {
         const [first, ...rest] = [1, 2, 3];
         return { first, rest };
@@ -993,7 +941,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useObjectDestructuring() {
@@ -1003,7 +950,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useObjectDestructuring() {
         const { 0: a, ...rest } = [1, 2, 3] as const;
         return { a, rest };
@@ -1013,7 +960,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useAssignmentPattern() {
@@ -1023,7 +969,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useAssignmentPattern() {
         const [a = 1] = [2] as const;
         return a;
@@ -1033,7 +979,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo, useState } from 'react';
       declare function useState<T>(initial: T): [T, (val: T) => void];
 
@@ -1045,7 +990,6 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
       import { useState } from 'react';
       declare function useState<T>(initial: T): [T, (val: T) => void];
 
@@ -1059,7 +1003,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import React, { useMemo } from 'react';
 
       export function useMixedImport(slug: string) {
@@ -1069,7 +1012,6 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
       import React from 'react';
 
       export function useMixedImport(slug: string) {
@@ -1081,7 +1023,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useInvalidConfig() {
@@ -1094,7 +1035,7 @@ ${typedPrelude}
         { messageId: 'primitiveMemo' },
       ],
       output: `
-${typedPrelude}
+
       export function useInvalidConfig() {
         return 1;
       }
@@ -1142,7 +1083,9 @@ ${typedPrelude}
       }
       `,
       errors: [{ messageId: 'primitiveMemo' }],
-      output: `      export function useUndefinedValue() {
+      output: `
+
+      export function useUndefinedValue() {
         return undefined;
       }
       `,
@@ -1150,7 +1093,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useNullValue() {
@@ -1161,7 +1103,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useNullValue() {
         return null;
       }
@@ -1177,15 +1119,40 @@ ${typedPrelude}
       }
       `,
       errors: [{ messageId: 'primitiveMemo' }],
-      output: `      export function useNullishBranches(flag: boolean, fallback: string) {
+      output: `
+
+      export function useNullishBranches(flag: boolean, fallback: string) {
         return (flag ? undefined : null) ?? fallback;
+      }
+      `,
+    },
+    // A string constant beside the call, read by the memoized expression. The
+    // constant survives the unwrap because the expression is moved rather than
+    // deleted, and its literal is what lets a program-less corpus probe
+    // perturb this rule at all: `undefined`/`null` are the classifications an
+    // isolated, lib-less program still resolves.
+    {
+      ...baseOptions,
+      code: `
+      import { useMemo } from 'react';
+
+      export function useTaggedNothing(slug: string) {
+        const tag = 'ready';
+        return useMemo(() => (slug === tag ? undefined : null), [slug, tag]);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+
+      export function useTaggedNothing(slug: string) {
+        const tag = 'ready';
+        return slug === tag ? undefined : null;
       }
       `,
     },
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useFunctionCallback() {
@@ -1196,7 +1163,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useFunctionCallback() {
         return undefined;
       }
@@ -1205,7 +1172,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useVoidZero() {
@@ -1214,7 +1180,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useVoidZero() {
         return void 0;
       }
@@ -1223,7 +1189,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import React from 'react';
 
       export function useNamespaceMissing() {
@@ -1232,8 +1197,6 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
-      import React from 'react';
 
       export function useNamespaceMissing() {
         return undefined;
@@ -1243,7 +1206,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo, useState } from 'react';
       declare function useState<T>(initial: T): [T, (val: T) => void];
 
@@ -1256,7 +1218,6 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
       import { useState } from 'react';
       declare function useState<T>(initial: T): [T, (val: T) => void];
 
@@ -1296,7 +1257,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useBlockCommentBeforeReturn() {
@@ -1308,7 +1268,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useBlockCommentBeforeReturn() {
         return /* keep me */ undefined;
       }
@@ -1317,7 +1277,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useLineCommentBeforeReturn() {
@@ -1329,7 +1288,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useLineCommentBeforeReturn() {
         // keep me
         return undefined;
@@ -1339,7 +1298,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useTrailingCommentAfterExpression() {
@@ -1350,7 +1308,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useTrailingCommentAfterExpression() {
         return undefined // keep me
         ;
@@ -1360,7 +1318,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useCommentBeforeCloseBrace() {
@@ -1372,7 +1329,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useCommentBeforeCloseBrace() {
         return undefined /* keep me */;
       }
@@ -1381,11 +1338,10 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useCommentInDependencyArray(flag: boolean) {
-        return useMemo(() => undefined, [
+        return useMemo(() => flag, [
           // keep me
           flag,
         ]);
@@ -1393,9 +1349,9 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useCommentInDependencyArray(flag: boolean) {
-        return undefined // keep me
+        return flag // keep me
         ;
       }
       `,
@@ -1403,7 +1359,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useCommentBeforeArrow() {
@@ -1412,7 +1367,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useCommentBeforeArrow() {
         return /* keep me */ undefined;
       }
@@ -1421,7 +1376,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useCommentBetweenArguments() {
@@ -1430,7 +1384,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useCommentBetweenArguments() {
         return undefined /* keep me */;
       }
@@ -1439,7 +1393,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useJsDocInCallback() {
@@ -1453,7 +1406,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useJsDocInCallback() {
         return /**
            * Why this value is nothing.
@@ -1464,23 +1417,22 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useManyComments(flag: boolean) {
         return useMemo(() => {
           // first
           /* second */
-          return undefined; // third
+          return flag; // third
         }, [/* fourth */ flag]);
       }
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useManyComments(flag: boolean) {
         // first
-        return /* second */ undefined // third
+        return /* second */ flag // third
         /* fourth */;
       }
       `,
@@ -1488,7 +1440,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useConciseBodyLeadingComment() {
@@ -1497,7 +1448,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useConciseBodyLeadingComment() {
         return /* keep me */ undefined;
       }
@@ -1506,7 +1457,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useCommentInParameterList() {
@@ -1515,7 +1465,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useCommentInParameterList() {
         return /* keep me */ undefined;
       }
@@ -1524,7 +1474,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useFunctionCallbackComment() {
@@ -1536,7 +1485,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useFunctionCallbackComment() {
         // keep me
         return null;
@@ -1546,7 +1495,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import React from 'react';
 
       export function useNamespaceCallbackComment() {
@@ -1558,8 +1506,6 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
-      import React from 'react';
 
       export function useNamespaceCallbackComment() {
         // keep me
@@ -1570,7 +1516,6 @@ ${typedPrelude}
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export const useAliasedCommentedMemo = () => {
@@ -1583,7 +1528,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export const useAliasedCommentedMemo = () => {
         const value = /* keep me */ undefined;
         return value;
@@ -1597,7 +1542,6 @@ ${typedPrelude}
       // expression.
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useStoredLineComment() {
@@ -1610,7 +1554,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useStoredLineComment() {
         // keep me
         const memoized = undefined;
@@ -1624,7 +1568,6 @@ ${typedPrelude}
       // line of its own without leaving the replacement.
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useNegatedCommented(flag: boolean) {
@@ -1637,7 +1580,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useNegatedCommented(flag: boolean) {
         void flag;
         return !(
@@ -1652,7 +1595,6 @@ ${typedPrelude}
       // hosts the expression it guards.
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useDirectiveLineComment() {
@@ -1664,7 +1606,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useDirectiveLineComment() {
         // eslint-disable-next-line no-restricted-syntax
         return undefined;
@@ -1676,7 +1618,6 @@ ${typedPrelude}
       // comment ENDS, so it may not share a line with the expression either.
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useDirectiveBlockComment() {
@@ -1688,7 +1629,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useDirectiveBlockComment() {
         /* eslint-disable-next-line no-restricted-syntax */
         return undefined;
@@ -1696,11 +1637,13 @@ ${typedPrelude}
       `,
     },
     {
-      // Retiring the sole specifier removes the declaration, but a comment
-      // between the braces survives in the declaration's place.
+      // Retiring the sole specifier would remove the declaration, and the
+      // ranges that unbind a specifier span the separators around it — so a
+      // comment written inside the declaration would be swallowed or stranded
+      // depending on where it sits. The unwrap is declined outright rather
+      // than guessed at: the report stands, and no comment is rewritten.
       ...baseOptions,
       code: `
-${typedPrelude}
       import { /* keep me */ useMemo } from 'react';
 
       export function useCommentedImport() {
@@ -1708,19 +1651,11 @@ ${typedPrelude}
       }
       `,
       errors: [{ messageId: 'primitiveMemo' }],
-      output: `
-${typedPrelude}
-      /* keep me */
-
-      export function useCommentedImport() {
-        return undefined;
-      }
-      `,
+      output: null,
     },
     {
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo, useState } from 'react';
       declare function useState<T>(initial: T): [T, (val: T) => void];
 
@@ -1732,7 +1667,6 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
       import { useState } from 'react';
       declare function useState<T>(initial: T): [T, (val: T) => void];
 
@@ -1744,12 +1678,12 @@ ${typedPrelude}
       `,
     },
     {
-      // A comment between the specifiers survives because the removal edits
-      // only the retired specifier and its comma, never re-emitting the
-      // declaration from its parts.
+      // A comment among the specifiers declines the unwrap for the same reason
+      // as above, even though a specifier here survives: the run that retires
+      // `useMemo` reaches forward to `useState`, which is exactly where the
+      // comment sits.
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo, /* keep me */ useState } from 'react';
       declare function useState<T>(initial: T): [T, (val: T) => void];
 
@@ -1760,17 +1694,7 @@ ${typedPrelude}
       }
       `,
       errors: [{ messageId: 'primitiveMemo' }],
-      output: `
-${typedPrelude}
-      import {  /* keep me */ useState } from 'react';
-      declare function useState<T>(initial: T): [T, (val: T) => void];
-
-      export function useCommentedSpecifierList(slug: string) {
-        const [state] = useState(slug);
-        void state;
-        return undefined;
-      }
-      `,
+      output: null,
     },
     {
       // A comment INSIDE the returned expression rides along with its text, so
@@ -1778,7 +1702,6 @@ ${typedPrelude}
       // rule that declined on every comment anywhere would pass just as well.
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       export function useCommentInsideExpression(flag: boolean) {
@@ -1787,7 +1710,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       export function useCommentInsideExpression(flag: boolean) {
         return flag ? undefined : /* inner */ null;
       }
@@ -1797,7 +1720,6 @@ ${typedPrelude}
       // Comments outside the call are never in the rewritten span.
       ...baseOptions,
       code: `
-${typedPrelude}
       import { useMemo } from 'react';
 
       /** Documented hook. */
@@ -1808,7 +1730,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}
+
       /** Documented hook. */
       export function useCommentsAroundCall() {
         // above the call
@@ -1816,5 +1738,341 @@ ${typedPrelude}
       }
       `,
     },
+    // #1896: the reported repro. Unwrapping `React.useMemo` deletes the only
+    // reference to the default import, so the same fix drops the declaration it
+    // just orphaned.
+    {
+      ...baseOptions,
+      code: `
+      import React from 'react';
+
+      export function useNamespace() {
+        return React.useMemo(() => undefined, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+
+      export function useNamespace() {
+        return undefined;
+      }
+      `,
+    },
+    // ...and a `React` anything else reads survives. An over-eager removal
+    // breaks the file outright, where a stranded import only fails a lint rule.
+    {
+      ...baseOptions,
+      code: `
+      import React from 'react';
+
+      export function useNamespaceKept(flag: boolean) {
+        return React.useMemo(() => flag, [flag]);
+      }
+
+      export function useOther() {
+        return React.useCallback(() => undefined, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+      import React from 'react';
+
+      export function useNamespaceKept(flag: boolean) {
+        return flag;
+      }
+
+      export function useOther() {
+        return React.useCallback(() => undefined, []);
+      }
+      `,
+    },
+    // The namespace spelling of the same import.
+    {
+      ...baseOptions,
+      code: `
+      import * as React from 'react';
+
+      export function useStarNamespace() {
+        return React.useMemo(() => 1, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+
+      export function useStarNamespace() {
+        return 1;
+      }
+      `,
+    },
+    // Two unwraps in one file: judged one at a time neither is the binding's
+    // last use, so the rewrites ship as ONE fix and the import goes with them.
+    {
+      ...baseOptions,
+      code: `
+      import React from 'react';
+
+      export function useFirst() {
+        return React.useMemo(() => 1, []);
+      }
+
+      export function useSecond() {
+        return React.useMemo(() => 2, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }, { messageId: 'primitiveMemo' }],
+      output: `
+
+      export function useFirst() {
+        return 1;
+      }
+
+      export function useSecond() {
+        return 2;
+      }
+      `,
+    },
+    // A suppressed report never rewrites, so its reference still counts and the
+    // import stays: the batch may only be judged against edits that land.
+    {
+      ...baseOptions,
+      code: `
+      import React from 'react';
+
+      export function useSuppressed() {
+        // eslint-disable-next-line no-usememo-for-pass-by-value
+        return React.useMemo(() => 1, []);
+      }
+
+      export function useLive() {
+        return React.useMemo(() => 2, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+      import React from 'react';
+
+      export function useSuppressed() {
+        // eslint-disable-next-line no-usememo-for-pass-by-value
+        return React.useMemo(() => 1, []);
+      }
+
+      export function useLive() {
+        return 2;
+      }
+      `,
+    },
+    // Both clauses of a mixed declaration go orphaned at once, which collapses
+    // the declaration rather than leaving `import , {} from 'react'` behind.
+    {
+      ...baseOptions,
+      code: `
+      import React, { useMemo as memo } from 'react';
+
+      export function useNamed(slug: string) {
+        return memo(() => slug, [slug]);
+      }
+
+      export function useNamespaced() {
+        return React.useMemo(() => 1, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }, { messageId: 'primitiveMemo' }],
+      output: `
+
+      export function useNamed(slug: string) {
+        return slug;
+      }
+
+      export function useNamespaced() {
+        return 1;
+      }
+      `,
+    },
+    // The same file with the specifier left unaliased unwraps only the
+    // namespaced call in one pass. Unbinding a specifier is checked against a
+    // second, coarser opinion — does the NAME still occur anywhere the edit
+    // does not delete — and `React.useMemo` spells `useMemo` in a position that
+    // reads nothing. The conservative direction costs a pass, never a binding:
+    // the unwrapped file no longer spells the name, so the next `--fix` pass
+    // retires the specifier.
+    {
+      ...baseOptions,
+      code: `
+      import React, { useMemo } from 'react';
+
+      export function useNamed(slug: string) {
+        return useMemo(() => slug, [slug]);
+      }
+
+      export function useNamespaced() {
+        return React.useMemo(() => 1, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }, { messageId: 'primitiveMemo' }],
+      output: `
+      import { useMemo } from 'react';
+
+      export function useNamed(slug: string) {
+        return useMemo(() => slug, [slug]);
+      }
+
+      export function useNamespaced() {
+        return 1;
+      }
+      `,
+    },
+    // The mixed declaration with only the default clause orphaned: the named
+    // specifier a surviving call still reads keeps its place.
+    {
+      ...baseOptions,
+      code: `
+      import React, { useMemo } from 'react';
+
+      export function useNamespacedOnly() {
+        return React.useMemo(() => 1, []);
+      }
+
+      export function useObject(id: string) {
+        return useMemo(() => ({ id }), [id]);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+      import { useMemo } from 'react';
+
+      export function useNamespacedOnly() {
+        return 1;
+      }
+
+      export function useObject(id: string) {
+        return useMemo(() => ({ id }), [id]);
+      }
+      `,
+    },
+    // A comment trailing the import on its own line sits AFTER the terminating
+    // token, so it is outside the declaration and not the fix's to delete. The
+    // retirement stops short of it rather than claiming the whole line.
+    {
+      ...baseOptions,
+      code: `
+      import { useMemo } from 'react'; /* pinned */
+
+      export function useTrailingImportComment(value: string) {
+        return useMemo(() => value, [value]);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+/* pinned */
+
+      export function useTrailingImportComment(value: string) {
+        return value;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+      import React from 'react'; // pinned
+
+      export function useTrailingNamespaceComment(value: string) {
+        return React.useMemo(() => value, [value]);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+// pinned
+
+      export function useTrailingNamespaceComment(value: string) {
+        return value;
+      }
+      `,
+    },
+    // The dependency array IS deleted, so a binding read only from there is
+    // left unreferenced. A parameter is not something the import planner may
+    // rewrite, so the whole fix declines — a report without a fix beats a file
+    // that fails `noUnusedParameters`.
+    {
+      ...baseOptions,
+      code: `
+      import { useMemo } from 'react';
+
+      export function useStaleDependency(flag: boolean) {
+        return useMemo(() => 'constant', [flag]);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: null,
+    },
   ],
 });
+
+/**
+ * The classic JSX runtime keeps `React` alive with no explicit reference, and
+ * scope analysis is the sole oracle for that: the scope manager records the
+ * implicit reference a JSX pragma creates, which is exactly what
+ * `no-unused-vars` consults. A hand-written `.tsx`/JSX guard was measurably
+ * wrong under `jsxPragma: null` (#1894), so none is written here.
+ *
+ * The pair is a control pair. Only the JSX-free half proves the removal still
+ * happens in a `.tsx` file, without which the first case would pass for a rule
+ * that simply never unbinds anything.
+ */
+const jsxOptions = {
+  parserOptions: {
+    project: path.join(__dirname, '../../tsconfig.json'),
+    tsconfigRootDir: path.join(__dirname, '../../'),
+    ecmaVersion: 2020 as const,
+    sourceType: 'module' as const,
+    ecmaFeatures: { jsx: true },
+  },
+  filename: path.join(
+    __dirname,
+    '../../src/tests/fixtures/type-aware-component.tsx',
+  ),
+} as const;
+
+ruleTesterJsx.run(
+  'no-usememo-for-pass-by-value (jsx)',
+  noUsememoForPassByValue,
+  {
+    valid: [],
+    invalid: [
+      {
+        ...jsxOptions,
+        code: `import React from 'react';
+
+export function useLabel(flag: boolean) {
+  return React.useMemo(() => flag, [flag]);
+}
+
+export const Panel = () => <div />;
+`,
+        errors: [{ messageId: 'primitiveMemo' }],
+        output: `import React from 'react';
+
+export function useLabel(flag: boolean) {
+  return flag;
+}
+
+export const Panel = () => <div />;
+`,
+      },
+      {
+        ...jsxOptions,
+        code: `import React from 'react';
+
+export function useLabel(flag: boolean) {
+  return React.useMemo(() => flag, [flag]);
+}
+`,
+        errors: [{ messageId: 'primitiveMemo' }],
+        output: `
+export function useLabel(flag: boolean) {
+  return flag;
+}
+`,
+      },
+    ],
+  },
+);

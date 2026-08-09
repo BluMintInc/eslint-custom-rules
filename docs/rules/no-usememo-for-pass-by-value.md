@@ -10,7 +10,7 @@
 
 This rule flags custom React hooks that return a `useMemo` result when the memoized value is pass-by-value: primitives with value equality (`string`, `number`, `boolean`, `null`, `undefined`, `bigint`) or arrays/tuples composed exclusively of these primitives. Memoizing these values does not provide beneficial referential stability (as primitives have value equality and recreating primitive-only containers is inexpensive), so the hook only adds noise and suggests a stability guarantee that is not necessary. `symbol` values and objects (or arrays/tuples containing objects) are excluded because their identity changes on each creation and memoization can legitimately stabilize them.
 
-The fixer replaces `useMemo(() => expr, deps)` with `expr` (when the callback is a single-expression return) and removes the unused `useMemo` import when possible.
+The fixer replaces `useMemo(() => expr, deps)` with `expr` (when the callback is a single-expression return) and retires the import the unwrap leaves unreferenced.
 
 ### The fixer carries comments instead of destroying them
 
@@ -78,22 +78,66 @@ export function useLabel(flag: boolean) {
 }
 ```
 
-The import retirement preserves comments the same way, by editing only the tokens it removes rather than re-emitting the declaration. A comment between the braces of a sole-specifier import survives in the declaration's place, and a comment between specifiers stays where it was written:
+### The fixer retires the import the unwrap orphans
+
+Unwrapping deletes the callee, so the binding it read can be left bound to nothing — the `useMemo` specifier for the plain spelling, and the default or namespace import for `React.useMemo`. The same fix retires whichever it orphans, and every unwrap in the file ships as one fix: judged one call at a time, a file with two unwrappable calls never sees either as the binding's last use, and the pass that unwraps both resolves every report, so nothing revisits the stranded import.
 
 ```ts
 // Before
-import { /* pinned */ useMemo } from 'react';
+import React from 'react';
+
+export function useNamespace() {
+  return React.useMemo(() => undefined, []);
+}
 
 // After --fix
-/* pinned */
+export function useNamespace() {
+  return undefined;
+}
+```
+
+Whether a reference survives is decided by scope analysis alone, the same oracle `no-unused-vars` consults. Under the classic JSX runtime the scope manager records the implicit `React` reference a JSX pragma creates, so a file that renders anything keeps its `React` import:
+
+```tsx
+// Before
+import React from 'react';
+
+export function useLabel(flag: boolean) {
+  return React.useMemo(() => flag, [flag]);
+}
+
+export const Panel = () => <div />;
+
+// After --fix — the pragma still reads React, so the import stays
+import React from 'react';
+
+export function useLabel(flag: boolean) {
+  return flag;
+}
+
+export const Panel = () => <div />;
+```
+
+A suppressed report never rewrites, so its reference still counts and the import stays. Only edits that actually land are weighed.
+
+The whole fix is declined when a binding would be left unreferenced yet cannot be retired safely, because half a fix — the unwrap without the unbinding — turns a clean file into one that fails `no-unused-vars` and `noUnusedLocals`, and the report that would have flagged the debt is resolved by the fix itself. Two shapes decline: a comment written inside the import declaration, since the ranges that unbind a specifier span the separators around it and would swallow or strand the comment; and a dependency read only from the array the unwrap deletes, since a parameter or local is not something the retirement may rewrite. Both are still reported, just not fixed.
+
+```ts
+// Reported without a fix: retiring `useMemo` would take the comment with it.
+import { /* pinned */ useMemo } from 'react';
+
+export function useLabel() {
+  return useMemo(() => 'ready', []);
+}
 ```
 
 ```ts
-// Before
-import { useMemo, /* io hooks */ useState } from 'react';
+// Reported without a fix: `flag` is read only by the dependency array.
+import { useMemo } from 'react';
 
-// After --fix
-import {  /* io hooks */ useState } from 'react';
+export function useConstant(flag: boolean) {
+  return useMemo(() => 'ready', [flag]);
+}
 ```
 
 ## Rule Details
