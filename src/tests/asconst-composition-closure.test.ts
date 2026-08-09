@@ -373,7 +373,6 @@ const UNDRIVEN: Record<string, UndrivenCause> = {
   'no-unused-props': 'noAssertionAdded',
   'no-unused-usestate': 'noAssertionAdded',
   'no-useless-fragment': 'noAssertionAdded',
-  'no-useless-usememo-primitives': 'noAssertionAdded',
   'no-usememo-for-pass-by-value': 'noAssertionAdded',
   'no-uuidv4-base62-as-key': 'noAssertionAdded',
   'parallelize-loop-awaits': 'noAssertionAdded',

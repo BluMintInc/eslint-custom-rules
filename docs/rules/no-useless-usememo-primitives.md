@@ -19,6 +19,7 @@
   - Respects generator callbacks—they always return iterators, so inlining yielded primitives would change the return type and behavior.
   - Does not apply when the callback includes function calls if `ignoreCallExpressions` is enabled (default) to avoid flagging intentionally expensive computations.
 - **Auto-fix**: Replaces `useMemo(() => EXPR, [deps])` with `EXPR` and removes the dependency array. A comment inside the `useMemo` call but outside the returned expression — such as an `eslint-disable-next-line` directive on the return statement — is carried into the replacement rather than destroyed, so a suppressed rule is never silently re-enabled. Each comment keeps the side of the expression it was written on, and one whose meaning depends on the line it occupies (a line comment, or a block-comment `eslint-disable-next-line`) keeps a line of its own so it still covers the inlined expression. The presence of a comment therefore never changes whether the fix applies.
+- **Auto-fix — imports**: The unwrap deletes the callee and the dependency array, so an import read only from there loses its last reference. The same fix drops that import, because a rewrite that strands a binding turns a clean file into one that fails `no-unused-vars` and `noUnusedLocals`, and the resolved report leaves nothing to re-raise the debt. Every unwrap in a file ships as one fix for the same reason: with two calls sharing one `useMemo` import, neither unwrap is the binding's last use on its own.
 
 ```tsx
 // Before
@@ -32,6 +33,40 @@ const label = (
   // eslint-disable-next-line no-restricted-syntax
   isPending ? 'Pending Response' : 'Request to Join');
 ```
+
+```tsx
+// Before
+import { useMemo } from 'react';
+
+export const useThing = () => useMemo(() => 1, []);
+
+// After — the specifier the unwrap orphaned goes with it
+export const useThing = () => 1;
+```
+
+A binding kept alive by anything else stays, and an import the returned
+expression itself reads is never touched — the expression is moved, not deleted:
+
+```tsx
+// Before
+import { useMemo } from 'react';
+import { LIMIT } from './constants';
+
+export const useCount = () => useMemo(() => 1, []);
+export const useConfig = () => useMemo(() => ({ limit: LIMIT }), []);
+
+// After — `useMemo` still has a caller, and `LIMIT` still has a reader
+import { useMemo } from 'react';
+import { LIMIT } from './constants';
+
+export const useCount = () => 1;
+export const useConfig = () => useMemo(() => ({ limit: LIMIT }), []);
+```
+
+The fix declines outright when a binding it would strand cannot be unbound
+safely — a local `const` read only from the dependency array, or an import
+declaration carrying a comment among its specifiers. A report without a fix is
+the lesser damage.
 
 ### Examples
 
