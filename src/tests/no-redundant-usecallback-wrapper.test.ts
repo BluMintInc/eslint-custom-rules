@@ -761,8 +761,7 @@ function C() {
       { memoizedHookNames: string[] },
     ],
     errors: [redundantError('signIn')],
-    output: `import { useCallback } from 'react';
-import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+    output: `import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
 
 function C() {
   const { signIn } = useAuthSubmit();
@@ -784,8 +783,7 @@ function C() {
       { memoizedHookNames: string[] },
     ],
     errors: [redundantError('signIn')],
-    output: `import { useCallback } from 'react';
-import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+    output: `import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
 
 function C() {
   const { signIn } = useAuthSubmit();
@@ -809,8 +807,7 @@ function C() {
       { memoizedHookNames: string[] },
     ],
     errors: [redundantError('signIn')],
-    output: `import { useCallback } from 'react';
-import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+    output: `import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
 
 function C() {
   const { signIn } = useAuthSubmit();
@@ -834,8 +831,7 @@ function C() {
       { memoizedHookNames: string[] },
     ],
     errors: [redundantError('signIn')],
-    output: `import { useCallback } from 'react';
-import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+    output: `import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
 
 function C() {
   const { signIn } = useAuthSubmit();
@@ -859,8 +855,7 @@ function C() {
       { memoizedHookNames: string[] },
     ],
     errors: [redundantError('signIn')],
-    output: `import { useCallback } from 'react';
-import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+    output: `import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
 
 function C() {
   const { signIn } = useAuthSubmit();
@@ -915,8 +910,7 @@ function C(){
       { memoizedHookNames: string[] },
     ],
     errors: [redundantError('signIn')],
-    output: `import { useCallback } from 'react';
-function useAuthSubmit(){ return { signIn: () => {} } }
+    output: `function useAuthSubmit(){ return { signIn: () => {} } }
 function C(){
   const { signIn } = useAuthSubmit();
   const handle = signIn;
@@ -999,8 +993,7 @@ function C() {
       { assumeAllUseAreMemoized: boolean },
     ],
     errors: [redundantError('signIn')],
-    output: `import { useCallback } from 'react';
-import { useMyCustomThing } from 'src/hooks/useMyCustomThing';
+    output: `import { useMyCustomThing } from 'src/hooks/useMyCustomThing';
 
 function C() {
   const signIn = useMyCustomThing();
@@ -1023,8 +1016,7 @@ function C() {
       { assumeAllUseAreMemoized: boolean },
     ],
     errors: [redundantError('signIn')],
-    output: `import { useCallback } from 'react';
-import { useMyCustomThing } from 'src/hooks/useMyCustomThing';
+    output: `import { useMyCustomThing } from 'src/hooks/useMyCustomThing';
 
 function C() {
   const signIn = useMyCustomThing();
@@ -1048,8 +1040,7 @@ function C() {
       { assumeAllUseAreMemoized: boolean },
     ],
     errors: [redundantError('signIn')],
-    output: `import { useCallback } from 'react';
-import { useMyCustomThing } from 'src/hooks/useMyCustomThing';
+    output: `import { useMyCustomThing } from 'src/hooks/useMyCustomThing';
 
 function C() {
   const signIn = useMyCustomThing();
@@ -1073,8 +1064,7 @@ function C() {
       { assumeAllUseAreMemoized: boolean },
     ],
     errors: [redundantError('signIn')],
-    output: `import { useCallback } from 'react';
-import { useMyCustomThing } from 'src/hooks/useMyCustomThing';
+    output: `import { useMyCustomThing } from 'src/hooks/useMyCustomThing';
 
 function C() {
   const signIn = useMyCustomThing();
@@ -1099,8 +1089,7 @@ function C() {
       { memoizedHookNames: string[] },
     ],
     errors: [redundantError('submit')],
-    output: `import { useCallback } from 'react';
-import { useSomething } from 'x';
+    output: `import { useSomething } from 'x';
 
 function C() {
   const submit = useSomething();
@@ -1124,8 +1113,7 @@ function C() {
       { memoizedHookNames: string[] },
     ],
     errors: [redundantError('submit', 'useLatestCallback')],
-    output: `import useLatestCallback from 'use-latest-callback';
-import { useSomething } from 'x';
+    output: `import { useSomething } from 'x';
 
 function C() {
   const submit = useSomething();
@@ -1147,8 +1135,7 @@ function C() {
       { assumeAllUseAreMemoized: boolean },
     ],
     errors: [redundantError('signIn')],
-    output: `import { useCallback } from 'react';
-import { useMyCustomThing } from 'src/hooks/useMyCustomThing';
+    output: `import { useMyCustomThing } from 'src/hooks/useMyCustomThing';
 
 function C() {
   const signIn = useMyCustomThing();
@@ -1192,8 +1179,7 @@ function C() {
       { memoizedHookNames: string[] },
     ],
     errors: [redundantError('signIn', 'useLatestCallback')],
-    output: `import useLatestCallback from 'use-latest-callback';
-import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+    output: `import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
 
 function C() {
   const { signIn } = useAuthSubmit();
@@ -1217,8 +1203,7 @@ function C() {
       { memoizedHookNames: string[] },
     ],
     errors: [redundantError('signIn', 'useLatestCallback')],
-    output: `import useLatestCallback from 'use-latest-callback';
-import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+    output: `import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
 
 function C() {
   const { signIn } = useAuthSubmit();
@@ -1240,8 +1225,7 @@ function C() {
       { memoizedHookNames: string[] },
     ],
     errors: [redundantError('signIn', 'useLatestCallback')],
-    output: `import useLatestCallback from 'use-latest-callback';
-import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+    output: `import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
 
 function C() {
   const { signIn } = useAuthSubmit();
@@ -1302,8 +1286,7 @@ function C() {
       { memoizedHookNames: string[] },
     ],
     errors: [redundantError('signIn', 'useLatestCallback2')],
-    output: `import useLatestCallback2 from 'use-latest-callback';
-import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+    output: `import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
 
 const useLatestCallback = 'not the hook';
 
@@ -1327,8 +1310,7 @@ function C() {
       { memoizedHookNames: string[] },
     ],
     errors: [redundantError('signIn', 'stableCallback')],
-    output: `import stableCallback from 'use-latest-callback';
-import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+    output: `import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
 
 function C() {
   const { signIn } = useAuthSubmit();
@@ -1350,8 +1332,7 @@ function C() {
       { memoizedHookNames: string[] },
     ],
     errors: [redundantError('signIn', 'stable')],
-    output: `import { useLatestCallback as stable } from 'use-latest-callback';
-import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+    output: `import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
 
 function C() {
   const { signIn } = useAuthSubmit();
@@ -1375,8 +1356,7 @@ function C() {
       { memoizedHookNames: string[] },
     ],
     errors: [redundantError('signIn', 'useLatestCallback')],
-    output: `import useLatestCallback from 'use-latest-callback';
-import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+    output: `import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
 
 function C() {
   const { signIn } = useAuthSubmit();
@@ -1400,8 +1380,7 @@ function C() {
       { assumeAllUseAreMemoized: boolean },
     ],
     errors: [redundantError('submit')],
-    output: `import { useCallback } from 'react';
-
+    output: `
 function C() {
   const { submit } = useEventHandlers();
   const h = submit;
@@ -1420,8 +1399,7 @@ function C() {
       { assumeAllUseAreMemoized: boolean },
     ],
     errors: [redundantError('submit')],
-    output: `import { useCallback } from 'react';
-
+    output: `
 function C() {
   const { submit } = useEventHandlers();
   const h = submit;
@@ -1440,8 +1418,7 @@ function C() {
       { assumeAllUseAreMemoized: boolean },
     ],
     errors: [redundantError('submit')],
-    output: `import { useCallback } from 'react';
-
+    output: `
 function C() {
   const { submit } = useEventHandlers();
   const h = submit;
@@ -1460,8 +1437,7 @@ function C() {
       { assumeAllUseAreMemoized: boolean },
     ],
     errors: [redundantError('submit')],
-    output: `import { useCallback } from 'react';
-
+    output: `
 function C() {
   const { submit } = useEventHandlers();
   const h = submit;
@@ -1482,8 +1458,7 @@ function C() {
       { assumeAllUseAreMemoized: boolean },
     ],
     errors: [redundantError('preventDefaultAction')],
-    output: `import { useCallback } from 'react';
-
+    output: `
 function C() {
   const { preventDefaultAction } = useEventHandlers();
   const h = preventDefaultAction;
@@ -1505,6 +1480,28 @@ function C() {
     ],
     errors: [redundantError('evt.submit')],
     output: null,
+  },
+  // #1895: the JSX pragma is a reference to `React` like any other, so scope
+  // analysis alone decides that the import survives. A hand-written guard
+  // asking whether the file "looks like JSX" is what gets this wrong.
+  {
+    code: `import React from 'react';
+import { useMemo } from 'react';
+
+function C() {
+  const inner = useMemo(() => () => doThing(), []);
+  const outer = React.useCallback(inner, [inner]);
+  return <button onClick={outer}/>;
+}`,
+    errors: [redundantError('inner')],
+    output: `import React from 'react';
+import { useMemo } from 'react';
+
+function C() {
+  const inner = useMemo(() => () => doThing(), []);
+  const outer = inner;
+  return <button onClick={outer}/>;
+}`,
   },
 ];
 
@@ -1796,8 +1793,7 @@ const C = () => {
   return outer;
 };`,
         errors: [redundantError('inner')],
-        output: `import { useCallback } from 'react';
-import useLatestCallback from 'use-latest-callback';
+        output: `import useLatestCallback from 'use-latest-callback';
 const C = () => {
   const inner = useLatestCallback(() => doThing());
   const outer = inner;
@@ -1832,7 +1828,6 @@ const C = () => {
 };`,
         errors: [redundantError('inner', 'useLatestCallback')],
         output: `import { useCallback } from 'react';
-import useLatestCallback from 'use-latest-callback';
 const C = () => {
   const inner = useCallback(() => doThing(), []);
   const outer = inner;
@@ -1850,8 +1845,7 @@ const C = () => {
   return outer;
 };`,
         errors: [redundantError('inner')],
-        output: `import { useCallback } from 'react';
-import stableCallback from 'use-latest-callback';
+        output: `import stableCallback from 'use-latest-callback';
 const C = () => {
   const inner = stableCallback(() => doThing());
   const outer = inner;
@@ -1868,7 +1862,7 @@ const C = () => {
   return outer;
 };`,
         errors: [redundantError('inner')],
-        output: `import { useCallback, useMemo } from 'react';
+        output: `import { useMemo } from 'react';
 const C = () => {
   const inner = useMemo(() => () => doThing(), []);
   const outer = inner;
@@ -1888,7 +1882,7 @@ const C = () => {
   return outer;
 };`,
         errors: [redundantError('inner')],
-        output: `import { useCallback, useMemo } from 'react';
+        output: `import { useMemo } from 'react';
 const C = () => {
   const inner = useMemo(() => {
     return function () {
@@ -1910,7 +1904,7 @@ const C = () => {
   return outer;
 };`,
         errors: [redundantError('inner')],
-        output: `import { useCallback, useMemo } from 'react';
+        output: `import { useMemo } from 'react';
 type Handler = () => void;
 const C = () => {
   const inner = useMemo(() => (() => doThing()) as Handler, []);
@@ -1935,6 +1929,319 @@ const C = () => {
   const third = second;
   return third;
 };`,
+      },
+    ],
+  },
+);
+
+/**
+ * Collapsing a wrapper deletes the reference that bound its import, so the same
+ * fix must drop the specifier it just orphaned (#1895). The suite is named for
+ * the rule alone because `RuleTester` registers the rule under the name passed
+ * to `run`, and the suppression fixture below has to spell that name in a
+ * disable directive.
+ */
+ruleTesterTs.run(
+  'no-redundant-usecallback-wrapper',
+  noRedundantUseCallbackWrapper,
+  {
+    valid: [],
+    invalid: [
+      // The reported repro: collapsing the file's last `useCallback` call leaves
+      // the specifier that bound it unreferenced, and the sibling `useMemo` on
+      // the same declaration must survive — a partial removal, not a whole
+      // statement one.
+      {
+        code: `import { useCallback, useMemo } from 'react';
+
+const C = () => {
+  const inner = useMemo(() => () => doThing(), []);
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};`,
+        errors: [redundantError('inner')],
+        output: `import { useMemo } from 'react';
+
+const C = () => {
+  const inner = useMemo(() => () => doThing(), []);
+  const outer = inner;
+  return outer;
+};`,
+      },
+      // A surviving `useCallback` call keeps the import: an over-eager removal
+      // breaks the file outright, where a stranded import only fails a lint
+      // rule.
+      {
+        code: `import { useCallback, useMemo } from 'react';
+
+const A = () => {
+  const inner = useMemo(() => () => doThing(), []);
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};
+const B = () => useCallback((id) => doOther(id), []);`,
+        errors: [redundantError('inner')],
+        output: `import { useCallback, useMemo } from 'react';
+
+const A = () => {
+  const inner = useMemo(() => () => doThing(), []);
+  const outer = inner;
+  return outer;
+};
+const B = () => useCallback((id) => doOther(id), []);`,
+      },
+      // The delegate is MOVED, not deleted. Handing the whole call span to the
+      // orphan planner would read `inner` as unreferenced — and `inner` is a
+      // local, which the planner refuses to touch, so the entire fix would
+      // decline instead of collapsing anything.
+      {
+        code: `import { useCallback, useMemo } from 'react';
+
+export const C = () => {
+  const inner = useMemo(() => () => doThing(), []);
+  return useCallback(inner, [inner]);
+};`,
+        errors: [redundantError('inner')],
+        output: `import { useMemo } from 'react';
+
+export const C = () => {
+  const inner = useMemo(() => () => doThing(), []);
+  return inner;
+};`,
+      },
+      // The dependency array IS deleted, so an import read only from there is
+      // unbound by the same edit.
+      {
+        code: `import { useCallback, useMemo } from 'react';
+import { LIMIT } from './constants';
+
+const C = () => {
+  const inner = useMemo(() => () => doThing(), []);
+  const outer = useCallback(inner, [inner, LIMIT]);
+  return outer;
+};`,
+        errors: [redundantError('inner')],
+        output: `import { useMemo } from 'react';
+
+const C = () => {
+  const inner = useMemo(() => () => doThing(), []);
+  const outer = inner;
+  return outer;
+};`,
+      },
+      // Two collapses in one file: judged one at a time neither is the binding's
+      // last use, so the rewrites ship as ONE fix and the import goes with them.
+      {
+        code: `import { useCallback, useMemo } from 'react';
+
+const A = () => {
+  const inner = useMemo(() => () => doThing(), []);
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};
+const B = () => {
+  const inner = useMemo(() => () => doOther(), []);
+  const outer = useCallback(() => inner(), [inner]);
+  return outer;
+};`,
+        errors: [redundantError('inner'), redundantError('inner')],
+        output: `import { useMemo } from 'react';
+
+const A = () => {
+  const inner = useMemo(() => () => doThing(), []);
+  const outer = inner;
+  return outer;
+};
+const B = () => {
+  const inner = useMemo(() => () => doOther(), []);
+  const outer = inner;
+  return outer;
+};`,
+      },
+      // A suppressed sibling never rewrites, so its reference still counts and
+      // the import stays: the batch may only be judged against edits that land.
+      {
+        code: `import { useCallback, useMemo } from 'react';
+
+const A = () => {
+  const inner = useMemo(() => () => doThing(), []);
+  // eslint-disable-next-line no-redundant-usecallback-wrapper
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};
+const B = () => {
+  const inner = useMemo(() => () => doOther(), []);
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};`,
+        errors: [redundantError('inner')],
+        output: `import { useCallback, useMemo } from 'react';
+
+const A = () => {
+  const inner = useMemo(() => () => doThing(), []);
+  // eslint-disable-next-line no-redundant-usecallback-wrapper
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};
+const B = () => {
+  const inner = useMemo(() => () => doOther(), []);
+  const outer = inner;
+  return outer;
+};`,
+      },
+      // The namespaced spelling unbinds the namespace, since the member
+      // expression is the only reference the deleted span carried.
+      {
+        code: `import React from 'react';
+import { useMemo } from 'react';
+
+const C = () => {
+  const inner = useMemo(() => () => doThing(), []);
+  const outer = React.useCallback(inner, [inner]);
+  return outer;
+};`,
+        errors: [redundantError('inner')],
+        output: `import { useMemo } from 'react';
+
+const C = () => {
+  const inner = useMemo(() => () => doThing(), []);
+  const outer = inner;
+  return outer;
+};`,
+      },
+      // ...and keeps it when anything else reads it.
+      {
+        code: `import * as React from 'react';
+
+const C = () => {
+  const inner = React.useMemo(() => () => doThing(), []);
+  const outer = React.useCallback(inner, [inner]);
+  return outer;
+};`,
+        errors: [redundantError('inner')],
+        output: `import * as React from 'react';
+
+const C = () => {
+  const inner = React.useMemo(() => () => doThing(), []);
+  const outer = inner;
+  return outer;
+};`,
+      },
+      // Losing the only named specifier next to a surviving default takes the
+      // braces with it rather than leaving `import React, {} from 'react'`.
+      {
+        code: `import React, { useCallback } from 'react';
+
+const C = () => {
+  const inner = React.useMemo(() => () => doThing(), []);
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};`,
+        errors: [redundantError('inner')],
+        output: `import React from 'react';
+
+const C = () => {
+  const inner = React.useMemo(() => () => doThing(), []);
+  const outer = inner;
+  return outer;
+};`,
+      },
+      // The mirror mix: the default clause goes and the named one stays.
+      {
+        code: `import React, { useMemo } from 'react';
+
+const C = () => {
+  const inner = useMemo(() => () => doThing(), []);
+  const outer = React.useCallback(inner, [inner]);
+  return outer;
+};`,
+        errors: [redundantError('inner')],
+        output: `import { useMemo } from 'react';
+
+const C = () => {
+  const inner = useMemo(() => () => doThing(), []);
+  const outer = inner;
+  return outer;
+};`,
+      },
+      // The wrapper need not be spelled `useCallback`: the default import of
+      // `use-latest-callback` binds the hook under whatever local name the file
+      // chose, and that specifier is the one the collapse orphans.
+      {
+        code: `import useLatestCallback from 'use-latest-callback';
+import { useMemo } from 'react';
+
+const C = () => {
+  const inner = useMemo(() => () => doThing(), []);
+  const outer = useLatestCallback(inner);
+  return outer;
+};`,
+        errors: [redundantError('inner', 'useLatestCallback')],
+        output: `import { useMemo } from 'react';
+
+const C = () => {
+  const inner = useMemo(() => () => doThing(), []);
+  const outer = inner;
+  return outer;
+};`,
+      },
+      // A comment among the specifiers makes the removal unsafe to compute, and
+      // half a fix — the collapse without the unbinding — is worse than none.
+      {
+        code: `import { /* keep */ useCallback, useMemo } from 'react';
+
+const C = () => {
+  const inner = useMemo(() => () => doThing(), []);
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};`,
+        errors: [redundantError('inner')],
+        output: null,
+      },
+      // The collapse would leave a local const unreferenced, and a local is not
+      // something the import planner may rewrite, so the whole fix declines — a
+      // report without a fix beats a file that fails `noUnusedLocals`.
+      {
+        code: `import { useCallback, useMemo } from 'react';
+
+const C = () => {
+  const threshold = 3;
+  const inner = useMemo(() => () => doThing(), []);
+  const outer = useCallback(inner, [inner, threshold]);
+  return outer;
+};`,
+        errors: [redundantError('inner')],
+        output: null,
+      },
+      // A require-bound wrapper is not an import specifier, so the collapse that
+      // strands it declines rather than guessing at the declaration.
+      {
+        code: `const { useCallback, useMemo } = require('react');
+
+const C = () => {
+  const inner = useMemo(() => () => doThing(), []);
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};`,
+        errors: [redundantError('inner')],
+        output: null,
+      },
+      // A member delegate is reported without a fix, so nothing is rewritten and
+      // nothing is unbound — an unfixed violation must not drag the import out
+      // on the strength of a rewrite that never happens.
+      {
+        code: `import { useCallback } from 'react';
+
+const C = () => {
+  const ctx = useThing();
+  const outer = useCallback(() => ctx.submit(), [ctx]);
+  return outer;
+};`,
+        options: [{ assumeAllUseAreMemoized: true }] as [
+          { assumeAllUseAreMemoized: boolean },
+        ],
+        errors: [redundantError('ctx.submit')],
+        output: null,
       },
     ],
   },

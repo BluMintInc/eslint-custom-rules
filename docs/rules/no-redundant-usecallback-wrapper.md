@@ -273,6 +273,48 @@ Where safe, the rule removes the redundant `useCallback` wrapper and passes the 
 - Member calls (for example, `svc.handle()`) are reported without an auto-fix to avoid breaking `this` binding.
 - Wrappers that supply any arguments—literals, closures, or derived values—are considered non-redundant and are not reported.
 
+### The import the collapse orphans
+
+Collapsing the last wrapper in a file deletes the last reference to the binding
+that named it, so the same fix drops the specifier it just orphaned. Without
+that, `--fix` turns a clean file into one that fails
+`@typescript-eslint/no-unused-vars` and `noUnusedLocals`, and since the fix
+resolves the report, nothing re-reports the debt.
+
+```tsx
+import { useCallback, useMemo } from 'react';
+
+const Row = () => {
+  const inner = useMemo(() => () => doThing(), []);
+  const outer = useCallback(inner, [inner]); // ✖ collapses to `inner`
+  return outer;
+};
+```
+
+`--fix` yields `import { useMemo } from 'react';` — the sibling specifier on the
+same declaration survives, because only the orphaned one is removed.
+
+Only what the rewrite genuinely deletes counts:
+
+- The delegate is **moved**, not deleted, so its own binding stays referenced.
+- The wrapper's callee and the dependency array **are** deleted, so a binding
+  read only from there — an import used solely as a dependency — is unbound by
+  the same edit.
+- A surviving reference anywhere else keeps the import. Scope analysis is the
+  sole oracle, which is what makes the implicit `React` reference of a JSX
+  pragma count as a use.
+
+The rewrites of a file are batched into **one** fix. Judged one call at a time,
+a file with two collapsible wrappers never sees either as the binding's last
+use, and a fix emitted separately from the unbinding cannot assume its sibling
+lands. A suppressed report is excluded from the batch, since its rewrite never
+happens and its reference still counts.
+
+The whole fix declines — leaving the report standing without a fixer — when a
+binding would be left unreferenced yet cannot be unbound safely: a local
+variable, a `require` destructuring, or an import declaration carrying a comment
+among its specifiers.
+
 ## Edge Cases Handled
 
 - Identifies callbacks destructured from hook results, and callbacks a hook returns directly.
