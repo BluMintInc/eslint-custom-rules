@@ -1,11 +1,20 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
-import { createSuppressionChecker } from '../utils/disableDirectives';
 import {
-  importBindingReferences,
-  planOrphanedImportRemoval,
+  createSuppressionChecker,
+  parseDisableDirectives,
+} from '../utils/disableDirectives';
+import {
+  bindingUses,
+  ImportRemovalSource,
+  planOrphanedBindingRemoval,
   TextRange,
 } from '../utils/importRemoval';
+import { planTypeDeclarationRemoval } from '../utils/typeDeclarationRemoval';
+import {
+  joinSegmentBody,
+  requiresLineBreakAfter,
+} from '../utils/replacementSegments';
 import {
   BOUND_UNPROVABLE,
   declarationOf,
@@ -997,11 +1006,16 @@ function containsRange(outer: TextRange, inner: TextRange): boolean {
 /**
  * Partitions annotations into the sets whose removals have to travel together.
  *
- * An import read from two annotations is unbound only once both are gone, so
+ * A binding read from two annotations is unbound only once both are gone, so
  * neither annotation may unbind it alone — and a fix may only count on the other
  * removal happening if it performs that removal itself. Annotations that jointly
- * keep an import alive are therefore merged into one batch, and every other
+ * keep a binding alive are therefore merged into one batch, and every other
  * annotation is a batch of one, judged against the file as it stands.
+ *
+ * EVERY binding is asked about, not only the imported ones. Partitioning over
+ * imports alone left a local `type` alias named by two annotations owned by no
+ * fix: each annotation looked innocent alone, both were stripped, and the alias
+ * survived with nothing referencing it (#1902).
  *
  * `candidates` must already exclude suppressed reports: a suppressed report's
  * fix never runs, so its annotation — and the reference it holds — outlives the
@@ -1025,13 +1039,13 @@ function batchAnnotations(
       containsRange(candidate.returnType.range, reference),
     );
 
-  for (const binding of importBindingReferences(source)) {
+  for (const binding of bindingUses(source)) {
     // A single reference cannot be shared, so the one-annotation judgement
     // already covers it.
-    if (binding.references.length < 2) continue;
+    if (binding.uses.length < 2) continue;
 
     const owners = new Set<number>();
-    const escapes = binding.references.some((reference) => {
+    const escapes = binding.uses.some((reference) => {
       const owner = ownerOf(reference);
       if (owner === -1) return true;
       owners.add(owner);
@@ -1064,18 +1078,143 @@ function batchAnnotations(
 }
 
 /**
- * The ranges a single fix deletes for `batch`: the annotations themselves plus
- * any import they were the last consumers of. `null` when a binding the removal
+ * A comment whose meaning is tied to where it sits. Re-emitting one somewhere
+ * else retargets it — a disable directive lands on an unrelated line and a
+ * `@ts-expect-error` becomes an error of its own — so a removal that would move
+ * one is withheld instead.
+ */
+function isPositionalDirective(comment: TSESTree.Comment): boolean {
+  if (parseDisableDirectives([comment]).length > 0) {
+    return true;
+  }
+  const value = comment.value.trim();
+  return value.startsWith('@ts-expect-error') || value.startsWith('@ts-ignore');
+}
+
+/** The indentation of the line `offset` sits on, for a carried line break. */
+function indentAt(source: TSESLint.SourceCode, offset: number): string {
+  const lineStart = source.text.lastIndexOf('\n', offset - 1) + 1;
+  const [indent] = /^[ \t]*/.exec(source.text.slice(lineStart, offset)) ?? [''];
+  return indent;
+}
+
+/**
+ * Whether the span deletes a whole declaration of the program.
+ *
+ * Such a span owns the comments inside it: they describe the declaration that is
+ * going away, and re-emitting them would leave prose behind with no subject. The
+ * spans that reach across a specifier list are the opposite case — the
+ * declaration survives them, so a comment they cover has to survive too.
+ */
+function removesWholeStatement(
+  source: TSESLint.SourceCode,
+  range: TextRange,
+): boolean {
+  return source.ast.body.some(
+    (statement) =>
+      statement.range[0] >= range[0] && statement.range[1] <= range[1],
+  );
+}
+
+/**
+ * What a removal range is replaced with: nothing, or the comments it covers
+ * re-emitted so the deletion carries them instead of dropping them. `null`
+ * withholds the fix, for a comment whose meaning is its position.
+ *
+ * The separators around the carried run are chosen from the text on either side
+ * rather than added unconditionally, so a range that already sits between
+ * whitespace does not gain any. A trailing line break is mandatory where the
+ * last comment is a line comment or the range consumed its own newline: without
+ * one the surviving code moves onto the comment's line and is commented out.
+ */
+function carriedText(
+  source: TSESLint.SourceCode,
+  range: TextRange,
+): string | null {
+  const comments = source
+    .getAllComments()
+    .filter(
+      (comment) => comment.range[0] >= range[0] && comment.range[1] <= range[1],
+    );
+  if (comments.length === 0) return '';
+  if (comments.some(isPositionalDirective)) return null;
+
+  const indent = indentAt(source, range[0]);
+  const segments = comments.map((comment) => ({
+    text: source.text.slice(comment.range[0], comment.range[1]),
+    breakAfter: requiresLineBreakAfter(comment),
+  }));
+  const body = joinSegmentBody(segments, indent);
+
+  const before = range[0] > 0 ? source.text[range[0] - 1] : '';
+  const after = source.text[range[1]] ?? '';
+  const lead = before === '' || /\s/.test(before) ? '' : ' ';
+  const trail =
+    segments[segments.length - 1].breakAfter ||
+    source.text.slice(range[0], range[1]).endsWith('\n')
+      ? `\n${indent}`
+      : after === '' || /\s/.test(after)
+      ? ''
+      : ' ';
+  return `${lead}${body}${trail}`;
+}
+
+/** One span of the fix, and the text that replaces it. */
+type Edit = { range: TextRange; text: string };
+
+/**
+ * ESLint applies a fix whole or not at all, and rejects one whose edits
+ * overlap. Two spans planned independently — an annotation and the declaration
+ * that strands it — can only overlap if a premise here is wrong, so an overlap
+ * withdraws the fix rather than throwing at apply time.
+ */
+function isDisjoint(edits: readonly Edit[]): boolean {
+  const sorted = [...edits].sort(
+    (left, right) => left.range[0] - right.range[0],
+  );
+  return sorted.every(
+    (edit, index) => index === 0 || sorted[index - 1].range[1] <= edit.range[0],
+  );
+}
+
+/**
+ * The edits a single fix makes for `batch`: the annotations themselves plus the
+ * bindings they were the last consumers of. `null` when a binding the removal
  * orphans cannot be unbound safely — the caller then drops the fix rather than
  * emitting the half of it that leaves a binding behind.
+ *
+ * A cleanup span is REPLACED by the comments it covers rather than deleted
+ * outright. The planner computes spans that reach across separators, so a
+ * comment among the specifiers sits inside one; declining on that comment is no
+ * remedy, since it lets a comment decide whether the annotations are stripped at
+ * all, which is a comment changing the transform just the same (#1877).
  */
 function planRemoval(
   source: TSESLint.SourceCode,
+  removalSource: ImportRemovalSource,
   batch: readonly PendingAnnotation[],
-): TextRange[] | null {
+): Edit[] | null {
   const annotations = batch.map((entry) => entry.returnType.range);
-  const imports = planOrphanedImportRemoval(source, annotations);
-  return imports ? [...annotations, ...imports] : null;
+  const cleanups = planOrphanedBindingRemoval(
+    removalSource,
+    annotations,
+    (variables, planned) =>
+      planTypeDeclarationRemoval(removalSource, variables, planned),
+  );
+  if (!cleanups) return null;
+
+  const edits: Edit[] = annotations.map((range) => ({ range, text: '' }));
+  for (const range of cleanups) {
+    if (removesWholeStatement(source, range)) {
+      edits.push({ range, text: '' });
+      continue;
+    }
+    const carried = carriedText(source, range);
+    if (carried === null) return null;
+    edits.push({ range, text: carried });
+  }
+
+  return isDisjoint(edits) ? edits : null;
 }
 
 export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
@@ -1121,6 +1260,36 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
       const visitorKeys = sourceCode.visitorKeys as VisitorKeys;
 
       const pending: PendingAnnotation[] = [];
+
+      /**
+       * The source the removal planner reads, with the comments inside a
+       * declaration hidden from it.
+       *
+       * `planImportBindingRemoval` declines outright on any comment inside the
+       * declaration it is asked to edit, because the spans it computes reach
+       * across separators and a comment nested among the specifiers would be
+       * swallowed. That decline is not available here: the annotations that
+       * jointly name an import are stripped by one fix or not at all, so
+       * declining only the import half strands the binding, and declining the
+       * whole fix lets a comment decide whether the rule's own transform fires
+       * (#1877, #1902).
+       *
+       * The planner is therefore asked for the spans as if the declaration
+       * carried no comments, and {@link carriedText} re-emits every comment
+       * those spans cover in place of the text they delete. Only
+       * `getCommentsInside` is blinded: `getCommentsBefore` still answers for
+       * the directive that binds a whole statement, which is the one shape no
+       * re-emission can save.
+       */
+      const removalSource = {
+        text: sourceCode.text,
+        ast: sourceCode.ast,
+        scopeManager: sourceCode.scopeManager,
+        getTokenBefore: sourceCode.getTokenBefore.bind(sourceCode),
+        getTokenAfter: sourceCode.getTokenAfter.bind(sourceCode),
+        getCommentsBefore: sourceCode.getCommentsBefore.bind(sourceCode),
+        getCommentsInside: () => [],
+      } as unknown as ImportRemovalSource;
 
       /**
        * Whether ESLint will discard a report, resolved the way ESLint resolves
@@ -1205,9 +1374,9 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
       }
 
       /**
-       * Emits every held report, each carrying the import cleanup its own
-       * removal makes necessary. An annotation and the import it unbinds are one
-       * fix: applying either half alone leaves the file worse than applying
+       * Emits every held report, each carrying the binding cleanup its own
+       * removal makes necessary. An annotation and the binding it unbinds are
+       * one fix: applying either half alone leaves the file worse than applying
        * neither.
        *
        * Orphanhood is judged against a single fix's own deletions, never against
@@ -1220,7 +1389,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
        * Waiting for the last such annotation does not work either. Once every
        * annotation is stripped the rule has nothing left to report, so no later
        * fix exists to carry the cleanup and the binding stays orphaned for good
-       * (issue #1654). The annotations that jointly hold an import alive are
+       * (issue #1654). The annotations that jointly hold a binding alive are
        * therefore removed by one fix, which owes two things: it deletes all of
        * them itself rather than assuming sibling reports land, and it counts
        * only annotations whose reports ESLint will not discard.
@@ -1228,11 +1397,13 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
       function flushReports(): void {
         const strippable = pending.filter((entry) => entry.strippable);
 
-        // Every annotation starts with the judgement it would get alone, so a
-        // batch can only ever add a cleanup, never withdraw one.
-        const plans = new Map<PendingAnnotation, TextRange[]>();
+        // Each annotation starts with the judgement it would get alone. That
+        // judgement holds only while the annotation is the whole story for every
+        // binding it names; a batch below either extends it to cover the
+        // binding they share, or withdraws it.
+        const plans = new Map<PendingAnnotation, Edit[]>();
         for (const entry of strippable) {
-          const plan = planRemoval(sourceCode, [entry]);
+          const plan = planRemoval(sourceCode, removalSource, [entry]);
           if (plan) {
             plans.set(entry, plan);
           }
@@ -1244,10 +1415,21 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
         );
         for (const batch of batches) {
           if (batch.length < 2) continue;
-          const plan = planRemoval(sourceCode, batch);
-          if (!plan) continue;
+          const plan = planRemoval(sourceCode, removalSource, batch);
+          if (plan) {
+            for (const entry of batch) {
+              plans.set(entry, plan);
+            }
+            continue;
+          }
+          // The batch exists because its members jointly hold a binding alive,
+          // so falling back to the one-at-a-time strip is not the harmless
+          // status quo it looks like: `--fix` applies those strips in the same
+          // run, the last one leaves the binding referenced by nothing, and no
+          // report survives to clean it up (#1902). Every member gives up its
+          // fix and keeps its report.
           for (const entry of batch) {
-            plans.set(entry, plan);
+            plans.delete(entry);
           }
         }
 
@@ -1262,8 +1444,11 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
             ...(plan
               ? {
                   fix: (fixer) =>
-                    plan.map((range) =>
-                      fixer.removeRange([range[0], range[1]]),
+                    plan.map((edit) =>
+                      fixer.replaceTextRange(
+                        [edit.range[0], edit.range[1]],
+                        edit.text,
+                      ),
                     ),
                 }
               : {}),

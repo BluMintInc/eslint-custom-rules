@@ -1446,10 +1446,10 @@ export const cloneUser = () => ({});
 `,
     },
 
-    // Only import bindings are unbindable, so only they group annotations. Two
-    // annotations sharing a local type alias are stripped one at a time as
-    // before, and the alias — which no import surgery can remove — keeps the
-    // import that it, not the annotations, references.
+    // Deleting the alias these two annotations share would strand the import the
+    // alias — not the annotations — references, and one deletion is as far as
+    // this cleanup reaches. Neither annotation may go alone either, since
+    // together they are the alias's only consumers, so the whole batch declines.
     {
       code: `import type { User } from './User';
 
@@ -1468,12 +1468,184 @@ export const cloneUser = (): Wrapper => ({ user: { id: '2' } });
           data: { functionKind: 'arrow function "cloneUser"' },
         },
       ],
-      output: `import type { User } from './User';
+      output: null,
+    },
 
-type Wrapper = { user: User };
+    // The same two annotations over an alias that references nothing: the alias
+    // goes with them, as one fix (#1902)
+    {
+      code: `type Wrapper = { id: string };
 
-export const buildUser = () => ({ user: { id: '1' } });
-export const cloneUser = () => ({ user: { id: '2' } });
+export const buildUser = (): Wrapper => ({ id: '1' });
+export const cloneUser = (): Wrapper => ({ id: '2' });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+      ],
+      output: `
+export const buildUser = () => ({ id: '1' });
+export const cloneUser = () => ({ id: '2' });
+`,
+    },
+
+    // An interface is unbound the same way a type alias is
+    {
+      code: `interface Wrapper { id: string }
+
+export const buildUser = (): Wrapper => ({ id: '1' });
+export const cloneUser = (): Wrapper => ({ id: '2' });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+      ],
+      output: `
+export const buildUser = () => ({ id: '1' });
+export const cloneUser = () => ({ id: '2' });
+`,
+    },
+
+    // An EXPORTED alias has a consumer no edit to this file can reach, so it
+    // stays and only the annotations go — the over-eager removal this cleanup
+    // must never make
+    {
+      code: `export type Wrapper = { id: string };
+
+export const buildUser = (): Wrapper => ({ id: '1' });
+export const cloneUser = (): Wrapper => ({ id: '2' });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+      ],
+      output: `export type Wrapper = { id: string };
+
+export const buildUser = () => ({ id: '1' });
+export const cloneUser = () => ({ id: '2' });
+`,
+    },
+
+    // An alias named by a third, non-annotation reference survives too
+    {
+      code: `type Wrapper = { id: string };
+
+const SEED: Wrapper = { id: 'seed' };
+
+export const buildUser = (): Wrapper => SEED;
+export const cloneUser = (): Wrapper => SEED;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+      ],
+      output: `type Wrapper = { id: string };
+
+const SEED: Wrapper = { id: 'seed' };
+
+export const buildUser = () => SEED;
+export const cloneUser = () => SEED;
+`,
+    },
+
+    // Two aliases, each named only by the annotations of one batch: both go
+    {
+      code: `type Wrapper = { id: string };
+type Holder = { id: string };
+
+export const buildUser = (): Wrapper => ({ id: '1' });
+export const cloneUser = (): Holder => ({ id: '2' });
+export const mergeUser = (): Wrapper & Holder => ({ id: '3' });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "mergeUser"' },
+        },
+      ],
+      output: `
+export const buildUser = () => ({ id: '1' });
+export const cloneUser = () => ({ id: '2' });
+export const mergeUser = () => ({ id: '3' });
+`,
+    },
+
+    // A value binding read only through `typeof` is stranded exactly as a type
+    // name is, and a value declaration is not something this cleanup will
+    // delete — so the whole batch declines
+    {
+      code: `const CONFIG = { debug: false };
+
+export const buildUser = (): typeof CONFIG => ({ debug: false });
+export const cloneUser = (): typeof CONFIG => ({ debug: false });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+      ],
+      output: null,
+    },
+
+    // The same binding read by the bodies too keeps itself alive, so both
+    // annotations go
+    {
+      code: `const CONFIG = { debug: false };
+
+export const buildUser = (): typeof CONFIG => CONFIG;
+export const cloneUser = (): typeof CONFIG => CONFIG;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+      ],
+      output: `const CONFIG = { debug: false };
+
+export const buildUser = () => CONFIG;
+export const cloneUser = () => CONFIG;
 `,
     },
 
@@ -1747,8 +1919,10 @@ export const cloneUser = () => ({});
 `,
     },
 
-    // A shadowing binding of the same name makes the deletion unprovable, so
-    // the batch declines and each annotation falls back to its own judgement
+    // A shadowing binding of the same name makes the deletion unprovable. The
+    // batch cannot fall back to stripping one annotation at a time — that is the
+    // same two deletions, arriving in the same `--fix` run, with no report left
+    // to unbind the import afterwards (#1902) — so it declines outright.
     {
       code: `import type { User } from './User';
 
@@ -1766,16 +1940,11 @@ export const nameOf = (User: string) => User;
           data: { functionKind: 'arrow function "cloneUser"' },
         },
       ],
-      output: `import type { User } from './User';
-
-export const buildUser = () => ({});
-export const cloneUser = () => ({});
-export const nameOf = (User: string) => User;
-`,
+      output: null,
     },
 
-    // A comment among the specifiers would be swallowed by the separator
-    // surgery, so the import stays and only the annotations go
+    // A comment among the specifiers is carried through the separator surgery
+    // rather than deciding whether the transform fires at all (#1902)
     {
       code: `import type { /* keep */ User, Role } from './types';
 
@@ -1794,13 +1963,96 @@ export const cloneUser = (): User => ({});
           data: { functionKind: 'arrow function "cloneUser"' },
         },
       ],
-      output: `import type { /* keep */ User, Role } from './types';
+      output: `import type { /* keep */ Role } from './types';
 
 export const ROLE: Role = 'admin';
 
 export const buildUser = () => ({});
 export const cloneUser = () => ({});
 `,
+    },
+
+    // A comment between the orphan and its surviving sibling is carried into
+    // the sibling's place
+    {
+      code: `import type { User /* keep */, Role } from './types';
+
+export const ROLE: Role = 'admin';
+
+export const buildUser = (): User => ({});
+export const cloneUser = (): User => ({});
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+      ],
+      output: `import type { /* keep */ Role } from './types';
+
+export const ROLE: Role = 'admin';
+
+export const buildUser = () => ({});
+export const cloneUser = () => ({});
+`,
+    },
+
+    // A directive among the specifiers means something at the position it
+    // occupies, so re-emitting it elsewhere is not carrying it — the fix is
+    // withheld instead
+    {
+      code: `import type {
+  User,
+  // eslint-disable-next-line no-unused-vars
+  Role,
+} from './types';
+
+export const ROLE: Role = 'admin';
+
+export const buildUser = (): User => ({});
+export const cloneUser = (): User => ({});
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+      ],
+      output: null,
+    },
+
+    // `@ts-expect-error` among the specifiers is positional for the same reason
+    {
+      code: `import type {
+  User,
+  // @ts-expect-error the module has no types
+  Role,
+} from './types';
+
+export const ROLE: Role = 'admin';
+
+export const buildUser = (): User => ({});
+export const cloneUser = (): User => ({});
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+      ],
+      output: null,
     },
 
     // A directive bound to the import's line would outlive its subject, so the
@@ -1822,12 +2074,7 @@ export const cloneUser = (): User => ({});
           data: { functionKind: 'arrow function "cloneUser"' },
         },
       ],
-      output: `// eslint-disable-next-line no-unused-vars
-import { User } from './User';
-
-export const buildUser = () => ({});
-export const cloneUser = () => ({});
-`,
+      output: null,
     },
 
     // The issue's own layout: a multi-line specifier list keeps its shape when
@@ -2401,7 +2648,7 @@ export const buildUser = (): User => ({});
       output: null,
     },
 
-    // A comment among the specifiers would be swallowed by the separator surgery
+    // A comment among the specifiers rides along with the separator surgery
     {
       code: `import type { /* keep */ User, Role } from './types';
 
@@ -2415,7 +2662,12 @@ export const buildUser = (): User => ({});
           data: { functionKind: 'arrow function "buildUser"' },
         },
       ],
-      output: null,
+      output: `import type { /* keep */ Role } from './types';
+
+export const ROLE: Role = 'admin';
+
+export const buildUser = () => ({});
+`,
     },
 
     // A shadowing binding of the same name means the two views of "is it still
@@ -2435,12 +2687,310 @@ export const nameOf = (User: string) => User;
       output: null,
     },
 
-    // A local type alias cannot be unbound by dropping an import specifier, so
-    // an annotation that is its only consumer keeps it company
+    // A module-scope type alias whose only consumer is the annotation goes with
+    // it, the same way an import specifier does (#1902)
     {
       code: `type User = { id: string };
 
 export const buildUser = (id: string): User => ({ id });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: `
+export const buildUser = (id: string) => ({ id });
+`,
+    },
+
+    // A type alias declared inside a block is not module-scope, and the
+    // containers that hold one do not all keep it private, so it is left alone
+    {
+      code: `export function build() {
+  type Local = { id: string };
+  const make = (): Local => ({ id: '1' });
+  return make();
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "make"' },
+        },
+      ],
+      output: null,
+    },
+
+    // Interface merging leaves the name meaning something else rather than
+    // nothing, so no declaration of it is deleted
+    {
+      code: `interface User { id: string }
+interface User { name: string }
+
+export const buildUser = (id: string): User => ({ id, name: '' });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: null,
+    },
+
+    // A file with no import or export is a SCRIPT, whose type declarations are
+    // visible to the whole program — nothing here proves the alias is dead
+    {
+      code: `type User = { id: string };
+
+const buildUser = (id: string): User => ({ id });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: null,
+    },
+
+    // An enum emits a runtime object, so deleting it would change what the file
+    // does rather than what it declares — the batch declines instead
+    {
+      code: `enum Role { Admin }
+
+export const readRole = (): Role => 0 as never;
+export const readBackupRole = (): Role => 0 as never;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "readRole"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "readBackupRole"' },
+        },
+      ],
+      output: null,
+    },
+
+    // The same enum read as a value keeps itself alive, so both annotations go
+    {
+      code: `enum Role { Admin }
+
+export const readRole = (): Role => Role.Admin;
+export const readBackupRole = (): Role => Role.Admin;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "readRole"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "readBackupRole"' },
+        },
+      ],
+      output: `enum Role { Admin }
+
+export const readRole = () => Role.Admin;
+export const readBackupRole = () => Role.Admin;
+`,
+    },
+
+    // A class is not a type declaration this cleanup deletes, whether or not the
+    // annotations are its only consumers
+    {
+      code: `class User {}
+
+export const buildUser = (): User => ({} as never);
+export const cloneUser = (): User => ({} as never);
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+      ],
+      output: null,
+    },
+    {
+      code: `class User {}
+
+export const buildUser = (): User => new User();
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: `class User {}
+
+export const buildUser = () => new User();
+`,
+    },
+
+    // A type declared inside a `namespace` is not module-scope
+    {
+      code: `namespace Api {
+  export type Wrapper = { id: string };
+}
+
+export const buildUser = (): Api.Wrapper => ({ id: '1' });
+export const cloneUser = (): Api.Wrapper => ({ id: '2' });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+      ],
+      output: null,
+    },
+
+    // Two declarators of one statement each carrying an annotation over the
+    // same alias: the alias goes once, and the statement that survives keeps
+    // both declarators
+    {
+      code: `type Wrapper = { id: string };
+
+export const buildUser = (): Wrapper => ({ id: '1' }), cloneUser = (): Wrapper => ({ id: '2' });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+      ],
+      output: `
+export const buildUser = () => ({ id: '1' }), cloneUser = () => ({ id: '2' });
+`,
+    },
+
+    // A comment inside the alias goes with the declaration it describes rather
+    // than being re-emitted with nothing left to describe
+    {
+      code: `type Wrapper = {
+  // the identifier
+  id: string;
+};
+
+export const buildUser = (): Wrapper => ({ id: '1' });
+export const cloneUser = (): Wrapper => ({ id: '2' });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "cloneUser"' },
+        },
+      ],
+      output: `
+export const buildUser = () => ({ id: '1' });
+export const cloneUser = () => ({ id: '2' });
+`,
+    },
+
+    // A same-named binding elsewhere makes the alias deletion unprovable
+    {
+      code: `type User = { id: string };
+
+export const buildUser = (): User => ({ id: '1' });
+export const nameOf = (User: string) => User;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: null,
+    },
+
+    // A directive bound to the alias's line would outlive its subject
+    {
+      code: `// eslint-disable-next-line no-unused-vars
+type User = { id: string };
+
+export const buildUser = (): User => ({ id: '1' });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: null,
+    },
+
+    // A re-exported alias has a consumer outside the file
+    {
+      code: `type User = { id: string };
+
+export type { User };
+
+export const buildUser = (): User => ({ id: '1' });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildUser"' },
+        },
+      ],
+      output: `type User = { id: string };
+
+export type { User };
+
+export const buildUser = () => ({ id: '1' });
+`,
+    },
+
+    // A self-referential alias reads its own name from outside the annotation,
+    // so the strip does not leave it referenced by nothing and it stays
+    {
+      code: `type Tree = { children: Tree[] };
+
+export const buildTree = (): Tree => ({ children: [] });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildTree"' },
+        },
+      ],
+      output: `type Tree = { children: Tree[] };
+
+export const buildTree = () => ({ children: [] });
+`,
+    },
+
+    // An alias whose body names a live binding: deleting it would strand that
+    // binding, which this cleanup does not chase, so it declines
+    {
+      code: `import type { User } from './User';
+
+type Wrapper = { user: User };
+
+export const buildUser = (): Wrapper => ({ user: { id: '1' } });
 `,
       errors: [
         {
