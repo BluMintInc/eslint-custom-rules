@@ -19,7 +19,8 @@ This rule:
 - Removes the `useCallback` specifier from the `react` import only when every reference to it is converted. If a JSX-returning call — or any other use of the binding, such as `const cb = useCallback` — survives, the `react` import is kept untouched and the `use-latest-callback` import is added alongside it.
 - Splices only the `useCallback` specifier and its separating comma out of the `react` import, so the rest of the declaration — its layout, its quote style, and every comment in it — is preserved. A comment that belongs to the removed specifier is left behind rather than deleted, because a trailing comment can be an eslint directive that governs the **next** line and dropping it would change which rules report on the file. The whole declaration is replaced only when `useCallback` is its sole specifier, in which case no comment inside it can govern anything that remains.
 - Emits the import rewrite and every call-site conversion as **one atomic fix** on a single report. When another rule's fix conflicts with any part of it in the same `--fix` pass, ESLint defers the whole conversion to the next pass instead of applying half of it, so the `useCallback` import can never be removed while a `useCallback(...)` call remains.
-- Withholds the fix when dropping the dependency array would leave a binding declared inside the component or hook with no reader left — see [Dependencies nothing else reads](#dependencies-nothing-else-reads).
+- Withholds the fix when dropping the dependency array would leave a declaration with no reader left, and retires an **import** left that way in the same fix — see [Dependencies nothing else reads](#dependencies-nothing-else-reads).
+- Retires the `react` import a converted `React.useCallback` call was the last reader of, decided by scope analysis rather than by any JSX or `.tsx` test — see [Retiring the `react` import a `React.useCallback` call was the last reader of](#retiring-the-react-import-a-reactusecallback-call-was-the-last-reader-of).
 - Leaves a callback whose identity another hook keys on alone entirely — see [When the callback identity is load-bearing](#when-the-callback-identity-is-load-bearing).
 - Keeps the rewritten call on one line only while that line fits the print width, and breaks the argument list open past it — see [Print width](#print-width).
 - Skips files in `node_modules` for performance so third-party code is untouched.
@@ -185,14 +186,81 @@ reaches a shadowed declaration is judged against that declaration rather than
 against an unrelated binding spelled the same way, and only **reads** keep a
 binding alive — one left merely written to is as dead as one left unreferenced.
 
+The same holds at **module scope**, with one binding kind the fix can retire
+itself: an **import**. An import read only by the deleted array is unbound in the
+same fix that deletes it, because ESLint applies a fix whole or not at all and a
+removal split across reports could land without the deletion it was claimed on.
+Any other module-scope declaration — a `const`, a function — is withheld like a
+local one, since this rule does not delete declarations.
+
+Both halves of the array are judged separately, so one dependency can survive
+while another is retired:
+
+```ts
+import { useCallback } from 'react';
+import { CONFIG } from './config'; // retired with the array below
+
+export const useThing = (id: string) => {
+  const handle = useCallback(() => {
+    go(id);
+  }, [id, CONFIG]);
+
+  return handle;
+};
+```
+
+`id` is read by the callback body, so deleting the array leaves it bound as
+before. `CONFIG` is read only by the array, so the import goes with it.
+
 Two things never withhold the fix:
 
 - A dependency that anything outside the deleted array still reads, the
   rewritten callback's own body included. It survives the deletion untouched.
-- A **module-scope or imported** binding. Whether a module-level name is dead is
-  not settled by this file — it can be exported, re-exported, or read from
-  another module — and the hoisted declarations this guard exists for are
-  written inside the hook.
+- An **exported** binding. Its consumers are out of this file's reach, so no edit
+  here can leave it unread.
+
+### Retiring the `react` import a `React.useCallback` call was the last reader of
+
+`React.useCallback(fn, [])` becomes `useLatestCallback(fn)`, which reads nothing
+from the `react` import at all. When that call held the **last read** of the
+`React` binding, the fix carries the import's removal with it — otherwise `--fix`
+would answer one report by producing an unreferenced import, failing the
+consumer's `no-unused-vars` and `noUnusedLocals` with nothing left to re-raise
+the debt.
+
+Whether the binding still has a reader is decided by **scope analysis**, never by
+looking for JSX or for a `.tsx` extension. Under the classic runtime the scope
+manager records the implicit `React` reference the JSX pragma creates, so a file
+whose JSX still needs the import keeps it; told there is no pragma
+(`jsxPragma: null`, the automatic runtime), the same file records no such
+reference and the import goes. That is the same oracle `no-unused-vars` consults,
+so the two can never disagree.
+
+```ts
+// Reported and fixed to `import useLatestCallback from 'use-latest-callback';`
+import React from 'react';
+
+export const Widget = () => {
+  const inner = React.useCallback(() => doThing(), []);
+  return inner;
+};
+```
+
+```ts
+// The react import survives: `React.createElement` still reads it.
+import React from 'react';
+
+export const Widget = () => {
+  const inner = React.useCallback(() => doThing(), []);
+  return React.createElement('div', null, inner);
+};
+```
+
+A **comment inside the declaration** withholds the whole fix rather than risking
+the comment: which line a comment governs is not this rule's to guess, and an
+eslint directive moved or dropped silently changes which rules report on the
+file. The one exception is the `useCallback` specifier splice described above,
+which touches only the specifier's own tokens and therefore never has to guess.
 
 ### When the callback identity is load-bearing
 
