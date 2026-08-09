@@ -3,12 +3,41 @@ import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
 import { createSuppressionChecker } from '../utils/disableDirectives';
 import { MICRODIFF_MODULES } from '../utils/microdiffModules';
+import { planOrphanedImportRemoval, TextRange } from '../utils/importRemoval';
 import {
   FAST_DEEP_EQUAL_MODULES,
   fastDeepEqualImport,
 } from '../utils/fastDeepEqualModules';
 
 type MessageIds = 'useFastDeepEqual';
+
+/** One rewrite the fix performs: `range` becomes `text`. */
+type Edit = { range: TSESTree.Range; text: string };
+
+/** A comparison the rule reports, held until `Program:exit`. */
+type Violation = {
+  node: TSESTree.Node;
+  diffCall: TSESTree.CallExpression;
+  isEquality: boolean;
+  /**
+   * The scope the comparison sits in, captured during traversal. `getScope`
+   * answers for the node ESLint is currently visiting, so asking at
+   * `Program:exit` would answer for the program instead and miss every shadow.
+   */
+  scope: TSESLint.Scope.Scope;
+};
+
+/** A violation whose rewrite is safe, with the edits and deletions it owns. */
+type PlannedViolation = {
+  violation: Violation;
+  edits: Edit[];
+  /** The positions the edits erase, for the orphaned-import analysis. */
+  removed: TSESTree.Range[];
+  /** The hoisted `const changes = diff(...)` the rewrite makes dead, if any. */
+  declaration?: TSESTree.VariableDeclaration;
+  /** The slice `declaration` gives up, whoever in the batch deletes it. */
+  declarationRemoval?: TSESTree.Range;
+};
 
 const DIFF_EXPORT_NAME = 'diff';
 
@@ -109,6 +138,20 @@ function rangesOverlap(
   return a[0] < b[1] && b[0] < a[1];
 }
 
+/**
+ * Whether the diff call sits inside the comparison being rewritten.
+ * `diff(a, b).length === 0` rewrites the call where it stands, while
+ * `changes.length === 0` compares a call declared elsewhere that the fix moves.
+ */
+function isCallInPlace(
+  node: TSESTree.Node,
+  diffCall: TSESTree.CallExpression,
+): boolean {
+  return (
+    diffCall.range[0] >= node.range[0] && diffCall.range[1] <= node.range[1]
+  );
+}
+
 export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
   name: 'fast-deep-equal-over-microdiff',
   meta: {
@@ -135,13 +178,24 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
     let microdiffImportName = 'diff';
     let fastDeepEqualImportName = 'isEqual';
     const reportedNodes = new Set<TSESTree.Node>();
-    let plannedFastDeepEqualImport = false;
 
     /**
-     * The `import ... from '@blumintinc/fast-deep-equal'` statement rides on a
-     * single violation's fix, so that violation is the file's import carrier. A
-     * suppressed carrier would take the import down with it while the surviving
-     * violations still emit `isEqual(...)` calls, leaving them unbound.
+     * Every comparison the rule reports, in traversal order.
+     *
+     * Reporting is deferred to `Program:exit` because the microdiff import is
+     * unbound only once no rewrite leaves a reference to it standing. Judged one
+     * comparison at a time, a file with two of them never sees either as the
+     * binding's last use, and the pass that rewrites both resolves every report
+     * — so nothing ever revisits the stranded import.
+     */
+    const violations: Violation[] = [];
+
+    /**
+     * A suppressed report is dropped together with its fix, so its rewrite never
+     * happens: counting it toward the batch would unbind an import the surviving
+     * text still calls, and would hand the `import ... from
+     * '@blumintinc/fast-deep-equal'` statement — which rides on one violation's
+     * fix — to a violation ESLint is about to discard.
      */
     const isReportSuppressed = createSuppressionChecker(context);
 
@@ -539,48 +593,90 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
     /**
      * The edits that turn the comparison itself into a fast-deep-equal call.
      */
-    function createComparisonFixes(
-      fixer: TSESLint.RuleFixer,
+    function createComparisonEdits(
       node: TSESTree.Node,
       diffCall: TSESTree.CallExpression,
       isEquality: boolean,
-    ): TSESLint.RuleFix[] {
-      // Comparing a call in place — `diff(a, b).length === 0` — is rewritten by
-      // splicing the two ranges that actually change: the callee name and the
-      // `.length` comparison tail (plus the `!`/`0 ===` head). Re-emitting the
-      // argument list instead destroyed everything between the arguments, and a
-      // dropped `eslint-disable` comment silently re-enables the rule it was
-      // suppressing.
-      const isCallInPlace =
-        diffCall.range[0] >= node.range[0] &&
-        diffCall.range[1] <= node.range[1];
-
-      if (!isCallInPlace) {
+    ): Edit[] {
+      if (!isCallInPlace(node, diffCall)) {
         // `changes.length === 0` compares a call declared elsewhere, so that
         // call moves to the comparison's position and its text has to be
         // re-emitted — verbatim, so its comments move with it.
         const call = renameCallee(diffCall);
-        return [fixer.replaceText(node, isEquality ? call : `!${call}`)];
+        return [{ range: node.range, text: isEquality ? call : `!${call}` }];
       }
 
-      const fixes: TSESLint.RuleFix[] = [];
+      // Comparing a call in place — `diff(a, b).length === 0` — is rewritten by
+      // splicing the ranges that actually change: the callee name and the
+      // `.length` comparison tail (plus the `!`/`0 ===` head). Re-emitting the
+      // argument list instead destroyed everything between the arguments, and a
+      // dropped `eslint-disable` comment silently re-enables the rule it was
+      // suppressing.
+      const edits: Edit[] = [];
       const headRange: TSESTree.Range = [node.range[0], diffCall.range[0]];
       if (!isEquality) {
-        fixes.push(fixer.replaceTextRange(headRange, '!'));
+        edits.push({ range: headRange, text: '!' });
       } else if (headRange[0] !== headRange[1]) {
-        fixes.push(fixer.removeRange(headRange));
+        edits.push({ range: headRange, text: '' });
       }
-      fixes.push(fixer.replaceText(diffCall.callee, fastDeepEqualImportName));
-      fixes.push(fixer.removeRange([diffCall.range[1], node.range[1]]));
-      return fixes;
+      edits.push({
+        range: diffCall.callee.range,
+        text: fastDeepEqualImportName,
+      });
+      edits.push({ range: [diffCall.range[1], node.range[1]], text: '' });
+      return edits;
     }
 
     /**
-     * The `import ... from '@blumintinc/fast-deep-equal'` edit, scheduled at
-     * most once per file. Claiming the carrier slot is a side effect, so this
-     * runs last — after every reason to decline the fix has been ruled out —
-     * otherwise a declining violation takes the import down with it and leaves
-     * the surviving violations' `isEqual(...)` calls unbound.
+     * The positions a rewrite genuinely erases, which is all the orphan
+     * analysis may be told about.
+     *
+     * Only deleted text counts, and the argument list is never deleted: it is
+     * spliced around where it stands, or moved verbatim to the comparison's
+     * position. Handing over the enclosing span instead would read every binding
+     * the arguments mention as unreferenced and delete its import — an
+     * over-removal strictly worse than the stranded import this exists to
+     * prevent. So each shape gives up the span around the call, plus the callee
+     * the rewrite renames.
+     *
+     * The one case that lists the comparison itself is a hoisted
+     * `const changes = diff(...)` this rule will not delete, since then the
+     * rewrite really does strip `changes` of its last read. Where the
+     * declaration goes too, `changes` goes with it, and listing the comparison
+     * would only make the planner refuse a rewrite that orphans nothing.
+     */
+    function removedReferenceRanges(
+      node: TSESTree.Node,
+      diffCall: TSESTree.CallExpression,
+      declarationRemoval?: TSESTree.Range,
+    ): TSESTree.Range[] {
+      if (isCallInPlace(node, diffCall)) {
+        return [
+          [node.range[0], diffCall.range[0]],
+          diffCall.callee.range,
+          [diffCall.range[1], node.range[1]],
+        ];
+      }
+      if (!declarationRemoval) {
+        return [node.range];
+      }
+      return [
+        [declarationRemoval[0], diffCall.range[0]],
+        diffCall.callee.range,
+        [diffCall.range[1], declarationRemoval[1]],
+      ];
+    }
+
+    /**
+     * The `import ... from '@blumintinc/fast-deep-equal'` edit, emitted once as
+     * part of the file's single fix.
+     *
+     * The anchor is the microdiff declaration, which the same fix may be
+     * deleting. Inserting *after* a declaration that is going away puts the
+     * insertion point inside the deleted span, and ESLint rejects that pair as
+     * overlapping and discards every message for the file — so a displaced
+     * anchor is taken over rather than followed: the new import lands on the
+     * exact position the old one occupied.
      *
      * The specifier is the scoped fork: it is the dependency this codebase
      * declares, so any other name would be written as an import that resolves
@@ -588,23 +684,40 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
      */
     function planFastDeepEqualImport(
       fixer: TSESLint.RuleFixer,
+      removalRanges: readonly TextRange[],
     ): TSESLint.RuleFix[] {
-      if (hasFastDeepEqualImport || plannedFastDeepEqualImport) {
+      if (hasFastDeepEqualImport) {
         return [];
       }
-      plannedFastDeepEqualImport = true;
 
       const importStatement = fastDeepEqualImport(fastDeepEqualImportName);
       const importDeclarations = sourceCode.ast.body.filter(
         (statement): statement is TSESTree.ImportDeclaration =>
           statement.type === AST_NODE_TYPES.ImportDeclaration,
       );
-      const microdiffImport = importDeclarations.find((declaration) =>
+      const removalStartOf = (declaration: TSESTree.ImportDeclaration) =>
+        removalRanges.find(
+          (range) =>
+            range[0] <= declaration.range[0] &&
+            range[1] >= declaration.range[1],
+        )?.[0];
+
+      const microdiffImports = importDeclarations.filter((declaration) =>
         MICRODIFF_MODULES.has(String(declaration.source.value)),
       );
-      const anchor =
-        microdiffImport ?? importDeclarations[importDeclarations.length - 1];
+      for (const declaration of microdiffImports) {
+        const start = removalStartOf(declaration);
+        if (start !== undefined) {
+          return [
+            fixer.insertTextBeforeRange([start, start], `${importStatement}\n`),
+          ];
+        }
+      }
 
+      const surviving = importDeclarations.filter(
+        (declaration) => removalStartOf(declaration) === undefined,
+      );
+      const anchor = microdiffImports[0] ?? surviving[surviving.length - 1];
       if (anchor) {
         return [fixer.insertTextAfter(anchor, `\n${importStatement}`)];
       }
@@ -612,17 +725,24 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
     }
 
     /**
-     * Create a fix for replacing microdiff equality check with fast-deep-equal
+     * The edits one violation contributes, or `null` when its rewrite is not
+     * provably safe.
+     *
+     * `removedDeclarations` carries the hoisted declarations earlier violations
+     * already claimed, so two comparisons measuring the same
+     * `const changes = diff(...)` delete it once and both get rewritten —
+     * deleting it twice is an overlap, and deleting it while leaving the second
+     * comparison reading `changes` unbinds that read.
      */
-    function createFix(
-      fixer: TSESLint.RuleFixer,
-      node: TSESTree.Node,
-      diffCall: TSESTree.CallExpression,
-      isEquality: boolean,
-    ): TSESLint.RuleFix[] | null {
-      // A suppressed report is dropped together with its fix. Producing no fix
-      // — and leaving the import unscheduled — passes the carrier slot to the
-      // first violation that survives.
+    function planViolation(
+      violation: Violation,
+      removedDeclarations: ReadonlyMap<
+        TSESTree.VariableDeclaration,
+        TSESTree.Range
+      >,
+    ): PlannedViolation | null {
+      const { node, diffCall, isEquality, scope } = violation;
+
       if (isReportSuppressed(node)) {
         return null;
       }
@@ -631,12 +751,12 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
       // makes both halves of the edit wrong: an inserted import collides with a
       // same-scope declaration (TS2440/TS2300), and a narrower-scope shadow
       // rebinds the emitted call to the local value with no diagnostic at all.
-      // Resolving from the fixed node's scope chain catches both. Declining
-      // before the import is scheduled leaves the carrier slot to a violation
-      // whose scope is safe, and drops the whole edit — including the removal
-      // of a redundant `const changes = diff(...)` — rather than half of it.
+      // Resolving from the fixed node's scope chain catches both. Dropping this
+      // violation from the batch leaves the carrier slot to one whose scope is
+      // safe, and drops its whole edit — including the removal of a redundant
+      // `const changes = diff(...)` — rather than half of it.
       const existingBinding = ASTHelpers.findVariableInScope(
-        ASTHelpers.getScope(context, node),
+        scope,
         fastDeepEqualImportName,
       );
       if (existingBinding && !bindsFastDeepEqual(existingBinding)) {
@@ -647,42 +767,90 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
         return null; // Can't fix if not exactly 2 arguments
       }
 
-      const comparisonFixes = createComparisonFixes(
-        fixer,
-        node,
-        diffCall,
-        isEquality,
-      );
+      const comparisonEdits = createComparisonEdits(node, diffCall, isEquality);
 
       // If the equality was via an identifier like `changes.length`, and that
       // identifier is declared as `const changes = diff(...);` and used ONLY for
       // `.length` checks, remove the redundant variable declaration.
       const declaration = findRedundantDeclaration(node);
-      const declarationFixes: TSESLint.RuleFix[] = [];
-      if (declaration) {
-        const removalRange = redundantDeclarationRange(declaration);
-        // A comparison nested inside the declaration it would delete — a diff
-        // argument that reads `changes.length` — admits no pair of disjoint
-        // edits. Reporting without a fix beats an overlap, which aborts the
-        // file, and beats a half-applied edit that deletes the surviving code.
-        if (
-          comparisonFixes.some(({ range }) =>
-            rangesOverlap(range, removalRange),
-          )
-        ) {
-          return null;
-        }
-        declarationFixes.push(fixer.removeRange(removalRange));
+      if (!declaration) {
+        return {
+          violation,
+          edits: comparisonEdits,
+          removed: removedReferenceRanges(node, diffCall),
+        };
       }
 
-      return [
-        ...planFastDeepEqualImport(fixer),
-        ...declarationFixes,
-        ...comparisonFixes,
-      ];
+      const claimed = removedDeclarations.get(declaration);
+      const removalRange = claimed ?? redundantDeclarationRange(declaration);
+      // A comparison nested inside the declaration it would delete — a diff
+      // argument that reads `changes.length` — admits no pair of disjoint
+      // edits. Reporting without a fix beats an overlap, which aborts the
+      // file, and beats a half-applied edit that deletes the surviving code.
+      if (
+        comparisonEdits.some(({ range }) => rangesOverlap(range, removalRange))
+      ) {
+        return null;
+      }
+
+      return {
+        violation,
+        declaration,
+        declarationRemoval: removalRange,
+        edits: claimed
+          ? comparisonEdits
+          : [...comparisonEdits, { range: removalRange, text: '' }],
+        removed: removedReferenceRanges(node, diffCall, removalRange),
+      };
     }
 
-    function reportEqualityCheck(
+    /**
+     * The rewrites that actually ship, in traversal order.
+     *
+     * Each is screened alone before it joins the batch: a rewrite whose own
+     * deletion orphans something that cannot be unbound safely — a local
+     * variable, an import behind a directive comment — would otherwise poison
+     * every other rewrite in the file. Edits that collide with an already
+     * accepted one are dropped for the same reason a single report's
+     * overlapping fixes are: ESLint asserts on the overlap and discards every
+     * message for the file.
+     */
+    function planViolations(): PlannedViolation[] {
+      const planned: PlannedViolation[] = [];
+      const claimedRanges: TSESTree.Range[] = [];
+      const removedDeclarations = new Map<
+        TSESTree.VariableDeclaration,
+        TSESTree.Range
+      >();
+
+      for (const violation of violations) {
+        const candidate = planViolation(violation, removedDeclarations);
+        if (!candidate) continue;
+        if (planOrphanedImportRemoval(sourceCode, candidate.removed) === null) {
+          continue;
+        }
+        if (
+          candidate.edits.some(({ range }) =>
+            claimedRanges.some((taken) => rangesOverlap(range, taken)),
+          )
+        ) {
+          continue;
+        }
+
+        claimedRanges.push(...candidate.edits.map(({ range }) => range));
+        if (candidate.declaration && candidate.declarationRemoval) {
+          removedDeclarations.set(
+            candidate.declaration,
+            candidate.declarationRemoval,
+          );
+        }
+        planned.push(candidate);
+      }
+
+      return planned;
+    }
+
+    function collectEqualityCheck(
       node: TSESTree.Node,
       result: { isEquality: boolean; diffCall?: TSESTree.CallExpression },
     ): void {
@@ -690,16 +858,11 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
       if (!diffCall) return;
       if (reportedNodes.has(node)) return;
       reportedNodes.add(node);
-      context.report({
+      violations.push({
         node,
-        messageId: 'useFastDeepEqual',
-        data: {
-          diffName: microdiffImportName,
-          fastEqualName: fastDeepEqualImportName,
-        },
-        fix(fixer) {
-          return createFix(fixer, node, diffCall, isEquality);
-        },
+        diffCall,
+        isEquality,
+        scope: ASTHelpers.getScope(context, node),
       });
     }
 
@@ -755,7 +918,7 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
           return;
         }
 
-        reportEqualityCheck(node, isMicrodiffEqualityCheck(node));
+        collectEqualityCheck(node, isMicrodiffEqualityCheck(node));
       },
 
       // Check if statements for microdiff equality patterns
@@ -766,7 +929,7 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
           return;
         }
 
-        reportEqualityCheck(node.test, isMicrodiffEqualityCheck(node.test));
+        collectEqualityCheck(node.test, isMicrodiffEqualityCheck(node.test));
       },
 
       // Check return statements for microdiff equality patterns
@@ -778,7 +941,60 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
           return;
         }
 
-        reportEqualityCheck(argument, isMicrodiffEqualityCheck(argument));
+        collectEqualityCheck(argument, isMicrodiffEqualityCheck(argument));
+      },
+
+      'Program:exit'() {
+        if (violations.length === 0) return;
+
+        const planned = planViolations();
+        // One plan over every surviving rewrite: the microdiff binding is left
+        // unreferenced by their union even when no single rewrite would strip
+        // its last use, and the pass that applies them all resolves every
+        // report — so this is the only moment the stranded import is visible.
+        const importRemoval =
+          planned.length > 0
+            ? planOrphanedImportRemoval(
+                sourceCode,
+                planned.flatMap((entry) => entry.removed),
+              )
+            : null;
+        const removalRanges = importRemoval ?? [];
+
+        // The whole batch ships as one fix, so no rewrite can land without the
+        // others the import's orphanhood was judged against, and no unbinding
+        // can land without the rewrite it was claimed on. The other violations
+        // report without a fixer; the carrier's pass already resolves them.
+        //
+        // No plan at all means some binding would be left unreferenced yet
+        // cannot be unbound safely, so every rewrite stays: reports without a
+        // fixer are the lesser damage.
+        const carrier = importRemoval ? planned[0] : undefined;
+
+        for (const violation of violations) {
+          context.report({
+            node: violation.node,
+            messageId: 'useFastDeepEqual',
+            data: {
+              diffName: microdiffImportName,
+              fastEqualName: fastDeepEqualImportName,
+            },
+            fix:
+              violation === carrier?.violation
+                ? (fixer: TSESLint.RuleFixer) => [
+                    ...planFastDeepEqualImport(fixer, removalRanges),
+                    ...removalRanges.map((range) =>
+                      fixer.removeRange([range[0], range[1]]),
+                    ),
+                    ...planned.flatMap((entry) =>
+                      entry.edits.map(({ range, text }) =>
+                        fixer.replaceTextRange(range, text),
+                      ),
+                    ),
+                  ]
+                : undefined,
+          });
+        }
       },
     };
   },

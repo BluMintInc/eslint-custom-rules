@@ -344,8 +344,7 @@ function areObjectsEqual(obj1, obj2) {
   return diff(obj1, obj2).length === 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import { diff } from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function areObjectsEqual(obj1, obj2) {
   return isEqual(obj1, obj2);
@@ -359,8 +358,7 @@ function areObjectsEqual(obj1, obj2) {
   return diff(obj1, obj2).length == 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import { diff } from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function areObjectsEqual(obj1, obj2) {
   return isEqual(obj1, obj2);
@@ -374,8 +372,7 @@ function objectsAreDifferent(obj1, obj2) {
   return diff(obj1, obj2).length !== 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import { diff } from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function objectsAreDifferent(obj1, obj2) {
   return !isEqual(obj1, obj2);
@@ -389,8 +386,7 @@ function objectsAreDifferent(obj1, obj2) {
   return diff(obj1, obj2).length != 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import { diff } from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function objectsAreDifferent(obj1, obj2) {
   return !isEqual(obj1, obj2);
@@ -404,8 +400,7 @@ function areObjectsEqual(obj1, obj2) {
   return !diff(obj1, obj2).length;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import { diff } from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function areObjectsEqual(obj1, obj2) {
   return isEqual(obj1, obj2);
@@ -422,8 +417,7 @@ function updateIfNeeded(obj1, obj2) {
   return true;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import { diff } from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function updateIfNeeded(obj1, obj2) {
   if (isEqual(obj1, obj2)) {
@@ -443,8 +437,7 @@ function updateIfNeeded(obj1, obj2) {
   return true;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import { diff } from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function updateIfNeeded(obj1, obj2) {
   if (isEqual(obj1, obj2)) {
@@ -466,8 +459,7 @@ function objectsAreTheSame(obj1, obj2) {
   return isEqual(obj1, obj2);
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import { diff } from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function areObjectsEqual(obj1, obj2) {
   return isEqual(obj1, obj2);
@@ -490,8 +482,7 @@ function areObjectsEqual(obj1, obj2) {
           data: messageData('compareObjects'),
         },
       ],
-      output: `import { diff as compareObjects } from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function areObjectsEqual(obj1, obj2) {
   return isEqual(obj1, obj2);
@@ -511,8 +502,7 @@ function areObjectsEqual(obj1, obj2) {
           data: messageData('diff', 'deepEqual'),
         },
       ],
-      output: `import { diff } from 'microdiff';
-import deepEqual from '@blumintinc/fast-deep-equal';
+      output: `import deepEqual from '@blumintinc/fast-deep-equal';
 
 function areObjectsEqual(obj1, obj2) {
   return deepEqual(obj1, obj2);
@@ -526,8 +516,7 @@ function areObjectsEqual(a, b) {
   return diff(a, b).length === 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function areObjectsEqual(a, b) {
   return isEqual(a, b);
@@ -542,8 +531,7 @@ function areObjectsEqual(a, b) {
   return changes.length === 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function areObjectsEqual(a, b) {
   return isEqual(a, b);
@@ -560,8 +548,7 @@ function doSomething(before, after) {
   }
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function doSomething(before, after) {
   if (isEqual(before, after)) {
@@ -578,8 +565,7 @@ function areSame(x, y) {
   return !changes.length;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function areSame(x, y) {
   return isEqual(x, y);
@@ -593,8 +579,7 @@ function eq(a, b) {
   return 0 === diff(a, b).length;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function eq(a, b) {
   return isEqual(a, b);
@@ -620,8 +605,7 @@ function checkAll(prevData, newData, previousMetadataRef, newMetadata) {
         { messageId: 'useFastDeepEqual', data: messageData() },
         { messageId: 'useFastDeepEqual', data: messageData() },
       ],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function checkAll(prevData, newData, previousMetadataRef, newMetadata) {
   const isDataEqual = isEqual({ ...prevData }, { ...newData });
@@ -643,8 +627,7 @@ function objectsAreDifferent(obj1, obj2) {
   return changes.length !== 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual' }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function objectsAreDifferent(obj1, obj2) {
   return !isEqual(obj1, obj2);
@@ -659,8 +642,7 @@ function eq(a, b) {
   return 0 === changes.length;
 }`,
       errors: [{ messageId: 'useFastDeepEqual' }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function eq(a, b) {
   return isEqual(a, b);
@@ -675,8 +657,7 @@ function areSame(x, y) {
   return !changes.length;
 }`,
       errors: [{ messageId: 'useFastDeepEqual' }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function areSame(x, y) {
   return isEqual(x, y);
@@ -693,8 +674,7 @@ function eq(a, b) {
   ).length === 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual' }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function eq(a, b) {
   return isEqual(
@@ -721,8 +701,7 @@ function areEqual(a, b) {
   ).length === 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function areEqual(a, b) {
   return isEqual(
@@ -744,8 +723,7 @@ function eq(a, b) {
   ).length === 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function eq(a, b) {
   return isEqual(
@@ -766,8 +744,7 @@ function eq(a, b) {
   ).length === 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function eq(a, b) {
   return isEqual(
@@ -787,8 +764,7 @@ function ne(a, b) {
   ).length !== 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function ne(a, b) {
   return !isEqual(
@@ -811,8 +787,7 @@ function eq(a, b) {
   ).length === 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function eq(a, b) {
   return isEqual(
@@ -832,8 +807,7 @@ function eq(a, b) {
   return diff(a, /* by value */ b).length === 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function eq(a, b) {
   return isEqual(a, /* by value */ b);
@@ -847,8 +821,7 @@ function eq(a, b) {
   return diff /* deep */ (a, b).length === 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function eq(a, b) {
   return isEqual /* deep */ (a, b);
@@ -866,8 +839,7 @@ function eq(a, b) {
   ).length;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function eq(a, b) {
   return isEqual(
@@ -885,8 +857,7 @@ function eq(a, b) {
   return 0 === diff(a, /* by value */ b).length;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function eq(a, b) {
   return isEqual(a, /* by value */ b);
@@ -907,8 +878,7 @@ function checkAll(previousMetadataRef, newMetadata) {
   return changesMetadata.length === 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function checkAll(previousMetadataRef, newMetadata) {
   return isEqual(
@@ -1062,8 +1032,7 @@ function areDifferent(a, b) {
         { messageId: 'useFastDeepEqual', data: messageData() },
         { messageId: 'useFastDeepEqual', data: messageData() },
       ],
-      output: `import { diff } from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function areSame(a, b) {
   // eslint-disable-next-line no-console
@@ -1313,8 +1282,7 @@ function eq(a, b) {
       code: `import diff from 'microdiff';
 function f(a, b) { const changes = diff(a, b); return changes.length !== 0; }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 function f(a, b) { return !isEqual(a, b); }`,
     },
     {
@@ -1322,8 +1290,7 @@ function f(a, b) { return !isEqual(a, b); }`,
       code: `import diff from 'microdiff';
 function f(a, b) { const changes = diff(a, b); const same = changes.length === 0; return same; }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 function f(a, b) { const same = isEqual(a, b); return same; }`,
     },
     {
@@ -1337,8 +1304,7 @@ function areSame(a, b) {
   return changes.length === 0 ? label : '';
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function areSame(a, b) {
   const label = 'compare';
@@ -1351,8 +1317,7 @@ function areSame(a, b) {
       code: `import diff from 'microdiff';
 function f(a, b) { const changes = diff(a, b); /* keep */ return changes.length === 0; }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 function f(a, b) { /* keep */ return isEqual(a, b); }`,
     },
     {
@@ -1364,8 +1329,7 @@ function f(a, b) {
   return changes.length === 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function f(a, b) {
   /* keep */
@@ -1378,8 +1342,7 @@ function f(a, b) {
 function f(a, b) { const changes = diff(a, b)
   return changes.length === 0 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 function f(a, b) {
   return isEqual(a, b) }`,
     },
@@ -1394,8 +1357,7 @@ function f(a, b) {
   return changes.length === 0 && !console.log(a);
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function f(a, b) {
   // eslint-disable-next-line no-console
@@ -1414,8 +1376,7 @@ function f(a, b) {
   }
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function f(a, b) {
   for (; !isEqual(a, b); ) {
@@ -1524,8 +1485,7 @@ function clean(a, b) {
       code: `import diff from '@blumintinc/microdiff';
 export const same = (a: object, b: object) => diff(a, b).length === 0;`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from '@blumintinc/microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 export const same = (a: object, b: object) => isEqual(a, b);`,
     },
     {
@@ -1536,8 +1496,7 @@ function areObjectsEqual(obj1, obj2) {
   return diff(obj1, obj2).length === 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import { diff } from '@blumintinc/microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function areObjectsEqual(obj1, obj2) {
   return isEqual(obj1, obj2);
@@ -1551,8 +1510,7 @@ function areObjectsEqual(obj1, obj2) {
   return diff(obj1, obj2).length == 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from '@blumintinc/microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function areObjectsEqual(obj1, obj2) {
   return isEqual(obj1, obj2);
@@ -1566,8 +1524,7 @@ function objectsAreDifferent(obj1, obj2) {
   return diff(obj1, obj2).length !== 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from '@blumintinc/microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function objectsAreDifferent(obj1, obj2) {
   return !isEqual(obj1, obj2);
@@ -1581,8 +1538,7 @@ function objectsAreDifferent(obj1, obj2) {
   return diff(obj1, obj2).length != 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from '@blumintinc/microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function objectsAreDifferent(obj1, obj2) {
   return !isEqual(obj1, obj2);
@@ -1596,8 +1552,7 @@ function areSame(a, b) {
   return !diff(a, b).length;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from '@blumintinc/microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function areSame(a, b) {
   return isEqual(a, b);
@@ -1611,8 +1566,7 @@ function eq(a, b) {
   return 0 === diff(a, b).length;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from '@blumintinc/microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function eq(a, b) {
   return isEqual(a, b);
@@ -1629,8 +1583,7 @@ function updateIfNeeded(obj1, obj2) {
   return true;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from '@blumintinc/microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function updateIfNeeded(obj1, obj2) {
   if (isEqual(obj1, obj2)) {
@@ -1648,8 +1601,7 @@ function areSame(a, b) {
   return changes.length === 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from '@blumintinc/microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function areSame(a, b) {
   return isEqual(a, b);
@@ -1665,8 +1617,7 @@ export function isSame(a: object, b: object) {
   return changes.length === 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff, { Difference } from '@blumintinc/microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 export function isSame(a: object, b: object) {
   return isEqual(a, b);
@@ -1684,8 +1635,7 @@ function areSame(a, b) {
       errors: [
         { messageId: 'useFastDeepEqual', data: messageData('compareDeep') },
       ],
-      output: `import compareDeep from '@blumintinc/microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function areSame(a, b) {
   return isEqual(a, b);
@@ -1701,8 +1651,7 @@ function areSame(a, b) {
       errors: [
         { messageId: 'useFastDeepEqual', data: messageData('compareDeep') },
       ],
-      output: `import compareDeep from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function areSame(a, b) {
   return isEqual(a, b);
@@ -1719,8 +1668,7 @@ function areObjectsEqual(obj1, obj2) {
       errors: [
         { messageId: 'useFastDeepEqual', data: messageData('compareObjects') },
       ],
-      output: `import { diff as compareObjects } from '@blumintinc/microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function areObjectsEqual(obj1, obj2) {
   return isEqual(obj1, obj2);
@@ -1740,8 +1688,7 @@ function areObjectsEqual(obj1, obj2) {
           data: messageData('diff', 'deepEqual'),
         },
       ],
-      output: `import diff from '@blumintinc/microdiff';
-import deepEqual from '@blumintinc/fast-deep-equal';
+      output: `import deepEqual from '@blumintinc/fast-deep-equal';
 
 function areObjectsEqual(obj1, obj2) {
   return deepEqual(obj1, obj2);
@@ -1749,8 +1696,11 @@ function areObjectsEqual(obj1, obj2) {
     },
     // The inserted import is anchored on the microdiff declaration, which the
     // scoped specifier has to match or the import lands on the wrong statement.
+    // The same fix deletes that declaration, so the new import takes over its
+    // position rather than following it: an insertion point inside a deleted
+    // span is an overlap ESLint rejects, discarding every message for the file.
     {
-      name: 'the inserted import is anchored on the scoped microdiff declaration',
+      name: 'the inserted import takes the place of the scoped microdiff declaration',
       code: `import diff from '@blumintinc/microdiff';
 import { helper } from './helper';
 
@@ -1758,8 +1708,7 @@ function areSame(a, b) {
   return helper(diff(a, b).length === 0);
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from '@blumintinc/microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 import { helper } from './helper';
 
 function areSame(a, b) {
@@ -1777,8 +1726,7 @@ function areSame(a, b) {
   return diff(a, b).length === 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from '@blumintinc/microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function areSame(a, b) {
   return isEqual(a, b);
@@ -1796,8 +1744,7 @@ function areSame(a, b) {
   return diff(a, b).length === 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from '@blumintinc/microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function areSame(a, b) {
   return isEqual(a, b);
@@ -1812,8 +1759,7 @@ function areSame(a, b) {
   return diff(a, b).length !== 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from '@blumintinc/microdiff';
-import isEqual from '@blumintinc/fast-deep-equal/react';
+      output: `import isEqual from '@blumintinc/fast-deep-equal/react';
 
 function areSame(a, b) {
   return !isEqual(a, b);
@@ -1828,8 +1774,7 @@ function areSame(a, b) {
   return diff(a, b).length === 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from '@blumintinc/microdiff';
-import isEqual from 'fast-deep-equal';
+      output: `import isEqual from 'fast-deep-equal';
 
 function areSame(a, b) {
   return isEqual(a, b);
@@ -1844,8 +1789,7 @@ function areSame(a, b) {
   return diff(a, b).length === 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from '@blumintinc/microdiff';
-import isEqual from 'fast-deep-equal/es6';
+      output: `import isEqual from 'fast-deep-equal/es6';
 
 function areSame(a, b) {
   return isEqual(a, b);
@@ -1865,8 +1809,7 @@ function areSame(a, b) {
           data: messageData('diff', 'deepEqual'),
         },
       ],
-      output: `import diff from '@blumintinc/microdiff';
-import deepEqual from '@blumintinc/fast-deep-equal';
+      output: `import deepEqual from '@blumintinc/fast-deep-equal';
 
 function areSame(a, b) {
   return deepEqual(a, b);
@@ -1886,8 +1829,7 @@ function areSame(a, b) {
           data: messageData('diff', 'deepEqual'),
         },
       ],
-      output: `import diff from '@blumintinc/microdiff';
-import deepEqual from '@blumintinc/fast-deep-equal/react';
+      output: `import deepEqual from '@blumintinc/fast-deep-equal/react';
 
 function areSame(a, b) {
   return deepEqual(a, b);
@@ -1905,8 +1847,7 @@ function areSame(a, b) {
   return diff(a, b).length === 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from '@blumintinc/microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 import '@blumintinc/fast-deep-equal';
 
 function areSame(a, b) {
@@ -1922,8 +1863,7 @@ function areSame(a, b) {
   return fastDeepEqual && diff(a, b).length === 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from '@blumintinc/microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 import * as fastDeepEqual from '@blumintinc/fast-deep-equal';
 
 function areSame(a, b) {
@@ -1945,8 +1885,7 @@ function areObjectsEqual(a, b) {
   return changes?.length === 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function areObjectsEqual(a, b) {
   return isEqual(a, b);
@@ -1960,8 +1899,7 @@ function areObjectsEqual(a, b) {
   return diff(a, b)?.length === 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function areObjectsEqual(a, b) {
   return isEqual(a, b);
@@ -1976,8 +1914,7 @@ function objectsAreDifferent(a, b) {
   return changes?.length !== 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function objectsAreDifferent(a, b) {
   return !isEqual(a, b);
@@ -1992,8 +1929,7 @@ function eq(a, b) {
   return 0 === changes?.length;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function eq(a, b) {
   return isEqual(a, b);
@@ -2010,8 +1946,7 @@ function doSomething(before, after) {
   }
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function doSomething(before, after) {
   if (isEqual(before, after)) {
@@ -2031,8 +1966,7 @@ function areSame(x, y) {
   return !changes?.length;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function areSame(x, y) {
   return isEqual(x, y);
@@ -2051,12 +1985,206 @@ function areObjectsEqual(a, b) {
   return diff?.(a, b).length === 0;
 }`,
       errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
-      output: `import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
 
 function areObjectsEqual(a, b) {
   return isEqual?.(a, b);
 }`,
+    },
+    // ------------------------------------------------------------------
+    // Issue #1893: the rewrite deletes the microdiff binding's last reference,
+    // so the same fix has to unbind it. Leaving the import behind turns a file
+    // that lints clean into one that fails `no-unused-vars` — an error in the
+    // consumer's CI and a `noUnusedLocals` build failure — and since the fix
+    // resolves this rule's own report, nothing re-reports the debt.
+    //
+    // The mirror shape matters more than the fix itself: an import still read
+    // elsewhere must survive, because deleting it unbinds working code.
+    // ------------------------------------------------------------------
+    {
+      name: 'the stranded microdiff import goes with the last reference (issue #1893)',
+      code: `import diff from 'microdiff';
+
+export const eq = (a, b) => diff(a, b).length === 0;`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
+
+export const eq = (a, b) => isEqual(a, b);`,
+    },
+    {
+      name: 'a microdiff import still read elsewhere survives the fix (issue #1893)',
+      code: `import diff from 'microdiff';
+
+export const eq = (a, b) => diff(a, b).length === 0;
+export const changesOf = (a, b) => diff(a, b);`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import diff from 'microdiff';
+import isEqual from '@blumintinc/fast-deep-equal';
+
+export const eq = (a, b) => isEqual(a, b);
+export const changesOf = (a, b) => diff(a, b);`,
+    },
+    {
+      name: 'an aliased microdiff import is unbound under its alias (issue #1893)',
+      code: `import d from 'microdiff';
+
+export const eq = (a, b) => d(a, b).length === 0;`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData('d') }],
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
+
+export const eq = (a, b) => isEqual(a, b);`,
+    },
+    {
+      name: 'an aliased microdiff import still read elsewhere survives (issue #1893)',
+      code: `import d from 'microdiff';
+
+export const eq = (a, b) => d(a, b).length === 0;
+export const changesOf = (a, b) => d(a, b);`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData('d') }],
+      output: `import d from 'microdiff';
+import isEqual from '@blumintinc/fast-deep-equal';
+
+export const eq = (a, b) => isEqual(a, b);
+export const changesOf = (a, b) => d(a, b);`,
+    },
+    // microdiff's other exports are types, so a declaration with more than one
+    // specifier is `diff` beside `Difference`. Only the specifier whose last
+    // reference the fix deleted may go; the braces stay with the survivor.
+    {
+      name: 'only the orphaned specifier leaves a shared microdiff import (issue #1893)',
+      code: `import diff, { Difference } from '@blumintinc/microdiff';
+
+export type Changes = Difference[];
+export const eq = (a, b) => diff(a, b).length === 0;`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import { Difference } from '@blumintinc/microdiff';
+import isEqual from '@blumintinc/fast-deep-equal';
+
+export type Changes = Difference[];
+export const eq = (a, b) => isEqual(a, b);`,
+    },
+    {
+      name: 'a shared microdiff import goes whole when every specifier is orphaned (issue #1893)',
+      code: `import diff, { Difference } from '@blumintinc/microdiff';
+
+export function isSame(a: object, b: object) {
+  const changes: Difference[] = diff(a, b);
+  return changes.length === 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
+
+export function isSame(a: object, b: object) {
+  return isEqual(a, b);
+}`,
+    },
+    // The arguments are carried through verbatim rather than deleted, so a
+    // binding they mention is still read after the fix. Reading the deleted
+    // declaration as the whole of the edit would strip its import — an
+    // over-removal strictly worse than the stranded import above.
+    {
+      name: 'an import read only by the diff arguments survives the inlining (issue #1893)',
+      code: `import diff from 'microdiff';
+import { normalize } from './normalize';
+
+export function eq(a, b) {
+  const changes = diff(normalize(a), b);
+  return changes.length === 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
+import { normalize } from './normalize';
+
+export function eq(a, b) {
+  return isEqual(normalize(a), b);
+}`,
+    },
+    // Two comparisons of one microdiff binding: neither rewrite alone strips
+    // its last reference, so the unbinding is only visible once both ship in
+    // the same fix — which is also what lets the hoisted declaration be deleted
+    // once instead of twice.
+    {
+      name: 'two comparisons unbind the shared microdiff import together (issue #1893)',
+      code: `import diff from 'microdiff';
+
+export const eq = (a, b) => diff(a, b).length === 0;
+export const ne = (a, b) => diff(a, b).length !== 0;`,
+      errors: [
+        { messageId: 'useFastDeepEqual', data: messageData() },
+        { messageId: 'useFastDeepEqual', data: messageData() },
+      ],
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
+
+export const eq = (a, b) => isEqual(a, b);
+export const ne = (a, b) => !isEqual(a, b);`,
+    },
+    {
+      name: 'two comparisons of one hoisted diff variable drop it once (issue #1893)',
+      code: `import diff from 'microdiff';
+
+export function eq(a, b) {
+  const changes = diff(a, b);
+  return changes.length === 0 && changes.length !== 0;
+}`,
+      errors: [
+        { messageId: 'useFastDeepEqual', data: messageData() },
+        { messageId: 'useFastDeepEqual', data: messageData() },
+      ],
+      output: `import isEqual from '@blumintinc/fast-deep-equal';
+
+export function eq(a, b) {
+  return isEqual(a, b) && !isEqual(a, b);
+}`,
+    },
+    // A declaration this rule will not delete — it declares a second variable —
+    // leaves `changes` unread once the comparison is rewritten. Rewriting it
+    // anyway would orphan `changes` instead of the import, so the whole fix is
+    // declined and the report stands on its own.
+    {
+      name: 'a multi-declarator hoisted diff declines the fix (issue #1893)',
+      code: `import diff from 'microdiff';
+
+export function eq(a, b) {
+  const changes = diff(a, b), label = 'compare';
+  return changes.length === 0 ? label : '';
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: null,
+    },
+    // The removal helper refuses an import it cannot rewrite cleanly, and that
+    // refusal takes the rewrite with it: half of this edit is worse than none.
+    {
+      name: 'a comment inside the microdiff import declines the fix (issue #1893)',
+      code: `import /* deep */ diff from 'microdiff';
+
+export const eq = (a, b) => diff(a, b).length === 0;`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: null,
+    },
+    {
+      name: 'a directive bound to the microdiff import declines the fix (issue #1893)',
+      code: `// eslint-disable-next-line no-restricted-imports
+import diff from 'microdiff';
+
+export const eq = (a, b) => diff(a, b).length === 0;`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: null,
+    },
+    // A same-named local elsewhere in the file is the case scope analysis and a
+    // text scan can disagree about, so the removal is declined rather than
+    // guessed at.
+    {
+      name: 'a same-named local elsewhere declines the removal (issue #1893)',
+      code: `import diff from 'microdiff';
+
+export const eq = (a, b) => diff(a, b).length === 0;
+
+export function report() {
+  const diff = 1;
+  return diff;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
+      output: null,
     },
   ],
 });
@@ -2206,8 +2334,7 @@ function areSame(a, b) {
 }
 `);
 
-    expect(output).toBe(`import { diff } from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+    expect(output).toBe(`import isEqual from '@blumintinc/fast-deep-equal';
 
 function areSame(a, b) {
   // eslint-disable-next-line @blumintinc/blumint/fast-deep-equal-over-microdiff-2
@@ -2373,8 +2500,7 @@ function areEqual(a, b) {
 
     const { output } = createLinter().verifyAndFix(code, config, 'compare.ts');
 
-    expect(output).toBe(`import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+    expect(output).toBe(`import isEqual from '@blumintinc/fast-deep-equal';
 
 function areEqual(a, b) {
   return isEqual(
@@ -2436,8 +2562,7 @@ function f(a, b) { const changes = diff(a, b); return changes.length !== 0; }
 `);
 
     expect(messages).toHaveLength(0);
-    expect(output).toBe(`import diff from 'microdiff';
-import isEqual from '@blumintinc/fast-deep-equal';
+    expect(output).toBe(`import isEqual from '@blumintinc/fast-deep-equal';
 function f(a, b) { return !isEqual(a, b); }
 `);
   });
@@ -2486,5 +2611,143 @@ function clean(a, b) {
       "import isEqual from '@blumintinc/fast-deep-equal';",
     );
     expect(output).toContain('return !isEqual(a, b);');
+  });
+});
+
+// Issue #1893: `RuleTester` compares text against `output` and never asks
+// whether the file it wrote still lints. The damage here is exactly that — a
+// binding left with no reader — so the instrument has to be the rule that counts
+// USES. agora runs `no-unused-vars` as an error and builds with
+// `noUnusedLocals`, so a stranded import is a red build there and a green suite
+// here.
+describe('fast-deep-equal-over-microdiff: --fix strands no binding (issue #1893)', () => {
+  const RULE_ID = '@blumintinc/blumint/fast-deep-equal-over-microdiff';
+
+  const createLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      fastDeepEqualOverMicrodiff as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const base = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2020 as const,
+      sourceType: 'module' as const,
+    },
+  };
+
+  /** The binding names core `no-unused-vars` quotes, as a sorted multiset. */
+  const unusedNames = (code: string) =>
+    createLinter()
+      .verify(
+        code,
+        { ...base, rules: { 'no-unused-vars': 'error' as const } },
+        'compare.ts',
+      )
+      .flatMap((message) => {
+        const match = /^'([^']+)'/.exec(message.message);
+        return match ? [match[1]] : [];
+      })
+      .sort();
+
+  const fix = (code: string) =>
+    createLinter().verifyAndFix(
+      code,
+      { ...base, rules: { [RULE_ID]: 'error' as const } },
+      'compare.ts',
+    ).output;
+
+  const expectNoNewOrphan = (code: string) => {
+    const output = fix(code);
+    expect(unusedNames(output)).toEqual(unusedNames(code));
+    return output;
+  };
+
+  it('leaves no unreferenced diff behind on the reported repro', () => {
+    const output = expectNoNewOrphan(`import diff from 'microdiff';
+
+export const eq = (a, b) => diff(a, b).length === 0;
+`);
+
+    expect(output).toBe(`import isEqual from '@blumintinc/fast-deep-equal';
+
+export const eq = (a, b) => isEqual(a, b);
+`);
+  });
+
+  it('leaves no unreferenced diff behind across two passes', () => {
+    const output = expectNoNewOrphan(`import diff from 'microdiff';
+
+export function checkAll(a, b, c, d) {
+  const first = diff(a, b);
+  const second = diff(c, d);
+  return first.length === 0 && second.length !== 0;
+}
+`);
+
+    expect(output).not.toContain('microdiff');
+  });
+
+  it('keeps a microdiff import that another call still reads', () => {
+    const output = expectNoNewOrphan(`import diff from 'microdiff';
+
+export const eq = (a, b) => diff(a, b).length === 0;
+export const changesOf = (a, b) => diff(a, b);
+`);
+
+    expect(output).toContain("import diff from 'microdiff';");
+    expect(output).toContain('export const changesOf = (a, b) => diff(a, b);');
+    expect(output).toContain('export const eq = (a, b) => isEqual(a, b);');
+  });
+
+  it('keeps a microdiff import whose only surviving reader is suppressed', () => {
+    const output = expectNoNewOrphan(`import diff from 'microdiff';
+
+export function areSame(a, b) {
+  // eslint-disable-next-line @blumintinc/blumint/fast-deep-equal-over-microdiff
+  return diff(a, b).length === 0;
+}
+
+export function areDifferent(a, b) {
+  return diff(a, b).length !== 0;
+}
+`);
+
+    expect(output).toContain("import diff from 'microdiff';");
+    expect(output).toContain('return !isEqual(a, b);');
+  });
+
+  it('keeps an import read only by the arguments it moves', () => {
+    const output = expectNoNewOrphan(`import diff from 'microdiff';
+import { normalize } from './normalize';
+
+export function eq(a, b) {
+  const changes = diff(normalize(a), b);
+  return changes.length === 0;
+}
+`);
+
+    expect(output).toContain("import { normalize } from './normalize';");
+    expect(output).toContain('return isEqual(normalize(a), b);');
+  });
+
+  // The control: the same measurement over the input proves the instrument
+  // fires at all, so a green run above is a verdict rather than a no-op.
+  it('does measure an unreferenced binding when there is one (control)', () => {
+    expect(
+      unusedNames(`import diff from 'microdiff';
+
+export const eq = (a, b) => a === b;
+`),
+    ).toEqual(['diff']);
   });
 });

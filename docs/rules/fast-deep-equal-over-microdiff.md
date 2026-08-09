@@ -97,6 +97,26 @@ return isEqual(
   ```
 
 - Reports without a fix when the comparison sits *inside* the declaration the fix would delete — a diff argument that reads `changes.length`, as in `const changes = diff(a, changes.length === 0);`. The two edits cannot be made disjoint there, and ESLint rejects overlapping edits within one report by throwing, which discards every message for the file. The violation is still reported, and the import is left for a violation that can be fixed.
+- Removes the `microdiff` import when the rewrite deleted its last reference, in the *same* fix as the rewrite. Stripping a binding's last use and leaving the declaration behind turns a file that lints clean into one that fails `no-unused-vars` — and since the rewrite resolves this rule's own report, nothing re-reports the debt:
+
+  ```ts
+  // before
+  import diff from 'microdiff';
+
+  export const eq = (a, b) => diff(a, b).length === 0;
+
+  // after
+  import isEqual from '@blumintinc/fast-deep-equal';
+
+  export const eq = (a, b) => isEqual(a, b);
+  ```
+
+  The removal is narrow, because deleting an import that is still read is the worse defect:
+
+  - Only the specifier whose last reference the fix deleted goes. `import diff, { Difference } from '@blumintinc/microdiff';` keeps `Difference` when a type annotation elsewhere still names it, and gives up the whole statement only when no specifier survives.
+  - A `diff` still called anywhere else in the file keeps its import, whether the surviving call is a diff-analysis use or a violation an inline `eslint-disable` suppressed.
+  - The argument list is carried through verbatim rather than deleted, so an import read only by the arguments — `diff(normalize(a), b)` — survives the inlining.
+  - The whole fix is declined when the import cannot be unbound cleanly: a comment inside the declaration, a directive comment bound to the line below it, or a same-named local elsewhere in the file that scope analysis and a text scan could disagree about. Half of this edit is worse than none of it.
 
 ### Examples of **incorrect** code for this rule:
 
@@ -244,10 +264,17 @@ export function summarize(before: object, after: object) {
 
 ### Interaction with inline disable comments
 
-The `import isEqual from '@blumintinc/fast-deep-equal';` statement is added once per file,
-attached to the fix of the first violation that is **not** suppressed by an
-inline `eslint-disable` directive. Suppressing an individual check therefore
-never strands the remaining `isEqual(...)` calls without their import:
+Every rewrite in a file ships as a single fix, carried by the first violation
+that is **not** suppressed by an inline `eslint-disable` directive. That fix also
+adds the `import isEqual from '@blumintinc/fast-deep-equal';` statement once, and
+removes the `microdiff` import when the batch leaves it unread — the three have
+to be one edit, since ESLint applies a fix whole or not at all and a partial
+application would either strand an `isEqual(...)` call without its import or
+delete an import a surviving call still needs.
+
+Suppressing an individual check therefore never strands the remaining
+`isEqual(...)` calls without their import, and keeps the `microdiff` import the
+suppressed check still reads:
 
 ```ts
 import { diff } from 'microdiff';
