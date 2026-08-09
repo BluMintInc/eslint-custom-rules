@@ -201,7 +201,10 @@ export { mockFirestore };`,
         });
       `,
       },
-      // Invalid case: Different name but same functionality
+      // Invalid case: Different name but same functionality. The alias is the
+      // only reader of the local it aliases, so retiring it would leave
+      // `myMockFirestore` bound to nothing; `jest.fn()` is a call this fixer
+      // cannot prove effect-free, so the report stands unfixed (#1900).
       {
         code: `
         const myMockFirestore = jest.fn();
@@ -214,16 +217,7 @@ export { mockFirestore };`,
         });
       `,
         errors: [ERROR],
-        output: `
-        import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
-        const myMockFirestore = jest.fn();
-
-        beforeEach(() => {
-          mockFirestore({
-            'some/path': [{ id: 'test' }],
-          });
-        });
-      `,
+        output: null,
       },
       // Invalid case: Using require syntax
       {
@@ -325,7 +319,9 @@ export { mockFirestore };`,
         }
       `,
       },
-      // Invalid case: Using with multiple declarations
+      // Invalid case: Using with multiple declarations. Both branches of the
+      // selector are read only by the retired declaration, so the fix is
+      // withheld rather than stranding two locals (#1900).
       {
         code: `
         const mockFirestore1 = jest.fn();
@@ -341,19 +337,7 @@ export { mockFirestore };`,
         });
       `,
         errors: [ERROR],
-        output: `
-        import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
-        const mockFirestore1 = jest.fn();
-        const mockFirestore2 = jest.fn();
-
-        describe('test suite', () => {
-          beforeEach(() => {
-            mockFirestore({
-              'some/path': [{ id: 'test' }],
-            });
-          });
-        });
-      `,
+        output: null,
       },
       // Invalid case: Using with complex object destructuring
       {
@@ -927,6 +911,134 @@ beforeEach(() => { mockFirestore({}); });`,
         errors: [ERROR],
         output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 beforeEach(() => { mockFirestore({}); });`,
+      },
+
+      // ---------------------------------------------------------------------
+      // Whatever the retired declaration was the last reader of goes with it,
+      // or the fix is withheld. Leaving a binding referenced by nothing turns a
+      // file that lints clean into one that fails `no-unused-vars` and
+      // `noUnusedLocals`, and the report it traded away is gone (#1900).
+      // ---------------------------------------------------------------------
+
+      // The stranded binding is an IMPORT, so it is retired in the same fix
+      {
+        code: `import { firestoreMock } from './localMocks';
+const mockFirestore = firestoreMock;
+beforeEach(() => { mockFirestore({}); });`,
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+beforeEach(() => { mockFirestore({}); });`,
+      },
+      // ...down to the one specifier that is stranded, when its siblings live
+      {
+        code: `import { firestoreMock, buildFixture } from './localMocks';
+const mockFirestore = firestoreMock;
+beforeEach(() => { mockFirestore(buildFixture()); });`,
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+import { buildFixture } from './localMocks';
+beforeEach(() => { mockFirestore(buildFixture()); });`,
+      },
+      // A default import is retired the same way
+      {
+        code: `import firestoreMock from './localMocks';
+const mockFirestore = firestoreMock;
+beforeEach(() => { mockFirestore({}); });`,
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+beforeEach(() => { mockFirestore({}); });`,
+      },
+      // Two retirements strand the import only when BOTH of them go, which is
+      // why they ship as one fix rather than one report at a time
+      {
+        code: `import { sharedMock } from './localMocks';
+const mockFirestore = sharedMock;
+class T {
+  mockFirestore = sharedMock;
+  run() { this.mockFirestore({}); }
+}
+beforeEach(() => { mockFirestore({}); });`,
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+class T {
+  run() { mockFirestore({}); }
+}
+beforeEach(() => { mockFirestore({}); });`,
+      },
+      // An import the surviving text still reads is left alone, and the fix
+      // proceeds
+      {
+        code: `import { sharedMock } from './localMocks';
+const mockFirestore = sharedMock;
+beforeEach(() => { mockFirestore({}); sharedMock.mockClear(); });`,
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+import { sharedMock } from './localMocks';
+beforeEach(() => { mockFirestore({}); sharedMock.mockClear(); });`,
+      },
+      // The same for a LOCAL the surviving text still reads: the alias goes and
+      // the local it aliased stays bound
+      {
+        code: `const myMockFirestore = jest.fn();
+const mockFirestore = myMockFirestore;
+beforeEach(() => { mockFirestore({}); myMockFirestore.mockClear(); });`,
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+const myMockFirestore = jest.fn();
+beforeEach(() => { mockFirestore({}); myMockFirestore.mockClear(); });`,
+      },
+      // An EXPORTED local has a reader in another file, so no edit here can
+      // strand it and the fix proceeds
+      {
+        code: `export const myMockFirestore = jest.fn();
+const mockFirestore = myMockFirestore;
+beforeEach(() => { mockFirestore({}); });`,
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+export const myMockFirestore = jest.fn();
+beforeEach(() => { mockFirestore({}); });`,
+      },
+      // A comment among the specifiers cannot be kept or dropped without
+      // guessing, so the whole fix is withheld
+      {
+        code: `import {
+  // the mock this file aliases
+  firestoreMock,
+} from './localMocks';
+const mockFirestore = firestoreMock;
+beforeEach(() => { mockFirestore({}); });`,
+        errors: [ERROR],
+        output: null,
+      },
+      // A directive bound to the stranded import's line would land on whatever
+      // moved up into its place
+      {
+        code: `// eslint-disable-next-line no-undef
+import { firestoreMock } from './localMocks';
+const mockFirestore = firestoreMock;
+beforeEach(() => { mockFirestore({}); });`,
+        errors: [ERROR],
+        output: null,
+      },
+      // Scope analysis and a plain name scan disagree here — the property is
+      // not a reference to the import — and the fix defers to the scan, since a
+      // wrong removal deletes working code while a declined one only leaves the
+      // report standing
+      {
+        code: `import { firestoreMock } from './localMocks';
+const mockFirestore = firestoreMock;
+beforeEach(() => { mockFirestore({}); registry.firestoreMock(); });`,
+        errors: [ERROR],
+        output: null,
+      },
+      // A namespace object the alias reads through is a local whose initializer
+      // is a call, so it cannot be deleted and the fix is withheld
+      {
+        code: `const localMocks = require('./localMocks');
+const mockFirestore = localMocks.mockFirestore;
+beforeEach(() => { mockFirestore({}); });`,
+        errors: [ERROR],
+        output: null,
       },
     ],
   },

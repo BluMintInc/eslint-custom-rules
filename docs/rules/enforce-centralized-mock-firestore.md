@@ -37,6 +37,39 @@ lines it happens to touch:
   restriction because it belongs to its class rather than to the module, so
   `export default class { mockFirestore = … }` is still fixed.
 
+### Bindings the retired declaration was reading
+
+Retiring a local mock deletes whatever its initializer read. When the retired
+declarations were the last readers of some other binding, that binding is left
+referenced by nothing — `--fix` would then turn a file that lints clean into one
+that fails `no-unused-vars` and `noUnusedLocals`, and the report it traded away
+is gone.
+
+- A stranded **import** is retired in the same fix, down to the single specifier
+  when its siblings are still read:
+
+  ```js
+  // before
+  import { firestoreMock, buildFixture } from './localMocks';
+  const mockFirestore = firestoreMock;
+  // after
+  import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+  import { buildFixture } from './localMocks';
+  ```
+
+- A stranded **local** withholds the whole fix, and the report stands unfixed.
+  Deleting the local instead is not available: its initializer is an arbitrary
+  expression — `jest.fn()`, a factory call, a `require` — whose effect the fixer
+  cannot prove absent, and dropping it would delete working code to settle a
+  lint warning. Retire such a mock by hand.
+- A binding the surviving text still reads — a local used elsewhere, an import
+  read by another statement, an exported const whose readers live in other files
+  — is not stranded, so the fix proceeds and the binding stays.
+- Anything the removal cannot be proven safe for withholds the fix as well: a
+  comment among the import's specifiers, a directive comment bound to the
+  import's line, or a name that still occurs in the file where scope analysis
+  says it should not.
+
 The injected import is placed below whatever opens the file, and the text above
 it is emitted exactly once:
 
@@ -82,6 +115,10 @@ beforeEach(() => {
   });
 });
 ```
+
+The alias above is reported without an autofix: the alias is the only reader of
+`myMockFirestore`, so retiring it would leave that local bound to nothing. Delete
+both declarations by hand and import the centralized mock.
 
 ```js
 const { mockFirestore: customMockFirestore } = require('./customMocks');
