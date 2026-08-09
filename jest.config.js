@@ -63,10 +63,16 @@ module.exports = {
   // Scratch roots hold transient *.test.ts fixtures that rules analyse on disk
   // (test-file-location-enforcement writes into .cursor/tmp). Discovery would
   // otherwise race their cleanup and fail the run on files that no longer exist.
+  //
+  // Agent worktrees are a full checkout of this repo, so discovery finds a
+  // second copy of every suite and runs it against that checkout's sources. A
+  // run then costs one multiple per live worktree and, worse, reports another
+  // checkout's failures under a path that reads as this one's.
   testPathIgnorePatterns: [
     '/node_modules/',
     '<rootDir>/.cursor/tmp/',
     '<rootDir>/.claude/tmp/',
+    '<rootDir>/.claude/worktrees/',
   ],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
   transform: {
@@ -77,7 +83,9 @@ module.exports = {
     // separately by `npm run build` (tsc).
     '^.+\\.tsx?$': ['ts-jest', { isolatedModules: true }],
   },
-  modulePathIgnorePatterns: ['<rootDir>/lib/'],
+  // A worktree's `__mocks__` collide with this checkout's in the haste map,
+  // which resolves manual mocks by basename alone.
+  modulePathIgnorePatterns: ['<rootDir>/lib/', '<rootDir>/.claude/worktrees/'],
   reporters: ['default', 'jest-junit'],
 
   // Asserts every RuleTester `valid` case can actually fail. Loaded globally
