@@ -793,7 +793,13 @@ function detectDifferences(original, updated) {
     {
       // A local binding shadowing the import calls the file's own function, not
       // the library's, so renaming it to `diff` would swap in a function that
-      // computes something else entirely. The import itself is still retired.
+      // computes something else entirely.
+      //
+      // The import is not retired either. Its reference list is empty precisely
+      // because the shadow answers the calls, so writing microdiff's import over
+      // it binds a `diff` no code reads: the file goes into the fix carrying one
+      // unused import and comes out carrying another, which the consumer's
+      // `no-unused-vars` and `noUnusedLocals` both fail the build on (#1903).
       code: `import { detailedDiff } from 'deep-object-diff';
 
 export function compare(oldState, newState) {
@@ -806,11 +812,79 @@ export function compare(oldState, newState) {
           data: { importSource: 'deep-object-diff' },
         },
       ],
+      output: null,
+    },
+    {
+      // The same shape with the fork already imported and used: the competing
+      // import is dropped rather than rewritten, so nothing new is bound and the
+      // `diff` the file does read survives. Over-eager removal of a live `diff`
+      // is the worse bug, and this is the fixture that pins it.
+      code: `import diff from '@blumintinc/microdiff';
+import { detailedDiff } from 'deep-object-diff';
+
+export function compare(oldState, newState) {
+  const detailedDiff = (a, b) => [a, b];
+  return diff(oldState, newState).length + detailedDiff(oldState, newState).length;
+}`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'deep-object-diff' },
+        },
+      ],
       output: `import diff from '@blumintinc/microdiff';
+
+
+export function compare(oldState, newState) {
+  const detailedDiff = (a, b) => [a, b];
+  return diff(oldState, newState).length + detailedDiff(oldState, newState).length;
+}`,
+    },
+    {
+      // An import nothing references at all is the same trade in its plainest
+      // form: replacing it swaps one unread name for another.
+      code: `import { detailedDiff } from 'deep-object-diff';
+
+export const answer = 1;`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'deep-object-diff' },
+        },
+      ],
+      output: null,
+    },
+    {
+      // Declining the import rewrite holds up nothing else in the file: the
+      // comparison below is still converted, and the import it emits is what
+      // retires the competing declaration on the following pass.
+      code: `import { detailedDiff } from 'deep-object-diff';
 
 export function compare(oldState, newState) {
   const detailedDiff = (a, b) => [a, b];
   return detailedDiff(oldState, newState);
+}
+
+export function hasConfigChanged(oldConfig, newConfig) {
+  return JSON.stringify(oldConfig) !== JSON.stringify(newConfig);
+}`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'deep-object-diff' },
+        },
+        { messageId: 'enforceMicrodiff' },
+      ],
+      output: `import diff from '@blumintinc/microdiff';
+import { detailedDiff } from 'deep-object-diff';
+
+export function compare(oldState, newState) {
+  const detailedDiff = (a, b) => [a, b];
+  return detailedDiff(oldState, newState);
+}
+
+export function hasConfigChanged(oldConfig, newConfig) {
+  return diff(oldConfig, newConfig).length > 0;
 }`,
     },
     {
@@ -843,7 +917,8 @@ export function compare(oldState, newState) {
 }`,
     },
     {
-      // A parameter shadows the import for the whole function body.
+      // A parameter shadows the import for the whole function body, which
+      // leaves the import serving no call to rewrite.
       code: `import { detailedDiff } from 'deep-object-diff';
 
 export function compare(detailedDiff, oldState, newState) {
@@ -855,11 +930,7 @@ export function compare(detailedDiff, oldState, newState) {
           data: { importSource: 'deep-object-diff' },
         },
       ],
-      output: `import diff from '@blumintinc/microdiff';
-
-export function compare(detailedDiff, oldState, newState) {
-  return detailedDiff(oldState, newState);
-}`,
+      output: null,
     },
     {
       // The same holds for an aliased specifier: the tracked name is the local
@@ -876,12 +947,7 @@ export function compare(oldConfig, newConfig) {
           data: { importSource: 'deep-diff' },
         },
       ],
-      output: `import diff from '@blumintinc/microdiff';
-
-export function compare(oldConfig, newConfig) {
-  const deepDiff = (a, b) => [a, b];
-  return deepDiff(oldConfig, newConfig);
-}`,
+      output: null,
     },
     {
       // The import rewrite carries the call site it feeds. Argument names told
@@ -934,6 +1000,50 @@ export function compare(oldConfig, newConfig) {
         { messageId: 'enforceMicrodiff' },
       ],
       output: null,
+    },
+    {
+      // An existing microdiff import binds the emitted `diff` whatever happens
+      // to the competing declaration, which is exactly when a rename can strand
+      // the binding it stops referencing: `applyChange` keeps the declaration
+      // alive, and rewriting the only call of `deepDiff` would leave that
+      // specifier bound to nothing (#1903).
+      code: `import diff from '@blumintinc/microdiff';
+import { diff as deepDiff, applyChange } from 'deep-diff';
+
+export function compare(oldConfig, newConfig) {
+  applyChange(oldConfig, newConfig);
+  return deepDiff(oldConfig, newConfig).length + diff(oldConfig, newConfig).length;
+}`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'deep-diff' },
+        },
+        { messageId: 'enforceMicrodiff' },
+      ],
+      output: null,
+    },
+    {
+      // The control for that gate: a reference the rename leaves alone keeps the
+      // specifier read, so the call is still converted. Declining here would
+      // trade the orphan for a rule that stops fixing what it can.
+      code: `import diff from '@blumintinc/microdiff';
+import { detailedDiff } from 'deep-object-diff';
+
+export const chosen = detailedDiff;
+export const changes = detailedDiff(oldState, newState);`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'deep-object-diff' },
+        },
+        { messageId: 'enforceMicrodiff' },
+      ],
+      output: `import diff from '@blumintinc/microdiff';
+import { detailedDiff } from 'deep-object-diff';
+
+export const chosen = detailedDiff;
+export const changes = diff(oldState, newState);`,
     },
     {
       // `diff(obj, newObj)` needs both operands, so a one-argument call has no

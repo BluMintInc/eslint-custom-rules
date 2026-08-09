@@ -259,8 +259,8 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
   },
   'enforce-microdiff::enforce-dynamic-imports': {
     reason:
-      "INCIDENTAL: the surviving fixture keeps an unrelated `import _ from 'lodash'` for the `_.difference` call the microdiff fixer deliberately declines; dropping it is clean under both (measured). Was 2 — the `fast-deep-equal/es6` SUBPATH half was FIXED in #1845, where an `ignoredLibraries` entry began covering the package's subpaths.",
-    cases: { dynamicImportRequired: 1 },
+      "INCIDENTAL: three outputs keep a static import of a library the microdiff fixer deliberately leaves in place, and none of the three is a spelling the pair forbids jointly. One keeps an unrelated `import _ from 'lodash'` for the `_.difference` call the fixer declines to convert; dropping it is clean under both (measured). The other two are the #1903 fixtures, where retiring the competing import would leave a binding unreferenced: an import every call of which is shadowed (the composed `--fix` reaches the clean spelling by itself on the next pass, measured — once a comparison elsewhere pulls microdiff in, the dead import is REMOVED rather than replaced), and one whose specifier a value reference keeps read (`export const chosen = detailedDiff`), whose remedy is `chosen = diff` off the microdiff import — clean under both (measured). `@blumintinc/microdiff` is on `DEFAULT_IGNORED_LIBRARIES`, so every remedy this rule names satisfies the sibling. Was 2 — the `fast-deep-equal/es6` SUBPATH half was FIXED in #1845, where an `ignoredLibraries` entry began covering the package's subpaths.",
+    cases: { dynamicImportRequired: 3 },
   },
   'enforce-mock-firestore::enforce-object-literal-as-const': {
     reason:
@@ -1135,9 +1135,10 @@ const KNOWN_STANDOFFS: Record<
   },
   'enforce-microdiff::enforce-dynamic-imports': {
     reason:
-      'The `lodash` import the microdiff fixer deliberately declines to rewrite (`_.difference` is not a deep diff) draws BOTH complaints — the static import and the lodash call are the same remedy. Dropping lodash for `@blumintinc/microdiff`, which is on `DEFAULT_IGNORED_LIBRARIES`, is clean under both (measured).',
+      'The `lodash` import the microdiff fixer deliberately declines to rewrite (`_.difference` is not a deep diff) draws BOTH complaints — the static import and the lodash call are the same remedy. Dropping lodash for `@blumintinc/microdiff`, which is on `DEFAULT_IGNORED_LIBRARIES`, is clean under both (measured). The `enforceMicrodiffImport` residual is the same shape one step earlier: `export const chosen = detailedDiff` holds a value reference of the competing import, which has no call site to rewrite, so the import survives the fix and both rules keep asking for it to go. Binding `chosen` to the `diff` from microdiff instead is clean under both (measured), and is the remedy the report names.',
     residuals: {
       'enforce-dynamic-imports:dynamicImportRequired + enforce-microdiff:enforceMicrodiff': 1,
+      'enforce-dynamic-imports:dynamicImportRequired + enforce-microdiff:enforceMicrodiffImport': 1,
     },
   },
   'enforce-querykey-ts::prefer-global-router-state-key': {
