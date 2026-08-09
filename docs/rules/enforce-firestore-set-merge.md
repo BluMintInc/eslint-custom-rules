@@ -63,7 +63,7 @@ and fix as before.
 
 - Rewrites a method call in place — only the method name and the tail of the argument list change — so the arguments keep their formatting and their comments. A comment inside a call is often an `eslint-disable` directive, and dropping one silently re-enables the rule it suppresses.
 - Binds `setDoc` as part of the same edit that emits it. `updateDoc(ref, data)` becomes `setDoc(ref, data, { merge: true })`, which needs `setDoc` in scope, so the import edit and the call rewrite ship as one fix: they sit in disjoint ranges, and a multi-rule `--fix` that applied one without the other would leave the file with an unbound name.
-- Renames the `updateDoc` entry — in `import { … } from 'firebase/firestore'` or in the object pattern of `await import('firebase/firestore')` — when the fix rewrites its last reference, so an alias disappears together with the reference that used it:
+- Renames the `updateDoc` entry — in `import { … } from 'firebase/firestore'` or in the object pattern of `await import('firebase/firestore')` — when the fix rewrites every reference to it, so an alias disappears together with the references that used it:
 
 ```ts
 // before
@@ -75,8 +75,61 @@ import { setDoc } from 'firebase/firestore';
 await setDoc(ref, { theme: 'dark' }, { merge: true });
 ```
 
-- Adds `setDoc` alongside `updateDoc` instead when any other reference to `updateDoc` survives the pass, because a multi-rule `--fix` can drop a sibling violation's fix and strand that reference on a removed binding. An existing `firebase/firestore` import is extended rather than duplicated.
-- Declines to fix when `setDoc` is already bound to something else, since the added import would collide with that declaration (TS2440/TS2300) and a narrower-scope shadow would rebind the emitted call to the local value with no diagnostic at all.
+- Adds `setDoc` alongside `updateDoc` instead when any reference to `updateDoc` survives the pass, because a multi-rule `--fix` can drop a sibling violation's fix and strand that reference on a removed binding. An existing `firebase/firestore` import is extended rather than duplicated.
+- Declines to fix when `setDoc` is already bound to something else, since the added import would collide with that declaration (TS2440/TS2300) and a narrower-scope shadow would rebind the emitted call to the local value with no diagnostic at all. A `setDoc` imported from a *different* firestore entry point counts as something else: `firebase-admin`'s API is not the modular SDK's, so emitting the call against it would call another function.
+
+### Retiring the `updateDoc` entry
+
+The rewrite strips a reference. When it strips the LAST one, the entry it came
+from has to go in the **same** fix — leaving it behind turns a file that lints
+clean into one failing `no-unused-vars` and `noUnusedLocals`, and the report
+that would have surfaced the problem is resolved by the very fix that caused it.
+
+Retirement is not a per-report question, so it is not decided per report. Two
+violations sharing one import each strip one reference, and only once both land
+is the entry unreferenced; a report that removed it on its own would strand
+whichever sibling fix a multi-rule `--fix` drops. One violation therefore owns
+every rewrite that justifies the removal, and its siblings report without a fix:
+
+```ts
+// before
+import { doc, updateDoc } from 'firebase/firestore';
+await updateDoc(refA, { theme: 'dark' });
+await updateDoc(refB, { fontSize: 14 });
+
+// after
+import { doc, setDoc } from 'firebase/firestore';
+await setDoc(refA, { theme: 'dark' }, { merge: true });
+await setDoc(refB, { fontSize: 14 }, { merge: true });
+```
+
+Removing the entry takes its separator with it, down to the whole declaration
+when it was the only specifier. A comment caught in that span is **carried**
+rather than deleted — and rather than being allowed to decide whether the
+rewrite fires at all, which would be a comment changing the transform just the
+same:
+
+```ts
+// before
+import { doc, setDoc, /* keep */ updateDoc } from 'firebase/firestore';
+await updateDoc(doc(db, 'users', id), { theme: 'dark' });
+
+// after
+import { doc, setDoc /* keep */ } from 'firebase/firestore';
+await setDoc(doc(db, 'users', id), { theme: 'dark' }, { merge: true });
+```
+
+A carried line comment keeps a line of its own, or the entry moving up into its
+place would be commented out. The one comment that cannot be carried is a
+directive — `eslint-disable-next-line`, `@ts-expect-error`, `@ts-ignore` — whose
+meaning **is** its position: re-emitting one retargets it. Those withhold the
+whole fix and leave the report standing, since a report that stays unfixed costs
+a manual edit where a mistargeted directive silences an unrelated line.
+
+Nothing is retired while a reference survives — an entry read as a value, a
+sibling call suppressed by an inline directive, or one the rule cannot rewrite
+(spread arguments) all keep the binding, because an over-eager removal deletes
+working code where a surviving specifier is merely inert.
 
 ### Interaction with inline disable comments
 

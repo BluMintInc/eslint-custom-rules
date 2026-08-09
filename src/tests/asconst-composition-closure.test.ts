@@ -333,7 +333,6 @@ const UNDRIVEN: Record<string, UndrivenCause> = {
   'enforce-f-extension-for-entry-points': 'noAssertionAdded',
   'enforce-fieldpath-syntax-in-docsetter': 'noAssertionAdded',
   'enforce-firestore-path-utils': 'noAssertionAdded',
-  'enforce-firestore-set-merge': 'noAssertionAdded',
   'enforce-is-prefix-validators': 'noAssertionAdded',
   'enforce-m3-sentence-case': 'noAssertionAdded',
   'enforce-realtimedb-path-utils': 'noAssertionAdded',
