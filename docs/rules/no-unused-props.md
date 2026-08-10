@@ -16,12 +16,17 @@ Props define the contract for a component. When a prop appears in the type but i
 
 The rule flags any prop declared in a `Props` type alias that is not read in the component body and not forwarded via `...rest`.
 
+The function spelling is not part of the question. An arrow function, a function
+expression and a `function` declaration all state the same contract, so all three
+are checked the same way.
+
 ### Examples of **incorrect** code for this rule:
 
 The props type may be carried either by the parameter annotation or by an
 FC-shaped declarator annotation (`React.FC<Props>`, `FC<Props>`,
 `FunctionComponent<Props>`); both resolve the same way when the type is
-declared in the same file.
+declared in the same file. An FC-shaped annotation belongs to a binding, so a
+`function` declaration carries its props type on the parameter.
 
 ```tsx
 type MyComponentProps = {
@@ -46,6 +51,17 @@ type GroupModeTogglesProps = {
 const GroupModeToggles = ({ mode, preferences }: GroupModeTogglesProps) => (
   <FormControlLabel control={<div />} label="Group mode" />
 );
+```
+
+```tsx
+type PanelProps = {
+  title: string;
+  subtitle: string; // subtitle is declared but never read or forwarded
+};
+
+export function Panel({ title }: PanelProps) {
+  return <h1>{title}</h1>;
+}
 ```
 
 ### Examples of **correct** code for this rule:
@@ -86,6 +102,22 @@ type GroupModeTogglesProps = {
 const GroupModeToggles = ({ mode, preferences, ...rest }: GroupModeTogglesProps) => (
   <FormControlLabel {...rest} control={<div />} label="Group mode" />
 );
+```
+
+```tsx
+type PanelProps = {
+  title: string;
+  subtitle: string;
+};
+
+export function Panel({ title, subtitle }: PanelProps) {
+  return (
+    <div>
+      <h1>{title}</h1>
+      <h2>{subtitle}</h2>
+    </div>
+  );
+}
 ```
 
 ## When Not To Use It

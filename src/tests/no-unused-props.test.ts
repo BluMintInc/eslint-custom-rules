@@ -532,13 +532,332 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         sourceType: 'module',
       },
     },
-    // A sibling declarator whose init is not an arrow function is simply not a
+    // A sibling declarator whose init is not a function is simply not a
     // component, so it contributes nothing to check.
     {
       code: `
         type Props = { used: string };
         const Component = ({ used }: Props) => <div>{used}</div>,
           CONFIG = { retries: 3 };
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // Issue #1910: every function spelling answers the same way. The cases
+    // below are the declaration and function-expression twins of the arrow
+    // fixtures above, so a prop consumed in one spelling stays silent in all.
+    {
+      code: `
+        type Props = { title: string };
+        function MyComponent({ title }: Props) {
+          return <h1>{title}</h1>;
+        }
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type Props = { title: string; subtitle: string };
+        export function MyComponent({ title, subtitle }: Props) {
+          return (
+            <div>
+              <h1>{title}</h1>
+              <h2>{subtitle}</h2>
+            </div>
+          );
+        }
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type Props = { title: string };
+        export default function MyComponent({ title }: Props) {
+          return <h1>{title}</h1>;
+        }
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A rest element forwards every prop the pattern does not name.
+    {
+      code: `
+        import { FormControlLabelProps } from '@mui/material';
+        type GroupModeTogglesProps = {
+          mode: string;
+        } & FormControlLabelProps;
+        function GroupModeToggles({ mode, ...rest }: GroupModeTogglesProps) {
+          return <FormControlLabel {...rest} control={<div />} label={mode} />;
+        }
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // Whole-`props` parameter destructured in the body.
+    {
+      code: `
+        type WrapApiErrorProps = Readonly<{ error: unknown; message: string }>;
+        function WrapApiError(props: WrapApiErrorProps) {
+          const { error, message } = props;
+          return <div>{message}{String(error)}</div>;
+        }
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // Member access and a whole-`props` spread consume props opaquely, which
+    // no enumeration can follow, so the declaration spelling stays silent for
+    // the same reason the arrow one does.
+    {
+      code: `
+        type CardProps = { title: string; content: string };
+        function Card(props: CardProps) {
+          return (
+            <div {...props}>
+              <h2>{props.title}</h2>
+            </div>
+          );
+        }
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A prop read only inside a nested closure is read.
+    {
+      code: `
+        type ListProps = { items: string[]; renderLabel: (item: string) => string };
+        function List({ items, renderLabel }: ListProps) {
+          return (
+            <ul>
+              {items.map((item) => (
+                <li key={item}>{renderLabel(item)}</li>
+              ))}
+            </ul>
+          );
+        }
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // An untyped parameter names no props type, so there is nothing to check.
+    {
+      code: `
+        function Component({ title }) {
+          return <h1>{title}</h1>;
+        }
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A parameter type that is not a `*Props` type is not a props contract,
+    // which is the same boundary the arrow spelling is held to.
+    {
+      code: `
+        type Config = { retries: number; verbose: boolean };
+        function runTask({ retries }: Config) {
+          return <div>{retries}</div>;
+        }
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A file that is neither react-like by extension nor holds JSX is out of
+    // scope whatever spelling the function uses.
+    {
+      code: `
+        type Props = { used: string; unused: string };
+        export function computeThing({ used }: Props) {
+          return used;
+        }
+      `,
+      filename: 'src/util/computeThing.ts',
+      parserOptions: {
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // Generic wrappers resolve to the underlying props type in this spelling too.
+    {
+      code: `
+        type DeepProps = { a: string; b: string };
+        function Deep({ a, b }: Readonly<Partial<DeepProps>>) {
+          return <div>{a}{b}</div>;
+        }
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A function expression assigned to a binding is the third spelling.
+    {
+      code: `
+        type Props = { title: string };
+        const MyComponent = function ({ title }: Props) {
+          return <h1>{title}</h1>;
+        };
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A declaration nested in a factory resolves the props type from the scope
+    // holding it.
+    {
+      code: `
+        type SharedProps = { title: string };
+
+        function makeComponent() {
+          type LocalProps = SharedProps & { subtitle: string };
+          function Component({ title, subtitle }: LocalProps) {
+            return (
+              <h1>
+                {title}
+                {subtitle}
+              </h1>
+            );
+          }
+          return Component;
+        }
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A props type declared after the component still resolves, since the
+    // report is deferred to `Program:exit`.
+    {
+      code: `
+        import { ImportedProps } from './external';
+
+        function ForwardRefComponent({ label, ...rest }: Props) {
+          return <div {...rest}>{label}</div>;
+        }
+
+        type Props = { label: string } & ImportedProps;
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A renamed binding marks the original prop name used.
+    {
+      code: `
+        type ButtonProps = { onClick: () => void; label: string };
+        function Button({ onClick: handleClick, label }: ButtonProps) {
+          return <button onClick={handleClick}>{label}</button>;
+        }
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // `Omit` drops the prop from the contract, so its absence is not a finding.
+    {
+      code: `
+        type BaseProps = {
+          used: string;
+          unused: string;
+        };
+
+        type Props = Omit<BaseProps, 'unused'>;
+
+        function Component({ used }: Props) {
+          return <span>{used}</span>;
+        }
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A configured react-like `.ts` hook, declaration-spelled, with every prop
+    // consumed.
+    {
+      code: `
+        type UseRangeProps = { value: number; onChange: (v: number) => void };
+        function useRange(props: UseRangeProps) {
+          const { value, onChange } = props;
+          return () => onChange(value);
+        }
+      `,
+      filename: 'src/hooks/useRange.ts',
+      settings: {
+        'no-unused-props': {
+          reactLikeExtensions: ['.ts', '.tsx'],
+        },
+      },
+      parserOptions: {
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A body destructure with a rest element forwards the remaining props.
+    {
+      code: `
+        type RestProps = { a: string; b: string; c: string };
+        function Rest(props: RestProps) {
+          const { a, ...rest } = props;
+          return <div {...rest}>{a}</div>;
+        }
       `,
       filename: 'test.tsx',
       parserOptions: {
@@ -1069,6 +1388,30 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         sourceType: 'module',
       },
     },
+    // Issue #1910 repro: the component spelled as a function declaration.
+    {
+      code: `
+        import type { ExternalProps } from './external';
+        type Props = Omit<ExternalProps, 'disabled'> & { disabled: boolean; label: string };
+
+        function Component({ disabled, label }: Props) {
+          return <div>{label}{disabled ? 'on' : 'off'}</div>;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: '...ExternalProps' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
     // An FC-annotated declarator resolves its props type from the annotation,
     // which the declarator-level analysis preserves alongside a sibling.
     {
@@ -1079,6 +1422,425 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
           Component: FC<Props> = ({ used }) => <div>{used}</div>;
       `,
       errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unused' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // Issue #1910: the declaration and function-expression twins of the arrow
+    // fixtures above. A prop left unread is unread whichever keyword declares
+    // the component.
+    {
+      code: `
+        type Props = { title: string; subtitle: string };
+        function MyComponent({ title }: Props) {
+          return <h1>{title}</h1>;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'subtitle' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type Props = { title: string; subtitle: string };
+        export function MyComponent({ title }: Props) {
+          return <h1>{title}</h1>;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'subtitle' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type Props = { title: string; subtitle: string };
+        export default function MyComponent({ title }: Props) {
+          return <h1>{title}</h1>;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'subtitle' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // Whole-`props` parameter destructured in the body, one prop omitted.
+    {
+      code: `
+        type BodyProps = { error: unknown; message: string };
+        function Body(props: BodyProps) {
+          const { error } = props;
+          return <div>{String(error)}</div>;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'message' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A renamed binding consumes its prop; the prop named by nothing does not.
+    {
+      code: `
+        type ButtonProps = { onClick: () => void; label: string; disabled: boolean };
+        function Button({ onClick: handleClick, label }: ButtonProps) {
+          return <button onClick={handleClick}>{label}</button>;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'disabled' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A string-literal prop key reports from its own node in this spelling too.
+    {
+      code: `
+        type Props = { 'data-testid': string; label: string };
+        function Component({ label }: Props) {
+          return <div>{label}</div>;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'data-testid' },
+          type: AST_NODE_TYPES.Literal,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // An imported type intersected into the props contract must be forwarded.
+    {
+      code: `
+        import { FormControlLabelProps } from '@mui/material';
+        type GroupModeTogglesProps = {
+          mode: string;
+        } & FormControlLabelProps;
+        function GroupModeToggles({ mode }: GroupModeTogglesProps) {
+          return <FormControlLabel control={<div />} label={mode} />;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: '...FormControlLabelProps' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A generic wrapper on the parameter annotation resolves to the props type.
+    {
+      code: `
+        type WrapProps = { error: unknown; message: string };
+        function Wrap({ error }: Readonly<WrapProps>) {
+          return <div>{String(error)}</div>;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'message' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // `async` sits between the keyword and the parameter list without hiding it.
+    {
+      code: `
+        type Props = { used: string; unused: string };
+        async function Component({ used }: Props) {
+          return <div>{used}</div>;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unused' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // So do type parameters: the props type is read off the first parameter
+    // either way.
+    {
+      code: `
+        type Props = { used: string; unused: string };
+        function Component<T extends object>({ used }: Props) {
+          return <div>{used}</div>;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unused' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A props-typed parameter is what puts a function in scope, not a
+    // capitalized name or a JSX return — the same boundary the arrow-spelled
+    // `helper` fixture above is held to.
+    {
+      code: `
+        type FooProps = { used: string; unused: string };
+
+        function helper({ used }: FooProps) {
+          return used.toUpperCase();
+        }
+
+        const Component = () => <span />;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unused' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A declaration nested in a factory is reached, so an unused prop on a
+    // scope-local props type is reported.
+    {
+      code: `
+        type SharedProps = { title: string };
+
+        function makeComponent() {
+          type LocalProps = SharedProps & { subtitle: string };
+          function Component({ title }: LocalProps) {
+            return <h1>{title}</h1>;
+          }
+          return Component;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'subtitle' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A declaration nested inside an arrow component is recorded without
+    // displacing the component holding it, so both verdicts stand.
+    {
+      code: `
+        type OuterProps = { a: string; unusedOuter: string };
+        type InnerProps = { b: string; unusedInner: string };
+        const Outer = ({ a }: OuterProps) => {
+          function Inner({ b }: InnerProps) {
+            return <div>{b}</div>;
+          }
+          return <Inner b={a} />;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedOuter' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedInner' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A function expression assigned to a binding reports like the arrow it
+    // could have been written as.
+    {
+      code: `
+        type Props = { title: string; subtitle: string };
+        const MyComponent = function ({ title }: Props) {
+          return <h1>{title}</h1>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'subtitle' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // An FC-shaped declarator annotation supplies the props type to a function
+    // expression with an unannotated parameter, as it does to an arrow.
+    {
+      code: `
+        import { FC } from 'react';
+        type Props = { used: string; unused: number };
+        const Component: FC<Props> = function ({ used }) {
+          return <div>{used}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unused' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A configured react-like `.ts` hook, declaration-spelled, with a prop it
+    // never reads.
+    {
+      code: `
+        type UseRangeProps = { value: number; onChange: (v: number) => void };
+        function useRange(props: UseRangeProps) {
+          const { value } = props;
+          return value;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'onChange' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'src/hooks/useRange.ts',
+      settings: {
+        'no-unused-props': {
+          reactLikeExtensions: ['.ts', '.tsx'],
+        },
+      },
+      parserOptions: {
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // Two declarations sharing a props type each answer for themselves.
+    {
+      code: `
+        type FooProps = { used: string; unused: string };
+
+        function First({ used }: FooProps) {
+          return <span>{used}</span>;
+        }
+
+        function Second({ used }: FooProps) {
+          return <div>{used}</div>;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unused' },
+          type: AST_NODE_TYPES.Identifier,
+        },
         {
           messageId: 'unusedProp',
           data: { propName: 'unused' },
