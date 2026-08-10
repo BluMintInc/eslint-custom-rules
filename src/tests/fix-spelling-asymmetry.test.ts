@@ -24,11 +24,15 @@ import {
  * mixing fixable and unfixable messages under one messageId is a conditional
  * decline, which the two spellings may legitimately hit different numbers of.
  *
- * **Detection**, scoped to the concise/block body pair alone. Those two are the
- * same function of the same node type differing only in body form, so an
- * asymmetry there means the rule reads `BlockStatement` bodies exclusively. The
- * declaration/arrow pairs carry no such guarantee — many rules are about
- * declarations deliberately — and folding them in buries the signal.
+ * **Detection**, across all five transforms. The concise/block pair holds the
+ * node type fixed, so an asymmetry there means the rule reads `BlockStatement`
+ * bodies exclusively; the declaration/arrow pairs change the node type, which
+ * is exactly what a rule keyed on one function syntax fails to follow. Folding
+ * them in does not bury the signal — that theory is measured false: the body
+ * pair alone makes 5,043 comparisons and surfaces three diverging rules, while
+ * all five make 12,466 and surface nine, six of them verified defects or filed
+ * decisions out of 157 rules driven. Six divergences in 157 is a reviewable
+ * baseline, and each is recorded in `DETECTION_EXEMPT` against its issue.
  *
  * A rule that reports on only one spelling is broken whichever way it leans: it
  * either withholds a remedy the other spelling gets, or blesses code it flags
@@ -418,15 +422,6 @@ const TRANSFORMS: readonly { name: string; build: Build }[] = [
   { name: 'blockArrow->concise', build: blockArrowToConcise },
 ];
 
-/**
- * The pair that isolates body FORM. Only these two feed the detection census,
- * because only they hold the node type fixed.
- */
-const BODY_TRANSFORMS = new Set<string>([
-  'conciseArrow->block',
-  'blockArrow->concise',
-]);
-
 type Variant = { transform: string; code: string };
 
 /**
@@ -632,12 +627,14 @@ type ProbeResult = {
   detectionFindings: Finding[];
   /** messageIds present on BOTH sides — the only comparisons that can assert. */
   sharedMessageIds: number;
-  /** Concise/block pairs compared — the detection census's own floor. */
-  bodyComparisons: number;
+  /** Respelled pairs the detection census diffed — its own floor. */
+  detectionComparisons: number;
+  /** Detection comparisons per transform, so a floor can hold each spelling. */
+  detectionComparisonsByTransform: Record<string, number>;
   /** Shared-messageId pairs where at least one side carried a fix. */
   fixableComparisons: number;
-  /** Body pairs where at least one side reported at all. */
-  reportingBodyComparisons: number;
+  /** Detection comparisons where at least one side reported at all. */
+  reportingDetectionComparisons: number;
   /**
    * Why a case contributed nothing, carried so a rule whose row can never fail
    * names the reason rather than leaving it to inference. A variant that was
@@ -656,9 +653,10 @@ const EMPTY: ProbeResult = {
   fixFindings: [],
   detectionFindings: [],
   sharedMessageIds: 0,
-  bodyComparisons: 0,
+  detectionComparisons: 0,
+  detectionComparisonsByTransform: {},
   fixableComparisons: 0,
-  reportingBodyComparisons: 0,
+  reportingDetectionComparisons: 0,
   variants: 0,
   comparedVariants: 0,
   lintable: false,
@@ -688,9 +686,10 @@ const probeCase = (
     fixFindings: [],
     detectionFindings: [],
     sharedMessageIds: 0,
-    bodyComparisons: 0,
+    detectionComparisons: 0,
+    detectionComparisonsByTransform: {},
     fixableComparisons: 0,
-    reportingBodyComparisons: 0,
+    reportingDetectionComparisons: 0,
     variants: 0,
     comparedVariants: 0,
     lintable: true,
@@ -714,22 +713,22 @@ const probeCase = (
       variant: variant.code,
     };
 
-    if (BODY_TRANSFORMS.has(variant.transform)) {
-      result.bodyComparisons++;
-      // A pair silent on BOTH sides cannot produce a one-sided report, so it is
-      // not a comparison that could ever have failed.
-      if (before.size || after.size) result.reportingBodyComparisons++;
-      for (const messageId of new Set([...before.keys(), ...after.keys()])) {
-        const inOriginal = before.has(messageId);
-        if (inOriginal === after.has(messageId)) continue;
-        result.detectionFindings.push({
-          ...context,
-          messageId,
-          detail: `reported on the ${
-            inOriginal ? 'original' : 'rewritten'
-          } spelling only`,
-        });
-      }
+    result.detectionComparisons++;
+    result.detectionComparisonsByTransform[variant.transform] =
+      (result.detectionComparisonsByTransform[variant.transform] || 0) + 1;
+    // A pair silent on BOTH sides cannot produce a one-sided report, so it is
+    // not a comparison that could ever have failed.
+    if (before.size || after.size) result.reportingDetectionComparisons++;
+    for (const messageId of new Set([...before.keys(), ...after.keys()])) {
+      const inOriginal = before.has(messageId);
+      if (inOriginal === after.has(messageId)) continue;
+      result.detectionFindings.push({
+        ...context,
+        messageId,
+        detail: `reported on the ${
+          inOriginal ? 'original' : 'rewritten'
+        } spelling only`,
+      });
     }
 
     // The fix census needs the report on both sides, so it iterates the
@@ -816,15 +815,18 @@ let casesConsidered = 0;
 let nonTypeScriptSkipped = 0;
 const rulesWithNonTypeScriptFixtures = new Set<string>();
 let sharedMessageIds = 0;
-let bodyComparisons = 0;
+let detectionComparisons = 0;
+const detectionComparisonsByTransform = new Map<string, number>(
+  TRANSFORMS.map((transform) => [transform.name, 0]),
+);
 const rulesCompared = new Set<string>();
 
 /**
  * Per-rule bookkeeping, so each rule's row can assert the probe reached it.
  *
  * `sharedMessageIds` is the only counter a FIX finding can come out of and
- * `bodyComparisons` the only one a DETECTION finding can; the rest exist to say
- * WHY a rule was never reached, which is what turns a dark row into a
+ * `detectionComparisons` the only one a DETECTION finding can; the rest exist
+ * to say WHY a rule was never reached, which is what turns a dark row into a
  * reviewable exemption instead of a green one.
  */
 type Drive = {
@@ -835,9 +837,9 @@ type Drive = {
   variants: number;
   comparedVariants: number;
   sharedMessageIds: number;
-  bodyComparisons: number;
+  detectionComparisons: number;
   fixableComparisons: number;
-  reportingBodyComparisons: number;
+  reportingDetectionComparisons: number;
 };
 const emptyDrive = (): Drive => ({
   tsCases: 0,
@@ -847,9 +849,9 @@ const emptyDrive = (): Drive => ({
   variants: 0,
   comparedVariants: 0,
   sharedMessageIds: 0,
-  bodyComparisons: 0,
+  detectionComparisons: 0,
   fixableComparisons: 0,
-  reportingBodyComparisons: 0,
+  reportingDetectionComparisons: 0,
 });
 const driveByRule = new Map<string, Drive>(
   probeRules.map((rule) => [rule, emptyDrive()]),
@@ -872,11 +874,19 @@ for (const rule of probeRules) {
     drive.variants += result.variants;
     drive.comparedVariants += result.comparedVariants;
     drive.sharedMessageIds += result.sharedMessageIds;
-    drive.bodyComparisons += result.bodyComparisons;
+    drive.detectionComparisons += result.detectionComparisons;
     drive.fixableComparisons += result.fixableComparisons;
-    drive.reportingBodyComparisons += result.reportingBodyComparisons;
+    drive.reportingDetectionComparisons += result.reportingDetectionComparisons;
     sharedMessageIds += result.sharedMessageIds;
-    bodyComparisons += result.bodyComparisons;
+    detectionComparisons += result.detectionComparisons;
+    for (const [transform, count] of Object.entries(
+      result.detectionComparisonsByTransform,
+    )) {
+      detectionComparisonsByTransform.set(
+        transform,
+        (detectionComparisonsByTransform.get(transform) || 0) + count,
+      );
+    }
     if (result.sharedMessageIds > 0) rulesCompared.add(rule);
     fixFindings.push(...result.fixFindings);
     detectionFindings.push(...result.detectionFindings);
@@ -895,8 +905,8 @@ const detectionRules = [
  * the rule WAS checked. Each rule therefore either asserts it drove at least one
  * comparison, or it is a NAMED SKIP carrying the measured reason — the same
  * non-vacuity check the controls at the bottom of this file already carry
- * (`sharedMessageIds + bodyComparisons > 0`), applied to the ~190 rows it was
- * never applied to (#1861).
+ * (`sharedMessageIds + detectionComparisons > 0`), applied to the ~190 rows it
+ * was never applied to (#1861).
  *
  * The causes are ordered from the outermost precondition inwards, so the one
  * named is the FIRST that failed: a rule with no TypeScript fixture is not also
@@ -919,10 +929,8 @@ const UNDRIVEN_CAUSES = {
     'declares meta.fixable yet offers no fix on any of its own fixtures here, so the fix channel is untested by its corpus',
   noFixInComparedPair:
     'offers a fix somewhere in its corpus, but never on a fixture whose respelling shares a messageId',
-  noBodyRespelling:
-    'no fixture contains a concise arrow body or a single-return block arrow, the pair this census diffs',
-  silentOnBodyPairs:
-    'reports on neither spelling of any concise/block pair its fixtures yield',
+  silentOnComparedPairs:
+    'reports on neither side of any respelled pair its fixtures yield',
 } as const;
 type UndrivenCause = keyof typeof UNDRIVEN_CAUSES;
 
@@ -950,8 +958,9 @@ const detectionCauseOf = (rule: string): UndrivenCause | null => {
   const drive = driveByRule.get(rule)!;
   if (drive.tsCases === 0) return 'noTsFixture';
   if (drive.lintableCases === 0) return 'unlintable';
-  if (drive.bodyComparisons === 0) return 'noBodyRespelling';
-  if (drive.reportingBodyComparisons === 0) return 'silentOnBodyPairs';
+  if (drive.variants === 0) return 'noRespelling';
+  if (drive.detectionComparisons === 0) return 'variantUnlintable';
+  if (drive.reportingDetectionComparisons === 0) return 'silentOnComparedPairs';
   return null;
 };
 
@@ -1007,87 +1016,57 @@ const FIX_UNDRIVEN: Record<string, UndrivenCause> = {
  * Rules the DETECTION census cannot drive, each with the measured cause.
  *
  * Every entry here is a fact about the rule's fixtures, not about the rule:
- * `noBodyRespelling` means no fixture contains either body form to swap, and
- * `silentOnBodyPairs` means the fixtures that do contain one are fixtures the
- * rule says nothing about. Both are legitimate — but they are recorded rather
- * than rendered as a passing row, because a reader cannot tell the two apart in
- * jest output.
+ * `noRespelling` means no fixture contains a function any transform can
+ * respell, and `silentOnComparedPairs` means the fixtures that do yield a pair
+ * are fixtures the rule says nothing about. Both are legitimate — but they are
+ * recorded rather than rendered as a passing row, because a reader cannot tell
+ * the two apart in jest output.
  */
 const DETECTION_UNDRIVEN: Record<string, UndrivenCause> = {
-  'array-methods-this-context': 'silentOnBodyPairs',
-  'avoid-utils-directory': 'noBodyRespelling',
-  'class-methods-read-top-to-bottom': 'silentOnBodyPairs',
-  'dynamic-https-errors': 'silentOnBodyPairs',
-  'enforce-centralized-mock-firestore': 'noBodyRespelling',
-  'enforce-cloud-function-id-length': 'noBodyRespelling',
-  'enforce-date-ttime': 'noBodyRespelling',
-  'enforce-dynamic-file-naming': 'noBodyRespelling',
-  'enforce-dynamic-imports': 'silentOnBodyPairs',
-  'enforce-early-destructuring': 'silentOnBodyPairs',
-  'enforce-empty-object-check': 'noBodyRespelling',
-  'enforce-firestore-path-utils': 'noBodyRespelling',
-  'enforce-firestore-rules-get-access': 'noBodyRespelling',
-  'enforce-id-capitalization': 'silentOnBodyPairs',
-  'enforce-identifiable-firestore-type': 'noBodyRespelling',
-  'enforce-m3-sentence-case': 'noBodyRespelling',
-  'enforce-memoize-getters': 'silentOnBodyPairs',
-  'enforce-realtimedb-path-utils': 'noBodyRespelling',
-  'enforce-serializable-params': 'silentOnBodyPairs',
-  'enforce-singular-type-names': 'noBodyRespelling',
-  'enforce-storage-context': 'noBodyRespelling',
-  'enforce-timestamp-now': 'noBodyRespelling',
-  'enforce-types-directory-placement': 'silentOnBodyPairs',
+  'array-methods-this-context': 'silentOnComparedPairs',
+  'avoid-utils-directory': 'noRespelling',
+  'class-methods-read-top-to-bottom': 'silentOnComparedPairs',
+  'enforce-date-ttime': 'silentOnComparedPairs',
+  'enforce-dynamic-file-naming': 'noRespelling',
+  'enforce-dynamic-imports': 'silentOnComparedPairs',
+  'enforce-firestore-path-utils': 'noRespelling',
+  'enforce-firestore-rules-get-access': 'noRespelling',
+  'enforce-identifiable-firestore-type': 'noRespelling',
+  'enforce-m3-sentence-case': 'noRespelling',
+  'enforce-realtimedb-path-utils': 'noRespelling',
+  'enforce-singular-type-names': 'noRespelling',
+  'enforce-types-directory-placement': 'silentOnComparedPairs',
   'enforce-typescript-markdown-code-blocks': 'noTsFixture',
-  'export-if-in-doubt': 'silentOnBodyPairs',
-  'extract-global-constants': 'silentOnBodyPairs',
-  'flatten-push-calls': 'noBodyRespelling',
-  'generic-starts-with-t': 'noBodyRespelling',
-  'jsdoc-above-field': 'noBodyRespelling',
-  'no-always-true-false-conditions': 'silentOnBodyPairs',
-  'no-async-foreach': 'noBodyRespelling',
-  'no-circular-references': 'noBodyRespelling',
-  'no-class-instance-destructuring': 'noBodyRespelling',
-  'no-conditional-literals-in-jsx': 'noBodyRespelling',
-  'no-curly-brackets-around-commented-properties': 'silentOnBodyPairs',
-  'no-fill-template-mutation': 'silentOnBodyPairs',
-  'no-filter-without-return': 'silentOnBodyPairs',
-  'no-firestore-object-arrays': 'noBodyRespelling',
-  'no-harness-coupled-disables': 'noBodyRespelling',
-  'no-memoize-on-static': 'noBodyRespelling',
-  'no-misused-switch-case': 'noBodyRespelling',
-  'no-overridable-method-calls-in-constructor': 'silentOnBodyPairs',
-  'no-passthrough-getters': 'silentOnBodyPairs',
-  'no-redundant-boolean-callback-props': 'noBodyRespelling',
-  'no-restricted-properties-fix': 'silentOnBodyPairs',
-  'no-separate-loading-state': 'noBodyRespelling',
-  'no-single-dismiss-dialog-button': 'noBodyRespelling',
-  'no-stablehash-react-nodes': 'silentOnBodyPairs',
-  'no-static-constants-in-dynamic-files': 'silentOnBodyPairs',
-  'no-try-catch-already-exists-in-transaction': 'silentOnBodyPairs',
-  'no-unnecessary-destructuring': 'silentOnBodyPairs',
+  'jsdoc-above-field': 'noRespelling',
+  'no-circular-references': 'silentOnComparedPairs',
+  'no-conditional-literals-in-jsx': 'noRespelling',
+  'no-filter-without-return': 'silentOnComparedPairs',
+  'no-harness-coupled-disables': 'noRespelling',
+  'no-memoize-on-static': 'silentOnComparedPairs',
+  'no-misused-switch-case': 'noRespelling',
+  'no-overridable-method-calls-in-constructor': 'silentOnComparedPairs',
+  'no-passthrough-getters': 'silentOnComparedPairs',
+  'no-redundant-boolean-callback-props': 'noRespelling',
+  'no-restricted-properties-fix': 'silentOnComparedPairs',
+  'no-static-constants-in-dynamic-files': 'silentOnComparedPairs',
+  'no-try-catch-already-exists-in-transaction': 'silentOnComparedPairs',
+  'no-unnecessary-destructuring': 'silentOnComparedPairs',
   'no-unpinned-dependencies': 'noTsFixture',
-  'omit-index-html': 'noBodyRespelling',
-  'prefer-block-comments-for-declarations': 'noBodyRespelling',
-  'prefer-destructuring-no-class': 'silentOnBodyPairs',
-  'prefer-document-flattening': 'noBodyRespelling',
-  'prefer-fragment-shorthand': 'noBodyRespelling',
-  'prefer-getter-over-parameterless-method': 'noBodyRespelling',
-  'prefer-type-alias-over-typeof-constant': 'noBodyRespelling',
-  'prefer-type-over-interface': 'noBodyRespelling',
-  'prefer-union-from-const-array': 'noBodyRespelling',
-  'prefer-url-tostring-over-tojson': 'noBodyRespelling',
-  'prefer-use-theme': 'noBodyRespelling',
-  'require-dynamic-firebase-imports': 'silentOnBodyPairs',
-  'require-https-error': 'noBodyRespelling',
-  'require-https-error-cause': 'silentOnBodyPairs',
-  'sync-onwrite-name-func': 'noBodyRespelling',
-  'test-file-location-enforcement': 'noBodyRespelling',
-  'use-custom-link': 'noBodyRespelling',
+  'omit-index-html': 'noRespelling',
+  'prefer-fragment-shorthand': 'noRespelling',
+  'prefer-getter-over-parameterless-method': 'noRespelling',
+  'prefer-use-theme': 'silentOnComparedPairs',
+  'require-https-error-cause': 'silentOnComparedPairs',
+  'sync-onwrite-name-func': 'noRespelling',
+  'test-file-location-enforcement': 'noRespelling',
+  'use-custom-link': 'noRespelling',
 };
 
 /**
- * Rules whose concise/block detection asymmetry is a known, filed decision
- * rather than an unnoticed defect.
+ * Rules whose detection asymmetry is known and filed — a design decision or an
+ * open defect issue — rather than an unnoticed defect. Each entry names the
+ * issue that tracks it, so nothing can retire silently under a label written
+ * for something else.
  *
  * Enforced in BOTH directions below. A rule that stops flagging must be removed
  * from here, and a new one must be added consciously — a one-way list would let
@@ -1096,6 +1075,11 @@ const DETECTION_UNDRIVEN: Record<string, UndrivenCause> = {
  * rule does not churn the gate while a NEW rule name still trips it.
  */
 const DETECTION_EXEMPT: Record<string, string> = {
+  // Credits a return-type annotation only when the enclosing function is a
+  // FunctionDeclaration, so the same annotated function respelled as an arrow
+  // is reported.
+  'enforce-firestore-doc-ref-generic':
+    'return annotation credited on declarations only, tracked as #1909',
   // Registers only a `ReturnStatement` visitor, so a concise body is
   // structurally invisible. Parity is a breadth decision, not a mechanical fix:
   // it adds ~703 consumer reports, almost all `jest.mock` factories, where the
@@ -1106,6 +1090,10 @@ const DETECTION_EXEMPT: Record<string, string> = {
   // identity shape is deliberately still concise-only, because widening it
   // would ship a second copy of behaviour whose boundary is unsettled.
   'no-undefined-null-passthrough': 'identity shape deferred, tracked as #1785',
+  // Enumerates candidate components from VariableDeclaration nodes only, so a
+  // component respelled as a function declaration is never checked.
+  'no-unused-props':
+    'components enumerated from VariableDeclaration only, tracked as #1910',
   // Reports in BOTH spellings and swaps `preferMap` for `preferMapManual` when
   // the dispatch sits in a concise body, whose message names the reason: there
   // is no statement position to place the `Record` in, so the fix is withheld
@@ -1114,6 +1102,17 @@ const DETECTION_EXEMPT: Record<string, string> = {
   // Surfaced by the #1859 widening.
   'prefer-map-over-conditional-dispatch':
     'deliberate fixable/manual split on an expression body',
+  // `ignoreVariadicFunctions` exempts a variadic FunctionDeclaration and not
+  // the identical arrow — a human-labeled design call.
+  'prefer-settings-object':
+    'ignoreVariadicFunctions exempts declarations only, tracked as #1857',
+  // Registers ArrowFunctionExpression and FunctionExpression visitors and no
+  // FunctionDeclaration key, so a declaration-spelled reassembly goes unseen.
+  'prefer-spread-over-reassembly':
+    'no FunctionDeclaration visitor, tracked as #1908',
+  // A FunctionDeclaration component is checked only when its parent is the
+  // Program or an export declaration, so a nested one is missed.
+  'require-memo': 'nested declaration components unchecked, tracked as #1774',
 };
 
 /**
@@ -1333,6 +1332,25 @@ const TRANSFORM_FLOORS: Record<string, { yielded: number; rules: number }> = {
 };
 
 /**
+ * What the DETECTION census must keep diffing, per transform, in the same
+ * shape as `TRANSFORM_FLOORS` and for the same reason: the total comparison
+ * count survives intact while one spelling's pairs stop being diffed at all.
+ * That is not hypothetical — the declaration/arrow answers were computed and
+ * discarded behind a body-pair fence, and the six defects they surface
+ * (#1908, #1909, #1910, #1774, #1755, #1857) were invisible for as long as the
+ * fence stood. The floors are the measurement with headroom, and the corpus
+ * only grows, so a fall through one is a harness regression rather than
+ * fixture churn.
+ */
+const DETECTION_COMPARISON_FLOORS: Record<string, number> = {
+  'declaration->arrow': 4000,
+  'arrow->declaration': 2200,
+  'funcExpression->arrow': 200,
+  'conciseArrow->block': 3400,
+  'blockArrow->concise': 1100,
+};
+
+/**
  * Attempts a transform still throws away, with the measured cause.
  *
  * Read in BOTH directions below: a transform with no entry must discard
@@ -1532,12 +1550,15 @@ console.log(
     `  fix census: ${sharedMessageIds} shared messageIds, ` +
       `${fixFindings.length} finding(s); ${fixDrivenRules.length} rule(s) ` +
       `driven, ${probeRules.length - fixDrivenRules.length} named skip(s)`,
-    `  detection census: ${bodyComparisons} body pairs, ` +
+    `  detection census: ${detectionComparisons} compared pairs, ` +
       `${detectionFindings.length} finding(s) across ` +
       `${detectionRules.length} rule(s); ${detectionDrivenRules.length} rule(s) ` +
       `driven, ${
         probeRules.length - detectionDrivenRules.length
       } named skip(s)`,
+    `  detection pairs by transform: ${JSON.stringify(
+      Object.fromEntries(detectionComparisonsByTransform),
+    )}`,
     ...[...transformStats].map(
       ([name, stats]) =>
         `  ${name}: attempted=${stats.attempted} sites=${stats.sites} ` +
@@ -1583,12 +1604,12 @@ describe('fix availability must not depend on how a function is spelled', () => 
     expect(probeRules.length).toBeGreaterThan(150);
     expect(casesConsidered).toBeGreaterThan(5000);
     expect(sharedMessageIds).toBeGreaterThan(3000);
-    expect(bodyComparisons).toBeGreaterThan(2000);
+    expect(detectionComparisons).toBeGreaterThan(11000);
     expect(rulesCompared.size).toBeGreaterThan(100);
     // The rows that can actually fail, floored separately: the counts above
     // survive intact even if every comparison piles onto a handful of rules.
     expect(fixDrivenRules.length).toBeGreaterThan(50);
-    expect(detectionDrivenRules.length).toBeGreaterThan(100);
+    expect(detectionDrivenRules.length).toBeGreaterThan(140);
   });
 
   /** Both directions, so a fixed rule must be removed rather than lingering. */
@@ -1664,10 +1685,33 @@ describe('fix availability must not depend on how a function is spelled', () => 
   }
 });
 
-describe('a concise and a block arrow body must be seen alike', () => {
-  it('flags exactly the rules whose asymmetry is a filed decision', () => {
+describe('every spelling of a function must be seen alike', () => {
+  it('flags exactly the rules whose detection asymmetry is recorded', () => {
     expect(detectionRules).toEqual(Object.keys(DETECTION_EXEMPT).sort());
   });
+
+  /**
+   * The census must keep diffing every spelling, per transform: a fence that
+   * re-scopes detection to the body pair would zero the declaration/arrow
+   * counts while the total above stays comfortably over its floor, and the six
+   * defects those pairs surface would go back to being computed and discarded.
+   */
+  it('declares a detection floor for each transform and for no other', () => {
+    expect(Object.keys(DETECTION_COMPARISON_FLOORS).sort()).toEqual(
+      TRANSFORMS.map((transform) => transform.name).sort(),
+    );
+  });
+
+  it.each(TRANSFORMS.map((transform) => transform.name))(
+    '%s feeds the detection census',
+    (name) => {
+      const compared = detectionComparisonsByTransform.get(name) || 0;
+      expect({
+        compared,
+        clearsFloor: compared >= DETECTION_COMPARISON_FLOORS[name],
+      }).toEqual({ compared, clearsFloor: true });
+    },
+  );
 
   /** Both directions and the cause, exactly as the fix census does above. */
   it('accounts for every rule the detection census cannot drive', () => {
@@ -1677,9 +1721,9 @@ describe('a concise and a block arrow body must be seen alike', () => {
   it.each(detectionDrivenRules.filter((rule) => !(rule in DETECTION_EXEMPT)))(
     '%s',
     (rule) => {
-      expect(driveByRule.get(rule)!.reportingBodyComparisons).toBeGreaterThan(
-        0,
-      );
+      expect(
+        driveByRule.get(rule)!.reportingDetectionComparisons,
+      ).toBeGreaterThan(0);
       // Reported one way and silent the other: either a remedy is withheld, or
       // code the rule flags is blessed one rewrite away.
       expect(reportOf(findingsFor(rule, detectionFindings))).toBe('');
@@ -1699,9 +1743,9 @@ describe('both detectors are load-bearing', () => {
       const control = CONTROLS.find((c) => c.name === name)!;
       const result = probeCase(name, plantedCase(control.code));
       // A control the probe never actually compared would prove nothing.
-      expect(result.sharedMessageIds + result.bodyComparisons).toBeGreaterThan(
-        0,
-      );
+      expect(
+        result.sharedMessageIds + result.detectionComparisons,
+      ).toBeGreaterThan(0);
       expect({
         fix: result.fixFindings.length > 0,
         detection: result.detectionFindings.length > 0,

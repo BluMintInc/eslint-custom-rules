@@ -17,10 +17,155 @@ function isInsideFunction(node: TSESTree.Node): boolean {
   return false;
 }
 
-function isFunctionDefinition(node: TSESTree.Expression | null): boolean {
+type FunctionLikeNode =
+  | TSESTree.ArrowFunctionExpression
+  | TSESTree.FunctionExpression
+  | TSESTree.FunctionDeclaration;
+
+/**
+ * Walks every child node except `parent` (which would loop back out of the
+ * subtree) and reports whether any of them satisfies the predicate.
+ */
+function someChildNode(
+  node: TSESTree.Node,
+  predicate: (child: TSESTree.Node) => boolean,
+): boolean {
+  for (const key of Object.keys(node)) {
+    if (key === 'parent') {
+      continue;
+    }
+    const value = (node as unknown as Record<string, unknown>)[key];
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (ASTHelpers.isNode(item) && predicate(item)) {
+          return true;
+        }
+      }
+    } else if (ASTHelpers.isNode(value) && predicate(value)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Whether the subtree reads `this`, `super`, or `new.target` from the scope
+ * that lexically encloses it. `declarationIncludesIdentifier` answers the
+ * identifier half of "does this helper read from its scope?", but a bare
+ * `this` (or `super`, or `new.target`) is not an Identifier node, so an arrow
+ * whose only capture is its lexical `this` would otherwise read as
+ * free-standing — an inverted answer, not a missed one. The walk stops at
+ * nodes that rebind `this` (`function` bodies and class bodies): a `this`
+ * inside those belongs to them, so it does not pin the helper to its
+ * surroundings.
+ */
+function capturesLexicalContext(node: TSESTree.Node): boolean {
+  if (
+    node.type === AST_NODE_TYPES.ThisExpression ||
+    node.type === AST_NODE_TYPES.Super
+  ) {
+    return true;
+  }
+  if (node.type === AST_NODE_TYPES.MetaProperty) {
+    return node.meta.name === 'new';
+  }
+  if (
+    node.type === AST_NODE_TYPES.FunctionDeclaration ||
+    node.type === AST_NODE_TYPES.FunctionExpression ||
+    node.type === AST_NODE_TYPES.ClassBody
+  ) {
+    return false;
+  }
+  return someChildNode(node, capturesLexicalContext);
+}
+
+/**
+ * Type parameters declared by the functions and classes that enclose `node`.
+ * A helper whose signature references one of these names cannot be hoisted:
+ * the name is scope-bound even when the runtime body closes over nothing.
+ * The `TSTypeParameterDeclaration` check keeps instantiation sites
+ * (`TSTypeParameterInstantiation`, e.g. on a call or a type reference) from
+ * contributing names.
+ */
+function enclosingTypeParameterNames(node: TSESTree.Node): Set<string> {
+  const names = new Set<string>();
+  let current = node.parent as TSESTree.Node | undefined;
+  while (current) {
+    const { typeParameters } = current as TSESTree.Node & {
+      typeParameters?: TSESTree.TSTypeParameterDeclaration;
+    };
+    if (typeParameters?.type === AST_NODE_TYPES.TSTypeParameterDeclaration) {
+      for (const param of typeParameters.params) {
+        names.add(param.name.name);
+      }
+    }
+    current = current.parent as TSESTree.Node | undefined;
+  }
+  return names;
+}
+
+function referencesTypeName(
+  node: TSESTree.Node,
+  names: ReadonlySet<string>,
+): boolean {
+  if (
+    node.type === AST_NODE_TYPES.TSTypeReference &&
+    node.typeName.type === AST_NODE_TYPES.Identifier &&
+    names.has(node.typeName.name)
+  ) {
+    return true;
+  }
+  return someChildNode(node, (child) => referencesTypeName(child, names));
+}
+
+/**
+ * Whether the helper's types are pinned to an enclosing scope. Runtime
+ * dependencies are not the only hoisting blocker: `function outer<T>() {
+ * const makeList = (): T[] => []; }` reads no value from `outer`, yet moving
+ * it to module scope leaves `T` unresolvable. Names the helper redeclares as
+ * its own type parameters shadow the enclosing ones, so they are subtracted
+ * before scanning; the declarator's own annotation (`const makeList: () =>
+ * T[] = ...`) sits outside the helper and can never see the helper's type
+ * parameters, so it is scanned against the unsubtracted set.
+ */
+function referencesEnclosingTypeParameter(
+  fn: FunctionLikeNode,
+  declaration?: TSESTree.VariableDeclarator,
+): boolean {
+  const enclosingNames = enclosingTypeParameterNames(fn);
+  if (enclosingNames.size === 0) {
+    return false;
+  }
+
+  const idAnnotation =
+    declaration?.id?.type === AST_NODE_TYPES.Identifier
+      ? declaration.id.typeAnnotation
+      : undefined;
+  if (idAnnotation && referencesTypeName(idAnnotation, enclosingNames)) {
+    return true;
+  }
+
+  const visibleNames = new Set(enclosingNames);
+  for (const param of fn.typeParameters?.params ?? []) {
+    visibleNames.delete(param.name.name);
+  }
+  return visibleNames.size > 0 && referencesTypeName(fn, visibleNames);
+}
+
+/**
+ * Whether hoisting the helper to module scope could change behaviour or break
+ * compilation. Shared by both spellings of a nested helper — `function
+ * inner()` and `const inner = () =>` — so the two answer the hoisting
+ * question identically (#1755).
+ */
+function helperCannotBeHoisted(
+  fn: FunctionLikeNode,
+  declaration?: TSESTree.VariableDeclarator,
+): boolean {
   return (
-    node?.type === 'FunctionExpression' ||
-    node?.type === 'ArrowFunctionExpression'
+    ASTHelpers.declarationIncludesIdentifier(fn) ||
+    capturesLexicalContext(fn) ||
+    referencesEnclosingTypeParameter(fn, declaration)
   );
 }
 
@@ -154,12 +299,40 @@ type DeclaratorAnalysis = {
   hasReportableIdentifier: boolean;
 };
 
+/**
+ * The function definition an initializer resolves to, stepping over TS
+ * assertion wrappers so `(() => 1) as Handler` classifies the same way as the
+ * bare arrow.
+ */
+function functionDefinitionOf(
+  node: TSESTree.Expression | null,
+): TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression | null {
+  const unwrapped = unwrapExpression(node);
+  if (
+    unwrapped?.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+    unwrapped?.type === AST_NODE_TYPES.FunctionExpression
+  ) {
+    return unwrapped;
+  }
+  return null;
+}
+
 function analyzeDeclarator(
   declaration: TSESTree.VariableDeclarator,
 ): DeclaratorAnalysis {
   const init = declaration.init ?? null;
-  const isFunctionOrMutable =
-    isFunctionDefinition(init) || isMutableValue(init);
+  const functionInit = functionDefinitionOf(init);
+  /**
+   * A function-valued initializer is a nested helper: the same hoisting
+   * question as a `function` declaration, asked in a different spelling
+   * (#1755). It is exempt only when hoisting could change behaviour — it
+   * closes over an enclosing binding, captures lexical `this`/`super`, or
+   * names an enclosing type parameter. A helper pinned by none of these flows
+   * through the same report path as a plain constant.
+   */
+  const isFunctionOrMutable = functionInit
+    ? helperCannotBeHoisted(functionInit, declaration)
+    : isMutableValue(init);
 
   return {
     isFunctionOrMutable,
@@ -250,7 +423,7 @@ export const extractGlobalConstants: TSESLint.RuleModule<
          */
         if (node.parent && isInsideFunction(node.parent)) {
           const scope = context.getScope();
-          const hasDependencies = ASTHelpers.blockIncludesIdentifier(node.body);
+          const hasDependencies = helperCannotBeHoisted(node);
           if (!hasDependencies && scope.type === 'function') {
             const funcName = node.id?.name;
             context.report({
