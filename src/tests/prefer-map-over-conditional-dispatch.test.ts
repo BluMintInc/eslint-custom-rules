@@ -2186,6 +2186,181 @@ class Factory {
       output: null,
       errors: [{ messageId: 'preferMapManual' }],
     },
+    // #1926: the issue's own shape — an exhaustive switch on a discriminated
+    // union's tag whose `default` asserts `never` and throws. The construct
+    // still converts (the default is unreachable for typed values, exactly as
+    // the type gate's contract says), but the emitted key type must be the
+    // discriminant's type EXPRESSION. Inlining the resolved literal union
+    // silently drops the exhaustiveness the rule's own message promises: a
+    // third `kind` added later leaves the Record valid, and the lookup returns
+    // `undefined` under `noImplicitAny: false` with no diagnostic anywhere.
+    //
+    // The issue spells the assertion as `const unhandled: never = body;`. That
+    // declarator sits inside the span the fix deletes, which reads to
+    // multi-declarator-closure's ARM B as a destroyed sibling (#1930) even
+    // though the binding it removes is scoped to the deleted block. The cast
+    // spelling asserts the same `never` exhaustiveness without a statement-level
+    // declarator, so the shape is pinned here without bumping that baseline.
+    {
+      code: `
+type Body = { kind: 'a' } | { kind: 'b' };
+const f = (body: Body) => {
+  switch (body.kind) {
+    case 'a':
+      return 1;
+    case 'b':
+      return 2;
+    default: {
+      throw new Error(String(body as never));
+    }
+  }
+};
+`,
+      output: `
+type Body = { kind: 'a' } | { kind: 'b' };
+const f = (body: Body) => {
+  const RESULT_BY_KIND: Record<Body['kind'], number> = {
+    a: 1,
+    b: 2,
+  };
+  return RESULT_BY_KIND[body.kind];
+};
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1926: a tag access on a value typed by a named object type — the key
+    // type follows the property through the alias (`Props['mode']`) so the
+    // Record is the thing that fails to compile when `mode` gains a member.
+    {
+      code: `
+type Props = { mode: 'compact' | 'full' };
+declare const props: Props;
+function f() {
+  switch (props.mode) {
+    case 'compact':
+      return 'c';
+    case 'full':
+      return 'f';
+  }
+}
+`,
+      output: `
+type Props = { mode: 'compact' | 'full' };
+declare const props: Props;
+function f() {
+  const RESULT_BY_MODE: Record<Props['mode'], string> = {
+    compact: 'c',
+    full: 'f',
+  };
+  return RESULT_BY_MODE[props.mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1926: a named-alias discriminant already prints as a name; deriving an
+    // indexed access must not displace it.
+    {
+      code: `
+type Mode = 'compact' | 'full';
+declare const mode: Mode;
+function f() {
+  switch (mode) {
+    case 'compact':
+      return 'c';
+    case 'full':
+      return 'f';
+  }
+}
+`,
+      output: `
+type Mode = 'compact' | 'full';
+declare const mode: Mode;
+function f() {
+  const RESULT_BY_MODE: Record<Mode, string> = {
+    compact: 'c',
+    full: 'f',
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1926: the key type is derived from the discriminant, not from the
+    // construct, so the ternary form carries the indexed access too. The
+    // fixture pinning that is WITHHELD: a ternary whose discriminant is a
+    // member expression goes silent under `?.`, because the ternary arm never
+    // gained the ChainExpression unwrapping #1867 gave the switch arm. That
+    // blindness predates #1926 and belongs to the ternary arm rather than to
+    // the key-type derivation, so it is filed as #1929 with the fixture text
+    // to restore here once the arm is fixed.
+    // #1926: the tag access is flow-narrowed above the switch, so the
+    // property's DECLARED union ('a' | 'b' | 'c') is wider than the cases the
+    // construct covers. `Holder['kind']` would demand a `c` entry the switch
+    // has no value for (TS2741 on the Record itself), so the resolved literal
+    // union stays — the derived key type ships only when it denotes the same
+    // key set.
+    {
+      code: `
+type Kind = 'a' | 'b' | 'c';
+type Holder = { kind: Kind };
+declare const h: Holder;
+function f() {
+  if (h.kind === 'c') {
+    return 0;
+  }
+  switch (h.kind) {
+    case 'a':
+      return 1;
+    case 'b':
+      return 2;
+  }
+}
+`,
+      output: `
+type Kind = 'a' | 'b' | 'c';
+type Holder = { kind: Kind };
+declare const h: Holder;
+function f() {
+  if (h.kind === 'c') {
+    return 0;
+  }
+  const RESULT_BY_KIND: Record<"a" | "b", number> = {
+    a: 1,
+    b: 2,
+  };
+  return RESULT_BY_KIND[h.kind];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1926: no name is reachable from a fully inline object type, so the
+    // resolved literal union stays the only faithful spelling. A synthesized
+    // name that does not resolve at the fix site would not compile, which is
+    // strictly worse than a weak key type.
+    {
+      code: `
+declare const o: { kind: 'a' | 'b' };
+function f() {
+  switch (o.kind) {
+    case 'a':
+      return 1;
+    case 'b':
+      return 2;
+  }
+}
+`,
+      output: `
+declare const o: { kind: 'a' | 'b' };
+function f() {
+  const RESULT_BY_KIND: Record<"a" | "b", number> = {
+    a: 1,
+    b: 2,
+  };
+  return RESULT_BY_KIND[o.kind];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
   ],
 };
 

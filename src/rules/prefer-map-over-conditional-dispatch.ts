@@ -88,6 +88,14 @@ const THIS_REBINDING_TYPES = new Set<string>([
 ]);
 
 /**
+ * A printed type that is a bare name — an alias, interface, enum, or class the
+ * checker resolved to a single symbol. Such a name already tracks its union as
+ * that union grows; anything more elaborate (a printed literal union, a type
+ * literal, a generic instantiation) does not.
+ */
+const BARE_TYPE_NAME = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+
+/**
  * Function/constructor/conditional type notation must be parenthesized to
  * appear as a `|` union member, or the emitted annotation does not parse
  * ("Function type notation must be parenthesized when used in a union type").
@@ -320,20 +328,141 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       return parts.map(parenthesizeForUnion).join(' | ');
     }
 
+    /** Whether two classified discriminant types admit exactly the same keys. */
+    function sameKeySpace(
+      left: ReturnType<typeof classifyDiscriminant>,
+      right: ReturnType<typeof classifyDiscriminant>,
+    ): boolean {
+      if (left.hasOther || right.hasOther) {
+        return false;
+      }
+      if (left.hasNullish !== right.hasNullish) {
+        return false;
+      }
+      const spell = (keys: LiteralKey[]) =>
+        new Set(keys.map((key) => `${key.kind}:${String(key.value)}`));
+      const leftKeys = spell(left.literalKeys);
+      const rightKeys = spell(right.literalKeys);
+      return (
+        leftKeys.size === rightKeys.size &&
+        [...leftKeys].every((key) => rightKeys.has(key))
+      );
+    }
+
+    /**
+     * `ObjectType['tag']` for a tag access whose object type has a name that
+     * resolves at the fix site.
+     *
+     * The rule's promise is that a missing key becomes a *compile* error the
+     * moment the union grows, and inlining the resolved literal union does not
+     * keep it: the stale `Record` still typechecks on its own, and only the
+     * lookup trips TS7053 — an implicit-any diagnostic, so under
+     * `noImplicitAny: false` nothing is reported at all and the lookup quietly
+     * yields `undefined` for the new member. Following the property through its
+     * declaring type instead puts the error on the `Record` ("Property 'c' is
+     * missing"), which names what to add and does not depend on
+     * `noImplicitAny` (#1926).
+     *
+     * A wrong annotation does not compile, so the derived spelling ships only
+     * when two things hold. The printed object-type name must resolve, at the
+     * fix site, to exactly the object's own type: the checker prints a symbol's
+     * bare name with no regard for whether that name is reachable there (the
+     * printer behaviour `validateAnnotation` exists to catch), and building an
+     * unreachable name would turn a fix that used to apply into a report. And
+     * the property's declared key set must equal the discriminant's, because a
+     * flow-narrowed tag access (`if (o.kind === 'c') return;` above the switch)
+     * leaves the declared union wider than the cases the construct covers —
+     * `Holder['kind']` there demands an entry the switch has no value for.
+     * Failing either, the resolved literal union stays: a weak key type beats
+     * one that breaks the build.
+     */
+    function indexedAccessTypeText(
+      discriminant: TSESTree.Node,
+      discriminantType: ts.Type,
+    ): string | null {
+      const chain = unwrapChain(discriminant);
+      if (
+        chain.type !== AST_NODE_TYPES.MemberExpression ||
+        chain.computed ||
+        chain.property.type !== AST_NODE_TYPES.Identifier
+      ) {
+        return null;
+      }
+      const objectType = tsTypeOf(chain.object);
+      const tsObjectNode = esTreeNodeToTSNodeMap.get(chain.object);
+      const tsFixSite = esTreeNodeToTSNodeMap.get(discriminant);
+      if (!objectType || !tsObjectNode || !tsFixSite) {
+        return null;
+      }
+      const propertyName = chain.property.name;
+      try {
+        const printed = checker.typeToString(objectType, tsObjectNode);
+        if (!printed || !BARE_TYPE_NAME.test(printed)) {
+          return null;
+        }
+        const inScope = checker
+          .getSymbolsInScope(
+            tsFixSite,
+            ts.SymbolFlags.Type | ts.SymbolFlags.Alias,
+          )
+          .find((symbol) => symbol.name === printed);
+        if (!inScope) {
+          return null;
+        }
+        const declaredSymbol =
+          inScope.flags & ts.SymbolFlags.Alias
+            ? checker.getAliasedSymbol(inScope)
+            : inScope;
+        if (checker.getDeclaredTypeOfSymbol(declaredSymbol) !== objectType) {
+          return null;
+        }
+        const property = checker.getPropertyOfType(objectType, propertyName);
+        if (!property) {
+          return null;
+        }
+        const declared = checker.getTypeOfSymbolAtLocation(
+          property,
+          tsObjectNode,
+        );
+        if (
+          !sameKeySpace(
+            classifyDiscriminant(declared),
+            classifyDiscriminant(discriminantType),
+          )
+        ) {
+          return null;
+        }
+        return `${printed}['${propertyName}']`;
+      } catch {
+        return null;
+      }
+    }
+
+    /**
+     * Key type for the emitted `Record`. A discriminant whose own type prints
+     * as a bare name already carries the union's identity, so that name is
+     * kept; otherwise the fix reaches for the tag's declaring type before
+     * settling for the resolved literal union (#1926).
+     */
     function discriminantTypeText(
       type: ts.Type,
       discriminant: TSESTree.Node,
     ): string | null {
+      let printed: string | null;
       try {
         // Pass the discriminant's TS node as the enclosing declaration so the
         // printer qualifies namespaced symbols to their scoped name at the fix
         // site rather than printing an ambiguous short name.
         const enclosing = esTreeNodeToTSNodeMap.get(discriminant);
         const text = checker.typeToString(type, enclosing);
-        return text && text !== 'error' ? text : null;
+        printed = text && text !== 'error' ? text : null;
       } catch {
-        return null;
+        printed = null;
       }
+      if (printed && BARE_TYPE_NAME.test(printed)) {
+        return printed;
+      }
+      return indexedAccessTypeText(discriminant, type) ?? printed;
     }
 
     /**
