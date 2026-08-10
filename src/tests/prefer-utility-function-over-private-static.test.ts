@@ -436,6 +436,204 @@ export class ApiClient {
         }
       `,
       },
+      // A JSDoc block inside the body documents one statement; documenting a
+      // helper is not what makes it worth extracting.
+      {
+        code: `
+        export class Example {
+          private static double(value: number) {
+            /**
+             * Doubling is the whole helper.
+             */
+            return value * 2;
+          }
+        }
+      `,
+      },
+      // A line comment inside the body
+      {
+        code: `
+        export class Example {
+          private static double(value: number) {
+            // Doubling is the whole helper.
+            return value * 2;
+          }
+        }
+      `,
+      },
+      // A trailing comment on the body's only statement
+      {
+        code: `
+        export class Example {
+          private static double(value: number) {
+            return value * 2; // Doubling is the whole helper.
+          }
+        }
+      `,
+      },
+      // Blank lines inside the body
+      {
+        code: `
+        export class Example {
+          private static double(value: number) {
+
+            return value * 2;
+
+          }
+        }
+      `,
+      },
+      // One statement wrapped across lines by a chained call
+      {
+        code: `
+        export class Example {
+          private static sortPositiveDoubles(values: number[]) {
+            return values
+              .map((value) => value * 2)
+              .filter((value) => value > 0)
+              .sort((a, b) => a - b);
+          }
+        }
+      `,
+      },
+      // One statement wrapped across lines by an object literal
+      {
+        code: `
+        export class Example {
+          private static describe(value: number) {
+            return {
+              doubled: value * 2,
+              squared: value * value,
+              negated: -value,
+            };
+          }
+        }
+      `,
+      },
+      // One statement wrapped across lines by a template literal's own newlines
+      {
+        code: `
+        export class Example {
+          private static banner(value: string) {
+            return \`first \${value}
+second line
+third line\`;
+          }
+        }
+      `,
+      },
+      // One statement whose callback is an expression-bodied arrow: the arrow
+      // contributes no statement of its own
+      {
+        code: `
+        export class Example {
+          private static doubleAll(
+            values: number[],
+          ) {
+            return values.map(
+              (value) => value * 2,
+            );
+          }
+        }
+      `,
+      },
+      // The block spelling of the same callback is the same helper, so it is
+      // measured the same
+      {
+        code: `
+        export class Example {
+          private static doubleAll(values: number[]) {
+            return values.map((value) => { return value * 2; });
+          }
+        }
+      `,
+      },
+      // The same chained call with every callback in block spelling
+      {
+        code: `
+        export class Example {
+          private static sortPositiveDoubles(values: number[]) {
+            return values
+              .map((value) => { return value * 2; })
+              .filter((value) => { return value > 0; })
+              .sort((a, b) => { return a - b; });
+          }
+        }
+      `,
+      },
+      // A void callback spelled with a block holds no statement a concise arrow
+      // would not
+      {
+        code: `
+        export class Example {
+          private static logAll(values: number[]) {
+            values.forEach((value) => { console.log(value); });
+          }
+        }
+      `,
+      },
+      // An empty body contains no statements at all
+      {
+        code: `
+        export class Example {
+          private static noop() {}
+        }
+      `,
+      },
+      // An empty body spread across lines
+      {
+        code: `
+        export class Example {
+          private static noop() {
+
+          }
+        }
+      `,
+      },
+      // The size escape and the class-state escape are independent: a body far
+      // over the statement threshold, written on one line, still escapes on
+      // `this`
+      {
+        code: `
+        export class Example {
+          private static readonly LIMIT = 3;
+
+          private static capAll(values: number[]) { const doubled = values.map((value) => value * 2); const capped = doubled.filter((value) => value < this.LIMIT); const sorted = capped.sort((a, b) => a - b); return sorted; }
+        }
+      `,
+      },
+      // The same, escaping on the class-name-qualified spelling
+      {
+        code: `
+        export class Example {
+          private static readonly LIMIT = 3;
+
+          private static capAll(values: number[]) { const doubled = values.map((value) => value * 2); const capped = doubled.filter((value) => value < Example.LIMIT); const sorted = capped.sort((a, b) => a - b); return sorted; }
+        }
+      `,
+      },
+      // Size alone came from wrapping: a complex return type over a single
+      // statement is still a single statement
+      {
+        code: `
+        export class ResponseFormatter {
+          private static formatResponse<T>(
+            data: T,
+            status: number,
+            message: string
+          ): { data: T; meta: { status: number; message: string; timestamp: number } } {
+            return {
+              data,
+              meta: {
+                status,
+                message,
+                timestamp: Date.now()
+              }
+            };
+          }
+        }
+      `,
+      },
     ],
     invalid: [
       // Basic case: private static method that should be a utility function
@@ -564,12 +762,14 @@ export class ApiClient {
             status: number,
             message: string
           ): { data: T; meta: { status: number; message: string; timestamp: number } } {
+            const timestamp = Date.now();
+
             return {
               data,
               meta: {
                 status,
                 message,
-                timestamp: Date.now()
+                timestamp
               }
             };
           }
@@ -926,6 +1126,98 @@ export class ApiClient {
         }
       `,
         errors: [buildError('compute', 'this class')],
+      },
+      // Four statements joined onto one physical line: formatting does not buy
+      // an exemption
+      {
+        code: `
+        export class Example {
+          private static compute(value: number) { const doubled = value * 2; const squared = value * value; const summed = doubled + squared; return summed; }
+        }
+      `,
+        errors: [buildError('compute', 'Example')],
+      },
+      // Two statements on one physical line is the threshold itself
+      {
+        code: `
+        export class Example {
+          private static compute(value: number) { const doubled = value * 2; return doubled; }
+        }
+      `,
+        errors: [buildError('compute', 'Example')],
+      },
+      // Nested statements count: one top-level `if` holding several statements
+      {
+        code: `
+        export class Example {
+          private static describe(values: number[]) {
+            if (values.length > 0) {
+              const first = values[0];
+              const last = values[values.length - 1];
+              return { first, last };
+            }
+          }
+        }
+      `,
+        errors: [buildError('describe', 'Example')],
+      },
+      // A guard whose consequent shares its line is two statements
+      {
+        code: `
+        export class Example {
+          private static assertNonEmpty(values: number[]) {
+            if (!values.length) throw new Error('empty');
+          }
+        }
+      `,
+        errors: [buildError('assertNonEmpty', 'Example')],
+      },
+      // Nested statements count: one top-level block holding several statements
+      {
+        code: `
+        export class Example {
+          private static describe(values: number[]) {
+            {
+              const first = values[0];
+              const last = values[values.length - 1];
+              return { first, last };
+            }
+          }
+        }
+      `,
+        errors: [buildError('describe', 'Example')],
+      },
+      // Nested statements count: one top-level `try` holding several statements,
+      // matching the documented incorrect example
+      {
+        code: `
+        export class JsonParser {
+          private static safeParseJson(input: string, fallback: unknown = null) {
+            try {
+              return JSON.parse(input);
+            } catch (error) {
+              console.error('Failed to parse JSON:', error);
+              return fallback;
+            }
+          }
+        }
+      `,
+        errors: [buildError('safeParseJson', 'JsonParser')],
+      },
+      // Nested statements count: one top-level `return` whose callback body
+      // holds several statements
+      {
+        code: `
+        export class Example {
+          private static tagAll(values: string[]) {
+            return values.map((value) => {
+              const trimmed = value.trim();
+              return 'tag:' + trimmed;
+            });
+          }
+        }
+      `,
+        errors: [buildError('tagAll', 'Example')],
       },
     ],
   },

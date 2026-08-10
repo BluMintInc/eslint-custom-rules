@@ -7,6 +7,113 @@ type MessageIds = 'preferUtilityFunctionOverPrivateStatic';
 
 type ClassNode = TSESTree.ClassDeclaration | TSESTree.ClassExpression;
 
+/**
+ * A body of a single statement is trivial: extracting it to a module-level
+ * utility buys nothing, so the rule stays silent below this many statements.
+ *
+ * Two statements is the same boundary the physical-line threshold this replaces
+ * drew for conventionally formatted code — a body written one statement per
+ * line spans `statements + 2` lines, so the former "fewer than 4 lines" escape
+ * is exactly "fewer than 2 statements".
+ */
+const MIN_REPORTED_STATEMENTS = 2;
+
+const FUNCTION_TYPES = new Set([
+  'ArrowFunctionExpression',
+  'FunctionDeclaration',
+  'FunctionExpression',
+]);
+
+/**
+ * The single statement a function body holds when that body is the block
+ * spelling of a concise arrow, and null otherwise.
+ *
+ * `(x) => x * 2` and `(x) => { return x * 2; }` are the same helper, and so are
+ * `(x) => log(x)` and `(x) => { log(x); }`. One spelling carries a statement
+ * node and the other carries none, so counting the block form's statement would
+ * make the size verdict turn on which spelling an author picked — the defect
+ * this measure exists to remove.
+ */
+const conciseSpellingStatement = (
+  node: TSESTree.Node,
+): TSESTree.Node | null => {
+  if (!FUNCTION_TYPES.has(node.type)) {
+    return null;
+  }
+
+  const body = (node as TSESTree.FunctionLike).body;
+  if (!body || body.type !== 'BlockStatement' || body.body.length !== 1) {
+    return null;
+  }
+
+  const only = body.body[0];
+  return only.type === 'ReturnStatement' || only.type === 'ExpressionStatement'
+    ? only
+    : null;
+};
+
+/**
+ * Counts the statements a method contains.
+ *
+ * The size escape asks how much work a helper does, which physical lines answer
+ * badly: a comment or a blank line inside the body inflates the count, a
+ * statement wrapped across several lines inflates it further, and several
+ * statements joined onto one line deflate it to nothing. Statements move with
+ * none of those.
+ *
+ * Nested statements count — those inside blocks, control flow and inner
+ * functions. Counting only the body's own `body.length` would exempt every
+ * helper whose logic sits inside a single `try`, `if` or `for`, or that hands
+ * its work to one multi-statement callback, which describes most non-trivial
+ * helpers.
+ *
+ * A `BlockStatement` contributes nothing of its own because it is a container
+ * for the statements already counted inside it.
+ */
+const countStatements = (root: TSESTree.Node): number => {
+  // Statements a concise arrow would not have carried, collected as their
+  // enclosing function is reached and skipped when the walk arrives at them.
+  const conciseSpellings = new Set<TSESTree.Node>();
+  let count = 0;
+
+  const visit = (node: TSESTree.Node) => {
+    const isCountedStatement =
+      node.type !== 'BlockStatement' &&
+      (node.type.endsWith('Statement') || node.type.endsWith('Declaration'));
+
+    if (isCountedStatement && !conciseSpellings.has(node)) {
+      count += 1;
+    }
+
+    const conciseSpelling = conciseSpellingStatement(node);
+    if (conciseSpelling) {
+      conciseSpellings.add(conciseSpelling);
+    }
+
+    for (const key in node) {
+      if (key === 'parent') {
+        continue;
+      }
+
+      const child = (node as unknown as Record<string, unknown>)[key];
+
+      if (Array.isArray(child)) {
+        for (const item of child) {
+          if (ASTHelpers.isNode(item)) {
+            visit(item);
+          }
+        }
+      } else if (ASTHelpers.isNode(child)) {
+        visit(child);
+      }
+    }
+  };
+
+  visit(root);
+
+  return count;
+};
+
 export const preferUtilityFunctionOverPrivateStatic = createRule<
   [],
   MessageIds
@@ -182,12 +289,12 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
           return;
         }
 
-        // Get the method body text to check size
-        const bodyText = sourceCode.getText(methodBody);
-        const lineCount = bodyText.split('\n').length;
-
-        // Skip small methods (less than 4 lines including braces)
-        if (lineCount < 4) {
+        // Skip trivial methods, measured in statements so that formatting —
+        // comments, blank lines, wrapping, or statements joined onto one line —
+        // cannot move the verdict. The whole method is measured, not just its
+        // body block, so that its own body and every function nested in it are
+        // counted by the same rule.
+        if (countStatements(node.value) < MIN_REPORTED_STATEMENTS) {
           return;
         }
 
