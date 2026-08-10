@@ -1,3 +1,22 @@
+## [1.20.138](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.137...v1.20.138) (2026-08-10)
+
+
+### Bug Fixes
+
+* **enforce-centralized-mock-firestore:** carry or withhold on the binding the retirement strands (closes [#1900](https://github.com/BluMintInc/eslint-custom-rules/issues/1900)) ([fe7ec1f](https://github.com/BluMintInc/eslint-custom-rules/commit/fe7ec1f0fb50331ce902b5c60b9da9ed71a05be7))
+* **enforce-firestore-set-merge:** batch the rewrites that retire the updateDoc binding (closes [#1901](https://github.com/BluMintInc/eslint-custom-rules/issues/1901)) ([e52571f](https://github.com/BluMintInc/eslint-custom-rules/commit/e52571f626979a5b8da2aa6fff64f466f736ed77))
+* **enforce-microdiff:** decline the import rewrite when every call is shadowed (closes [#1903](https://github.com/BluMintInc/eslint-custom-rules/issues/1903)) ([dcb5297](https://github.com/BluMintInc/eslint-custom-rules/commit/dcb529740bed8efc790996f788433d7f7fd928a2))
+* **fast-deep-equal-over-microdiff:** remove the microdiff import the rewrite orphans (closes [#1893](https://github.com/BluMintInc/eslint-custom-rules/issues/1893)) ([4fe2cbe](https://github.com/BluMintInc/eslint-custom-rules/commit/4fe2cbecbad3f951abb952383094d8613e8174e5))
+* **key-only-outermost-element:** remove the import a stripped key orphans (closes [#1904](https://github.com/BluMintInc/eslint-custom-rules/issues/1904)) ([bd706d1](https://github.com/BluMintInc/eslint-custom-rules/commit/bd706d1fe886a8979db3f4db9eb0eabc818d97bf))
+* **no-empty-dependency-use-callbacks:** retire the import the hoist orphans (closes [#1897](https://github.com/BluMintInc/eslint-custom-rules/issues/1897)) ([d58abd9](https://github.com/BluMintInc/eslint-custom-rules/commit/d58abd957827286ecb9150cb54107bda79672f61))
+* **no-explicit-return-type:** batch every binding the stripped annotations strand (closes [#1902](https://github.com/BluMintInc/eslint-custom-rules/issues/1902)) ([073638d](https://github.com/BluMintInc/eslint-custom-rules/commit/073638ddae075c12591487ef6ccafec4ae7ad04e))
+* **no-mock-firebase-admin:** report the factory form, not a bare re-activation (closes [#1907](https://github.com/BluMintInc/eslint-custom-rules/issues/1907)) ([c7a7d00](https://github.com/BluMintInc/eslint-custom-rules/commit/c7a7d00b3c31d3fda010d00351805d9fd6406dc8))
+* **no-redundant-usecallback-wrapper:** remove the import the collapse orphans (closes [#1895](https://github.com/BluMintInc/eslint-custom-rules/issues/1895)) ([2245320](https://github.com/BluMintInc/eslint-custom-rules/commit/2245320ef62a32db496d9d7b3767d1a8b4630187))
+* **no-useless-usememo-primitives:** remove the react import the unwrap orphans (closes [#1894](https://github.com/BluMintInc/eslint-custom-rules/issues/1894)) ([172e421](https://github.com/BluMintInc/eslint-custom-rules/commit/172e421987adaefb4f188693bd709d315df72c96))
+* **no-usememo-for-pass-by-value:** retire the import the React.useMemo unwrap orphans (closes [#1896](https://github.com/BluMintInc/eslint-custom-rules/issues/1896)) ([739e07d](https://github.com/BluMintInc/eslint-custom-rules/commit/739e07df8a140de86bdd21d9de84a6308af5b384))
+* **prefer-params-over-parent-id:** remove the pattern property the rewrite strands (closes [#1899](https://github.com/BluMintInc/eslint-custom-rules/issues/1899)) ([6b5a55d](https://github.com/BluMintInc/eslint-custom-rules/commit/6b5a55df202f05242974eb03b3489dcd3b9a82c1))
+* **use-latest-callback:** retire the react import the conversion orphans (closes [#1898](https://github.com/BluMintInc/eslint-custom-rules/issues/1898)) ([82b3e53](https://github.com/BluMintInc/eslint-custom-rules/commit/82b3e534e4d49e48d51a859258abc58ef4a5c9ec))
+
 ## [1.20.137](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.136...v1.20.137) (2026-08-08)
 
 

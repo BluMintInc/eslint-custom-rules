@@ -1,5 +1,115 @@
 [
   {
+    "version": "1.20.138",
+    "date": "2026-08-10T02:17:15.300Z",
+    "rules": [
+      {
+        "name": "enforce-centralized-mock-firestore",
+        "changeType": "fix",
+        "issues": [
+          1900
+        ],
+        "summary": "carry or withhold on the binding the retirement strands (closes #1900)"
+      },
+      {
+        "name": "enforce-firestore-set-merge",
+        "changeType": "fix",
+        "issues": [
+          1901
+        ],
+        "summary": "batch the rewrites that retire the updateDoc binding (closes #1901)"
+      },
+      {
+        "name": "enforce-microdiff",
+        "changeType": "fix",
+        "issues": [
+          1903
+        ],
+        "summary": "decline the import rewrite when every call is shadowed (closes #1903)"
+      },
+      {
+        "name": "fast-deep-equal-over-microdiff",
+        "changeType": "fix",
+        "issues": [
+          1893
+        ],
+        "summary": "remove the microdiff import the rewrite orphans (closes #1893)"
+      },
+      {
+        "name": "key-only-outermost-element",
+        "changeType": "fix",
+        "issues": [
+          1904
+        ],
+        "summary": "remove the import a stripped key orphans (closes #1904)"
+      },
+      {
+        "name": "no-empty-dependency-use-callbacks",
+        "changeType": "fix",
+        "issues": [
+          1897
+        ],
+        "summary": "retire the import the hoist orphans (closes #1897)"
+      },
+      {
+        "name": "no-explicit-return-type",
+        "changeType": "fix",
+        "issues": [
+          1902
+        ],
+        "summary": "batch every binding the stripped annotations strand (closes #1902)"
+      },
+      {
+        "name": "no-mock-firebase-admin",
+        "changeType": "fix",
+        "issues": [
+          1907
+        ],
+        "summary": "report the factory form, not a bare re-activation (closes #1907)"
+      },
+      {
+        "name": "no-redundant-usecallback-wrapper",
+        "changeType": "fix",
+        "issues": [
+          1895
+        ],
+        "summary": "remove the import the collapse orphans (closes #1895)"
+      },
+      {
+        "name": "no-useless-usememo-primitives",
+        "changeType": "fix",
+        "issues": [
+          1894
+        ],
+        "summary": "remove the react import the unwrap orphans (closes #1894)"
+      },
+      {
+        "name": "no-usememo-for-pass-by-value",
+        "changeType": "fix",
+        "issues": [
+          1896
+        ],
+        "summary": "retire the import the React.useMemo unwrap orphans (closes #1896)"
+      },
+      {
+        "name": "prefer-params-over-parent-id",
+        "changeType": "fix",
+        "issues": [
+          1899
+        ],
+        "summary": "remove the pattern property the rewrite strands (closes #1899)"
+      },
+      {
+        "name": "use-latest-callback",
+        "changeType": "fix",
+        "issues": [
+          1898
+        ],
+        "summary": "retire the react import the conversion orphans (closes #1898)"
+      }
+    ]
+  },
+  {
     "version": "1.20.137",
     "date": "2026-08-08T22:49:24.968Z",
     "rules": [
