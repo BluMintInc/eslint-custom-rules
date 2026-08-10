@@ -124,6 +124,25 @@ One shape is deliberately **not** this rule's, in either spelling:
   bare hand-back on **any** return path (`if (compact) return Row;`) defeats the
   carve-out, because callers can still receive the un-memoized function.
 
+  A **container** carries the component to callers just as a bare return does,
+  so an object property value or an array element counts at any depth. The
+  ES-module interop shape every `jest.mock()` factory returns for a default
+  export is the common case:
+
+  ```jsx
+  // Not reported: Row is memoized before any caller can reach it.
+  export function makeRow() {
+    function Row({ label }) {
+      return <li>{label}</li>;
+    }
+    return { __esModule: true, default: memo(Row) };
+  }
+  ```
+
+  The bare rule reaches through containers in step: `return { default: Row };`
+  and `return [Row];` hand the un-memoized function to callers and are reported,
+  and a memoized sibling property buys the bare one nothing.
+
 `export default` is rewritten as a separate statement, because
 `export default const X = ...` is not valid syntax. This declaration:
 

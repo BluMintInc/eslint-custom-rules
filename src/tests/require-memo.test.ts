@@ -234,6 +234,98 @@ export function makeRow() {
     // `optional-chaining-closure` derives them from these fixtures, and the
     // sibling `memo-nested-react-components` pins the hand-back twins in its
     // own suite, where the matching carve-out lives (#1911).
+
+    // ---------------------------------------------------------------------
+    // A CONTAINER-carried hand-back memoizes the component just as a bare
+    // `return memo(Row)` does (#1919): `{ __esModule: true, default: <component> }`
+    // is what every `jest.mock()` factory returns for a default export, so it is
+    // the common way a memoized component reaches its callers in test code.
+    // ---------------------------------------------------------------------
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `export function makeRow() {
+  function Row({label}) { return <li>{label}</li>; }
+  return { __esModule: true, default: memo(Row) };
+}`,
+    },
+    // The arrow twin of the shape above — the carve-out stays spelling-blind
+    // through a container too.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `export function makeRow() {
+  const Row = ({label}) => { return <li>{label}</li>; };
+  return { __esModule: true, default: memo(Row) };
+}`,
+    },
+    // The gap is container recursion, not optional chaining: the nullish
+    // spelling inside a container reads as the same wrapper the plain one does.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `export function makeRow() {
+  function Row({label}) { return <li>{label}</li>; }
+  return { __esModule: true, default: memo?.(Row) };
+}`,
+    },
+    // Depth is not a boundary — a container nested in a container carries the
+    // component out just the same.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `export function makeModule() {
+  function Row({label}) { return <li>{label}</li>; }
+  return { rows: { default: memo(Row) } };
+}`,
+    },
+    // An ARRAY element is a carried value as much as a property value is. The
+    // bare `return [memo(Row)]` spelling is deliberately not pinned here:
+    // `memo-nested-react-components` recurses into an object but not an array,
+    // so that fixture would sign its array blindness off in
+    // `crossrule-contradiction-closure`. Wrapping the array in the object the
+    // sibling does read keeps this rule's array arm load-bearing — `Cell` is
+    // reachable only through it — without blessing the sibling's gap.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `export function makeModule() {
+  function Row({label}) { return <li>{label}</li>; }
+  function Cell({value}) { return <td>{value}</td>; }
+  return { __esModule: true, default: memo(Row), extras: [memo(Cell)] };
+}`,
+    },
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `export function makeModule() {
+  function Row({label}) { return <li>{label}</li>; }
+  function Cell({value}) { return <td>{value}</td>; }
+  return { __esModule: true, default: memo(Row), extras: [[memo(Cell)]] };
+}`,
+    },
+    // A second wrapper inside the container is read through, exactly as it is
+    // when the call is returned directly.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `export function withRef(Wrapped) {
+  function Inner({value}, ref) { return <Wrapped value={value} ref={ref} />; }
+  return { __esModule: true, default: memo(forwardRef(Inner)) };
+}`,
+    },
+    // A type assertion over the whole container does not hide the wrapper.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `export function makeRow() {
+  function Row({label}) { return <li>{label}</li>; }
+  return { __esModule: true, default: memo(Row) } as RowModule;
+}`,
+    },
+    // A shorthand property is read as the VALUE it carries, never as its key:
+    // `Row` names a binding that is already memoized, and `Cell`'s wrapper in
+    // the property beside it still counts.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `export function makeModule() {
+  const Row = memo(function RowUnmemoized({label}) { return <li>{label}</li>; });
+  function Cell({value}) { return <td>{value}</td>; }
+  return { Row, default: memo(Cell) };
+}`,
+    },
     // A nested camelCase helper stays a helper wherever it sits (issue #1243).
     // Not named `render*`, because that name shape is
     // `no-render-function-components`' claim.
@@ -861,6 +953,115 @@ export function makeRow() {
 export function makeRow() {
   const Row = memo(({label}) => { return <li>{label}</li>; });
   return Row;
+}`,
+      name: 'Row',
+    }),
+
+    // ---------------------------------------------------------------------
+    // A container carries an UN-memoized component out just as plainly as it
+    // carries a memoized one (#1919). Reading the memo() call through a
+    // container without reading the bare reference through it too would turn
+    // every shape below from a report into a silent escape.
+    // ---------------------------------------------------------------------
+    withDefaults({
+      code: `export function makeRow() {
+  function Row({label}) { return <li>{label}</li>; }
+  return { default: Row };
+}`,
+      output: `import { memo } from '../util/memo';
+export function makeRow() {
+  const Row = memo(function RowUnmemoized({label}) { return <li>{label}</li>; });
+  return { default: Row };
+}`,
+      name: 'Row',
+    }),
+    // A shorthand property hands the binding back under its own name.
+    withDefaults({
+      code: `export function makeRow() {
+  function Row({label}) { return <li>{label}</li>; }
+  return { Row };
+}`,
+      output: `import { memo } from '../util/memo';
+export function makeRow() {
+  const Row = memo(function RowUnmemoized({label}) { return <li>{label}</li>; });
+  return { Row };
+}`,
+      name: 'Row',
+    }),
+    // A sibling property being memoized buys the bare one nothing.
+    withDefaults({
+      code: `export function makeModule() {
+  function Row({label}) { return <li>{label}</li>; }
+  function Cell({value}) { return <td>{value}</td>; }
+  return { __esModule: true, default: memo(Row), fallback: Cell };
+}`,
+      output: `import { memo } from '../util/memo';
+export function makeModule() {
+  function Row({label}) { return <li>{label}</li>; }
+  const Cell = memo(function CellUnmemoized({value}) { return <td>{value}</td>; });
+  return { __esModule: true, default: memo(Row), fallback: Cell };
+}`,
+      name: 'Cell',
+    }),
+    // The array arm reads bare references as readily as it reads wrappers.
+    withDefaults({
+      code: `export function makeModule() {
+  function Row({label}) { return <li>{label}</li>; }
+  function Cell({value}) { return <td>{value}</td>; }
+  return { __esModule: true, default: memo(Row), extras: [Cell] };
+}`,
+      output: `import { memo } from '../util/memo';
+export function makeModule() {
+  function Row({label}) { return <li>{label}</li>; }
+  const Cell = memo(function CellUnmemoized({value}) { return <td>{value}</td>; });
+  return { __esModule: true, default: memo(Row), extras: [Cell] };
+}`,
+      name: 'Cell',
+    }),
+    // A call that is not memo() hands back whatever it returns, so the
+    // component it takes is still un-memoized where it is declared.
+    withDefaults({
+      code: `export function makeModule() {
+  function Row({label}) { return <li>{label}</li>; }
+  function Cell({value}) { return <td>{value}</td>; }
+  return { __esModule: true, default: memo(Row), fallback: wrap(Cell) };
+}`,
+      output: `import { memo } from '../util/memo';
+export function makeModule() {
+  function Row({label}) { return <li>{label}</li>; }
+  const Cell = memo(function CellUnmemoized({value}) { return <td>{value}</td>; });
+  return { __esModule: true, default: memo(Row), fallback: wrap(Cell) };
+}`,
+      name: 'Cell',
+    }),
+    // Any bare path defeats the carve-out, in either direction: a bare return
+    // beside a memoized container, and a memoized return beside a container
+    // that carries the component bare.
+    withDefaults({
+      code: `export function makeRow(compact) {
+  function Row({label}) { return <li>{label}</li>; }
+  if (compact) { return Row; }
+  return { __esModule: true, default: memo(Row) };
+}`,
+      output: `import { memo } from '../util/memo';
+export function makeRow(compact) {
+  const Row = memo(function RowUnmemoized({label}) { return <li>{label}</li>; });
+  if (compact) { return Row; }
+  return { __esModule: true, default: memo(Row) };
+}`,
+      name: 'Row',
+    }),
+    withDefaults({
+      code: `export function makeRow(compact) {
+  function Row({label}) { return <li>{label}</li>; }
+  if (compact) { return memo(Row); }
+  return { default: Row };
+}`,
+      output: `import { memo } from '../util/memo';
+export function makeRow(compact) {
+  const Row = memo(function RowUnmemoized({label}) { return <li>{label}</li>; });
+  if (compact) { return memo(Row); }
+  return { default: Row };
 }`,
       name: 'Row',
     }),
