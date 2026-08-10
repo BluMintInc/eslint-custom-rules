@@ -95,9 +95,7 @@ const DIVERGENT_WITHOUT_PROGRAM = new Set(['no-entire-object-hook-deps']);
  * The set is asserted EXACTLY: a new entry fails as a regression, and a stale
  * one fails as a fix that nobody removed the baseline for.
  */
-const ORPHAN_BASELINE = new Map<string, string>([
-  ['key-only-outermost-element', '#1904'],
-]);
+const ORPHAN_BASELINE = new Map<string, string>([]);
 
 /**
  * `enforce-microdiff` (#1903) is deliberately NOT baselined. It is a real defect
