@@ -9,8 +9,10 @@ const FIREBASE_ADMIN_MODULE = 'firebaseAdmin';
 const MODULE_EXTENSION = /\.(?:tsx?|jsx?|mjs|cjs)$/;
 
 /**
- * Backend tier: `jest.setup.node.js` auto-mocks this module repo-wide, so a
- * local `jest.mock()` bypasses the shared stub the rule exists to protect.
+ * Backend tier: `jest.setup.node.js` runs a bare
+ * `jest.mock('./functions/src/config/firebaseAdmin')`, which activates the
+ * manual mock in `functions/src/config/__mocks__/`. A local *factory* replaces
+ * that manual mock and is what the rule exists to catch.
  */
 const BACKEND_FIREBASE_ADMIN = 'functions/src/config/firebaseAdmin';
 
@@ -38,19 +40,69 @@ const comparisonPathOf = (mockPath: string, filename: string) => {
   return toPosix(path.resolve(path.dirname(filename), mockPath));
 };
 
-const bypassesSharedMock = (comparisonPath: string) => {
+type Tier = 'backend' | 'frontend' | 'unknown';
+
+const tierOf = (comparisonPath: string): Tier => {
   // Backend is tested first because the backend path *contains* the frontend
   // path as a substring; checking frontend first would exempt every backend
   // mock and silently disable the rule.
   if (comparisonPath.includes(BACKEND_FIREBASE_ADMIN)) {
-    return true;
+    return 'backend';
   }
   if (comparisonPath.includes(FRONTEND_FIREBASE_ADMIN)) {
-    return false;
+    return 'frontend';
   }
   // A specifier attributable to neither tier keeps the rule's protection:
   // prefer reporting over silently allowing an unknown layout to shadow a
   // shared mock.
+  return 'unknown';
+};
+
+/**
+ * The factory argument, or `undefined` when the call supplies none. An explicit
+ * `undefined` placeholder — `jest.mock(path, undefined, { virtual: true })` — is
+ * the same call as the one-argument form, so it must read as "no factory" too.
+ */
+const factoryOf = (node: TSESTree.CallExpression) => {
+  const factory = node.arguments[1];
+  if (!factory) {
+    return undefined;
+  }
+  if (
+    factory.type === AST_NODE_TYPES.Identifier &&
+    factory.name === 'undefined'
+  ) {
+    return undefined;
+  }
+  return factory;
+};
+
+/**
+ * Whether the call overrides the shared mock rather than re-activating it.
+ *
+ * A BARE backend `jest.mock()` is byte-for-byte the call `jest.setup.node.js`
+ * already makes: it activates the manual mock at
+ * `functions/src/config/__mocks__/firebaseAdmin.ts`. It replaces nothing and
+ * supplies no divergent state, so the message's rationale simply does not apply
+ * — and suites need the local form to obtain per-call spies (`db.doc`,
+ * `db.runTransaction`) that the shared `FakeFirestore` instance never exposes.
+ * Only a factory substitutes a different module body.
+ *
+ * The exemption stops at the backend tier on purpose. For an unattributable
+ * specifier there is no known `__mocks__` sibling, so a bare call may fall
+ * through to Jest's AUTOMOCK — every export replaced by an empty `jest.fn()` —
+ * which genuinely is divergent state.
+ */
+const overridesSharedMock = (
+  tier: Tier,
+  factory: TSESTree.Node | undefined,
+) => {
+  if (tier === 'frontend') {
+    return false;
+  }
+  if (tier === 'backend') {
+    return factory !== undefined;
+  }
   return true;
 };
 
@@ -140,7 +192,7 @@ export const noMockFirebaseAdmin = createRule<[], MessageIds>({
     schema: [],
     messages: {
       noMockFirebaseAdmin:
-        'Do not mock firebaseAdmin module "{{modulePath}}". The project already ships a stable mock in jest.setup.node.js; overriding it creates divergent Firestore/Auth state and brittle test fixtures. Keep the shared mock and use __test-utils__/mockFirestore to seed data instead of replacing the module.',
+        'Do not override the firebaseAdmin module mock for "{{modulePath}}". jest.setup.node.js already activates the shared manual mock; substituting your own module body creates divergent Firestore/Auth state and brittle test fixtures. Use __test-utils__/mockFirestore to seed data, and where a suite only needs the shared mock active, write a bare jest.mock() of functions/src/config/firebaseAdmin with no factory argument.',
     },
   },
   defaultOptions: [],
@@ -185,11 +237,12 @@ export const noMockFirebaseAdmin = createRule<[], MessageIds>({
             return;
           }
 
-          if (!bypassesSharedMock(comparisonPathOf(mockPath, filename))) {
+          const tier = tierOf(comparisonPathOf(mockPath, filename));
+          const factory = factoryOf(node);
+          if (!overridesSharedMock(tier, factory)) {
             return;
           }
 
-          const factory = node.arguments[1];
           if (factory && exercisesCollectionGroup(factory)) {
             return;
           }
