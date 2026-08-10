@@ -100,7 +100,23 @@ async function bumpVersion(versionRef: VersionRef) {
 }
 ```
 
-A receiver counts when it denotes one statically known object: a bare binding (`versionRef`), `this`, `super`, or a fixed chain over any of those (`this.inner`, `app.services.store`). Optional chaining and non-null assertions spell the same path, so `this.inner?.write()` and `this.inner.read()` share a receiver too.
+A receiver counts when it denotes one statically known object: a bare binding (`versionRef`), the enclosing instance (`this` or `super`), or a fixed chain over any of those (`this.inner`, `app.services.store`). Optional chaining and non-null assertions spell the same path, so `this.inner?.write()` and `this.inner.read()` share a receiver too.
+
+`this` and `super` are **one receiver**. They name the same object—`super.m()` and `this.m()` invoke against the same instance and differ only in where method lookup starts—so a run that mixes the spellings carries exactly the hazard a single-spelling run does, and stays sequential:
+
+```typescript
+class Child extends Base {
+  private summaries: string[] = [];
+
+  public async run() {
+    await super.initializeTeamData(); // populates this.summaries
+    const stamp = await this.resolveHostStamp(); // reads this.summaries
+    return stamp;
+  }
+}
+```
+
+The merge applies at the chain root, so it composes with nested paths (`super.inner.write()` and `this.inner.read()` share a receiver) while leaving distinct slots on that instance distinct (`super.users.read()` and `this.posts.read()` are still parallelized).
 
 `this` is the strongest case, because a method call on `this` is the canonical way to mutate instance state and the rule models instance state nowhere—the dependency below flows through `this.summaries` and has no syntactic representation at the call site.
 
@@ -128,7 +144,7 @@ class MatchWinnerAnnouncer {
 }
 ```
 
-Receivers that differ, or whose identity varies per evaluation, are still flagged: a distinct member (`api.users.get()` vs `api.posts.get()`, `this.users.read()` vs `this.posts.read()`), a fresh chain per call (`db.collection(a).get()` vs `db.collection(b).get()`), or a numeric/dynamic index (`operations[0]()` vs `operations[1]()`) selects a different target each time. Two pure reads on one receiver are conservatively kept sequential as well, since a shared receiver can hold hidden state (for example a paginated cursor)—the worst case is a missed parallelization, which is safer than reordering a real dependency.
+Receivers that differ, or whose identity varies per evaluation, are still flagged: a distinct member (`api.users.get()` vs `api.posts.get()`, `super.users.read()` vs `this.posts.read()`), a bare binding paired with the instance (`svc.read()` vs `super.read()`), a fresh chain per call (`db.collection(a).get()` vs `db.collection(b).get()`), or a numeric/dynamic index (`operations[0]()` vs `operations[1]()`) selects a different target each time. Two pure reads on one receiver are conservatively kept sequential as well, since a shared receiver can hold hidden state (for example a paginated cursor)—the worst case is a missed parallelization, which is safer than reordering a real dependency.
 
 ### ✅ Correct (refetch/refresh ordering)
 

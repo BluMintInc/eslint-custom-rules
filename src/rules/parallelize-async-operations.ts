@@ -413,17 +413,35 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     }
 
     /**
+     * The key both `this` and `super` mint. They name the SAME object: `super.m()`
+     * and `this.m()` invoke against the same instance and differ only in where
+     * method lookup starts, so for an ordering question they are one receiver and
+     * a run that mixes the spellings carries the same read-after-write hazard as
+     * either spelling alone. Collapsing them can only ADD barriers, never remove
+     * one, which is the direction the rule's trade-off prefers. (#1923)
+     *
+     * The merge is confined to the chain ROOT, so two different slots reached
+     * from that instance (`super.users` versus `this.posts`) stay distinct.
+     */
+    const INSTANCE_RECEIVER_KEY = 'this';
+
+    /**
      * Builds a stable textual key for the object a method is invoked on, so two
      * awaits can be compared for "same receiver" by string equality.
      *
      * Every receiver form that denotes ONE statically-known object gets a key:
-     * a bare identifier (`svc`), `this`, `super`, and a chain of fixed segments
-     * over any of those (`this.inner`, `a.b.c`). The chain is spelled out in
-     * full so that `this.inner.x()` and `this.inner.y()` share a receiver while
-     * `this.inner.x()` and `this.other.y()` do not.
+     * a bare identifier (`svc`), the instance (`this`/`super`), and a chain of
+     * fixed segments over any of those (`this.inner`, `a.b.c`). The chain is
+     * spelled out in full so that `this.inner.x()` and `this.inner.y()` share a
+     * receiver while `this.inner.x()` and `this.other.y()` do not. Deriving the
+     * instance key at the root is what makes `super.inner.x()` and
+     * `this.inner.y()` compose into one key without special-casing the bare form.
      *
-     * `this` and `super` are reserved words, so no identifier or path segment
-     * can collide with the keys minted for them.
+     * `this` and `super` are reserved words, so no identifier can be spelled
+     * either one and no bare-binding chain can be rooted at the instance key. A
+     * path segment may spell a reserved word (`api.this`), but a segment only
+     * ever appears after a `${objectKey}.` prefix, so it cannot produce the
+     * unprefixed instance key.
      *
      * Returns null for a receiver whose identity is not statically known: a
      * call in the chain (`realtimeDb.ref(path).remove()`) can produce a
@@ -441,10 +459,8 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
           return node.name;
 
         case AST_NODE_TYPES.ThisExpression:
-          return 'this';
-
         case AST_NODE_TYPES.Super:
-          return 'super';
+          return INSTANCE_RECEIVER_KEY;
 
         case AST_NODE_TYPES.ChainExpression:
         case AST_NODE_TYPES.TSNonNullExpression:
@@ -1111,13 +1127,14 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
       // reordering a real data dependency.
       //
       // That trade-off is receiver-agnostic, so every receiver denoting one
-      // statically-known object qualifies: a bare binding, `this`, `super`, and
-      // fixed chains over them (`this.inner`). `this` is if anything the
-      // strongest case -- a method call on `this` is the canonical way to mutate
+      // statically-known object qualifies: a bare binding, the instance
+      // (`this`, `super` -- one receiver, see INSTANCE_RECEIVER_KEY), and fixed
+      // chains over them (`this.inner`). The instance is if anything the
+      // strongest case -- a method call on it is the canonical way to mutate
       // instance state, and the rule models instance state nowhere, so the
       // dependency `this.load()` -> `this.read()` has no syntactic edge at all.
       // Receivers whose identity varies per evaluation (call chains, dynamic
-      // subscripts) are still left untouched. (#1914)
+      // subscripts) are still left untouched. (#1914, #1923)
       const receiverKeys = awaitNodes.map((node) => {
         const awaitExpr = getAwaitExpression(node);
         return awaitExpr ? getCalleeReceiverKey(awaitExpr) : null;

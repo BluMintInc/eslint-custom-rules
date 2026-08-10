@@ -3383,6 +3383,123 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
       }
       `,
     },
+    // `super.m()` and `this.m()` execute against the SAME instance -- they
+    // differ only in where method lookup starts -- so a run that mixes the two
+    // spellings carries the same read-after-write hazard as either spelling
+    // alone. `initializeTeamData` populates instance state that
+    // `resolveHostStamp` reads. (#1923)
+    {
+      code: `
+        class Child extends Base {
+          private summaries: string[] = [];
+          public async run() {
+            await super.initializeTeamData();
+            const stamp = await this.resolveHostStamp();
+            return stamp;
+          }
+          private async resolveHostStamp() {
+            return this.summaries[0];
+          }
+        }
+      `,
+    },
+    // The opposite order shares the receiver just as much. (#1923)
+    {
+      code: `
+        class Child extends Base {
+          private summaries: string[] = [];
+          public async run() {
+            await this.initializeTeamData();
+            const stamp = await super.resolveHostStamp();
+            return stamp;
+          }
+        }
+      `,
+    },
+    // Discarded-result form: no declaration on either statement, so the pair is
+    // linked by nothing but the receiver. (#1923)
+    {
+      code: `
+        class Child extends Base {
+          public async run(userId: string) {
+            await super.initializeTeamData();
+            await this.generateUpdateMessage(userId);
+          }
+          private async generateUpdateMessage(userId: string) {}
+        }
+      `,
+    },
+    // The collapse composes with the chain derivation rather than applying to
+    // the bare form only: `super.inner` and `this.inner` reach the same slot on
+    // the same instance. (#1923)
+    {
+      code: `
+        class Child extends Base {
+          private inner: any;
+          public async run() {
+            await super.inner.write(1);
+            const value = await this.inner.read();
+            return value;
+          }
+        }
+      `,
+    },
+    // Three awaits mixing all three spellings of the one instance receiver.
+    // (#1923)
+    {
+      code: `
+        class Child extends Base {
+          public async run() {
+            await super.method1();
+            await this.method2();
+            const value = await this?.method3();
+            return value;
+          }
+        }
+      `,
+    },
+    // The barrier holds the whole run, so an unrelated leading await does not
+    // release the mixed-spelling pair that follows it -- here the collapsed
+    // receiver is the run's ONLY link. (#1923)
+    {
+      code: `
+        class Child extends Base {
+          public async run() {
+            await warmCache();
+            await super.write(1);
+            const value = await this.read();
+            return value;
+          }
+        }
+      `,
+    },
+    // The optional and non-null spellings survive the collapse too. (#1923)
+    {
+      code: `
+        class Child extends Base {
+          private inner: any;
+          public async run() {
+            await super.inner!.write(1);
+            const value = await this.inner?.read();
+            return value;
+          }
+        }
+      `,
+    },
+    // A computed string-literal segment spells the same slot under `super` as
+    // under `this`. (#1923)
+    {
+      code: `
+        class Child extends Base {
+          private inner: any;
+          public async run() {
+            await super['inner'].write(1);
+            const value = await this.inner.read();
+            return value;
+          }
+        }
+      `,
+    },
   ],
   invalid: [
     // The barrier must not collapse DISTINCT receivers onto one key: a key that
@@ -3574,6 +3691,137 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
           db.getPosts()
         ]);
         return [people, articles];
+      }
+      `,
+    },
+    // Folding `super` into the instance key must merge only the ROOT: two
+    // different slots reached from that instance are still different objects,
+    // whichever spelling reaches them. A collapse that flattened the whole path
+    // would silence every await pair inside a subclass. (#1923)
+    {
+      code: `
+      class Child extends Base {
+        private users: any;
+        private posts: any;
+        async run() {
+          const people = await super.users.read();
+          const articles = await this.posts.read();
+          return [people, articles];
+        }
+      }
+      `,
+      errors: [error(2)],
+      output: `
+      class Child extends Base {
+        private users: any;
+        private posts: any;
+        async run() {
+          const [people, articles] = await Promise.all([
+            super.users.read(),
+            this.posts.read()
+          ]);
+          return [people, articles];
+        }
+      }
+      `,
+    },
+    // A bare binding is a different object from the instance, so pairing it
+    // with `super` reports exactly as pairing it with `this` does. (#1923)
+    {
+      code: `
+      class Child extends Base {
+        async run(svc) {
+          const remote = await svc.read();
+          const local = await super.read();
+          return [remote, local];
+        }
+      }
+      `,
+      errors: [error(2)],
+      output: `
+      class Child extends Base {
+        async run(svc) {
+          const [remote, local] = await Promise.all([
+            svc.read(),
+            super.read()
+          ]);
+          return [remote, local];
+        }
+      }
+      `,
+    },
+    // A path SEGMENT may spell a reserved word, but a segment key always
+    // carries its object's prefix, so `api.this` cannot collide with the
+    // unprefixed instance key the collapse mints. (#1923)
+    {
+      code: `
+      class Holder {
+        async run(api) {
+          const remote = await api.this.read();
+          const local = await this.read();
+          return [remote, local];
+        }
+      }
+      `,
+      errors: [error(2)],
+      output: `
+      class Holder {
+        async run(api) {
+          const [remote, local] = await Promise.all([
+            api.this.read(),
+            this.read()
+          ]);
+          return [remote, local];
+        }
+      }
+      `,
+    },
+    // Same for the computed spelling of such a segment. (#1923)
+    {
+      code: `
+      class Child extends Base {
+        async run(api) {
+          const remote = await api['super'].read();
+          const local = await super.read();
+          return [remote, local];
+        }
+      }
+      `,
+      errors: [error(2)],
+      output: `
+      class Child extends Base {
+        async run(api) {
+          const [remote, local] = await Promise.all([
+            api['super'].read(),
+            super.read()
+          ]);
+          return [remote, local];
+        }
+      }
+      `,
+    },
+    // A free call has no receiver at all, so a `super` call pairs with it
+    // freely. (#1923)
+    {
+      code: `
+      class Child extends Base {
+        async run() {
+          const value = await super.read();
+          const other = await loadSettings();
+          return [value, other];
+        }
+      }
+      `,
+      errors: [error(2)],
+      output: `
+      class Child extends Base {
+        async run() {
+          const [value, other] = await Promise.all([
+            super.read(),
+            loadSettings()
+          ]);
+          return [value, other];
+        }
       }
       `,
     },
