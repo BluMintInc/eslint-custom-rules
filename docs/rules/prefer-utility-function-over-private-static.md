@@ -76,18 +76,25 @@ it contributes nothing beyond the statement it sits in. A chained call whose
 callbacks are one-expression functions therefore stays one statement in either
 spelling.
 
-A member reaches its class through any of these spellings, all of which count as
-using class state — the list applies to a function-valued property just as it
-does to a method, since `this` inside a static property initializer is the class
-too:
+### What counts as reading class state
 
-- `this.member`
+**A member reads class state when it dereferences a member of its class.** The
+dereference is what decides, not the spelling of the receiver: inside a static
+member `this` *is* the class, so `this` and the class name are two spellings of
+one receiver and get one answer. The definition applies to a function-valued
+property just as it does to a method, since `this` inside a static property
+initializer is the class too.
+
+These all count as using class state:
+
+- `this.member`, including the computed `this['member']`
 - `<ClassName>.member`, where `ClassName` is the enclosing class — including the
   optional-chained `<ClassName>?.member` and the computed `<ClassName>['member']`
-- `owner.member`, where `owner` is a binding holding the class
-  (`const owner = ClassName`)
-- `const { member } = ClassName` and `const { member } = owner` — the pattern is
-  the dereference, provided it names at least one property
+- `owner.member`, where `owner` is a binding holding the class or `this`
+  (`const owner = ClassName`, `const self = this`)
+- `const { member } = ClassName`, `const { member } = this` and
+  `const { member } = owner` — the pattern is the dereference, provided it names
+  at least one property
 - `super.member`
 - `new.target`
 
@@ -116,8 +123,10 @@ class, and nothing writes to it afterwards. A binding reassigned anywhere in the
 file may hold something else by the time it is used, so it is not credited and
 the report stands.
 
-Aliasing `this` needs no special handling: `this` in a static member is the
-class, and mentioning it at all already counts as reaching class state.
+Aliasing `this` is resolved the same way, because `this` in a static member is
+the class: `const self = this; self.MEMBER` reads that member, and
+`const a = this; const b = a; b.MEMBER` does too. Mentioning `this` is not by
+itself a state read — the dereference is.
 
 A destructuring pattern counts only when it names a property. `const {} = C`
 selects nothing, and `const { ...rest } = C` selects nothing either — that is
@@ -131,8 +140,19 @@ counts.
 report standing, and so does handing the class to something else as a value
 (`register(owner)`). A helper that only instantiates or type-tests the class
 touches none of its state and works unchanged at module scope, which is the
-helper this rule exists to surface. Only a dereference of a member — through the
-class binding or through an alias of it — makes a helper unable to move.
+helper this rule exists to surface. Only a dereference of a member makes a
+helper unable to move.
+
+The `this` spelling sits on the same boundary, since it is the same receiver:
+`new this()`, `const self = this; new self()`, `x instanceof this` and
+`register(this)` all leave the report standing, while `this.MEMBER` and
+`const self = this; self.MEMBER` do not. Two spellings of one non-state use
+cannot get opposite verdicts.
+
+Inside a nested `function` written in the member body, `this` is the call-time
+receiver rather than the class, but a dereference through it is still treated as
+a class-state read: deciding the receiver needs the call sites, which the member
+alone does not carry, and this rule prefers a missed report to a wrong one.
 
 Why this matters:
 
@@ -182,6 +202,20 @@ export class Aliased {
   private static buildAll(values: number[]) {
     const owner = Aliased;
     const made = values.map(() => new owner());
+    return made;
+  }
+}
+```
+
+```ts
+// `this` in a static member is the class, so it sits on the same boundary the
+// class name does: constructing through an alias of it reads no member
+export class Aliased {
+  private static readonly LIMIT = 10;
+
+  private static buildAll(values: number[]) {
+    const self = this;
+    const made = values.map(() => new self());
     return made;
   }
 }
@@ -299,6 +333,19 @@ export class Aliased {
   private static capAll(values: number[]) {
     const owner = Aliased;
     const capped = values.map((value) => Math.min(value, owner.LIMIT));
+    return capped;
+  }
+}
+```
+
+```ts
+// An alias of `this` reaches the same member `this.MEMBER` does
+export class Aliased {
+  private static readonly LIMIT = 10;
+
+  private static capAll(values: number[]) {
+    const self = this;
+    const capped = values.map((value) => Math.min(value, self.LIMIT));
     return capped;
   }
 }
