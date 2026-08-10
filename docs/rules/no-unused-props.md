@@ -20,6 +20,10 @@ The function spelling is not part of the question. An arrow function, a function
 expression and a `function` declaration all state the same contract, so all three
 are checked the same way.
 
+Neither is nesting. A component declared inside another component — directly, in
+a hook callback, or in any block within the body — states its own contract, and
+so does the component holding it. Every level is checked on its own.
+
 ### Examples of **incorrect** code for this rule:
 
 The props type may be carried either by the parameter annotation or by an

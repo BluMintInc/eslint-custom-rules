@@ -129,10 +129,6 @@ export const noUnusedProps = createRule({
       restUsed: boolean;
     };
     const componentsToCheck: ComponentUsage[] = [];
-    let currentComponents: {
-      node: TSESTree.Node;
-      components: ComponentUsage[];
-    } | null = null;
 
     const clearState = () => {
       propsTypes.clear();
@@ -140,7 +136,6 @@ export const noUnusedProps = createRule({
       spreadTypeToPropNames.clear();
       processingTypeAliases.clear();
       componentsToCheck.length = 0;
-      currentComponents = null;
     };
 
     const isGenericTypeSpread = (prop: string) =>
@@ -1242,32 +1237,23 @@ export const noUnusedProps = createRule({
       },
 
       VariableDeclaration(node) {
-        const components = node.declarations
-          .map((declaration) => componentUsageOfDeclarator(declaration))
-          .filter(
-            (component): component is ComponentUsage => component !== null,
-          );
-
-        // A declaration holding no component leaves any pending one untouched,
-        // so an inner non-component declaration cannot drop its enclosing one.
-        if (components.length > 0) {
-          currentComponents = { node, components };
-        }
-      },
-
-      'VariableDeclaration:exit'(node) {
-        if (currentComponents?.node === node) {
-          componentsToCheck.push(...currentComponents.components);
-          currentComponents = null;
-        }
+        // Recorded on entry, straight into the accumulator. A declaration
+        // reaches its verdict from its own declarators alone, so there is
+        // nothing for the rest of its subtree to contribute; staging it until
+        // `:exit` only gave a component declared INSIDE it the chance to
+        // displace it, silencing the enclosing component (#1912). Reporting
+        // happens at `Program:exit`, so a props type declared after the
+        // component still resolves.
+        node.declarations.forEach((declaration) => {
+          const component = componentUsageOfDeclarator(declaration);
+          if (component) {
+            componentsToCheck.push(component);
+          }
+        });
       },
 
       FunctionDeclaration(node) {
         const component = componentUsageOfFunction(node);
-        // Recorded straight into the accumulator rather than through the
-        // pending slot above, which holds a single statement: a declaration
-        // nested inside an arrow component would take that slot and the
-        // enclosing component's verdict would be discarded with it.
         if (component) {
           componentsToCheck.push(component);
         }
