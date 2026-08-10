@@ -229,13 +229,13 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
   },
   'enforce-firestore-doc-ref-generic::no-explicit-return-type': {
     reason:
-      'INCIDENTAL: the fixtures annotate `DocumentReference<T>` returns to display the generic under test; the annotation is inferable, and deleting it leaves the generic check unchanged.',
-    cases: { noExplicitReturnTypeInferable: 6 },
+      'INCIDENTAL: the fixtures annotate `DocumentReference<T>` returns to display the generic under test; the annotation is inferable, and deleting it leaves the generic check unchanged. 6 -> 25 with the #1909 fixtures, which pin the SAME annotated shapes in the spellings the rule used to miss — arrow (block, concise, optional-chained and awaited), function expression, class method, getter, class arrow property, object-literal method and property, an IIFE, and a nested-`return` pair. Every one is a respelling of an already-exempted declaration, so the sibling objects to the same inferable annotation it always did.',
+    cases: { noExplicitReturnTypeInferable: 25 },
   },
   'enforce-firestore-doc-ref-generic::prefer-type-over-interface': {
     reason:
-      'PIPELINE: the fixtures declare their models with `interface`; `--fix` converts all 77 to `type`, which the generic check reads identically.',
-    cases: { preferType: 77 },
+      'PIPELINE: the fixtures declare their models with `interface`; `--fix` converts all 96 to `type`, which the generic check reads identically. 77 -> 96 with the #1909 fixtures, whose models are the same plain `interface User { name: string }` declarations the existing 77 use.',
+    cases: { preferType: 96 },
   },
   'enforce-global-constants::react-memoize-literals': {
     reason:
