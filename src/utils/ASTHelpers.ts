@@ -411,314 +411,38 @@ export class ASTHelpers {
     }
   }
 
+  /**
+   * Keys that a child walk must not follow: `parent` is the only back-edge in
+   * an ESTree tree and would make traversal non-terminating, while the rest
+   * carry positions and raw source rather than referenceable expressions.
+   */
+  private static readonly NON_TRAVERSABLE_NODE_KEYS = new Set([
+    'parent',
+    'range',
+    'loc',
+    'type',
+    'comments',
+    'tokens',
+  ]);
+
+  /**
+   * Collects the class members a method body references, for the ordering
+   * graph of class-methods-read-top-to-bottom.
+   *
+   * An edge exists exactly when a member is reached through `this.<member>`
+   * (or `<ClassName>.<member>` for statics), anywhere in the body and under
+   * any enclosing statement or expression form. A bare identifier is never an
+   * edge: a local, a parameter, a destructured binding or an import that
+   * happens to share a member's name is not a reference to that member.
+   */
   public static classMethodDependenciesOf(
     node: TSESTree.Node | null,
     graph: Graph,
     className: string,
   ): string[] {
     const dependencies: string[] = [];
+    this.collectClassMemberReferences(node, className, true, dependencies);
 
-    if (!node) {
-      return dependencies;
-    }
-
-    // Gracefully handle ParenthesizedExpression without widening AST node types
-    if (this.isParenthesizedExpression(node)) {
-      return this.classMethodDependenciesOf(
-        (node as any).expression,
-        graph,
-        className,
-      );
-    }
-
-    switch (node.type as any) {
-      case 'MethodDefinition': {
-        const functionBody = (node as any).value.body;
-        return (functionBody?.body || [])
-          .map((statement: any) =>
-            this.classMethodDependenciesOf(statement, graph, className),
-          )
-          .flat();
-      }
-
-      case 'Identifier':
-        dependencies.push((node as any).name);
-        break;
-
-      case 'ExpressionStatement':
-        return this.classMethodDependenciesOf(
-          (node as any).expression,
-          graph,
-          className,
-        );
-
-      case 'MemberExpression': {
-        const memberExpr = node as any;
-        if (
-          (memberExpr.object.type === 'ThisExpression' &&
-            memberExpr.property.type === 'Identifier') ||
-          (memberExpr.object.type === 'Identifier' &&
-            memberExpr.object.name === className &&
-            memberExpr.property.type === 'Identifier')
-        ) {
-          dependencies.push(memberExpr.property.name);
-        } else {
-          return [
-            ...this.classMethodDependenciesOf(
-              memberExpr.object,
-              graph,
-              className,
-            ),
-            ...this.classMethodDependenciesOf(
-              memberExpr.property,
-              graph,
-              className,
-            ),
-          ];
-        }
-        break;
-      }
-
-      case 'TSNonNullExpression':
-        return this.classMethodDependenciesOf(
-          (node as any).expression,
-          graph,
-          className,
-        );
-      case 'ArrayPattern':
-        return (node as any).elements
-          .map((element: any) =>
-            this.classMethodDependenciesOf(element, graph, className),
-          )
-          .flat();
-      case 'ObjectPattern':
-        return (node as any).properties
-          .map((property: any) =>
-            this.classMethodDependenciesOf(property, graph, className),
-          )
-          .flat();
-      case 'AssignmentPattern':
-        return this.classMethodDependenciesOf(
-          (node as any).left,
-          graph,
-          className,
-        );
-      case 'RestElement':
-        return this.classMethodDependenciesOf(
-          (node as any).argument,
-          graph,
-          className,
-        );
-      case 'AwaitExpression':
-        return this.classMethodDependenciesOf(
-          (node as any).argument,
-          graph,
-          className,
-        );
-      case 'AssignmentExpression': {
-        const assignExpr = node as any;
-        return [
-          ...this.classMethodDependenciesOf(assignExpr.left, graph, className),
-          ...this.classMethodDependenciesOf(assignExpr.right, graph, className),
-        ];
-      }
-      case 'BlockStatement':
-        return (node as any).body
-          .map((statement: any) =>
-            this.classMethodDependenciesOf(statement, graph, className),
-          )
-          .flat()
-          .filter(Boolean) as string[];
-      case 'IfStatement': {
-        const ifStmt = node as any;
-        return [
-          ...this.classMethodDependenciesOf(ifStmt.test, graph, className),
-          ...this.classMethodDependenciesOf(
-            ifStmt.consequent,
-            graph,
-            className,
-          ),
-          ...this.classMethodDependenciesOf(ifStmt.alternate, graph, className),
-        ];
-      }
-      case 'TSTypeAssertion':
-        return this.classMethodDependenciesOf(
-          (node as any).expression,
-          graph,
-          className,
-        );
-      case 'SpreadElement':
-        return this.classMethodDependenciesOf(
-          (node as any).argument,
-          graph,
-          className,
-        );
-      case 'ChainExpression':
-        return this.classMethodDependenciesOf(
-          (node as any).expression,
-          graph,
-          className,
-        );
-      case 'ArrayExpression':
-        return (node as any).elements
-          .map(
-            (element: any) =>
-              element &&
-              (element.type === 'SpreadElement'
-                ? this.classMethodDependenciesOf(
-                    element.argument,
-                    graph,
-                    className,
-                  )
-                : this.classMethodDependenciesOf(element, graph, className)),
-          )
-          .flat()
-          .filter(Boolean) as string[];
-      case 'ObjectExpression':
-        return (node as any).properties
-          .map((property: any) => {
-            if (property.type === 'Property') {
-              return this.classMethodDependenciesOf(
-                property.value,
-                graph,
-                className,
-              );
-            } else if (property.type === 'SpreadElement') {
-              return this.classMethodDependenciesOf(
-                property.argument,
-                graph,
-                className,
-              );
-            }
-            return false;
-          })
-          .flat()
-          .filter(Boolean) as string[];
-
-      case 'Property':
-        return this.classMethodDependenciesOf(
-          (node as any).value,
-          graph,
-          className,
-        );
-
-      case 'BinaryExpression':
-      case 'LogicalExpression': {
-        const binLogExpr = node as any;
-        return [
-          ...this.classMethodDependenciesOf(binLogExpr.left, graph, className),
-          ...this.classMethodDependenciesOf(binLogExpr.right, graph, className),
-        ];
-      }
-
-      case 'UnaryExpression':
-      case 'UpdateExpression':
-        return this.classMethodDependenciesOf(
-          (node as any).argument,
-          graph,
-          className,
-        );
-      case 'CallExpression':
-      case 'NewExpression': {
-        // For function and constructor calls, we care about both the callee and the arguments.
-        const callNewExpr = node as any;
-        return [
-          ...this.classMethodDependenciesOf(
-            callNewExpr.callee,
-            graph,
-            className,
-          ),
-          ...callNewExpr.arguments
-            .map((arg: any) =>
-              this.classMethodDependenciesOf(arg, graph, className),
-            )
-            .flat(),
-        ];
-      }
-
-      case 'ConditionalExpression': {
-        const condExpr = node as any;
-        return [
-          ...this.classMethodDependenciesOf(condExpr.test, graph, className),
-          ...this.classMethodDependenciesOf(
-            condExpr.consequent,
-            graph,
-            className,
-          ),
-          ...this.classMethodDependenciesOf(
-            condExpr.alternate,
-            graph,
-            className,
-          ),
-        ];
-      }
-      case 'TSAsExpression':
-        return this.classMethodDependenciesOf(
-          (node as any).expression,
-          graph,
-          className,
-        );
-      case 'VariableDeclaration':
-        return (node as any).declarations
-          .map((declaration: any) =>
-            this.classMethodDependenciesOf(declaration, graph, className),
-          )
-          .flat()
-          .filter(Boolean);
-      case 'VariableDeclarator':
-        return this.classMethodDependenciesOf(
-          (node as any).init,
-          graph,
-          className,
-        );
-      case 'ForOfStatement': {
-        const forOfStmt = node as any;
-        return [
-          ...this.classMethodDependenciesOf(forOfStmt.left, graph, className),
-          ...this.classMethodDependenciesOf(forOfStmt.body, graph, className),
-          ...this.classMethodDependenciesOf(forOfStmt.right, graph, className),
-        ];
-      }
-      case 'ForStatement': {
-        const forStmt = node as any;
-        return [forStmt.body, forStmt.init, forStmt.test, forStmt.update]
-          .map((node: any) =>
-            this.classMethodDependenciesOf(node, graph, className),
-          )
-          .flat();
-      }
-      case 'ThrowStatement':
-        return this.classMethodDependenciesOf(
-          (node as any).argument,
-          graph,
-          className,
-        );
-      case 'TemplateLiteral':
-        return (node as any).expressions
-          .map((expression: any) =>
-            this.classMethodDependenciesOf(expression, graph, className),
-          )
-          .flat();
-      case 'ReturnStatement':
-        return this.classMethodDependenciesOf(
-          (node as any).argument,
-          graph,
-          className,
-        );
-      case 'ArrowFunctionExpression': {
-        const arrowFunc = node as any;
-        return [
-          ...(arrowFunc.params || []).flatMap((param: any) =>
-            this.classMethodDependenciesOf(param, graph, className),
-          ),
-          ...this.classMethodDependenciesOf(arrowFunc.body, graph, className),
-        ];
-      }
-      default:
-        break;
-    }
-
-    // Removing duplicates and ensuring exact matches only
     return [
       ...new Set(
         dependencies.filter((dep) => {
@@ -730,6 +454,158 @@ export class ASTHelpers {
         }),
       ),
     ];
+  }
+
+  /**
+   * @param isThisTheInstance whether `this` still denotes the instance of the
+   * class being graphed. A nested non-arrow function or class rebinds it, so a
+   * `this.member` inside one names a different object entirely.
+   */
+  private static collectClassMemberReferences(
+    node: unknown,
+    className: string,
+    isThisTheInstance: boolean,
+    dependencies: string[],
+  ): void {
+    if (!this.isNode(node)) {
+      return;
+    }
+
+    switch (node.type as string) {
+      case 'MethodDefinition':
+      case 'TSAbstractMethodDefinition': {
+        // The method's own function expression does not rebind `this`, so its
+        // parameters and body are walked as instance context. A computed key
+        // and decorators evaluate outside the instance, hence the split.
+        const method = node as any;
+        this.collectClassMemberReferences(
+          method.key,
+          className,
+          false,
+          dependencies,
+        );
+        for (const decorator of method.decorators || []) {
+          this.collectClassMemberReferences(
+            decorator,
+            className,
+            false,
+            dependencies,
+          );
+        }
+        for (const param of method.value?.params || []) {
+          this.collectClassMemberReferences(
+            param,
+            className,
+            true,
+            dependencies,
+          );
+        }
+        this.collectClassMemberReferences(
+          method.value?.body,
+          className,
+          true,
+          dependencies,
+        );
+        return;
+      }
+
+      case 'FunctionExpression':
+      case 'FunctionDeclaration':
+      case 'TSDeclareFunction':
+      case 'ClassDeclaration':
+      case 'ClassExpression': {
+        // Traversal continues so `<ClassName>.<member>` statics stay visible,
+        // but `this` no longer denotes the graphed instance.
+        this.walkChildNodes(node, className, false, dependencies);
+        return;
+      }
+
+      case 'MemberExpression': {
+        const memberName = this.classMemberNameReferencedBy(
+          node,
+          className,
+          isThisTheInstance,
+        );
+        if (memberName !== null) {
+          dependencies.push(memberName);
+        }
+        break;
+      }
+
+      default:
+        break;
+    }
+
+    // Every remaining node type reaches its children through the generic walk.
+    // An allowlist of node types silently drops whatever it forgets, which
+    // loses edges rather than reporting them (try/catch, switch, loops).
+    this.walkChildNodes(node, className, isThisTheInstance, dependencies);
+  }
+
+  /**
+   * Resolves the class member a member expression names, or null when the
+   * expression reads some other object.
+   */
+  private static classMemberNameReferencedBy(
+    node: TSESTree.Node,
+    className: string,
+    isThisTheInstance: boolean,
+  ): string | null {
+    const { object, property, computed } = node as any;
+
+    const readsInstance =
+      object?.type === 'ThisExpression' && isThisTheInstance;
+    // An anonymous class expression has an empty name, which no identifier
+    // can match.
+    const readsStatic =
+      !!className && object?.type === 'Identifier' && object.name === className;
+    if (!readsInstance && !readsStatic) {
+      return null;
+    }
+
+    if (!computed && property?.type === 'Identifier') {
+      return property.name;
+    }
+    // `this['helper']` names the member as precisely as `this.helper` does,
+    // whereas `this[key]` names one only at runtime.
+    if (
+      computed &&
+      property?.type === 'Literal' &&
+      typeof property.value === 'string'
+    ) {
+      return property.value;
+    }
+    return null;
+  }
+
+  private static walkChildNodes(
+    node: TSESTree.Node,
+    className: string,
+    isThisTheInstance: boolean,
+    dependencies: string[],
+  ): void {
+    for (const [key, value] of Object.entries(node)) {
+      if (ASTHelpers.NON_TRAVERSABLE_NODE_KEYS.has(key)) {
+        continue;
+      }
+      if (Array.isArray(value)) {
+        for (const element of value) {
+          this.collectClassMemberReferences(
+            element,
+            className,
+            isThisTheInstance,
+            dependencies,
+          );
+        }
+        continue;
+      }
+      this.collectClassMemberReferences(
+        value,
+        className,
+        isThisTheInstance,
+        dependencies,
+      );
+    }
   }
 
   public static isNode(value: unknown): value is TSESTree.Node {

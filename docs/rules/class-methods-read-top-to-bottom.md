@@ -14,6 +14,19 @@ Your classes should read like a top-to-bottom story: your fields (properties) es
 - Place the constructor before other methods.
 - Keep callers above the methods they invoke so you can scan downward without backtracking.
 
+### Member ranking
+
+Fields come first, then the constructor, then methods ordered so that each caller precedes the helpers it invokes. Members that no other member calls—and members with no calls of their own—are ranked by their modifiers instead:
+
+1. `static` members before instance members.
+2. Within each group, `public`, then members with no accessibility modifier, then `protected`, then `private`. That is the conventional TypeScript layout: the public API leads, the extension points a subclass overrides follow, and the internals sit last.
+
+### What counts as a dependency
+
+A member is a dependency of a method when the method reads it through `this.<member>`, or through `<ClassName>.<member>` for a static. The enclosing syntax is irrelevant: a call inside `try`/`catch`/`finally`, a `switch`, any loop, a labeled block, a template literal, an optional chain (`this?.helper()`, `this.helper?.()`) or a nested arrow function counts exactly as much as one written at the top of the body. A method referenced without being called—passed as a callback, for instance—counts too.
+
+Names alone never create a dependency. A local variable, a parameter, a destructured binding, a `catch` binding or an imported function that merely shares a member's name is a different binding, so it does not pull that member anywhere. For the same reason, `this` inside a nested non-arrow `function () {}` denotes that function's own receiver rather than the instance, and `super.helper()` names the base class's member, so neither creates a dependency on this class's member.
+
 ### Examples of incorrect code for this rule:
 
 ```typescript

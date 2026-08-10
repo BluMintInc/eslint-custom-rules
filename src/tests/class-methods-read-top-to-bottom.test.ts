@@ -427,6 +427,528 @@ ruleTesterTs.run(
   }
 }`,
       },
+      // ── #1916: accessibility ranking ───────────────────────────────────
+      // 'protected' was absent from the accessibility priority array, so
+      // indexOf returned -1 and ranked every protected member ahead of the
+      // public API it extends.
+      {
+        code: `export class Repro {
+  public first() {
+    return 1;
+  }
+
+  protected second() {
+    return 2;
+  }
+}`,
+      },
+      {
+        code: `export class Repro {
+  public a: number[] = [];
+  protected b: number[] = [];
+}`,
+      },
+      // Pins the relative rank rather than the mere absence of a report, so a
+      // fix that gives 'protected' the wrong slot still fails.
+      {
+        code: `export class Repro {
+  public a: number[] = [];
+  protected b: number[] = [];
+  private c: number[] = [];
+}`,
+      },
+      {
+        code: `export class Repro {
+  public first() {
+    return 1;
+  }
+
+  protected second() {
+    return 2;
+  }
+
+  private third() {
+    return 3;
+  }
+}`,
+      },
+      // Implicit accessibility outranks protected, which outranks private.
+      {
+        code: `export class Repro {
+  first() {
+    return 1;
+  }
+
+  protected second() {
+    return 2;
+  }
+
+  private third() {
+    return 3;
+  }
+}`,
+      },
+      // Staticness outranks accessibility, so a protected static still leads.
+      {
+        code: `export class Repro {
+  protected static first() {
+    return 1;
+  }
+
+  public second() {
+    return 2;
+  }
+}`,
+      },
+      // The conventional layout: fields, then public API, then extension
+      // points, then internals.
+      {
+        code: `export class Repro {
+  public a = 1;
+  protected b = 2;
+  private c = 3;
+
+  public run() {
+    return this.helper();
+  }
+
+  protected helper() {
+    return this.internal();
+  }
+
+  private internal() {
+    return 1;
+  }
+}`,
+      },
+
+      // ── #1917: an edge survives every enclosing statement form ─────────
+      {
+        code: `export class Repro {
+  private run() {
+    try {
+      return this.helper();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  public helper() {
+    return 1;
+  }
+}`,
+      },
+      // Control for the case above: the identical class without the try.
+      {
+        code: `export class Repro {
+  private run() {
+    return this.helper();
+  }
+
+  public helper() {
+    return 1;
+  }
+}`,
+      },
+      {
+        code: `export class Repro {
+  private run() {
+    try {
+      return 1;
+    } catch (e) {
+      return this.helper();
+    }
+  }
+
+  public helper() {
+    return 1;
+  }
+}`,
+      },
+      {
+        code: `export class Repro {
+  private run() {
+    try {
+      return 1;
+    } finally {
+      this.helper();
+    }
+  }
+
+  public helper() {
+    return 1;
+  }
+}`,
+      },
+      {
+        code: `export class Repro {
+  private run() {
+    try {
+      throw this.helper();
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  public helper() {
+    return 1;
+  }
+}`,
+      },
+      {
+        code: `export class Repro {
+  private run(flag: number) {
+    switch (flag) {
+      case 1:
+        return this.helper();
+      default:
+        return 0;
+    }
+  }
+
+  public helper() {
+    return 1;
+  }
+}`,
+      },
+      {
+        code: `export class Repro {
+  private run() {
+    switch (this.helper()) {
+      case 1:
+        return 1;
+      default:
+        return 0;
+    }
+  }
+
+  public helper() {
+    return 1;
+  }
+}`,
+      },
+      {
+        code: `export class Repro {
+  private run() {
+    while (this.helper() < 10) {
+      return 1;
+    }
+    return 0;
+  }
+
+  public helper() {
+    return 1;
+  }
+}`,
+      },
+      {
+        code: `export class Repro {
+  private run() {
+    do {
+      return this.helper();
+    } while (false);
+  }
+
+  public helper() {
+    return 1;
+  }
+}`,
+      },
+      {
+        code: `export class Repro {
+  private run(obj: Record<string, number>) {
+    for (const key in obj) {
+      return this.helper();
+    }
+    return 0;
+  }
+
+  public helper() {
+    return 1;
+  }
+}`,
+      },
+      {
+        code: `export class Repro {
+  private run(items: number[]) {
+    for (const item of items) {
+      return this.helper();
+    }
+    return 0;
+  }
+
+  public helper() {
+    return 1;
+  }
+}`,
+      },
+      {
+        code: `export class Repro {
+  private run() {
+    outer: {
+      return this.helper();
+    }
+  }
+
+  public helper() {
+    return 1;
+  }
+}`,
+      },
+      {
+        code: `export class Repro {
+  private run() {
+    return (0, this.helper());
+  }
+
+  public helper() {
+    return 1;
+  }
+}`,
+      },
+      {
+        code: `export class Repro {
+  private run() {
+    return this.helper\`x\`;
+  }
+
+  public helper() {
+    return 1;
+  }
+}`,
+      },
+      {
+        code: `export class Repro {
+  private run() {
+    return \`\${this.helper()}\`;
+  }
+
+  public helper() {
+    return 1;
+  }
+}`,
+      },
+      // An arrow keeps the enclosing `this`, so the edge survives.
+      {
+        code: `export class Repro {
+  private run() {
+    const fn = () => this.helper();
+    return fn();
+  }
+
+  public helper() {
+    return 1;
+  }
+}`,
+      },
+      // A nested non-arrow function rebinds `this`, but a ClassName-qualified
+      // static reference inside it still names this class's member.
+      {
+        code: `export class Repro {
+  private static run() {
+    const fn = function () {
+      return Repro.helper();
+    };
+    return fn();
+  }
+
+  public static helper() {
+    return 1;
+  }
+}`,
+      },
+      // Optional chaining wraps the member expression in a ChainExpression.
+      {
+        code: `export class Repro {
+  private run() {
+    return this?.helper();
+  }
+
+  public helper() {
+    return 1;
+  }
+}`,
+      },
+      {
+        code: `export class Repro {
+  private run() {
+    return this.helper?.();
+  }
+
+  public helper() {
+    return 1;
+  }
+}`,
+      },
+      // A method passed as a callback is referenced without being called.
+      {
+        code: `export class Repro {
+  private run(items: number[]) {
+    return items.map(this.helper);
+  }
+
+  public helper() {
+    return 1;
+  }
+}`,
+      },
+      // A string-literal computed access names the member as precisely as dot
+      // access does.
+      {
+        code: `export class Repro {
+  private run() {
+    return this['helper']();
+  }
+
+  public helper() {
+    return 1;
+  }
+}`,
+      },
+
+      // ── #1918: a name collision is not a reference ──────────────────────
+      // A bare identifier sharing a member's name used to fabricate an edge,
+      // reordering the class around a dependency that does not exist.
+      {
+        code: `export class Repro {
+  public helper() {
+    return 1;
+  }
+
+  public run() {
+    const helper = 1;
+    return helper;
+  }
+}`,
+      },
+      {
+        code: `export class Repro {
+  public helper() {
+    return 1;
+  }
+
+  public run(helper: number) {
+    return helper;
+  }
+}`,
+      },
+      {
+        code: `export class Repro {
+  public helper() {
+    return 1;
+  }
+
+  public run(config: { helper: number }) {
+    return config.helper;
+  }
+}`,
+      },
+      {
+        code: `export class Repro {
+  public helper() {
+    return 1;
+  }
+
+  public run(props: { helper: number }) {
+    const { helper } = props;
+    return helper;
+  }
+}`,
+      },
+      {
+        code: `import { helper } from './helpers';
+
+export class Repro {
+  public helper() {
+    return 1;
+  }
+
+  public run() {
+    return helper();
+  }
+}`,
+      },
+      {
+        code: `export class Repro {
+  public helper() {
+    return 1;
+  }
+
+  public run() {
+    const helper = 1;
+    return { helper };
+  }
+}`,
+      },
+      {
+        code: `export class Repro {
+  public helper() {
+    return 1;
+  }
+
+  public run(flag: boolean) {
+    if (flag) {
+      const helper = 2;
+      return helper;
+    }
+    return 0;
+  }
+}`,
+      },
+      {
+        code: `export class Repro {
+  public helper() {
+    return 1;
+  }
+
+  public run() {
+    try {
+      return 1;
+    } catch (helper) {
+      return 0;
+    }
+  }
+}`,
+      },
+      {
+        code: `export class Repro {
+  public helper() {
+    return 1;
+  }
+
+  public run() {
+    return { helper: 1 };
+  }
+}`,
+      },
+      // `this` inside a non-arrow function is the call-site receiver, not the
+      // instance, so it names no member of this class.
+      {
+        code: `export class Repro {
+  public helper() {
+    return 1;
+  }
+
+  public run() {
+    const fn = function () {
+      return this.helper();
+    };
+    return fn.call(this);
+  }
+}`,
+      },
+      // `super.helper` resolves to the base class's member, not this one's.
+      {
+        code: `export class Repro extends Base {
+  public helper() {
+    return 1;
+  }
+
+  public run() {
+    return super.helper();
+  }
+}`,
+      },
     ],
     invalid: [
       {
@@ -852,6 +1374,197 @@ class Grouped {
   }
 }
 `,
+      },
+      // ── #1916: protected outranks nothing above public ──────────────────
+      {
+        code: `export class Repro {
+  protected second() {
+    return 2;
+  }
+
+  public first() {
+    return 1;
+  }
+}`,
+        output: `export class Repro {
+  public first() {
+    return 1;
+  }
+
+  protected second() {
+    return 2;
+  }
+}`,
+        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+      },
+      {
+        code: `export class Repro {
+  protected b: number[] = [];
+  public a: number[] = [];
+}`,
+        output: `export class Repro {
+  public a: number[] = [];
+  protected b: number[] = [];
+}`,
+        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+      },
+      {
+        code: `export class Repro {
+  private c = 3;
+  protected b = 2;
+}`,
+        output: `export class Repro {
+  protected b = 2;
+  private c = 3;
+}`,
+        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+      },
+
+      // ── #1917/#1918: the edge itself is what drives these reports ────────
+      // Each pair is two same-accessibility orphans apart from one genuine
+      // `this.<member>` reference, so a lost edge silences the report and a
+      // fabricated one would move a member for nothing.
+      {
+        code: `export class Repro {
+  public helper() {
+    return 1;
+  }
+
+  public run() {
+    return this.helper();
+  }
+}`,
+        output: `export class Repro {
+  public run() {
+    return this.helper();
+  }
+
+  public helper() {
+    return 1;
+  }
+}`,
+        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+      },
+      {
+        code: `export class Repro {
+  public helper() {
+    return 1;
+  }
+
+  public run() {
+    try {
+      return this.helper();
+    } catch (e) {
+      return null;
+    }
+  }
+}`,
+        output: `export class Repro {
+  public run() {
+    try {
+      return this.helper();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  public helper() {
+    return 1;
+  }
+}`,
+        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+      },
+      {
+        code: `export class Repro {
+  public helper() {
+    return 1;
+  }
+
+  public run() {
+    while (this.helper() < 10) {
+      return 1;
+    }
+    return 0;
+  }
+}`,
+        output: `export class Repro {
+  public run() {
+    while (this.helper() < 10) {
+      return 1;
+    }
+    return 0;
+  }
+
+  public helper() {
+    return 1;
+  }
+}`,
+        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+      },
+      {
+        code: `export class Repro {
+  public helper() {
+    return 1;
+  }
+
+  public run() {
+    const fn = () => this.helper();
+    return fn();
+  }
+}`,
+        output: `export class Repro {
+  public run() {
+    const fn = () => this.helper();
+    return fn();
+  }
+
+  public helper() {
+    return 1;
+  }
+}`,
+        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+      },
+      {
+        code: `export class Repro {
+  public static helper() {
+    return 1;
+  }
+
+  public static run() {
+    return Repro.helper();
+  }
+}`,
+        output: `export class Repro {
+  public static run() {
+    return Repro.helper();
+  }
+
+  public static helper() {
+    return 1;
+  }
+}`,
+        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+      },
+      {
+        code: `export class Repro {
+  public helper() {
+    return 1;
+  }
+
+  public run() {
+    return this?.helper();
+  }
+}`,
+        output: `export class Repro {
+  public run() {
+    return this?.helper();
+  }
+
+  public helper() {
+    return 1;
+  }
+}`,
+        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
       },
     ],
   },
