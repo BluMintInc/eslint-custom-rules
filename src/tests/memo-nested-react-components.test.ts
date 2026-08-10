@@ -715,16 +715,106 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
     },
     {
       // The interop object hand-back reaches the carve-out one property deep,
-      // so the optional call inside it must be transparent there too. The
-      // component carries the `Unmemoized` suffix because `require-memo` does
-      // not credit an object-carried hand-back in EITHER spelling (measured),
-      // and that gap is its own, not this rule's.
+      // so the optional call inside it must be transparent there too.
+      // `require-memo` credits an object-carried `memo(...)` hand-back in both
+      // spellings since #1919, so the component needs no `Unmemoized` opt-out
+      // to keep the pair in agreement (measured) (#1925).
       name: 'HOC factory handing back an object carrying memo?.(Inner)',
       code: `
         import { memo } from 'src/util/memo';
         export function buildModule() {
-          function RowUnmemoized({ label }) { return <li>{label}</li>; }
-          return { __esModule: true, default: memo?.(RowUnmemoized) };
+          function Row({ label }) { return <li>{label}</li>; }
+          return { __esModule: true, default: memo?.(Row) };
+        }
+      `,
+    },
+    // -----------------------------------------------------------------------
+    // An ARRAY carries a component out to callers exactly as an object does, so
+    // the HOC-factory carve-out reads through both. The sibling walker
+    // `expressionCreatesComponent` already recursed into both containers, and
+    // `require-memo`'s `containedValues` reads array elements beside object
+    // property values, so an array-carried `memo(...)` hand-back read as a
+    // nested un-memoized declaration was an asymmetry rather than a design
+    // (#1925).
+    // -----------------------------------------------------------------------
+    {
+      name: 'HOC factory handing back an array carrying memo(Inner) (#1925)',
+      code: `
+        import { memo } from 'src/util/memo';
+        export function makeRow() {
+          function Row({ label }) { return <li>{label}</li>; }
+          return [memo(Row)];
+        }
+      `,
+    },
+    {
+      // Depth is not a boundary: a container nested in a container hands the
+      // component out just the same (#1925).
+      name: 'HOC factory handing back a nested array carrying memo(Inner) (#1925)',
+      code: `
+        import { memo } from 'src/util/memo';
+        export function makeRow() {
+          function Row({ label }) { return <li>{label}</li>; }
+          return [[memo(Row)]];
+        }
+      `,
+    },
+    {
+      // The gap is container recursion, not optional chaining (#1911): the
+      // nullish spelling inside an array reads as the same wrapper the plain
+      // one does (#1925).
+      name: 'HOC factory handing back an array carrying memo?.(Inner) (#1925)',
+      code: `
+        import { memo } from 'src/util/memo';
+        export function makeRow() {
+          function Row({ label }) { return <li>{label}</li>; }
+          return [memo?.(Row)];
+        }
+      `,
+    },
+    {
+      // Mixed containers: the component is reachable only through the array
+      // sitting in a property value (#1925).
+      name: 'HOC factory handing back an array inside an object (#1925)',
+      code: `
+        import { memo } from 'src/util/memo';
+        export function buildModule() {
+          function Row({ label }) { return <li>{label}</li>; }
+          return { __esModule: true, extras: [memo(Row)] };
+        }
+      `,
+    },
+    {
+      // The mirror spelling: an interop object carried as an array element
+      // (#1925).
+      name: 'HOC factory handing back an object inside an array (#1925)',
+      code: `
+        import { memo } from 'src/util/memo';
+        export function buildModule() {
+          function Row({ label }) { return <li>{label}</li>; }
+          return [{ __esModule: true, default: memo(Row) }];
+        }
+      `,
+    },
+    {
+      // A type-level wrapper on the ELEMENT is as transparent as one on the
+      // whole hand-back (#1925).
+      name: 'HOC factory handing back an array carrying memo(Inner) as ComponentType (#1925)',
+      code: `
+        import { memo } from 'src/util/memo';
+        export function makeRow() {
+          function Row({ label }) { return <li>{label}</li>; }
+          return [memo(Row) as ComponentType<RowProps>];
+        }
+      `,
+    },
+    {
+      name: 'HOC factory handing back an array carrying memo(Inner) satisfies ComponentType (#1925)',
+      code: `
+        import { memo } from 'src/util/memo';
+        export function makeRow() {
+          function Row({ label }) { return <li>{label}</li>; }
+          return [memo(Row) satisfies ComponentType<RowProps>];
         }
       `,
     },
@@ -1617,6 +1707,47 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
           messageId: 'memoizeNestedComponent',
           data: {
             componentName: 'InnerUnmemoized',
+            locationDescription: 'a render body',
+          },
+        },
+      ],
+    },
+    // Reading arrays credits the WRAPPED hand-back, never a bare one. A bare
+    // array-carried reference is the shape `require-memo` is still repairing —
+    // it reports there and its remedy is the `memo(...)` wrapper the fixtures
+    // above carry — so crediting it here would exempt the very shape the paired
+    // rule is complaining about (#1925).
+    {
+      name: 'factory handing back an array carrying a bare component still reports (#1925)',
+      code: `
+        export function makeRow() {
+          function Row({ label }) { return <li>{label}</li>; }
+          return [Row];
+        }
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'Row',
+            locationDescription: 'a render body',
+          },
+        },
+      ],
+    },
+    {
+      name: 'factory handing back a nested array carrying a bare component still reports (#1925)',
+      code: `
+        export function makeRow() {
+          function Row({ label }) { return <li>{label}</li>; }
+          return [[Row]];
+        }
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'Row',
             locationDescription: 'a render body',
           },
         },

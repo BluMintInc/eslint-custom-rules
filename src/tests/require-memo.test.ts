@@ -275,13 +275,27 @@ export function makeRow() {
   return { rows: { default: memo(Row) } };
 }`,
     },
-    // An ARRAY element is a carried value as much as a property value is. The
-    // bare `return [memo(Row)]` spelling is deliberately not pinned here:
-    // `memo-nested-react-components` recurses into an object but not an array,
-    // so that fixture would sign its array blindness off in
-    // `crossrule-contradiction-closure`. Wrapping the array in the object the
-    // sibling does read keeps this rule's array arm load-bearing — `Cell` is
-    // reachable only through it — without blessing the sibling's gap.
+    // An ARRAY element is a carried value as much as a property value is, and
+    // the bare spelling is pinned here because the sibling
+    // `memo-nested-react-components` reads an array-carried hand-back too
+    // (#1925) — it is silent on both, so neither fixture signs off a gap of
+    // its own.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `export function makeRow() {
+  function Row({label}) { return <li>{label}</li>; }
+  return [memo(Row)];
+}`,
+    },
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `export function makeRow() {
+  function Row({label}) { return <li>{label}</li>; }
+  return [[memo(Row)]];
+}`,
+    },
+    // The array arm stays load-bearing when the array sits inside the object
+    // container: `Cell` is reachable only through it.
     {
       filename: 'src/components/SomeComponent.tsx',
       code: `export function makeModule() {
