@@ -731,6 +731,270 @@ const read = (obj, source) => {
 };
       `,
     },
+    // ------------------------------------------------------------------
+    // Issue #1915: the declaration site that carries the `: number` proof is
+    // whichever one the author wrote it on. A return-type annotation and a
+    // class-field annotation spell the same `TSNumberKeyword` a declarator or
+    // a parameter does, in the same file, resolvable by scope analysis alone.
+    // ------------------------------------------------------------------
+    {
+      name: 'a `: number` return-type annotation on a method is numeric proof at the call site',
+      code: `
+class Reader {
+  constructor(private readonly mapping) {}
+  private rankOf(seed): number {
+    return seed + 1;
+  }
+  read(seed) {
+    const rank = this.rankOf(seed);
+    return this.mapping[rank];
+  }
+}
+      `,
+    },
+    {
+      name: 'a call to a `: number`-returning method is numeric in key position',
+      code: `
+class Reader {
+  constructor(private readonly mapping) {}
+  private rankOf(seed): number {
+    return seed + 1;
+  }
+  read(seed) {
+    return this.mapping[this.rankOf(seed)];
+  }
+}
+      `,
+    },
+    {
+      name: 'a class field annotated `: number` is numeric at the use site',
+      code: `
+class Reader {
+  private readonly rank: number = 1;
+  constructor(private readonly mapping) {}
+  read() {
+    return this.mapping[this.rank];
+  }
+}
+      `,
+    },
+    {
+      name: 'a `: number` return-type annotation on a free arrow function is numeric proof',
+      code: `
+const rankOf = (seed): number => {
+  return seed + 1;
+};
+const at = (mapping, seed) => {
+  const rank = rankOf(seed);
+  return mapping[rank];
+};
+      `,
+    },
+    {
+      name: 'an annotated local initialized from a call stays numeric (#1713)',
+      code: `
+const at = (mapping, seed) => {
+  const rank: number = rankOf(seed);
+  return mapping[rank];
+};
+      `,
+    },
+    {
+      name: 'a `: number` method is numeric through a static receiver',
+      code: `
+class Reader {
+  private static rankOf(seed): number {
+    return seed + 1;
+  }
+  static read(mapping, seed) {
+    return mapping[this.rankOf(seed)];
+  }
+}
+      `,
+    },
+    {
+      name: 'a `: number` static method reached by the class name is numeric',
+      code: `
+class Reader {
+  static rankOf(seed): number {
+    return seed + 1;
+  }
+}
+const read = (mapping, seed) => mapping[Reader.rankOf(seed)];
+      `,
+    },
+    {
+      name: 'a `: number` static field reached by the class name is numeric',
+      code: `
+class Reader {
+  static rank: number = 1;
+}
+const read = (mapping) => mapping[Reader.rank];
+      `,
+    },
+    {
+      name: 'a `: number` static field reached through a static `this` is numeric',
+      code: `
+class Reader {
+  static rank: number = 1;
+  static read(mapping) {
+    return mapping[this.rank];
+  }
+}
+      `,
+    },
+    {
+      name: 'a getter returning `: number` is numeric at the read site',
+      code: `
+class Reader {
+  constructor(private readonly mapping) {}
+  private get rank(): number {
+    return 1;
+  }
+  read() {
+    return this.mapping[this.rank];
+  }
+}
+      `,
+    },
+    {
+      // A setter constrains writes, not reads, so pairing one with the getter
+      // must not withdraw the getter's own proof.
+      name: 'a getter paired with a setter keeps its numeric proof',
+      code: `
+class Reader {
+  constructor(private readonly mapping) {}
+  private get rank(): number {
+    return 1;
+  }
+  private set rank(next) {}
+  read() {
+    return this.mapping[this.rank];
+  }
+}
+      `,
+    },
+    {
+      name: 'a `: number` constructor parameter property is numeric at the use site',
+      code: `
+class Reader {
+  constructor(private readonly mapping, private readonly rank: number) {}
+  read() {
+    return this.mapping[this.rank];
+  }
+}
+      `,
+    },
+    {
+      name: 'a `: number`-returning arrow class field is numeric at the call site',
+      code: `
+class Reader {
+  constructor(private readonly mapping) {}
+  private rankOf = (seed): number => seed + 1;
+  read(seed) {
+    return this.mapping[this.rankOf(seed)];
+  }
+}
+      `,
+    },
+    {
+      // `this.rankOf?.(seed)` parses as a ChainExpression around the call, so
+      // the callee resolution has to survive the optional spelling.
+      name: 'an optionally-called `: number` method keeps its proof',
+      code: `
+class Reader {
+  constructor(private readonly mapping) {}
+  private rankOf(seed): number {
+    return seed;
+  }
+  read(seed) {
+    return this.mapping[this.rankOf?.(seed)];
+  }
+}
+      `,
+    },
+    {
+      name: 'an optionally-read `: number` field keeps its proof',
+      code: `
+class Reader {
+  private readonly rank: number = 1;
+  constructor(private readonly mapping) {}
+  read() {
+    return this.mapping[this?.rank];
+  }
+}
+      `,
+    },
+    {
+      // An arrow keeps the enclosing `this`, so a field initializer resolves
+      // against the class it is written in.
+      name: 'a `: number` field is numeric inside an arrow class field',
+      code: `
+class Reader {
+  private readonly rank: number = 1;
+  constructor(private readonly mapping) {}
+  read = () => this.mapping[this.rank];
+}
+      `,
+    },
+    {
+      name: 'a `: number` function declaration is numeric at the call site',
+      code: `
+function rankOf(seed): number {
+  return seed;
+}
+const read = (mapping, seed) => mapping[rankOf(seed)];
+      `,
+    },
+    {
+      name: 'a `: number` ambient function declaration is numeric at the call site',
+      code: `
+declare function rankOf(seed): number;
+const read = (mapping, seed) => mapping[rankOf(seed)];
+      `,
+    },
+    {
+      name: 'a `: number` field stays numeric inside an offset',
+      code: `
+class Reader {
+  private readonly rank: number = 1;
+  constructor(private readonly mapping) {}
+  read() {
+    return this.mapping[this.rank + 1];
+  }
+}
+      `,
+    },
+    {
+      name: 'a `: number` abstract method is numeric at the call site',
+      code: `
+abstract class Reader {
+  constructor(protected readonly mapping) {}
+  protected abstract rankOf(seed): number;
+  read(seed) {
+    return this.mapping[this.rankOf(seed)];
+  }
+}
+      `,
+    },
+    {
+      // The annotation is the proof at every declaration site, and an assertion
+      // inside the body is exactly what `const k: number = raw as unknown as
+      // number` already carries past the same check. Crediting one spelling and
+      // not the other would rebuild the asymmetry #1915 reports.
+      name: 'a laundering assertion inside a `: number` body leaves the annotation standing',
+      code: `
+class Reader {
+  constructor(private readonly mapping) {}
+  private rankOf(raw): number {
+    return raw as unknown as number;
+  }
+  read(raw) {
+    return this.mapping[this.rankOf(raw)];
+  }
+}
+      `,
+    },
   ],
   invalid: [
     {
@@ -2993,6 +3257,577 @@ const read = (m, rawKey, sanitize) => {
   const safeKey = sanitize?.(rawKey);
   return m[assertSafe(safeKey)];
 };
+      `,
+    },
+    // ------------------------------------------------------------------
+    // Issue #1915 FENCE: the proof is the `number` keyword the author wrote at
+    // the declaration site the reference RESOLVES to. A return type naming
+    // anything else, an inferred one, and a same-named member of another class
+    // or another half of this one all keep reporting.
+    // ------------------------------------------------------------------
+    {
+      name: 'a `: string` return type proves nothing',
+      code: `
+class Reader {
+  constructor(private readonly mapping) {}
+  private rankOf(seed): string {
+    return seed;
+  }
+  read(seed) {
+    return this.mapping[this.rankOf(seed)];
+  }
+}
+      `,
+      errors: [lintError('this.rankOf(seed)')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+class Reader {
+  constructor(private readonly mapping) {}
+  private rankOf(seed): string {
+    return seed;
+  }
+  read(seed) {
+    return this.mapping[assertSafe(this.rankOf(seed))];
+  }
+}
+      `,
+    },
+    {
+      name: 'an `: any` return type proves nothing',
+      code: `
+class Reader {
+  constructor(private readonly mapping) {}
+  private rankOf(seed): any {
+    return seed;
+  }
+  read(seed) {
+    return this.mapping[this.rankOf(seed)];
+  }
+}
+      `,
+      errors: [lintError('this.rankOf(seed)')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+class Reader {
+  constructor(private readonly mapping) {}
+  private rankOf(seed): any {
+    return seed;
+  }
+  read(seed) {
+    return this.mapping[assertSafe(this.rankOf(seed))];
+  }
+}
+      `,
+    },
+    {
+      name: 'an `: unknown` return type proves nothing',
+      code: `
+class Reader {
+  constructor(private readonly mapping) {}
+  private rankOf(seed): unknown {
+    return seed;
+  }
+  read(seed) {
+    return this.mapping[this.rankOf(seed)];
+  }
+}
+      `,
+      errors: [lintError('this.rankOf(seed)')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+class Reader {
+  constructor(private readonly mapping) {}
+  private rankOf(seed): unknown {
+    return seed;
+  }
+  read(seed) {
+    return this.mapping[assertSafe(this.rankOf(seed))];
+  }
+}
+      `,
+    },
+    {
+      // A union admitting a string admits '__proto__', which is the whole
+      // hazard — only the bare keyword rules it out.
+      name: 'a `: number | string` return type proves nothing',
+      code: `
+class Reader {
+  constructor(private readonly mapping) {}
+  private rankOf(seed): number | string {
+    return seed;
+  }
+  read(seed) {
+    return this.mapping[this.rankOf(seed)];
+  }
+}
+      `,
+      errors: [lintError('this.rankOf(seed)')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+class Reader {
+  constructor(private readonly mapping) {}
+  private rankOf(seed): number | string {
+    return seed;
+  }
+  read(seed) {
+    return this.mapping[assertSafe(this.rankOf(seed))];
+  }
+}
+      `,
+    },
+    {
+      // The rule reads syntax, not types: an inferred return is not a written
+      // proof, and reading one would need the checker this rule does without.
+      name: 'an unannotated method returning a number proves nothing',
+      code: `
+class Reader {
+  constructor(private readonly mapping) {}
+  private rankOf(seed) {
+    return 1;
+  }
+  read(seed) {
+    return this.mapping[this.rankOf(seed)];
+  }
+}
+      `,
+      errors: [lintError('this.rankOf(seed)')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+class Reader {
+  constructor(private readonly mapping) {}
+  private rankOf(seed) {
+    return 1;
+  }
+  read(seed) {
+    return this.mapping[assertSafe(this.rankOf(seed))];
+  }
+}
+      `,
+    },
+    {
+      name: 'a `: number` field of another class proves nothing',
+      code: `
+class Ranked {
+  rank: number = 1;
+}
+class Reader {
+  constructor(private readonly mapping) {}
+  read() {
+    return this.mapping[this.rank];
+  }
+}
+      `,
+      errors: [lintError('this.rank')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+class Ranked {
+  rank: number = 1;
+}
+class Reader {
+  constructor(private readonly mapping) {}
+  read() {
+    return this.mapping[assertSafe(this.rank)];
+  }
+}
+      `,
+    },
+    {
+      name: 'a `: number` method of another class proves nothing',
+      code: `
+class Ranked {
+  rankOf(seed): number {
+    return seed;
+  }
+}
+class Reader {
+  constructor(private readonly mapping) {}
+  read(seed) {
+    return this.mapping[this.rankOf(seed)];
+  }
+}
+      `,
+      errors: [lintError('this.rankOf(seed)')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+class Ranked {
+  rankOf(seed): number {
+    return seed;
+  }
+}
+class Reader {
+  constructor(private readonly mapping) {}
+  read(seed) {
+    return this.mapping[assertSafe(this.rankOf(seed))];
+  }
+}
+      `,
+    },
+    {
+      // The callee resolves through the scope chain, so the nearest binding is
+      // what is judged — the outer helper's annotation is not in play.
+      name: 'a local shadowing a `: number` helper proves nothing',
+      code: `
+const rankOf = (seed): number => seed;
+const read = (mapping, seed) => {
+  const rankOf = (s) => s;
+  return mapping[rankOf(seed)];
+};
+      `,
+      errors: [lintError('rankOf(seed)')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const rankOf = (seed): number => seed;
+const read = (mapping, seed) => {
+  const rankOf = (s) => s;
+  return mapping[assertSafe(rankOf(seed))];
+};
+      `,
+    },
+    {
+      name: 'an instance field read through a static `this` proves nothing',
+      code: `
+class Reader {
+  rank: number = 1;
+  static read(mapping) {
+    return mapping[this.rank];
+  }
+}
+      `,
+      errors: [lintError('this.rank')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+class Reader {
+  rank: number = 1;
+  static read(mapping) {
+    return mapping[assertSafe(this.rank)];
+  }
+}
+      `,
+    },
+    {
+      name: 'a static field read through an instance `this` proves nothing',
+      code: `
+class Reader {
+  static rank: number = 1;
+  constructor(private readonly mapping) {}
+  read() {
+    return this.mapping[this.rank];
+  }
+}
+      `,
+      errors: [lintError('this.rank')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+class Reader {
+  static rank: number = 1;
+  constructor(private readonly mapping) {}
+  read() {
+    return this.mapping[assertSafe(this.rank)];
+  }
+}
+      `,
+    },
+    {
+      // A non-arrow callback receives its own call-time `this`, which is not
+      // the class the field is declared on.
+      name: 'a `this` rebound by a plain function proves nothing',
+      code: `
+class Reader {
+  rank: number = 1;
+  constructor(private readonly mapping) {}
+  read() {
+    const self = this;
+    return [1].map(function () {
+      return self.mapping[this.rank];
+    });
+  }
+}
+      `,
+      errors: [lintError('this.rank')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+class Reader {
+  rank: number = 1;
+  constructor(private readonly mapping) {}
+  read() {
+    const self = this;
+    return [1].map(function () {
+      return self.mapping[assertSafe(this.rank)];
+    });
+  }
+}
+      `,
+    },
+    {
+      name: 'a nested class shadows the outer class it is written in',
+      code: `
+class Outer {
+  rank: number = 1;
+  read(mapping) {
+    class Inner {
+      at() {
+        return mapping[this.rank];
+      }
+    }
+    return Inner;
+  }
+}
+      `,
+      errors: [lintError('this.rank')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+class Outer {
+  rank: number = 1;
+  read(mapping) {
+    class Inner {
+      at() {
+        return mapping[assertSafe(this.rank)];
+      }
+    }
+    return Inner;
+  }
+}
+      `,
+    },
+    {
+      name: 'a member of a receiver that is not a class proves nothing',
+      code: `
+const read = (mapping, holder) => mapping[holder.rank];
+      `,
+      errors: [lintError('holder.rank')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (mapping, holder) => mapping[assertSafe(holder.rank)];
+      `,
+    },
+    {
+      // The declaration no longer says what the call reaches once another
+      // function is written into the binding.
+      name: 'a callee reassigned to an unannotated function proves nothing',
+      code: `
+let rankOf = (seed): number => seed;
+rankOf = (seed) => seed;
+const read = (mapping, seed) => mapping[rankOf(seed)];
+      `,
+      errors: [lintError('rankOf(seed)')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+let rankOf = (seed): number => seed;
+rankOf = (seed) => seed;
+const read = (mapping, seed) => mapping[assertSafe(rankOf(seed))];
+      `,
+    },
+    {
+      // A parameter's definition node is the function that declares it, whose
+      // own return type describes the function, not the parameter.
+      name: 'a parameter callee inside a `: number` function proves nothing',
+      code: `
+const at = (mapping, rankOf): number => mapping[rankOf(1)];
+      `,
+      errors: [lintError('rankOf(1)')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const at = (mapping, rankOf): number => mapping[assertSafe(rankOf(1))];
+      `,
+    },
+    {
+      // A superclass may be declared in another file, so its annotations are
+      // out of reach of a single-file analysis.
+      name: 'a `super` method call proves nothing',
+      code: `
+class Base {
+  rankOf(seed): number {
+    return seed;
+  }
+}
+class Reader extends Base {
+  constructor(private readonly mapping) {
+    super();
+  }
+  read(seed) {
+    return this.mapping[super.rankOf(seed)];
+  }
+}
+      `,
+      errors: [lintError('super.rankOf(seed)')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+class Base {
+  rankOf(seed): number {
+    return seed;
+  }
+}
+class Reader extends Base {
+  constructor(private readonly mapping) {
+    super();
+  }
+  read(seed) {
+    return this.mapping[assertSafe(super.rankOf(seed))];
+  }
+}
+      `,
+    },
+    {
+      // `Promise<number>` is a type reference, not the `number` keyword, so the
+      // awaited call is judged unproven like any other.
+      name: 'an awaited `: Promise<number>` method proves nothing',
+      code: `
+class Reader {
+  constructor(private readonly mapping) {}
+  private async rankOf(seed): Promise<number> {
+    return seed;
+  }
+  async read(seed) {
+    return this.mapping[await this.rankOf(seed)];
+  }
+}
+      `,
+      errors: [lintError('await this.rankOf(seed)')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+class Reader {
+  constructor(private readonly mapping) {}
+  private async rankOf(seed): Promise<number> {
+    return seed;
+  }
+  async read(seed) {
+    return this.mapping[assertSafe(await this.rankOf(seed))];
+  }
+}
+      `,
+    },
+    {
+      name: 'a field annotated `: number | string` proves nothing',
+      code: `
+class Reader {
+  private readonly rank: number | string = 1;
+  constructor(private readonly mapping) {}
+  read() {
+    return this.mapping[this.rank];
+  }
+}
+      `,
+      errors: [lintError('this.rank')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+class Reader {
+  private readonly rank: number | string = 1;
+  constructor(private readonly mapping) {}
+  read() {
+    return this.mapping[assertSafe(this.rank)];
+  }
+}
+      `,
+    },
+    {
+      name: 'an unannotated field initialized to a number proves nothing',
+      code: `
+class Reader {
+  private readonly rank = 1;
+  constructor(private readonly mapping) {}
+  read() {
+    return this.mapping[this.rank];
+  }
+}
+      `,
+      errors: [lintError('this.rank')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+class Reader {
+  private readonly rank = 1;
+  constructor(private readonly mapping) {}
+  read() {
+    return this.mapping[assertSafe(this.rank)];
+  }
+}
+      `,
+    },
+    {
+      // A setter says what a write accepts; with no getter beside it there is
+      // no declared read type at all.
+      name: 'a setter alone proves nothing about the read',
+      code: `
+class Reader {
+  constructor(private readonly mapping) {}
+  private set rank(next: number) {}
+  read() {
+    return this.mapping[this.rank];
+  }
+}
+      `,
+      errors: [lintError('this.rank')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+class Reader {
+  constructor(private readonly mapping) {}
+  private set rank(next: number) {}
+  read() {
+    return this.mapping[assertSafe(this.rank)];
+  }
+}
+      `,
+    },
+    {
+      // The annotation lives in another file, where this analysis cannot read
+      // it — an imported name proves nothing on its own.
+      name: 'an imported callee proves nothing',
+      code: `
+import { rankOf } from './rank';
+const read = (mapping, seed) => mapping[rankOf(seed)];
+      `,
+      errors: [lintError('rankOf(seed)')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+import { rankOf } from './rank';
+const read = (mapping, seed) => mapping[assertSafe(rankOf(seed))];
+      `,
+    },
+    {
+      // An object literal's method is not a class member, so `this.rank` there
+      // resolves to no annotated declaration.
+      name: 'an object literal method `this` proves nothing',
+      code: `
+const holder = {
+  rank: 1,
+  read(mapping) {
+    return mapping[this.rank];
+  },
+};
+      `,
+      errors: [lintError('this.rank')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const holder = {
+  rank: 1,
+  read(mapping) {
+    return mapping[assertSafe(this.rank)];
+  },
+};
+      `,
+    },
+    {
+      // A computed member read names whatever the key holds, which is the very
+      // thing the rule cannot see — the member carries no declaration to read.
+      name: 'a computed member read on the receiver proves nothing',
+      code: `
+class Reader {
+  private readonly rank: number = 1;
+  constructor(private readonly mapping) {}
+  read(k) {
+    return this.mapping[this[k]];
+  }
+}
+      `,
+      errors: [lintError('this[k]'), lintError('k')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+class Reader {
+  private readonly rank: number = 1;
+  constructor(private readonly mapping) {}
+  read(k) {
+    return this.mapping[assertSafe(this[k])];
+  }
+}
       `,
     },
   ],
