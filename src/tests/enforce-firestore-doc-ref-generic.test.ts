@@ -134,6 +134,217 @@ ruleTesterTs.run(
         }
       `,
       },
+      // The return annotation states the schema regardless of which function
+      // spelling carries it, so each of the three forms below is the twin of a
+      // declaration-spelled fixture and must draw the same silence (#1909).
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        const getRef = async (): Promise<DocumentReference<User>> => {
+          return db.collection('users').doc(userId);
+        };
+      `,
+      },
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        const getRef = async function (): Promise<DocumentReference<User>> {
+          return db.collection('users').doc(userId);
+        };
+      `,
+      },
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        const getUserRef = (id: string): DocumentReference<User> => {
+          return db.collection('users').doc(id);
+        };
+      `,
+      },
+      // A concise body is the returned expression, with no ReturnStatement to
+      // carry the annotation's evidence.
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        const getUserRef = (id: string): DocumentReference<User> =>
+          db.collection('users').doc(id);
+      `,
+      },
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        const getUserRef = async (id: string): Promise<DocumentReference<User>> =>
+          db.collection('users').doc(id);
+      `,
+      },
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        const getUsers = (): CollectionReference<User> => db.collection('users');
+      `,
+      },
+      {
+        code: `
+        interface Post {
+          title: string;
+        }
+        const getPosts = (): CollectionGroup<Post> => db.collectionGroup('posts');
+      `,
+      },
+      // Generic constraints, arrow twin of the declaration fixture below.
+      {
+        code: `
+        interface BaseModel {
+          id: string;
+        }
+        interface User extends BaseModel {
+          name: string;
+        }
+        const getRef = <T extends BaseModel>(id: string): DocumentReference<T> =>
+          db.collection('users').doc(id);
+      `,
+      },
+      // A return annotation spelled as a type alias resolves to the same
+      // statement of intent.
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        type UserRef = DocumentReference<User>;
+        const getUserRef = (id: string): UserRef => db.collection('users').doc(id);
+      `,
+      },
+      // An annotated method, getter and object-literal member each carry the
+      // annotation on a FunctionExpression rather than a FunctionDeclaration.
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        class UserService {
+          getRef(id: string): DocumentReference<User> {
+            return db.collection('users').doc(id);
+          }
+        }
+      `,
+      },
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        class UserService {
+          get ref(): DocumentReference<User> {
+            return db.collection('users').doc(this.id);
+          }
+        }
+      `,
+      },
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        const userRepository = {
+          getRef(id: string): DocumentReference<User> {
+            return db.collection('users').doc(id);
+          },
+        };
+      `,
+      },
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        const userRepository = {
+          getRef: (id: string): DocumentReference<User> =>
+            db.collection('users').doc(id),
+        };
+      `,
+      },
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        class UserService {
+          getRef = (id: string): DocumentReference<User> =>
+            db.collection('users').doc(id);
+        }
+      `,
+      },
+      // A return annotation constrains every return path, not just the ones
+      // written directly in the function body.
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        const getUserRef = (id: string): DocumentReference<User> => {
+          if (id) {
+            return db.collection('users').doc(id);
+          }
+          return db.collection('users').doc('fallback');
+        };
+      `,
+      },
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        function getUserRef(id: string): DocumentReference<User> {
+          if (id) {
+            return db.collection('users').doc(id);
+          }
+          return db.collection('users').doc('fallback');
+        }
+      `,
+      },
+      // A concise body reached through a wrapper node — the `ChainExpression`
+      // an optional link interposes, or an `await` — is still the body.
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        const getUserRef = (id: string): DocumentReference<User> =>
+          db?.collection('users').doc(id);
+      `,
+      },
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        const getUserRef = async (id: string): Promise<DocumentReference<User>> =>
+          await db.collection('users').doc(id);
+      `,
+      },
+      // An immediately invoked arrow annotates its result the same way.
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        const userRef = ((): DocumentReference<User> =>
+          db.collection('users').doc(userId))();
+      `,
+      },
       // Complex object types
       {
         code: `
@@ -1783,6 +1994,120 @@ ruleTesterTs.run(
       },
     ],
     invalid: [
+      /**
+       * Crediting the return annotation on every function spelling (#1909) is
+       * bounded by two things: the annotation has to exist, and it has to
+       * describe the value the expression becomes. The cases below hold each
+       * boundary from the arrow side, where the widening applies.
+       */
+      // No annotation to credit, in any of the three spellings.
+      {
+        code: `
+        const getRef = async () => {
+          return db.collection('users').doc(userId);
+        };
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      {
+        code: `const getRef = (id: string) => db.collection('users').doc(id);`,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      {
+        code: `
+        const getRef = function (id: string) {
+          return db.collection('users').doc(id);
+        };
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      {
+        code: `const getUsers = () => db.collection('users');`,
+        errors: [missingGenericError('CollectionReference')],
+      },
+      {
+        code: `const getPosts = () => db.collectionGroup('posts');`,
+        errors: [missingGenericError('CollectionGroup')],
+      },
+      // An annotation that names the reference type without a schema is still
+      // the violation this rule exists to report, in both spellings.
+      {
+        code: `
+        const getRef = async (): Promise<DocumentReference> =>
+          db.collection('users').doc(userId);
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      {
+        code: `
+        async function getRef(): Promise<DocumentReference> {
+          return db.collection('users').doc(userId);
+        }
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      {
+        code: `
+        const getRef = (): DocumentReference<any> =>
+          db.collection('users').doc(userId);
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      // A reference built inside an annotated function but never returned is
+      // described by nothing, so the annotation must not exempt it.
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        const getId = (): string => {
+          const ref = db.collection('users').doc(userId);
+          return ref.id;
+        };
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        const logRef = (): void => {
+          db.collection('users').doc(userId);
+        };
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // An inner function owns its own returns, so the outer annotation says
+      // nothing about them.
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        const getRef = (): DocumentReference<User> => {
+          const getLog = () => db.collection('logs').doc(logId);
+          return db.collection('users').doc(userId);
+        };
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        class UserService {
+          getRef(id: string): DocumentReference<User> {
+            const getLog = function () {
+              return db.collection('logs').doc(id);
+            };
+            return db.collection('users').doc(id);
+          }
+        }
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
       /**
        * Namespaced spellings of the same types (issue #1754). The namespace is
        * arbitrary — `FirebaseFirestore.`, `admin.firestore.` and any

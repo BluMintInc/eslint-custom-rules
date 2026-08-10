@@ -13,6 +13,7 @@ This rule requires every Firestore `DocumentReference`, `CollectionReference`, a
 - An optional link anywhere in the receiver (`db?.collection<T>('x')`) is looked through. It changes the reference's nullability, not its schema: the type is `CollectionReference<T> | undefined`, still carrying `T`, so the derived `doc(...)` inherits a shape and needs no generic. The inverse holds too — `db?.collection('x')` supplies nothing and is reported exactly as `db.collection('x')` is.
 - Resolving a stored collection is deliberately shallow: only a `const` whose initializer is a `collection<T>(...)` call, whose annotation is `CollectionReference<T>`, or which asserts that type is followed, and only one hop. An alias of an alias, a `let`, a parameter, or an import cannot be proven typed, so `doc(...)` on those still requires its own generic.
 - A class member reached as `this.member` or `this.member()` is resolved through its return type annotation when it has one, and otherwise through the expression it returns. See [Where the schema evidence must live](#where-the-schema-evidence-must-live).
+- A return type annotation states the schema whichever function spelling carries it — a declaration, a function expression, an arrow with a block body or with a concise one, a class method, a getter, or an object-literal member — and on every return path, not only a `return` written directly in the function body. What it does not cover is a reference the function never hands back: a reference built and stored inside an annotated function is described by nothing and is still reported.
 - Generics that use `any` or `{}` erase the schema and disable compile-time checks; nested `any`/`{}` are flagged when the rule can see them inline or via same-file types. See [How a named generic is resolved](#how-a-named-generic-is-resolved).
 - Receivers that trace back to `@firebase/rules-unit-testing` are exempt. See [Compat Firestore from `@firebase/rules-unit-testing`](#compat-firestore-from-firebaserules-unit-testing).
 - The reference type is recognized however it is namespaced. `FirebaseFirestore.DocumentReference`, `admin.firestore.DocumentReference` and a namespace-import alias such as `fs.DocumentReference` are the same type as the bare `DocumentReference` and are checked identically. Matching keys on the last segment of the name, because the namespace alias is chosen by the importer while `DocumentReference` / `CollectionReference` / `CollectionGroup` are specific enough that an unrelated module's type of the same name is not a realistic collision.
@@ -95,6 +96,34 @@ async function getRef(): Promise<DocumentReference<User>> {
 async function getRef() {
   return db.collection<User>('users').doc(userId);
 }
+```
+
+While an annotation lasts, it counts the same in every spelling. Which keyword introduces the function, and whether the returned expression travels through a `return` statement or is a concise arrow body, are decisions about layout that say nothing about the document shape:
+
+```ts
+// All three state the same schema, and all three are silent.
+const getRefArrow = async (): Promise<DocumentReference<User>> => {
+  return db.collection('users').doc(userId);
+};
+
+const getRefConcise = (id: string): DocumentReference<User> =>
+  db.collection('users').doc(id);
+
+class UserService {
+  getRef(id: string): DocumentReference<User> {
+    return db.collection('users').doc(id);
+  }
+}
+```
+
+The boundary is what the annotation describes, which is the value the function returns. A reference the function only builds is reported, however the enclosing function is annotated:
+
+```ts
+// Reported: `string` describes the id, not the reference the body constructs.
+const getUserId = (): string => {
+  const ref = db.collection('users').doc(userId);
+  return ref.id;
+};
 ```
 
 ## Compat Firestore from `@firebase/rules-unit-testing`
@@ -215,6 +244,10 @@ const guardedUserDoc = guardedUsersCollection.doc('123');
 type BaseData = { id: string; createdAt: Date };
 type UserWithBase = UserData & BaseData;
 const userWithBaseDoc: DocumentReference<UserWithBase> = db.doc('users/123');
+
+// A return annotation counts on an arrow exactly as it does on a declaration
+const getUserDoc = (id: string): DocumentReference<UserData> =>
+  db.collection('users').doc(id);
 ```
 
 ## When Not To Use It

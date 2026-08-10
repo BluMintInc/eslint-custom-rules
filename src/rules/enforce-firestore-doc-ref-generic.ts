@@ -64,6 +64,42 @@ function unwrapOptionalChain(node: TSESTree.Node): TSESTree.Node {
   return node.type === AST_NODE_TYPES.ChainExpression ? node.expression : node;
 }
 
+/** The spellings a function can be written in. */
+type FunctionNode =
+  | TSESTree.FunctionDeclaration
+  | TSESTree.FunctionExpression
+  | TSESTree.ArrowFunctionExpression;
+
+function isFunctionNode(node: TSESTree.Node): node is FunctionNode {
+  return (
+    node.type === AST_NODE_TYPES.FunctionDeclaration ||
+    node.type === AST_NODE_TYPES.FunctionExpression ||
+    node.type === AST_NODE_TYPES.ArrowFunctionExpression
+  );
+}
+
+/**
+ * The nearest function a node sits inside.
+ *
+ * A return statement is reached from its function through an arbitrary depth of
+ * blocks, conditionals and loops, so stepping a fixed number of parents up
+ * answers a question about indentation rather than about ownership: it finds the
+ * function only when the `return` is written directly in the body, and only for
+ * the spelling whose body is a block.
+ */
+function enclosingFunction(node: TSESTree.Node): FunctionNode | undefined {
+  let current: TSESTree.Node | undefined = node.parent as
+    | TSESTree.Node
+    | undefined;
+  while (current) {
+    if (isFunctionNode(current)) {
+      return current;
+    }
+    current = current.parent as TSESTree.Node | undefined;
+  }
+  return undefined;
+}
+
 /** The declaration spellings a named document schema can be written in. */
 type NamedTypeDeclaration =
   | TSESTree.TSInterfaceDeclaration
@@ -330,6 +366,10 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
         return nodeCache.get(node)!;
       }
 
+      // The child the walk arrived from, which is what distinguishes a function
+      // whose returned expression is under examination from one that merely
+      // contains the expression somewhere in its body.
+      let previous: TSESTree.Node | undefined;
       let current: TSESTree.Node | undefined = node;
       while (current) {
         // Type assertions using 'as' keyword
@@ -353,16 +393,28 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
           nodeCache.set(node, true);
           return true;
         }
-        // Return statements in functions with return type annotations
+        // Return statements in functions with return type annotations. The
+        // annotation states the schema whichever way its function is written,
+        // so a declaration, a function expression and an arrow are all read.
         if (current.type === AST_NODE_TYPES.ReturnStatement) {
-          const func = current.parent?.parent;
-          if (
-            func?.type === AST_NODE_TYPES.FunctionDeclaration &&
-            func.returnType
-          ) {
+          if (enclosingFunction(current)?.returnType) {
             nodeCache.set(node, true);
             return true;
           }
+        }
+        // A concise arrow body is the returned expression itself and produces no
+        // ReturnStatement, so the branch above cannot see it. Requiring the walk
+        // to have arrived from the body keeps the annotation describing only
+        // what the function hands back: a reference built and stored inside a
+        // block body is described by nothing and still reports.
+        if (
+          isFunctionNode(current) &&
+          current.returnType &&
+          current.body === previous &&
+          current.body.type !== AST_NODE_TYPES.BlockStatement
+        ) {
+          nodeCache.set(node, true);
+          return true;
         }
         // Assignment expressions to class properties
         if (current.type === AST_NODE_TYPES.AssignmentExpression) {
@@ -387,6 +439,7 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
             }
           }
         }
+        previous = current;
         current = current.parent as TSESTree.Node;
       }
       nodeCache.set(node, false);
@@ -846,21 +899,8 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
     function findFunctionParameter(
       node: TSESTree.Identifier,
     ): TSESTree.Parameter | null {
-      const isFunctionNode = (
-        n: TSESTree.Node,
-      ): n is
-        | TSESTree.FunctionDeclaration
-        | TSESTree.FunctionExpression
-        | TSESTree.ArrowFunctionExpression =>
-        n.type === AST_NODE_TYPES.FunctionDeclaration ||
-        n.type === AST_NODE_TYPES.FunctionExpression ||
-        n.type === AST_NODE_TYPES.ArrowFunctionExpression;
-
       const findParamInFunction = (
-        func:
-          | TSESTree.FunctionDeclaration
-          | TSESTree.FunctionExpression
-          | TSESTree.ArrowFunctionExpression,
+        func: FunctionNode,
       ): TSESTree.Identifier | null => {
         const param = func.params.find(
           (p): p is TSESTree.Identifier =>
@@ -872,11 +912,7 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
         return param || null;
       };
 
-      const functionScopes: Array<
-        | TSESTree.FunctionDeclaration
-        | TSESTree.FunctionExpression
-        | TSESTree.ArrowFunctionExpression
-      > = [];
+      const functionScopes: FunctionNode[] = [];
 
       let current: TSESTree.Node | undefined = node;
       while (current) {

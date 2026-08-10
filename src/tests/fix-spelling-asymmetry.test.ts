@@ -1075,11 +1075,6 @@ const DETECTION_UNDRIVEN: Record<string, UndrivenCause> = {
  * rule does not churn the gate while a NEW rule name still trips it.
  */
 const DETECTION_EXEMPT: Record<string, string> = {
-  // Credits a return-type annotation only when the enclosing function is a
-  // FunctionDeclaration, so the same annotated function respelled as an arrow
-  // is reported.
-  'enforce-firestore-doc-ref-generic':
-    'return annotation credited on declarations only, tracked as #1909',
   // Registers only a `ReturnStatement` visitor, so a concise body is
   // structurally invisible. Parity is a breadth decision, not a mechanical fix:
   // it adds ~703 consumer reports, almost all `jest.mock` factories, where the
