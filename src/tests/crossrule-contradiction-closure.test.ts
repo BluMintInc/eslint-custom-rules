@@ -339,8 +339,8 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
   },
   'memo-nested-react-components::require-memo': {
     reason:
-      'PIPELINE: the fixtures declare unmemoized OUTER components around the nested one under test; `--fix` wraps 6 of 7 in `memo()`.',
-    cases: { requireMemo: 7 },
+      "PIPELINE: the fixtures declare unmemoized OUTER components around the nested one under test; `--fix` wraps 8 of 9 in `memo()`. The ninth declines because the visible `memo` binding is react's rather than the `util/memo` helper, so the edit would collide. Two joined with #1911 as the `?.` twins of rows already here — each draws the report on the same outer component its plain twin does, and both converge (measured). An object-carried hand-back was deliberately kept OUT of this corpus: `require-memo` credits neither spelling of `return { default: memo(Row) }`, a gap of its own that this pair should not sign off.",
+    cases: { requireMemo: 9 },
   },
   'memo-nested-react-components::use-custom-memo': {
     reason:

@@ -566,6 +566,292 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
         };
       `,
     },
+    {
+      name: 'HOC factory (function declaration) handing back memo(Row)',
+      code: `
+        import { memo } from 'src/util/memo';
+        export function makeRow() {
+          function Row({ label }) { return <li>{label}</li>; }
+          return memo(Row);
+        }
+      `,
+    },
+    {
+      name: 'HOC factory (function declaration) handing back memo?.(Row)',
+      code: `
+        import { memo } from 'src/util/memo';
+        export function makeRow() {
+          function Row({ label }) { return <li>{label}</li>; }
+          return memo?.(Row);
+        }
+      `,
+    },
+    {
+      name: 'HOC factory (function declaration) handing back React.memo(Row)',
+      code: `
+        import * as React from 'react';
+        export function makeRow() {
+          function Row({ label }) { return <li>{label}</li>; }
+          return React.memo(Row);
+        }
+      `,
+    },
+    {
+      name: 'HOC factory (function declaration) handing back React?.memo(Row)',
+      code: `
+        import * as React from 'react';
+        export function makeRow() {
+          function Row({ label }) { return <li>{label}</li>; }
+          return React?.memo(Row);
+        }
+      `,
+    },
+    {
+      // The optional call is a spelling of the same hand-back, so the arrow
+      // factory must read it the same way the declaration one does.
+      name: 'HOC factory (arrow) handing back memo?.(Inner)',
+      code: `
+        import { memo } from 'src/util/memo';
+        export const buildView = () => {
+          const InnerUnmemoized = ({ value }) => <span>{value}</span>;
+          return memo?.(InnerUnmemoized);
+        };
+      `,
+    },
+    {
+      name: 'HOC factory (arrow) handing back CustomReact?.memo(Inner)',
+      code: `
+        import * as CustomReact from 'src/util/react';
+        export const buildView = () => {
+          const InnerUnmemoized = ({ value }) => <span>{value}</span>;
+          return CustomReact?.memo(InnerUnmemoized);
+        };
+      `,
+    },
+    {
+      // A parenthesized optional chain puts the ChainExpression in callee
+      // position rather than around the whole call.
+      name: 'HOC factory handing back (React?.memo)(Inner)',
+      code: `
+        import * as React from 'react';
+        export const buildView = () => {
+          const InnerUnmemoized = ({ value }) => <span>{value}</span>;
+          return (React?.memo)(InnerUnmemoized);
+        };
+      `,
+    },
+    {
+      name: 'HOC factory handing back forwardRef?.(Inner)',
+      code: `
+        import { forwardRef } from 'react';
+        export const buildRefView = () => {
+          const InnerUnmemoized = (props, ref) => <div ref={ref} />;
+          return forwardRef?.(InnerUnmemoized);
+        };
+      `,
+    },
+    {
+      name: 'HOC factory handing back memo(forwardRef(Inner))',
+      code: `
+        import { memo, forwardRef } from 'src/util/memo';
+        export const buildDatePicker = () => {
+          const InnerReflessUnmemoized = (props, ref) => <div ref={ref} />;
+          const InnerUnmemoized = forwardRef(InnerReflessUnmemoized);
+          return memo(forwardRef(InnerUnmemoized));
+        };
+      `,
+    },
+    {
+      name: 'HOC factory handing back memo?.(forwardRef?.(Inner))',
+      code: `
+        import { memo, forwardRef } from 'src/util/memo';
+        export const buildDatePicker = () => {
+          const InnerReflessUnmemoized = (props, ref) => <div ref={ref} />;
+          return memo?.(forwardRef?.(InnerReflessUnmemoized));
+        };
+      `,
+    },
+    {
+      name: 'HOC factory handing back forwardRef(memo(Inner))',
+      code: `
+        import { memo, forwardRef } from 'src/util/memo';
+        export const buildRefView = () => {
+          const InnerUnmemoized = (props, ref) => <div ref={ref} />;
+          return forwardRef(memo(InnerUnmemoized));
+        };
+      `,
+    },
+    {
+      name: 'HOC factory handing back forwardRef?.(memo?.(Inner))',
+      code: `
+        import { memo, forwardRef } from 'src/util/memo';
+        export const buildRefView = () => {
+          const InnerUnmemoized = (props, ref) => <div ref={ref} />;
+          return forwardRef?.(memo?.(InnerUnmemoized));
+        };
+      `,
+    },
+    {
+      // A type-level wrapper around the hand-back is transparent to the
+      // carve-out in both spellings.
+      name: 'HOC factory handing back memo(Inner) as ComponentType',
+      code: `
+        import { memo } from 'src/util/memo';
+        export function makeRow() {
+          function Row({ label }) { return <li>{label}</li>; }
+          return memo(Row) as ComponentType<RowProps>;
+        }
+      `,
+    },
+    {
+      name: 'HOC factory handing back memo?.(Inner) as ComponentType',
+      code: `
+        import { memo } from 'src/util/memo';
+        export function makeRow() {
+          function Row({ label }) { return <li>{label}</li>; }
+          return memo?.(Row) as ComponentType<RowProps>;
+        }
+      `,
+    },
+    {
+      // The interop object hand-back reaches the carve-out one property deep,
+      // so the optional call inside it must be transparent there too. The
+      // component carries the `Unmemoized` suffix because `require-memo` does
+      // not credit an object-carried hand-back in EITHER spelling (measured),
+      // and that gap is its own, not this rule's.
+      name: 'HOC factory handing back an object carrying memo?.(Inner)',
+      code: `
+        import { memo } from 'src/util/memo';
+        export function buildModule() {
+          function RowUnmemoized({ label }) { return <li>{label}</li>; }
+          return { __esModule: true, default: memo?.(RowUnmemoized) };
+        }
+      `,
+    },
+    {
+      // #1336 in the nullish spelling: the memo hook stabilizes the identity
+      // regardless of how the memo() hand-back is spelled.
+      name: 'useMemo returning memo?.(inline) is identity-stabilized',
+      code: `
+        import { useMemo } from 'react';
+        import { memo } from 'src/util/memo';
+        const Outer = ({ value }) => {
+          const Wrapped = useMemo(() => memo?.((props) => <div {...props} />), [value]);
+          return <Wrapped value={value} />;
+        };
+      `,
+    },
+    {
+      name: 'useMemo returning React?.memo(inline) is identity-stabilized',
+      code: `
+        import * as React from 'react';
+        const Outer = () => {
+          const Wrapped = React.useMemo(() => React?.memo((props) => <div {...props} />), []);
+          return <Wrapped />;
+        };
+      `,
+    },
+    {
+      // The hook itself called through an optional chain still resolves to the
+      // hook, so the identity-stabilization carve-out still applies.
+      name: 'useMemo?.() returning memo(inline) is identity-stabilized',
+      code: `
+        import { useMemo } from 'react';
+        import { memo } from 'src/util/memo';
+        const Outer = () => {
+          const Wrapped = useMemo?.(() => memo((props) => <div {...props} />), []);
+          return <Wrapped />;
+        };
+      `,
+    },
+    {
+      name: 'useDeepCompareMemo?.() returning memo?.(inline) is identity-stabilized',
+      code: `
+        import { memo } from 'src/util/memo';
+        import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+        const Outer = ({ value }) => {
+          const View = useDeepCompareMemo?.(() => {
+            return memo?.((props) => <span>{props.value}</span>);
+          }, [value]);
+          return <View value={value} />;
+        };
+      `,
+    },
+    {
+      // The non-PascalCase binding carve-out reads the declarator through the
+      // call, so an optional hook call must not hide the binding's name.
+      name: 'lowercase render callback via an optional hook call stays silent',
+      code: `
+        import { useCallback } from 'react';
+        const renderHit = useCallback?.((hit) => <AccordionCompetitor {...hit} />, []);
+      `,
+    },
+    {
+      name: 'lowercase render callback via an optional hook call inside a render body stays silent',
+      code: `
+        import { useCallback } from 'react';
+        const MyList = () => {
+          const renderHit = useCallback?.((hit) => <Hit {...hit} />, []);
+          return <Hits render={renderHit} />;
+        };
+      `,
+    },
+    {
+      // A runner call reached through an optional chain is still a statement,
+      // so its body still runs once per test rather than per render.
+      name: 'it?.() callback keeps the test-runner exemption',
+      code: `
+        it?.('forwards the override', () => {
+          const MockAvatar = () => <span>mock-avatar</span>;
+          render(<Competitor AvatarComponent={MockAvatar} />);
+        });
+      `,
+    },
+    {
+      name: 'describe?.() callback keeps the test-runner exemption',
+      code: `
+        describe?.('suite', () => {
+          const StubProbe = () => <div />;
+          render(<StubProbe />);
+        });
+      `,
+    },
+    {
+      name: 'it.each([...])?.() callback keeps the test-runner exemption',
+      code: `
+        it.each([1, 2])?.('case %s', (value) => {
+          const StubProbe = () => <div>{value}</div>;
+          render(<StubProbe />);
+        });
+      `,
+    },
+    {
+      name: 'jest?.mock() factory keeps the module-mock exemption',
+      code: `
+        jest?.mock('../Widget', () => {
+          const MockWidget = () => <div />;
+          return { default: MockWidget };
+        });
+      `,
+    },
+    {
+      name: 'jest.mock?.() factory keeps the module-mock exemption',
+      code: `
+        jest.mock?.('../Widget', () => {
+          const MockWidget = () => <div />;
+          return { default: MockWidget };
+        });
+      `,
+    },
+    {
+      name: '(jest?.mock)() factory keeps the module-mock exemption',
+      code: `
+        (jest?.mock)('../Widget', () => {
+          const MockWidget = () => <div />;
+          return { default: MockWidget };
+        });
+      `,
+    },
   ],
   invalid: [
     // The test-runner exemption reads only the NEAREST enclosing function, so a
@@ -1154,6 +1440,184 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
           data: {
             componentName: 'HeaderComponent',
             locationDescription: 'the "HeaderComponent" prop',
+          },
+        },
+      ],
+    },
+    // #1911 controls: unwrapping the optional chain must not widen the
+    // already-memoized carve-out past memo/forwardRef. Each of these is the
+    // nullish twin of a shape that reports in its plain spelling.
+    {
+      name: 'factory handing back a non-memo optional call still reports',
+      code: `
+        export function makeRow() {
+          function Row({ label }) { return <li>{label}</li>; }
+          return wrap?.(Row);
+        }
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'Row',
+            locationDescription: 'a render body',
+          },
+        },
+      ],
+    },
+    {
+      name: 'factory handing back styled?.(Inner) still reports',
+      code: `
+        import { styled } from 'src/util/styled';
+        export const buildStyled = () => {
+          const InnerUnmemoized = () => <div />;
+          return styled?.(InnerUnmemoized);
+        };
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'InnerUnmemoized',
+            locationDescription: 'a render body',
+          },
+        },
+      ],
+    },
+    {
+      name: 'factory with a memo?.() hand-back that also returns JSX still reports',
+      code: `
+        import { memo } from 'react';
+        function withWeird(WrappedComponent) {
+          const InnerUnmemoized = (props) => <WrappedComponent {...props} />;
+          if (shouldRenderInline) {
+            return <InnerUnmemoized />;
+          }
+          return memo?.(InnerUnmemoized);
+        }
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'InnerUnmemoized',
+            locationDescription: 'a render body',
+          },
+        },
+      ],
+    },
+    {
+      name: 'lookalike registry.mock?.() earns no module-mock exemption',
+      code: `
+        registry.mock?.('../Widget', () => {
+          const InlineWidget = () => <div />;
+          return { count: 1 };
+        });
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'InlineWidget',
+            locationDescription: 'a render body',
+          },
+        },
+      ],
+    },
+    {
+      // The exemption requires the runner call to stand alone as a statement,
+      // and an optional chain does not turn a value-position call into one.
+      name: 'value-position test?.() callback still reports',
+      code: `
+        const outcome = test?.(() => {
+          const InlineProbe = () => <div />;
+          register(InlineProbe);
+          return 1;
+        });
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'InlineProbe',
+            locationDescription: 'a render body',
+          },
+        },
+      ],
+    },
+    {
+      // The declarator is read through the chain, so the report names the
+      // binding rather than falling back to the anonymous label.
+      name: 'PascalCase component via an optional useMemo call reports under its own name',
+      code: `
+        import { useMemo } from 'react';
+        const Parent = () => {
+          const Child = useMemo?.(() => (props) => <div {...props} />, []);
+          return <Child />;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'Child',
+            locationDescription: 'useMemo()',
+          },
+        },
+      ],
+    },
+    {
+      name: 'PascalCase component via an optional useCallback call reports under its own name',
+      code: `
+        import { useCallback } from 'react';
+        const CustomButton = useCallback?.(({ onClick }) => <button onClick={onClick} />, []);
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'CustomButton',
+            locationDescription: 'useCallback()',
+          },
+        },
+      ],
+    },
+    {
+      // A component-type prop fed an inline definition through memo?.() is the
+      // nullish twin of the memo() form, which reports.
+      name: 'component-type prop fed memo?.(inline) still reports',
+      code: `
+        import { memo } from 'react';
+        const MyPage = () => {
+          return <Layout Header={memo?.((props) => <header {...props} />)} />;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'Header',
+            locationDescription: 'the "Header" prop',
+          },
+        },
+      ],
+    },
+    {
+      // A bare hand-back through an optional chain is not a memo() call at all,
+      // so the nested component keeps its report.
+      name: 'factory handing back an optional member access still reports',
+      code: `
+        export const buildView = () => {
+          const InnerUnmemoized = ({ value }) => <span>{value}</span>;
+          return registry?.InnerUnmemoized;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'InnerUnmemoized',
+            locationDescription: 'a render body',
           },
         },
       ],

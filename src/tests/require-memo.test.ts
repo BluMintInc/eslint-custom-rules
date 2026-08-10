@@ -230,13 +230,10 @@ export function makeRow() {
   return React.memo(Row);
 }`,
     },
-    // The nullish spellings of the two shapes above are NOT pinned here on
-    // purpose. `optional-chaining-closure` derives them from these fixtures, so
-    // the coverage exists either way; adding them to this suite instead drags
-    // them into `crossrule-contradiction-closure`, where `memo-nested-react-
-    // components` reports on `memo?.(Row)` but not on `memo(Row)` — its own
-    // ChainExpression blindness, tracked separately, and not a divergence this
-    // suite should sign off as legitimate.
+    // The nullish spellings of the two shapes above are not pinned here:
+    // `optional-chaining-closure` derives them from these fixtures, and the
+    // sibling `memo-nested-react-components` pins the hand-back twins in its
+    // own suite, where the matching carve-out lives (#1911).
     // A nested camelCase helper stays a helper wherever it sits (issue #1243).
     // Not named `render*`, because that name shape is
     // `no-render-function-components`' claim.

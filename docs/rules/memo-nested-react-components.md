@@ -18,6 +18,7 @@ When a component function reference changes, React treats it as a **different co
 - **Exemptions**:
   - A `useMemo` / `useDeepCompareMemo` callback that returns a `memo(...)` or `forwardRef(...)`-wrapped component. The memo hook stabilizes the component's identity across re-renders (a new identity is produced only when dependencies change), so the component does not remount on an ordinary re-render. A bare inner component (e.g. `useMemo(() => (props) => <div />, deps)`) stays flagged—wrap it in `memo()` for the fully-stabilized pattern.
   - A `memo(...)` element returned directly (`useMemo(() => <JSX />, deps)`), which memoizes an element rather than defining a component.
+  - A factory that hands its component back already wrapped (`return memo(Row)`, `return memo(forwardRef(Inner))`, `return { __esModule: true, default: memo(Row) }`). Such a factory runs once per call rather than once per render, so the component it returns has a stable identity.
 - **Fix behavior**: This rule does not provide an auto-fix because the correct solution usually involves moving the component definition to the module scope and using React Context or props to provide dynamic data.
 
 ### Options
@@ -106,6 +107,7 @@ const MyPage = () => {
 
 - **Render-prop callbacks** (e.g., `render={...}`) are fine; this rule targets component-type props only. A prop counts as component-type only when its name is uppercase-initial **and** ends in `Wrapper`, `Component`, `Template`, `Header`, or `Footer`. A lowercase-initial prop is a render callback even when its tail matches a suffix, so `renderHeader={...}`, `renderFooter={...}`, and `renderTemplate={...}` are not flagged, while `HeaderComponent={...}` and `CatalogWrapper={...}` are. This matches how the rule treats bindings: a non-PascalCase name such as `renderHit` is a render callback, not a component.
 - **JSX elements** passed directly to props are fine (e.g., `header={<TitleSelect />}`).
+- **Optional-chained spellings** read the same as their plain twins. ESTree wraps a whole optional chain in a `ChainExpression`, so `memo?.(Row)`, `React?.memo(Row)` and `(React?.memo)(Row)` are the same already-memoized hand-back as `memo(Row)`, and `it?.()` / `describe?.()` / `jest?.mock()` keep the test-runner and module-mock exemptions. A non-memo optional call such as `wrap?.(Row)` is still not a memoized hand-back, so the nested component it returns is still flagged.
 
 ## Version
 
