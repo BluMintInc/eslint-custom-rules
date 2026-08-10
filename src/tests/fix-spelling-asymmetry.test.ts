@@ -1106,10 +1106,6 @@ const DETECTION_EXEMPT: Record<string, string> = {
   // the identical arrow — a human-labeled design call.
   'prefer-settings-object':
     'ignoreVariadicFunctions exempts declarations only, tracked as #1857',
-  // Registers ArrowFunctionExpression and FunctionExpression visitors and no
-  // FunctionDeclaration key, so a declaration-spelled reassembly goes unseen.
-  'prefer-spread-over-reassembly':
-    'no FunctionDeclaration visitor, tracked as #1908',
 };
 
 /**

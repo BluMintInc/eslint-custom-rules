@@ -439,8 +439,8 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
   },
   'prefer-spread-over-reassembly::enforce-object-literal-as-const': {
     reason:
-      "INCIDENTAL: the fixture's fixed output asserts `as Pair`, which the literal rule does not accept in place of `as const`; writing `as const` is clean under both (measured).",
-    cases: { enforceAsConst: 1 },
+      "INCIDENTAL: one fixed output asserts `as Pair`, which the literal rule does not accept in place of `as const`; writing `as const` is clean under both (measured). 1 -> 5 is the #1908 widening: the four narrowing-pick carve-outs (#1642 annotation, #1643 `Readonly` unwrap, #1644 sibling-module hop, #1769 lexically nested type) gained a FunctionDeclaration twin, and a declaration must spell its target `return { a, b };` where the arrow twin spells it `=> ({ a, b })`. The sibling registers only a `ReturnStatement` visitor (its own `DETECTION_EXEMPT` entry, #1795), so the concise arrow is structurally invisible to it and the block-bodied twin is not — the disagreement is about the block body, not about either rule's subject. `return { a, b } as const;` leaves both silent on all four (measured), and this rule's `unwrapTransparent` reads the pick through that assertion unchanged, so the carve-out still holds in the satisfying spelling.",
+    cases: { enforceAsConst: 5 },
   },
   'prefer-usecallback-over-usememo-for-functions::use-latest-callback': {
     reason:
