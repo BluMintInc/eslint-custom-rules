@@ -987,11 +987,6 @@ const measuredUndriven = (
  * below, so an entry cannot outlive what it describes.
  */
 const FIX_UNDRIVEN: Record<string, UndrivenCause> = {
-  // All 116 function expressions in its fixtures are class method shorthand,
-  // which has no arrow-valued spelling and is declined by name (#1870); the
-  // concise/block pairs that do survive report a different messageId on each
-  // side, since reordering is what it measures.
-  'class-methods-read-top-to-bottom': 'noSharedMessageId',
   'enforce-date-ttime': 'noSharedMessageId',
   'enforce-firestore-rules-get-access': 'noRespelling',
   'enforce-typescript-markdown-code-blocks': 'noTsFixture',
@@ -1025,7 +1020,6 @@ const FIX_UNDRIVEN: Record<string, UndrivenCause> = {
 const DETECTION_UNDRIVEN: Record<string, UndrivenCause> = {
   'array-methods-this-context': 'silentOnComparedPairs',
   'avoid-utils-directory': 'noRespelling',
-  'class-methods-read-top-to-bottom': 'silentOnComparedPairs',
   'enforce-date-ttime': 'silentOnComparedPairs',
   'enforce-dynamic-file-naming': 'noRespelling',
   'enforce-dynamic-imports': 'silentOnComparedPairs',

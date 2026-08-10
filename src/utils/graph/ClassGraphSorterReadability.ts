@@ -13,7 +13,10 @@ export class ClassGraphSorterReadability extends ClassGraphSorter {
     any[]
   > = {
     isStatic: [true, false],
-    accessibility: ['public', undefined, 'private'],
+    // 'protected' sits between the implicitly-public members and 'private',
+    // matching the conventional TypeScript layout of public API, then
+    // extension points, then internals.
+    accessibility: ['public', undefined, 'protected', 'private'],
   };
 
   private static readonly SEARCH_NODE_PRIORITY_FUNCTIONS: Array<
@@ -98,15 +101,32 @@ export class ClassGraphSorterReadability extends ClassGraphSorter {
     );
   }
 
+  /**
+   * An unlisted modifier value must not outrank every listed one. Ranking it
+   * last mirrors the guard sortNodes already applies to its own findIndex, and
+   * keeps a value the map forgets from being hoisted to the top of the class.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private static priorityRankOf(priorities: any[], value: unknown) {
+    const index = priorities.indexOf(value);
+    return index === -1 ? priorities.length : index;
+  }
+
   private static sortMembersForReadability(a: GraphNode, b: GraphNode) {
     // NOTE: the ordering from Object.entries is safe here since it is readonly
     for (const [key, priorities] of Object.entries(
       ClassGraphSorterReadability.MODIFIER_PRIORITY_MAP,
     )) {
-      const indexA = priorities.indexOf(a[key as GraphNodeModifier]);
-      const indexB = priorities.indexOf(b[key as GraphNodeModifier]);
-      if (indexA !== indexB) {
-        return indexA - indexB;
+      const rankA = ClassGraphSorterReadability.priorityRankOf(
+        priorities,
+        a[key as GraphNodeModifier],
+      );
+      const rankB = ClassGraphSorterReadability.priorityRankOf(
+        priorities,
+        b[key as GraphNodeModifier],
+      );
+      if (rankA !== rankB) {
+        return rankA - rankB;
       }
     }
     return 0;
