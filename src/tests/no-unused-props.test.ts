@@ -547,6 +547,210 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         sourceType: 'module',
       },
     },
+    // Issue #1912: nesting reaches every component without inventing reports.
+    // Each fixture below is the fully-consumed twin of a nested-component
+    // fixture in the invalid list, so an enclosing component that reads all of
+    // its props stays silent no matter what is declared inside it.
+    {
+      code: `
+        type OuterProps = { a: string };
+        type InnerProps = { b: string };
+        const Outer = ({ a }: OuterProps) => {
+          const Inner = ({ b }: InnerProps) => <div>{b}</div>;
+          return <Inner b={a} />;
+        };
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type L1Props = { a: string };
+        type L2Props = { b: string };
+        type L3Props = { c: string };
+        const L1 = ({ a }: L1Props) => {
+          const L2 = ({ b }: L2Props) => {
+            const L3 = ({ c }: L3Props) => <div>{c}</div>;
+            return <L3 c={b} />;
+          };
+          return <L2 b={a} />;
+        };
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type OuterProps = { a: string };
+        type FirstProps = { b: string };
+        type SecondProps = { c: string };
+        const Outer = ({ a }: OuterProps) => {
+          const First = ({ b }: FirstProps) => <div>{b}</div>;
+          const Second = ({ c }: SecondProps) => <span>{c}</span>;
+          return (
+            <div>
+              <First b={a} />
+              <Second c={a} />
+            </div>
+          );
+        };
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A hook callback is just another body the nested declaration lives in.
+    {
+      code: `
+        type OuterProps = { a: string };
+        type InnerProps = { b: string };
+        const Outer = ({ a }: OuterProps) => {
+          const rendered = useMemo(() => {
+            const Inner = ({ b }: InnerProps) => <div>{b}</div>;
+            return <Inner b={a} />;
+          }, [a]);
+          return rendered;
+        };
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // An identifier param destructured in the body keeps its own verdict when
+    // the body also declares a component.
+    {
+      code: `
+        type OuterProps = { a: string };
+        type InnerProps = { b: string };
+        const Outer = (props: OuterProps) => {
+          const { a } = props;
+          const Inner = ({ b }: InnerProps) => <div>{b}</div>;
+          return <Inner b={a} />;
+        };
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A nested component whose param shadows the enclosing param name is a
+    // different binding, and each component answers from its own destructuring.
+    {
+      code: `
+        type OuterProps = { a: string };
+        type InnerProps = { b: string };
+        const Outer = (props: OuterProps) => {
+          const { a } = props;
+          const Inner = (props: InnerProps) => {
+            const { b } = props;
+            return <div>{b}</div>;
+          };
+          return <Inner b={a} />;
+        };
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // An FC-annotated enclosing component resolves its props type from the
+    // declarator annotation whether or not it declares a component inside.
+    {
+      code: `
+        import { FC } from 'react';
+        type OuterProps = { a: string };
+        type InnerProps = { b: string };
+        const Outer: FC<OuterProps> = ({ a }) => {
+          const Inner: FC<InnerProps> = ({ b }) => <div>{b}</div>;
+          return <Inner b={a} />;
+        };
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A block nested inside the component body is still inside the component.
+    {
+      code: `
+        type OuterProps = { flag: boolean; a: string };
+        type InnerProps = { b: string };
+        const Outer = ({ flag, a }: OuterProps) => {
+          if (flag) {
+            const Inner = ({ b }: InnerProps) => <div>{b}</div>;
+            return <Inner b={a} />;
+          }
+          return null;
+        };
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A non-component factory holding a component contributes only the
+    // component's verdict, and a fully-consumed one is silent.
+    {
+      code: `
+        type InnerProps = { b: string };
+        function makeComponent() {
+          const Inner = ({ b }: InnerProps) => <div>{b}</div>;
+          return Inner;
+        }
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A sibling declarator alongside a nested component leaves both the
+    // enclosing and the nested verdict intact (#1890 crossed with #1912).
+    {
+      code: `
+        type OuterProps = { a: string };
+        type InnerProps = { b: string };
+        const Outer = ({ a }: OuterProps) => {
+          const LIMIT = 2,
+            Inner = ({ b }: InnerProps) => (
+              <div>
+                {b}
+                {LIMIT}
+              </div>
+            );
+          return <Inner b={a} />;
+        };
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
     // Issue #1910: every function spelling answers the same way. The cases
     // below are the declaration and function-expression twins of the arrow
     // fixtures above, so a prop consumed in one spelling stays silent in all.
@@ -1734,6 +1938,614 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
           data: { propName: 'unusedOuter' },
           type: AST_NODE_TYPES.Identifier,
         },
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedInner' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // Issue #1912 repro: an arrow component declared inside another arrow
+    // component. The enclosing component's verdict must survive the nested
+    // declaration.
+    {
+      code: `
+        type OuterProps = { a: string; unusedOuter: string };
+        type InnerProps = { b: string };
+
+        const Outer = ({ a }: OuterProps) => {
+          const Inner = ({ b }: InnerProps) => <div>{b}</div>;
+          return <Inner b={a} />;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedOuter' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A nested component and its host each answer for their own props type.
+    {
+      code: `
+        type OuterProps = { a: string; unusedOuter: string };
+        type InnerProps = { b: string; unusedInner: string };
+
+        const Outer = ({ a }: OuterProps) => {
+          const Inner = ({ b }: InnerProps) => <div>{b}</div>;
+          return <Inner b={a} />;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedOuter' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedInner' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // The mirror of the #1912 repro: a fully-consumed host does not mask an
+    // unread prop on the component nested inside it.
+    {
+      code: `
+        type OuterProps = { a: string };
+        type InnerProps = { b: string; unusedInner: string };
+
+        const Outer = ({ a }: OuterProps) => {
+          const Inner = ({ b }: InnerProps) => <div>{b}</div>;
+          return <Inner b={a} />;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedInner' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // Nesting is not depth-limited: every level answers.
+    {
+      code: `
+        type L1Props = { a: string; unusedL1: string };
+        type L2Props = { b: string; unusedL2: string };
+        type L3Props = { c: string; unusedL3: string };
+
+        const L1 = ({ a }: L1Props) => {
+          const L2 = ({ b }: L2Props) => {
+            const L3 = ({ c }: L3Props) => <div>{c}</div>;
+            return <L3 c={b} />;
+          };
+          return <L2 b={a} />;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedL1' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedL2' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedL3' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // Two components nested side by side in one host: neither displaces the
+    // other, nor the host.
+    {
+      code: `
+        type OuterProps = { a: string; unusedOuter: string };
+        type FirstProps = { b: string; unusedFirst: string };
+        type SecondProps = { c: string; unusedSecond: string };
+
+        const Outer = ({ a }: OuterProps) => {
+          const First = ({ b }: FirstProps) => <div>{b}</div>;
+          const Second = ({ c }: SecondProps) => <span>{c}</span>;
+          return (
+            <div>
+              <First b={a} />
+              <Second c={a} />
+            </div>
+          );
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedOuter' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedFirst' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedSecond' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A hook callback body holds the nested declaration without hiding the
+    // component that owns the hook call.
+    {
+      code: `
+        type OuterProps = { a: string; unusedOuter: string };
+        type InnerProps = { b: string; unusedInner: string };
+
+        const Outer = ({ a }: OuterProps) => {
+          const rendered = useMemo(() => {
+            const Inner = ({ b }: InnerProps) => <div>{b}</div>;
+            return <Inner b={a} />;
+          }, [a]);
+          return rendered;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedOuter' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedInner' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type OuterProps = { a: string; unusedOuter: string };
+        type InnerProps = { b: string; unusedInner: string };
+
+        const Outer = ({ a }: OuterProps) => {
+          const render = useCallback(() => {
+            const Inner = ({ b }: InnerProps) => <div>{b}</div>;
+            return <Inner b={a} />;
+          }, [a]);
+          return <div>{render()}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedOuter' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedInner' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A callback passed to `.map` inside the returned JSX is reached too.
+    {
+      code: `
+        type OuterProps = { items: string[]; unusedOuter: string };
+        type RowProps = { label: string; unusedRow: string };
+
+        const Outer = ({ items }: OuterProps) => {
+          return (
+            <ul>
+              {items.map((item) => {
+                const Row = ({ label }: RowProps) => <li>{label}</li>;
+                return <Row key={item} label={item} />;
+              })}
+            </ul>
+          );
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedOuter' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedRow' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // The declaration-spelled host of a nested arrow keeps its verdict, the
+    // spelling asymmetry #1912 leaves behind once both paths record on entry.
+    {
+      code: `
+        type OuterProps = { a: string; unusedOuter: string };
+        type InnerProps = { b: string; unusedInner: string };
+
+        function Outer({ a }: OuterProps) {
+          const Inner = ({ b }: InnerProps) => <div>{b}</div>;
+          return <Inner b={a} />;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedOuter' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedInner' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A non-component factory has no verdict of its own, so only the component
+    // nested inside it reports.
+    {
+      code: `
+        type InnerProps = { b: string; unusedInner: string };
+
+        function makeComponent() {
+          const Inner = ({ b }: InnerProps) => <div>{b}</div>;
+          return Inner;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedInner' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type InnerProps = { b: string; unusedInner: string };
+
+        const makeComponent = () => {
+          const Inner = ({ b }: InnerProps) => <div>{b}</div>;
+          return Inner;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedInner' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // The identifier-param branch reaches the same verdict with a component
+    // declared in the body it scans.
+    {
+      code: `
+        type OuterProps = { a: string; unusedOuter: string };
+        type InnerProps = { b: string; unusedInner: string };
+
+        const Outer = (props: OuterProps) => {
+          const { a } = props;
+          const Inner = ({ b }: InnerProps) => <div>{b}</div>;
+          return <Inner b={a} />;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedOuter' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedInner' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A nested param shadowing the enclosing param name binds a different
+    // variable, so neither component borrows the other's destructuring.
+    {
+      code: `
+        type OuterProps = { a: string; unusedOuter: string };
+        type InnerProps = { b: string; unusedInner: string };
+
+        const Outer = (props: OuterProps) => {
+          const { a } = props;
+          const Inner = (props: InnerProps) => {
+            const { b } = props;
+            return <div>{b}</div>;
+          };
+          return <Inner b={a} />;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedOuter' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedInner' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // An FC-annotated host resolves its props type from the declarator and
+    // keeps that verdict past a nested FC-annotated component (#1620, #1912).
+    {
+      code: `
+        import { FC } from 'react';
+        type OuterProps = { a: string; unusedOuter: string };
+        type InnerProps = { b: string; unusedInner: string };
+
+        const Outer: FC<OuterProps> = ({ a }) => {
+          const Inner: FC<InnerProps> = ({ b }) => <div>{b}</div>;
+          return <Inner b={a} />;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedOuter' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedInner' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A sibling declarator in the nested statement changes neither verdict
+    // (#1890 crossed with #1912).
+    {
+      code: `
+        type OuterProps = { a: string; unusedOuter: string };
+        type InnerProps = { b: string; unusedInner: string };
+
+        const Outer = ({ a }: OuterProps) => {
+          const LIMIT = 2,
+            Inner = ({ b }: InnerProps) => (
+              <div>
+                {b}
+                {LIMIT}
+              </div>
+            );
+          return <Inner b={a} />;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedOuter' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedInner' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A nested block is still inside the host component's body.
+    {
+      code: `
+        type OuterProps = { flag: boolean; a: string; unusedOuter: string };
+        type InnerProps = { b: string; unusedInner: string };
+
+        const Outer = ({ flag, a }: OuterProps) => {
+          if (flag) {
+            const Inner = ({ b }: InnerProps) => <div>{b}</div>;
+            return <Inner b={a} />;
+          }
+          return null;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedOuter' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedInner' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A component behind an IIFE binding: the intervening non-component
+    // statement is skipped, and the host still reports.
+    {
+      code: `
+        type OuterProps = { a: string; unusedOuter: string };
+        type InnerProps = { b: string; unusedInner: string };
+
+        const Outer = ({ a }: OuterProps) => {
+          const Inner = (() => {
+            const Deep = ({ b }: InnerProps) => <div>{b}</div>;
+            return Deep;
+          })();
+          return <Inner b={a} />;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedOuter' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedInner' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A nested function expression is the same statement shape as a nested
+    // arrow, so the host survives it identically.
+    {
+      code: `
+        type OuterProps = { a: string; unusedOuter: string };
+        type InnerProps = { b: string; unusedInner: string };
+
+        const Outer = ({ a }: OuterProps) => {
+          const Inner = function ({ b }: InnerProps) {
+            return <div>{b}</div>;
+          };
+          return <Inner b={a} />;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedOuter' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unusedInner' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A rest element on the host forwards its remaining props, and that
+    // carve-out survives the nested declaration: only the nested one reports.
+    {
+      code: `
+        type OuterProps = { a: string; extra: string };
+        type InnerProps = { b: string; unusedInner: string };
+
+        const Outer = ({ a, ...rest }: OuterProps) => {
+          const Inner = ({ b }: InnerProps) => <div {...rest}>{b}</div>;
+          return <Inner b={a} />;
+        };
+      `,
+      errors: [
         {
           messageId: 'unusedProp',
           data: { propName: 'unusedInner' },
