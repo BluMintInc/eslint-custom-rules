@@ -8,10 +8,35 @@ Private static methods that do not touch class state are really module-level uti
 
 ## Rule Details
 
-This rule flags private static methods that:
+This rule flags private static members that:
 
+- Are declared as a **method** or a **getter** — setters are out of scope, see below
 - Do not reach their own class anywhere in their body (including nested callbacks)
 - Have a non-trivial body — **two or more statements**
+
+### Member kinds in scope
+
+| Member kind | In scope | Why |
+| --- | --- | --- |
+| `private static method()` | Yes | Moves to module scope as-is. |
+| `private static get member()` | Yes | The body moves to a module-level function the getter calls, or that the call sites call directly. |
+| `private static set member(value)` | No | The prescribed extraction cannot be performed. |
+
+A getter is in scope because a class-agnostic getter body is the same hidden
+utility a class-agnostic method body is, and it has the same remedy one step
+removed: extract the body into a module-level function and call it from the
+getter, or from the call sites directly. Excluding getters would leave a
+one-keyword evasion — writing `get` in front of a helper would silence the rule
+without changing anything about the logic it flags.
+
+A setter is excluded because the remedy cannot be carried out. A setter has no
+return value and module scope has no setter form, so there is no module-level
+function that replaces it: the accessor has to stay to receive the assignment.
+A rule that reports a member whose prescribed rewrite is unavailable is
+unenforceable, so setters are silent at any size and whatever their body reads.
+
+Reports name the member kind they found, so an accessor reads as
+`Private static getter "x"` rather than as a method.
 
 The size threshold is measured in statements, not lines. A line count moves with
 formatting: a JSDoc block, a line comment or a blank line inside the body would
@@ -86,6 +111,17 @@ export class Example {
 }
 ```
 
+```ts
+// A getter is measured exactly as a method is
+export class RequestDefaults {
+  private static get config() {
+    const base = { retries: 3 };
+    const extra = { timeout: 1000 };
+    return { ...base, ...extra };
+  }
+}
+```
+
 ### Examples of **correct** code for this rule:
 
 ```ts
@@ -104,8 +140,9 @@ export class DataProcessor {
 
 ```ts
 // Reading class state is allowed at any size. `withClassState` is over the
-// statement threshold and escapes on `this.multiplier`; the getter escapes
-// separately, as a single-statement body.
+// statement threshold and escapes on `this.multiplier`; the getter is in scope
+// as a getter and escapes on the same size rule a method would, as a
+// single-statement body.
 export class Example {
   private static withClassState(values: number[]) {
     const scaled = values.map((value) => value * this.multiplier);
@@ -114,6 +151,34 @@ export class Example {
 
   private static get multiplier() {
     return 2;
+  }
+}
+```
+
+```ts
+// The remedy for a reported getter: the body becomes a module-level function
+// and the accessor calls it
+export const buildConfig = () => {
+  const base = { retries: 3 };
+  const extra = { timeout: 1000 };
+  return { ...base, ...extra };
+};
+
+export class RequestDefaults {
+  private static get config() {
+    return buildConfig();
+  }
+}
+```
+
+```ts
+// A setter is never reported, whatever its size: no module-level function can
+// take its place, so the extraction this rule prescribes is unavailable to it
+export class Recorder {
+  private static set payload(value: string[]) {
+    const trimmed = value.map((entry) => entry.trim());
+    const named = trimmed.filter((entry) => entry.length > 0);
+    console.log(named);
   }
 }
 ```

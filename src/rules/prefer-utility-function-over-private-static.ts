@@ -3,7 +3,9 @@ import { createRule } from '../utils/createRule';
 import { getMethodName } from '../utils/getMethodName';
 import { ASTHelpers } from '../utils/ASTHelpers';
 
-type MessageIds = 'preferUtilityFunctionOverPrivateStatic';
+type MessageIds =
+  | 'preferUtilityFunctionOverPrivateStatic'
+  | 'preferUtilityFunctionOverPrivateStaticGetter';
 
 type ClassNode = TSESTree.ClassDeclaration | TSESTree.ClassExpression;
 
@@ -130,6 +132,13 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
     messages: {
       preferUtilityFunctionOverPrivateStatic:
         'Private static method "{{methodName}}" in class "{{className}}" does not use class state. Keeping class-agnostic helpers as private statics hides reusable logic and signals coupling that is not present. Extract this logic into a standalone utility function (module-level or shared) and import it where needed so it can be reused and unit tested independently.',
+      // A getter carries the same hidden helper as a method, but the remedy
+      // differs in one step — module scope has no getter form, so the extracted
+      // function is called from the accessor (or from its call sites) rather
+      // than replacing it. Naming the subject "method" for an accessor sends a
+      // developer looking for a declaration that is not there.
+      preferUtilityFunctionOverPrivateStaticGetter:
+        'Private static getter "{{methodName}}" in class "{{className}}" does not use class state. Keeping class-agnostic helpers as private statics hides reusable logic and signals coupling that is not present. Extract this logic into a standalone utility function (module-level or shared) and call it from the getter, or from the call sites directly, so it can be reused and unit tested independently.',
     },
   },
   defaultOptions: [],
@@ -283,6 +292,15 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
       'MethodDefinition[static=true][accessibility="private"]'(
         node: TSESTree.MethodDefinition,
       ) {
+        // A setter is out of scope whatever its size: it has no return value
+        // and module scope has no setter form, so "extract this logic into a
+        // standalone utility function" names a rewrite its author cannot
+        // perform. A rule whose remedy cannot be carried out is unenforceable,
+        // and the accessor still has to exist to receive the assignment.
+        if (node.kind === 'set') {
+          return;
+        }
+
         const methodBody = node.value.body;
 
         if (!methodBody) {
@@ -317,7 +335,10 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
 
         context.report({
           node,
-          messageId: 'preferUtilityFunctionOverPrivateStatic',
+          messageId:
+            node.kind === 'get'
+              ? 'preferUtilityFunctionOverPrivateStaticGetter'
+              : 'preferUtilityFunctionOverPrivateStatic',
           data: {
             methodName,
             className: className ?? 'this class',

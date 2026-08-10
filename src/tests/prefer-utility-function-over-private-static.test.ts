@@ -6,6 +6,11 @@ const buildError = (methodName: string, className: string) => ({
   data: { methodName, className },
 });
 
+const buildGetterError = (methodName: string, className: string) => ({
+  messageId: 'preferUtilityFunctionOverPrivateStaticGetter' as const,
+  data: { methodName, className },
+});
+
 ruleTesterTs.run(
   'prefer-utility-function-over-private-static',
   preferUtilityFunctionOverPrivateStatic,
@@ -634,6 +639,264 @@ third line\`;
         }
       `,
       },
+      // A setter is silent whatever its size: it cannot become a module-level
+      // function, so the prescribed extraction is not a rewrite its author can
+      // perform
+      {
+        code: `
+        export class Example {
+          private static set payload(value: string) {
+            const trimmed = value.trim();
+            const upper = trimmed.toUpperCase();
+            console.log(upper);
+          }
+        }
+      `,
+      },
+      // The same setter written class-agnostically over many statements and
+      // nested control flow
+      {
+        code: `
+        export class Example {
+          private static set payload(value: string[]) {
+            const trimmed = value.map((entry) => entry.trim());
+            for (const entry of trimmed) {
+              if (entry.length > 0) {
+                console.log(entry);
+              }
+            }
+          }
+        }
+      `,
+      },
+      // A setter that writes class state escapes for two reasons at once
+      {
+        code: `
+        export class Example {
+          private static stored: string[] = [];
+
+          private static set payload(value: string[]) {
+            const trimmed = value.map((entry) => entry.trim());
+            Example.stored = trimmed;
+          }
+        }
+      `,
+      },
+      // The same, through `this`
+      {
+        code: `
+        export class Example {
+          private static stored: string[] = [];
+
+          private static set payload(value: string[]) {
+            const trimmed = value.map((entry) => entry.trim());
+            this.stored = trimmed;
+          }
+        }
+      `,
+      },
+      // A setter whose statements are joined onto one line: the size measure
+      // never runs for a setter at all
+      {
+        code: `
+        export class Example {
+          private static set payload(value: string) { const trimmed = value.trim(); const upper = trimmed.toUpperCase(); console.log(upper); }
+        }
+      `,
+      },
+      // A one-statement setter
+      {
+        code: `
+        export class Example {
+          private static set payload(value: string) {
+            console.log(value.trim());
+          }
+        }
+      `,
+      },
+      // An empty setter body
+      {
+        code: `
+        export class Example {
+          private static set payload(value: string) {}
+        }
+      `,
+      },
+      // A string-literal-keyed setter is still a setter
+      {
+        code: `
+        export class Example {
+          private static set 'payload-value'(value: string) {
+            const trimmed = value.trim();
+            const upper = trimmed.toUpperCase();
+            console.log(upper);
+          }
+        }
+      `,
+      },
+      // A setter paired with a getter under the same key, both below the size
+      // threshold
+      {
+        code: `
+        export class Example {
+          private static value = 'a';
+
+          private static get payload() {
+            return Example.value;
+          }
+
+          private static set payload(next: string) {
+            console.log(next.trim());
+          }
+        }
+      `,
+      },
+      // A non-static private setter is out of scope on staticness
+      {
+        code: `
+        export class Example {
+          private set payload(value: string) {
+            const trimmed = value.trim();
+            const upper = trimmed.toUpperCase();
+            console.log(upper);
+          }
+        }
+      `,
+      },
+      // A public static setter is out of scope on accessibility
+      {
+        code: `
+        export class Example {
+          public static set payload(value: string) {
+            const trimmed = value.trim();
+            const upper = trimmed.toUpperCase();
+            console.log(upper);
+          }
+        }
+      `,
+      },
+      // A protected static setter is out of scope on accessibility
+      {
+        code: `
+        export class Example {
+          protected static set payload(value: string) {
+            const trimmed = value.trim();
+            const upper = trimmed.toUpperCase();
+            console.log(upper);
+          }
+        }
+      `,
+      },
+      // A getter of a single statement is trivial, exactly as a method is
+      {
+        code: `
+        export class Example {
+          private static get config() {
+            return { retries: 3 };
+          }
+        }
+      `,
+      },
+      // A getter documented by a comment is still one statement
+      {
+        code: `
+        export class Example {
+          private static get config() {
+            // The whole helper is the literal below.
+            return { retries: 3 };
+          }
+        }
+      `,
+      },
+      // An empty getter body
+      {
+        code: `
+        export class Example {
+          private static get config() {}
+        }
+      `,
+      },
+      // A getter over the size threshold escapes on `this`
+      {
+        code: `
+        export class Example {
+          private static readonly BASE = { retries: 3 };
+
+          private static get config() {
+            const base = this.BASE;
+            const extra = { timeout: 1000 };
+            return { ...base, ...extra };
+          }
+        }
+      `,
+      },
+      // A getter over the size threshold escapes on the class-name-qualified
+      // spelling
+      {
+        code: `
+        export class Example {
+          private static readonly BASE = { retries: 3 };
+
+          private static get config() {
+            const base = Example.BASE;
+            const extra = { timeout: 1000 };
+            return { ...base, ...extra };
+          }
+        }
+      `,
+      },
+      // A getter over the size threshold escapes on `super`
+      {
+        code: `
+        export class Base {
+          protected static readonly BASE = { retries: 3 };
+        }
+
+        export class Derived extends Base {
+          private static get config() {
+            const base = super.BASE;
+            const extra = { timeout: 1000 };
+            return { ...base, ...extra };
+          }
+        }
+      `,
+      },
+      // A non-static private getter is out of scope on staticness
+      {
+        code: `
+        export class Example {
+          private get config() {
+            const base = { retries: 3 };
+            const extra = { timeout: 1000 };
+            return { ...base, ...extra };
+          }
+        }
+      `,
+      },
+      // A public static getter is out of scope on accessibility
+      {
+        code: `
+        export class Example {
+          public static get config() {
+            const base = { retries: 3 };
+            const extra = { timeout: 1000 };
+            return { ...base, ...extra };
+          }
+        }
+      `,
+      },
+      // A protected static getter is out of scope on accessibility
+      {
+        code: `
+        export class Example {
+          protected static get config() {
+            const base = { retries: 3 };
+            const extra = { timeout: 1000 };
+            return { ...base, ...extra };
+          }
+        }
+      `,
+      },
     ],
     invalid: [
       // Basic case: private static method that should be a utility function
@@ -1218,6 +1481,167 @@ third line\`;
         }
       `,
         errors: [buildError('tagAll', 'Example')],
+      },
+      // A class-agnostic getter over the size threshold is a hidden utility,
+      // reported with the accessor's own wording
+      {
+        code: `
+        export class Example {
+          private static get config() {
+            const base = { retries: 3 };
+            const extra = { timeout: 1000 };
+            return { ...base, ...extra };
+          }
+        }
+      `,
+        errors: [buildGetterError('config', 'Example')],
+      },
+      // A getter whose statements are joined onto one line
+      {
+        code: `
+        export class Example {
+          private static get config() { const base = { retries: 3 }; return { ...base, timeout: 1000 }; }
+        }
+      `,
+        errors: [buildGetterError('config', 'Example')],
+      },
+      // A getter whose statements are nested inside one `try`
+      {
+        code: `
+        export class Example {
+          private static get parsedDefaults() {
+            try {
+              return JSON.parse(readDefaults());
+            } catch (error) {
+              console.error('Failed to parse defaults:', error);
+              return {};
+            }
+          }
+        }
+      `,
+        errors: [buildGetterError('parsedDefaults', 'Example')],
+      },
+      // A getter reading another class's static is class-agnostic from here
+      {
+        code: `
+        class Config {
+          static readonly LIMIT = 5;
+        }
+
+        export class Runner {
+          private static get plan() {
+            const limit = Config.LIMIT;
+            const steps = Array.from({ length: limit }, (_, index) => index);
+            return steps;
+          }
+        }
+      `,
+        errors: [buildGetterError('plan', 'Runner')],
+      },
+      // A string-literal-keyed getter reports under its literal key
+      {
+        code: `
+        export class Example {
+          private static get 'config-value'() {
+            const base = { retries: 3 };
+            const extra = { timeout: 1000 };
+            return { ...base, ...extra };
+          }
+        }
+      `,
+        errors: [buildGetterError('config-value', 'Example')],
+      },
+      // A getter on a class expression names the class it is bound to
+      {
+        code: `
+        const AssignedExpression = class {
+          private static get config() {
+            const base = { retries: 3 };
+            const extra = { timeout: 1000 };
+            return { ...base, ...extra };
+          }
+        };
+      `,
+        errors: [buildGetterError('config', 'AssignedExpression')],
+      },
+      // A getter/setter pair under one key: the setter's presence does not
+      // change the getter's verdict, and the setter itself stays silent
+      {
+        code: `
+        export class Example {
+          private static get payload() {
+            const base = { retries: 3 };
+            const extra = { timeout: 1000 };
+            return { ...base, ...extra };
+          }
+
+          private static set payload(next: Record<string, number>) {
+            const entries = Object.entries(next);
+            const named = entries.map(([key, value]) => key + value);
+            console.log(named);
+          }
+        }
+      `,
+        errors: [buildGetterError('payload', 'Example')],
+      },
+      // The same pair with the setter reaching class state: still exactly one
+      // report, on the getter
+      {
+        code: `
+        export class Example {
+          private static stored: Record<string, number> = {};
+
+          private static get payload() {
+            const base = { retries: 3 };
+            const extra = { timeout: 1000 };
+            return { ...base, ...extra };
+          }
+
+          private static set payload(next: Record<string, number>) {
+            const entries = Object.entries(next);
+            Example.stored = Object.fromEntries(entries);
+          }
+        }
+      `,
+        errors: [buildGetterError('payload', 'Example')],
+      },
+      // A method and a getter in one class keep their own wordings
+      {
+        code: `
+        export class Example {
+          private static get config() {
+            const base = { retries: 3 };
+            const extra = { timeout: 1000 };
+            return { ...base, ...extra };
+          }
+
+          private static merge(values: number[]) {
+            const doubled = values.map((value) => value * 2);
+            return doubled.filter((value) => value > 0);
+          }
+        }
+      `,
+        errors: [
+          buildGetterError('config', 'Example'),
+          buildError('merge', 'Example'),
+        ],
+      },
+      // A method alongside a setter: the method reports, the setter does not
+      {
+        code: `
+        export class Example {
+          private static set payload(value: string) {
+            const trimmed = value.trim();
+            console.log(trimmed.toUpperCase());
+          }
+
+          private static merge(values: number[]) {
+            const doubled = values.map((value) => value * 2);
+            return doubled.filter((value) => value > 0);
+          }
+        }
+      `,
+        errors: [buildError('merge', 'Example')],
       },
     ],
   },
