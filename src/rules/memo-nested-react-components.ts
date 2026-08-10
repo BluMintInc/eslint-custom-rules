@@ -499,15 +499,46 @@ const isInsideFunction = (node: TSESTree.Node): boolean => {
 const isPascalCaseName = (name: string): boolean => /^[A-Z]/.test(name);
 
 /**
+ * The values a container hands to its caller: object property values and array
+ * elements. Mirrors `containedValues` in the paired `require-memo` rule (#1919),
+ * so the two rules agree on what a container-carried hand-back is.
+ *
+ * A property KEY is not a carried value, and a spread is excluded in both
+ * directions — `{ ...Row }` copies a component's own properties rather than
+ * handing the component back, so it keeps the verdict it has.
+ */
+const containerCarriedValues = (
+  container: TSESTree.ObjectExpression | TSESTree.ArrayExpression,
+): TSESTree.Expression[] => {
+  if (container.type === AST_NODE_TYPES.ObjectExpression) {
+    return container.properties
+      .filter(
+        (property): property is TSESTree.Property =>
+          property.type === AST_NODE_TYPES.Property,
+      )
+      .map((property) => property.value as TSESTree.Expression);
+  }
+
+  return container.elements.filter(
+    (element): element is TSESTree.Expression =>
+      !!element && element.type !== AST_NODE_TYPES.SpreadElement,
+  );
+};
+
+/**
  * A return value is a *component* (vs. rendered output) when it is a
  * memo()/forwardRef() call, a PascalCase identifier (returned component
  * reference), or an inline function that itself creates a component. Such a
  * value identifies the surrounding function as an HOC factory rather than a
  * render body.
+ *
+ * `creditsBareReference` governs the identifier arm alone; see the container
+ * recursion below for why an array element does not carry it.
  */
 const returnExpressionIsComponent = (
   expression: TSESTree.Expression | null,
   reactImports: ReactImports,
+  creditsBareReference = true,
 ): boolean => {
   if (!expression) {
     return false;
@@ -526,27 +557,43 @@ const returnExpressionIsComponent = (
   }
 
   if (unwrapped.type === AST_NODE_TYPES.Identifier) {
-    return isPascalCaseName(unwrapped.name);
+    return creditsBareReference && isPascalCaseName(unwrapped.name);
   }
 
   if (isFunctionExpression(unwrapped)) {
     return Boolean(functionCreatesComponent(unwrapped, reactImports));
   }
 
-  // A factory that hands its component back inside an object is still an HOC
+  // A factory that hands its component back inside a container is still an HOC
   // factory, not a render body — the ES-module interop shape
   // `{ __esModule: true, default: Component }` that every `jest.mock()` factory
-  // uses puts the component one property deep. Recursing covers nesting; render
-  // bodies return JSX rather than object literals, so this does not blur the
-  // two.
-  if (unwrapped.type === AST_NODE_TYPES.ObjectExpression) {
-    return unwrapped.properties.some(
-      (property) =>
-        property.type === AST_NODE_TYPES.Property &&
-        returnExpressionIsComponent(
-          property.value as TSESTree.Expression,
-          reactImports,
-        ),
+  // uses puts the component one property deep, and an array carries it out just
+  // the same. Reading only objects here made the array spelling of an
+  // already-memoized hand-back read as a nested un-memoized declaration, while
+  // the sibling walker `expressionCreatesComponent` and `require-memo`'s
+  // `containedValues` both read either container (#1925). Recursing covers
+  // nesting and the mixed spellings; render bodies return JSX rather than
+  // container literals, so this does not blur the two.
+  //
+  // An array element does NOT carry the bare-reference credit: `return [Row]`
+  // hands a component out un-memoized, which is exactly what `require-memo`
+  // reports there and repairs with the `memo(...)` wrapper. Crediting it would
+  // exempt the shape the paired rule is still complaining about, so the array
+  // arm credits only a hand-back already wrapped or defined inline.
+  if (
+    unwrapped.type === AST_NODE_TYPES.ObjectExpression ||
+    unwrapped.type === AST_NODE_TYPES.ArrayExpression
+  ) {
+    const creditsBareReferenceWithin =
+      creditsBareReference &&
+      unwrapped.type === AST_NODE_TYPES.ObjectExpression;
+
+    return containerCarriedValues(unwrapped).some((carried) =>
+      returnExpressionIsComponent(
+        carried,
+        reactImports,
+        creditsBareReferenceWithin,
+      ),
     );
   }
 
