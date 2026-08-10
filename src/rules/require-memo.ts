@@ -180,37 +180,97 @@ function callArgumentsMention(
 }
 
 /**
+ * The values a container hands to its caller: object property values and array
+ * elements. A component reaches callers through one exactly as it does through
+ * a bare return — `{ __esModule: true, default: <component> }` is the shape
+ * every `jest.mock()` factory returns for a default export — so both questions
+ * the carve-out asks read through containers, at any depth.
+ *
+ * A property KEY is not a carried value: `{ Row: memo(Row) }` names the export
+ * with the same identifier it memoizes, and reading the key would call that a
+ * bare escape. A spread is excluded in both directions, so `{ ...Row }`, which
+ * copies a component's own properties rather than handing the component back,
+ * keeps the verdict it has.
+ */
+function containedValues(node: TSESTree.Node): TSESTree.Node[] {
+  const value = unwrapValue(node);
+  if (value.type === AST_NODE_TYPES.ObjectExpression) {
+    return value.properties
+      .filter(
+        (property): property is TSESTree.Property =>
+          property.type === AST_NODE_TYPES.Property,
+      )
+      .map((property) => property.value);
+  }
+  if (value.type === AST_NODE_TYPES.ArrayExpression) {
+    return value.elements.filter(
+      (element): element is TSESTree.Expression =>
+        !!element && element.type !== AST_NODE_TYPES.SpreadElement,
+    );
+  }
+  return [];
+}
+
+/**
  * Whether `node` hands `componentName` to memo(), possibly through another
- * wrapper — `memo(Row)`, `memo(forwardRef(Inner))`, `forwardRef(memo(Inner))`.
+ * wrapper — `memo(Row)`, `memo(forwardRef(Inner))`, `forwardRef(memo(Inner))` —
+ * or inside a container, `{ __esModule: true, default: memo(Row) }`.
  */
 function memoizesComponent(
   node: TSESTree.Node,
   componentName: string,
 ): boolean {
   const value = unwrapValue(node);
-  if (value.type !== AST_NODE_TYPES.CallExpression) {
-    return false;
+  if (value.type === AST_NODE_TYPES.CallExpression) {
+    if (
+      isMemoCallee(value.callee) &&
+      value.arguments.some((argument) =>
+        callArgumentsMention(argument, componentName),
+      )
+    ) {
+      return true;
+    }
+    return value.arguments.some((argument) =>
+      memoizesComponent(argument, componentName),
+    );
   }
-  if (
-    isMemoCallee(value.callee) &&
-    value.arguments.some((argument) =>
-      callArgumentsMention(argument, componentName),
-    )
-  ) {
-    return true;
+  return containedValues(value).some((carried) =>
+    memoizesComponent(carried, componentName),
+  );
+}
+
+/**
+ * Whether this hand-back lets a caller receive `componentName` un-memoized —
+ * returned bare, or carried bare inside a container.
+ *
+ * Kept in step with {@link memoizesComponent} by design: a container that the
+ * memo question reads but this one does not would turn `return { default: Row }`
+ * from a report into a silent escape, trading a false positive for a false
+ * negative. Call arguments are deliberately not descended into, because
+ * `wrap(Row)` hands back whatever `wrap` returns rather than `Row` itself.
+ */
+function escapesUnmemoized(
+  node: TSESTree.Node,
+  componentName: string,
+): boolean {
+  const value = unwrapValue(node);
+  if (value.type === AST_NODE_TYPES.Identifier) {
+    return value.name === componentName;
   }
-  return value.arguments.some((argument) =>
-    memoizesComponent(argument, componentName),
+  return containedValues(value).some((carried) =>
+    escapesUnmemoized(carried, componentName),
   );
 }
 
 /**
  * Whether `componentName` is already memoized at the point it escapes its
  * enclosing function: every hand-back to callers goes through `memo(...)`
- * (`return memo(Row)`, `return memo(forwardRef(Inner))`), so a second wrapper
- * at the declaration would be redundant. A bare hand-back on ANY return path
- * (`return Row`) defeats the carve-out — callers can receive the un-memoized
- * function, and memoizing it where it is declared is exactly the remedy.
+ * (`return memo(Row)`, `return memo(forwardRef(Inner))`, or the same call
+ * carried in a container as in `return { __esModule: true, default: memo(Row) }`),
+ * so a second wrapper at the declaration would be redundant. A bare hand-back on
+ * ANY return path (`return Row`, `return { default: Row }`) defeats the
+ * carve-out — callers can receive the un-memoized function, and memoizing it
+ * where it is declared is exactly the remedy.
  *
  * This is the one lifetime question the rule asks, and it is asked of BOTH
  * spellings: a carve-out keyed to one function syntax is a detection asymmetry,
@@ -229,13 +289,9 @@ function isMemoizedAtEscape(
     return false;
   }
   const handBacks = ownReturnArguments(enclosing);
-  const escapesBare = handBacks.some((argument) => {
-    const value = unwrapValue(argument);
-    return (
-      value.type === AST_NODE_TYPES.Identifier && value.name === componentName
-    );
-  });
-  if (escapesBare) {
+  if (
+    handBacks.some((argument) => escapesUnmemoized(argument, componentName))
+  ) {
     return false;
   }
   return handBacks.some((argument) =>
