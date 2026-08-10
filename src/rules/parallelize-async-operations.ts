@@ -337,10 +337,14 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
 
     /**
      * Checks whether an awaited call performs a route transition.
+     *
+     * The receiver pattern is anchored at both ends, so it recognizes a router
+     * held in a bare binding and leaves every multi-segment receiver key to the
+     * method-name test below.
      */
     function isNavigationCall(awaitExpr: TSESTree.AwaitExpression): boolean {
-      const receiverName = getCalleeReceiverName(awaitExpr);
-      if (receiverName && NAVIGATION_RECEIVER_PATTERN.test(receiverName)) {
+      const receiverKey = getCalleeReceiverKey(awaitExpr);
+      if (receiverKey && NAVIGATION_RECEIVER_PATTERN.test(receiverKey)) {
         return true;
       }
 
@@ -385,23 +389,97 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     }
 
     /**
-     * Extracts the bare receiver identifier of an awaited *named-method* call:
-     * the `object` of a `MemberExpression` callee when that object is a plain
-     * identifier and the accessed member is a named method -- either a
-     * non-computed property (`versionRef.set(...)`) or a computed string-literal
-     * key (`api['getData']()`). Both denote invoking a method on the shared
-     * receiver, so they are equivalent for ordering purposes.
+     * Names the member a `MemberExpression` accesses, when that member denotes
+     * a FIXED path segment: a non-computed property (`api.users`) or a computed
+     * string-literal key (`api['users']`). Both spell the same slot, so they
+     * yield the same segment and compare equal.
      *
-     * Returns null when the receiver is not a bare identifier -- a computed
-     * chain (`realtimeDb.ref(path).remove()`), a nested member
-     * (`api.users.getAll()`), a `this`/`super` receiver, or a non-member callee.
-     * Also returns null for a numeric or dynamic index (`operations[0]()`,
-     * `operations[i]()`): those select a distinct callable from a container
-     * rather than invoking a method on a stateful receiver, so they are
-     * genuinely independent and must not be collapsed onto a shared receiver.
+     * A numeric or dynamic index (`operations[0]`, `operations[i]`) yields null:
+     * it selects a distinct element from a container rather than reaching a
+     * fixed slot on a stateful object, so two such accesses carry no shared
+     * receiver even when their subscripts are written identically.
+     */
+    function getMemberSegment(
+      member: TSESTree.MemberExpression,
+    ): string | null {
+      const property = member.property;
+      if (member.computed) {
+        return property.type === AST_NODE_TYPES.Literal &&
+          typeof property.value === 'string'
+          ? property.value
+          : null;
+      }
+      return property.type === AST_NODE_TYPES.Identifier ? property.name : null;
+    }
+
+    /**
+     * Builds a stable textual key for the object a method is invoked on, so two
+     * awaits can be compared for "same receiver" by string equality.
+     *
+     * Every receiver form that denotes ONE statically-known object gets a key:
+     * a bare identifier (`svc`), `this`, `super`, and a chain of fixed segments
+     * over any of those (`this.inner`, `a.b.c`). The chain is spelled out in
+     * full so that `this.inner.x()` and `this.inner.y()` share a receiver while
+     * `this.inner.x()` and `this.other.y()` do not.
+     *
+     * `this` and `super` are reserved words, so no identifier or path segment
+     * can collide with the keys minted for them.
+     *
+     * Returns null for a receiver whose identity is not statically known: a
+     * call in the chain (`realtimeDb.ref(path).remove()`) can produce a
+     * different object per invocation, and a dynamic subscript
+     * (`handlers[i].run()`) selects a different element per subscript, so
+     * neither denotes state two awaits demonstrably share.
+     *
+     * Optional chaining and non-null assertions are spellings of the same path
+     * (`this.inner?.x()`, `this.inner!.x()`), so they unwrap to the same key --
+     * matching MemberExpression alone would leave the barrier blind to them.
+     */
+    function getReceiverKey(node: TSESTree.Node): string | null {
+      switch (node.type) {
+        case AST_NODE_TYPES.Identifier:
+          return node.name;
+
+        case AST_NODE_TYPES.ThisExpression:
+          return 'this';
+
+        case AST_NODE_TYPES.Super:
+          return 'super';
+
+        case AST_NODE_TYPES.ChainExpression:
+        case AST_NODE_TYPES.TSNonNullExpression:
+          return getReceiverKey(node.expression);
+
+        case AST_NODE_TYPES.MemberExpression: {
+          const objectKey = getReceiverKey(node.object);
+          if (objectKey === null) {
+            return null;
+          }
+          const segment = getMemberSegment(node);
+          return segment === null ? null : `${objectKey}.${segment}`;
+        }
+
+        default:
+          return null;
+      }
+    }
+
+    /**
+     * Extracts the receiver key of an awaited *named-method* call: the key of
+     * the `object` of a `MemberExpression` callee, when the accessed member is
+     * a named method -- either a non-computed property (`versionRef.set(...)`)
+     * or a computed string-literal key (`api['getData']()`). Both denote
+     * invoking a method on the shared receiver, so they are equivalent for
+     * ordering purposes.
+     *
+     * Returns null when the callee is not a named method on a statically-known
+     * receiver: a non-member callee (`fetchAll()`), a receiver produced by a
+     * call (`realtimeDb.ref(path).remove()`), or a numeric or dynamic index
+     * (`operations[0]()`, `operations[i]()`), which selects a distinct callable
+     * from a container rather than invoking a method on a stateful receiver.
      * Handles optional-call ChainExpressions.
      */
-    function getCalleeReceiverName(
+    function getCalleeReceiverKey(
       awaitExpr: TSESTree.AwaitExpression,
     ): string | null {
       let callExpr: TSESTree.CallExpression | null = null;
@@ -419,23 +497,15 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
       }
 
       const callee = callExpr.callee;
-      if (
-        callee.type !== AST_NODE_TYPES.MemberExpression ||
-        callee.object.type !== AST_NODE_TYPES.Identifier
-      ) {
+      if (callee.type !== AST_NODE_TYPES.MemberExpression) {
         return null;
       }
 
-      const property = callee.property;
-      const isNamedMember = callee.computed
-        ? property.type === AST_NODE_TYPES.Literal &&
-          typeof property.value === 'string'
-        : property.type === AST_NODE_TYPES.Identifier;
-      if (!isNamedMember) {
+      if (getMemberSegment(callee) === null) {
         return null;
       }
 
-      return callee.object.name;
+      return getReceiverKey(callee.object);
     }
 
     /**
@@ -1030,25 +1100,33 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
       }
 
       // 7. Shared-receiver ordering barrier. Two awaited calls whose callees are
-      // member expressions on the SAME receiver identifier (e.g. `ref.set(x)`
-      // then `ref.get()`) can carry a read-after-write / write-after-write
+      // member expressions on the SAME receiver (e.g. `ref.set(x)` then
+      // `ref.get()`) can carry a read-after-write / write-after-write
       // dependency: the later call may observe or overwrite state the earlier
       // one produced on that shared object. Promise.all runs its operands
       // concurrently, so it would race that ordering and let the read see the
       // stale value. Keep such a run sequential. Skipping a genuinely
       // independent pair of reads on one receiver is only a missed
       // parallelization (a safe no-op), which is preferable to silently
-      // reordering a real data dependency. The receiver must be a bare
-      // identifier; computed chains and nested members are left untouched.
-      const receiverNames = awaitNodes.map((node) => {
+      // reordering a real data dependency.
+      //
+      // That trade-off is receiver-agnostic, so every receiver denoting one
+      // statically-known object qualifies: a bare binding, `this`, `super`, and
+      // fixed chains over them (`this.inner`). `this` is if anything the
+      // strongest case -- a method call on `this` is the canonical way to mutate
+      // instance state, and the rule models instance state nowhere, so the
+      // dependency `this.load()` -> `this.read()` has no syntactic edge at all.
+      // Receivers whose identity varies per evaluation (call chains, dynamic
+      // subscripts) are still left untouched. (#1914)
+      const receiverKeys = awaitNodes.map((node) => {
         const awaitExpr = getAwaitExpression(node);
-        return awaitExpr ? getCalleeReceiverName(awaitExpr) : null;
+        return awaitExpr ? getCalleeReceiverKey(awaitExpr) : null;
       });
-      for (let i = 1; i < receiverNames.length; i++) {
-        const receiver = receiverNames[i];
+      for (let i = 1; i < receiverKeys.length; i++) {
+        const receiver = receiverKeys[i];
         if (!receiver) continue;
         for (let j = 0; j < i; j++) {
-          if (receiverNames[j] === receiver) {
+          if (receiverKeys[j] === receiver) {
             return true;
           }
         }
