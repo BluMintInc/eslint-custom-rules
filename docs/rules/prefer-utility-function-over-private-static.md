@@ -11,7 +11,25 @@ Private static methods that do not touch class state are really module-level uti
 This rule flags private static methods that:
 
 - Do not reach their own class anywhere in their body (including nested callbacks)
-- Have a non-trivial body (four or more lines including braces)
+- Have a non-trivial body — **two or more statements**
+
+The size threshold is measured in statements, not lines. A line count moves with
+formatting: a JSDoc block, a line comment or a blank line inside the body would
+push a one-statement helper over the threshold, a single statement wrapped
+across several lines would do the same, and several statements joined onto one
+line would slip under it. None of those change how much work the helper does.
+
+Statements nested inside blocks, control flow and inner functions count toward
+the total, so a helper whose whole body sits inside one `try`, `if` or `for`, or
+that returns the result of one multi-statement callback, is measured by what it
+contains rather than by its outermost statement. An empty body and a body of a
+single statement are trivial and never reported, whatever their shape.
+
+A function body holding only a `return` or a single expression is the block
+spelling of a concise arrow — `(x) => { return x * 2; }` is `(x) => x * 2` — so
+it contributes nothing beyond the statement it sits in. A chained call whose
+callbacks are one-expression functions therefore stays one statement in either
+spelling.
 
 A method reaches its class through any of these spellings, all of which count as
 using class state:
@@ -61,6 +79,13 @@ export class JsonParser {
 }
 ```
 
+```ts
+// Joining the statements onto one line does not make the helper trivial
+export class Example {
+  private static compute(value: number) { const doubled = value * 2; const squared = value * value; return doubled + squared; }
+}
+```
+
 ### Examples of **correct** code for this rule:
 
 ```ts
@@ -78,14 +103,27 @@ export class DataProcessor {
 ```
 
 ```ts
-// Using class state is allowed
+// Reading class state is allowed at any size. `withClassState` is over the
+// statement threshold and escapes on `this.multiplier`; the getter escapes
+// separately, as a single-statement body.
 export class Example {
-  private static withClassState(value: number) {
-    return value * this.multiplier;
+  private static withClassState(values: number[]) {
+    const scaled = values.map((value) => value * this.multiplier);
+    return scaled.filter((value) => value > 0);
   }
 
   private static get multiplier() {
     return 2;
+  }
+}
+```
+
+```ts
+// A single statement is trivial however it is documented or wrapped
+export class Slugger {
+  private static toSlug(title: string) {
+    // Comments and line breaks do not count toward the threshold.
+    return title.trim().toLowerCase().replace(/\s+/g, '-');
   }
 }
 ```
