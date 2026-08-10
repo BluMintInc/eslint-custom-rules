@@ -16,7 +16,7 @@ The rule reports when all of these are true:
 - The file is not a **test file** (`.test.*`, `.spec.*`, or under `__tests__/` / `__mocks__/`), whose awaits encode ordering rather than latency.
 - Two or more awaits or await-based variable declarations appear consecutively.
 - Later awaits do not reference identifiers **declared** by earlier awaits (direct identifier reference-based dependency check).
-- Later awaits do not read an identifier that an earlier await **writes from inside a callback** (`mutator = new Mutator(tx)` in a transaction body), a data dependency that flows through the closure rather than through the await's value.
+- Later awaits do not read an identifier — or an **instance slot** (`this.mutator`) — that an earlier await **writes from inside a callback** (`mutator = new Mutator(tx)` in a transaction body), a data dependency that flows through the closure rather than through the await's value.
 - Later awaits do not share "coordinator" identifiers (like `batchManager`, `transaction`, or `collector`) with earlier awaits.
 - The awaited calls do not invoke methods on the **same receiver** (e.g. `ref.set(...)` then `ref.get()`, or `this.load()` then `this.read()`), which can carry a read-after-write / write-after-write ordering dependency on that shared object.
 - No later discarded-result await reads as a **state refetch/refresh** (`refresh*`, `reload*`, `refetch*`, `revalidate*`, `resync*`, `sync*`), which re-observes state a preceding await may have mutated.
@@ -66,6 +66,29 @@ async function exitTeam(db: Firestore, teamId: string) {
 The write scan deliberately crosses function boundaries, because the interesting write lives inside the callback. It covers assignments (`x = v`, `x += v`), update expressions (`x++`), every leaf of a destructuring assignment target (`({ x } = v)`, `[x] = v`), and a `for...of` head that is not a declaration. A member write records its **root object** — `state.nested.value = v` counts as a write to `state` — since that is the binding through which a later await observes the change.
 
 A declaration inside the callback is not a write: `const x = ...` binds a fresh local that no later await can read, even when an outer binding shares the name. Callbacks that write only names they declare themselves, or write a binding no later await reads, stay parallelizable.
+
+#### Writes to instance state
+
+A callback that writes **instance state** carries the same dependency, and it is the more common spelling of it in class-based code:
+
+```typescript
+class TeamExit {
+  private mutator?: TeamMutator;
+
+  async run(db: Firestore, teamId: string) {
+    await db.runTransaction(async (transaction) => {
+      this.mutator = new TeamMutator(transaction, teamId);
+    });
+    await this.mutator?.deleteIfEmptied();
+  }
+}
+```
+
+`this.mutator` has no root binding for a name comparison to catch, so such a write is tracked by its **full path** instead. `this` and `super` name the same instance and therefore mint the same path, so the spelling of the write does not decide the barrier.
+
+The path is matched slot by slot, which is what keeps genuinely independent instance work parallelizable: a callback that writes `this.alpha` does **not** block a later await reading `this.beta`, and it does not block a later await reading a same-spelled *local* `alpha` either. A write and a read that overlap on the path do block each other in both directions — writing `this.state` blocks a later `this.state.mutator` (the container was replaced), and writing `this.state.mutator` blocks a later `this.state.persist()` (the method can read the slot). Two sibling slots under a shared container (`this.state.alpha` and `this.state.beta`) consequently fuse: reaching either one evaluates `this.state`, and the rule answers that ambiguity with a barrier, since a missed parallelization is a safe no-op while a silent reorder is not. A dynamic segment (`this.mutators[i] = m`) is tracked by its longest fixed prefix, `this.mutators`, for the same reason.
+
+Writes rooted at a plain binding keep their **root object** treatment described above: `ctx.mutator = m` is a write to `ctx`, so any later await mentioning `ctx` is blocked regardless of which slot it reads.
 
 ### ✅ Correct (shared coordinator dependency)
 
