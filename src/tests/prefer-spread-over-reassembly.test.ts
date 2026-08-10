@@ -163,19 +163,6 @@ const Wrapper = ({ hits = [], isLoading = false, onNearEnd }) => {
 };
 `,
 
-    // Function declaration (not arrow/expression) — not checked by this rule.
-    `
-function Wrapper({ hits, isLoading, onNearEnd }) {
-  return (
-    <Child
-      hits={hits}
-      isLoading={isLoading}
-      onNearEnd={onNearEnd}
-    />
-  );
-}
-`,
-
     // Multiple return statements — body is not a single-return block.
     `
 const Wrapper = ({ hits, isLoading, onNearEnd }) => {
@@ -884,6 +871,216 @@ function outer() {
     const pick = ({ a, b }: Wide) => ({ a, b });
     return pick;
   };
+}
+`,
+
+    // ---------------------------------------------------------------------
+    // Regression (#1908): the FunctionDeclaration spelling. Every carve-out
+    // below is the declaration twin of an arrow fixture above it, pinned so the
+    // widened visitor cannot buy its reports at the cost of a false positive.
+    // ---------------------------------------------------------------------
+
+    // A declaration with no parameter has nothing to reassemble.
+    `
+function Wrapper() {
+  return <Child hits={hits} isLoading={isLoading} />;
+}
+`,
+
+    // A field consumed by conditional logic is not merely forwarded.
+    `
+function Wrapper({ hits, isLoading, onNearEnd }) {
+  if (isLoading) {
+    return <Spinner />;
+  }
+  return <Child hits={hits} isLoading={isLoading} onNearEnd={onNearEnd} />;
+}
+`,
+
+    // Renamed forwards cannot become a spread.
+    `
+function Wrapper({ items, loading }) {
+  return <Child data={items} isLoading={loading} />;
+}
+`,
+
+    // A rest element is an explicit decision to separate props.
+    `
+function Wrapper({ hits, isLoading, ...rest }) {
+  return <Child {...rest} hits={hits} isLoading={isLoading} />;
+}
+`,
+
+    // Defaults would be bypassed by a spread.
+    `
+function Wrapper({ hits = [], isLoading = false, onNearEnd }) {
+  return <Child hits={hits} isLoading={isLoading} onNearEnd={onNearEnd} />;
+}
+`,
+
+    // Nested destructuring binds names the parameter does not carry.
+    `
+function Wrapper({ data: { hits, isLoading }, onNearEnd }) {
+  return <Child hits={hits} isLoading={isLoading} onNearEnd={onNearEnd} />;
+}
+`,
+
+    // One forwarded field sits below minFields.
+    `
+function Wrapper({ hits }) {
+  return <Child hits={hits} />;
+}
+`,
+
+    // Fields split across several targets have no single spread destination.
+    `
+function Wrapper({ header, hits, isLoading, footer }) {
+  return (
+    <>
+      <Header content={header} />
+      <List hits={hits} isLoading={isLoading} />
+      <Footer content={footer} />
+    </>
+  );
+}
+`,
+
+    // A second parameter means the destructuring is not the whole signature.
+    `
+function Wrapper({ a, b }, extra) {
+  return <X a={a} b={b} />;
+}
+`,
+
+    // A defaulted parameter is an AssignmentPattern, not an ObjectPattern
+    // (#1356), in the declaration spelling as much as in the arrow one.
+    `
+function Bar({ a, b } = {}) {
+  return <Foo a={a} b={b} />;
+}
+`,
+
+    // Regression (#1610): a narrowing projection behind a type-only wrapper
+    // drops \`c\`, so the spread would smuggle it back in.
+    `
+function pickBlock({ a, b, c }) {
+  return { a, b } as const;
+}
+`,
+
+    // Regression (#1610): a wrapper around something that is neither JSX nor an
+    // object literal remains unclassifiable.
+    `
+function computed({ a, b }) {
+  return compute(a, b) as const;
+}
+`,
+
+    // Regression (#1610): a side-effect statement means the body is not a lone
+    // return, wrapper or not.
+    `
+function logged({ a, b }) {
+  console.log(a);
+  return { a, b } as const;
+}
+`,
+
+    // Regression (#1610): a conditional spread consuming a destructured field
+    // is unsafe here too.
+    `
+function conditional({ a, b }) {
+  return { ...(a && { a }), b } as const;
+}
+`,
+
+    // Regression (#1642): the narrowing-pick proof reads the parameter's own
+    // annotation, which a declaration carries identically.
+    `
+type Wide = { a: string; b: string; c: string };
+function pick({ a, b }: Wide) {
+  return { a, b };
+}
+`,
+
+    // Regression (#1643): so does the key-preserving unwrap.
+    `
+type Wide = Readonly<{ a: string; b: string; c: string }>;
+function pick({ a, b }: Wide) {
+  return { a, b };
+}
+`,
+
+    // Regression (#1644): and the single hop into a relative sibling module.
+    {
+      filename: FIXTURE_FILE,
+      code: `
+import type { Wide } from './types';
+function pick({ a, b }: Wide) {
+  return { a, b };
+}
+`,
+    },
+
+    // Regression (#1769): and lexical resolution of a type declared in an
+    // enclosing function body.
+    `
+function outer() {
+  type Wide = { a: string; b: string; c: string };
+  function pick({ a, b }: Wide) {
+    return { a, b };
+  }
+  return pick;
+}
+`,
+
+    // An overload signature parses as TSDeclareFunction and carries no body, so
+    // the widened visitor never receives one.
+    `
+function pick({ a, b }: Wide): Pair;
+function pick(input) {
+  return input;
+}
+`,
+
+    // \`declare function\` is the other body-less spelling.
+    `
+declare function pick({ a, b }: Wide): Pair;
+`,
+
+    // An empty body holds no return to classify.
+    `
+function Wrapper({ a, b }) {}
+`,
+
+    // A bare \`return\` produces no target.
+    `
+function Wrapper({ a, b }) {
+  return;
+}
+`,
+
+    // A transformed forward is not an identical one, exported or not.
+    `
+export function Wrapper({ hits, isLoading }) {
+  return <Child hits={hits.slice(0, 10)} isLoading={isLoading} />;
+}
+`,
+
+    // A field read in the element's children is used outside the forwarding.
+    `
+function Wrapper({ hits, isLoading }) {
+  return (
+    <Child hits={hits} isLoading={isLoading}>
+      {isLoading}
+    </Child>
+  );
+}
+`,
+
+    // The remedy itself: a declaration already spreading its parameter.
+    `
+function Wrapper(props) {
+  return <Child {...props} />;
 }
 `,
   ],
@@ -2747,6 +2944,434 @@ function outer() {
   type Readonly<T> = Pick<T, 'a' | 'b'>;
   type Big = { a: string; b: string; c: string };
   const pick = (props: Readonly<Big>) => ({ ...props });
+  return pick;
+}
+`,
+    },
+
+    // ---------------------------------------------------------------------
+    // Regression (#1908): a `function` declaration is an ordinary spelling of a
+    // component, and the reassembly it holds is the same reassembly an arrow
+    // holds. Each case below is the declaration twin of an arrow fixture above,
+    // pinning the report AND the exact fix so the two spellings cannot drift.
+    // ---------------------------------------------------------------------
+
+    // The reported shape verbatim: identical to the three-field arrow above.
+    {
+      code: `
+function Wrapper({ a, b, c }) {
+  return <X a={a} b={b} c={c} />;
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+function Wrapper(props) {
+  return <X {...props} />;
+}
+`,
+    },
+
+    // The multi-attribute element collapses to a lone spread.
+    {
+      code: `
+function Wrapper({ hits, isLoading, onNearEnd }) {
+  return (
+    <Child
+      hits={hits}
+      isLoading={isLoading}
+      onNearEnd={onNearEnd}
+    />
+  );
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+function Wrapper(props) {
+  return (
+    <Child {...props} />
+  );
+}
+`,
+    },
+
+    // Regression (#1356): the annotation survives on a declaration too. The
+    // sibling `Foo` takes a single non-destructured parameter, so it is left
+    // alone — only the reassembling declaration is rewritten.
+    {
+      code: `
+type FooProps = { a: string; b: string };
+function Foo(p: FooProps) {
+  return null;
+}
+function Bar({ a, b }: FooProps) {
+  return <Foo a={a} b={b} />;
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type FooProps = { a: string; b: string };
+function Foo(p: FooProps) {
+  return null;
+}
+function Bar(props: FooProps) {
+  return <Foo {...props} />;
+}
+`,
+    },
+
+    // An `export` keyword in front of the declaration changes nothing.
+    {
+      code: `
+export function Wrapper({ hits, isLoading }) {
+  return <Child hits={hits} isLoading={isLoading} />;
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+export function Wrapper(props) {
+  return <Child {...props} />;
+}
+`,
+    },
+
+    // `export default function` is the same declaration one node deeper.
+    {
+      code: `
+export default function Wrapper({ a, b }) {
+  return <X a={a} b={b} />;
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+export default function Wrapper(props) {
+  return <X {...props} />;
+}
+`,
+    },
+
+    // A default export may omit the name entirely; the fix edits the parameter
+    // list, which is present either way.
+    {
+      code: `
+export default function ({ a, b }) {
+  return <X a={a} b={b} />;
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+export default function (props) {
+  return <X {...props} />;
+}
+`,
+    },
+
+    // A declaration nested in another function body.
+    {
+      code: `
+function outer() {
+  function Wrapper({ a, b }) {
+    return <X a={a} b={b} />;
+  }
+  return Wrapper;
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+function outer() {
+  function Wrapper(props) {
+    return <X {...props} />;
+  }
+  return Wrapper;
+}
+`,
+    },
+
+    // A declaration exported from inside a namespace.
+    {
+      code: `
+namespace Shapes {
+  export function pick({ a, b }) {
+    return { a, b };
+  }
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+namespace Shapes {
+  export function pick(props) {
+    return { ...props };
+  }
+}
+`,
+    },
+
+    // The object-literal target branch.
+    {
+      code: `
+function transform({ a, b, c }) {
+  return { a, b, c };
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+function transform(props) {
+  return { ...props };
+}
+`,
+    },
+
+    // Regression (#1443): a directive on a retained property survives the
+    // object-literal splice under the declaration spelling as well.
+    {
+      code: `
+function transform({ a, b }) {
+  return {
+    a,
+    b,
+    // eslint-disable-next-line no-console
+    label: console.log('x'),
+  };
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+function transform(props) {
+  return {
+    ...props,
+    // eslint-disable-next-line no-console
+    label: console.log('x'),
+  };
+}
+`,
+    },
+
+    // Regression (#1443): a retained JSX attribute keeps its comment and line.
+    {
+      code: `
+function Wrapper({ hits, isLoading }) {
+  return (
+    <Child
+      hits={hits}
+      isLoading={isLoading}
+      // keep me: describes extra
+      extra="x"
+    />
+  );
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+function Wrapper(props) {
+  return (
+    <Child
+      {...props}
+      // keep me: describes extra
+      extra="x"
+    />
+  );
+}
+`,
+    },
+
+    // Regression (#1443): a non-self-closing element keeps its children.
+    {
+      code: `
+function Wrapper({ hits, isLoading }) {
+  return (
+    <Child
+      hits={hits}
+      isLoading={isLoading}
+      // eslint-disable-next-line no-console
+      onClick={() => console.log('x')}
+    >
+      <Inner />
+    </Child>
+  );
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+function Wrapper(props) {
+  return (
+    <Child
+      {...props}
+      // eslint-disable-next-line no-console
+      onClick={() => console.log('x')}
+    >
+      <Inner />
+    </Child>
+  );
+}
+`,
+    },
+
+    // Regression (#1610): the type-only wrapper is left verbatim and only the
+    // reassembly collapses.
+    {
+      code: `
+function t({ a, b }) {
+  return { a, b } as const;
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+function t(props) {
+  return { ...props } as const;
+}
+`,
+    },
+
+    // A destructured field named `props` forces a fresh parameter name.
+    {
+      code: `
+function W({ props, isLoading }: ChildProps) {
+  return <Child props={props} isLoading={isLoading} />;
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+function W(props0: ChildProps) {
+  return <Child {...props0} />;
+}
+`,
+    },
+
+    // Regression (#1356): a multi-line inline annotation keeps its formatting.
+    {
+      code: `
+function Wrapper({ hits, isLoading }: {
+  hits: Hit[];
+  isLoading: boolean;
+}) {
+  return <Child hits={hits} isLoading={isLoading} />;
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+function Wrapper(props: {
+  hits: Hit[];
+  isLoading: boolean;
+}) {
+  return <Child {...props} />;
+}
+`,
+    },
+
+    // The `minFields` option gates the declaration spelling identically.
+    {
+      code: `
+function W({ a, b, c }) {
+  return <X a={a} b={b} c={c} />;
+}
+`,
+      options: [{ minFields: 3 }],
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+function W(props) {
+  return <X {...props} />;
+}
+`,
+    },
+
+    // `async` and `function*` are still declarations carrying a reassembly.
+    {
+      code: `
+async function build({ a, b }) {
+  return { a, b };
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+async function build(props) {
+  return { ...props };
+}
+`,
+    },
+    {
+      code: `
+function* build({ a, b }) {
+  return { a, b };
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+function* build(props) {
+  return { ...props };
+}
+`,
+    },
+
+    // Regression (#1642): the narrowing proof runs in the safe direction on a
+    // declaration too — an EXHAUSTIVE member set still reports.
+    {
+      code: `
+type Pair = { a: string; b: string };
+function pick({ a, b }: Pair) {
+  return { a, b };
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Pair = { a: string; b: string };
+function pick(props: Pair) {
+  return { ...props };
+}
+`,
+    },
+
+    // Regression (#1643): exhaustive through a key-preserving operator.
+    {
+      code: `
+type Wide = Readonly<{ a: string; b: string }>;
+function pick({ a, b }: Wide) {
+  return { a, b };
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Wide = Readonly<{ a: string; b: string }>;
+function pick(props: Wide) {
+  return { ...props };
+}
+`,
+    },
+
+    // Regression (#1644): exhaustive across the single hop into a sibling.
+    {
+      filename: FIXTURE_FILE,
+      code: `
+import type { Exact } from './types';
+function pick({ a, b }: Exact) {
+  return { a, b };
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+import type { Exact } from './types';
+function pick(props: Exact) {
+  return { ...props };
+}
+`,
+    },
+
+    // Regression (#1769): exhaustive through a lexically nested declaration.
+    {
+      code: `
+function outer() {
+  type Exact = { a: string; b: string };
+  function pick({ a, b }: Exact) {
+    return { a, b };
+  }
+  return pick;
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+function outer() {
+  type Exact = { a: string; b: string };
+  function pick(props: Exact) {
+    return { ...props };
+  }
   return pick;
 }
 `,

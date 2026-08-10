@@ -17,6 +17,21 @@ type Options = [{ minFields?: number }];
 const DEFAULT_MIN_FIELDS = 2;
 
 /**
+ * The function spellings the rule examines.
+ *
+ * A destructure-then-reassemble body is the same reassembly however its
+ * function is written, and a `function` declaration is an ordinary spelling of
+ * a React component, so the declaration is read alongside the two expression
+ * forms rather than being structurally invisible (#1908). Every carve-out below
+ * is expressed over the parameter and the body, both of which a declaration
+ * carries identically, so none of them is re-derived per spelling.
+ */
+type CheckedFunction =
+  | TSESTree.ArrowFunctionExpression
+  | TSESTree.FunctionExpression
+  | TSESTree.FunctionDeclaration;
+
+/**
  * Collects all identifier references (not declarations) used anywhere in a
  * subtree. Used to detect when a destructured binding is consumed for purposes
  * other than being forwarded directly.
@@ -898,9 +913,7 @@ function classifyTarget(expression: TSESTree.Node): Target | null {
   return null;
 }
 
-function getSingleTarget(
-  fn: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
-): Target | null {
+function getSingleTarget(fn: CheckedFunction): Target | null {
   const body = fn.body;
 
   // Concise arrow: `(props) => <X />`, `({ x, y }) => ({ x, y } as const)`.
@@ -1459,7 +1472,7 @@ export const preferSpreadOverReassembly = createRule<Options, MessageIds>({
      * `units` is annotated `Unit[]`.
      */
     function contextualElementMemberNames(
-      fn: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
+      fn: CheckedFunction,
     ): Set<string> | null {
       const call = fn.parent;
       if (
@@ -1498,7 +1511,7 @@ export const preferSpreadOverReassembly = createRule<Options, MessageIds>({
      * widening is demonstrated.
      */
     function isProvablyNarrowingPick(
-      fn: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
+      fn: CheckedFunction,
       param: TSESTree.ObjectPattern,
       destructuredNames: readonly string[],
     ): boolean {
@@ -1514,9 +1527,7 @@ export const preferSpreadOverReassembly = createRule<Options, MessageIds>({
       return destructuredNames.every((name) => memberNames.has(name));
     }
 
-    function checkFunction(
-      fn: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
-    ): void {
+    function checkFunction(fn: CheckedFunction): void {
       // Must have exactly one parameter that is an ObjectPattern.
       if (fn.params.length !== 1) return;
       const param = fn.params[0];
@@ -1638,6 +1649,12 @@ export const preferSpreadOverReassembly = createRule<Options, MessageIds>({
         checkFunction(node);
       },
       FunctionExpression(node) {
+        checkFunction(node);
+      },
+      // A body-less signature — an overload or `declare function` — parses as
+      // `TSDeclareFunction`, so this key only ever receives a function that has
+      // a body to read.
+      FunctionDeclaration(node) {
         checkFunction(node);
       },
     };

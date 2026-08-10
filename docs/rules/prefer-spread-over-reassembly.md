@@ -12,6 +12,8 @@ When a function destructures its single object parameter into named fields and t
 
 Using spread syntax (`{...props}`) expresses the forwarding intent directly: new fields propagate automatically, the code is shorter, and the change surface shrinks to a single location.
 
+All three function spellings are examined: an arrow function, a function expression, and a `function` **declaration**. A declaration is an ordinary way to write a component or a helper, and the reassembly it holds is the same reassembly — every condition and carve-out below is expressed over the parameter and the body, which each spelling carries identically. A body-less signature (a TypeScript overload, `declare function`) has nothing to read and is left alone.
+
 The rule only fires when **all** of the following hold:
 
 - The function has exactly one parameter that is a plain object destructuring.
@@ -108,6 +110,13 @@ const toPreviews = (subgroups) => {
 };
 ```
 
+```tsx
+// The `function` declaration spelling of the same reassembly.
+export default function Wrapper({ hits, isLoading, onNearEnd }) {
+  return <Child hits={hits} isLoading={isLoading} onNearEnd={onNearEnd} />;
+}
+```
+
 ### ✅ Correct
 
 ```tsx
@@ -201,6 +210,22 @@ const Wrapper = ({ hits, isLoading, onNearEnd }) => {
   }
   return <Child hits={hits} isLoading={isLoading} onNearEnd={onNearEnd} />;
 };
+```
+
+```tsx
+// The declaration spelling after the autofix.
+export default function Wrapper(props) {
+  return <Child {...props} />;
+}
+```
+
+```ts
+// Valid — the narrowing-pick protection reads the declaration's annotation
+// exactly as it reads an arrow's, so `c` still stops the report.
+type Wide = { a: string; b: string; c: string };
+function pick({ a, b }: Wide) {
+  return { a, b };
+}
 ```
 
 ## Options
