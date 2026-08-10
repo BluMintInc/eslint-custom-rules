@@ -5,9 +5,73 @@ import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds =
   | 'preferUtilityFunctionOverPrivateStatic'
-  | 'preferUtilityFunctionOverPrivateStaticGetter';
+  | 'preferUtilityFunctionOverPrivateStaticGetter'
+  | 'preferUtilityFunctionOverPrivateStaticProperty';
 
 type ClassNode = TSESTree.ClassDeclaration | TSESTree.ClassExpression;
+
+/**
+ * The class members that can hold a hidden utility. A helper is the same helper
+ * whether it is written `compute() {}` or `compute = () => {}` — both are
+ * class-owned function-valued members, and neither the description this rule
+ * enforces nor the remedy it names is scoped to one member syntax. Examining
+ * only one spelling would let the other carry the identical logic past the rule
+ * unchanged (#1927).
+ */
+type ClassMember = TSESTree.MethodDefinition | TSESTree.PropertyDefinition;
+
+// A declaration without an implementation — an overload signature or an
+// `abstract`/`declare` member — parses as a function with no body, and is left
+// to the body guard at the report site rather than filtered out here.
+type MemberFunction =
+  | TSESTree.FunctionExpression
+  | TSESTree.TSEmptyBodyFunctionExpression
+  | TSESTree.ArrowFunctionExpression;
+
+/**
+ * The function a member holds, or null when it holds none.
+ *
+ * A property initialized to anything other than a function — a constant, an
+ * object, a call result — carries no logic to extract, so it is never examined
+ * (#1927).
+ */
+const memberFunctionOf = (member: ClassMember): MemberFunction | null => {
+  if (member.type === 'MethodDefinition') {
+    return member.value;
+  }
+
+  const { value } = member;
+  if (
+    value &&
+    (value.type === 'ArrowFunctionExpression' ||
+      value.type === 'FunctionExpression')
+  ) {
+    return value;
+  }
+
+  return null;
+};
+
+/**
+ * The message a member renders, chosen by the member's own syntax.
+ *
+ * The property arm is decided before the accessor arms rather than after: a
+ * `PropertyDefinition` carries no `kind`, so an accessor test would report
+ * false for it and let it fall through to a message naming a subject it is not.
+ * A property's remedy matches a method's exactly — module scope holds the same
+ * function form a function-valued property does — so only the subject noun
+ * differs, and naming a property a "method" sends a developer looking for a
+ * declaration the class does not hold (#1927).
+ */
+const messageIdFor = (member: ClassMember): MessageIds => {
+  if (member.type === 'PropertyDefinition') {
+    return 'preferUtilityFunctionOverPrivateStaticProperty';
+  }
+
+  return member.kind === 'get'
+    ? 'preferUtilityFunctionOverPrivateStaticGetter'
+    : 'preferUtilityFunctionOverPrivateStatic';
+};
 
 /**
  * A body of a single statement is trivial: extracting it to a module-level
@@ -139,6 +203,13 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
       // developer looking for a declaration that is not there.
       preferUtilityFunctionOverPrivateStaticGetter:
         'Private static getter "{{methodName}}" in class "{{className}}" does not use class state. Keeping class-agnostic helpers as private statics hides reusable logic and signals coupling that is not present. Extract this logic into a standalone utility function (module-level or shared) and call it from the getter, or from the call sites directly, so it can be reused and unit tested independently.',
+      // A function-valued property is the same hidden helper a method is, and
+      // its remedy is the same one — module scope holds the arrow and function
+      // forms a property holds. Only the subject differs: a developer told a
+      // "method" is at fault searches for a declaration the class does not
+      // hold.
+      preferUtilityFunctionOverPrivateStaticProperty:
+        'Private static property "{{methodName}}" in class "{{className}}" holds a function that does not use class state. Keeping class-agnostic helpers as private statics hides reusable logic and signals coupling that is not present. Extract this logic into a standalone utility function (module-level or shared) and import it where needed so it can be reused and unit tested independently.',
     },
   },
   defaultOptions: [],
@@ -342,10 +413,8 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
       return false;
     };
 
-    const getClassNode = (
-      method: TSESTree.MethodDefinition,
-    ): ClassNode | null => {
-      const classNode = method.parent?.parent;
+    const getClassNode = (member: ClassMember): ClassNode | null => {
+      const classNode = member.parent?.parent;
 
       if (
         classNode &&
@@ -461,63 +530,71 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
       return identifiers;
     };
 
+    const checkMember = (node: ClassMember) => {
+      // A setter is out of scope whatever its size: it has no return value
+      // and module scope has no setter form, so "extract this logic into a
+      // standalone utility function" names a rewrite its author cannot
+      // perform. A rule whose remedy cannot be carried out is unenforceable,
+      // and the accessor still has to exist to receive the assignment.
+      if (node.type === 'MethodDefinition' && node.kind === 'set') {
+        return;
+      }
+
+      const memberFunction = memberFunctionOf(node);
+
+      if (!memberFunction) {
+        return;
+      }
+
+      const memberBody = memberFunction.body;
+
+      if (!memberBody) {
+        return;
+      }
+
+      // Skip trivial members, measured in statements so that formatting —
+      // comments, blank lines, wrapping, or statements joined onto one line —
+      // cannot move the verdict. The whole function is measured, not just its
+      // body block, so that its own body and every function nested in it are
+      // counted by the same rule.
+      if (countStatements(memberFunction) < MIN_REPORTED_STATEMENTS) {
+        return;
+      }
+
+      const classNode = getClassNode(node);
+      const className = classNode ? getClassName(classNode) : null;
+      const classBindingIdentifiers = classNode
+        ? collectClassBindingIdentifiers(classNode, className)
+        : new Set<TSESTree.Node>();
+
+      // A member that reaches its own class cannot become a module-level
+      // utility: a `private static` member is unreachable from module scope.
+      if (referencesClassState(memberBody, classBindingIdentifiers)) {
+        return;
+      }
+
+      const methodName =
+        getMethodName(node, sourceCode, {
+          computedFallbackToText: false,
+        }) || '<unknown>';
+
+      context.report({
+        node,
+        messageId: messageIdFor(node),
+        data: {
+          methodName,
+          className: className ?? 'this class',
+        },
+      });
+    };
+
     return {
-      'MethodDefinition[static=true][accessibility="private"]'(
-        node: TSESTree.MethodDefinition,
-      ) {
-        // A setter is out of scope whatever its size: it has no return value
-        // and module scope has no setter form, so "extract this logic into a
-        // standalone utility function" names a rewrite its author cannot
-        // perform. A rule whose remedy cannot be carried out is unenforceable,
-        // and the accessor still has to exist to receive the assignment.
-        if (node.kind === 'set') {
-          return;
-        }
-
-        const methodBody = node.value.body;
-
-        if (!methodBody) {
-          return;
-        }
-
-        // Skip trivial methods, measured in statements so that formatting —
-        // comments, blank lines, wrapping, or statements joined onto one line —
-        // cannot move the verdict. The whole method is measured, not just its
-        // body block, so that its own body and every function nested in it are
-        // counted by the same rule.
-        if (countStatements(node.value) < MIN_REPORTED_STATEMENTS) {
-          return;
-        }
-
-        const classNode = getClassNode(node);
-        const className = classNode ? getClassName(classNode) : null;
-        const classBindingIdentifiers = classNode
-          ? collectClassBindingIdentifiers(classNode, className)
-          : new Set<TSESTree.Node>();
-
-        // A method that reaches its own class cannot become a module-level
-        // utility: a `private static` member is unreachable from module scope.
-        if (referencesClassState(methodBody, classBindingIdentifiers)) {
-          return;
-        }
-
-        const methodName =
-          getMethodName(node, sourceCode, {
-            computedFallbackToText: false,
-          }) || '<unknown>';
-
-        context.report({
-          node,
-          messageId:
-            node.kind === 'get'
-              ? 'preferUtilityFunctionOverPrivateStaticGetter'
-              : 'preferUtilityFunctionOverPrivateStatic',
-          data: {
-            methodName,
-            className: className ?? 'this class',
-          },
-        });
-      },
+      'MethodDefinition[static=true][accessibility="private"]': checkMember,
+      // The modifiers are matched exactly as the method arm matches them: a
+      // helper escapes only by being spelled differently, and widening the
+      // property arm past `private static` would report members the method arm
+      // leaves alone (#1927).
+      'PropertyDefinition[static=true][accessibility="private"]': checkMember,
     };
   },
 });
