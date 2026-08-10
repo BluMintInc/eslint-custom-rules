@@ -61,12 +61,16 @@ function isHigherOrderFunctionReturningJSX(
   return false;
 }
 
-const isUnmemoizedArrowFunction = (parentNode: TSESTree.Node) => {
+const isUnmemoizedArrowFunction = (
+  node: ComponentNode,
+  parentNode: TSESTree.Node,
+) => {
   return (
     parentNode.type === 'VariableDeclarator' &&
     parentNode.id.type === 'Identifier' &&
     startsWithUppercase(parentNode.id.name) &&
-    !isComponentExplicitlyUnmemoized(parentNode.id.name)
+    !isComponentExplicitlyUnmemoized(parentNode.id.name) &&
+    !isMemoizedAtEscape(parentNode.id.name, node)
   );
 };
 
@@ -131,7 +135,10 @@ function unwrapValue(node: TSESTree.Node): TSESTree.Node {
     node.type === AST_NODE_TYPES.TSAsExpression ||
     node.type === AST_NODE_TYPES.TSSatisfiesExpression ||
     node.type === AST_NODE_TYPES.TSTypeAssertion ||
-    node.type === AST_NODE_TYPES.TSNonNullExpression
+    node.type === AST_NODE_TYPES.TSNonNullExpression ||
+    // ESTree wraps a whole optional chain in a ChainExpression, so `memo?.(Row)`
+    // and `React?.memo(Row)` reach here as something other than a CallExpression.
+    node.type === AST_NODE_TYPES.ChainExpression
   ) {
     return unwrapValue(node.expression);
   }
@@ -139,63 +146,110 @@ function unwrapValue(node: TSESTree.Node): TSESTree.Node {
 }
 
 /**
- * Whether `enclosing` is an HOC factory that hands `componentName` straight back
- * to its callers. Such a component reaches callers as-is, so wrapping it in
- * memo() at its declaration is the correct remedy — exactly as it is at module
- * scope. A `memo(Row)` / `forwardRef(Row)` return is not a bare hand-back: the
- * component is already memoized and a second wrapper would be redundant.
+ * Whether `node` spells React's memoization helper in callee position: the bare
+ * `memo` binding or a member access ending in `.memo` (`React.memo`).
  */
-function handsComponentToCallers(
-  enclosing: ComponentNode,
+function isMemoCallee(node: TSESTree.Node): boolean {
+  const callee = unwrapValue(node);
+  return (
+    (callee.type === AST_NODE_TYPES.Identifier && callee.name === MEMO_NAME) ||
+    (callee.type === AST_NODE_TYPES.MemberExpression &&
+      callee.property.type === AST_NODE_TYPES.Identifier &&
+      callee.property.name === MEMO_NAME)
+  );
+}
+
+/** Whether `componentName` appears in `node`'s (possibly nested) call arguments. */
+function callArgumentsMention(
+  node: TSESTree.Node,
   componentName: string,
-  context: Readonly<RuleContext<'requireMemo', []>>,
 ): boolean {
-  // A function that renders JSX is a render body, not a factory. Components
-  // declared in one are recreated on every render, which memo() cannot fix;
-  // `memo-nested-react-components` owns that shape and says so in its message.
-  if (ASTHelpers.returnsJSX(enclosing.body, context)) {
+  const value = unwrapValue(node);
+  if (
+    value.type === AST_NODE_TYPES.Identifier &&
+    value.name === componentName
+  ) {
+    return true;
+  }
+  if (value.type === AST_NODE_TYPES.CallExpression) {
+    return value.arguments.some((argument) =>
+      callArgumentsMention(argument, componentName),
+    );
+  }
+  return false;
+}
+
+/**
+ * Whether `node` hands `componentName` to memo(), possibly through another
+ * wrapper — `memo(Row)`, `memo(forwardRef(Inner))`, `forwardRef(memo(Inner))`.
+ */
+function memoizesComponent(
+  node: TSESTree.Node,
+  componentName: string,
+): boolean {
+  const value = unwrapValue(node);
+  if (value.type !== AST_NODE_TYPES.CallExpression) {
     return false;
   }
+  if (
+    isMemoCallee(value.callee) &&
+    value.arguments.some((argument) =>
+      callArgumentsMention(argument, componentName),
+    )
+  ) {
+    return true;
+  }
+  return value.arguments.some((argument) =>
+    memoizesComponent(argument, componentName),
+  );
+}
 
-  return ownReturnArguments(enclosing).some((argument) => {
+/**
+ * Whether `componentName` is already memoized at the point it escapes its
+ * enclosing function: every hand-back to callers goes through `memo(...)`
+ * (`return memo(Row)`, `return memo(forwardRef(Inner))`), so a second wrapper
+ * at the declaration would be redundant. A bare hand-back on ANY return path
+ * (`return Row`) defeats the carve-out — callers can receive the un-memoized
+ * function, and memoizing it where it is declared is exactly the remedy.
+ *
+ * This is the one lifetime question the rule asks, and it is asked of BOTH
+ * spellings: a carve-out keyed to one function syntax is a detection asymmetry,
+ * not a design (#1774). Nesting in particular is NOT a carve-out — a component
+ * declared inside a render body is also claimed by
+ * `memo-nested-react-components`, whose hoist-it-out remedy repairs the
+ * remount-per-render damage; this rule's memo() wrapper is the complementary
+ * step that keeps the (hoisted) component's consumers from re-rendering.
+ */
+function isMemoizedAtEscape(
+  componentName: string,
+  node: ComponentNode,
+): boolean {
+  const enclosing = enclosingFunctionOf(node);
+  if (!enclosing) {
+    return false;
+  }
+  const handBacks = ownReturnArguments(enclosing);
+  const escapesBare = handBacks.some((argument) => {
     const value = unwrapValue(argument);
     return (
       value.type === AST_NODE_TYPES.Identifier && value.name === componentName
     );
   });
-}
-
-/**
- * Whether wrapping the declaration in memo() where it stands is the right fix.
- *
- * This is the rule's real question, and it is about the binding's lifetime, not
- * about which node happens to be the declaration's parent: a component whose
- * binding outlives a render (module scope — including a block, a namespace and
- * `export default`) is memoizable in place, and so is one an HOC factory returns
- * unwrapped. A component created inside a render body is not; it gets a fresh
- * identity on every render and `memo-nested-react-components` owns it.
- */
-function isMemoizableInPlace(
-  node: TSESTree.FunctionDeclaration,
-  context: Readonly<RuleContext<'requireMemo', []>>,
-): boolean {
-  const enclosing = enclosingFunctionOf(node);
-  if (!enclosing) {
-    return true;
+  if (escapesBare) {
+    return false;
   }
-  return handsComponentToCallers(enclosing, node.id?.name ?? '', context);
+  return handBacks.some((argument) =>
+    memoizesComponent(argument, componentName),
+  );
 }
 
-const isUnmemoizedFunctionComponent = (
-  node: TSESTree.Node,
-  context: Readonly<RuleContext<'requireMemo', []>>,
-) => {
+const isUnmemoizedFunctionComponent = (node: TSESTree.Node) => {
   return (
     node.type === 'FunctionDeclaration' &&
     !!node.id &&
     startsWithUppercase(node.id.name) &&
     !isComponentExplicitlyUnmemoized(node.id.name) &&
-    isMemoizableInPlace(node, context)
+    !isMemoizedAtEscape(node.id.name, node)
   );
 };
 
@@ -532,8 +586,8 @@ function checkFunction(
     ASTHelpers.returnsJSX(node.body, context) &&
     ASTHelpers.hasParameters(node)
   ) {
-    const isDeclarationComponent = isUnmemoizedFunctionComponent(node, context);
-    const isArrowComponent = isUnmemoizedArrowFunction(parentNode);
+    const isDeclarationComponent = isUnmemoizedFunctionComponent(node);
+    const isArrowComponent = isUnmemoizedArrowFunction(node, parentNode);
     if (isDeclarationComponent || isArrowComponent) {
       const componentName =
         (node.type === 'FunctionDeclaration' && node.id?.name) ||

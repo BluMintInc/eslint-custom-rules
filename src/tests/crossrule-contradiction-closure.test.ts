@@ -464,8 +464,8 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
   },
   'require-memo::memo-nested-react-components': {
     reason:
-      'HANDOFF: `require-memo` declines for a component declared inside a render body and names `memo-nested-react-components` as its owner in a source comment; memoizing the nested component is clean under both (measured).',
-    cases: { memoizeNestedComponent: 3 },
+      'CO-REPORT: `require-memo` claims nested components in both spellings (#1774) and says so in its source; the sibling reports the same nested component because nesting is ITS complaint and hoisting its remedy — two sequential steps of one repair. One case is the `Unmemoized` opt-out valid fixture, which opts out of memo(), not of hoisting; the other eight are fixed outputs whose in-place `memo(...)` wrapper the sibling correctly calls insufficient. All nine hand-enumerated; `require-memo` is silent on every one (its fix converges), and the HOC-factory exemption in the sibling leaves the factory-shaped outputs unreported.',
+    cases: { memoizeNestedComponent: 9 },
   },
   'require-memo::no-render-function-components': {
     reason:

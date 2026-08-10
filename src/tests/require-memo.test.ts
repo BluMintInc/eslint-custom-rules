@@ -180,60 +180,9 @@ ruleTesterJsx.run('requireMemo', requireMemo, {
     },
 
     // ---------------------------------------------------------------------
-    // Division of labour with `memo-nested-react-components` (issue #1774).
-    //
-    // A component whose identity is recreated by an enclosing scope belongs to
-    // that rule, whose message says outright that memo() does NOT fix it.
-    // Reporting these here too would double-report a single defect with two
-    // contradictory remedies, so each shape below is deliberately silent.
-    // ---------------------------------------------------------------------
-    // Declared in a function body and never handed back: the enclosing call
-    // recreates it, so `memo-nested-react-components` owns it.
-    {
-      filename: 'src/components/SomeComponent.tsx',
-      code: `function setup() {
-  function Component({foo}) { return <div>{foo}</div>; }
-  register(Component);
-}`,
-    },
-    // Declared in a render body — the canonical shape
-    // `memo-nested-react-components` exists for. The outer component is already
-    // memoized so the only question the case asks is about the inner one.
-    {
-      filename: 'src/components/SomeComponent.tsx',
-      code: `export const Page = memo(function PageUnmemoized({items}) {
-  function Row({label}) { return <li>{label}</li>; }
-  return <ul>{items.map((item) => <Row label={item} />)}</ul>;
-});`,
-    },
-    // Returned on one branch by a function that renders JSX on another: still a
-    // render body, so `memo-nested-react-components` owns it.
-    {
-      filename: 'src/components/SomeComponent.tsx',
-      code: `export function renderPanel({compact, items}) {
-  function Row({label}) { return <li>{label}</li>; }
-  if (compact) {
-    return Row;
-  }
-  return <ul>{items.map((item) => <Row label={item} />)}</ul>;
-}`,
-    },
-    // Declared inside an HOC factory but never handed back: the factory's own
-    // return value is what reaches callers, so neither rule claims this one —
-    // `memo-nested-react-components` exempts the factory as identity-stable and
-    // require-memo has no escaping binding to memoize.
-    {
-      filename: 'src/components/SomeComponent.tsx',
-      code: `export function withGuard(Editable) {
-  function GuardedInner({value}) { return <Editable value={value} />; }
-  return memo(function GuardedUnmemoized({value}) {
-    return <Provider><GuardedInner value={value} /></Provider>;
-  });
-}`,
-    },
-
-    // ---------------------------------------------------------------------
-    // Already memoized where it escapes: a second wrapper is redundant.
+    // Already memoized where it escapes: a second wrapper is redundant. The
+    // carve-out is spelling-blind (#1774): the arrow twins below must stay as
+    // silent as the declarations, or the two spellings drift apart again.
     // ---------------------------------------------------------------------
     {
       filename: 'src/components/SomeComponent.tsx',
@@ -248,6 +197,72 @@ ruleTesterJsx.run('requireMemo', requireMemo, {
   function Inner({value}, ref) { return <Wrapped value={value} ref={ref} />; }
   return memo(forwardRef(Inner));
 }`,
+    },
+    // The arrow twins of the two shapes above.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `export function makeRow() {
+  const Row = ({label}) => { return <li>{label}</li>; };
+  return memo(Row);
+}`,
+    },
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `export function withRef(Wrapped) {
+  const Inner = ({value}, ref) => { return <Wrapped value={value} ref={ref} />; };
+  return memo(forwardRef(Inner));
+}`,
+    },
+    // A type assertion on the memoized hand-back does not hide the wrapper.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `export function makeRow() {
+  function Row({label}) { return <li>{label}</li>; }
+  return memo(Row) as ComponentType<RowProps>;
+}`,
+    },
+    // `React.memo` spells the same helper through a member access.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `import React from 'react';
+export function makeRow() {
+  function Row({label}) { return <li>{label}</li>; }
+  return React.memo(Row);
+}`,
+    },
+    // The nullish spellings of the two shapes above are NOT pinned here on
+    // purpose. `optional-chaining-closure` derives them from these fixtures, so
+    // the coverage exists either way; adding them to this suite instead drags
+    // them into `crossrule-contradiction-closure`, where `memo-nested-react-
+    // components` reports on `memo?.(Row)` but not on `memo(Row)` — its own
+    // ChainExpression blindness, tracked separately, and not a divergence this
+    // suite should sign off as legitimate.
+    // A nested camelCase helper stays a helper wherever it sits (issue #1243).
+    // Not named `render*`, because that name shape is
+    // `no-render-function-components`' claim.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `function Toolbar() {
+  function formatCell({value}) { return <td>{value}</td>; }
+  return <table>{formatCell({value: 1})}</table>;
+}`,
+    },
+    // A nested non-component function returns no JSX, so no spelling of it is
+    // a memo candidate.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `export const Wrapper = memo(function WrapperUnmemoized({items}) {
+  function total({values}) { return values.length; }
+  return <div>{total({values: items})}</div>;
+});`,
+    },
+    // A nested declaration opts out the same way a top-level one does.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `export const Page = memo(function PageUnmemoized({items}) {
+  function RowUnmemoized({label}) { return <li>{label}</li>; }
+  return <ul>{items.map((item) => <RowUnmemoized label={item} />)}</ul>;
+});`,
     },
 
     // ---------------------------------------------------------------------
@@ -850,6 +865,159 @@ export function makeRow() {
   const Row = memo(({label}) => { return <li>{label}</li>; });
   return Row;
 }`,
+      name: 'Row',
+    }),
+
+    // ---------------------------------------------------------------------
+    // Nesting is not a carve-out (issue #1774, reopened). A component declared
+    // inside another function is the same component its arrow twin is at the
+    // identical depth, and the arrow twin has always been reported — so the
+    // declaration spelling is reported too, wherever it sits.
+    // ---------------------------------------------------------------------
+    // The issue's FORM2: a nested declaration, minimal shape.
+    withDefaults({
+      code: `function __probeNest() {
+  function Component({foo}) { return <div>{foo}</div>; }
+}`,
+      output: `import { memo } from '../util/memo';
+function __probeNest() {
+  const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });
+}`,
+      name: 'Component',
+    }),
+    // The issue's control, pinned: the arrow twin at the identical depth.
+    withDefaults({
+      code: `function __probeNest() {
+  const Component = ({foo}) => { return <div>{foo}</div>; };
+}`,
+      output: `import { memo } from '../util/memo';
+function __probeNest() {
+  const Component = memo(({foo}) => { return <div>{foo}</div>; });
+}`,
+      name: 'Component',
+    }),
+    // Declared in a function body and handed to a registrar rather than
+    // returned: the binding is still an un-memoized component reaching callers.
+    withDefaults({
+      code: `function setup() {
+  function Component({foo}) { return <div>{foo}</div>; }
+  register(Component);
+}`,
+      output: `import { memo } from '../util/memo';
+function setup() {
+  const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });
+  register(Component);
+}`,
+      name: 'Component',
+    }),
+    // The reopening comment's shape: a declaration inside a memo() factory.
+    // The factory function itself is already memoized (and named Unmemoized);
+    // only the nested Row is the violation, exactly as its arrow twin is.
+    withDefaults({
+      code: `export const Page = memo(function PageUnmemoized({items}) {
+  function Row({label}) { return <li>{label}</li>; }
+  return <ul>{items.map((item) => <Row label={item} />)}</ul>;
+});`,
+      output: `import { memo } from '../util/memo';
+export const Page = memo(function PageUnmemoized({items}) {
+  const Row = memo(function RowUnmemoized({label}) { return <li>{label}</li>; });
+  return <ul>{items.map((item) => <Row label={item} />)}</ul>;
+});`,
+      name: 'Row',
+    }),
+    // The arrow twin inside the same memo() factory, pinned alongside it.
+    withDefaults({
+      code: `export const Page = memo(function PageUnmemoized({items}) {
+  const Row = ({label}) => { return <li>{label}</li>; };
+  return <ul>{items.map((item) => <Row label={item} />)}</ul>;
+});`,
+      output: `import { memo } from '../util/memo';
+export const Page = memo(function PageUnmemoized({items}) {
+  const Row = memo(({label}) => { return <li>{label}</li>; });
+  return <ul>{items.map((item) => <Row label={item} />)}</ul>;
+});`,
+      name: 'Row',
+    }),
+    // Nested inside an arrow component's body.
+    withDefaults({
+      code: `const Dashboard = memo(({items}) => {
+  function Row({label}) { return <li>{label}</li>; }
+  return <ul>{items.map((item) => <Row label={item} />)}</ul>;
+});`,
+      output: `import { memo } from '../util/memo';
+const Dashboard = memo(({items}) => {
+  const Row = memo(function RowUnmemoized({label}) { return <li>{label}</li>; });
+  return <ul>{items.map((item) => <Row label={item} />)}</ul>;
+});`,
+      name: 'Row',
+    }),
+    // Nested inside a method body. An object-literal method rather than a
+    // class member, because a class method returning a per-call JSX-returner
+    // is `require-memoize-jsx-returners`' contract, and this suite must not
+    // bless a shape that sibling owns.
+    withDefaults({
+      code: `const panel = {
+  render() {
+    function Cell({value}) { return <td>{value}</td>; }
+    return <table><Cell value={1} /></table>;
+  },
+};`,
+      output: `import { memo } from '../util/memo';
+const panel = {
+  render() {
+    const Cell = memo(function CellUnmemoized({value}) { return <td>{value}</td>; });
+    return <table><Cell value={1} /></table>;
+  },
+};`,
+      name: 'Cell',
+    }),
+    // Handed back bare on one branch while another renders JSX: callers can
+    // still receive the un-memoized function, so the report stands.
+    withDefaults({
+      code: `export function renderPanel({compact, items}) {
+  function Row({label}) { return <li>{label}</li>; }
+  if (compact) {
+    return Row;
+  }
+  return <ul>{items.map((item) => <Row label={item} />)}</ul>;
+}`,
+      output: `import { memo } from '../util/memo';
+export function renderPanel({compact, items}) {
+  const Row = memo(function RowUnmemoized({label}) { return <li>{label}</li>; });
+  if (compact) {
+    return Row;
+  }
+  return <ul>{items.map((item) => <Row label={item} />)}</ul>;
+}`,
+      name: 'Row',
+    }),
+    // Declared inside an HOC factory and consumed by the returned component:
+    // the arrow twin of this shape has always been reported.
+    withDefaults({
+      code: `export function withGuard(Editable) {
+  function GuardedInner({value}) { return <Editable value={value} />; }
+  return memo(function GuardedUnmemoized({value}) {
+    return <Provider><GuardedInner value={value} /></Provider>;
+  });
+}`,
+      output: `import { memo } from '../util/memo';
+export function withGuard(Editable) {
+  const GuardedInner = memo(function GuardedInnerUnmemoized({value}) { return <Editable value={value} />; });
+  return memo(function GuardedUnmemoized({value}) {
+    return <Provider><GuardedInner value={value} /></Provider>;
+  });
+}`,
+      name: 'GuardedInner',
+    }),
+    // A nested declaration meets the same collision guard a top-level one does:
+    // the report stands, the edit is withheld.
+    withDefaults({
+      code: `import { memo } from 'react';
+const Dashboard = memo(({items}) => {
+  function Row({label}) { return <li>{label}</li>; }
+  return <ul>{items.map((item) => <Row label={item} />)}</ul>;
+});`,
+      output: null,
       name: 'Row',
     }),
 
