@@ -93,27 +93,36 @@ function renderItem({ label }) {
 
 ### Which components this rule claims
 
-The rule asks whether wrapping the component in `memo()` **where it stands** is
-the right fix, which is a question about the binding's lifetime — not about the
-syntax that declares it or the node that happens to be its parent. A component is
-reported when its identity survives a render:
+An un-memoized component is reported **wherever it sits** — module scope, a bare
+or conditional block, a `namespace` body, `export default`, and inside another
+function's body. Nesting is not a carve-out, and neither is the syntax that
+declares the component: a `function` declaration and a `const` arrow at the same
+depth are the same component, so they receive the same verdict.
 
-- anywhere outside a function body — module scope, a bare or conditional block, a
-  `namespace` body, and `export default`;
-- inside a function that hands it straight back to callers unwrapped
-  (`function makeRow() { function Row(...) {...} return Row; }`), because the
-  caller receives exactly that un-memoized function.
+```jsx
+// Reported: a nested declaration is the same component its arrow twin is.
+export const Page = memo(function PageUnmemoized({ items }) {
+  function Row({ label }) {
+    return <li>{label}</li>;
+  }
+  return <ul>{items.map((item) => <Row label={item} />)}</ul>;
+});
+```
 
-Two shapes are deliberately **not** this rule's:
+A component nested in a render body is also claimed by
+[`memo-nested-react-components`](./memo-nested-react-components.md), whose
+remedy — hoist the component out of the render body — is the one that repairs
+the remount-per-render damage. Following that hoist, this rule's `memo()`
+wrapper is what keeps the hoisted component's consumers from re-rendering; the
+two reports are complementary steps of one repair.
 
-- **A component created inside a render body** belongs to
-  [`memo-nested-react-components`](./memo-nested-react-components.md). It gets a
-  fresh identity on every render, so React unmounts and remounts it — damage that
-  `memo()` does not repair. That rule reports it and explains the real fix
-  (hoist to module scope). Reporting it here as well would attach a second,
-  contradictory remedy to one defect.
-- **A component already handed to `memo()`/`forwardRef()` where it escapes**
-  (`return memo(Row);`) is memoized; a second wrapper would be redundant.
+One shape is deliberately **not** this rule's, in either spelling:
+
+- **A component already handed to `memo()` where it escapes** —
+  `return memo(Row);`, `return memo(forwardRef(Inner));`, `React.memo` included —
+  is memoized where callers receive it; a second wrapper would be redundant. A
+  bare hand-back on **any** return path (`if (compact) return Row;`) defeats the
+  carve-out, because callers can still receive the un-memoized function.
 
 `export default` is rewritten as a separate statement, because
 `export default const X = ...` is not valid syntax. This declaration:

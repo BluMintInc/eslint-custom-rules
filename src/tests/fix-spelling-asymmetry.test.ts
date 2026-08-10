@@ -1110,9 +1110,6 @@ const DETECTION_EXEMPT: Record<string, string> = {
   // FunctionDeclaration key, so a declaration-spelled reassembly goes unseen.
   'prefer-spread-over-reassembly':
     'no FunctionDeclaration visitor, tracked as #1908',
-  // A FunctionDeclaration component is checked only when its parent is the
-  // Program or an export declaration, so a nested one is missed.
-  'require-memo': 'nested declaration components unchecked, tracked as #1774',
 };
 
 /**
