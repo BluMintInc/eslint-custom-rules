@@ -66,6 +66,47 @@ This rule keeps the identity at the outermost element and forbids shorthand frag
 ))}
 ```
 
+## What the fix removes
+
+The fix deletes the `key` attribute together with the whitespace that separated
+it from what precedes it, so no position in an attribute list leaves a stray
+space behind: `<div key={k}>` becomes `<div>`, and `<div id="x" key={k} className="y">`
+becomes `<div id="x" className="y">`.
+
+Deleting a `key` also deletes the expression that computed it, which may have
+been the last thing referencing an import. That import leaves in the SAME fix —
+applying half of the pair would trade this rule's report for a
+`no-unused-vars` error, and nothing would re-report the debt once the `key` is
+gone.
+
+```jsx
+// before
+import { uuidv4Base62 } from 'utils';
+
+{items.map((item) => (
+  <div key={item.id}>
+    <span key={uuidv4Base62()}>{item.name}</span>
+  </div>
+))}
+
+// after
+{items.map((item) => (
+  <div key={item.id}>
+    <span>{item.name}</span>
+  </div>
+))}
+```
+
+Two nested keys that jointly hold one binding alive are removed by a single fix
+for the same reason: neither may unbind it alone, and a fix may only count on the
+other removal happening if it performs that removal itself.
+
+The report always stands; only the fix is withheld when the removal would strand
+a binding this rule must not rewrite — a `map` callback parameter read by nothing
+else, a local helper, or an import whose declaration carries a comment among its
+specifiers. Delete the `key` by hand in those cases and clean up whatever it
+leaves behind.
+
 ## When Not To Use It
 
 Disable this rule only if a nested child truly owns its own identity boundary independent of the list item (for example, when rendering another keyed list or portal inside). In most cases, keeping the key on the outermost element is safer and clearer for React’s reconciliation.
