@@ -619,19 +619,31 @@ export const noUnusedProps = createRule({
     };
 
     /**
-     * The props usage of a single declarator, or `null` when the declarator is
-     * not a props-typed arrow component. Each declarator answers on its own:
-     * this rule reports a member of a props type and rewrites nothing, so a
-     * sibling binding in the same statement has no bearing on the verdict
-     * (#1890).
+     * Every function spelling a component can be written in. Which keyword a
+     * developer reaches for is not part of the question this rule asks — a prop
+     * declared in a Props type and never read is unused whether the function
+     * holding it is an arrow, a function expression or a declaration (#1910).
      */
-    const componentUsageOfDeclarator = (
-      declaration: TSESTree.VariableDeclarator,
+    type ComponentFunction =
+      | TSESTree.ArrowFunctionExpression
+      | TSESTree.FunctionExpression
+      | TSESTree.FunctionDeclaration;
+
+    /**
+     * The props usage of a single function, or `null` when its first parameter
+     * carries no resolvable `*Props` type.
+     *
+     * `annotatedId` is the binding the function is assigned to, when there is
+     * one; it supplies the props type for an unannotated parameter under an
+     * FC-shaped annotation (#1620). A function declaration binds its own name
+     * and can carry no such annotation, so it passes none.
+     */
+    const componentUsageOfFunction = (
+      fn: ComponentFunction,
+      annotatedId?: TSESTree.BindingName,
     ): ComponentUsage | null => {
-      if (declaration.init?.type !== AST_NODE_TYPES.ArrowFunctionExpression) {
-        return null;
-      }
-      const fn = declaration.init;
+      const propsArgumentOfBinding = () =>
+        annotatedId ? propsArgumentOfFcAnnotation(annotatedId) : undefined;
       const param = fn.params[0];
 
       if (param?.type === AST_NODE_TYPES.ObjectPattern) {
@@ -639,8 +651,7 @@ export const noUnusedProps = createRule({
         // as the plain `FooProps` annotation; an unannotated pattern under an
         // FC-annotated declarator resolves from the annotation's argument.
         const typeName = resolvePropsTypeName(
-          param.typeAnnotation?.typeAnnotation ??
-            propsArgumentOfFcAnnotation(declaration.id),
+          param.typeAnnotation?.typeAnnotation ?? propsArgumentOfBinding(),
         );
         if (!typeName) {
           return null;
@@ -655,8 +666,7 @@ export const noUnusedProps = createRule({
         // the body. Resolve the Props type (unwrapping generic wrappers) and
         // scan the body for `const { ... } = props`.
         const typeName = resolvePropsTypeName(
-          param.typeAnnotation?.typeAnnotation ??
-            propsArgumentOfFcAnnotation(declaration.id),
+          param.typeAnnotation?.typeAnnotation ?? propsArgumentOfBinding(),
         );
         if (!typeName) {
           return null;
@@ -687,6 +697,25 @@ export const noUnusedProps = createRule({
       }
 
       return null;
+    };
+
+    /**
+     * The props usage of a single declarator, or `null` when the declarator
+     * holds no props-typed function. Each declarator answers on its own: this
+     * rule reports a member of a props type and rewrites nothing, so a sibling
+     * binding in the same statement has no bearing on the verdict (#1890).
+     */
+    const componentUsageOfDeclarator = (
+      declaration: TSESTree.VariableDeclarator,
+    ): ComponentUsage | null => {
+      const { init } = declaration;
+      if (
+        init?.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
+        init?.type !== AST_NODE_TYPES.FunctionExpression
+      ) {
+        return null;
+      }
+      return componentUsageOfFunction(init, declaration.id);
     };
 
     return {
@@ -1230,6 +1259,17 @@ export const noUnusedProps = createRule({
         if (currentComponents?.node === node) {
           componentsToCheck.push(...currentComponents.components);
           currentComponents = null;
+        }
+      },
+
+      FunctionDeclaration(node) {
+        const component = componentUsageOfFunction(node);
+        // Recorded straight into the accumulator rather than through the
+        // pending slot above, which holds a single statement: a declaration
+        // nested inside an arrow component would take that slot and the
+        // enclosing component's verdict would be discarded with it.
+        if (component) {
+          componentsToCheck.push(component);
         }
       },
 

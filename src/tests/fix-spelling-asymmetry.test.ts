@@ -1085,10 +1085,6 @@ const DETECTION_EXEMPT: Record<string, string> = {
   // identity shape is deliberately still concise-only, because widening it
   // would ship a second copy of behaviour whose boundary is unsettled.
   'no-undefined-null-passthrough': 'identity shape deferred, tracked as #1785',
-  // Enumerates candidate components from VariableDeclaration nodes only, so a
-  // component respelled as a function declaration is never checked.
-  'no-unused-props':
-    'components enumerated from VariableDeclaration only, tracked as #1910',
   // Reports in BOTH spellings and swaps `preferMap` for `preferMapManual` when
   // the dispatch sits in a concise body, whose message names the reason: there
   // is no statement position to place the `Record` in, so the fix is withheld
