@@ -152,10 +152,6 @@ const KNOWN_DIVERGENT: Record<string, string> = {
     'ARTIFACT: only reached via `memo<any, Props>?.(Comp)`, an optional call on the React memo binding',
   'memo-compare-deeply-complex-props::member':
     'ARTIFACT: only reached via `React?.forwardRef`, an optional link on the namespace import',
-  'memo-nested-react-components::call':
-    'ARTIFACT: only reached via `describe?.()` / `it?.()`',
-  'memo-nested-react-components::member':
-    'ARTIFACT: only reached via `it?.each`',
   'no-always-true-false-conditions::call':
     'CORRECT: `?.` introduces a nullish branch, so a condition that was statically decidable no longer is',
   'no-always-true-false-conditions::member':

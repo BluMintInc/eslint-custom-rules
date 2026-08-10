@@ -64,11 +64,64 @@ const collectReactImports = (
   return reactImports;
 };
 
+/**
+ * Strips wrappers that leave a value's identity untouched, so a respelling
+ * reaches the same matcher as the plain form.
+ *
+ * ESTree wraps a whole optional chain in a ChainExpression, so `memo?.(Row)`
+ * arrives as `ChainExpression { expression: CallExpression }` and
+ * `(React?.memo)(Row)` puts one in callee position. Every carve-out below asks
+ * "is this a memo()/forwardRef() call?" by matching CallExpression directly, so
+ * without this arm the nullish spelling of an already-memoized hand-back reads
+ * as an un-memoized nested declaration (#1911).
+ */
+const unwrapNode = (node: TSESTree.Node): TSESTree.Node => {
+  switch (node.type) {
+    case AST_NODE_TYPES.TSAsExpression:
+    case AST_NODE_TYPES.TSSatisfiesExpression:
+    case AST_NODE_TYPES.TSNonNullExpression:
+    case AST_NODE_TYPES.ChainExpression:
+      return unwrapNode(node.expression);
+    default:
+      break;
+  }
+
+  /**
+   * ParenthesizedExpression appears in the parsed AST even though the type
+   * is missing from AST_NODE_TYPES. This assertion safely unwraps to keep
+   * traversal consistent.
+   */
+  if ((node.type as unknown as string) === 'ParenthesizedExpression') {
+    return unwrapNode(
+      (node as unknown as { expression: TSESTree.Node }).expression,
+    );
+  }
+
+  return node;
+};
+
+/**
+ * The ancestor a node reaches once optional-chain wrappers are skipped. A
+ * ChainExpression sits between a call and its declarator in
+ * `const X = useCallback?.(...)`, and between a runner call and its statement in
+ * `it?.('name', () => {})`, so a parent read that expects one of those directly
+ * misses the shape it was written to recognize.
+ */
+const parentBeyondChain = (node: TSESTree.Node): TSESTree.Node | undefined => {
+  let parent = node.parent;
+  while (parent && parent.type === AST_NODE_TYPES.ChainExpression) {
+    parent = parent.parent;
+  }
+  return parent;
+};
+
 const calleeMatchesReactMember = (
-  callee: TSESTree.LeftHandSideExpression,
+  calleeNode: TSESTree.Node,
   reactImports: ReactImports,
   member: keyof ReactImports['named'],
 ): boolean => {
+  const callee = unwrapNode(calleeNode);
+
   if (callee.type === AST_NODE_TYPES.Identifier) {
     return reactImports.named[member] === callee.name;
   }
@@ -99,30 +152,7 @@ const isFunctionExpression = (
 const unwrapExpression = (
   expression: TSESTree.Expression,
 ): TSESTree.Expression => {
-  if (expression.type === AST_NODE_TYPES.TSAsExpression) {
-    return unwrapExpression(expression.expression);
-  }
-  if (expression.type === AST_NODE_TYPES.TSSatisfiesExpression) {
-    return unwrapExpression(expression.expression);
-  }
-  if (expression.type === AST_NODE_TYPES.TSNonNullExpression) {
-    return unwrapExpression(expression.expression);
-  }
-  /**
-   * ParenthesizedExpression appears in the parsed AST even though the type
-   * is missing from AST_NODE_TYPES. This assertion safely unwraps to keep
-   * traversal consistent.
-   */
-  if (
-    ((expression as TSESTree.Node).type as unknown as string) ===
-    'ParenthesizedExpression'
-  ) {
-    return unwrapExpression(
-      (expression as unknown as { expression: TSESTree.Expression }).expression,
-    );
-  }
-
-  return expression;
+  return unwrapNode(expression) as TSESTree.Expression;
 };
 
 const isReactCreateElementCall = (
@@ -132,9 +162,9 @@ const isReactCreateElementCall = (
   return calleeMatchesReactMember(node.callee, reactImports, 'createElement');
 };
 
-const isHookCall = (
-  callee: TSESTree.LeftHandSideExpression,
-): { name: string } | null => {
+const isHookCall = (calleeNode: TSESTree.Node): { name: string } | null => {
+  const callee = unwrapNode(calleeNode);
+
   if (callee.type === AST_NODE_TYPES.Identifier) {
     if (CALLBACK_HOOKS.has(callee.name)) {
       return { name: callee.name };
@@ -170,9 +200,11 @@ const isHookCall = (
  * are not misread as element creation.
  */
 const calleeMatchesName = (
-  callee: TSESTree.LeftHandSideExpression,
+  calleeNode: TSESTree.Node,
   name: string,
 ): boolean => {
+  const callee = unwrapNode(calleeNode);
+
   if (callee.type === AST_NODE_TYPES.Identifier) {
     return callee.name === name;
   }
@@ -414,12 +446,14 @@ const shouldIgnoreFile = (filename: string, patterns: string[]): boolean => {
 };
 
 const getVariableName = (node: TSESTree.CallExpression): string | null => {
+  const parent = parentBeyondChain(node);
+
   if (
-    node.parent &&
-    node.parent.type === AST_NODE_TYPES.VariableDeclarator &&
-    node.parent.id.type === AST_NODE_TYPES.Identifier
+    parent &&
+    parent.type === AST_NODE_TYPES.VariableDeclarator &&
+    parent.id.type === AST_NODE_TYPES.Identifier
   ) {
-    return node.parent.id.name;
+    return parent.id.name;
   }
 
   return null;
@@ -657,7 +691,9 @@ const TEST_RUNNER_NAMES = new Set([
  * The identifier a callee is rooted at, so `it`, `it.only`, `it.each(...)` and
  * `describe.each`...`` all resolve to the runner's own name.
  */
-const calleeRootName = (callee: TSESTree.Node): string | undefined => {
+const calleeRootName = (calleeNode: TSESTree.Node): string | undefined => {
+  const callee = unwrapNode(calleeNode);
+
   switch (callee.type) {
     case AST_NODE_TYPES.Identifier:
       return callee.name;
@@ -687,7 +723,7 @@ const isTestRunnerCallback = (fn: TSESTree.Node): boolean => {
   if (!call.arguments.includes(fn as TSESTree.CallExpressionArgument)) {
     return false;
   }
-  if (call.parent?.type !== AST_NODE_TYPES.ExpressionStatement) {
+  if (parentBeyondChain(call)?.type !== AST_NODE_TYPES.ExpressionStatement) {
     return false;
   }
   const root = calleeRootName(call.callee);
@@ -715,7 +751,7 @@ const isModuleMockFactory = (fn: TSESTree.Node): boolean => {
   if (!call.arguments.includes(fn as TSESTree.CallExpressionArgument)) {
     return false;
   }
-  const { callee } = call;
+  const callee = unwrapNode(call.callee);
   return (
     callee.type === AST_NODE_TYPES.MemberExpression &&
     !callee.computed &&
@@ -929,8 +965,9 @@ See: https://react.dev/learn/your-first-component#nesting-and-organizing-compone
         if (isInsideHocFactory(node, reactImports)) return;
 
         // Skip if it's already a hook call (handled by CallExpression visitor)
-        if (node.init.type === AST_NODE_TYPES.CallExpression) {
-          const hook = isHookCall(node.init.callee);
+        const init = unwrapExpression(node.init);
+        if (init.type === AST_NODE_TYPES.CallExpression) {
+          const hook = isHookCall(init.callee);
           if (hook) return;
         }
 
