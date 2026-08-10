@@ -32,9 +32,12 @@ const RESULT_BY_STANDARD: Record<TokenStandard, typeof NativeTokenEncoder | type
 return RESULT_BY_STANDARD[token.standard];
 ```
 
-A `Record` makes exhaustiveness a **compile-time** guarantee — under `strict`, a
-missing key is a type error the moment a new member joins the union — instead of
-a runtime fallthrough risk. Adding a new case becomes a one-line data edit
+A `Record` makes exhaustiveness a **compile-time** guarantee — a missing key is
+a type error the moment a new member joins the union — instead of a runtime
+fallthrough risk. That guarantee lives in the key *type*, so the fix emits the
+discriminant's type **expression** (`TokenStandard`, `ThumbnailBody['kind']`)
+and the missing-key error lands on the `Record`; see
+[The key type](#the-key-type). Adding a new case becomes a one-line data edit
 instead of a new branch. This mechanizes BluMint's "Replace hardcoded
 special-cases with data" doctrine.
 
@@ -255,6 +258,37 @@ only after the checker resolved the expression to a string/number *literal*
 type, so the key is a literal key and `Record<D, V>` stays exhaustive over it.
 Keys for the member a `default`/`else` covers have no case-test expression of
 their own and stay plain.
+
+### The key type
+
+The exhaustiveness guarantee lives entirely in the `Record`'s **key type**, so
+the fix emits a type expression that keeps tracking the union rather than the
+literal union the checker resolved the discriminant to:
+
+- a discriminant whose own type prints as a name keeps that name
+  (`Record<TokenStandard, V>`, `Record<Mode, V>`);
+- a tag access such as `body.kind`, whose resolved type is an anonymous literal
+  union, is emitted as the indexed access through the object's named type
+  (`Record<ThumbnailBody['kind'], V>`);
+- when no name is reachable — a fully inline type such as
+  `declare const o: { kind: 'a' | 'b' }`, or a tag access the surrounding flow
+  has already narrowed below its declared union — the resolved literal union is
+  the only faithful spelling and stays.
+
+The difference is not cosmetic. With the literal union inlined, a `Record` that
+has fallen behind its union still typechecks on its own and only the **lookup**
+errors, as `TS7053` ("implicitly has an 'any' type"). That is an implicit-any
+diagnostic, so under `noImplicitAny: false` nothing is reported at all and the
+lookup silently yields `undefined` for the new member; even under full `strict`
+the error lands at the lookup site rather than on the table that is missing the
+key. With the type expression the error is `TS2741` ("Property 'c' is missing")
+on the `Record` itself — it names exactly what to add and does not depend on
+`noImplicitAny`.
+
+The derived spelling ships only when the name resolves at the fix site and the
+property's declared key set matches the discriminant's; otherwise the fix falls
+back to the resolved literal union, because a weak key type beats one that does
+not compile.
 
 ### Incorrect
 
