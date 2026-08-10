@@ -62,6 +62,10 @@ using class state:
 - `this.member`
 - `<ClassName>.member`, where `ClassName` is the enclosing class — including the
   optional-chained `<ClassName>?.member` and the computed `<ClassName>['member']`
+- `owner.member`, where `owner` is a binding holding the class
+  (`const owner = ClassName`)
+- `const { member } = ClassName` and `const { member } = owner` — the pattern is
+  the dereference, provided it names at least one property
 - `super.member`
 - `new.target`
 
@@ -71,6 +75,42 @@ static member (`OtherClass.MEMBER`) leaves the report standing. A method reading
 a `private static` member of its own class is never reported, because such a
 member is unreachable from module scope and so the extraction this rule
 prescribes is impossible for it.
+
+### Aliases of the class binding
+
+Binding the class to a local first changes the syntax that reaches a member, not
+which member is read, so `const owner = ClassName; owner.MEMBER` counts exactly
+as `ClassName.MEMBER` does. The alias is resolved by binding as well: a local
+initialized from anything else is not the class even if it is named like one,
+and an alias of a local that shadows the class name resolves to the shadow.
+
+Chains are followed to a fixpoint — `const a = ClassName; const b = a; b.MEMBER`
+reads the same member — because no chain length changes the answer, so any fixed
+depth would misreport the read one hop past it.
+
+An alias is credited only when it provably still holds the class wherever it is
+dereferenced: it has one declaration, that declaration initializes it from the
+class, and nothing writes to it afterwards. A binding reassigned anywhere in the
+file may hold something else by the time it is used, so it is not credited and
+the report stands.
+
+Aliasing `this` needs no special handling: `this` in a static member is the
+class, and mentioning it at all already counts as reaching class state.
+
+A destructuring pattern counts only when it names a property. `const {} = C`
+selects nothing, and `const { ...rest } = C` selects nothing either — that is
+the shape `no-unnecessary-destructuring` reports and rewrites to the plain
+assignment `const rest = C`, so it is an alias of the class rather than a read
+of one of its members. `const { MEMBER, ...rest } = C` does name a member and so
+counts.
+
+**Construction and `instanceof` are not state reads.** `new ClassName()`,
+`new owner()`, `x instanceof ClassName` and `x instanceof owner` all leave the
+report standing, and so does handing the class to something else as a value
+(`register(owner)`). A helper that only instantiates or type-tests the class
+touches none of its state and works unchanged at module scope, which is the
+helper this rule exists to surface. Only a dereference of a member — through the
+class binding or through an alias of it — makes a helper unable to move.
 
 Why this matters:
 
@@ -108,6 +148,20 @@ export class JsonParser {
 // Joining the statements onto one line does not make the helper trivial
 export class Example {
   private static compute(value: number) { const doubled = value * 2; const squared = value * value; return doubled + squared; }
+}
+```
+
+```ts
+// Binding the class to a local does not turn construction into a state read:
+// this helper works unchanged at module scope
+export class Aliased {
+  private static readonly LIMIT = 10;
+
+  private static buildAll(values: number[]) {
+    const owner = Aliased;
+    const made = values.map(() => new owner());
+    return made;
+  }
 }
 ```
 
@@ -189,6 +243,19 @@ export class Slugger {
   private static toSlug(title: string) {
     // Comments and line breaks do not count toward the threshold.
     return title.trim().toLowerCase().replace(/\s+/g, '-');
+  }
+}
+```
+
+```ts
+// A local holding the class reaches the same member the qualified spelling does
+export class Aliased {
+  private static readonly LIMIT = 10;
+
+  private static capAll(values: number[]) {
+    const owner = Aliased;
+    const capped = values.map((value) => Math.min(value, owner.LIMIT));
+    return capped;
   }
 }
 ```
