@@ -18,7 +18,7 @@ The rule reports when all of these are true:
 - Later awaits do not reference identifiers **declared** by earlier awaits (direct identifier reference-based dependency check).
 - Later awaits do not read an identifier that an earlier await **writes from inside a callback** (`mutator = new Mutator(tx)` in a transaction body), a data dependency that flows through the closure rather than through the await's value.
 - Later awaits do not share "coordinator" identifiers (like `batchManager`, `transaction`, or `collector`) with earlier awaits.
-- The awaited calls do not invoke methods on the **same receiver identifier** (e.g. `ref.set(...)` then `ref.get()`), which can carry a read-after-write / write-after-write ordering dependency on that shared object.
+- The awaited calls do not invoke methods on the **same receiver** (e.g. `ref.set(...)` then `ref.get()`, or `this.load()` then `this.read()`), which can carry a read-after-write / write-after-write ordering dependency on that shared object.
 - No later discarded-result await reads as a **state refetch/refresh** (`refresh*`, `reload*`, `refetch*`, `revalidate*`, `resync*`, `sync*`), which re-observes state a preceding await may have mutated.
 - None of the awaits performs a **route transition** (`push*`, `replace*`, `navigate*`, `redirect*`, `reroute*`, `goto*`, or any method on a `router`/`history`/`navigation`/`nav` receiver), which sequences the surrounding awaits by UI lifetime.
 - No later await names a promise that an earlier **awaited aggregate** (`Promise.all`, `allSettled`, `any`, `race`) is still producing — neither the aggregated array's own `const` binding nor any element written as a bare identifier.
@@ -90,7 +90,7 @@ async function processBatch(batchManager: BatchManager, item1: Item, item2: Item
 
 ### ✅ Correct (shared receiver ordering)
 
-These must remain sequential because both awaits call methods on the **same receiver identifier** (`versionRef`). The `.get()` must observe the value written by the preceding `.set()`; rewriting to `Promise.all([...])` would race the read against the write and can return the stale value.
+These must remain sequential because both awaits call methods on the **same receiver** (`versionRef`). The `.get()` must observe the value written by the preceding `.set()`; rewriting to `Promise.all([...])` would race the read against the write and can return the stale value.
 
 ```typescript
 async function bumpVersion(versionRef: VersionRef) {
@@ -100,7 +100,35 @@ async function bumpVersion(versionRef: VersionRef) {
 }
 ```
 
-The receiver must be a bare identifier. A distinct nested member (`api.users.get()` vs `api.posts.get()`), a fresh chain per call (`db.collection(a).get()` vs `db.collection(b).get()`), or a numeric/dynamic index (`operations[0]()` vs `operations[1]()`) selects a different target each time and is still flagged. Two pure reads on one receiver are conservatively kept sequential as well, since a shared receiver can hold hidden state (for example a paginated cursor)—the worst case is a missed parallelization, which is safer than reordering a real dependency.
+A receiver counts when it denotes one statically known object: a bare binding (`versionRef`), `this`, `super`, or a fixed chain over any of those (`this.inner`, `app.services.store`). Optional chaining and non-null assertions spell the same path, so `this.inner?.write()` and `this.inner.read()` share a receiver too.
+
+`this` is the strongest case, because a method call on `this` is the canonical way to mutate instance state and the rule models instance state nowhere—the dependency below flows through `this.summaries` and has no syntactic representation at the call site.
+
+```typescript
+class MatchWinnerAnnouncer {
+  private summaries: string[] = [];
+
+  public async forHosts() {
+    await this.initializeTeamData(); // populates this.summaries
+    const stamp = await this.resolveHostStamp(); // reads this.summaries
+    return stamp;
+  }
+
+  private async initializeTeamData() {
+    this.summaries = await this.fetchSummaries();
+  }
+
+  private async resolveHostStamp() {
+    return this.summaries[0];
+  }
+
+  private async fetchSummaries() {
+    return ['a'];
+  }
+}
+```
+
+Receivers that differ, or whose identity varies per evaluation, are still flagged: a distinct member (`api.users.get()` vs `api.posts.get()`, `this.users.read()` vs `this.posts.read()`), a fresh chain per call (`db.collection(a).get()` vs `db.collection(b).get()`), or a numeric/dynamic index (`operations[0]()` vs `operations[1]()`) selects a different target each time. Two pure reads on one receiver are conservatively kept sequential as well, since a shared receiver can hold hidden state (for example a paginated cursor)—the worst case is a missed parallelization, which is safer than reordering a real dependency.
 
 ### ✅ Correct (refetch/refresh ordering)
 

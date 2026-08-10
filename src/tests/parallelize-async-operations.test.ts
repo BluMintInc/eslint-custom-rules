@@ -2258,58 +2258,6 @@ async function saveAll(a, b) {
       `,
     },
 
-    // Edge case: Sequential awaits with this context
-    {
-      code: `
-      class AsyncClass {
-        async sequentialMethods() {
-          await this.method1();
-          await this.method2();
-          await this.method3();
-          return 'completed';
-        }
-      }
-      `,
-      errors: [error(3)],
-      output: `
-      class AsyncClass {
-        async sequentialMethods() {
-          await Promise.all([
-            this.method1(),
-            this.method2(),
-            this.method3()
-          ]);
-          return 'completed';
-        }
-      }
-      `,
-    },
-
-    // Edge case: Sequential awaits with super calls
-    {
-      code: `
-      class ChildClass extends ParentClass {
-        async sequentialSuper() {
-          await super.method1();
-          await super.method2();
-          return 'completed';
-        }
-      }
-      `,
-      errors: [error(2)],
-      output: `
-      class ChildClass extends ParentClass {
-        async sequentialSuper() {
-          await Promise.all([
-            super.method1(),
-            super.method2()
-          ]);
-          return 'completed';
-        }
-      }
-      `,
-    },
-
     // Edge case: Sequential awaits with yield expressions (in async generator)
     {
       code: `
@@ -3217,6 +3165,417 @@ async function secondParameterNamedPromise(documents) {
   }, Promise.resolve());
 }
 `,
+    },
+  ],
+});
+
+ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
+  valid: [
+    /**
+     * A `this` receiver is an ordering barrier: `initializeTeamData` populates
+     * instance state that `resolveHostStamp` reads, an edge with no syntactic
+     * representation. Same trade-off #1287 accepted for bare identifiers.
+     */
+    {
+      code: `
+        class MatchWinnerAnnouncer {
+          private summaries: string[] = [];
+          public async forHosts(hostIds: readonly string[]) {
+            await this.initializeTeamData();
+            const stamp = await this.resolveHostStamp();
+            return [stamp, hostIds] as const;
+          }
+          private async initializeTeamData() {
+            this.summaries = await this.fetchSummaries();
+          }
+          private async resolveHostStamp() {
+            return this.summaries[0];
+          }
+          private async fetchSummaries() {
+            return ['a'];
+          }
+        }
+      `,
+    },
+    /** Discarded-result form: no declaration on either statement. */
+    {
+      code: `
+        class Announcer {
+          public async forUser(userId: string) {
+            await this.initializeTeamData();
+            await this.generateUpdateMessage(userId);
+          }
+          private async initializeTeamData() {}
+          private async generateUpdateMessage(userId: string) {}
+        }
+      `,
+    },
+    /** `super` receiver — same barrier. */
+    {
+      code: `
+        class Child extends Base {
+          public async run() {
+            await super.initializeTeamData();
+            const stamp = await super.resolveHostStamp();
+            return stamp;
+          }
+        }
+      `,
+    },
+    /** Nested member receiver `this.inner.*` — same shared object. */
+    {
+      code: `
+        class Holder {
+          private inner: any;
+          public async run() {
+            await this.inner.initializeTeamData();
+            const stamp = await this.inner.resolveHostStamp();
+            return stamp;
+          }
+        }
+      `,
+    },
+    // Three consecutive awaits on `this`. This case and the `super` one below
+    // sat in `invalid` from the original spec (#742), pinning the pre-#1287
+    // assumption that a shared receiver carries no ordering signal. #1287
+    // overturned that for bare identifiers; the rationale is receiver-agnostic,
+    // so the same run on `this` is a barrier too. (#1914)
+    {
+      code: `
+      class AsyncClass {
+        async sequentialMethods() {
+          await this.method1();
+          await this.method2();
+          await this.method3();
+          return 'completed';
+        }
+      }
+      `,
+    },
+    {
+      code: `
+      class ChildClass extends ParentClass {
+        async sequentialSuper() {
+          await super.method1();
+          await super.method2();
+          return 'completed';
+        }
+      }
+      `,
+    },
+    // A deep chain of fixed segments denotes one object just as a bare binding
+    // does, so the whole path is the receiver key.
+    {
+      code: `
+      async function deepChain(app) {
+        await app.services.store.write(1);
+        const value = await app.services.store.read();
+        return value;
+      }
+      `,
+    },
+    // Optional chaining is a spelling of the same path: the barrier must engage
+    // on `this.inner?.x()` exactly as on `this.inner.x()`. Matching
+    // MemberExpression alone goes blind here, because the optional form wraps
+    // the call in a ChainExpression.
+    {
+      code: `
+      class Holder {
+        private inner: any;
+        async run() {
+          await this.inner?.write(1);
+          const value = await this.inner.read();
+          return value;
+        }
+      }
+      `,
+    },
+    {
+      code: `
+      class Holder {
+        private inner: any;
+        async run() {
+          await this.inner?.write(1);
+          const value = await this.inner?.read();
+          return value;
+        }
+      }
+      `,
+    },
+    // An optional call on `this` itself.
+    {
+      code: `
+      class Holder {
+        async run() {
+          await this?.write(1);
+          const value = await this.read();
+          return value;
+        }
+      }
+      `,
+    },
+    // A non-null assertion is likewise the same path.
+    {
+      code: `
+      class Holder {
+        private inner: any;
+        async run() {
+          await this.inner!.write(1);
+          const value = await this.inner.read();
+          return value;
+        }
+      }
+      `,
+    },
+    // A computed string-literal segment spells the same slot as the dotted
+    // form, so `this['inner']` and `this.inner` share a receiver key.
+    {
+      code: `
+      class Holder {
+        private inner: any;
+        async run() {
+          await this['inner'].write(1);
+          const value = await this.inner.read();
+          return value;
+        }
+      }
+      `,
+    },
+    // Three awaits on one nested receiver, each spelled differently.
+    {
+      code: `
+      class Holder {
+        private inner: any;
+        async run() {
+          await this.inner.write(1);
+          await this.inner?.write(2);
+          const value = await this.inner['read']();
+          return value;
+        }
+      }
+      `,
+    },
+    // The barrier holds the whole run, so an unrelated leading await does not
+    // release the `this` pair that follows it.
+    {
+      code: `
+      class Holder {
+        async run() {
+          await warmCache();
+          await this.write(1);
+          const value = await this.read();
+          return value;
+        }
+      }
+      `,
+    },
+    // A method invoked optionally on an optional receiver is still that
+    // receiver's method.
+    {
+      code: `
+      class Holder {
+        private inner: any;
+        async run() {
+          await this.inner?.write?.(1);
+          const value = await this.inner.read();
+          return value;
+        }
+      }
+      `,
+    },
+  ],
+  invalid: [
+    // The barrier must not collapse DISTINCT receivers onto one key: a key that
+    // ignored the path would silence every await pair rooted at `this` and
+    // disable the rule inside classes entirely.
+    {
+      code: `
+      class Holder {
+        private users: any;
+        private posts: any;
+        async run() {
+          const people = await this.users.read();
+          const articles = await this.posts.read();
+          return [people, articles];
+        }
+      }
+      `,
+      errors: [error(2)],
+      output: `
+      class Holder {
+        private users: any;
+        private posts: any;
+        async run() {
+          const [people, articles] = await Promise.all([
+            this.users.read(),
+            this.posts.read()
+          ]);
+          return [people, articles];
+        }
+      }
+      `,
+    },
+    // A bare binding and `this` are different objects.
+    {
+      code: `
+      class Holder {
+        async run(svc) {
+          const remote = await svc.read();
+          const local = await this.read();
+          return [remote, local];
+        }
+      }
+      `,
+      errors: [error(2)],
+      output: `
+      class Holder {
+        async run(svc) {
+          const [remote, local] = await Promise.all([
+            svc.read(),
+            this.read()
+          ]);
+          return [remote, local];
+        }
+      }
+      `,
+    },
+    // Free calls have no receiver at all, so the barrier never engages.
+    {
+      code: `
+      async function freeCalls() {
+        const people = await fetchUsers();
+        const articles = await fetchPosts();
+        return [people, articles];
+      }
+      `,
+      errors: [error(2)],
+      output: `
+      async function freeCalls() {
+        const [people, articles] = await Promise.all([
+          fetchUsers(),
+          fetchPosts()
+        ]);
+        return [people, articles];
+      }
+      `,
+    },
+    // Deep chains that diverge at their last segment are different objects.
+    {
+      code: `
+      async function divergingChains(app) {
+        const people = await app.services.users.read();
+        const articles = await app.services.posts.read();
+        return [people, articles];
+      }
+      `,
+      errors: [error(2)],
+      output: `
+      async function divergingChains(app) {
+        const [people, articles] = await Promise.all([
+          app.services.users.read(),
+          app.services.posts.read()
+        ]);
+        return [people, articles];
+      }
+      `,
+    },
+    // A numeric subscript selects a distinct element from a container rather
+    // than reaching a fixed slot on a stateful object, so two such receivers
+    // are independent even under a shared root.
+    {
+      code: `
+      class Holder {
+        private handlers: any[];
+        async run() {
+          const first = await this.handlers[0].read();
+          const second = await this.handlers[1].read();
+          return [first, second];
+        }
+      }
+      `,
+      errors: [error(2)],
+      output: `
+      class Holder {
+        private handlers: any[];
+        async run() {
+          const [first, second] = await Promise.all([
+            this.handlers[0].read(),
+            this.handlers[1].read()
+          ]);
+          return [first, second];
+        }
+      }
+      `,
+    },
+    // A call inside the chain can yield a different object per evaluation, so
+    // the key derivation stops there -- a `this` root does not change that.
+    {
+      code: `
+      class Holder {
+        private realtimeDb: any;
+        async run(pathA, pathB) {
+          await this.realtimeDb.ref(pathA).remove();
+          await this.realtimeDb.ref(pathB).remove();
+        }
+      }
+      `,
+      errors: [error(2)],
+      output: `
+      class Holder {
+        private realtimeDb: any;
+        async run(pathA, pathB) {
+          await Promise.all([
+            this.realtimeDb.ref(pathA).remove(),
+            this.realtimeDb.ref(pathB).remove()
+          ]);
+        }
+      }
+      `,
+    },
+    // One receiver among the run's awaits pairs with nothing.
+    {
+      code: `
+      class Holder {
+        async run() {
+          const value = await this.read();
+          const other = await loadSettings();
+          return [value, other];
+        }
+      }
+      `,
+      errors: [error(2)],
+      output: `
+      class Holder {
+        async run() {
+          const [value, other] = await Promise.all([
+            this.read(),
+            loadSettings()
+          ]);
+          return [value, other];
+        }
+      }
+      `,
+    },
+    // Two distinct bare receivers keep reporting, which is the #1287 behavior
+    // this fix extends rather than replaces.
+    {
+      code: `
+      async function distinctBareReceivers(api, db) {
+        const people = await api.getUsers();
+        const articles = await db.getPosts();
+        return [people, articles];
+      }
+      `,
+      errors: [error(2)],
+      output: `
+      async function distinctBareReceivers(api, db) {
+        const [people, articles] = await Promise.all([
+          api.getUsers(),
+          db.getPosts()
+        ]);
+        return [people, articles];
+      }
+      `,
     },
   ],
 });
