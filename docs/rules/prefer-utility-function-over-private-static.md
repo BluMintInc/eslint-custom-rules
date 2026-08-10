@@ -10,8 +10,24 @@ Private static methods that do not touch class state are really module-level uti
 
 This rule flags private static methods that:
 
-- Do not reference `this` anywhere in their body (including nested callbacks)
+- Do not reach their own class anywhere in their body (including nested callbacks)
 - Have a non-trivial body (four or more lines including braces)
+
+A method reaches its class through any of these spellings, all of which count as
+using class state:
+
+- `this.member`
+- `<ClassName>.member`, where `ClassName` is the enclosing class — including the
+  optional-chained `<ClassName>?.member` and the computed `<ClassName>['member']`
+- `super.member`
+- `new.target`
+
+The class name is matched by binding, not by text: a local variable or parameter
+that shadows the class name reads as an unrelated value, and another class's
+static member (`OtherClass.MEMBER`) leaves the report standing. A method reading
+a `private static` member of its own class is never reported, because such a
+member is unreachable from module scope and so the extraction this rule
+prescribes is impossible for it.
 
 Why this matters:
 
@@ -70,6 +86,21 @@ export class Example {
 
   private static get multiplier() {
     return 2;
+  }
+}
+```
+
+```ts
+// The class-name-qualified spelling reaches the same state as `this`
+export class PriceTotals {
+  private static readonly EMPTY_PRICES: readonly number[] = [];
+
+  private static sumActivePrices(items: Item[]) {
+    const active = items.filter((item) => item.active);
+    const prices = active.length
+      ? active.map((item) => item.price)
+      : PriceTotals.EMPTY_PRICES;
+    return prices.reduce((sum, price) => sum + price, 0);
   }
 }
 ```

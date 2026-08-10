@@ -11,6 +11,243 @@ ruleTesterTs.run(
   preferUtilityFunctionOverPrivateStatic,
   {
     valid: [
+      {
+        code: `
+type Item = { price: number; active: boolean };
+
+export class PriceTotals {
+  private static readonly EMPTY_PRICES: readonly number[] = [];
+
+  constructor(private readonly items: Item[]) {}
+
+  public get total() {
+    return PriceTotals.sumActivePrices(this.items);
+  }
+
+  private static sumActivePrices(items: Item[]) {
+    const active = items.filter((item) => item.active);
+    const prices = active.length
+      ? active.map((item) => item.price)
+      : PriceTotals.EMPTY_PRICES;
+    return prices.reduce((sum, price) => sum + price, 0);
+  }
+}
+        `,
+      },
+      {
+        code: `
+export class ApiClient {
+  private static readonly RETRY_LIMIT = 3;
+
+  public send(requests: string[]) {
+    return ApiClient.buildRetryPlan(requests);
+  }
+
+  private static buildRetryPlan(requests: string[]) {
+    const normalized = requests.map((request) => request.trim());
+    const deduped = Array.from(new Set(normalized));
+    const limit = ApiClient.RETRY_LIMIT;
+    return deduped.map((request) => ({ request, limit }));
+  }
+}
+        `,
+      },
+      // Class-name-qualified call of a sibling private static method
+      {
+        code: `
+        export class Formatter {
+          private static normalize(value: string) {
+            return value.trim();
+          }
+
+          private static formatAll(values: string[]) {
+            const trimmed = values.map((value) => Formatter.normalize(value));
+            const unique = Array.from(new Set(trimmed));
+            return unique.sort();
+          }
+        }
+      `,
+      },
+      // Class-name-qualified read of a private static getter
+      {
+        code: `
+        export class Scaler {
+          private static get multiplier() {
+            return 2;
+          }
+
+          private static scaleAll(values: number[]) {
+            const scaled = values.map((value) => value * Scaler.multiplier);
+            const total = scaled.reduce((sum, value) => sum + value, 0);
+            return { scaled, total };
+          }
+        }
+      `,
+      },
+      // Class-name-qualified read inside a nested arrow callback
+      {
+        code: `
+        export class Tagger {
+          private static readonly PREFIX = 'tag:';
+
+          private static tagAll(values: string[]) {
+            return values.map((value) => {
+              const trimmed = value.trim();
+              return Tagger.PREFIX + trimmed;
+            });
+          }
+        }
+      `,
+      },
+      // Class-name-qualified read inside a nested function declaration
+      {
+        code: `
+        export class Joiner {
+          private static readonly SEPARATOR = ',';
+
+          private static joinAll(values: string[]) {
+            function combine(parts: string[]) {
+              return parts.join(Joiner.SEPARATOR);
+            }
+            return combine(values);
+          }
+        }
+      `,
+      },
+      // Class-name-qualified read inside a template literal
+      {
+        code: `
+        export class Labeler {
+          private static readonly PREFIX = 'id';
+
+          private static labelAll(values: number[]) {
+            const labels = values.map((value) => \`\${Labeler.PREFIX}-\${value}\`);
+            const joined = labels.join(' ');
+            return joined;
+          }
+        }
+      `,
+      },
+      // Optional-chained class-name-qualified read (ChainExpression wrapper)
+      {
+        code: `
+        export class Lookup {
+          private static readonly TABLE: Record<string, number> = {};
+
+          private static lookupAll(keys: string[]) {
+            const found = keys.map((key) => Lookup?.TABLE[key]);
+            const defined = found.filter((value) => value !== undefined);
+            return defined;
+          }
+        }
+      `,
+      },
+      // Computed class-name-qualified read
+      {
+        code: `
+        export class Bracket {
+          private static readonly LIMIT = 5;
+
+          private static capAll(values: number[]) {
+            const limit = Bracket['LIMIT'];
+            const capped = values.map((value) => Math.min(value, limit));
+            return capped;
+          }
+        }
+      `,
+      },
+      // Class expression assigned to a const, read through the const name
+      {
+        code: `
+        const Bounds = class {
+          private static readonly MAX = 10;
+
+          private static clampAll(values: number[]) {
+            const clamped = values.map((value) => Math.min(value, Bounds.MAX));
+            const sorted = clamped.sort((a, b) => a - b);
+            return sorted;
+          }
+        };
+      `,
+      },
+      // Named class expression read through its own inner binding
+      {
+        code: `
+        const Exported = class InnerBounds {
+          private static readonly MAX = 10;
+
+          private static clampAll(values: number[]) {
+            const clamped = values.map((value) => Math.min(value, InnerBounds.MAX));
+            const sorted = clamped.sort((a, b) => a - b);
+            return sorted;
+          }
+        };
+      `,
+      },
+      // Class expression assigned through an assignment expression
+      {
+        code: `
+        let Assigned;
+        Assigned = class {
+          private static readonly SIZE = 4;
+
+          private static chunk(values: number[]) {
+            const size = Assigned.SIZE;
+            const head = values.slice(0, size);
+            return head;
+          }
+        };
+      `,
+      },
+      // Class nested inside a function, read through its function-scoped name
+      {
+        code: `
+        export function createCounter() {
+          class Counter {
+            private static readonly STEP = 2;
+
+            private static advance(values: number[]) {
+              const stepped = values.map((value) => value + Counter.STEP);
+              const filtered = stepped.filter((value) => value > 0);
+              return filtered;
+            }
+
+            public static run(values: number[]) {
+              return Counter.advance(values);
+            }
+          }
+          return Counter;
+        }
+      `,
+      },
+      // super.x reaches the base class's static state
+      {
+        code: `
+        export class Base {
+          protected static readonly DEFAULTS = [1, 2, 3];
+        }
+
+        export class Derived extends Base {
+          private static withDefaults(values: number[]) {
+            const merged = [...values, ...super.DEFAULTS];
+            const unique = Array.from(new Set(merged));
+            return unique;
+          }
+        }
+      `,
+      },
+      // new.target reads the constructor the method is invoked on
+      {
+        code: `
+        export class Guarded {
+          private static describeTarget(values: number[]) {
+            const target = new.target;
+            const doubled = values.map((value) => value * 2);
+            return { target, doubled };
+          }
+        }
+      `,
+      },
       // Non-static private method
       {
         code: `
@@ -543,6 +780,152 @@ ruleTesterTs.run(
         };
       `,
         errors: [buildError('format', 'AssignedExpression')],
+      },
+      // A different class's static member is class-agnostic from here
+      {
+        code: `
+        class Config {
+          static readonly LIMIT = 5;
+        }
+
+        export class Runner {
+          private static planAll(values: number[]) {
+            const limited = values.filter((value) => value < Config.LIMIT);
+            const sorted = limited.sort((a, b) => a - b);
+            return sorted;
+          }
+        }
+      `,
+        errors: [buildError('planAll', 'Runner')],
+      },
+      // A different class's static reached through optional chaining
+      {
+        code: `
+        export class Sender {
+          private static prepare(values: string[]) {
+            const limit = Config?.LIMIT;
+            const capped = values.slice(0, limit);
+            return capped;
+          }
+        }
+      `,
+        errors: [buildError('prepare', 'Sender')],
+      },
+      // A local declaration shadowing the class name is not class state
+      {
+        code: `
+        export class Registry {
+          private static readonly ITEMS: string[] = [];
+
+          private static collect(values: string[]) {
+            const Registry = { ITEMS: values };
+            const items = Registry.ITEMS;
+            return items.map((item) => item.trim());
+          }
+        }
+      `,
+        errors: [buildError('collect', 'Registry')],
+      },
+      // A parameter shadowing the class name is not class state
+      {
+        code: `
+        export class Loader {
+          private static readonly PATHS: string[] = [];
+
+          private static resolveAll(Loader: { PATHS: string[] }) {
+            const paths = Loader.PATHS;
+            const trimmed = paths.map((path) => path.trim());
+            return trimmed;
+          }
+        }
+      `,
+        errors: [buildError('resolveAll', 'Loader')],
+      },
+      // A nested class shadowing the outer class name is not the outer's state
+      {
+        code: `
+        export class Outer {
+          private static readonly TOKEN = 'a';
+
+          private static build(values: string[]) {
+            const helper = () => {
+              class Outer {
+                static readonly TOKEN = 'b';
+              }
+              return Outer.TOKEN;
+            };
+            return helper() + values.length;
+          }
+        }
+      `,
+        errors: [buildError('build', 'Outer')],
+      },
+      // A module-level constant is reachable from a module-level utility
+      {
+        code: `
+        const DEFAULT_LIMIT = 10;
+
+        export class Limiter {
+          private static applyLimit(values: number[]) {
+            const limited = values.slice(0, DEFAULT_LIMIT);
+            const sorted = limited.sort((a, b) => a - b);
+            return sorted;
+          }
+        }
+      `,
+        errors: [buildError('applyLimit', 'Limiter')],
+      },
+      // A pure computation over its parameters
+      {
+        code: `
+        export class MathUtils {
+          private static average(values: number[]) {
+            const total = values.reduce((sum, value) => sum + value, 0);
+            const count = values.length || 1;
+            return total / count;
+          }
+        }
+      `,
+        errors: [buildError('average', 'MathUtils')],
+      },
+      // import.meta is a MetaProperty but reaches no class
+      {
+        code: `
+        export class Env {
+          private static describe(values: string[]) {
+            const url = import.meta.url;
+            const joined = values.join(',');
+            return \`\${url}:\${joined}\`;
+          }
+        }
+      `,
+        errors: [buildError('describe', 'Env')],
+      },
+      // Anonymous class expression passed as an argument has no name to match
+      {
+        code: `
+        register(class {
+          private static compute(value: number) {
+            const doubled = value * 2;
+            const squared = value * value;
+            return { doubled, squared };
+          }
+        });
+      `,
+        errors: [buildError('compute', 'this class')],
+      },
+      // Anonymous default-exported class has no name to match
+      {
+        code: `
+        export default class {
+          private static compute(value: number) {
+            const doubled = value * 2;
+            const squared = value * value;
+            return { doubled, squared };
+          }
+        }
+      `,
+        errors: [buildError('compute', 'this class')],
       },
     ],
   },
