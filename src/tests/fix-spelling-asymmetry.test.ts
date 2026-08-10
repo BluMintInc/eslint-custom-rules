@@ -1086,10 +1086,6 @@ const DETECTION_EXEMPT: Record<string, string> = {
   // `as const` remedy makes properties readonly and can break a test that
   // reassigns a mock.
   'enforce-object-literal-as-const': 'breadth decision, tracked as #1795',
-  // The declaration half of the nested-helper carve-out was repaired under
-  // #1755; the arrow half still reports a nested helper no rewrite can hoist.
-  'extract-global-constants':
-    'nested arrow helper still reported, tracked as #1755',
   // The `&&` and ternary shapes reached block bodies in #1794; the bare
   // identity shape is deliberately still concise-only, because widening it
   // would ship a second copy of behaviour whose boundary is unsettled.

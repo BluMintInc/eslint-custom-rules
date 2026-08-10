@@ -41,6 +41,11 @@ function renderList() {
   }
   return buildFallback();
 }
+
+function renderRow() {
+  const buildPlaceholder = () => 'unknown'; // ❌ the same helper, arrow spelling
+  return buildPlaceholder();
+}
 ```
 
 ### Examples of correct code
@@ -67,8 +72,26 @@ function loopInline() {
 }
 ```
 
-A nested helper is reported only when it reads **nothing** from the scope that
-encloses it. A reference through JSX counts as a read, so a component defined
+A nested helper is reported in either spelling — `function inner() {}` or
+`const inner = () => {}` — and only when it reads **nothing** from the scope
+that encloses it. Closing over an enclosing binding, capturing lexical
+`this`/`super`/`new.target` in an arrow, or referencing a type parameter of an
+enclosing function or class all pin the helper where it is, so those stay
+silent:
+
+```typescript
+function createCounter(start: number) {
+  const next = () => start + 1; // ✅ closes over `start`, cannot be hoisted
+  return next;
+}
+
+function collect<T>() {
+  const emptyPage = (): T[] => []; // ✅ `T` is scope-bound
+  return emptyPage;
+}
+```
+
+A reference through JSX counts as a read, so a component defined
 inside a factory that renders one of the factory's own bindings stays where it
 is — hoisting it would not compile:
 

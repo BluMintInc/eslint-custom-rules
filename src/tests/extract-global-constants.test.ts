@@ -1,6 +1,10 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import type { TSESLint } from '@typescript-eslint/utils';
-import { ruleTesterJsx, withParserOptions } from '../utils/ruleTester';
+import {
+  ruleTesterJsx,
+  ruleTesterTs,
+  withParserOptions,
+} from '../utils/ruleTester';
 import { extractGlobalConstants } from '../rules/extract-global-constants';
 
 const buildExtractMessage = (name: string) =>
@@ -1145,6 +1149,305 @@ ruleTesterJsx.run('extract-global-constants', extractGlobalConstants, {
       errors: [buildExtractError('CACHE_KEY')],
     },
   ]),
+});
+
+/**
+ * The arrow half of issue #1755. A nested helper spelled `const inner = () =>`
+ * asks the same hoisting question as `function inner()`, so the two spellings
+ * must answer identically: report when the helper reads nothing from its
+ * enclosing scope, stay silent when it closes over an enclosing binding,
+ * captures lexical `this`/`super`/`new.target`, or names an enclosing type
+ * parameter.
+ */
+ruleTesterTs.run('extract-global-constants', extractGlobalConstants, {
+  valid: [
+    // Closure over the enclosing function's parameter blocks hoisting.
+    `
+      function outer(limit: number) {
+        const withinLimit = () => limit > 0;
+        return withinLimit;
+      }
+    `,
+    // Closure over an enclosing local blocks hoisting.
+    `
+      function outer() {
+        const seed = computeSeed();
+        const helper = () => seed + 1;
+        return helper();
+      }
+    `,
+    // An arrow nested in an arrow closes over the outer arrow's parameter.
+    `
+      const outer = (base: number) => {
+        const scaled = () => base * 2;
+        return scaled();
+      };
+    `,
+    // A function-expression helper closing over a local is just as pinned.
+    `
+      function outer() {
+        const flag = readFlag();
+        const check = function () {
+          return flag;
+        };
+        return check();
+      }
+    `,
+    // An arrow captures the lexical `this` of the enclosing method, even when
+    // `this` never appears as a member-expression object.
+    `
+      class Counter {
+        snapshot() {
+          const grab = () => this;
+          return grab();
+        }
+      }
+    `,
+    `
+      class Counter {
+        count = 0;
+        increment() {
+          const bump = () => this.count + 1;
+          return bump();
+        }
+      }
+    `,
+    // `super` is bound to the enclosing method, so the arrow cannot move.
+    `
+      class Derived extends Base {
+        render() {
+          const call = () => super.render();
+          return call();
+        }
+      }
+    `,
+    // A parameter default reading `this` captures it just as a body would.
+    `
+      class Box {
+        wrap() {
+          const pick = (value = this) => value;
+          return pick();
+        }
+      }
+    `,
+    // `new.target` belongs to the enclosing constructor-callable function.
+    `
+      function outer() {
+        const madeWithNew = () => new.target;
+        return madeWithNew;
+      }
+    `,
+    // A class property arrow is a class member, not a nested `const` helper.
+    `
+      class Widget {
+        onPing = () => 1;
+      }
+    `,
+    // IIFE initializer capturing an enclosing parameter (#1103's shape).
+    `
+      function outer(input: string) {
+        const normalized = (() => input.trim())();
+        return normalized;
+      }
+    `,
+    // The return type names the enclosing function's type parameter, so
+    // hoisting would not compile even though the body reads nothing.
+    `
+      function outer<T>() {
+        const makeList = (): T[] => [];
+        return makeList;
+      }
+    `,
+    // Same blocker, declaration spelling: the two halves stay symmetric.
+    `
+      function outer<T>() {
+        function makeList(): T[] {
+          return [];
+        }
+        return makeList;
+      }
+    `,
+    // The enclosing class's type parameter is just as scope-bound.
+    `
+      class Repo<T> {
+        list() {
+          const emptyPage = (): T[] => [];
+          return emptyPage();
+        }
+      }
+    `,
+    // The declarator's own annotation can carry the scope-bound name too.
+    `
+      function outer<T>() {
+        const makeList: () => T[] = () => [];
+        return makeList;
+      }
+    `,
+    // A parameter type annotation naming the enclosing type parameter.
+    `
+      function outer<T>(seed: T) {
+        const wrap = (sample: T) => [];
+        return wrap;
+      }
+    `,
+    // `let`-bound helpers may be reassigned; only `const` helpers are stable
+    // enough to hoist.
+    `
+      function outer() {
+        let handler = () => 1;
+        handler = () => 2;
+        return handler();
+      }
+    `,
+    // Recursion through the binding name reads from the enclosing scope; the
+    // conservative answer is silence.
+    `
+      function outer() {
+        const loop = (): number => loop();
+        return loop;
+      }
+    `,
+    // A dependency-carrying helper exempts its whole declaration list.
+    `
+      function outer(dep: () => void) {
+        const first = 1, second = () => dep();
+        return second;
+      }
+    `,
+    // Module scope: nothing to hoist.
+    `const topHelper = () => 1;`,
+  ],
+  invalid: [
+    // The repro from #1755: a nested arrow helper that closes over nothing.
+    {
+      code: `
+        function outer() {
+          const inner = () => 1;
+          return inner();
+        }
+      `,
+      errors: [buildExtractError('inner')],
+    },
+    {
+      code: `
+        const outer = () => {
+          const inner = () => {
+            return 1;
+          };
+          return inner();
+        };
+      `,
+      errors: [buildExtractError('inner')],
+    },
+    // Function-expression spelling of the same helper.
+    {
+      code: `
+        function outer() {
+          const inner = function () {
+            return 1;
+          };
+          return inner();
+        }
+      `,
+      errors: [buildExtractError('inner')],
+    },
+    // `async` does not change the hoisting question.
+    {
+      code: `
+        function outer() {
+          const delayed = async () => 1;
+          return delayed();
+        }
+      `,
+      errors: [buildExtractError('delayed')],
+    },
+    // A dependency-free helper inside a class method is hoistable.
+    {
+      code: `
+        class Widget {
+          compute() {
+            const double = () => 2;
+            return double();
+          }
+        }
+      `,
+      errors: [buildExtractError('double')],
+    },
+    // Block scope inside a function is still function-nested.
+    {
+      code: `
+        function outer(flag: boolean) {
+          if (flag) {
+            const noop = () => {};
+            noop();
+          }
+        }
+      `,
+      errors: [buildExtractError('noop')],
+    },
+    // A generic helper whose only type parameter is its own is hoistable.
+    {
+      code: `
+        function outer() {
+          const makeList = <T>(): T[] => [];
+          return makeList;
+        }
+      `,
+      errors: [buildExtractError('makeList')],
+    },
+    // Annotations alone are not dependencies.
+    {
+      code: `
+        function outer() {
+          const toZero = (input: number): number => 0;
+          return toZero;
+        }
+      `,
+      errors: [buildExtractError('toZero')],
+    },
+    // Both declarators are scope-free, so both are reported.
+    {
+      code: `
+        function outer() {
+          const LIMIT = 5, makeEmpty = () => [];
+          return makeEmpty;
+        }
+      `,
+      errors: [buildExtractError('LIMIT'), buildExtractError('makeEmpty')],
+    },
+    // A TS assertion between the binding and the arrow does not exempt it.
+    {
+      code: `
+        function outer() {
+          const cb = (() => 1) as () => number;
+          return cb;
+        }
+      `,
+      errors: [buildExtractError('cb')],
+    },
+    // Dynamic `this` in a function expression is not a lexical capture.
+    {
+      code: `
+        function outer() {
+          const helper = function () {
+            return this;
+          };
+          return helper;
+        }
+      `,
+      errors: [buildExtractError('helper')],
+    },
+    // Returning a fresh literal each call still reads nothing from scope.
+    {
+      code: `
+        function outer() {
+          const buildConfig = () => ({ retries: 3 });
+          return buildConfig();
+        }
+      `,
+      errors: [buildExtractError('buildConfig')],
+    },
+  ],
 });
 
 describe('extract-global-constants visitor safety', () => {
