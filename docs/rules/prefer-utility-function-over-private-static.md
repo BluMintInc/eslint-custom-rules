@@ -10,17 +10,34 @@ Private static methods that do not touch class state are really module-level uti
 
 This rule flags private static members that:
 
-- Are declared as a **method** or a **getter** — setters are out of scope, see below
+- Are declared as a **method**, a **getter**, or a **property holding a function** — setters and properties holding anything else are out of scope, see below
 - Do not reach their own class anywhere in their body (including nested callbacks)
 - Have a non-trivial body — **two or more statements**
 
 ### Member kinds in scope
 
+Both member spellings are covered. Which syntax an author picked does not change
+whether the logic is class-agnostic, so it does not change the verdict either.
+
 | Member kind | In scope | Why |
 | --- | --- | --- |
 | `private static method()` | Yes | Moves to module scope as-is. |
+| `private static member = () => {}` | Yes | Moves to module scope as-is; module scope holds the arrow form. |
+| `private static member = function () {}` | Yes | Same helper as the arrow spelling. |
 | `private static get member()` | Yes | The body moves to a module-level function the getter calls, or that the call sites call directly. |
 | `private static set member(value)` | No | The prescribed extraction cannot be performed. |
+| `private static MEMBER = 10` | No | A property holding no function holds no logic to extract. |
+
+A function-valued property is in scope because it is the same hidden utility a
+method is, with the same remedy: module scope holds the arrow and function-
+expression forms a property holds, so the helper moves out unchanged. Examining
+only the method spelling would leave a one-character evasion — writing `=` in
+front of a helper would silence the rule without changing anything about the
+logic it flags.
+
+The property arm matches `private static` exactly as the method arm does. Every
+other modifier — `protected static`, `public static`, bare `static`, and any
+non-static member — is out of scope for both spellings.
 
 A getter is in scope because a class-agnostic getter body is the same hidden
 utility a class-agnostic method body is, and it has the same remedy one step
@@ -36,7 +53,10 @@ A rule that reports a member whose prescribed rewrite is unavailable is
 unenforceable, so setters are silent at any size and whatever their body reads.
 
 Reports name the member kind they found, so an accessor reads as
-`Private static getter "x"` rather than as a method.
+`Private static getter "x"` and a function-valued property reads as
+`Private static property "x"`, rather than either reading as a method — a
+developer told a "method" is at fault would search for a declaration the class
+does not hold.
 
 The size threshold is measured in statements, not lines. A line count moves with
 formatting: a JSDoc block, a line comment or a blank line inside the body would
@@ -56,8 +76,10 @@ it contributes nothing beyond the statement it sits in. A chained call whose
 callbacks are one-expression functions therefore stays one statement in either
 spelling.
 
-A method reaches its class through any of these spellings, all of which count as
-using class state:
+A member reaches its class through any of these spellings, all of which count as
+using class state — the list applies to a function-valued property just as it
+does to a method, since `this` inside a static property initializer is the class
+too:
 
 - `this.member`
 - `<ClassName>.member`, where `ClassName` is the enclosing class — including the
@@ -71,7 +93,7 @@ using class state:
 
 The class name is matched by binding, not by text: a local variable or parameter
 that shadows the class name reads as an unrelated value, and another class's
-static member (`OtherClass.MEMBER`) leaves the report standing. A method reading
+static member (`OtherClass.MEMBER`) leaves the report standing. A member reading
 a `private static` member of its own class is never reported, because such a
 member is unreachable from module scope and so the extraction this rule
 prescribes is impossible for it.
@@ -176,6 +198,28 @@ export class RequestDefaults {
 }
 ```
 
+```ts
+// A property holding a function is measured exactly as a method is
+export class Repro {
+  private static computeAlt = (v: number) => {
+    const doubled = v * 2;
+    const capped = Math.min(doubled, 10);
+    return capped;
+  };
+}
+```
+
+```ts
+// A function expression is the same helper as an arrow, and `readonly`
+// restricts reassignment of the binding rather than what the function reaches
+export class Repro {
+  private static readonly computeAll = function (values: number[]) {
+    const doubled = values.map((value) => value * 2);
+    return doubled.filter((value) => value > 0);
+  };
+}
+```
+
 ### Examples of **correct** code for this rule:
 
 ```ts
@@ -257,6 +301,32 @@ export class Aliased {
     const capped = values.map((value) => Math.min(value, owner.LIMIT));
     return capped;
   }
+}
+```
+
+```ts
+// A property holding no function holds no logic to extract, whatever its
+// modifiers
+export class Limits {
+  private static LIMIT = 10;
+  private static readonly NAMES: string[] = ['first', 'second'];
+}
+```
+
+```ts
+// A function-valued property escapes on the same two rules a method does: the
+// first is too small to be worth extracting, and the second reads class state
+export class Repro {
+  private static readonly LIMIT = 10;
+
+  private static double = (value: number) => {
+    return value * 2;
+  };
+
+  private static capAll = (values: number[]) => {
+    const capped = values.map((value) => Math.min(value, Repro.LIMIT));
+    return capped;
+  };
 }
 ```
 

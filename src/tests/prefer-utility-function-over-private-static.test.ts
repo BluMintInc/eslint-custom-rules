@@ -11,6 +11,14 @@ const buildGetterError = (methodName: string, className: string) => ({
   data: { methodName, className },
 });
 
+// A helper written as a function-valued property carries its own subject noun:
+// "method" would send a developer looking for a declaration the class does not
+// hold (#1927).
+const buildPropertyError = (methodName: string, className: string) => ({
+  messageId: 'preferUtilityFunctionOverPrivateStaticProperty' as const,
+  data: { methodName, className },
+});
+
 ruleTesterTs.run(
   'prefer-utility-function-over-private-static',
   preferUtilityFunctionOverPrivateStatic,
@@ -1110,6 +1118,177 @@ export class Aliased {
         };
       `,
       },
+      // A property holding no function holds no logic to extract, whatever its
+      // modifiers (#1927)
+      {
+        code: `
+        export class Repro {
+          private static LIMIT = 10;
+          private static readonly NAMES: string[] = ['a', 'b'];
+        }
+      `,
+      },
+      // The size escape (#1920) decides the arrow-property spelling too: this
+      // body is too small to be worth extracting, and it is silent for that
+      // reason rather than because properties go unexamined (#1927)
+      {
+        code: `
+        export class Repro {
+          private static computeAlt = (v: number) => {
+            return v * 2;
+          };
+        }
+      `,
+      },
+      // A concise arrow carries no statement at all, so it sits on the same
+      // side of the size escape as its block-bodied twin (#1927)
+      {
+        code: `
+        export class Repro {
+          private static computeAlt = (v: number) => v * 2 + 1;
+        }
+      `,
+      },
+      // The class-state escape (#1913) decides the arrow-property spelling too:
+      // a member reachable only from inside the class cannot move to module
+      // scope (#1927)
+      {
+        code: `
+        export class Repro {
+          private static cache = new Map<number, number>();
+
+          private static computeAlt = (v: number) => {
+            const doubled = v * 2;
+            const cached = Repro.cache.get(doubled);
+            return cached;
+          };
+        }
+      `,
+      },
+      // `this` inside a static property initializer is the class, so it reads
+      // class state exactly as the method spelling does (#1927)
+      {
+        code: `
+        export class Repro {
+          private static readonly LIMIT = 10;
+
+          private static capAll = (values: number[]) => {
+            const capped = values.map((value) => Math.min(value, this.LIMIT));
+            return capped;
+          };
+        }
+      `,
+      },
+      // An alias of the class binding reaches class state from a property
+      // initializer as it does from a method body (#1927)
+      {
+        code: `
+        export class Repro {
+          private static readonly LIMIT = 10;
+
+          private static capAll = (values: number[]) => {
+            const owner = Repro;
+            const capped = values.map((value) => Math.min(value, owner.LIMIT));
+            return capped;
+          };
+        }
+      `,
+      },
+      // A function expression assigned to the property reaches class state
+      // through the class binding just as an arrow does (#1927)
+      {
+        code: `
+        export class Repro {
+          private static readonly LIMIT = 10;
+
+          private static capAll = function (values: number[]) {
+            const capped = values.map((value) => Math.min(value, Repro.LIMIT));
+            return capped;
+          };
+        }
+      `,
+      },
+      // Spelling parity is exact: the property arm reports where the method arm
+      // reports and nowhere else, so a `protected static` property is out of
+      // scope as a `protected static` method is (#1927)
+      {
+        code: `
+        export class Repro {
+          protected static computeAlt = (v: number) => {
+            const doubled = v * 2;
+            const capped = Math.min(doubled, 10);
+            return capped;
+          };
+        }
+      `,
+      },
+      // A `public static` property is part of the class's published surface,
+      // which is what the method arm's accessibility gate says too (#1927)
+      {
+        code: `
+        export class Repro {
+          public static computeAlt = (v: number) => {
+            const doubled = v * 2;
+            const capped = Math.min(doubled, 10);
+            return capped;
+          };
+        }
+      `,
+      },
+      // An omitted accessibility keyword is public, so a bare `static` property
+      // is out of scope on the same grounds (#1927)
+      {
+        code: `
+        export class Repro {
+          static computeAlt = (v: number) => {
+            const doubled = v * 2;
+            const capped = Math.min(doubled, 10);
+            return capped;
+          };
+        }
+      `,
+      },
+      // An instance property is not a static one: it is reached through an
+      // instance, so it is not the class-agnostic helper this rule names (#1927)
+      {
+        code: `
+        export class Repro {
+          private computeAlt = (v: number) => {
+            const doubled = v * 2;
+            const capped = Math.min(doubled, 10);
+            return capped;
+          };
+        }
+      `,
+      },
+      // Neither static nor private: the furthest cell from the one this rule
+      // reports on (#1927)
+      {
+        code: `
+        export class Repro {
+          computeAlt = (v: number) => {
+            const doubled = v * 2;
+            const capped = Math.min(doubled, 10);
+            return capped;
+          };
+        }
+      `,
+      },
+      // A setter stays out of scope alongside a function-valued property: the
+      // widening to properties leaves accessor scoping untouched (#1927)
+      {
+        code: `
+        export class Repro {
+          private static target = 0;
+
+          private static set limit(value: number) {
+            const doubled = value * 2;
+            const capped = Math.min(doubled, 10);
+            Repro.target = capped;
+          }
+        }
+      `,
+      },
     ],
     invalid: [
       // Basic case: private static method that should be a utility function
@@ -2093,6 +2272,127 @@ export class Aliased {
         }
       `,
         errors: [buildError('capAll', 'Aliased')],
+      },
+      // The same hidden utility spelled as a private static arrow property.
+      // Which member syntax an author picked does not change whether the logic
+      // is class-agnostic, so it does not change the verdict either. The report
+      // covers the whole member, as it does for the method spelling (#1927)
+      {
+        code: `
+export class Repro {
+  private static computeAlt = (v: number) => {
+    const doubled = v * 2;
+    const capped = Math.min(doubled, 10);
+    return capped;
+  };
+}
+`,
+        errors: [
+          {
+            ...buildPropertyError('computeAlt', 'Repro'),
+            line: 3,
+            column: 3,
+            endLine: 7,
+            endColumn: 5,
+          },
+        ],
+      },
+      // A function expression is the same helper as an arrow (#1927)
+      {
+        code: `
+        export class Repro {
+          private static computeAlt = function (v: number) {
+            const doubled = v * 2;
+            const capped = Math.min(doubled, 10);
+            return capped;
+          };
+        }
+      `,
+        errors: [buildPropertyError('computeAlt', 'Repro')],
+      },
+      // `readonly` restricts reassignment of the binding, not what the function
+      // it holds reaches (#1927)
+      {
+        code: `
+        export class Repro {
+          private static readonly computeAlt = (v: number) => {
+            const doubled = v * 2;
+            const capped = Math.min(doubled, 10);
+            return capped;
+          };
+        }
+      `,
+        errors: [buildPropertyError('computeAlt', 'Repro')],
+      },
+      // The class-state escape's other side: the same property with its one
+      // read of `Repro.cache` removed reports, so the silence of its twin is
+      // owed to that read and not to the member spelling (#1927)
+      {
+        code: `
+        export class Repro {
+          private static cache = new Map<number, number>();
+
+          private static computeAlt = (v: number) => {
+            const doubled = v * 2;
+            const cached = Math.min(doubled, 10);
+            return cached;
+          };
+        }
+      `,
+        errors: [buildPropertyError('computeAlt', 'Repro')],
+      },
+      // The size escape's other side: one more statement than its silent twin
+      // carries, and the same property reports (#1927)
+      {
+        code: `
+        export class Repro {
+          private static computeAlt = (v: number) => {
+            const doubled = v * 2;
+            return doubled;
+          };
+        }
+      `,
+        errors: [buildPropertyError('computeAlt', 'Repro')],
+      },
+      // A local shadowing the class name is not the class, so a property that
+      // dereferences it holds nothing the class owns (#1927)
+      {
+        code: `
+        export class Repro {
+          private static readonly LIMIT = 10;
+
+          private static capAll = (values: number[]) => {
+            const Repro = { LIMIT: 5 };
+            const capped = values.map((value) => Math.min(value, Repro.LIMIT));
+            return capped;
+          };
+        }
+      `,
+        errors: [buildPropertyError('capAll', 'Repro')],
+      },
+      // Each member spelling renders its own subject noun: a getter is named a
+      // getter and a function-valued property is named a property, so neither
+      // falls through to the other's message (#1927)
+      {
+        code: `
+        export class Repro {
+          private static get multiplier() {
+            const base = 2;
+            const scaled = base * 3;
+            return scaled;
+          }
+
+          private static computeAlt = (v: number) => {
+            const doubled = v * 2;
+            const capped = Math.min(doubled, 10);
+            return capped;
+          };
+        }
+      `,
+        errors: [
+          buildGetterError('multiplier', 'Repro'),
+          buildPropertyError('computeAlt', 'Repro'),
+        ],
       },
     ],
   },
