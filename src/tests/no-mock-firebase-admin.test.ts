@@ -93,6 +93,72 @@ ruleTesterTs.run('no-mock-firebase-admin', noMockFirebaseAdmin, {
       code: `jest.mock('./config/firebaseAdmin', () => ({}));`,
       filename: 'src/test.test.ts',
     },
+    // ---------------------------------------------------------------------
+    // Backend tier, BARE call. `jest.setup.node.js` already runs
+    // `jest.mock('./functions/src/config/firebaseAdmin')` with no factory, so a
+    // local bare call is the IDENTICAL call: it re-activates the manual mock at
+    // functions/src/config/__mocks__/firebaseAdmin.ts. It replaces nothing and
+    // supplies no divergent state. Only a factory overrides the shared mock.
+    // ---------------------------------------------------------------------
+    {
+      /**
+       * A BARE jest.mock activates the project's own manual mock in
+       * __mocks__/ — it replaces nothing and supplies no divergent state, so
+       * the rule's own stated rationale ("overriding it creates divergent
+       * Firestore/Auth state") does not apply. A suite needs this form to
+       * obtain per-call spies on db.doc / db.runTransaction, which the shared
+       * FakeFirestore instance does not expose.
+       */
+      code: `jest.mock('../../../config/firebaseAdmin');`,
+      filename:
+        'functions/src/firestore/GitHubIssue/changeHandlers/respondGitHubIssueChange.test.ts',
+    },
+    // Same bare re-activation from a payout test.
+    {
+      code: `jest.mock('../../../config/firebaseAdmin');`,
+      filename:
+        'functions/src/util/tournament/payout/deriveIsChampionPayout.test.ts',
+    },
+    // A written-out module extension names the same backend module, so the bare
+    // call is the same re-activation.
+    {
+      code: `jest.mock('../../config/firebaseAdmin.ts');`,
+      filename: 'functions/src/util/realtimeDb/updateIfExists.test.ts',
+    },
+    // Bare backend re-activation written as an uninterpolated template literal.
+    {
+      code: 'jest.mock(`../../config/firebaseAdmin`);',
+      filename: 'functions/src/util/realtimeDb/updateIfExists.test.ts',
+    },
+    // Bare backend re-activation from a .spec file.
+    {
+      code: `jest.mock('../config/firebaseAdmin');`,
+      filename: 'functions/src/util/updateIfExists.spec.ts',
+    },
+    // Bare backend re-activation addressed through a workspace alias: the
+    // specifier still names functions/src/config/firebaseAdmin.
+    {
+      code: `jest.mock('@project/functions/src/config/firebaseAdmin');`,
+      filename: 'src/test.test.ts',
+    },
+    // Mixed tiers, neither of which overrides a shared mock: the backend call is
+    // bare (re-activation) and the frontend module has no shared mock at all.
+    {
+      code: `
+        jest.mock('../../config/firebaseAdmin');
+        jest.mock('src/config/firebaseAdmin', () => ({}));`,
+      filename: 'functions/src/util/realtimeDb/updateIfExists.test.ts',
+    },
+    // An explicit `undefined` placeholder is how a suite reaches the third
+    // argument; it supplies no module body, so the call is still the bare one.
+    {
+      code: `jest.mock('../../config/firebaseAdmin', undefined, { virtual: true });`,
+      filename: 'functions/src/util/realtimeDb/updateIfExists.test.ts',
+    },
+    {
+      code: `jest.mock('../../config/firebaseAdmin', undefined);`,
+      filename: 'functions/src/util/realtimeDb/updateIfExists.test.ts',
+    },
     // Interpolated specifiers name a module only known at runtime, so no tier
     // can be attributed. The trailing interpolation makes these a DIFFERENT
     // module than firebaseAdmin even on a backend filename.
@@ -261,20 +327,15 @@ ruleTesterTs.run('no-mock-firebase-admin', noMockFirebaseAdmin, {
     },
   ],
   invalid: [
-    // Backend tier: jest.setup.node.js auto-mocks this module, so a local mock
-    // bypasses the shared stub.
+    // Backend tier WITH a factory: the factory replaces the manual mock
+    // jest.setup.node.js activates, which is the override this rule exists to
+    // catch.
     {
       code: `jest.mock('../../config/firebaseAdmin', () => ({
         db: mockFirestore()
       }));`,
       filename: 'functions/src/util/realtimeDb/updateIfExists.test.ts',
       errors: [errorFor('../../config/firebaseAdmin')],
-    },
-    {
-      code: `jest.mock('../../../config/firebaseAdmin');`,
-      filename:
-        'functions/src/util/tournament/payout/deriveIsChampionPayout.test.ts',
-      errors: [errorFor('../../../config/firebaseAdmin')],
     },
     {
       code: `jest.mock('../../../../config/firebaseAdmin', () => ({
@@ -284,23 +345,41 @@ ruleTesterTs.run('no-mock-firebase-admin', noMockFirebaseAdmin, {
         'functions/src/util/tournament/aggregation/__tests__/recomputeGuestlistMetadataCounts.test.ts',
       errors: [errorFor('../../../../config/firebaseAdmin')],
     },
-    // Backend tier with an explicit module extension
+    // The exact specifier/file pair whose BARE form is exempt above: adding a
+    // factory turns re-activation into an override, so protection survives the
+    // bare-call exemption.
     {
-      code: `jest.mock('../../config/firebaseAdmin.ts');`,
+      code: `jest.mock('../../../config/firebaseAdmin', () => ({
+        db: { doc: jest.fn() },
+      }));`,
+      filename:
+        'functions/src/util/tournament/payout/deriveIsChampionPayout.test.ts',
+      errors: [errorFor('../../../config/firebaseAdmin')],
+    },
+    // Backend tier with an explicit module extension, overridden by a factory
+    {
+      code: `jest.mock('../../config/firebaseAdmin.ts', () => ({ db: {} }));`,
       filename: 'functions/src/util/realtimeDb/updateIfExists.test.ts',
       errors: [errorFor('../../config/firebaseAdmin.ts')],
     },
-    // Backend tier written as a template literal
+    // Backend tier written as a template literal, overridden by a factory
     {
-      code: 'jest.mock(`../../config/firebaseAdmin`);',
+      code: 'jest.mock(`../../config/firebaseAdmin`, () => ({ db: {} }));',
       filename: 'functions/src/util/realtimeDb/updateIfExists.test.ts',
       errors: [errorFor('../../config/firebaseAdmin')],
     },
-    // Backend tier from a .spec file
+    // Backend tier from a .spec file, overridden by a factory
     {
-      code: `jest.mock('../config/firebaseAdmin');`,
+      code: `jest.mock('../config/firebaseAdmin', () => ({ auth: jest.fn() }));`,
       filename: 'functions/src/util/updateIfExists.spec.ts',
       errors: [errorFor('../config/firebaseAdmin')],
+    },
+    // A factory need not be written inline: any second argument that is not the
+    // `undefined` placeholder substitutes a module body.
+    {
+      code: `jest.mock('../../config/firebaseAdmin', buildFirebaseAdminMock);`,
+      filename: 'functions/src/util/realtimeDb/updateIfExists.test.ts',
+      errors: [errorFor('../../config/firebaseAdmin')],
     },
     // Backend tier addressed with a bare specifier
     {
@@ -312,20 +391,27 @@ ruleTesterTs.run('no-mock-firebase-admin', noMockFirebaseAdmin, {
       filename: 'src/test.test.ts',
       errors: [errorFor('functions/src/config/firebaseAdmin')],
     },
+    // Backend tier addressed through a workspace alias, overridden by a factory
     {
-      code: `jest.mock('@project/functions/src/config/firebaseAdmin');`,
+      code: `jest.mock('@project/functions/src/config/firebaseAdmin', () => ({
+        db: mockFirestore(),
+      }));`,
       filename: 'src/test.test.ts',
       errors: [errorFor('@project/functions/src/config/firebaseAdmin')],
     },
-    // Mixed tiers in one file: only the backend mock bypasses a shared mock
+    // Mixed tiers in one file: only the backend factory overrides a shared mock
     {
       code: `
-        jest.mock('../../config/firebaseAdmin');
+        jest.mock('../../config/firebaseAdmin', () => ({ db: {} }));
         jest.mock('src/config/firebaseAdmin', () => ({}));`,
       filename: 'functions/src/util/realtimeDb/updateIfExists.test.ts',
       errors: [errorFor('../../config/firebaseAdmin')],
     },
-    // Unattributable specifiers stay protected
+    // Unattributable specifiers stay protected, INCLUDING the bare form. The
+    // bare-call exemption rests on a KNOWN manual mock sibling; for an
+    // unfamiliar layout no such sibling is known, so a bare call may fall
+    // through to Jest's automock, which replaces every export with an empty
+    // jest.fn() — divergent state by any measure.
     {
       code: `jest.mock('firebaseAdmin');`,
       filename: 'src/test.test.ts',
@@ -337,6 +423,13 @@ ruleTesterTs.run('no-mock-firebase-admin', noMockFirebaseAdmin, {
       }));`,
       filename: 'src/test.test.ts',
       errors: [errorFor('../../config/firebaseAdmin')],
+    },
+    // The `undefined` placeholder reads as "no factory", which is exempt only in
+    // the backend tier; an unattributable module still reports.
+    {
+      code: `jest.mock('firebaseAdmin', undefined, { virtual: true });`,
+      filename: 'src/test.test.ts',
+      errors: [errorFor('firebaseAdmin')],
     },
     // Simple mock without factory
     {
