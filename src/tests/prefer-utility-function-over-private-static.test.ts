@@ -897,6 +897,219 @@ third line\`;
         }
       `,
       },
+      // Binding the class to a local reaches the same state the qualified
+      // spelling does
+      {
+        code: `
+export class Aliased {
+  private static readonly LIMIT = 10;
+
+  public run(values: number[]) {
+    return Aliased.capAll(values);
+  }
+
+  private static capAll(values: number[]) {
+    const owner = Aliased;
+    const capped = values.map((v) => Math.min(v, owner.LIMIT));
+    return capped;
+  }
+}
+      `,
+      },
+      // The alias read from inside a nested callback
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static capAll(values: number[]) {
+            const owner = Aliased;
+            return values.map((value) => {
+              const cap = owner.LIMIT;
+              return Math.min(value, cap);
+            });
+          }
+        }
+      `,
+      },
+      // An alias declared with `let` and never rebound still holds the class
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static capAll(values: number[]) {
+            let owner = Aliased;
+            const capped = values.map((value) => Math.min(value, owner.LIMIT));
+            return capped;
+          }
+        }
+      `,
+      },
+      // An alias declared with `var`
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static capAll(values: number[]) {
+            var owner = Aliased;
+            const capped = values.map((value) => Math.min(value, owner.LIMIT));
+            return capped;
+          }
+        }
+      `,
+      },
+      // Alias chains are followed to a fixpoint, so a second hop reads the same
+      // member the first one does
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static capAll(values: number[]) {
+            const first = Aliased;
+            const second = first;
+            const capped = values.map((value) => Math.min(value, second.LIMIT));
+            return capped;
+          }
+        }
+      `,
+      },
+      // Four hops: no chain length changes which member is read
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static capAll(values: number[]) {
+            const a = Aliased;
+            const b = a;
+            const c = b;
+            const d = c;
+            const capped = values.map((value) => Math.min(value, d.LIMIT));
+            return capped;
+          }
+        }
+      `,
+      },
+      // An alias declared at module scope reaches the class just as a local one
+      // does
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static capAll(values: number[]) {
+            const capped = values.map((value) => Math.min(value, owner.LIMIT));
+            return capped;
+          }
+        }
+
+        const owner = Aliased;
+      `,
+      },
+      // Type-only syntax around the alias initializer names the same binding
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static capAll(values: number[]) {
+            const owner = Aliased as typeof Aliased;
+            const capped = values.map((value) => Math.min(value, owner.LIMIT));
+            return capped;
+          }
+        }
+      `,
+      },
+      // The computed spelling through an alias reads the same member
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static capAll(values: number[]) {
+            const owner = Aliased;
+            const capped = values.map((value) => Math.min(value, owner['LIMIT']));
+            return capped;
+          }
+        }
+      `,
+      },
+      // Destructuring off the class binding is itself the dereference
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static capAll(values: number[]) {
+            const { LIMIT } = Aliased;
+            const capped = values.map((value) => Math.min(value, LIMIT));
+            return capped;
+          }
+        }
+      `,
+      },
+      // Destructuring off an alias of the class binding
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static capAll(values: number[]) {
+            const owner = Aliased;
+            const { LIMIT } = owner;
+            const capped = values.map((value) => Math.min(value, LIMIT));
+            return capped;
+          }
+        }
+      `,
+      },
+      // A named member alongside a rest element still names a member
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static describe(values: number[]) {
+            const { LIMIT, ...rest } = Aliased;
+            const keys = Object.keys(rest);
+            return keys.length + values.length + LIMIT;
+          }
+        }
+      `,
+      },
+      // Aliasing `this` inside a static member reaches the class, as `this`
+      // itself does
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static capAll(values: number[]) {
+            const self = this;
+            const capped = values.map((value) => Math.min(value, self.LIMIT));
+            return capped;
+          }
+        }
+      `,
+      },
+      // A named class expression aliased through a local: the alias resolves to
+      // the class's own inner binding
+      {
+        code: `
+        const Holder = class Inner {
+          private static readonly LIMIT = 10;
+
+          private static capAll(values: number[]) {
+            const owner = Inner;
+            const capped = values.map((value) => Math.min(value, owner.LIMIT));
+            return capped;
+          }
+        };
+      `,
+      },
     ],
     invalid: [
       // Basic case: private static method that should be a utility function
@@ -1642,6 +1855,244 @@ third line\`;
         }
       `,
         errors: [buildError('merge', 'Example')],
+      },
+      // An alias of another class is not this class's state
+      {
+        code: `
+        declare const Other: { LIMIT: number };
+
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static capAll(values: number[]) {
+            const owner = Other;
+            const capped = values.map((value) => Math.min(value, owner.LIMIT));
+            return capped;
+          }
+        }
+      `,
+        errors: [buildError('capAll', 'Aliased')],
+      },
+      // A binding reassigned away from the class may hold anything by the time
+      // it is dereferenced, so it is not credited
+      {
+        code: `
+        declare const Other: { LIMIT: number };
+
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static capAll(values: number[]) {
+            let owner: { LIMIT: number } = Aliased;
+            owner = Other;
+            const capped = values.map((value) => Math.min(value, owner.LIMIT));
+            return capped;
+          }
+        }
+      `,
+        errors: [buildError('capAll', 'Aliased')],
+      },
+      // The reassignment disqualifies the alias wherever it sits, including
+      // after the read
+      {
+        code: `
+        declare const Other: { LIMIT: number };
+
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static capAll(values: number[]) {
+            let owner: { LIMIT: number } = Aliased;
+            const capped = values.map((value) => Math.min(value, owner.LIMIT));
+            owner = Other;
+            return capped;
+          }
+        }
+      `,
+        errors: [buildError('capAll', 'Aliased')],
+      },
+      // Constructing through an alias is not a state read: a helper that only
+      // instantiates the class is exactly the class-agnostic utility this rule
+      // exists to surface, and it survives the move to module scope
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static buildAll(values: number[]) {
+            const owner = Aliased;
+            const made = values.map(() => new owner());
+            return made;
+          }
+        }
+      `,
+        errors: [buildError('buildAll', 'Aliased')],
+      },
+      // `instanceof` through an alias is not a state read either
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static onlyMine(values: unknown[]) {
+            const owner = Aliased;
+            const kept = values.filter((value) => value instanceof owner);
+            return kept;
+          }
+        }
+      `,
+        errors: [buildError('onlyMine', 'Aliased')],
+      },
+      // The same boundary without the alias: a bare class reference that is not
+      // a dereference leaves the report standing
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static buildAll(values: number[]) {
+            const made = values.map(() => new Aliased());
+            return made;
+          }
+        }
+      `,
+        errors: [buildError('buildAll', 'Aliased')],
+      },
+      // Passing the class binding along as a value is not a dereference
+      {
+        code: `
+        declare function register(target: unknown): void;
+
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static registerAll(values: number[]) {
+            const owner = Aliased;
+            register(owner);
+            return values.length;
+          }
+        }
+      `,
+        errors: [buildError('registerAll', 'Aliased')],
+      },
+      // A local named like the class but initialized from something else is not
+      // the class, whatever it is dereferenced for
+      {
+        code: `
+        declare const source: { LIMIT: number };
+
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static capAll(values: number[]) {
+            const Aliased2 = source;
+            const capped = values.map((value) => Math.min(value, Aliased2.LIMIT));
+            return capped;
+          }
+        }
+      `,
+        errors: [buildError('capAll', 'Aliased')],
+      },
+      // An alias of a local that shadows the class name resolves to the shadow,
+      // not to the class
+      {
+        code: `
+        export class Registry {
+          private static readonly ITEMS: string[] = [];
+
+          private static collect(values: string[]) {
+            const Registry = { ITEMS: values };
+            const owner = Registry;
+            return owner.ITEMS.map((item) => item.trim());
+          }
+        }
+      `,
+        errors: [buildError('collect', 'Registry')],
+      },
+      // Destructuring off a foreign object is not a class-state read
+      {
+        code: `
+        declare const Other: { LIMIT: number };
+
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static capAll(values: number[]) {
+            const { LIMIT } = Other;
+            const capped = values.map((value) => Math.min(value, LIMIT));
+            return capped;
+          }
+        }
+      `,
+        errors: [buildError('capAll', 'Aliased')],
+      },
+      // An empty pattern reads no member, so it is not a state read
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static capAll(values: number[]) {
+            const {} = Aliased;
+            const capped = values.map((value) => value * 2);
+            return capped;
+          }
+        }
+      `,
+        errors: [buildError('capAll', 'Aliased')],
+      },
+      // A lone rest element selects no property — it is the plain assignment
+      // `no-unnecessary-destructuring` rewrites it to — so it is an alias of
+      // the class rather than a read of one of its members
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static describe(values: number[]) {
+            const { ...statics } = Aliased;
+            const keys = Object.keys(statics);
+            return keys.length + values.length;
+          }
+        }
+      `,
+        errors: [buildError('describe', 'Aliased')],
+      },
+      // A rest element alongside a named member still reads that member, so the
+      // named-property arm is what decides — this pair is the boundary's other
+      // side and stays silent
+      {
+        code: `
+        declare const Other: { LIMIT: number; scale: number };
+
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static describe(values: number[]) {
+            const { LIMIT, ...rest } = Other;
+            const keys = Object.keys(rest);
+            return keys.length + values.length + LIMIT;
+          }
+        }
+      `,
+        errors: [buildError('describe', 'Aliased')],
+      },
+      // A binding declared without an initializer and written later is not
+      // credited: the write is not the declaration the alias check requires
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static capAll(values: number[]) {
+            let owner;
+            owner = Aliased;
+            const capped = values.map((value) => Math.min(value, owner.LIMIT));
+            return capped;
+          }
+        }
+      `,
+        errors: [buildError('capAll', 'Aliased')],
       },
     ],
   },
