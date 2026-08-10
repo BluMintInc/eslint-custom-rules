@@ -79,7 +79,9 @@ property name:
   `parseInt(...)`, `parseFloat(...)`, any `Math.*` call, `.length`, and `+` when
   **both** sides are themselves numeric. An identifier qualifies when the
   binding it resolves to proves it: a `: number` parameter, a variable whose
-  every write keeps it numeric, or a binding **declared** numeric (below).
+  every write keeps it numeric, or a binding **declared** numeric (below). A
+  call and a member read qualify when the declaration they resolve to is
+  declared numeric (below) as well.
 - **A template's fixed text rules the names out.** `` obj[`user-${id}`] `` is
   exempt because no substitution can make a key beginning `user-` be
   `__proto__`, `constructor` or `prototype`. The fixed text has to *earn* that,
@@ -148,13 +150,23 @@ obj[String(index)]; // an explicit string conversion is a string
 
 A value produced by a call has no numeric shape to read, so the only thing that
 can prove it is the type its declaration gives it. TypeScript rejects a
-non-numeric value under either spelling of that declaration, which makes both a
-syntactic proof — the same trust a `(index: number)` parameter earns:
+non-numeric value under any spelling of that declaration, which makes every one
+of them a syntactic proof — the same trust a `(index: number)` parameter earns.
+Which site the author wrote the annotation on does not change the verdict:
 
 - **`: number` on the binding name** — `const rank: number = rankOf(id)`,
   `let cursor: number = seek()`, `(index: number = compute()) => …`.
 - **`number` asserted on the initializing value** — `const rank = rankOf(id) as
   number`, `rankOf(id) satisfies number`, `<number>rankOf(id)`.
+- **`: number` as a function's return type** — `function rankOf(id): number`,
+  `const rankOf = (id): number => …`, `private rankOf(id): number`,
+  `declare function rankOf(id): number`, and the getter spelling
+  `get rank(): number`. A call to one is numeric wherever it appears, key
+  position included.
+- **`: number` on a class property** — `private readonly rank: number = 1`,
+  `static rank: number = 1`, `abstract rank: number`, and the constructor
+  parameter property `constructor(private readonly rank: number) {}`. A read of
+  one is numeric.
 
 ```js
 // ✅ Exempt: the declaration is what proves the key numeric.
@@ -163,20 +175,50 @@ placements[rank];
 
 const index = raw.offset as number;
 buffer[index];
+
+class Reader {
+  private readonly rank: number = 1;
+  constructor(private readonly mapping) {}
+  private rankOf(seed): number {
+    return seed + 1;
+  }
+  read(seed) {
+    const rank = this.rankOf(seed); // the return type proves it
+    return [this.mapping[rank], this.mapping[this.rankOf(seed)], this.mapping[this.rank]];
+  }
+}
 ```
+
+A call and a member read are credited only against the declaration they actually
+resolve to. The callee resolves through the scope chain, so a local that shadows
+a numeric helper is judged by the shadowing declaration alone, and a binding
+reassigned to another function has to prove every write. A member resolves
+against the class it is written in: `this` inside an instance member reaches the
+instance half, `this` inside a `static` member and a bare `ClassName.` reach the
+static half, and a `this` a non-arrow callback rebinds reaches neither. A
+same-named member of another class, of the other half of this one, or of an
+object literal is never read.
 
 The proof is exact and it is local:
 
-- Only the `number` keyword counts. `as any`, `as unknown`, `as string`,
-  `as const`, a generic such as `Wrapped<number>` and a union such as
-  `number | string` all leave the key reported, because none of them rules out a
-  property name.
+- Only the `number` keyword counts, at every site. `as any`, `as unknown`,
+  `as string`, `as const`, a generic such as `Wrapped<number>` or
+  `Promise<number>`, and a union such as `number | string` all leave the key
+  reported, because none of them rules out a property name.
+- Only a **written** annotation counts. An unannotated method whose body happens
+  to return a number is still reported: reading that would take the type checker
+  this rule deliberately does without.
 - An assertion that reaches `number` **through `any` or `unknown`** proves
   nothing either. `raw as number` is worth trusting only because TypeScript
   rejects it unless `raw` could be a number; a step through `any` or `unknown`
   removes exactly that check, which is what makes `raw as unknown as number` the
   idiom for asserting anything at all. It compiles for a `raw` holding
   `'__proto__'`, so `buffer[index]` stays reported.
+  That refusal is about an assertion standing **in place of** a declaration. An
+  annotation is credited on the strength of the annotation itself, so a
+  laundering assertion inside an annotated body leaves the return type standing,
+  exactly as `const rank: number = raw as unknown as number` leaves the binding
+  annotation standing.
 - The proof covers the **initializer** only. A later assignment is a separate
   statement — and it is where a value out of a `catch` binding or an `any`-typed
   source enters the binding — so every other write still has to prove itself.
@@ -195,6 +237,20 @@ obj[cursor];
 
 const { offset }: { offset: number } = source; // the pattern carries the type
 obj[offset];
+
+class Reader {
+  static rank: number = 1;
+  constructor(private readonly mapping) {}
+  private rankOf(seed) {
+    return seed + 1; // inferred, not written
+  }
+  read(seed) {
+    return [
+      this.mapping[this.rankOf(seed)], // no return type to read
+      this.mapping[this.rank], // `static`, so `this` does not reach it
+    ];
+  }
+}
 ```
 
 ### Compiler-bounded Record lookups are exempt

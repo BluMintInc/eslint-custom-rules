@@ -341,6 +341,18 @@ function templateCanSpell(quasis: readonly string[], target: string): boolean {
 }
 
 /**
+ * A `: number` type annotation. Every declaration site spells the proof with
+ * the same `TSTypeAnnotation` wrapper — a binding name, a class property, a
+ * function's return type — so one predicate reads them all, and which site the
+ * author chose stops deciding the verdict.
+ */
+function isNumberTypeAnnotation(
+  annotation: TSESTree.TSTypeAnnotation | undefined,
+): boolean {
+  return annotation?.typeAnnotation.type === AST_NODE_TYPES.TSNumberKeyword;
+}
+
+/**
  * A `: number` annotation on a binding name. Parameters and variable
  * declarators are the bindings that carry one, and TypeScript checks every
  * value that reaches such a binding against it.
@@ -348,8 +360,201 @@ function templateCanSpell(quasis: readonly string[], target: string): boolean {
 function isNumberAnnotated(node: TSESTree.Node): boolean {
   return (
     node.type === AST_NODE_TYPES.Identifier &&
-    node.typeAnnotation?.typeAnnotation.type === AST_NODE_TYPES.TSNumberKeyword
+    isNumberTypeAnnotation(node.typeAnnotation)
   );
+}
+
+/** The function-valued nodes that can carry a return-type annotation. */
+type AnnotatableFunction =
+  | TSESTree.FunctionDeclaration
+  | TSESTree.FunctionExpression
+  | TSESTree.ArrowFunctionExpression
+  | TSESTree.TSDeclareFunction
+  | TSESTree.TSEmptyBodyFunctionExpression;
+
+/** The node read as a function, or null when it is not one. */
+function asFunctionNode(node: TSESTree.Node): AnnotatableFunction | null {
+  switch (node.type) {
+    case AST_NODE_TYPES.FunctionDeclaration:
+    case AST_NODE_TYPES.FunctionExpression:
+    case AST_NODE_TYPES.ArrowFunctionExpression:
+    case AST_NODE_TYPES.TSDeclareFunction:
+    case AST_NODE_TYPES.TSEmptyBodyFunctionExpression:
+      return node;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Whether a function declares that it returns a number. The `: number` on a
+ * return type is the author's own claim at a declaration site, and TypeScript
+ * rejects every `return` that contradicts it — the same trust a `: number`
+ * binding annotation already earns, spelled one node over.
+ *
+ * A laundering assertion inside the body (`return raw as unknown as number`)
+ * switches that check off for the one statement carrying it, and is still
+ * credited here. `const k: number = raw as unknown as number` is credited for
+ * exactly the same reason: the annotation, not the initializer, is what the
+ * proof rests on. Refusing the return annotation alone would reinstate the very
+ * asymmetry between declaration sites this predicate exists to remove — and a
+ * body scan is not a proof anyway, since the laundering can happen one call or
+ * one local alias further away and read as clean.
+ */
+function returnsNumberType(node: TSESTree.Node): boolean {
+  const fn = asFunctionNode(node);
+  return !!fn && isNumberTypeAnnotation(fn.returnType);
+}
+
+/** The binding a constructor parameter property declares, default and all. */
+function parameterPropertyBinding(
+  node: TSESTree.TSParameterProperty,
+): TSESTree.Node {
+  return node.parameter.type === AST_NODE_TYPES.AssignmentPattern
+    ? node.parameter.left
+    : node.parameter;
+}
+
+/** Class members that declare a value under a name of their own. */
+const NAMED_CLASS_MEMBER_TYPES = new Set<AST_NODE_TYPES>([
+  AST_NODE_TYPES.MethodDefinition,
+  AST_NODE_TYPES.TSAbstractMethodDefinition,
+  AST_NODE_TYPES.PropertyDefinition,
+  AST_NODE_TYPES.TSAbstractPropertyDefinition,
+  AST_NODE_TYPES.AccessorProperty,
+  AST_NODE_TYPES.TSAbstractAccessorProperty,
+]);
+
+/**
+ * The name a class member declares, or null for an index signature, a static
+ * block, or a computed key whose text names no member the syntax can match.
+ */
+function classMemberName(member: TSESTree.Node): string | null {
+  if (!NAMED_CLASS_MEMBER_TYPES.has(member.type)) {
+    return null;
+  }
+  const { key, computed } = member as TSESTree.PropertyDefinition;
+  if (computed) {
+    return null;
+  }
+  if (key.type === AST_NODE_TYPES.Identifier) {
+    return key.name;
+  }
+  return key.type === AST_NODE_TYPES.Literal && typeof key.value === 'string'
+    ? key.value
+    : null;
+}
+
+/**
+ * A setter declares what a write to the member accepts, never what a read of it
+ * yields — a `get depth(): number` paired with a `set depth(v: string)` reads
+ * as a number. So the setter is left out of the judgement rather than failing
+ * it, which would let adding a setter re-report the getter's own proof.
+ */
+function isSetterDeclaration(node: TSESTree.Node): boolean {
+  return (
+    (node.type === AST_NODE_TYPES.MethodDefinition ||
+      node.type === AST_NODE_TYPES.TSAbstractMethodDefinition) &&
+    node.kind === 'set'
+  );
+}
+
+/**
+ * Whether reading the member yields a number by its own declaration: a property
+ * annotated `: number`, a getter returning `: number`, or a constructor
+ * parameter property annotated `: number`.
+ */
+function memberReadsNumber(declaration: TSESTree.Node): boolean {
+  switch (declaration.type) {
+    case AST_NODE_TYPES.PropertyDefinition:
+    case AST_NODE_TYPES.TSAbstractPropertyDefinition:
+    case AST_NODE_TYPES.AccessorProperty:
+    case AST_NODE_TYPES.TSAbstractAccessorProperty:
+      return isNumberTypeAnnotation(declaration.typeAnnotation);
+    case AST_NODE_TYPES.MethodDefinition:
+    case AST_NODE_TYPES.TSAbstractMethodDefinition:
+      return declaration.kind === 'get' && returnsNumberType(declaration.value);
+    case AST_NODE_TYPES.TSParameterProperty:
+      return isNumberAnnotated(parameterPropertyBinding(declaration));
+    default:
+      return false;
+  }
+}
+
+/** Whether calling the member returns a number by its own declaration. */
+function memberCallReturnsNumber(declaration: TSESTree.Node): boolean {
+  switch (declaration.type) {
+    case AST_NODE_TYPES.MethodDefinition:
+    case AST_NODE_TYPES.TSAbstractMethodDefinition:
+      return (
+        declaration.kind === 'method' && returnsNumberType(declaration.value)
+      );
+    case AST_NODE_TYPES.PropertyDefinition:
+    case AST_NODE_TYPES.TSAbstractPropertyDefinition:
+    case AST_NODE_TYPES.AccessorProperty:
+    case AST_NODE_TYPES.TSAbstractAccessorProperty:
+      return !!declaration.value && returnsNumberType(declaration.value);
+    default:
+      return false;
+  }
+}
+
+/**
+ * Whether the function is the body of a class member rather than a function of
+ * its own. A method's `FunctionExpression` receives the class instance as
+ * `this`; every other non-arrow function receives its own call-time receiver.
+ */
+function isClassMemberBody(node: TSESTree.Node): boolean {
+  const owner = node.parent;
+  switch (owner?.type) {
+    case AST_NODE_TYPES.MethodDefinition:
+    case AST_NODE_TYPES.TSAbstractMethodDefinition:
+    case AST_NODE_TYPES.PropertyDefinition:
+    case AST_NODE_TYPES.TSAbstractPropertyDefinition:
+    case AST_NODE_TYPES.AccessorProperty:
+    case AST_NODE_TYPES.TSAbstractAccessorProperty:
+      return owner.value === node;
+    default:
+      return false;
+  }
+}
+
+/**
+ * The half of a class — static or instance — that `this` reaches at a node,
+ * together with the body whose members it names. A non-arrow function rebinds
+ * `this` to its own call-time receiver, so the walk stops there unless that
+ * function IS a member's body; an arrow keeps the enclosing `this`, which is
+ * what makes `read = () => this.rank` resolve against the class it is written
+ * in. The walk stops at the innermost class body, so a nested class shadows the
+ * outer one exactly as `this` does at run time.
+ */
+function enclosingClassContext(
+  node: TSESTree.Node,
+): { body: TSESTree.ClassBody; isStatic: boolean } | null {
+  let child: TSESTree.Node = node;
+  let parent = node.parent;
+  while (parent) {
+    if (parent.type === AST_NODE_TYPES.ClassBody) {
+      // A static block's `this` is the class object, the same half of the class
+      // a `static` member lives on.
+      return {
+        body: parent,
+        isStatic:
+          child.type === AST_NODE_TYPES.StaticBlock ||
+          (child as TSESTree.PropertyDefinition).static === true,
+      };
+    }
+    if (
+      (parent.type === AST_NODE_TYPES.FunctionExpression ||
+        parent.type === AST_NODE_TYPES.FunctionDeclaration) &&
+      !isClassMemberBody(parent)
+    ) {
+      return null;
+    }
+    child = parent;
+    parent = parent.parent;
+  }
+  return null;
 }
 
 /** The types an assertion can launder any value through without complaint. */
@@ -1190,6 +1395,186 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
     };
 
     /**
+     * The class body an identifier names. A class reached by its own name
+     * exposes only the static half of itself, which is why the caller is told
+     * so rather than left to guess.
+     */
+    const classBodyOfName = (
+      identifier: TSESTree.Identifier,
+    ): TSESTree.ClassBody | null => {
+      const variable = ASTHelpers.findVariableInScope(
+        ASTHelpers.getScope(context, identifier),
+        identifier.name,
+      );
+      if (!variable || variable.defs.length !== 1) {
+        return null;
+      }
+      const { node: definition } = variable.defs[0];
+      if (definition.type === AST_NODE_TYPES.ClassDeclaration) {
+        return definition.body;
+      }
+      return definition.type === AST_NODE_TYPES.VariableDeclarator &&
+        definition.init?.type === AST_NODE_TYPES.ClassExpression
+        ? definition.init.body
+        : null;
+    };
+
+    /**
+     * The class body a receiver's members are declared in, and which half of it
+     * the receiver reaches. `this` resolves to the class it is written in;
+     * a bare name resolves to the class that name binds to, whose members it
+     * reaches statically. Anything else — a parameter, an import, a `super`
+     * whose class may live in another file — resolves to no body, so the
+     * annotation on a same-named member of some other class is never read.
+     */
+    const receiverClassContext = (
+      receiver: TSESTree.Node,
+    ): { body: TSESTree.ClassBody; isStatic: boolean } | null => {
+      const target = unwrapWrittenKey(receiver);
+      if (target.type === AST_NODE_TYPES.ThisExpression) {
+        return enclosingClassContext(target);
+      }
+      if (target.type !== AST_NODE_TYPES.Identifier) {
+        return null;
+      }
+      const body = classBodyOfName(target);
+      return body ? { body, isStatic: true } : null;
+    };
+
+    /**
+     * The declarations of a member name on one half of a class. A `static`
+     * member and an instance member of the same name are separate declarations
+     * that TypeScript keeps apart, so crediting the wrong half would credit an
+     * annotation the reference does not resolve to. Constructor parameter
+     * properties declare a member too, and are read alongside the body's own
+     * elements.
+     */
+    const classMemberDeclarations = (
+      body: TSESTree.ClassBody,
+      name: string,
+      isStatic: boolean,
+    ): TSESTree.Node[] => {
+      const declarations: TSESTree.Node[] = [];
+      for (const member of body.body) {
+        if (
+          !isStatic &&
+          member.type === AST_NODE_TYPES.MethodDefinition &&
+          member.kind === 'constructor'
+        ) {
+          for (const parameter of member.value.params) {
+            if (
+              parameter.type === AST_NODE_TYPES.TSParameterProperty &&
+              (parameterPropertyBinding(parameter) as TSESTree.Identifier)
+                .name === name
+            ) {
+              declarations.push(parameter);
+            }
+          }
+        }
+        if (
+          classMemberName(member) === name &&
+          (member as TSESTree.PropertyDefinition).static === isStatic
+        ) {
+          declarations.push(member);
+        }
+      }
+      return declarations.filter(
+        (declaration) => !isSetterDeclaration(declaration),
+      );
+    };
+
+    /**
+     * Whether a member read resolves to a member its own class declares
+     * `: number`. Every declaration of the name has to carry the proof: an
+     * overload or a second declaration that does not is a value the read can
+     * also yield.
+     */
+    const isNumberMemberRead = (node: TSESTree.MemberExpression): boolean => {
+      if (node.computed || node.property.type !== AST_NODE_TYPES.Identifier) {
+        return false;
+      }
+      const receiver = receiverClassContext(node.object);
+      if (!receiver) {
+        return false;
+      }
+      const declarations = classMemberDeclarations(
+        receiver.body,
+        node.property.name,
+        receiver.isStatic,
+      );
+      return declarations.length > 0 && declarations.every(memberReadsNumber);
+    };
+
+    /**
+     * Whether a call resolves to a function the author declared `: number`
+     * returning — a free function, a method, or a function-valued class member.
+     * The callee is resolved through the scope chain, so a local that shadows a
+     * numeric helper is judged by the shadowing declaration alone; a binding
+     * reassigned to another function has to prove every write, because the
+     * declaration no longer says what the call reaches.
+     */
+    const isNumberReturningCall = (node: TSESTree.CallExpression): boolean => {
+      const callee = unwrapWrittenKey(node.callee);
+      if (callee.type === AST_NODE_TYPES.Identifier) {
+        const variable = ASTHelpers.findVariableInScope(
+          ASTHelpers.getScope(context, callee),
+          callee.name,
+        );
+        if (!variable || variable.defs.length === 0) {
+          return false;
+        }
+        // The definition KIND decides which node carries the annotation: a
+        // function name is annotated on the function it names, while a
+        // parameter's definition node is the enclosing function — whose own
+        // return type says nothing about what the parameter holds.
+        const declaresNumeric = variable.defs.every((def) => {
+          switch (def.type) {
+            case TSESLint.Scope.DefinitionType.FunctionName:
+              return returnsNumberType(def.node);
+            case TSESLint.Scope.DefinitionType.Variable:
+              // The declarator's initializer is a write, so the write pass is
+              // what reads the annotation off the function it holds.
+              return (
+                def.node.type === AST_NODE_TYPES.VariableDeclarator &&
+                !!def.node.init
+              );
+            default:
+              return false;
+          }
+        });
+        return (
+          declaresNumeric &&
+          variable.references
+            .filter((reference) => reference.isWrite())
+            .every(
+              (reference) =>
+                !!reference.writeExpr &&
+                returnsNumberType(unwrapWrittenKey(reference.writeExpr)),
+            )
+        );
+      }
+      if (
+        callee.type !== AST_NODE_TYPES.MemberExpression ||
+        callee.computed ||
+        callee.property.type !== AST_NODE_TYPES.Identifier
+      ) {
+        return false;
+      }
+      const receiver = receiverClassContext(callee.object);
+      if (!receiver) {
+        return false;
+      }
+      const declarations = classMemberDeclarations(
+        receiver.body,
+        callee.property.name,
+        receiver.isStatic,
+      );
+      return (
+        declarations.length > 0 && declarations.every(memberCallReturnsNumber)
+      );
+    };
+
+    /**
      * Whether the syntax alone proves the key is a number. `__proto__`,
      * `constructor` and `prototype` are never the string form of a number, so a
      * numeric key cannot reach the prototype surface assertSafe exists to
@@ -1230,14 +1615,17 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             isStaticallyNumeric(target.right, seen)
           );
         case AST_NODE_TYPES.CallExpression:
-          return isNumericCall(target);
+          return isNumericCall(target) || isNumberReturningCall(target);
         case AST_NODE_TYPES.MemberExpression:
           // `.length` is a number on arrays, typed arrays and strings alike.
-          return (
+          if (
             !target.computed &&
             target.property.type === AST_NODE_TYPES.Identifier &&
             target.property.name === 'length'
-          );
+          ) {
+            return true;
+          }
+          return isNumberMemberRead(target);
         case AST_NODE_TYPES.Identifier:
           return isNumericIdentifier(target, seen);
         default:
