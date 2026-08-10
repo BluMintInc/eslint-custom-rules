@@ -1088,8 +1088,8 @@ export class Aliased {
         }
       `,
       },
-      // Aliasing `this` inside a static member reaches the class, as `this`
-      // itself does
+      // Aliasing `this` inside a static member reaches the class, as
+      // dereferencing `this` itself does
       {
         code: `
         export class Aliased {
@@ -1099,6 +1099,97 @@ export class Aliased {
             const self = this;
             const capped = values.map((value) => Math.min(value, self.LIMIT));
             return capped;
+          }
+        }
+      `,
+      },
+      // The exempt side of the construction boundary for the `this` spelling:
+      // an alias of `this` that is dereferenced reads a member, which is what
+      // holds a helper inside the class. Its reporting twin sits in the invalid
+      // list, so the narrowing is a boundary rather than a blanket (#1928)
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static limitOf() {
+            const self = this;
+            return self.LIMIT;
+          }
+        }
+      `,
+      },
+      // The computed spelling reads the same member the dotted one does (#1928)
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static limitOf() {
+            const scaled = this['LIMIT'] * 2;
+            return scaled;
+          }
+        }
+      `,
+      },
+      // Calling a member through `this` dereferences it (#1928)
+      {
+        code: `
+        export class Aliased {
+          private static helper(value: number) {
+            return value * 2;
+          }
+
+          private static computeAll(values: number[]) {
+            const doubled = values.map((value) => this.helper(value));
+            return doubled;
+          }
+        }
+      `,
+      },
+      // A chain of aliases off `this` is followed to a fixpoint, exactly as a
+      // chain off the class binding is (#1928)
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static limitOf() {
+            const a = this;
+            const b = a;
+            return b.LIMIT;
+          }
+        }
+      `,
+      },
+      // Destructuring a named member off `this` is a dereference of it: the
+      // pattern is the read (#1928)
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static describe(values: number[]) {
+            const { LIMIT } = this;
+            return values.length + LIMIT;
+          }
+        }
+      `,
+      },
+      // Inside a nested `function`, `this` is the call-time receiver rather
+      // than the class, yet a dereference through it stays exempt: deciding the
+      // receiver needs the call sites, which a single member does not carry, and
+      // a missed report costs less than a wrong one (#1928)
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static limitOf() {
+            const read = function (this: { LIMIT: number }) {
+              return this.LIMIT;
+            };
+            return read.call(this);
           }
         }
       `,
@@ -2153,6 +2244,152 @@ export class Aliased {
         }
       `,
         errors: [buildError('registerAll', 'Aliased')],
+      },
+      // `this` in a static member is the class, so both spellings answer one
+      // question: is a member dereferenced? Constructing through an alias of
+      // `this` reads none, and the helper survives the move to module scope —
+      // the same verdict its `Aliased` twin above already gets (#1928)
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static buildAll(values: number[]) {
+            const self = this;
+            const made = values.map(() => new self());
+            return made;
+          }
+        }
+      `,
+        errors: [buildError('buildAll', 'Aliased')],
+      },
+      // `instanceof` through an alias of `this` is a type test, not a state
+      // read (#1928)
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static onlyMine(values: unknown[]) {
+            const t = this;
+            const kept = values.filter((value) => value instanceof t);
+            return kept;
+          }
+        }
+      `,
+        errors: [buildError('onlyMine', 'Aliased')],
+      },
+      // The same boundary without the alias hop: constructing off `this`
+      // directly reads no member either (#1928)
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static buildAll(values: number[]) {
+            const made = values.map(() => new this());
+            return made;
+          }
+        }
+      `,
+        errors: [buildError('buildAll', 'Aliased')],
+      },
+      // `instanceof this` written directly (#1928)
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static onlyMine(values: unknown[]) {
+            const kept = values.filter((value) => value instanceof this);
+            return kept;
+          }
+        }
+      `,
+        errors: [buildError('onlyMine', 'Aliased')],
+      },
+      // Binding `this` and handing the binding straight back reads no member,
+      // so nothing about the class holds this helper in place (#1928)
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static owner() {
+            const self = this;
+            return self;
+          }
+        }
+      `,
+        errors: [buildError('owner', 'Aliased')],
+      },
+      // Passing `this` along as a value is not a dereference, as passing the
+      // class binding along is not (#1928)
+      {
+        code: `
+        declare function register(target: unknown): void;
+
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static registerAll(values: number[]) {
+            register(this);
+            return values.length;
+          }
+        }
+      `,
+        errors: [buildError('registerAll', 'Aliased')],
+      },
+      // The chain is followed for the non-reading side too: no length of alias
+      // chain off `this` turns construction into a state read (#1928)
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static buildAll(values: number[]) {
+            const a = this;
+            const b = a;
+            const made = values.map(() => new b());
+            return made;
+          }
+        }
+      `,
+        errors: [buildError('buildAll', 'Aliased')],
+      },
+      // A lone rest element off `this` selects no property, so it aliases the
+      // class rather than reading one of its members — the `Aliased` spelling
+      // of this shape reports for the same reason (#1928)
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static describe(values: number[]) {
+            const { ...statics } = this;
+            const keys = Object.keys(statics);
+            return keys.length + values.length;
+          }
+        }
+      `,
+        errors: [buildError('describe', 'Aliased')],
+      },
+      // A nested `function` whose `this` is never dereferenced reads nothing
+      // from any receiver, so the helper is class-agnostic (#1928)
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static describeAll(values: number[]) {
+            const describe = function (this: unknown) {
+              return String(this);
+            };
+            return values.map(() => describe.call(null));
+          }
+        }
+      `,
+        errors: [buildError('describeAll', 'Aliased')],
       },
       // A local named like the class but initialized from something else is not
       // the class, whatever it is dereferenced for

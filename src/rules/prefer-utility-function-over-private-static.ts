@@ -271,8 +271,17 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
     };
 
     /**
-     * Whether an expression evaluates to the class itself: the class binding, or
-     * a local holding it as in `const owner = ClassName`.
+     * Whether an expression evaluates to the class itself: `this`, which inside
+     * a static member is the class; the class binding; or a local holding
+     * either, as in `const owner = ClassName` or `const self = this`.
+     *
+     * Every spelling of the class is answered here rather than by a check of
+     * its own, because they all answer one question — does this expression name
+     * the class? A second implementation of that question is how the `this`
+     * spelling came to disagree with the class binding on construction and
+     * `instanceof`: it asked whether a `ThisExpression` appeared anywhere in the
+     * member instead of whether a member was dereferenced, so `new self()` read
+     * as class state while its `new owner()` twin did not (#1928).
      *
      * Alias chains are followed to a fixpoint rather than to a fixed number of
      * hops: `const a = ClassName; const b = a; b.MEMBER` reads the same member
@@ -287,12 +296,17 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
      * anywhere may hold something else by the time it is used, and crediting it
      * would exempt a helper that never touches the class.
      */
-    const holdsClassBinding = (
+    const holdsClassReceiver = (
       node: TSESTree.Node,
       classBindingIdentifiers: ReadonlySet<TSESTree.Node>,
       visited: Set<TSESLint.Scope.Variable> = new Set(),
     ): boolean => {
       const target = unwrapTypeSyntax(node);
+
+      if (target.type === 'ThisExpression') {
+        return true;
+      }
+
       if (target.type !== 'Identifier') {
         return false;
       }
@@ -328,7 +342,7 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
         return false;
       }
 
-      return holdsClassBinding(
+      return holdsClassReceiver(
         definition.node.init,
         classBindingIdentifiers,
         visited,
@@ -336,18 +350,22 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
     };
 
     // A method reads the class it is declared on through several spellings, all
-    // equivalent: `this.x`, `super.x`, `new.target` and `ClassName.x`. The last
-    // one is resolved by identity against the class binding (see
+    // equivalent: `this.x`, `super.x`, `new.target` and `ClassName.x`. What
+    // makes each of the first and last a read is the dereference, not the
+    // receiver's spelling — `this` and the class binding both reach the member
+    // arm below through `holdsClassReceiver`, so neither can answer the
+    // construction and `instanceof` boundary differently from the other
+    // (#1928). The class binding is resolved by identity (see
     // collectClassBindingIdentifiers) so that a shadowing local of the same name
-    // does not read as class state, and it follows aliases of that binding so
-    // that the syntax reaching a member does not change the answer.
+    // does not read as class state, and aliases of it are followed so that the
+    // syntax reaching a member does not change the answer.
     const referencesClassState = (
       node: TSESTree.Node,
       classBindingIdentifiers: ReadonlySet<TSESTree.Node>,
     ): boolean => {
       if (!node) return false;
 
-      if (node.type === 'ThisExpression' || node.type === 'Super') {
+      if (node.type === 'Super') {
         return true;
       }
 
@@ -359,12 +377,13 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
         return true;
       }
 
-      // `ClassName.member` — including the optional-chained `ClassName?.member`,
-      // whose MemberExpression is reached through its wrapping ChainExpression,
-      // and `owner.member` where `owner` is a local holding the class.
+      // `this.member` and `ClassName.member` — including the optional-chained
+      // `ClassName?.member`, whose MemberExpression is reached through its
+      // wrapping ChainExpression, the computed `this['member']`, and
+      // `owner.member` where `owner` is a local holding the class or `this`.
       if (
         node.type === 'MemberExpression' &&
-        holdsClassBinding(node.object, classBindingIdentifiers)
+        holdsClassReceiver(node.object, classBindingIdentifiers)
       ) {
         return true;
       }
@@ -379,7 +398,7 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
         node.id.type === 'ObjectPattern' &&
         node.id.properties.some((property) => property.type === 'Property') &&
         node.init &&
-        holdsClassBinding(node.init, classBindingIdentifiers)
+        holdsClassReceiver(node.init, classBindingIdentifiers)
       ) {
         return true;
       }
