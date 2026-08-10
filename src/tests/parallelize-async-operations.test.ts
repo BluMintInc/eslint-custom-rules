@@ -1284,6 +1284,147 @@ async function plainFunctionCallbackWriteThenRead(runner) {
 }
 `,
     // ------------------------------------------------------------------
+    // The same closure-write hazard aimed at INSTANCE state. `this.mutator` has
+    // no root BINDING for the name comparison to catch, so the write must be
+    // matched by PATH or the barrier never engages and the rewrite silently
+    // drops the second operation. (#1924)
+    // ------------------------------------------------------------------
+    // The issue's shape: under Promise.all the array elements evaluate left to
+    // right, so `this.mutator` is still undefined when the second element runs,
+    // the optional chain short-circuits and `deleteIfEmptied` NEVER happens.
+    // (#1924)
+    `
+class TeamExit {
+  async run(db, teamId) {
+    await db.runTransaction(async (transaction) => {
+      this.mutator = new TeamMutator(transaction, teamId);
+    });
+    await this.mutator?.deleteIfEmptied();
+  }
+}
+`,
+    // The `?.` is not what decides: without it the same rewrite raises a
+    // TypeError instead of silently skipping the operation. (#1924)
+    `
+class TeamExitStrict {
+  async run(db, teamId) {
+    await db.runTransaction(async () => {
+      this.mutator = new TeamMutator(teamId);
+    });
+    await this.mutator.deleteIfEmptied();
+  }
+}
+`,
+    // `super.mutator` and `this.mutator` reach the same slot on the same
+    // instance, so the spelling of the write cannot decide the barrier. (#1924)
+    `
+class SubclassExit extends BaseExit {
+  async run(db, teamId) {
+    await db.runTransaction(async () => {
+      super.mutator = new TeamMutator(teamId);
+    });
+    await this.mutator?.deleteIfEmptied();
+  }
+}
+`,
+    // Depth does not dilute the dependency: written path and read path name the
+    // same slot. (#1924)
+    `
+class NestedExit {
+  async run(db, teamId) {
+    await db.runTransaction(async (transaction) => {
+      this.state.mutator = new TeamMutator(transaction, teamId);
+    });
+    await this.state.mutator?.deleteIfEmptied();
+  }
+}
+`,
+    // Nor does more of it. (#1924)
+    `
+class DeeplyNestedExit {
+  async run(db) {
+    await db.runTransaction(async (transaction) => {
+      this.cache.team.mutator = new TeamMutator(transaction);
+    });
+    await this.cache.team.mutator.deleteIfEmptied();
+  }
+}
+`,
+    // Writing the CONTAINER is a write to everything beneath it: replacing
+    // `this.state` replaces the object the later `this.state.mutator` reads.
+    // (#1924)
+    `
+class ContainerWriteExit {
+  async run(db) {
+    await db.runTransaction(async (transaction) => {
+      this.state = new TeamState(transaction);
+    });
+    await this.state.mutator?.deleteIfEmptied();
+  }
+}
+`,
+    // And the converse direction: a method invoked ON the container can read
+    // the slot the callback just filled, so a write BENEATH a later read is a
+    // barrier too. (#1924)
+    `
+class ContainerReadExit {
+  async run(db) {
+    await db.runTransaction(async (transaction) => {
+      this.state.mutator = new TeamMutator(transaction);
+    });
+    await this.state.persist();
+  }
+}
+`,
+    // A dynamic segment hides WHICH slot the callback wrote, so the write keys
+    // on the longest fixed prefix -- which still covers the later read. (#1924)
+    `
+class DynamicSlotExit {
+  async run(db, index) {
+    await db.runTransaction(async (transaction) => {
+      this.mutators[index] = new TeamMutator(transaction);
+    });
+    await this.mutators.deleteEmptied();
+  }
+}
+`,
+    // An update expression is a write with no assignment operator in sight, and
+    // it reaches instance state just the same. (#1924)
+    `
+class CounterExit {
+  async run(runner, sink) {
+    await runner.execute(async () => { this.count++; });
+    await sink.persist(this.count);
+  }
+}
+`,
+    // Sibling slots under a SHARED container fuse, deliberately: reaching
+    // `this.state.beta` evaluates `this.state`, and the rule cannot tell that
+    // navigation from a read of the whole container, so it answers the doubt
+    // with a barrier. The fusion stops at the instance itself -- slots reached
+    // directly from `this` stay independent, as the invalid cases pin. (#1924)
+    `
+class SiblingSlotExit {
+  async run(db) {
+    await db.runTransaction(async (transaction) => {
+      this.state.alpha = new TeamMutator(transaction);
+    });
+    await this.state.beta?.deleteIfEmptied();
+  }
+}
+`,
+    // A write rooted at a BINDING keeps its root-binding treatment, keyed on
+    // `ctx` rather than on a path. The instance-path vocabulary is purely
+    // additive and must not narrow this into per-slot matching. (#1924)
+    `
+async function parameterObjectWriteThenRead(db, ctx) {
+  await db.runTransaction(async (transaction) => {
+    ctx.mutator = new TeamMutator(transaction);
+  });
+  await ctx.mutator?.deleteIfEmptied();
+}
+`,
+    // ------------------------------------------------------------------
     // Fold-accumulator serialization barrier. `arr.reduce(async (promise, x)
     // => { await promise; ... }, Promise.resolve())` is the canonical idiom for
     // FORCING sequential execution over a collection: the first parameter is
@@ -2886,6 +3027,65 @@ async function localDeclarationIsNotAWrite(runner, sink) {
   }),
     sink.persist(captured)
   ]);
+}
+`,
+    },
+    // Controls for the instance-state arm of the closure-write barrier. It keys
+    // on the full PATH the callback wrote, so it must not degrade into "any
+    // callback writing the instance blocks the run": distinct slots on one
+    // instance are as independent as distinct bindings. Keying on the receiver
+    // (`this`) would silence this. (#1924)
+    {
+      code: `
+class DistinctSlotExit {
+  async run(db) {
+    await db.runTransaction(async (transaction) => {
+      this.alpha = new TeamMutator(transaction);
+    });
+    await this.beta?.deleteIfEmptied();
+  }
+}
+`,
+      errors: [error(2)],
+      output: `
+class DistinctSlotExit {
+  async run(db) {
+    await Promise.all([
+      db.runTransaction(async (transaction) => {
+      this.alpha = new TeamMutator(transaction);
+    }),
+      this.beta?.deleteIfEmptied()
+    ]);
+  }
+}
+`,
+    },
+    // The other failure mode of a too-coarse key: the callback writes the
+    // instance slot `this.mutator`, while the later await reads a same-spelled
+    // LOCAL binding that no callback touches. Keying on the property NAME would
+    // fuse two unrelated pieces of state. (#1924)
+    {
+      code: `
+class SameSpelledExit {
+  async run(db, mutator) {
+    await db.runTransaction(async (transaction) => {
+      this.mutator = new TeamMutator(transaction);
+    });
+    await mutator.deleteIfEmptied();
+  }
+}
+`,
+      errors: [error(2)],
+      output: `
+class SameSpelledExit {
+  async run(db, mutator) {
+    await Promise.all([
+      db.runTransaction(async (transaction) => {
+      this.mutator = new TeamMutator(transaction);
+    }),
+      mutator.deleteIfEmptied()
+    ]);
+  }
 }
 `,
     },

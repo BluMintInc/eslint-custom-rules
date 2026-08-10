@@ -481,6 +481,129 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     }
 
     /**
+     * Reports whether a receiver key names a slot reached from the INSTANCE
+     * rather than from a bare binding. `this` and `super` are reserved words, so
+     * no binding can be spelled the instance key and a path segment only ever
+     * appears after a `${objectKey}.` prefix -- the test is therefore exact
+     * rather than heuristic. (#1924)
+     */
+    function isInstancePathKey(key: string): boolean {
+      return (
+        key === INSTANCE_RECEIVER_KEY ||
+        key.startsWith(`${INSTANCE_RECEIVER_KEY}.`)
+      );
+    }
+
+    /**
+     * Builds the path key of an instance-rooted member expression
+     * (`this.mutator`, `super.state.mutator`), or null when the expression does
+     * not reach instance state.
+     *
+     * A PATH key, not a bare name, is what makes an instance write usable as an
+     * ordering barrier. Keying on the receiver alone would fuse `this.alpha` and
+     * `this.beta` into one slot and barrier every run that touches the instance
+     * twice; keying on the property name alone would barrier a later await that
+     * merely mentions a same-spelled local. The full path distinguishes both.
+     *
+     * A dynamic segment (`this.rows[i]`) hides WHICH slot is reached, so the key
+     * truncates to the longest fixed prefix (`this.rows`). For an ordering
+     * question a prefix is the conservative answer: it overlaps every path
+     * beneath it, so the barrier still engages.
+     *
+     * Bare-identifier roots yield null. They are already covered by the
+     * root-binding behaviour of collectAssignmentTarget, and re-keying them by
+     * path would NARROW that coverage into MORE reports -- the wrong direction
+     * for a rule that prefers a missed parallelization over a silent reorder.
+     */
+    function getInstancePathKey(node: TSESTree.Node): string | null {
+      const key = getReceiverKey(node);
+      if (key !== null) {
+        return isInstancePathKey(key) ? key : null;
+      }
+
+      // getReceiverKey refuses the whole chain when any segment is dynamic;
+      // dropping the outermost layer and retrying recovers the fixed prefix.
+      switch (node.type) {
+        case AST_NODE_TYPES.ChainExpression:
+        case AST_NODE_TYPES.TSNonNullExpression:
+        case AST_NODE_TYPES.TSAsExpression:
+          return getInstancePathKey(node.expression);
+
+        case AST_NODE_TYPES.MemberExpression:
+          return getInstancePathKey(node.object);
+
+        default:
+          return null;
+      }
+    }
+
+    /**
+     * Reports whether a write to one instance path can be observed through a
+     * read of another. Equal paths alias; so do a path and any path BENEATH it,
+     * in both directions -- writing `this.state` replaces the object a later
+     * `this.state.mutator` reads, and writing `this.state.mutator` changes what
+     * a later `this.state` hands to whoever receives it. Disjoint slots
+     * (`this.alpha` versus `this.beta`) do not alias, which is what keeps
+     * genuinely independent instance work parallelizable. (#1924)
+     */
+    function instancePathsOverlap(written: string, read: string): boolean {
+      return (
+        written === read ||
+        read.startsWith(`${written}.`) ||
+        written.startsWith(`${read}.`)
+      );
+    }
+
+    /**
+     * Collects every instance-rooted path an expression MENTIONS, at every
+     * depth: visiting `this.state.mutator` records `this.state.mutator` and also
+     * `this.state`, because the inner member expression is a node in its own
+     * right. Sub-paths therefore need no special handling at the call site.
+     *
+     * Needed because the identifier sets the barriers compare hold BARE names
+     * (`mutator`), so a written key like `this.mutator` could never match one.
+     *
+     * The traversal crosses function boundaries, matching getAllIdentifiers: the
+     * question is which state the awaited expression touches, and a callback
+     * handed to that expression touches it too. A non-arrow callback rebinds
+     * `this`, so its paths are attributed to the enclosing instance even though
+     * they belong to another object -- that can only add a barrier, never remove
+     * one. (#1924)
+     */
+    function getInstancePathKeys(node: TSESTree.Node): Set<string> {
+      const keys = new Set<string>();
+
+      const visit = (current: TSESTree.Node): void => {
+        if (current.type === AST_NODE_TYPES.MemberExpression) {
+          const pathKey = getInstancePathKey(current);
+          if (pathKey !== null) {
+            keys.add(pathKey);
+          }
+        }
+
+        for (const key in current) {
+          if (key === 'parent' || key === 'range' || key === 'loc') continue;
+
+          const child = (current as any)[key];
+          if (!child || typeof child !== 'object') continue;
+
+          if (Array.isArray(child)) {
+            for (const item of child) {
+              if (item && typeof item === 'object' && 'type' in item) {
+                visit(item as TSESTree.Node);
+              }
+            }
+          } else if ('type' in child) {
+            visit(child as TSESTree.Node);
+          }
+        }
+      };
+
+      visit(node);
+      return keys;
+    }
+
+    /**
      * Extracts the receiver key of an awaited *named-method* call: the key of
      * the `object` of a `MemberExpression` callee, when the accessed member is
      * a named method -- either a non-computed property (`versionRef.set(...)`)
@@ -815,7 +938,17 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     }
 
     /**
-     * Records the binding a single assignment target writes to.
+     * What a set of assignment targets writes to, in the two vocabularies the
+     * ordering barriers can match on: bindings reachable by NAME, and slots on
+     * the instance reachable only by PATH. (#1924)
+     */
+    type AssignmentTargets = {
+      identifiers: TSESTree.Identifier[];
+      instancePaths: string[];
+    };
+
+    /**
+     * Records the state a single assignment target writes to.
      *
      * A member write records its ROOT object (`obj.a.b = 1` yields `obj`),
      * because the state it mutates is reachable through that binding, and a
@@ -824,17 +957,30 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
      * Destructuring targets recurse to their leaf identifiers, since
      * `({ a } = source)` and `[a] = source` write `a` just as `a = source.a`
      * does.
+     *
+     * A member write rooted at the instance (`this.mutator = m`) has no root
+     * BINDING at all, so the root walk below records nothing for it and every
+     * barrier keyed on names is blind to the write. Such a target additionally
+     * records its instance PATH, which a barrier can match against the paths a
+     * later await reads. The two vocabularies are independent: the root walk is
+     * left exactly as it is, so an identifier-rooted write keeps its (wider,
+     * quieter) root-binding treatment. (#1924)
      */
     function collectAssignmentTarget(
       target: TSESTree.Node,
-      targets: TSESTree.Identifier[],
+      targets: AssignmentTargets,
     ): void {
       switch (target.type) {
         case AST_NODE_TYPES.Identifier:
-          targets.push(target);
+          targets.identifiers.push(target);
           break;
 
         case AST_NODE_TYPES.MemberExpression: {
+          const instancePath = getInstancePathKey(target);
+          if (instancePath !== null) {
+            targets.instancePaths.push(instancePath);
+          }
+
           let root: TSESTree.Node = target;
           for (;;) {
             if (root.type === AST_NODE_TYPES.MemberExpression) {
@@ -850,7 +996,7 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
             }
           }
           if (root.type === AST_NODE_TYPES.Identifier) {
-            targets.push(root);
+            targets.identifiers.push(root);
           }
           break;
         }
@@ -913,7 +1059,8 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     }
 
     /**
-     * Collects the identifier names an awaited expression WRITES.
+     * Collects the state an awaited expression WRITES: the identifier names it
+     * assigns, and the instance paths (`this.mutator`) it assigns. (#1924)
      *
      * The traversal deliberately crosses function boundaries, which is the
      * opposite of what containsSuspendingAwait needs: the write that matters
@@ -926,8 +1073,11 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
      * inside a callback creates a fresh local binding rather than publishing a
      * value to an outer one, so it cannot be what a later await reads.
      */
-    function getAssignedNames(node: TSESTree.Node): Set<string> {
-      const targets: TSESTree.Identifier[] = [];
+    function getAssignedState(node: TSESTree.Node): {
+      names: Set<string>;
+      instancePaths: Set<string>;
+    } {
+      const targets: AssignmentTargets = { identifiers: [], instancePaths: [] };
 
       const visit = (current: TSESTree.Node): void => {
         if (current.type === AST_NODE_TYPES.AssignmentExpression) {
@@ -965,12 +1115,15 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
       visit(node);
 
       const names = new Set<string>();
-      for (const target of targets) {
+      for (const target of targets.identifiers) {
         if (!isDeclaredWithin(target, node)) {
           names.add(target.name);
         }
       }
-      return names;
+      // An instance path needs no declared-within filter: `this` names the
+      // enclosing instance, which no callback can declare as a fresh local, so
+      // every such write is by construction published to the outer scope.
+      return { names, instancePaths: new Set(targets.instancePaths) };
     }
 
     /**
@@ -1207,19 +1360,44 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
       // the `?.` turns the same rewrite into a TypeError instead. Keyed on a
       // write that a LATER await actually reads, so a callback whose effects
       // nothing downstream observes still parallelizes. (#1723)
-      const assignedNames = awaitNodes.map((node) => {
+      //
+      // Instance state is the same hazard written a different way: `await
+      // db.runTransaction(async (tx) => { this.mutator = new Mutator(tx); });
+      // await this.mutator?.deleteIfEmptied();` reorders just as silently, but
+      // `this.mutator` has no root BINDING for the name comparison to catch, so
+      // the write must be matched by PATH instead. The two vocabularies are
+      // checked side by side and the path check is purely additive: it can only
+      // suppress a report, never create one. Paths are compared slot by slot, so
+      // a write to `this.alpha` leaves a later `this.beta` parallelizable while
+      // a write to `this.state` still blocks a later `this.state.mutator`.
+      // (#1924)
+      const assignedState = awaitNodes.map((node) => {
         const awaitExpr = getAwaitExpression(node);
         return awaitExpr
-          ? getAssignedNames(awaitExpr.argument)
+          ? getAssignedState(awaitExpr.argument)
+          : { names: new Set<string>(), instancePaths: new Set<string>() };
+      });
+      const readInstancePaths = awaitNodes.map((node) => {
+        const awaitExpr = getAwaitExpression(node);
+        return awaitExpr
+          ? getInstancePathKeys(awaitExpr.argument)
           : new Set<string>();
       });
       for (let i = 1; i < awaitNodes.length; i++) {
         const currentIds = allIdentifiers[i];
-        if (currentIds.size === 0) continue;
+        const currentPaths = readInstancePaths[i];
+        if (currentIds.size === 0 && currentPaths.size === 0) continue;
         for (let j = 0; j < i; j++) {
-          for (const written of assignedNames[j]) {
+          for (const written of assignedState[j].names) {
             if (currentIds.has(written)) {
               return true;
+            }
+          }
+          for (const writtenPath of assignedState[j].instancePaths) {
+            for (const readPath of currentPaths) {
+              if (instancePathsOverlap(writtenPath, readPath)) {
+                return true;
+              }
             }
           }
         }
