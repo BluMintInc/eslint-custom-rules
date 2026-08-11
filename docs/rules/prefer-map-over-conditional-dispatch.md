@@ -112,11 +112,12 @@ does not count as reading the narrowed object; an arrow function's `this` is the
 lexical one and does count, matching how a closure over an identifier-rooted base
 object counts.
 
-An optional-chained discriminant is read the same way. TypeScript discriminates
-a union through `?.`, so `switch (result?.kind)` narrows exactly as
-`switch (result.kind)` does, and the exemption applies to both — a nullable
-discriminant is precisely where `?.` gets written, and a `Record` hoisted out of
-one destroys the same narrowing (`result.data` then fails with TS2339).
+An optional-chained discriminant is read the same way, in every form. TypeScript
+discriminates a union through `?.`, so `switch (result?.kind)` and
+`result?.kind === 'success' ? ... : ...` narrow exactly as their plain spellings
+do, and the exemption applies to all of them — a nullable discriminant is
+precisely where `?.` gets written, and a `Record` hoisted out of one destroys the
+same narrowing (`result.data` then fails with TS2339).
 
 ```ts
 // Never fires — `?.` narrows the union just as the plain access does
@@ -128,13 +129,20 @@ switch (result?.kind) {
 }
 ```
 
+A non-null assertion is read the same way, wherever it sits in the chain
+(`result!.kind`, `box?.r!.kind`, `result.kind!`). It asserts a value the
+narrowing does not depend on, so an exemption that a `!` could switch off would
+be an exemption for one spelling — and the `Record` it let through would hoist
+`result.data` out of the narrowing exactly as before.
+
 Where the construct is **not** narrowing, an optional-chained discriminant keeps
 the ordinary autofix: the generated lookup copies the discriminant's source text
 verbatim (`RESULT_BY_KIND[o?.kind]`), so the optional link survives intact.
 Whether the chain can yield `undefined` is answered by the discriminant's *type*
 — under `strictNullChecks` a nullish receiver makes `o?.kind` include
 `undefined`, which routes to the report-only `Partial<Record<D, V>>` advice
-below.
+below. That is a question about the type, not about the spelling, so it is
+decided identically for a `switch`, a ternary and an `if`/`else if` chain.
 
 A branch that returns a tag-independent constant (`case 'failure': return 0;`)
 does not by itself disqualify the construct — it is the *sibling* branch's
@@ -155,13 +163,19 @@ a hidden lookup table.
 - **Grouped cases** (`case 'a': case 'b': return X;`) do fire; the fix expands
   them into repeated `Record` entries.
 - For the **ternary** and **if/else-if** forms, "same discriminant" means
-  token-identical AND restricted to an identifier or a non-optional, call-free
-  member expression rooted at an identifier (a `this`-rooted or optional-chained
-  discriminant such as `this.slot.role === 'title' ? ... : ...` or
-  `slot?.role === 'title' ? ... : ...` is out of scope for those two forms; the
-  `switch` form accepts both). A call-bearing discriminant
+  token-identical AND restricted to an identifier or a call-free, non-computed
+  member expression rooted at an identifier. Optional links and non-null
+  assertions *inside* the chain (`slot?.role === 'title' ? ... : ...`,
+  `slot!.role === ...`) are spellings of that same member read, so they qualify
+  exactly as the plain access does — the `switch` form reads them that way too,
+  so every form answers the same question about the same discriminant. An
+  assertion on the whole tag access (`slot.role! === 'title' ? ... : ...`) and a
+  `this`-rooted discriminant (`this.slot.role === 'title' ? ... : ...`) remain
+  out of scope for these two forms. A call-bearing discriminant
   (`getKind() === 'a' ? ... : getKind() === 'b' ? ...`) does not fire —
-  collapsing repeated evaluations into one lookup changes the evaluation count.
+  collapsing repeated evaluations into one lookup changes the evaluation count —
+  and neither does a computed link (`a[i].kind`), whose index would be read once
+  instead of once per test.
 - A lone `x === 'lit' ? a : b` on a 2-member union is a fully-covered chain of
   length 1 and does fire.
 
