@@ -1,5 +1,147 @@
 [
   {
+    "version": "1.20.140",
+    "date": "2026-08-11T22:49:18.139Z",
+    "rules": [
+      {
+        "name": "class-methods-read-top-to-bottom",
+        "changeType": "fix",
+        "issues": [
+          1932
+        ],
+        "summary": "treat `#foo` as private, so one ECMA-private member stops silencing the class (closes #1932)"
+      },
+      {
+        "name": "consistent-callback-naming",
+        "changeType": "fix",
+        "issues": [
+          1944,
+          1946,
+          1948,
+          1949
+        ],
+        "summary": "report a callback written as a class property (closes #1949); withhold a rename an intervening binding would capture (closes #1948); carry a class-method rename to its `this.` readers (closes #1946); withhold the rename when a member satisfies a declared contract (closes #1944)"
+      },
+      {
+        "name": "enforce-assert-safe-object-key",
+        "changeType": "fix",
+        "issues": [
+          1933
+        ],
+        "summary": "credit a `#private` member with its own `: number` proof (closes #1933)"
+      },
+      {
+        "name": "enforce-assert-throws",
+        "changeType": "fix",
+        "issues": [
+          1934
+        ],
+        "summary": "resolve `#assert` member names instead of collapsing them to '' (closes #1934)"
+      },
+      {
+        "name": "enforce-boolean-naming-prefixes",
+        "changeType": "fix",
+        "issues": [
+          1935
+        ],
+        "summary": "see `#name` members, not just `Identifier` keys (closes #1935)"
+      },
+      {
+        "name": "enforce-firestore-doc-ref-generic",
+        "changeType": "fix",
+        "issues": [
+          1936
+        ],
+        "summary": "resolve a schema declared on a `#` member (closes #1936)"
+      },
+      {
+        "name": "enforce-memoize-async",
+        "changeType": "fix",
+        "issues": [
+          1952,
+          1953,
+          1954
+        ],
+        "summary": "stay silent on a method with a private name (closes #1954); anchor `@Memoize()` to the method, not to the line (closes #1953); stay silent inside a class expression (closes #1952)"
+      },
+      {
+        "name": "enforce-memoize-getters",
+        "changeType": "fix",
+        "issues": [
+          1945,
+          1947
+        ],
+        "summary": "stay silent inside a class expression (closes #1947); anchor `@Memoize()` to the getter, not to the line (closes #1945)"
+      },
+      {
+        "name": "no-passthrough-getters",
+        "changeType": "fix",
+        "issues": [
+          1937
+        ],
+        "summary": "rank a `#` getter as private, not public (closes #1937)"
+      },
+      {
+        "name": "parallelize-async-operations",
+        "changeType": "fix",
+        "issues": [
+          1938
+        ],
+        "summary": "engage the ordering barriers on `#` members (closes #1938)"
+      },
+      {
+        "name": "prefer-docsetter-setall",
+        "changeType": "fix",
+        "issues": [
+          1939
+        ],
+        "summary": "resolve a `#docSetter` receiver to its own field (closes #1939)"
+      },
+      {
+        "name": "prefer-getter-over-parameterless-method",
+        "changeType": "fix",
+        "issues": [
+          1940
+        ],
+        "summary": "let `#` methods reach the analysis (closes #1940)"
+      },
+      {
+        "name": "prefer-map-over-conditional-dispatch",
+        "changeType": "fix",
+        "issues": [
+          1941
+        ],
+        "summary": "derive a lookup name from a `#` discriminant (closes #1941)"
+      },
+      {
+        "name": "prefer-utility-function-over-private-static",
+        "changeType": "fix",
+        "issues": [
+          1942
+        ],
+        "summary": "see `static #foo` in all three arms (closes #1942)"
+      },
+      {
+        "name": "require-memoize-jsx-returners",
+        "changeType": "fix",
+        "issues": [
+          1950,
+          1951,
+          1955
+        ],
+        "summary": "stay silent on a member with a private name (closes #1955); anchor `@Memoize()` to the member, not to the line (closes #1951); stay silent inside a class expression (closes #1950)"
+      },
+      {
+        "name": "semantic-function-prefixes",
+        "changeType": "fix",
+        "issues": [
+          1943
+        ],
+        "summary": "name `#` methods instead of returning early (closes #1943)"
+      }
+    ]
+  },
+  {
     "version": "1.20.139",
     "date": "2026-08-11T03:05:43.013Z",
     "rules": [
