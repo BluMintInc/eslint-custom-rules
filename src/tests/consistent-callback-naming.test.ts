@@ -484,6 +484,38 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         };
       `,
     },
+    // Bug #1949 control: the class-field arm keys on the `handle` prefix, not on
+    // the field spelling. A compliant field name stays silent.
+    {
+      code: `class C { onClick = () => {}; }`,
+    },
+    // Bug #1949: the #1301 disambiguation reaches the field arm too. "handle"
+    // followed by a lowercase letter is an ordinary word, not the prefix, and a
+    // bare `handle` is a whole word — none of these is a subject however it is
+    // spelled.
+    {
+      code: `
+        class C {
+          handled = true;
+          handler = (): void => {};
+          handlers: (() => void)[] = [];
+          handledCount = 0;
+          handle = (): void => {};
+        }
+      `,
+    },
+    // Bug #1949: a computed key is an expression, so the name the class member
+    // actually gets is whatever the binding holds. The field contributes no
+    // report of its own — see the invalid case that pins the binding's report
+    // as the only one.
+    {
+      code: `
+        import { key } from './keys';
+        class C {
+          [key] = (): void => {};
+        }
+      `,
+    },
   ],
   invalid: [
     // Bug #1522: the prop rename spans the JSX usage AND the props type
@@ -1875,6 +1907,571 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
       errors: [{ messageId: 'callbackFunctionPrefix' }],
       output: `const config = { click: onClick };`,
     },
+    // Bug #1949: the repro. A callback written as a class FIELD was silent
+    // while the same callback written as a METHOD reported, so `=` was a
+    // one-token evasion of the rule.
+    {
+      code: `class C { handleClick = () => {}; }`,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `class C { click = () => {}; }`,
+    },
+    // Bug #1949: a type annotation on the field changes nothing.
+    {
+      code: `class C { handleClick: () => void = () => {}; }`,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `class C { click: () => void = () => {}; }`,
+    },
+    // Bug #1949: a `function` expression is the same field.
+    {
+      code: `class C { handleClick = function () {}; }`,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `class C { click = function () {}; }`,
+    },
+    /**
+     * Bug #1949 scope decision, pinned in both directions: a field is judged on
+     * its NAME, not on whether it holds a function. `handleClickCount = 0`
+     * carries the prefix the rule exists to remove, and `const handleClickCount
+     * = 0` is already reported one arm over, so a value gate here would make
+     * the same name reportable or not depending on which side of an `=` it sat
+     * — and would hand back the evasion this fixture's neighbours close, since
+     * `handleClick = makeHandler()` is a callback the rule cannot always type.
+     */
+    {
+      code: `class C { handleClickCount = 0; }`,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `class C { clickCount = 0; }`,
+    },
+    // Bug #1949: an optional field and a definite-assignment field are fields.
+    {
+      code: `class C { handleClick?: () => void; }`,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `class C { click?: () => void; }`,
+    },
+    {
+      code: `class C { handleClick!: () => void; }`,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `class C { click!: () => void; }`,
+    },
+    // Bug #1949: `readonly` changes nothing about who can name the member.
+    {
+      code: `class C { readonly handleClick = (): void => {}; }`,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `class C { readonly click = (): void => {}; }`,
+    },
+    // Bug #1949: a decorated field is still a field. The decorator sees the
+    // renamed key, exactly as it does on the method spelling.
+    {
+      code: `
+        class C {
+          @observable handleClick = (): void => {};
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `
+        class C {
+          @observable click = (): void => {};
+        }
+      `,
+    },
+    // Bug #1949: the field's readers are `this.` reads in this file, so the
+    // declaration and every one of them move in ONE fix — the #1946 contract,
+    // now reached from a field.
+    {
+      code: `
+        class C {
+          handleClick = (): void => {};
+          run(): void {
+            this.handleClick();
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `
+        class C {
+          click = (): void => {};
+          run(): void {
+            this.click();
+          }
+        }
+      `,
+    },
+    // Bug #1949: a field initializer's arrow inherits `this` lexically, so a
+    // read from a SIBLING field moves with the declaration too.
+    {
+      code: `
+        class C {
+          handleClick = (): void => {};
+          run = (): void => {
+            this.handleClick();
+          };
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `
+        class C {
+          click = (): void => {};
+          run = (): void => {
+            this.click();
+          };
+        }
+      `,
+    },
+    // Bug #1949: the field's own initializer reading the field back is the
+    // same lexical `this`, so the recursive read is rewritten as well.
+    {
+      code: `
+        class C {
+          handleClick = (): void => {
+            this.handleClick();
+          };
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `
+        class C {
+          click = (): void => {
+            this.click();
+          };
+        }
+      `,
+    },
+    // Bug #1949: an optional-chained read and a read from a nested arrow are
+    // the same reference on a field as on a method.
+    {
+      code: `
+        class C {
+          handleClick = (): void => {};
+          run(items: number[]): void {
+            this?.handleClick();
+            items.forEach(() => {
+              this.handleClick();
+            });
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `
+        class C {
+          click = (): void => {};
+          run(items: number[]): void {
+            this?.click();
+            items.forEach(() => {
+              this.click();
+            });
+          }
+        }
+      `,
+    },
+    // Bug #1949: `this` in a static member is the class object, so a static
+    // field and its static reads move together.
+    {
+      code: `
+        class C {
+          static handleClick = (): void => {};
+          static run(): void {
+            this.handleClick();
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `
+        class C {
+          static click = (): void => {};
+          static run(): void {
+            this.click();
+          }
+        }
+      `,
+    },
+    // Bug #1949: an instance `this.` read cannot be a read of a STATIC field,
+    // so the receiver mismatch withholds the whole rename rather than
+    // rewriting a member the fixer has not accounted for.
+    {
+      code: `
+        class C {
+          static handleClick = (): void => {};
+          run(): void {
+            this.handleClick();
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1949: the mismatch holds in the other direction too — `this` in a
+    // static method is the class object, which has no instance field.
+    {
+      code: `
+        class C {
+          handleClick = (): void => {};
+          static run(): void {
+            this.handleClick();
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1949: a `private` field is unnameable outside the class body, so
+    // its rename is owned even when the class is exported (#1946's private
+    // arm, reached from a field).
+    {
+      code: `
+        export class C {
+          private handleClick = (): void => {};
+          run(): void {
+            this.handleClick();
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `
+        export class C {
+          private click = (): void => {};
+          run(): void {
+            this.click();
+          }
+        }
+      `,
+    },
+    // Bug #1949: a `public` field of an exported class is named by importers
+    // this fixer cannot edit — `import { C } from './c'; c.handleClick()`
+    // fails with TS2339 — so the report stands and the rename is withheld.
+    {
+      code: `
+        export class C {
+          public handleClick = (): void => {};
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1949: the same for an implicit-public field.
+    {
+      code: `
+        export class C {
+          handleClick = (): void => {};
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1949: `protected` is nameable by subclasses, which live in files a
+    // single-file fixer cannot see, so it is withheld exactly as `public` is.
+    {
+      code: `
+        export class C {
+          protected handleClick = (): void => {};
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1949: a class merely MENTIONED beyond its declaration can hand an
+    // instance to another module, so a field of it is withheld too.
+    {
+      code: `
+        class C {
+          handleClick = (): void => {};
+        }
+        export const c = new C();
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1949 boundary: a class expression assigned to a module-private
+    // binding stays inside the file, so its field IS renamed. Without this the
+    // withholding above could be a blanket disable of the field fixer.
+    {
+      code: `
+        const C = class {
+          handleClick = (): void => {};
+        };
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `
+        const C = class {
+          click = (): void => {};
+        };
+      `,
+    },
+    // Bug #1949 / #1944: a field of a class with `extends` may be satisfying a
+    // declaration in a base this file never sees, so the rename is withheld
+    // and the report kept.
+    {
+      code: `
+        import { Base } from './base';
+        class C extends Base {
+          handleClick = (): void => {};
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1949 / #1944: the `implements` half of the same contract. Renaming
+    // the field alone leaves the interface member behind — `TS2420: Class 'C'
+    // incorrectly implements interface 'Clickable'`.
+    {
+      code: `
+        interface Clickable {
+          handleClick: () => void;
+        }
+        class C implements Clickable {
+          handleClick = (): void => {};
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1949 / #1944: `override` says outright that a base declares the
+    // member, and the heritage clause it needs already withholds.
+    {
+      code: `
+        import { Base } from './base';
+        class C extends Base {
+          override handleClick = (): void => {};
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1949: a `declare` field defines nothing — it asserts that a base
+    // constructor, a decorator or a framework establishes the property by name
+    // somewhere the class body does not show. That definition is out of the
+    // fixer's reach, so the report is kept and the rename withheld, the same
+    // answer an abstract declaration gets.
+    {
+      code: `class C { declare handleClick: () => void; }`,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1949: a computed read spells the member as a string the fixer must
+    // not rewrite blindly, so the whole field rename is withheld.
+    {
+      code: `
+        class C {
+          handleClick = (): void => {};
+          run(): void {
+            this['handleClick']();
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1949: `this[key]` does not name which member is read at all.
+    {
+      code: `
+        class C {
+          handleClick = (): void => {};
+          run(key: 'handleClick'): void {
+            this[key]();
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1949: an ordinary function expression rebinds `this` to its caller,
+    // so `this.handleClick` inside one may be another object's member.
+    {
+      code: `
+        class C {
+          handleClick = (): void => {};
+          run(items: number[]): void {
+            items.forEach(function (this: C) {
+              this.handleClick();
+            }, this);
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1949: destructuring off `this` names the member in a form no key
+    // rewrite follows.
+    {
+      code: `
+        class C {
+          handleClick = (): void => {};
+          run(): void {
+            const { handleClick } = this;
+            handleClick();
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1949: a read through an instance is a reference the fixer cannot
+    // attribute to this class — including the assignment form, which a field
+    // invites more than a method does.
+    {
+      code: `
+        class C {
+          handleClick = (): void => {};
+        }
+        const c = new C();
+        c.handleClick = (): void => {};
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1949: a subclass reading the field through `super`.
+    {
+      code: `
+        class C {
+          handleClick = (): void => {};
+        }
+        class D extends C {
+          run(): void {
+            super.handleClick();
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1949: any string spelling of the name in the file withholds, since
+    // the fixer must not rewrite text it cannot prove names this member.
+    {
+      code: `
+        class C {
+          handleClick = (): void => {};
+        }
+        console.log('handleClick');
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1949: a sibling already holding the target name would make the
+    // rename a duplicate member, silently discarding one of them.
+    {
+      code: `
+        class C {
+          click = (): void => {};
+          handleClick = (): void => {};
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1949: the sibling collision holds across the field/method spellings
+    // too — the class body declares one member space per name for this check.
+    {
+      code: `
+        class C {
+          click(): void {}
+          handleClick = (): void => {};
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1949: `handleDelete` strips to `delete`, a reserved word. The
+    // report is kept and the fix withheld rather than emitting a keyword —
+    // the member position happens to parse, but the rule cannot see whether
+    // the field is later destructured into a binding, where it does not.
+    {
+      code: `class C { handleDelete = (): void => {}; }`,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    /**
+     * Bug #1949: the `declaresNameTwice` interaction. A static field and an
+     * instance method may share a name legally, so the class body declares
+     * `handleClick` twice and BOTH reports lose their fix — renaming one half
+     * without the other is a rename this pass cannot reason about, and the
+     * check is deliberately name-keyed rather than member-space-keyed.
+     */
+    {
+      code: `
+        class C {
+          static handleClick = (): void => {};
+          handleClick(): void {}
+        }
+      `,
+      errors: [
+        { messageId: 'callbackFunctionPrefix' },
+        { messageId: 'callbackFunctionPrefix' },
+      ],
+      output: null,
+    },
+    /**
+     * Bug #1949: a computed key REFERENCES a binding, so the member's own name
+     * is whatever that binding holds — something the rule cannot read. The
+     * binding's declaration is the subject and carries the only report here;
+     * the field contributes none, which is exactly what this case's single
+     * expected error pins. The rename that does apply is the binding's.
+     */
+    {
+      code: `
+        const handleClick = 'x';
+        class C {
+          [handleClick] = (): void => {};
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `
+        const click = 'x';
+        class C {
+          [click] = (): void => {};
+        }
+      `,
+    },
+    // Bug #1949 regression guard for #1944: an abstract PROPERTY declaration is
+    // still reported by its own arm, and still report-only, now that a
+    // concrete field is a subject too.
+    {
+      code: `
+        abstract class BaseForm {
+          abstract handleSubmit: (data: string) => string;
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1949 regression guard: the method spelling the rule already covered
+    // still reports and still autofixes — the widening must not displace it.
+    {
+      code: `
+        class C {
+          handleClick(): void {}
+          handleSubmit = (): void => {};
+        }
+      `,
+      errors: [
+        { messageId: 'callbackFunctionPrefix' },
+        { messageId: 'callbackFunctionPrefix' },
+      ],
+      output: `
+        class C {
+          click(): void {}
+          submit = (): void => {};
+        }
+      `,
+    },
+    // Bug #1949 regression guard: an object-literal member and a constructor
+    // parameter property are on neither new path, and keep their answers — the
+    // parameter property report-only, the object member rewritten.
+    {
+      code: `
+        const config = { handleClick: onClick };
+        class C {
+          constructor(private readonly handleChange: () => void) {}
+        }
+      `,
+      errors: [
+        { messageId: 'callbackFunctionPrefix' },
+        { messageId: 'callbackFunctionPrefix' },
+      ],
+      output: `
+        const config = { click: onClick };
+        class C {
+          constructor(private readonly handleChange: () => void) {}
+        }
+      `,
+    },
   ],
 });
 
@@ -1977,6 +2574,26 @@ describe('consistent-callback-naming --fix output parses (Bug #1719)', () => {
     const output = fix(`class C {\n  handleClick() {}\n}\n`);
 
     expect(output).toBe(`class C {\n  click() {}\n}\n`);
+    expect(parses(output)).toBe(true);
+  });
+
+  // Bug #1949: the field spelling of the same rename, end to end.
+  it('renames a class field end to end', () => {
+    const output = fix(`class C {\n  handleClick = () => {};\n}\n`);
+
+    expect(output).toBe(`class C {\n  click = () => {};\n}\n`);
+    expect(parses(output)).toBe(true);
+  });
+
+  // Bug #1949: the reserved-word guard covers the field key too. `class C {
+  // delete = fn }` happens to parse, so only a byte-identical output pins that
+  // the fixer declined rather than emitting a keyword.
+  it('never emits a reserved word for a class field rename', () => {
+    const code = `class C {\n  handleDelete = () => {};\n}\n`;
+
+    const output = fix(code);
+
+    expect(output).toBe(code);
     expect(parses(output)).toBe(true);
   });
 
@@ -2183,6 +2800,39 @@ describe('consistent-callback-naming --fix output type-checks (Bug #1946)', () =
       'a recursive function whose own body holds the reference',
       `function handleRetry(count: number): void {\n  if (count > 0) {\n    handleRetry(count - 1);\n  }\n}\nconsole.log(handleRetry);\n`,
     ],
+    // Bug #1949. A field has the binding sites a method has, so it inherits the
+    // whole withholding story above — and the differential is what proves the
+    // inheritance is real rather than asserted: a field rename that reached the
+    // key and not `this.handleClick` would be the same TS2339 the method
+    // spelling used to ship.
+    [
+      'the #1949 repro: a class field the file owns',
+      `class C {\n  handleClick = (): void => {};\n  run(): void {\n    this.handleClick();\n  }\n}\n`,
+    ],
+    [
+      'a public field of an exported class',
+      `export class C {\n  handleClick = (): void => {};\n}\n`,
+    ],
+    [
+      'a private field of an exported class',
+      `export class C {\n  private handleClick = (): void => {};\n  run(): void {\n    this.handleClick();\n  }\n}\n`,
+    ],
+    [
+      'a static class field read from a static method',
+      `class C {\n  static handleClick = (): void => {};\n  static run(): void {\n    this.handleClick();\n  }\n}\n`,
+    ],
+    [
+      'a class field with a computed read',
+      `class C {\n  handleClick = (): void => {};\n  run(): void {\n    this['handleClick']();\n  }\n}\n`,
+    ],
+    [
+      'a class field implementing a contract (#1944)',
+      `interface S {\n  handleClick: () => void;\n}\nclass C implements S {\n  handleClick = (): void => {};\n}\nvoid new C();\n`,
+    ],
+    [
+      'a declare class field',
+      `class C {\n  declare handleClick: () => void;\n}\n`,
+    ],
   ];
 
   const results = SHAPES.map(([, code]) => fixWholeFile(code));
@@ -2225,6 +2875,9 @@ describe('consistent-callback-naming --fix output type-checks (Bug #1946)', () =
       'a function declaration and its call',
       'a sibling block binding that encloses no reference',
       'a recursive function whose own body holds the reference',
+      'the #1949 repro: a class field the file owns',
+      'a private field of an exported class',
+      'a static class field read from a static method',
     ]);
   });
 
