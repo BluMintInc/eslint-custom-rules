@@ -1,4 +1,5 @@
 import { Linter, Rule } from 'eslint';
+import * as ts from 'typescript';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceMemoizeGetters } from '../rules/enforce-memoize-getters';
 
@@ -388,6 +389,85 @@ ruleTesterTs.run('enforce-memoize-getters', enforceMemoizeGetters, {
           private get #fetcher() { return {}; }
           public read() { return this.#fetcher; }
         }
+      `,
+    },
+    // ------------------------------------------------------------------
+    // Issue #1947: the same mode rejects a decorator on EVERY member of a
+    // class EXPRESSION — TS1206 again, whatever the member is named and
+    // wherever the decorator is written. Measured against a real `ts.Program`
+    // with `experimentalDecorators: true`: each shape below compiles as
+    // written and gained `TS1206: Decorators are not valid here.` the moment
+    // `--fix` inserted `@Memoize()`. The remedy the message prescribes cannot
+    // be written in place, so the report is withheld along with its fix.
+    // ------------------------------------------------------------------
+    {
+      name: 'a getter in an anonymous class expression is not reported',
+      code: `
+        export const Service = class {
+          private get fetcher() { return {}; }
+        };
+      `,
+    },
+    {
+      name: 'a getter in a named class expression is not reported',
+      code: `
+        export const Service = class Inner {
+          private get fetcher() { return {}; }
+        };
+      `,
+    },
+    {
+      name: 'a getter in a class expression returned from a factory is not reported',
+      code: `
+        export function build() {
+          return class {
+            private get fetcher() { return {}; }
+          };
+        }
+      `,
+    },
+    {
+      name: 'a getter in a class expression passed as an argument is not reported',
+      code: `
+        declare function register(constructor: unknown): void;
+        register(class {
+          private get fetcher() { return {}; }
+        });
+      `,
+    },
+    {
+      name: 'a getter in a class expression held in an object property is not reported',
+      code: `
+        export const registry = {
+          Service: class {
+            private get fetcher() { return {}; }
+          },
+        };
+      `,
+    },
+    {
+      name: 'a getter in a class expression held in a class property is not reported',
+      code: `
+        export class Outer {
+          static Inner = class {
+            private get fetcher() { return {}; }
+          };
+        }
+      `,
+    },
+    {
+      name: 'a getter in a class expression sharing its line is not reported',
+      code: `
+        export const Service = class { private get fetcher() { return {}; } };
+      `,
+    },
+    {
+      name: 'a class expression is silent even where the import already exists',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        export const Service = class {
+          private get fetcher() { return {}; }
+        };
       `,
     },
   ],
@@ -1102,12 +1182,16 @@ class Example {
       output: null,
     },
     {
+      // Written as a class DECLARATION: the shadowing decline is what this
+      // case pins, and a class expression would withhold the report for the
+      // unrelated reason of issue #1947, leaving the shadowing path untested.
       name: 'a shadowing parameter named Memoize withholds the fix at that site',
       code: `
         export function build(Memoize) {
-          return class {
+          class Service {
             private get fetcher() { return Memoize; }
-          };
+          }
+          return Service;
         }
       `,
       errors: [{ messageId: 'requireMemoizeGetter' }],
@@ -1134,9 +1218,10 @@ class Example {
           private get first() { return 1; }
         }
         export function build(Memoize) {
-          return class {
+          class Service {
             private get second() { return Memoize; }
-          };
+          }
+          return Service;
         }
       `,
       errors: [
@@ -1150,9 +1235,10 @@ class Example {
           private get first() { return 1; }
         }
         export function build(Memoize) {
-          return class {
+          class Service {
             private get second() { return Memoize; }
-          };
+          }
+          return Service;
         }
       `,
     },
@@ -1504,6 +1590,118 @@ class UserAccount { @Memoize() private get a() { return 1; } @Memoize() private 
       output:
         "import { Memoize } from '@blumintinc/typescript-memoize';\nclass UserAccount {\n\t\t@Memoize()\n\t\tprivate get isLocked() { return true; }\n}",
     },
+    // ------------------------------------------------------------------
+    // Issue #1947: the class-EXPRESSION decline must not spread to class
+    // DECLARATIONS, which take decorators in every position TypeScript
+    // accepts a class in. Each of these compiled clean before and after
+    // `--fix` under a real `ts.Program` with `experimentalDecorators: true`.
+    // ------------------------------------------------------------------
+    {
+      name: 'a class declaration nested in a function is still reported and fixed',
+      code: `
+        export function build() {
+          class Service {
+            private get fetcher() { return {}; }
+          }
+          return Service;
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        export function build() {
+          class Service {
+            @Memoize()
+            private get fetcher() { return {}; }
+          }
+          return Service;
+        }
+      `,
+    },
+    {
+      name: 'a class declaration inside a class expression method is still reported and fixed',
+      code: `
+        export const Outer = class {
+          public build() {
+            class Service {
+              private get fetcher() { return {}; }
+            }
+            return Service;
+          }
+        };
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        export const Outer = class {
+          public build() {
+            class Service {
+              @Memoize()
+              private get fetcher() { return {}; }
+            }
+            return Service;
+          }
+        };
+      `,
+    },
+    {
+      name: 'an anonymous default-exported class is a declaration, so it is still fixed',
+      code: `
+        export default class {
+          private get fetcher() { return {}; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        export default class {
+          @Memoize()
+          private get fetcher() { return {}; }
+        }
+      `,
+    },
+    {
+      name: 'a class declaration inside a block is still reported and fixed',
+      code: `
+        {
+          class Service {
+            private get fetcher() { return {}; }
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        {
+          class Service {
+            @Memoize()
+            private get fetcher() { return {}; }
+          }
+        }
+      `,
+    },
+    {
+      name: 'a declaration is still fixed while a sibling class expression stays silent',
+      code: `
+        export class Outer {
+          private get first() { return 1; }
+        }
+        export const Inner = class {
+          private get second() { return 2; }
+        };
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        export class Outer {
+          @Memoize()
+          private get first() { return 1; }
+        }
+        export const Inner = class {
+          private get second() { return 2; }
+        };
+      `,
+    },
   ],
 });
 
@@ -1781,11 +1979,12 @@ export class Service {
 
   it('leaves a shadowing binding alone across every pass', () => {
     const code = `export function build(Memoize) {
-  return class {
+  class Service {
     private get fetcher() {
       return Memoize;
     }
-  };
+  }
+  return Service;
 }
 `;
 
@@ -1800,11 +1999,12 @@ export class Service {
   }
 }
 export function build(Memoize) {
-  return class {
+  class Service {
     private get second() {
       return Memoize;
     }
-  };
+  }
+  return Service;
 }
 `);
 
@@ -1940,5 +2140,251 @@ class UserAccount {
 
     expect(first.fixed).toBe(true);
     expect(first.output).toContain('@Memoize()');
+  });
+});
+
+// Issue #1947: the class-expression carve-out is a claim about the COMPILER,
+// and no ESLint-level assertion can check it. `RuleTester` never type-checks,
+// and the class-expression cases above are `valid`, so they produce no fix
+// pair for `fixer-type-safety` to compile — the whole suite would stay green
+// with the carve-out removed and `--fix` emitting TS1206 again. These cases
+// compile each shape under a real `ts.Program` with `experimentalDecorators:
+// true` and assert differentially: the fixed text must carry no diagnostic its
+// input did not already carry. An absolute count would only measure how many
+// identifiers a fragment leaves undefined.
+describe('enforce-memoize-getters: `--fix` leaves every class shape compiling (issue #1947)', () => {
+  const RULE_ID = '@blumintinc/blumint/enforce-memoize-getters';
+  const FILENAME = '/memoize/Service.ts';
+  const MEMOIZE_STUB = '/memoize/typescript-memoize.d.ts';
+  const MEMOIZE_STUB_TEXT =
+    'export declare function Memoize(...args: unknown[]): MethodDecorator;\n';
+
+  const createLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      enforceMemoizeGetters as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const LINT_CONFIG = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2022 as const,
+      sourceType: 'module' as const,
+    },
+    rules: { [RULE_ID]: 'error' as const },
+  };
+
+  const fix = (code: string) =>
+    createLinter().verifyAndFix(code, LINT_CONFIG, FILENAME);
+
+  /**
+   * `noLib` keeps each program to two source files, which is what makes a
+   * per-shape compile affordable here; the lib types are absent from the input
+   * and the output alike, so their diagnostics cancel in the differential. The
+   * memoize package resolves to an in-memory stub so that the import the fixer
+   * injects cannot manufacture a TS2307 the input lacked and mask the
+   * diagnostic actually under test.
+   */
+  const compilerOptions: ts.CompilerOptions = {
+    experimentalDecorators: true,
+    strict: true,
+    target: ts.ScriptTarget.ES2022,
+    noEmit: true,
+    noLib: true,
+    types: [],
+  };
+
+  const diagnosticsOf = (source: string): string[] => {
+    const files = new Map<string, string>([
+      [FILENAME, source],
+      [MEMOIZE_STUB, MEMOIZE_STUB_TEXT],
+    ]);
+    const sourceFiles = new Map(
+      [...files].map(([name, text]) => [
+        name,
+        ts.createSourceFile(name, text, ts.ScriptTarget.ES2022, true),
+      ]),
+    );
+    const host: ts.CompilerHost = {
+      getSourceFile: (name) => sourceFiles.get(name),
+      getDefaultLibFileName: () => 'lib.d.ts',
+      writeFile: () => undefined,
+      getCurrentDirectory: () => '/memoize',
+      getCanonicalFileName: (name) => name,
+      useCaseSensitiveFileNames: () => true,
+      getNewLine: () => '\n',
+      fileExists: (name) => files.has(name),
+      readFile: (name) => files.get(name),
+      resolveModuleNames: (moduleNames) =>
+        moduleNames.map((name) =>
+          name === '@blumintinc/typescript-memoize' ||
+          name === 'typescript-memoize'
+            ? {
+                resolvedFileName: MEMOIZE_STUB,
+                extension: ts.Extension.Dts,
+                isExternalLibraryImport: true,
+              }
+            : undefined,
+        ),
+    };
+    const program = ts.createProgram([FILENAME], compilerOptions, host);
+    const file = program.getSourceFile(FILENAME);
+    if (!file) {
+      throw new Error('the source under test is missing from the program');
+    }
+    // TS1206 is a grammar check the CHECKER runs, so it reaches neither
+    // `getSyntacticDiagnostics` nor a `transpileModule` round trip; reading
+    // both buckets is what makes it visible.
+    return [
+      ...program.getSyntacticDiagnostics(file),
+      ...program.getSemanticDiagnostics(file),
+    ].map((diagnostic) => `TS${diagnostic.code}`);
+  };
+
+  const introducedBy = (before: string, after: string): string[] => {
+    const carried = diagnosticsOf(before);
+    return diagnosticsOf(after).filter((code, index, all) => {
+      const seenBefore = carried.filter((entry) => entry === code).length;
+      const seenHere = all.slice(0, index + 1).filter((e) => e === code).length;
+      return seenHere > seenBefore;
+    });
+  };
+
+  it('proves the premise: a decorator inside a class expression is TS1206', () => {
+    // The harness itself needs a control, or a compile step that silently saw
+    // nothing would certify every shape below as clean. Written by hand, the
+    // very edit the fixer used to make is rejected — and the same decorator on
+    // the same member of a class DECLARATION is accepted.
+    expect(
+      diagnosticsOf(`import { Memoize } from '@blumintinc/typescript-memoize';
+export const Service = class {
+  @Memoize()
+  private get fetcher() { return 1; }
+};
+`),
+    ).toContain('TS1206');
+
+    expect(
+      diagnosticsOf(`import { Memoize } from '@blumintinc/typescript-memoize';
+export class Service {
+  @Memoize()
+  private get fetcher() { return 1; }
+}
+`),
+    ).not.toContain('TS1206');
+  });
+
+  // Spelled out rather than composed from a shared body: a mismatched brace
+  // would make the fixture a parse error, and an unparseable fixture reports
+  // nothing — which is indistinguishable from the silence under test. The
+  // `verify` assertion below counts the parse error too, so this cannot pass
+  // vacuously.
+  const CLASS_EXPRESSIONS: [string, string][] = [
+    [
+      'anonymous, bound to a const',
+      'export const Service = class {\n  private get fetcher() { return 1; }\n};\n',
+    ],
+    [
+      'named',
+      'export const Service = class Inner {\n  private get fetcher() { return 1; }\n};\n',
+    ],
+    [
+      'returned from a factory',
+      'export function build() {\n  return class {\n    private get fetcher() { return 1; }\n  };\n}\n',
+    ],
+    [
+      'passed as an argument',
+      'declare function use(c: unknown): void;\nuse(class {\n  private get fetcher() { return 1; }\n});\n',
+    ],
+    [
+      'held in an object property',
+      'export const registry = {\n  Service: class {\n    private get fetcher() { return 1; }\n  },\n};\n',
+    ],
+    [
+      'held in a class property',
+      'export class Outer {\n  static Inner = class {\n    private get fetcher() { return 1; }\n  };\n}\n',
+    ],
+    [
+      'written on a single line',
+      'export const Service = class { private get fetcher() { return 1; } };\n',
+    ],
+  ];
+
+  it.each(CLASS_EXPRESSIONS)(
+    'a class expression %s is silent and left byte-for-byte alone',
+    (_name, code) => {
+      expect(createLinter().verify(code, LINT_CONFIG, FILENAME)).toHaveLength(
+        0,
+      );
+
+      const first = fix(code);
+
+      expect(first.fixed).toBe(false);
+      expect(first.output).toBe(code);
+      expect(introducedBy(code, first.output)).toEqual([]);
+    },
+  );
+
+  const CLASS_DECLARATIONS: [string, string][] = [
+    [
+      'at the top level',
+      'export class Service {\n  private get fetcher() { return 1; }\n}\n',
+    ],
+    [
+      'nested in a function',
+      'export function build() {\n  class Service {\n    private get fetcher() { return 1; }\n  }\n  return Service;\n}\n',
+    ],
+    [
+      'nested in a class expression method',
+      'export const Outer = class {\n  public build() {\n    class Service {\n      private get fetcher() { return 1; }\n    }\n    return Service;\n  }\n};\n',
+    ],
+    [
+      'anonymous and default-exported',
+      'export default class {\n  private get fetcher() { return 1; }\n}\n',
+    ],
+    [
+      'on a single line',
+      'export class Service { private get fetcher() { return 1; } }\n',
+    ],
+  ];
+
+  it.each(CLASS_DECLARATIONS)(
+    'a class declaration %s is still decorated, converges, and still compiles',
+    (_name, code) => {
+      const first = fix(code);
+
+      expect(first.fixed).toBe(true);
+      expect(first.output).toContain('@Memoize()');
+      // Re-running the fixer on its own output is the convergence detector:
+      // comparing the two strings would call an even-length cycle converged.
+      expect(fix(first.output).fixed).toBe(false);
+      expect(introducedBy(code, first.output)).toEqual([]);
+    },
+  );
+
+  it('would have caught the bug: the pre-fix edit introduces TS1206', () => {
+    // The mutation this guard exists to detect, applied by hand: had the rule
+    // kept decorating a class expression, `introducedBy` would have returned
+    // exactly this, so the assertions above are not vacuous.
+    const before = `export const Service = class {
+  private get fetcher() { return 1; }
+};
+`;
+    const after = `import { Memoize } from '@blumintinc/typescript-memoize';
+export const Service = class {
+  @Memoize()
+  private get fetcher() { return 1; }
+};
+`;
+
+    expect(introducedBy(before, after)).toEqual(['TS1206']);
   });
 });

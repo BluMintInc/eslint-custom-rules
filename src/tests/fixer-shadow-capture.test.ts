@@ -600,7 +600,10 @@ const UNPROBED_RULES: Record<string, Reason> = {
   'enforce-dynamic-firebase-imports': REASONS.noEnclosingBlock,
   'enforce-firestore-rules-get-access': REASONS.noEnclosingBlock,
   'enforce-m3-sentence-case': REASONS.noEnclosingBlock,
-  'enforce-memoize-getters': REASONS.noEnclosingBlock,
+  // `enforce-memoize-getters` is absent from this class deliberately (#1947):
+  // its corpus carries a class DECLARATION nested in a function whose getter is
+  // reported AND decorated, so one of its reports sits inside a function block
+  // and the probe below drives the rule for real.
   'enforce-mui-rounded-icons': REASONS.noEnclosingBlock,
   'enforce-snapshot-state-narrowing': REASONS.noEnclosingBlock,
   'enforce-unique-cursor-headers': REASONS.noEnclosingBlock,

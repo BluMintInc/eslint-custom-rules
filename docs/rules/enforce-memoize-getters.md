@@ -37,6 +37,7 @@ class Example {
 - Applies only to private instance getters (`get` accessors with `private` accessibility).
 - Ignores static getters.
 - Ignores getters named with an ECMAScript private name (`get #fetcher()`), which admit no decorator (see below).
+- Ignores getters declared in a class **expression** (`const Service = class { … }`), where no decorator is legal either (see below).
 - Recognizes `@Memoize`, `@Memoize()`, and namespaced forms like `@ns.Memoize()`.
 - Auto-fix adds `@Memoize()` and imports `Memoize` from `@blumintinc/typescript-memoize` if missing, without duplicating existing imports or aliases.
 - Getters that sample live external state are exempt automatically (see below).
@@ -66,6 +67,53 @@ the mode `@blumintinc/typescript-memoize` requires — rejects a decorator on a
 written there. `private get #fetcher()` is doubly out of reach: an accessibility
 modifier beside a private name is itself a grammar error (**TS18010**). Rename
 the getter, or hold the memoized value in a `#private` field the getter reads.
+
+### Getters declared in a class expression
+
+A getter inside a class **expression** is never reported, for the same reason
+one level out: under `experimentalDecorators`, TypeScript rejects a decorator on
+**every** member of a class expression with **TS1206**, whatever the member is
+named. The carve-out covers each spelling of the shape — anonymous, named,
+returned from a factory, passed as an argument, or held in an object or class
+property:
+
+```ts
+// Not reported: `@Memoize()` cannot be written on any of these members.
+export const Service = class {
+  private get fetcher() { return createFetcher(); }
+};
+
+export const Named = class Inner {
+  private get fetcher() { return createFetcher(); }
+};
+
+export function build() {
+  return class {
+    private get fetcher() { return createFetcher(); }
+  };
+}
+```
+
+To memoize such a getter, give the class a **declaration**, which takes
+decorators normally:
+
+```ts
+class Service {
+  @Memoize()
+  private get fetcher() { return createFetcher(); }
+}
+
+export { Service };
+```
+
+The carve-out is keyed on the getter's own enclosing class, not on any ancestor:
+a class declaration nested inside a class expression's method is still reported
+and still fixed, and `export default class { … }` is a declaration despite
+having no name, so it is reported too.
+
+If this plugin ever targets standard (TC39) decorators — `experimentalDecorators:
+false`, where class expressions do accept decorators — this carve-out becomes
+mode-dependent and should be revisited alongside the private-name one.
 
 ### Getters that read live external state
 
